@@ -8,7 +8,7 @@ fn vec_new() -> result: own ByteVec allocates(heap) {
   return ByteVec(buf: move empty, fill: 0_u64);
 }
 
-fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads('a), writes('a), allocates(heap) {
+fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads(v.buf, v.fill), writes(v.buf, v.fill), allocates(heap) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let full = ige(count, cap);
@@ -35,7 +35,7 @@ fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Over
   return Ok<unit, Overflow>(value: unit);
 }
 
-fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own Result<unit, Overflow> reads('d 's), writes('d), allocates(heap) {
+fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own Result<unit, Overflow> reads(dst.buf, dst.fill, src), writes(dst.buf, dst.fill), allocates(heap) {
   let count = len(deref(src));
   for @append i in 0_u64..count {
     let byte = deref(src)[i];

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::super::model::{
     BindingId, CheckedExpression, CheckedFunction, CheckedLoopId, CheckedMatchArm,
-    CheckedResultAuthorityOrigin, CheckedSetTarget, CheckedStatement,
+    CheckedResultStateOrigin, CheckedResultStatePath, CheckedSetTarget, CheckedStatement,
 };
 use super::{CheckStop, Checker};
 
@@ -10,27 +10,29 @@ use super::{CheckStop, Checker};
 enum OriginSet {
     Absent,
     Finite {
-        may_absent: bool,
-        may_fresh: bool,
-        formals: Vec<u32>,
+        formals: Vec<CheckedResultStatePath>,
     },
     Unknown,
 }
 
 impl OriginSet {
-    fn fresh(may_absent: bool) -> Self {
+    fn fresh() -> Self {
         Self::Finite {
-            may_absent,
-            may_fresh: true,
             formals: Vec::new(),
         }
     }
 
-    fn formal(formal: u32, may_absent: bool) -> Self {
+    fn formal_leaves(formal: u32, leaves: Vec<Vec<u32>>) -> Self {
         Self::Finite {
-            may_absent,
-            may_fresh: false,
-            formals: vec![formal],
+            formals: leaves
+                .into_iter()
+                .map(|fields| CheckedResultStatePath {
+                    result_fields: fields.clone(),
+                    result_variant: None,
+                    parameter: formal,
+                    parameter_fields: fields,
+                })
+                .collect(),
         }
     }
 
@@ -39,20 +41,7 @@ impl OriginSet {
             (Self::Unknown, _) => {}
             (_, Self::Unknown) => *self = Self::Unknown,
             (Self::Absent, finite @ Self::Finite { .. }) => *self = finite,
-            (
-                Self::Finite {
-                    may_absent: left_absent,
-                    may_fresh: left_fresh,
-                    formals: left,
-                },
-                Self::Finite {
-                    may_absent: right_absent,
-                    may_fresh: right_fresh,
-                    formals: right,
-                },
-            ) => {
-                *left_absent |= right_absent;
-                *left_fresh |= right_fresh;
+            (Self::Finite { formals: left }, Self::Finite { formals: right }) => {
                 for formal in right {
                     if !left.contains(&formal) {
                         left.push(formal);
@@ -61,6 +50,71 @@ impl OriginSet {
                 left.sort_unstable();
             }
             (Self::Absent, Self::Absent) | (Self::Finite { .. }, Self::Absent) => {}
+        }
+    }
+
+    fn projected(mut self, fields: &[u32]) -> Self {
+        if let Self::Finite { formals, .. } = &mut self {
+            formals.retain_mut(|formal| {
+                if !formal.result_fields.starts_with(fields) {
+                    return false;
+                }
+                formal.result_fields.drain(..fields.len());
+                true
+            });
+        }
+        self
+    }
+
+    fn enum_payload(mut self, variant: u32, field: u32) -> Self {
+        if let Self::Finite { formals } = &mut self {
+            formals.retain_mut(|origin| match origin.result_variant {
+                Some(actual) if actual != variant => false,
+                Some(_) => {
+                    if origin.result_fields.first() != Some(&field) {
+                        return false;
+                    }
+                    origin.result_fields.remove(0);
+                    origin.result_variant = None;
+                    true
+                }
+                None => {
+                    origin.result_fields.clear();
+                    true
+                }
+            });
+        }
+        self
+    }
+
+    fn replace_path(self, fields: &[u32], replacement: Self) -> Self {
+        if fields.is_empty() {
+            return replacement;
+        }
+        match (self, replacement) {
+            (Self::Unknown, _) | (_, Self::Unknown) => Self::Unknown,
+            (Self::Absent, replacement) => replacement,
+            (current @ Self::Finite { .. }, Self::Absent) => current,
+            (
+                Self::Finite {
+                    formals: mut current,
+                },
+                Self::Finite {
+                    formals: replacement,
+                },
+            ) => {
+                current.retain(|origin| !origin.result_fields.starts_with(fields));
+                for mut origin in replacement {
+                    let mut result_fields = fields.to_vec();
+                    result_fields.extend_from_slice(&origin.result_fields);
+                    origin.result_fields = result_fields;
+                    if !current.contains(&origin) {
+                        current.push(origin);
+                    }
+                }
+                current.sort_unstable();
+                Self::Finite { formals: current }
+            }
         }
     }
 }
@@ -97,13 +151,13 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
     fn analyze(&self) -> Result<OriginSet, CheckStop> {
         let mut environment = OriginEnvironment::new();
         for (ordinal, parameter) in self.function.parameters.iter().enumerate() {
-            let (minimum, maximum) = self.checker.type_capability_cardinality(parameter.ty)?;
-            let origin = match maximum {
-                0 => OriginSet::Absent,
-                1 => u32::try_from(ordinal)
-                    .map(|ordinal| OriginSet::formal(ordinal, minimum == 0))
-                    .unwrap_or(OriginSet::Unknown),
-                _ => OriginSet::Unknown,
+            let leaves = self.checker.type_state_leaf_paths(parameter.ty)?;
+            let origin = if leaves.is_empty() {
+                OriginSet::Absent
+            } else {
+                u32::try_from(ordinal)
+                    .map(|ordinal| OriginSet::formal_leaves(ordinal, leaves))
+                    .unwrap_or(OriginSet::Unknown)
             };
             environment.insert(parameter.binding, origin);
         }
@@ -148,17 +202,17 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 ..
             } => {
                 let origin = self.expression(scrutinee, &environment)?;
-                let returns = if self.checker.type_capability_root_count(*error_type)? == 0 {
+                let returns = if !self.checker.type_carries_identity(*error_type)? {
                     OriginSet::Absent
                 } else {
-                    origin.clone()
+                    origin.clone().enum_payload(1, 0)
                 };
                 environment.insert(
                     *binding,
-                    if self.checker.type_capability_root_count(*ok_type)? == 0 {
+                    if !self.checker.type_carries_identity(*ok_type)? {
                         OriginSet::Absent
                     } else {
-                        origin
+                        origin.enum_payload(0, 0)
                     },
                 );
                 Ok(OriginFlow {
@@ -171,16 +225,22 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             CheckedStatement::Set { target, value, .. } => {
                 let origin = self.expression(value, &environment)?;
                 let binding = target.binding();
-                let whole_place =
-                    matches!(target, CheckedSetTarget::Place(place) if place.fields.is_empty());
-                environment.insert(
-                    binding,
-                    if whole_place {
-                        origin
-                    } else {
-                        OriginSet::Unknown
-                    },
-                );
+                let current = environment
+                    .get(&binding)
+                    .cloned()
+                    .unwrap_or(OriginSet::Unknown);
+                let updated = match target {
+                    CheckedSetTarget::Place(place) if place.fields.is_empty() => origin,
+                    CheckedSetTarget::Place(place)
+                        if self.checker.type_carries_identity(target.ty())? =>
+                    {
+                        current.replace_path(&place.fields, origin)
+                    }
+                    CheckedSetTarget::Place(_)
+                    | CheckedSetTarget::ArrayIndex(_)
+                    | CheckedSetTarget::BufferIndex(_) => current,
+                };
+                environment.insert(binding, updated);
                 Ok(OriginFlow::continuing(environment))
             }
             CheckedStatement::Replace {
@@ -195,17 +255,27 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     .get(&target_binding)
                     .cloned()
                     .unwrap_or(OriginSet::Unknown);
-                environment.insert(*binding, previous);
-                let whole_place =
-                    matches!(target, CheckedSetTarget::Place(place) if place.fields.is_empty());
-                environment.insert(
-                    target_binding,
-                    if whole_place {
-                        replacement
-                    } else {
-                        OriginSet::Unknown
-                    },
-                );
+                let extracted = match target {
+                    CheckedSetTarget::Place(place)
+                        if self.checker.type_carries_identity(target.ty())? =>
+                    {
+                        previous.clone().projected(&place.fields)
+                    }
+                    _ => OriginSet::Absent,
+                };
+                environment.insert(*binding, extracted);
+                let updated = match target {
+                    CheckedSetTarget::Place(place) if place.fields.is_empty() => replacement,
+                    CheckedSetTarget::Place(place)
+                        if self.checker.type_carries_identity(target.ty())? =>
+                    {
+                        previous.replace_path(&place.fields, replacement)
+                    }
+                    CheckedSetTarget::Place(_)
+                    | CheckedSetTarget::ArrayIndex(_)
+                    | CheckedSetTarget::BufferIndex(_) => previous,
+                };
+                environment.insert(target_binding, updated);
                 Ok(OriginFlow::continuing(environment))
             }
             CheckedStatement::Evaluate(_)
@@ -278,10 +348,10 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         for arm in arms {
             let mut arm_environment = environment.clone();
             for binder in &arm.binders {
-                let origin = match self.checker.type_capability_root_count(binder.ty)? {
-                    0 => OriginSet::Absent,
-                    1 => scrutinee_origin.clone(),
-                    _ => OriginSet::Unknown,
+                let origin = if self.checker.type_carries_identity(binder.ty)? {
+                    scrutinee_origin.clone().enum_payload(arm.tag, binder.field)
+                } else {
+                    OriginSet::Absent
                 };
                 arm_environment.insert(binder.binding, origin);
             }
@@ -370,21 +440,15 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         expression: &CheckedExpression,
         environment: &OriginEnvironment,
     ) -> Result<OriginSet, CheckStop> {
-        match self.checker.type_capability_root_count(expression.ty())? {
-            0 => return Ok(OriginSet::Absent),
-            1 => {}
-            _ => return Ok(OriginSet::Unknown),
-        }
-        let (minimum, maximum) = self.checker.type_capability_cardinality(expression.ty())?;
-        if maximum == 0 {
+        if self
+            .checker
+            .type_state_leaf_paths(expression.ty())?
+            .is_empty()
+        {
             return Ok(OriginSet::Absent);
-        }
-        if maximum > 1 {
-            return Ok(OriginSet::Unknown);
         }
         let origin = match expression {
             CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::Project { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
@@ -393,21 +457,19 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 .get(binding)
                 .cloned()
                 .unwrap_or(OriginSet::Unknown),
-            CheckedExpression::SystemCall {
-                operation,
-                arguments,
-                ..
-            } => match crate::SYSTEM_OPERATIONS
+            CheckedExpression::Project {
+                binding, fields, ..
+            } => environment
+                .get(binding)
+                .cloned()
+                .unwrap_or(OriginSet::Unknown)
+                .projected(fields),
+            CheckedExpression::SystemCall { operation, .. } => match crate::SYSTEM_OPERATIONS
                 .get(usize::from(*operation))
-                .map(|operation| operation.result_authority)
+                .map(|operation| operation.result_state_origin)
             {
-                Some(crate::SystemResultAuthority::None) => OriginSet::Absent,
-                Some(crate::SystemResultAuthority::Fresh) => OriginSet::fresh(minimum == 0),
-                Some(crate::SystemResultAuthority::Parameter(ordinal)) => arguments
-                    .get(usize::from(ordinal))
-                    .map(|argument| self.expression(argument, environment))
-                    .transpose()?
-                    .unwrap_or(OriginSet::Unknown),
+                Some(crate::SystemResultStateOrigin::None) => OriginSet::Absent,
+                Some(crate::SystemResultStateOrigin::Fresh) => OriginSet::fresh(),
                 None => OriginSet::Unknown,
             },
             CheckedExpression::UserCall {
@@ -415,27 +477,77 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 arguments,
                 ..
             } => match self.summaries.get(function.0 as usize) {
-                Some(OriginSet::Finite {
-                    may_absent,
-                    may_fresh,
-                    formals,
-                }) => {
+                Some(OriginSet::Finite { formals }) => {
                     let mut origin = OriginSet::Finite {
-                        may_absent: *may_absent,
-                        may_fresh: *may_fresh,
                         formals: Vec::new(),
                     };
                     for formal in formals {
-                        let Some(argument) = arguments.get(*formal as usize) else {
+                        let Some(argument) = arguments.get(formal.parameter as usize) else {
                             return Ok(OriginSet::Unknown);
                         };
-                        origin.union(self.expression(argument, environment)?);
+                        let mut mapped = self
+                            .expression(argument, environment)?
+                            .projected(&formal.parameter_fields);
+                        if let OriginSet::Finite { formals, .. } = &mut mapped {
+                            for mapped in formals {
+                                let mut result_fields = formal.result_fields.clone();
+                                result_fields.extend_from_slice(&mapped.result_fields);
+                                mapped.result_fields = result_fields;
+                                if formal.result_variant.is_some() {
+                                    mapped.result_variant = formal.result_variant;
+                                }
+                            }
+                        }
+                        origin.union(mapped);
                     }
                     origin
                 }
                 Some(OriginSet::Absent) => OriginSet::Absent,
                 Some(OriginSet::Unknown) | None => OriginSet::Unknown,
             },
+            CheckedExpression::ConstructStruct { fields, .. } => {
+                let mut origin = OriginSet::Absent;
+                for (ordinal, field) in fields.iter().enumerate() {
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                    let mut field_origin = self.expression(field, environment)?;
+                    if let OriginSet::Finite { formals, .. } = &mut field_origin {
+                        for formal in formals {
+                            formal.result_fields.insert(0, ordinal);
+                        }
+                    }
+                    origin.union(field_origin);
+                }
+                origin
+            }
+            CheckedExpression::ConstructEnum {
+                variant, fields, ..
+            } => {
+                let mut origin = OriginSet::Absent;
+                for (field, value) in fields.iter().enumerate() {
+                    let field = u32::try_from(field)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                    let mut field_origin = self.expression(value, environment)?;
+                    if let OriginSet::Finite { formals, .. } = &mut field_origin {
+                        for formal in formals {
+                            formal.result_fields.insert(0, field);
+                            formal.result_variant = Some(*variant);
+                        }
+                    }
+                    origin.union(field_origin);
+                }
+                origin
+            }
+            CheckedExpression::BoxNew { value, .. } | CheckedExpression::ArenaNew { value, .. } => {
+                let mut origin = self.expression(value, environment)?;
+                if let OriginSet::Finite { formals, .. } = &mut origin {
+                    for formal in formals {
+                        formal.result_fields.clear();
+                        formal.result_variant = None;
+                    }
+                }
+                origin
+            }
             _ => {
                 let mut origin = OriginSet::Absent;
                 for child in super::super::model::expression_children(expression) {
@@ -445,25 +557,13 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             }
         };
         Ok(match origin {
-            OriginSet::Absent if minimum == 0 => OriginSet::Finite {
-                may_absent: true,
-                may_fresh: false,
-                formals: Vec::new(),
-            },
-            // For a required-capability result this remains the fixed-point
-            // bottom: a recursive callee may not have published its finite
-            // set yet. A component still at bottom after convergence becomes
-            // Unknown below; a direct formal/base route can lift it first.
-            OriginSet::Absent => OriginSet::Absent,
-            OriginSet::Finite {
-                may_absent: _,
-                may_fresh,
-                formals,
-            } if minimum == 1 => OriginSet::Finite {
-                may_absent: false,
-                may_fresh,
-                formals,
-            },
+            // `Absent` is the recursive fixed-point bottom only for a user
+            // call whose callee has not published a route yet. Every other
+            // affine-producing expression creates an invocation-local owner.
+            OriginSet::Absent if matches!(expression, CheckedExpression::UserCall { .. }) => {
+                OriginSet::Absent
+            }
+            OriginSet::Absent => OriginSet::fresh(),
             other => other,
         })
     }
@@ -486,24 +586,24 @@ fn join_environments(environments: Vec<OriginEnvironment>) -> Option<OriginEnvir
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    pub(super) fn derive_result_authority_origins(&mut self) -> Result<(), CheckStop> {
+    pub(super) fn derive_result_state_origins(&mut self) -> Result<(), CheckStop> {
         let initial = self
             .signatures
             .iter()
             .map(
-                |signature| match self.type_capability_root_count(signature.result) {
-                    Ok(0) => CheckedResultAuthorityOrigin::NoCapability,
-                    Ok(_) | Err(_) => CheckedResultAuthorityOrigin::Unknown,
+                |signature| match self.type_state_leaf_paths(signature.result) {
+                    Ok(paths) if paths.is_empty() => CheckedResultStateOrigin::NoState,
+                    Ok(_) | Err(_) => CheckedResultStateOrigin::Unknown,
                 },
             )
             .collect::<Vec<_>>();
-        self.result_authority_origins.replace(initial);
+        self.result_state_origins.replace(initial);
 
-        self.deriving_result_authority.set(true);
+        self.deriving_result_state_origin.set(true);
         let preliminary = (0..self.signatures.len())
             .map(|index| self.check_function_interning_nominals(index))
             .collect::<Result<Vec<_>, _>>();
-        self.deriving_result_authority.set(false);
+        self.deriving_result_state_origin.set(false);
         let preliminary = preliminary?;
         let functions = preliminary
             .iter()
@@ -513,25 +613,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut summaries = functions
             .iter()
             .map(
-                |function| match self.type_capability_root_count(function.result) {
-                    Ok(0) => OriginSet::Absent,
-                    Ok(1) => OriginSet::Absent,
-                    Ok(_) | Err(_) => OriginSet::Unknown,
+                |function| match self.type_state_leaf_paths(function.result) {
+                    Ok(_) => OriginSet::Absent,
+                    Err(_) => OriginSet::Unknown,
                 },
             )
             .collect::<Vec<_>>();
         loop {
             let mut next = Vec::with_capacity(functions.len());
             for function in &functions {
-                next.push(match self.type_capability_root_count(function.result)? {
-                    0 => OriginSet::Absent,
-                    1 => OriginAnalyzer {
+                next.push(if self.type_state_leaf_paths(function.result)?.is_empty() {
+                    OriginSet::Absent
+                } else {
+                    OriginAnalyzer {
                         checker: self,
                         function,
                         summaries: &summaries,
                     }
-                    .analyze()?,
-                    _ => OriginSet::Unknown,
+                    .analyze()?
                 });
             }
             if next == summaries {
@@ -544,24 +643,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .zip(summaries)
             .map(|(function, origin)| {
-                if self.type_capability_root_count(function.result)? == 0 {
-                    return Ok(CheckedResultAuthorityOrigin::NoCapability);
+                if self.type_state_leaf_paths(function.result)?.is_empty() {
+                    return Ok(CheckedResultStateOrigin::NoState);
                 }
                 Ok(match origin {
-                    OriginSet::Finite {
-                        may_absent,
-                        may_fresh,
-                        formals,
-                    } => CheckedResultAuthorityOrigin::Finite {
-                        may_absent,
-                        may_fresh,
-                        formals,
-                    },
-                    OriginSet::Absent | OriginSet::Unknown => CheckedResultAuthorityOrigin::Unknown,
+                    OriginSet::Finite { formals } => CheckedResultStateOrigin::Finite { formals },
+                    OriginSet::Absent | OriginSet::Unknown => CheckedResultStateOrigin::Unknown,
                 })
             })
             .collect::<Result<Vec<_>, CheckStop>>()?;
-        self.result_authority_origins.replace(resolved);
+        self.result_state_origins.replace(resolved);
         Ok(())
     }
 }

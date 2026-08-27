@@ -409,12 +409,12 @@ impl IrBuilder<'_> {
         // costing the parallelism the window judgment already granted inside
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
-        let authority_orders = builder.authority_orders();
         let overlaps = builder.overlaps();
+        let completion_steps = builder.completion_steps();
         builder.finish(
             chunk_symbol(ordinal),
             overlaps,
-            authority_orders,
+            completion_steps,
             Some(IrSynthesis::Chunk),
             crate::TargetAction::INLINE,
         )
@@ -609,8 +609,6 @@ impl IrBuilder<'_> {
             splitter_symbol(ordinal),
             vec![IrOverlap {
                 members: vec![left, right],
-                ordered_attribution: None,
-                dispatch_last: false,
             }],
             Vec::new(),
             Some(IrSynthesis::Splitter),

@@ -21,7 +21,7 @@ mod slice;
 mod stackless;
 mod system;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
 use super::qualification::{
@@ -681,12 +681,12 @@ struct FunctionEmitter<'program, 'state> {
     /// complete them.
     overlap_handed_out: HashSet<IrValueId>,
     overlap_join_sites: HashSet<IrValueId>,
+    /// Source-ordered direct completion steps, keyed by the call value each
+    /// step reaches.  Their wait sets contain only ordinary prior result/loan
+    /// dependencies retained by lowering.
+    completion_steps: HashMap<IrValueId, crate::IrCompletionStep>,
     /// Hand-outs emitted in the current block and not yet joined.
     handed_out: Vec<HandedOut>,
-    /// The one source-ordered OutputSequence batch currently being filled.
-    ordered_output: Option<completion::OrderedOutputEmission>,
-    /// The one all-or-none independent file batch currently being filled.
-    free_file_batch: Option<completion::FreeFileBatchEmission>,
     /// Whether any function in this module emitted a typed completion handoff.
     completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
@@ -736,29 +736,36 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // A sequential clone suppresses compute hand-outs only. Target
         // completion is independent of the compute-pool choice and remains
         // active in both worlds.
+        let completion_steps: HashMap<_, _> =
+            if qualification.target().supports_posix_file_completion() {
+                function
+                    .completion_steps()
+                    .iter()
+                    .cloned()
+                    .map(|step| (step.call(), step))
+                    .collect()
+            } else {
+                HashMap::new()
+            };
         let overlaps: Vec<IrOverlap> = function
             .overlaps()
             .iter()
             .filter_map(|overlap| {
-                if !overlap_is_actualizable(program, qualification, function, overlap)
-                    || (sequential_clones.is_some()
-                        && !target_completion_overlap(qualification, function, overlap))
+                if overlap
+                    .members()
+                    .iter()
+                    .any(|member| completion_steps.contains_key(member))
+                    || !overlap_is_actualizable(program, function, overlap)
+                    || sequential_clones.is_some()
                 {
                     return None;
                 }
-                let overlap = overlap.clone();
-                Some(
-                    if free_completion_overlap(qualification, function, &overlap) {
-                        overlap.dispatch_every_member()
-                    } else {
-                        overlap
-                    },
-                )
+                Some(overlap.clone())
             })
             .collect();
         let overlap_handed_out = overlaps
             .iter()
-            .flat_map(|overlap| overlap.dispatched().iter().copied())
+            .flat_map(|overlap| overlap.handed_out().iter().copied())
             .collect();
         let overlap_join_sites = overlaps
             .iter()
@@ -779,9 +786,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             overlaps,
             overlap_handed_out,
             overlap_join_sites,
+            completion_steps,
             handed_out: Vec::new(),
-            ordered_output: None,
-            free_file_batch: None,
             completion_used,
             sequential_clones,
         }
@@ -934,6 +940,35 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
+        if let IrInstruction::Define {
+            result,
+            ty,
+            operation,
+        } = instruction
+            && let Some(step) = self.completion_steps.get(result).cloned()
+        {
+            self.emit_completion_dependencies(step.wait_for())?;
+            if step.submit() {
+                let IrOperation::SystemCall {
+                    operation,
+                    target_action,
+                    arguments,
+                } = operation
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if !target_action.may_suspend() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                self.emit_handed_out_system_call(*result, *ty, *operation, arguments)?;
+            } else {
+                self.emit_definition(*result, *ty, operation)?;
+            }
+            if step.finish() {
+                self.emit_all_completion_joins()?;
+            }
+            return Ok(());
+        }
         // A group's join rides the definition of its last member: the members
         // before it were handed out and their values do not exist until here.
         if let IrInstruction::Define { result, .. } = instruction
@@ -1189,6 +1224,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         block: IrBlockId,
         terminator: &IrTerminator,
     ) -> Result<(), BackendFailure> {
+        self.emit_all_completion_joins()?;
         match terminator {
             IrTerminator::Unreachable => {
                 writeln!(self.output, "  unreachable").map_err(|_| BackendFailure::TextEmission)
@@ -1437,13 +1473,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 /// exist; only its direct compiler-owned file operation can enter completion.
 fn overlap_is_actualizable(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     function: &IrFunction,
     overlap: &IrOverlap,
 ) -> bool {
-    if target_completion_overlap(qualification, function, overlap) {
-        return true;
-    }
     if overlap
         .members()
         .iter()
@@ -1468,62 +1500,7 @@ fn overlap_is_actualizable(
                 .functions()
                 .get(*function as usize)
                 .is_some_and(|callee| !callee.target_action().may_suspend()),
-            Some(IrOperation::SystemCall {
-                operation,
-                target_action,
-                ..
-            }) => {
-                target_action.may_suspend()
-                    && qualification.target().supports_posix_file_completion()
-                    && system::completion_file_operation(*operation).is_some()
-            }
             _ => false,
-        })
-}
-
-fn target_completion_overlap(
-    qualification: &Qualification,
-    function: &IrFunction,
-    overlap: &IrOverlap,
-) -> bool {
-    if let Some(attribution) = overlap.ordered_attribution() {
-        return attribution == crate::SystemAuthorityAttribution::OutputBytes
-            && overlap.dispatched().len() <= crate::ORDERED_OUTPUT_BATCH_MEMBERS
-            && qualification.target().supports_posix_file_completion()
-            && overlap.dispatched().iter().all(|member| {
-                matches!(
-                    definition_operation(function, *member),
-                    Some(IrOperation::SystemCall {
-                        operation,
-                        target_action,
-                        ..
-                    }) if target_action.may_suspend()
-                        && system::completion_file_operation(*operation)
-                            == Some(system::CompletionFileOperation::Write)
-                )
-            });
-    }
-    free_completion_overlap(qualification, function, overlap)
-}
-
-fn free_completion_overlap(
-    qualification: &Qualification,
-    function: &IrFunction,
-    overlap: &IrOverlap,
-) -> bool {
-    overlap.ordered_attribution().is_none()
-        && overlap.members().len() <= crate::FREE_COMPLETION_BATCH_MEMBERS
-        && qualification.target().supports_posix_file_completion()
-        && overlap.members().iter().all(|member| {
-            matches!(
-                definition_operation(function, *member),
-                Some(IrOperation::SystemCall {
-                    operation,
-                    target_action,
-                    ..
-                }) if target_action.may_suspend()
-                    && system::completion_file_operation(*operation).is_some()
-            )
         })
 }
 
@@ -1676,7 +1653,7 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
     overlaps
         .iter()
         .find(|overlap| overlap.join_site() == Some(result))
-        .and_then(|overlap| overlap.dispatched().last().copied())
+        .and_then(|overlap| overlap.handed_out().last().copied())
 }
 
 fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]) -> String {

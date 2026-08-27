@@ -13,7 +13,8 @@ use super::entailment::{
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
     CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
+    CheckedSliceSource, CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType,
+    FunctionId, expression_children,
 };
 use crate::{NodePath, SemanticCompilerFailure};
 
@@ -45,6 +46,13 @@ pub(crate) struct ParameterDependencies {
 pub(crate) struct ProvenanceDependency {
     pub(crate) unconditional_external: bool,
     pub(crate) parameters: ParameterDependencies,
+}
+
+/// Data provenance written to one exact formal-rooted state path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StateWriteDependencies {
+    pub(crate) fields: Vec<u32>,
+    pub(crate) dependency: ProvenanceDependency,
 }
 
 impl ProvenanceDependency {
@@ -203,8 +211,8 @@ pub(crate) struct FunctionDependencies {
     /// Whole resolved storage roots only, in dense [`BindingId`] order.
     pub(crate) storage_roots: Vec<ProvenanceDependency>,
     pub(crate) result: ValueDependencies,
-    /// One aggregate content-write dependency per declared parameter.
-    pub(crate) writes: Vec<ProvenanceDependency>,
+    /// Exact declared write paths, grouped by formal ordinal.
+    pub(crate) writes: Vec<Vec<StateWriteDependencies>>,
 }
 
 /// Exact checked occurrence of one concrete ordered requirement set.
@@ -517,8 +525,8 @@ pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResu
         3 | 5 | 9 => SystemResultProvenance::OkDependent,
         // read_at and directory_next.
         8 | 13 => SystemResultProvenance::EndpointDependent,
-        // exit_status.
-        10 => SystemResultProvenance::NoneExternal,
+        // exit_status and proof-only reserve_file.
+        10 | 15 => SystemResultProvenance::NoneExternal,
         _ => return None,
     })
 }
@@ -577,8 +585,9 @@ pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static
         // file/source authority is represented separately from memory.
         8 | 13 => &[1],
         9 => &[0],
-        // open_file, like every other open, writes no parameter.
-        0..=2 | 4 | 6 | 7 | 10..=12 | 14 => &[],
+        // open_file, like every other open, writes no external parameter;
+        // reserve_file's proof-only factory transition is internal.
+        0..=2 | 4 | 6 | 7 | 10..=12 | 14 | 15 => &[],
         _ => return Err(SemanticCompilerFailure::InvalidResolution),
     })
 }
@@ -622,7 +631,7 @@ struct FunctionPass<'check> {
     bindings: Vec<Option<ValueDependencies>>,
     roots: Vec<ProvenanceDependency>,
     result: ValueDependencies,
-    writes: Vec<ProvenanceDependency>,
+    writes: Vec<Vec<StateWriteDependencies>>,
 }
 
 impl<'check> FunctionPass<'check> {
@@ -632,6 +641,24 @@ impl<'check> FunctionPass<'check> {
         entry_external: bool,
     ) -> ProvenanceResult<Self> {
         let slots = binding_slot_count(function);
+        let mut writes = vec![Vec::new(); function.parameters.len()];
+        for path in &function.declared_state_writes {
+            let ordinal = function
+                .parameters
+                .iter()
+                .position(|parameter| parameter.declaration == path.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            writes
+                .get_mut(ordinal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .push(StateWriteDependencies {
+                    fields: path.fields.clone(),
+                    dependency: ProvenanceDependency::default(),
+                });
+        }
+        for parameter_writes in &mut writes {
+            parameter_writes.sort_by(|left, right| left.fields.cmp(&right.fields));
+        }
         let mut pass = Self {
             function,
             nominals,
@@ -639,7 +666,7 @@ impl<'check> FunctionPass<'check> {
             bindings: vec![None; slots],
             roots: vec![ProvenanceDependency::default(); slots],
             result: ValueDependencies::empty(function.result, nominals),
-            writes: vec![ProvenanceDependency::default(); function.parameters.len()],
+            writes,
         };
         pass.collect_holders(&function.body)?;
         for (ordinal, parameter) in function.parameters.iter().enumerate() {
@@ -860,6 +887,7 @@ impl<'check> FunctionPass<'check> {
     fn add_root_write(
         &mut self,
         binding: BindingId,
+        fields: &[u32],
         dependencies: &ProvenanceDependency,
         seed_every_value_component: bool,
     ) -> ProvenanceResult<bool> {
@@ -882,21 +910,46 @@ impl<'check> FunctionPass<'check> {
             }
         }
         for (ordinal, parameter) in self.function.parameters.iter().enumerate() {
-            let capability_write = self
-                .function
-                .declared_capability_writes
-                .contains(&parameter.declaration);
-            if (matches!(parameter.mode, CheckedMode::Unique(_)) || capability_write)
-                && self.resolve_root(parameter.binding)? == resolved
-            {
-                let write = self
+            if self.resolve_root(parameter.binding)? == resolved {
+                let writes = self
                     .writes
                     .get_mut(ordinal)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                changed |= write.union(dependencies);
+                for write in writes.iter_mut().filter(|write| write.fields == fields) {
+                    changed |= write.dependency.union(dependencies);
+                }
             }
         }
         Ok(changed)
+    }
+
+    fn add_state_write(
+        &mut self,
+        path: &CheckedStatePath,
+        dependencies: &ProvenanceDependency,
+    ) -> ProvenanceResult<bool> {
+        let ordinal = self
+            .function
+            .parameters
+            .iter()
+            .position(|parameter| parameter.declaration == path.root)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let writes = self
+            .writes
+            .get_mut(ordinal)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let Some(write) = writes.iter_mut().find(|write| write.fields == path.fields) else {
+            return Ok(false);
+        };
+        Ok(write.dependency.union(dependencies))
+    }
+
+    fn set_target_fields(target: &CheckedSetTarget) -> &[u32] {
+        match target {
+            CheckedSetTarget::Place(target) => &target.fields,
+            CheckedSetTarget::ArrayIndex(target) => &target.fields,
+            CheckedSetTarget::BufferIndex(target) => &target.root.fields,
+        }
     }
 
     fn set_seeds_every_value_component(&self, target: &CheckedSetTarget) -> ProvenanceResult<bool> {
@@ -976,7 +1029,12 @@ impl<'check> FunctionPass<'check> {
                     let root = target.binding();
                     let seed_every_value_component =
                         self.set_seeds_every_value_component(target)?;
-                    self.add_root_write(root, &aggregate, seed_every_value_component)?;
+                    self.add_root_write(
+                        root,
+                        Self::set_target_fields(target),
+                        &aggregate,
+                        seed_every_value_component,
+                    )?;
                     if let CheckedSetTarget::Place(place) = target
                         && place.fields.is_empty()
                     {
@@ -1003,7 +1061,12 @@ impl<'check> FunctionPass<'check> {
                     let root = target.binding();
                     let seed_every_value_component =
                         self.set_seeds_every_value_component(target)?;
-                    self.add_root_write(root, &aggregate, seed_every_value_component)?;
+                    self.add_root_write(
+                        root,
+                        Self::set_target_fields(target),
+                        &aggregate,
+                        seed_every_value_component,
+                    )?;
                     if let CheckedSetTarget::Place(place) = target
                         && place.fields.is_empty()
                     {
@@ -1143,20 +1206,31 @@ impl<'check> FunctionPass<'check> {
                 if callee.writes.len() != arguments.len() {
                     return Err(SemanticCompilerFailure::InvalidResolution);
                 }
-                for (ordinal, dependencies) in callee.writes.iter().enumerate() {
-                    if !dependencies.unconditional_external
-                        && dependencies.parameters.datums.is_empty()
-                    {
-                        continue;
-                    }
-                    let substituted = substitute_dependency(dependencies, &actuals)?;
+                for (ordinal, writes) in callee.writes.iter().enumerate() {
                     let argument = arguments
                         .get(ordinal)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let root = self
-                        .argument_root(argument)?
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.add_root_write(root, &substituted, true)?;
+                    for write in writes {
+                        let dependencies = &write.dependency;
+                        if !dependencies.unconditional_external
+                            && dependencies.parameters.datums.is_empty()
+                        {
+                            continue;
+                        }
+                        let substituted = substitute_dependency(dependencies, &actuals)?;
+                        if let Some(origins) = Self::argument_state_origins(argument) {
+                            if origins.unknown {
+                                return Err(SemanticCompilerFailure::InvalidResolution);
+                            }
+                            for origin in origins.clone().projected(&write.fields).formals {
+                                self.add_state_write(&origin.source, &substituted)?;
+                            }
+                        }
+                        if let Some((root, mut fields)) = self.argument_place(argument)? {
+                            fields.extend_from_slice(&write.fields);
+                            self.add_root_write(root, &fields, &substituted, true)?;
+                        }
+                    }
                 }
                 substitute_value(&callee.result, &actuals)?
             }
@@ -1175,10 +1249,17 @@ impl<'check> FunctionPass<'check> {
                     let argument = arguments
                         .get(*ordinal)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let root = self
-                        .argument_root(argument)?
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.add_root_write(root, &external, true)?;
+                    if let Some(origins) = Self::argument_state_origins(argument) {
+                        if origins.unknown {
+                            return Err(SemanticCompilerFailure::InvalidResolution);
+                        }
+                        for origin in &origins.formals {
+                            self.add_state_write(&origin.source, &external)?;
+                        }
+                    }
+                    if let Some((root, fields)) = self.argument_place(argument)? {
+                        self.add_root_write(root, &fields, &external, true)?;
+                    }
                 }
                 let mut value = system_result_dependencies(*operation, *result, self.nominals)?;
                 if let Some(start) = system_endpoint_start(*operation)? {
@@ -1373,17 +1454,50 @@ impl<'check> FunctionPass<'check> {
         })
     }
 
-    fn argument_root(&self, argument: &CheckedExpression) -> ProvenanceResult<Option<BindingId>> {
-        let binding = match argument {
-            CheckedExpression::Binding { binding, .. } => *binding,
-            CheckedExpression::BorrowBuffer { root, .. } => root.binding,
-            CheckedExpression::BorrowAddressed { binding, .. }
+    fn argument_state_origins(argument: &CheckedExpression) -> Option<&CheckedStateOrigins> {
+        match argument {
+            CheckedExpression::Binding { state_origins, .. }
+            | CheckedExpression::Project { state_origins, .. }
+            | CheckedExpression::BorrowSystemResource { state_origins, .. } => {
+                state_origins.as_ref()
+            }
+            _ => None,
+        }
+    }
+
+    fn argument_place(
+        &self,
+        argument: &CheckedExpression,
+    ) -> ProvenanceResult<Option<(BindingId, Vec<u32>)>> {
+        let (binding, fields) = match argument {
+            CheckedExpression::Binding { binding, .. }
+            | CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::BorrowSystemResource { binding, .. }
-            | CheckedExpression::ReborrowAddressed { binding, .. } => *binding,
+            | CheckedExpression::ReborrowAddressed { binding, .. }
+            | CheckedExpression::DerefAddressed { binding, .. } => (*binding, Vec::new()),
+            CheckedExpression::BorrowBuffer { root, .. } => (root.binding, root.fields.clone()),
+            CheckedExpression::Project {
+                binding, fields, ..
+            } => (*binding, fields.clone()),
+            CheckedExpression::UserCall {
+                result_borrow: Some(result),
+                ..
+            } => (result.binding, result.fields.clone()),
+            CheckedExpression::ProjectValue { value, field, .. } => {
+                let Some((binding, mut fields)) = self.argument_place(value)? else {
+                    return Ok(None);
+                };
+                fields.push(*field);
+                return Ok(Some((binding, fields)));
+            }
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
+                return self.argument_place(value);
+            }
             _ => return Ok(None),
         };
-        Ok(Some(self.resolve_root(binding)?))
+        Ok(Some((self.resolve_root(binding)?, fields)))
     }
 }
 
@@ -1507,8 +1621,16 @@ fn dependency_fixed_point(
             if summary.writes.len() != derived.writes.len() {
                 return Err(SemanticCompilerFailure::InvalidResolution);
             }
-            for (target, source) in summary.writes.iter_mut().zip(&derived.writes) {
-                target.union(source);
+            for (target_writes, source_writes) in summary.writes.iter_mut().zip(&derived.writes) {
+                if target_writes.len() != source_writes.len() {
+                    return Err(SemanticCompilerFailure::InvalidResolution);
+                }
+                for (target, source) in target_writes.iter_mut().zip(source_writes) {
+                    if target.fields != source.fields {
+                        return Err(SemanticCompilerFailure::InvalidResolution);
+                    }
+                    target.dependency.union(&source.dependency);
+                }
             }
         }
         if summaries == previous {
@@ -2218,6 +2340,7 @@ enum CarrierState {
     Write {
         function: FunctionId,
         parameter: u32,
+        fields: Vec<u32>,
         goal: CarrierGoal,
     },
 }
@@ -2673,6 +2796,7 @@ impl<'check> CarrierReconstructor<'check> {
                 function,
                 &checked.body,
                 binding,
+                None,
                 &mut pass,
                 goal,
                 true,
@@ -3210,6 +3334,23 @@ impl<'check> CarrierReconstructor<'check> {
         visited: &mut Vec<CarrierState>,
         route: &mut Option<CarrierRoute>,
     ) -> ProvenanceResult<()> {
+        self.scan_expression_path_writes(
+            function, expression, root, None, pass, goal, visited, route,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn scan_expression_path_writes(
+        &self,
+        function: FunctionId,
+        expression: &CheckedExpression,
+        root: BindingId,
+        target_fields: Option<&[u32]>,
+        pass: &mut FunctionPass<'check>,
+        goal: CarrierGoal,
+        visited: &mut Vec<CarrierState>,
+        route: &mut Option<CarrierRoute>,
+    ) -> ProvenanceResult<()> {
         match expression {
             CheckedExpression::UserCall {
                 function: callee,
@@ -3223,9 +3364,24 @@ impl<'check> CarrierReconstructor<'check> {
                     return Err(SemanticCompilerFailure::InvalidResolution);
                 }
                 for (ordinal, argument) in arguments.iter().enumerate() {
-                    if pass.argument_root(argument)? == Some(root) {
-                        let parameter = u32::try_from(ordinal)
-                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                    let Some((actual_root, actual_fields)) = pass.argument_place(argument)? else {
+                        continue;
+                    };
+                    if actual_root != root {
+                        continue;
+                    }
+                    let parameter = u32::try_from(ordinal)
+                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                    let writes = callee_summary
+                        .writes
+                        .get(ordinal)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    for write in writes {
+                        let mut instantiated = actual_fields.clone();
+                        instantiated.extend_from_slice(&write.fields);
+                        if target_fields.is_some_and(|fields| fields != instantiated) {
+                            continue;
+                        }
                         choose_carrier_route(
                             route,
                             self.route_user_write(
@@ -3235,6 +3391,7 @@ impl<'check> CarrierReconstructor<'check> {
                                 argument_nodes,
                                 arguments,
                                 parameter,
+                                &write.fields,
                                 goal,
                                 visited,
                             )?,
@@ -3253,8 +3410,12 @@ impl<'check> CarrierReconstructor<'check> {
                     let argument = arguments
                         .get(*ordinal)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    let Some((actual_root, actual_fields)) = pass.argument_place(argument)? else {
+                        continue;
+                    };
                     if matches!(goal, CarrierGoal::External)
-                        && pass.argument_root(argument)? == Some(root)
+                        && actual_root == root
+                        && target_fields.is_none_or(|fields| fields == actual_fields)
                     {
                         let argument_node = argument_nodes
                             .get(*ordinal)
@@ -3277,7 +3438,16 @@ impl<'check> CarrierReconstructor<'check> {
             _ => {}
         }
         for child in expression_children(expression) {
-            self.scan_expression_writes(function, child, root, pass, goal, visited, route)?;
+            self.scan_expression_path_writes(
+                function,
+                child,
+                root,
+                target_fields,
+                pass,
+                goal,
+                visited,
+                route,
+            )?;
         }
         Ok(())
     }
@@ -3291,27 +3461,38 @@ impl<'check> CarrierReconstructor<'check> {
         argument_nodes: &[NodePath],
         arguments: &[CheckedExpression],
         parameter: u32,
+        fields: &[u32],
         goal: CarrierGoal,
         visited: &mut Vec<CarrierState>,
     ) -> ProvenanceResult<Option<CarrierRoute>> {
-        let dependency = self
+        let writes = self
             .summary(callee)?
             .writes
             .get(parameter as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let dependency = &writes
+            .iter()
+            .find(|write| write.fields == fields)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .dependency;
         let mut route = None;
         if matches!(goal, CarrierGoal::External) && dependency.unconditional_external {
             choose_carrier_route(
                 &mut route,
-                self.route_write(callee, parameter, CarrierGoal::External, visited)?,
+                self.route_write(callee, parameter, fields, CarrierGoal::External, visited)?,
             );
         }
         for datum in &dependency.parameters.datums {
             let argument = arguments
                 .get(datum.ordinal as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let Some(callee_route) =
-                self.route_write(callee, parameter, CarrierGoal::Parameter(*datum), visited)?
+            let Some(callee_route) = self.route_write(
+                callee,
+                parameter,
+                fields,
+                CarrierGoal::Parameter(*datum),
+                visited,
+            )?
             else {
                 continue;
             };
@@ -3446,22 +3627,29 @@ impl<'check> CarrierReconstructor<'check> {
         &self,
         function: FunctionId,
         parameter: u32,
+        fields: &[u32],
         goal: CarrierGoal,
         visited: &mut Vec<CarrierState>,
     ) -> ProvenanceResult<Option<CarrierRoute>> {
         let state = CarrierState::Write {
             function,
             parameter,
+            fields: fields.to_vec(),
             goal,
         };
         if visited.contains(&state) {
             return Ok(None);
         }
-        let dependency = self
+        let writes = self
             .summary(function)?
             .writes
             .get(parameter as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let dependency = &writes
+            .iter()
+            .find(|write| write.fields == fields)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .dependency;
         if !goal.is_present(dependency) {
             return Ok(None);
         }
@@ -3478,6 +3666,7 @@ impl<'check> CarrierReconstructor<'check> {
             function,
             &checked.body,
             root,
+            Some(fields),
             &mut pass,
             goal,
             false,
@@ -3494,6 +3683,7 @@ impl<'check> CarrierReconstructor<'check> {
         function: FunctionId,
         statements: &[CheckedStatement],
         root: BindingId,
+        target_fields: Option<&[u32]>,
         pass: &mut FunctionPass<'check>,
         goal: CarrierGoal,
         widening_only: bool,
@@ -3509,12 +3699,27 @@ impl<'check> CarrierReconstructor<'check> {
                     condition: value, ..
                 }
                 | CheckedStatement::Return { value, .. }
-                | CheckedStatement::Give { value, .. } => {
-                    self.scan_expression_writes(function, value, root, pass, goal, visited, route)?
-                }
-                CheckedStatement::PropagateLet { scrutinee, .. } => self.scan_expression_writes(
-                    function, scrutinee, root, pass, goal, visited, route,
+                | CheckedStatement::Give { value, .. } => self.scan_expression_path_writes(
+                    function,
+                    value,
+                    root,
+                    target_fields,
+                    pass,
+                    goal,
+                    visited,
+                    route,
                 )?,
+                CheckedStatement::PropagateLet { scrutinee, .. } => self
+                    .scan_expression_path_writes(
+                        function,
+                        scrutinee,
+                        root,
+                        target_fields,
+                        pass,
+                        goal,
+                        visited,
+                        route,
+                    )?,
                 CheckedStatement::Set {
                     node_path,
                     target,
@@ -3529,7 +3734,12 @@ impl<'check> CarrierReconstructor<'check> {
                     let resolved = pass.resolve_root(target.binding())?;
                     let seeds_every_value_component =
                         pass.set_seeds_every_value_component(target)?;
-                    if resolved == root && (!widening_only || seeds_every_value_component) {
+                    let path_matches = target_fields
+                        .is_none_or(|fields| fields == FunctionPass::set_target_fields(target));
+                    if resolved == root
+                        && path_matches
+                        && (!widening_only || seeds_every_value_component)
+                    {
                         choose_carrier_route(
                             route,
                             self.route_expression_aggregate(function, value, goal, visited)?
@@ -3538,22 +3748,33 @@ impl<'check> CarrierReconstructor<'check> {
                                 }),
                         );
                     }
-                    self.scan_expression_writes(function, value, root, pass, goal, visited, route)?;
+                    self.scan_expression_path_writes(
+                        function,
+                        value,
+                        root,
+                        target_fields,
+                        pass,
+                        goal,
+                        visited,
+                        route,
+                    )?;
                     match target {
                         CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => self.scan_expression_writes(
+                        CheckedSetTarget::ArrayIndex(target) => self.scan_expression_path_writes(
                             function,
                             &target.offset,
                             root,
+                            target_fields,
                             pass,
                             goal,
                             visited,
                             route,
                         )?,
-                        CheckedSetTarget::BufferIndex(target) => self.scan_expression_writes(
+                        CheckedSetTarget::BufferIndex(target) => self.scan_expression_path_writes(
                             function,
                             &target.offset,
                             root,
+                            target_fields,
                             pass,
                             goal,
                             visited,
@@ -3567,14 +3788,22 @@ impl<'check> CarrierReconstructor<'check> {
                 | CheckedStatement::ValueMatchLet {
                     scrutinee, arms, ..
                 } => {
-                    self.scan_expression_writes(
-                        function, scrutinee, root, pass, goal, visited, route,
+                    self.scan_expression_path_writes(
+                        function,
+                        scrutinee,
+                        root,
+                        target_fields,
+                        pass,
+                        goal,
+                        visited,
+                        route,
                     )?;
                     for arm in arms {
                         self.scan_write_block(
                             function,
                             &arm.body,
                             root,
+                            target_fields,
                             pass,
                             goal,
                             widening_only,
@@ -3586,12 +3815,31 @@ impl<'check> CarrierReconstructor<'check> {
                 CheckedStatement::CountedRange {
                     lower, upper, body, ..
                 } => {
-                    self.scan_expression_writes(function, lower, root, pass, goal, visited, route)?;
-                    self.scan_expression_writes(function, upper, root, pass, goal, visited, route)?;
+                    self.scan_expression_path_writes(
+                        function,
+                        lower,
+                        root,
+                        target_fields,
+                        pass,
+                        goal,
+                        visited,
+                        route,
+                    )?;
+                    self.scan_expression_path_writes(
+                        function,
+                        upper,
+                        root,
+                        target_fields,
+                        pass,
+                        goal,
+                        visited,
+                        route,
+                    )?;
                     self.scan_write_block(
                         function,
                         body,
                         root,
+                        target_fields,
                         pass,
                         goal,
                         widening_only,
@@ -3604,6 +3852,7 @@ impl<'check> CarrierReconstructor<'check> {
                         function,
                         body,
                         root,
+                        target_fields,
                         pass,
                         goal,
                         widening_only,

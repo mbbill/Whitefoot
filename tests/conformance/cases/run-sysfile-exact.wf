@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "SYS-8: the sharpest boundary of the family, and the one most likely to be miscoded as `a full buffer implies end of input`. A file whose size equals the requested range extent fills [start, end) exactly and returns next = end, which is a success and not an end, so a further call is required and only that call reports ReadEnd.";
   let page = buffer_new(8_u64, 0_u8);
   region 'a {
@@ -8,7 +8,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                let permit = reserve_file<'c>(factory: &uniq 'c files);
+                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     region 'f {
                       region 'd {

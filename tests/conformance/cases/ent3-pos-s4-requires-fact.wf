@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64) -> result: own u8 pure contract {
+fn get(b: own buffer<u8>, i: own u64) -> result: own u8 reads(b) contract {
   define room = len(b);
   define inside = ilt(i, room);
   requires inside;

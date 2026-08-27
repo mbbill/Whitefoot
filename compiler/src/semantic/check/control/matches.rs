@@ -558,6 +558,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if written.len() != variant.fields.len() {
             return self.invalid_match_fields(variant, arm);
         }
+        let scrutinee_state_origins = self.state_origins_of_value(scrutinee, bindings)?;
         let mut binders = Vec::with_capacity(written.len());
         for (index, (written, field)) in written.into_iter().zip(&variant.fields).enumerate() {
             if self
@@ -600,7 +601,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
                 Some(BorrowInfo { place, ..parent })
             };
-            let capability_origins = self.capability_origins_of_value(scrutinee, bindings)?;
+            let field_ordinal =
+                u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            let state_origins = scrutinee_state_origins
+                .clone()
+                .map(|origins| origins.enum_payload(variant.tag, field_ordinal));
             if bindings
                 .insert(
                     declaration.id(),
@@ -609,9 +614,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: declaration.id(),
                         mode,
                         ty: field.ty,
-                        capability_origins: self
-                            .type_carries_one_capability(field.ty)?
-                            .then(|| capability_origins.clone())
+                        state_origins: self
+                            .type_carries_identity(field.ty)?
+                            .then_some(state_origins)
                             .flatten(),
                         live: true,
                         loop_depth,
@@ -629,8 +634,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             binders.push(CheckedMatchBinder {
                 node_path: self.tree.path(written)?.clone(),
                 binding,
-                field: u32::try_from(index)
-                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                field: field_ordinal,
                 mode,
                 ty: field.ty,
             });

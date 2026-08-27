@@ -1,10 +1,82 @@
-# Completion core performance results
+# Completion I/O results
 
-Status: first clean-core measurement plus final integrated rerun on
-2026-08-26. The first result measures commit
-`6dec866363cdaceaaa2e26ef57971ede79abf098`; the final rerun uses the completed
-admission protocol, distinct admission/capacity notification paths, and target
-adapters described below.
+Status: the unified-state rebuild was validated and remeasured on 2026-08-27.
+The later sections retain historical component measurements for comparison.
+The owner-confirmed design of 2026-08-26 removed the former Ordered batch and
+capability-root layers. The first historical result measures commit
+`6dec866363cdaceaaa2e26ef57971ede79abf098`; the last historical rerun uses the
+completed admission protocol, distinct admission/capacity notification paths,
+and target adapters described below.
+
+## Unified-state rebuild result, 2026-08-27
+
+The final work-branch tree passes the complete executable validation below:
+
+```text
+default Rust library tests       1321 passed, 0 failed
+gate all-target Rust tests       1412 passed, 0 failed, 1 costly adapter ignored
+separate conformance adapter     502 Pass, 1 Skip
+maintained programs              54 passed, 0 failed
+macOS native helper policies     0, 1, and 4 helpers passed
+ASan and UBSan                   passed
+core/read hostile stress         200 of 200 passed
+conformance structure/coverage   29 of 29; 137 of 137 rules
+```
+
+The Windows x86-64 completion and adapter probes strict-cross-link with the
+required IOCP and overlapped-I/O imports. This is compile/link evidence, not a
+Windows execution result, so Windows production qualification remains closed.
+
+Canonical `make check` reaches the specification archive gate and stops with
+the expected statement that a `CANDIDATE` is valid branch work but not a
+merge-ready `ACTIVE` identity. Every later component was also invoked
+independently and passed. Activation and merge remain separate owner-approved
+work; this expected stop is not an implementation or test failure.
+
+### Cleaned runtime measurement
+
+The historical benchmark source was rebuilt against the final unified-state
+runtime after the Ordered, family, root, and batch-admission machinery had been
+deleted. Each of three complete runs performed its semantic self-check for
+direct, zero-helper progress, and helper-park `pread`, `read`, and `write`
+paths before recording timings. The measured source identities were:
+
+```text
+runtime.c       8042e1df711f01d1ea45d8bde12f25c13d97e8316b1f6e3c6430055f28940cde
+contract.h      f54e31f452be2baa0ec3a471271193e577056c3df5724b410aec54318480b0a4
+file_adapter.c  535fc63a6232df92fee218fa88d2402cff1703551576964af36e2387c3ea18f6
+```
+
+The generation-checked accepted-terminal round trip was stable at 35.594 to
+36.299 ns/op. The inline-terminal samples were 33.337 to 41.295 ns/op; one run
+was visibly bimodal, while the other two medians were 33.856 and 34.137 ns/op.
+
+The cached sequential-read comparison was stable across all three runs:
+
+```text
+run                    1          2          3
+direct read         410.619    411.346    423.864 ns/op
+0-helper progress   468.023    481.394    494.929 ns/op
+added cost           57.404     70.048     71.065 ns/op
+relative cost          14.0%      17.0%      16.8%
+```
+
+Positioned reads and 64-byte writes had run-to-run dispersion large enough to
+swamp or materially change the measured delta. No comparative number is
+claimed for those two operations from this rerun. The full raw records remain
+outside the repository:
+
+```text
+$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-perf/run-unified-state.txt
+$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-perf/run-unified-state-2.txt
+$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-perf/run-unified-state-3.txt
+```
+
+The measurement supports the selected lowering boundary. A call with no
+independent work should use the direct or inline specialization. A call with
+real independent work may pay roughly 57 to 71 ns on this cached-read host to
+expose overlap. These numbers do not predict cold storage, durable writes,
+network I/O, Linux io_uring throughput, or Windows IOCP execution.
 
 ## The deciding question
 

@@ -367,11 +367,11 @@ fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
     only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\ncommand fn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return unit;\n}\n");
 }
 
-/// The one canonical byte sequence [FN-7] states for a complete four-input
+/// The one canonical byte sequence [FN-7] states for a complete five-input
 /// command entry header.
-const COMMAND_ENTRY_HEADER: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), traps {";
+const COMMAND_ENTRY_HEADER: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {";
 
-const COMMAND_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), traps {\n  return unit;\n}\n";
+const COMMAND_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return unit;\n}\n";
 
 #[test]
 fn the_command_entry_header_renders_from_form2_without_amendment() {

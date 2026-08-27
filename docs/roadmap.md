@@ -1,14 +1,15 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 51 (v0.36 remains activated authority; the capability-based
-completion-I/O rebuild and v0.37 candidate are the live work-branch direction)
+Revision: 52 (v0.36 remains activated authority; the unified-state
+completion-I/O rebuild is the live v0.37 work-branch direction)
 
 The active language authority is v0.36, SHA-256
 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
 On this work branch the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md)
-declares a v0.37 CANDIDATE which supersedes those exact bytes. A candidate is
-valid branch work, not a merge-ready active identity; activation still needs
+contains an in-progress v0.37 candidate which supersedes those exact bytes.
+Its bytes are changing during the rebuild. A candidate is valid branch work,
+not a merge-ready active identity; activation still needs
 the exact owner-approved revision, outgoing v0.36 archive, approval record,
 and canonical gate. The execution plan is
 [`docs/current-plan.md`](current-plan.md).
@@ -56,7 +57,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.34]` `[current: safe-Rust compiler]`
+`[current: spec v0.36]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -67,11 +68,10 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md); v0.33 on `main` remains
-semantic authority until the branch's linked ACTIVE v0.34 revision is merged.
-The first-slice system interface compiles and runs end-to-end on the native
-macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
-remain ahead of any performance claim.
+belong in the [compiler README](../compiler/README.md). v0.36 is the active
+semantic authority. The work branch is rebuilding the system interface around
+formal state paths, ordinary ownership, and completion-only lowering; its
+partially migrated v0.37 candidate is not active language authority.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
@@ -435,13 +435,13 @@ creating writer trust or weakening the checked safety envelope.
   retain their distinct semantics.
 - **Facts:** [contract surface design space](../research/investigations/contract-surface/DESIGN-SPACE.md) ·
   [terminal obligation-discharge direction](#outlineproof-8) ·
-  [system capability architecture](#outlinebound-1) ·
+  [unified host-boundary architecture](#outlinebound-1) ·
   [batch 0072 closure](done/0072-searching-wfgrep.md) ·
   [batch 0073 closure](done/0073-claim-only-contracts.md).
 
 ### outline:PROOF-10 — Claim residual source canonicality
 
-`[implemented on branch 0075]` `[next: exact-revision make check and merge review]`
+`[current: active v0.36; introduced by v0.34]` `[terminal]`
 
 - **Goal:** make every claim in a successful checker result one mechanically
   qualified, individually necessary runtime-residual candidate, and every
@@ -483,11 +483,11 @@ creating writer trust or weakening the checked safety envelope.
   irredundancy, not a unique proof basis or globally weakest proposition.
   Accepted-claim runtime execution is unchanged, and no optional solver
   participates in ordinary source acceptance.
-- **Current:** this exact revision carries active v0.34 at SHA-256
-  `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`;
-  `main` retains v0.33 until the exact revision is approved and merged.
-  The residual lifecycle, contribution basis, reconstruction, fixed eligible
-  set, component/occurrence necessity, stable terminal evidence, generic
+- **Current:** v0.34 introduced this direction, and active v0.36 preserves it.
+  The exact activation identities and conformance boundaries remain in
+  `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
+  reconstruction, fixed eligible set, component/occurrence necessity, stable
+  terminal evidence, generic
   schema and concrete-instance checks, and unchanged retained lowering path
   are implemented. The locality correction classifies every user-call or
   system-call result component as `BoundaryResult` and propagates that
@@ -501,20 +501,16 @@ creating writer trust or weakening the checked safety envelope.
   a high-claim-count scaling risk even though this change removes its repeated
   PRV-1 fixed point. The real,
   backend, and protected migrations are complete through `99df5579`. The
-  protected source census is 95 claim statements in 74 `.wf` files using
-  `^[[:space:]]*claim `; raw word counts that include documentation and strings
-  are not source-statement counts. The native adapter reports 500 passes and
-  one intentional skip. Warm probes measured locality at about 226
-  microseconds once per inventory, `utf8parse` compilation about 25% faster,
-  and optimized `wfgrep` compilation about 10–13% faster than the compared
-  baseline; these are bounded development measurements, not a general speed
-  guarantee or a closure of the inherited per-mask scaling risk.
-- **Missing / next:** commit the exact-diff review and the rule-4 specification
-  and conformance record, then run canonical root `make check` on that exact
-  revision and report the result without changing its bytes. The only approval
-  step is owner approval of the exact green revision to be
-  merged into `main`. No other document, artifact, or coordination practice
-  adds an approval or merge precondition.
+  protected source census at activation was 95 claim statements in 74 `.wf`
+  files using `^[[:space:]]*claim `; raw word counts that include documentation
+  and strings are not source-statement counts. Warm probes measured locality at
+  about 226 microseconds once per inventory, `utf8parse` compilation about 25%
+  faster, and optimized `wfgrep` compilation about 10–13% faster than the
+  compared baseline; these are bounded development measurements, not a general
+  speed guarantee or a closure of the inherited per-mask scaling risk.
+- **Missing / next:** none inside this direction. Later specification versions
+  must preserve its source and runtime invariants unless a new owner-approved
+  specification change explicitly supersedes them.
 - **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md) ·
   [batch 0073 claim-only closure](done/0073-claim-only-contracts.md).
 
@@ -540,21 +536,20 @@ facts-off evidence rather than trust in the compiler or writer.
 
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
-`[current: native adapter green on branch ACTIVE revision]`
-`[next: preserve independent reporting]`
+`[current: native adapter installed]`
+`[next: publish an exact-revision report for the migrated candidate]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. Active v0.33 on `main` reports `Pass=498 Skip=1 Fail=0`; the v0.34
-  branch ACTIVE revision reports `Pass=500 Skip=1 Fail=0` with 501
-  manifest/source identities and 135/135 rule coverage. The Cargo integration
-  remains marked `#[ignore]` for ordinary test runs, while canonical root
-  `make check` invokes the complete native adapter explicitly. The earlier
-  v0.32 `460/1/0`, v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
-  historical attribution evidence, not current status.
-- **Missing / next:** preserve the independent pass/fail/skip report. Any
+  compiler. Canonical root `make check` invokes the complete adapter
+  explicitly even though the Cargo integration remains marked `#[ignore]` for
+  ordinary test runs. Historical exact-revision results remain in their batch
+  and activation records; this outline carries no floating count for the
+  changing v0.37 candidate.
+- **Missing / next:** publish the next independent pass/fail/skip report for
+  the exact migrated candidate. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -856,28 +851,20 @@ carries is counted-loop reduction permission, not intra-object disjointness.
 
 - **Goal:** execute selected parallel forms without hiding serialization,
   unbounded overhead, or an unexplained trusted runtime.
-- **Current:** batch 0074's branch answers the archive audit's required
-  witness rather than deferring it. The lane pool is a runtime-count worker set
-  sized by `WF_WORKERS` whose workers share-read outer state, it allocates
-  nothing per offer, it never queues (a refused offer is an inline call), and
-  granted-lane counts are measured rather than assumed. Whether that shape
-  survives a second workload is still open. The v0.37 work branch now carries
-  the separate I/O shape: bounded preallocated operation slots, product
-  milestones, generation-safe publication, one compute/target/completion/admission/capacity
-  wake epoch, typed target-only helpers, real Linux io_uring positioned I/O,
-  an epoll/eventfd multi-waiter-safe park, and a strict-cross-linked Windows
-  IOCP implementation. Independent direct file groups reserve 2–64 slots
-  all-or-none and submit every member; same-root Output batches retain source
-  attribution; completion drain precedes dependent-frame readiness; the first
-  tail-wrapper stackless slice resumes on any scheduler lane; pure compute
-  links no completion runtime.
+- **Current:** batch 0074's compute lane pool remains the measured baseline.
+  The I/O rebuild separately retains bounded generation-checked completion
+  records, exact result and loan-release milestones, one
+  compute/target/completion wake decision, typed target-only helpers, real
+  Linux io_uring positioned I/O, and the Windows IOCP foundation. The rejected
+  root/family/Ordered group layer has been removed. Completion drain still
+  precedes dependent-frame readiness, the first tail-wrapper stackless slice
+  can resume on any scheduler lane, and pure compute links no completion
+  runtime.
 - **Missing / next:** generalize selective stackless continuation lowering to
-  branches, loops, multiple suspension points, indirect calls, and non-tail
-  children; replace the explicit multi-root capability stop with per-leaf
-  origins; consume retained DirectorySource Ordered edges; measure
-  cold/high-latency and native target workloads; and execute the Windows probe
-  and close its persistent multi-waiter wake before qualification. Any widening
-  keeps the same bounded ownership and hostile soundness gates.
+  branches, loops, multiple suspension points, and non-tail children;
+  measure cold/high-latency and native target workloads; and execute the
+  Windows probe before qualification. Any widening keeps the same bounded
+  ownership and hostile soundness gates.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
   [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
 
@@ -886,42 +873,39 @@ carries is counted-loop reduction permission, not intra-object disjointness.
 Serves P0, W3, T1, T2, and R6: external usefulness and target reach may not
 become alternate unchecked semantics or prematurely bind the whole toolchain.
 
-### outline:BOUND-1 — System capabilities and host integration
+### outline:BOUND-1 — Unified state and host integration
 
-`[current: v0.36 active; v0.37 capability-completion candidate implemented]`
-`[next: widen stackless/DirectorySource, Windows execution, then activation review]`
+`[current: v0.36 active; v0.37 unified-state candidate implemented and validated]`
+`[next: owner review and activation; then wider APIs and target measurements]`
 
-- **Goal:** give command, service, and embedded program instances a
-  coherent capability-based host boundary covering process context,
-  filesystems, data streams, clocks, randomness, networking, waiting and
-  cancellation, and future threads or tasks without ambient mutable authority
-  or writer-defined trust.
-- **Current:** v0.36 remains active. The v0.37 candidate removes the
-  payload-free `external` and target-shaped `blocks` effects. `reads` and
-  `writes` instead name ordinary borrow regions or direct formal capability
-  values, while compiler-derived family summaries refine each capability use
-  into Free, Ordered, or Exclusive fragments. Completion is the sole
-  language-level I/O model. `read_at` provides Free positioned reads;
-  `Output` and `DirectorySource` use shared borrows with Ordered reservations;
-  compiler-derived close is an Exclusive whole-root transition. Direct system
-  calls participate in the same proof-derived overlap judgment as user calls.
-  The candidate compiler, runtime core, typed macOS fallback, Linux io_uring
-  adapter, Windows IOCP code, conformance migration, and first performance
-  measurements exist on `codex/io-model-completion-rebuild`. Capability-result
-  origins preserve finite formal/fresh/absent sets for values carrying at most
-  one runtime root; multi-root executable values stop explicitly after source
-  judgments rather than losing an effect. Family relations are true
-  fragment-pair contracts; all-or-none free file batches, direct Output
-  batches, and the first stackless wrapper chain are executable; Linux native
-  selection and CQ wake have run on Linux 6.8.0 aarch64.
-- **Missing / next:** widen stackless lowering beyond its one-suspension
-  tail-chain subset; add per-release-leaf origins for multi-root products;
-  actualize retained
-  DirectorySource edges and remaining finite system calls; execute and qualify
-  Windows; then present exact candidate bytes and conformance changes for owner
-  review and merge-time activation. Network, timer, cancellation, deadline,
-  and finish-required file-output declarations already have concrete family
-  designs and enter the system catalog only with their target slice.
+- **Goal:** give command, service, and embedded program instances a coherent
+  host boundary covering process context, filesystems, data streams, clocks,
+  randomness, networking, waiting, and cancellation without ambient mutable
+  authority, writer-defined trust, or a second I/O type system.
+- **Current:** v0.36 remains active. The owner-confirmed v0.37 direction uses
+  ordinary opaque affine values and the existing `own`, `move`, `&`, and
+  `&uniq` rules for all resources. `reads` and `writes` name formal parameters
+  or static struct fields rather than lifetimes. Lifetimes state loan duration
+  only. There is one state/effect system and
+  no `world`, `external`, `blocks`, `capability-root`, `family-fragment`, or
+  `Ordered` permission layer. Changing clocks, Outputs, Sources, cursors, and
+  factories use `own` or `&uniq`; genuinely independent work uses distinct
+  ordinary owned places or borrows. File opens consume proof-only one-shot
+  `FilePermit` values produced by total `reserve_file(&uniq FileFactory)`;
+  `DirectoryRead` is a shared selector, host exhaustion remains a typed open
+  result, and the permit is erased before the native ABI. Completion remains the sole language-level
+  I/O model. The generation-safe runtime core, target-only helpers, Linux
+  io_uring work, Windows IOCP foundation, selective stackless slice, and
+  component measurements were retained while the rejected group machinery was
+  removed. The final candidate passes compiler, program, conformance,
+  sanitizer, native helper, stress, and cross-link gates. The cleaned Mac
+  runtime has also been remeasured; those numbers remain scoped to that host
+  and workload.
+- **Missing / next:** present the exact candidate bytes and conformance changes
+  for owner review and activation; widen stackless lowering; execute and
+  qualify Windows; add network, timer, cancellation, deadline, and
+  finish-required output APIs only with complete ordinary ownership and target
+  contracts.
 - **Facts:** [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
   [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·

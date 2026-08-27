@@ -3,7 +3,7 @@ struct Columns {
   right: buffer<u64>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads('r), writes('r), traps {
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right), writes(left, right), traps {
   let left_room = len(deref(left));
   let right_room = len(deref(right));
   let index_value = 0_u64;
@@ -25,7 +25,7 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   return unit;
 }
 
-fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads('r), traps {
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right), traps {
   let left_room = len(deref(left));
   let right_room = len(deref(right));
   let index_value = 0_u64;

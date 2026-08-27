@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> function_result: own unit writes('r) {
+fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> function_result: own unit reads(input), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
   let length = len(input);
   let index_value = 0_u64;
   let lines = 0_u64;
@@ -63,7 +63,7 @@ fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> function_resul
   return unit;
 }
 
-fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> function_result: own unit reads('r), writes('r) {
+fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> function_result: own unit reads(left.lines, left.words, left.bytes, left.first_space, left.last_space, right.lines, right.words, right.bytes, right.first_space, right.last_space), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
   if ieq(deref(left).bytes, 0_u64) {
     set deref(out).lines = deref(right).lines;
     set deref(out).words = deref(right).words;

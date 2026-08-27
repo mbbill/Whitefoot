@@ -219,29 +219,6 @@ fn denied_detail<Source: LedgerSource>(
                 source.spelling(right)?
             )
         }
-        Denial::Authority { left, right, sides } => {
-            let relation = (left.family == right.family)
-                .then(|| {
-                    crate::system_authority_pair_relation(
-                        left.family,
-                        left.fragment,
-                        right.fragment,
-                    )
-                })
-                .flatten()
-                .map_or("unknown", crate::SystemAuthorityPairRelation::spelling);
-            format!(
-                "the {relation} {}:{} reservation pair of {} and {}:{} of {} conflicts at {} vs {}",
-                left.family.spelling(),
-                left.fragment.spelling(),
-                statement_name(sides.0),
-                right.family.spelling(),
-                right.fragment.spelling(),
-                statement_name(sides.1),
-                source.spelling(&left.argument)?,
-                source.spelling(&right.argument)?
-            )
-        }
         Denial::UnresolvedFootprint { side, argument } => format!(
             "unresolved footprint through {} of {}",
             source.spelling(argument)?,

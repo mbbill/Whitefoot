@@ -55,7 +55,7 @@ use super::{
     VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, ViewObligationOutcome,
     fragment_type, overflow_conjuncts_for_values,
 };
-use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
+use crate::SYSTEM_OPERATIONS;
 
 /// One [ENT-5] kill event gathered from a statement or expression.
 #[derive(Clone, Debug)]
@@ -4655,25 +4655,29 @@ impl Analyzer<'_, '_> {
                     self.collect_expression_kills(argument, events);
                 }
                 for (index, argument) in arguments.iter().enumerate() {
-                    let written = callee.is_some_and(|callee| {
-                        callee.parameter_writes.get(index).copied().unwrap_or(false)
-                    });
-                    if written
-                        && let Some((place, element, entry_image_only)) =
-                            self.argument_referent(argument)
+                    let Some(writes) = callee.and_then(|callee| callee.parameter_writes.get(index))
+                    else {
+                        continue;
+                    };
+                    if let Some((place, element, entry_image_only)) =
+                        self.argument_referent(argument)
                     {
-                        if entry_image_only {
-                            events.push(KillEvent::EntryImageHolderWrite {
-                                place,
-                                element,
-                                source: call.clone(),
-                            });
-                        } else {
-                            events.push(KillEvent::Write {
-                                place,
-                                element,
-                                source: call.clone(),
-                            });
+                        for fields in writes {
+                            let mut written = place.clone();
+                            written.fields.extend_from_slice(fields);
+                            if entry_image_only {
+                                events.push(KillEvent::EntryImageHolderWrite {
+                                    place: written,
+                                    element,
+                                    source: call.clone(),
+                                });
+                            } else {
+                                events.push(KillEvent::Write {
+                                    place: written,
+                                    element,
+                                    source: call.clone(),
+                                });
+                            }
                         }
                     }
                 }
@@ -4684,17 +4688,16 @@ impl Analyzer<'_, '_> {
                 arguments,
                 ..
             } => {
-                let parameters = SYSTEM_OPERATIONS
-                    .get(usize::from(*operation))
-                    .map(|operation| operation.parameters)
+                let operation_row = SYSTEM_OPERATIONS.get(usize::from(*operation));
+                let writes = operation_row
+                    .map(|operation| crate::operation_state_effects(operation).1)
                     .unwrap_or_default();
                 for argument in arguments {
                     self.collect_expression_kills(argument, events);
                 }
                 for (index, argument) in arguments.iter().enumerate() {
-                    let written = parameters.get(index).is_some_and(|parameter| {
-                        matches!(parameter.mode, SystemParameterMode::UniqueBorrow(_))
-                    });
+                    let written =
+                        u8::try_from(index).is_ok_and(|ordinal| writes.contains(&ordinal));
                     if written
                         && let Some((place, element, entry_image_only)) =
                             self.argument_referent(argument)

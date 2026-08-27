@@ -52,10 +52,9 @@ static int finish_inline(
 static int test_core_product_and_generation(void) {
     wf_completion_runtime runtime;
     wf_completion_slot slots[3];
-    wf_completion_token batch[2];
+    wf_completion_token operations[2];
     wf_completion_token third;
     wf_completion_token replacement;
-    wf_completion_token refused[2];
     wf_completion_event events[3];
     wf_completion_publication first_publication;
     wf_completion_publication stale_publication;
@@ -82,18 +81,13 @@ static int test_core_product_and_generation(void) {
         22
     );
 
-    /* A batch is all-or-none. The failed second batch must leave the third
-     * slot available to a single claimant. */
     PROBE_CHECK(
-        wf_completion_claim_many(&runtime, batch, 2) == WF_COMPLETION_CLAIMED,
+        wf_completion_claim(&runtime, &operations[0]) == WF_COMPLETION_CLAIMED
+            && wf_completion_claim(&runtime, &operations[1])
+                == WF_COMPLETION_CLAIMED,
         23
     );
-    PROBE_CHECK(batch[0].slot != batch[1].slot, 24);
-    PROBE_CHECK(
-        wf_completion_claim_many(&runtime, refused, 2)
-            == WF_COMPLETION_CLAIM_WAIT_CAPACITY,
-        25
-    );
+    PROBE_CHECK(operations[0].slot != operations[1].slot, 24);
     PROBE_CHECK(
         wf_completion_claim(&runtime, &third) == WF_COMPLETION_CLAIMED,
         26
@@ -105,15 +99,15 @@ static int test_core_product_and_generation(void) {
     );
 
     PROBE_CHECK(
-        wf_completion_set_adapter_tag(&runtime, batch[0], 73)
+        wf_completion_set_adapter_tag(&runtime, operations[0], 73)
             == WF_COMPLETION_TRANSITIONED,
         28
     );
     PROBE_CHECK(
         wf_completion_depend(
             &runtime,
-            batch[0],
-            WF_COMPLETION_AUTHORITY_RELEASED,
+            operations[0],
+            WF_COMPLETION_RESOURCE_RELEASED,
             &first_frame
         ) == WF_COMPLETION_DEPEND_REGISTERED,
         29
@@ -121,28 +115,28 @@ static int test_core_product_and_generation(void) {
     PROBE_CHECK(
         wf_completion_depend(
             &runtime,
-            batch[0],
+            operations[0],
             WF_COMPLETION_RESULT_READY,
             &second_frame
         ) == WF_COMPLETION_DEPEND_DUPLICATE,
         30
     );
     PROBE_CHECK(
-        wf_completion_begin_submit(&runtime, batch[0])
+        wf_completion_begin_submit(&runtime, operations[0])
             == WF_COMPLETION_TRANSITIONED
-            && wf_completion_target_accepted(&runtime, batch[0])
+            && wf_completion_target_accepted(&runtime, operations[0])
                 == WF_COMPLETION_TRANSITIONED,
         31
     );
     first_publication = value_publication(&first_value);
-    first_publication.milestones &= ~WF_COMPLETION_AUTHORITY_RELEASED;
+    first_publication.milestones &= ~WF_COMPLETION_RESOURCE_RELEASED;
     PROBE_CHECK(
         wf_completion_publish_terminal(
             &runtime,
-            batch[0],
+            operations[0],
             &first_publication
         ) == WF_COMPLETION_PUBLISH_INCOMPLETE_TERMINAL
-            && wf_completion_set_adapter_tag(&runtime, batch[0], 74)
+            && wf_completion_set_adapter_tag(&runtime, operations[0], 74)
                 == WF_COMPLETION_TRANSITION_INVALID_STATE,
         32
     );
@@ -150,7 +144,7 @@ static int test_core_product_and_generation(void) {
     PROBE_CHECK(
         wf_completion_publish_terminal(
             &runtime,
-            batch[0],
+            operations[0],
             &first_publication
         ) == WF_COMPLETION_PUBLISHED,
         33
@@ -159,22 +153,22 @@ static int test_core_product_and_generation(void) {
     PROBE_CHECK(
         wf_completion_publish_terminal(
             &runtime,
-            batch[0],
+            operations[0],
             &first_publication
         ) == WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL,
         35
     );
     PROBE_CHECK(
         wf_completion_drain(&runtime, events, 1, 3) == 1
-            && events[0].token.slot == batch[0].slot
-            && events[0].token.generation == batch[0].generation,
+            && events[0].token.slot == operations[0].slot
+            && events[0].token.generation == operations[0].generation,
         38
     );
     PROBE_CHECK(ready_count == 1 && last_ready_frame == &first_frame, 136);
     PROBE_CHECK(
         wf_completion_depend(
             &runtime,
-            batch[0],
+            operations[0],
             WF_COMPLETION_RESULT_READY,
             &second_frame
         ) == WF_COMPLETION_DEPEND_ALREADY_READY,
@@ -184,7 +178,7 @@ static int test_core_product_and_generation(void) {
     PROBE_CHECK(
         wf_completion_consume(
             &runtime,
-            batch[0],
+            operations[0],
             &consumed,
             sizeof(consumed),
             &outcome
@@ -203,21 +197,21 @@ static int test_core_product_and_generation(void) {
      * publish bytes nor win a second terminal transition. */
     PROBE_CHECK(
         wf_completion_claim(&runtime, &replacement) == WF_COMPLETION_CLAIMED
-            && replacement.slot == batch[0].slot
-            && replacement.generation == batch[0].generation + 1,
+            && replacement.slot == operations[0].slot
+            && replacement.generation == operations[0].generation + 1,
         41
     );
     stale_publication = value_publication(&stale_value);
     PROBE_CHECK(
         wf_completion_publish_terminal(
             &runtime,
-            batch[0],
+            operations[0],
             &stale_publication
         ) == WF_COMPLETION_PUBLISH_STALE,
         42
     );
 
-    PROBE_CHECK(finish_inline(&runtime, batch[1], 2) == 0, 43);
+    PROBE_CHECK(finish_inline(&runtime, operations[1], 2) == 0, 43);
     PROBE_CHECK(finish_inline(&runtime, third, 3) == 0, 44);
     PROBE_CHECK(finish_inline(&runtime, replacement, 4) == 0, 45);
     drained = wf_completion_drain(&runtime, events, 3, 3);
@@ -238,7 +232,7 @@ static int test_core_product_and_generation(void) {
     }
     statistics = wf_completion_statistics_snapshot(&runtime);
     PROBE_CHECK(
-        statistics.claims == 4 && statistics.claim_capacity_waits == 2
+        statistics.claims == 4 && statistics.claim_capacity_waits == 1
             && statistics.publications == 4
             && statistics.stale_publications == 1
             && statistics.duplicate_terminals == 1

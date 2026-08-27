@@ -164,18 +164,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        self.check_loan_access(
-            bindings,
-            None,
-            &ResolvedPlace {
-                root: declaration,
-                fields: fields.clone(),
-            },
-            AccessKind::Write,
-            node,
-        )?;
+        let resolved = ResolvedPlace {
+            root: declaration,
+            fields: fields.clone(),
+        };
+        self.check_loan_access(bindings, None, &resolved, AccessKind::Write, node)?;
 
         self.check_mutation_target_class(node, ty, for_replace)?;
+        let mut effects = EffectSet::NONE;
+        for path in self.effect_paths_for_place(&resolved, bindings)? {
+            effects.add_write(path.clone());
+            if for_replace {
+                effects.add_read(path);
+            }
+        }
 
         Ok((
             declaration,
@@ -184,7 +186,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 fields,
                 ty,
             }),
-            EffectSet::NONE,
+            effects,
         ))
     }
 
@@ -797,7 +799,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         expression: CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            capability_origins: local.capability_origins.clone(),
+                            state_origins: local.state_origins.clone(),
                             ty: local.ty,
                             slice_origins,
                             consume_root: !copy,
@@ -872,9 +874,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.released_paths(paths)?
                         .into_iter()
                         .map(|(fields, ty, release)| CheckedProjectedDrop {
+                            state_origins: local
+                                .state_origins
+                                .clone()
+                                .map(|origins| origins.projected(&fields)),
                             fields,
                             ty,
-                            capability_origins: local.capability_origins.clone(),
                             release,
                         })
                         .collect()
@@ -889,6 +894,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     root: declaration,
                     fields: access_fields,
                 };
+                let mut effects = EffectSet::NONE;
+                if matches!(access_kind, AccessKind::Read) {
+                    for path in self.effect_paths_for_place(&access, bindings)? {
+                        effects.add_read(path);
+                    }
+                }
                 if fields.is_empty() {
                     let slice = local.slice;
                     let slice_origins = slice
@@ -899,12 +910,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            capability_origins: local.capability_origins.clone(),
+                            state_origins: local
+                                .state_origins
+                                .clone()
+                                .map(|origins| origins.projected(&fields)),
                             ty,
                             slice_origins,
                             consume_root: !copy,
                         },
-                        EffectSet::NONE,
+                        effects,
                         access,
                         access_kind,
                     );
@@ -915,13 +929,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::Project {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            capability_origins: local.capability_origins.clone(),
+                            state_origins: local
+                                .state_origins
+                                .clone()
+                                .map(|origins| origins.projected(&fields)),
                             fields,
                             ty,
                             consume_root: !copy,
                             residual_drops,
                         },
-                        EffectSet::NONE,
+                        effects,
                         access,
                         access_kind,
                     ))
@@ -1092,12 +1109,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         self.check_mutation_target_class(node, ty, for_replace)?;
         let mut effects = EffectSet::NONE;
-        if let Some(region) = borrow.origin_region {
-            effects.add_region_write(region);
+        for path in self.effect_paths_for_place(&resolved, bindings)? {
+            effects.add_write(path.clone());
             if for_replace {
                 // [SET-2, EFF-2]: the commit is one read and one write of
                 // the target's ultimate storage origin.
-                effects.add_region_read(region);
+                effects.add_read(path);
             }
         }
         Ok((

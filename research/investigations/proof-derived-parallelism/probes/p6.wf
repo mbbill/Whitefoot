@@ -2,13 +2,13 @@ enum Trouble {
   TooBig(limit: u64);
 }
 
-fn bump['c](cell: &uniq 'c u64) -> result: own u64 reads('c), writes('c) {
+fn bump['c](cell: &uniq 'c u64) -> result: own u64 reads(cell), writes(cell) {
   let was = deref(cell);
   set deref(cell) = was +wrap 1_u64;
   return was;
 }
 
-fn peek['c](cell: &'c u64) -> result: own u64 reads('c) {
+fn peek['c](cell: &'c u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
 
@@ -25,12 +25,12 @@ fn guard_value(v: own u64) -> result: own Result<u64, Trouble> pure {
   return Ok<u64, Trouble>(value: v);
 }
 
-fn emit['o, 's](output: &'o Output, source: &'s buffer<u8>) -> result: own u64 reads('o 's), writes(output) {
-  doc "A user function whose row writes the Output capability through its ordered sequence fragment; eligibility follows the fragment and the adjacent call's footprint rather than a global outside-call gate.";
+fn emit['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>) -> result: own u64 reads(output, source), writes(output) {
+  doc "A user function that advances one Output through an ordinary exclusive borrow; eligibility follows ordinary ownership and the adjacent call's footprint rather than a global outside-call gate.";
   let room = len(deref(source));
   let fits = ige(room, 1_u64);
   if fits {
-    match write_once<'o, 's>(output: output, source: source, start: 0_u64, end: 1_u64) {
+    match write_once<'o, 's>(output: move output, source: source, start: 0_u64, end: 1_u64) {
       Ok(value: next) => {
         return next;
       }
@@ -94,7 +94,7 @@ fn d_propagate(x: own u64) -> result: own Result<u64, Trouble> pure {
   return Ok<u64, Trouble>(value: both);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let w = d_write_write(x: 3_u64);
   let r = d_write_read(x: 5_u64);
   let rw = d_read_write(x: 7_u64);
@@ -102,7 +102,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
   let report = buffer_new(2_u64, 65_u8);
   region 'o {
     region 's {
-      let one = emit<'o, 's>(output: &'o out, source: &'s report);
+      let one = emit<'o, 's>(output: &uniq 'o out, source: &'s report);
       let two = takeval(v: 11_u64);
       let sum = one +wrap two;
       let all = w +wrap r;

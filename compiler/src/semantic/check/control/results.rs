@@ -78,7 +78,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.invalid_propagation(propagate);
         }
         let error_drops = self.live_affine_drops(bindings, &HashSet::new())?;
-        let capability_origins = self.capability_origins_of_value(&value, bindings)?;
+        let result_state_origins = self.state_origins_of_value(&value, bindings)?;
+        let ok_state_origins = result_state_origins
+            .clone()
+            .map(|origins| origins.enum_payload(0, 0));
         if bindings
             .insert(
                 declaration,
@@ -87,9 +90,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration,
                     mode: CheckedMode::Own,
                     ty: ok_type,
-                    capability_origins: self
-                        .type_carries_one_capability(ok_type)?
-                        .then(|| capability_origins.clone())
+                    state_origins: self
+                        .type_carries_identity(ok_type)?
+                        .then_some(ok_state_origins)
                         .flatten(),
                     live: true,
                     loop_depth: scope.loops.len(),

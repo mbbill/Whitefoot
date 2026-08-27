@@ -74,13 +74,13 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 /// overlap is decided solely from the concrete actual places.
 #[test]
 fn independent_direct_output_operations_are_permitted() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(out err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
       region 'source {
-        let first = write_once<'out, 'source>(output: &'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-        let second = write_once<'err, 'source>(output: &'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+        let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        let second = write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
       }
     }
   }
@@ -96,16 +96,16 @@ fn independent_direct_output_operations_are_permitted() {
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
-/// Two output reservations may coexist on one root. Their family-defined
-/// ordered relation contributes an explicit source-order edge.
+/// One Output is an ordinary mutable state object. Two loans covering the
+/// same named region therefore fail before overlap permission is considered.
 #[test]
-fn direct_output_operations_on_one_capability_are_ordered() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'source {
-      let first = write_once<'out, 'source>(output: &'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-      let second = write_once<'out, 'source>(output: &'out out, source: &'source bytes, start: 1_u64, end: 2_u64);
+      let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+      let second = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 1_u64, end: 2_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -113,26 +113,68 @@ fn direct_output_operations_on_one_capability_are_ordered() {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
-    assert_eq!(pair.authority_order.len(), 1);
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected an ordinary loan conflict, got {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("exclusive loan", "exclusive loan"));
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// The family contract, not capability identity alone, can admit two
-/// reservations on the same logical root. Directory lookup is explicitly
-/// free, and the shared memory loans also coexist.
 #[test]
-fn free_directory_authority_can_overlap_on_one_capability() {
-    let source =
-        br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
-  region 'directory {
-    let first = open_directory_source<'directory>(directory: &'directory cwd);
-    let second = open_directory_source<'directory>(directory: &'directory cwd);
+fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  let bytes = buffer_new(3_u64, 65_u8);
+  region 'out {
+    region 'err {
+      region 'source {
+        let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        let middle = write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+        let last = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 2_u64, end: 3_u64);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
+    let steps = &function_table(&table, "main").completion_steps;
+    assert_eq!(
+        steps.len(),
+        3,
+        "the adjacent eligible pairs form one schedule"
+    );
+    assert!(steps[0].has_later_independent_call);
+    assert!(steps[1].has_later_independent_call);
+    assert!(!steps[2].has_later_independent_call);
+    assert!(steps[0].wait_for.is_empty());
+    assert!(steps[1].wait_for.is_empty());
+    assert_eq!(steps[2].wait_for, vec![steps[0].site.binding]);
+}
+
+/// Two short exclusive factory loans mint independent ordinary owners. Once
+/// those calls return, the permits can feed two opens through shared loans of
+/// one directory without retaining either factory loan.
+#[test]
+fn independent_permits_allow_opens_through_one_shared_directory() {
+    let source = br#"fn open_two['directory](first_permit: own FilePermit, second_permit: own FilePermit, directory: &'directory DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
+  let first = open_directory_source<'directory>(permit: move first_permit, directory: directory);
+  let second = open_directory_source<'directory>(permit: move second_permit, directory: directory);
+  return unit;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region 'state {
+    let first_permit = reserve_file<'state>(factory: &uniq 'state files);
+    let second_permit = reserve_file<'state>(factory: &uniq 'state files);
+    open_two<'state>(first_permit: move first_permit, second_permit: move second_permit, directory: &'state cwd);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "open_two");
+    assert_eq!(pair.first.callee_name, "open_directory_source");
+    assert_eq!(pair.second.callee_name, "open_directory_source");
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
@@ -163,7 +205,6 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(pair.first.callee_name, "read_at");
     assert_eq!(pair.second.callee_name, "read_at");
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
-    assert!(pair.authority_order.is_empty());
 }
 
 /// A direct inline system operation is not mistaken for an unknown call and
@@ -203,7 +244,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
-fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {
+fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);
@@ -238,6 +279,40 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     assert_eq!(runs[0].sites.len(), 2);
 }
 
+#[test]
+fn disjoint_effect_fields_do_not_shrink_a_whole_object_unique_loan() {
+    let source = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn set_left['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {
+  set deref(pair).left = 1_u64;
+  return unit;
+}
+
+fn set_right['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.right) {
+  set deref(pair).right = 2_u64;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 0_u64, right: 0_u64);
+  region 'r {
+    let first = set_left<'r>(pair: &uniq 'r pair);
+    let second = set_right<'r>(pair: &uniq 'r pair);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Loan { kind, .. } = denial(pair, 2) else {
+        panic!("the whole-object unique loans must remain independent of effect precision");
+    };
+    assert_eq!(kind.halves(), ("exclusive loan", "exclusive loan"));
+}
+
 /// Read-only sibling recursion. Nothing is written at all, so condition 2 is
 /// satisfied by an empty write footprint rather than by disjointness.
 #[test]
@@ -247,7 +322,7 @@ fn read_only_sibling_recursion_is_permitted_and_eligible() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn depth['b](node: &'b box<BoxNode>) -> result: own u64 reads('b) {
+fn depth['b](node: &'b box<BoxNode>) -> result: own u64 reads(node) {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return 1_u64;
@@ -275,7 +350,7 @@ command fn main() -> status: own ExitStatus pure {
 /// every lane views the same immutable input.
 #[test]
 fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
-    let source = br#"fn width['r](data: &'r buffer<u64>) -> result: own u64 reads('r) {
+    let source = br#"fn width['r](data: &'r buffer<u64>) -> result: own u64 reads(data) {
   return len(deref(data));
 }
 
@@ -306,7 +381,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// chain stops at two members even though both adjacent pairs hold.
 #[test]
 fn a_chain_stops_where_a_nonadjacent_pair_conflicts() {
-    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads('r), writes('r) {
+    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads(slot), writes(slot) {
   let seen = deref(slot);
   set deref(slot) = 7_u64;
   return seen;
@@ -348,12 +423,12 @@ fn a_dataflow_link_between_siblings_is_denied_by_condition_one() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn fold_shift['b](node: &uniq 'b box<BoxNode>, shift: own u64) -> result: own u64 reads('b), writes('b) {
+fn fold_shift['b](node: &uniq 'b box<BoxNode>, shift: own u64) -> result: own u64 reads(node), writes(node) {
   let base = fold<'b>(node: move node);
   return imax(base, shift);
 }
 
-fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {
+fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);
@@ -394,7 +469,7 @@ command fn main() -> status: own ExitStatus pure {
 /// two write footprints overlap under [OWN-7].
 #[test]
 fn overlapping_unique_arguments_are_denied_by_condition_two() {
-    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads('r), writes('r) {
+    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads(slot), writes(slot) {
   let seen = deref(slot);
   set deref(slot) = 7_u64;
   return seen;
@@ -437,7 +512,7 @@ command fn main() -> status: own ExitStatus pure {
 /// pre-write value with no runtime linked.
 #[test]
 fn an_operand_read_of_written_storage_is_denied_by_condition_two() {
-    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes(slot) {
   set deref(slot) = 15_u64;
   return 1_u64;
 }
@@ -476,7 +551,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
     let source =
-        br#"fn fill['d](dst: &uniq 'd buffer<u64>, mark: own u64) -> result: own u64 reads('d), writes('d) {
+        br#"fn fill['d](dst: &uniq 'd buffer<u64>, mark: own u64) -> result: own u64 reads(dst), writes(dst) {
   let room = len(deref(dst));
   let k = 0_u64;
   loop @go {
@@ -527,7 +602,7 @@ fn an_operand_read_by_the_first_call_of_storage_the_second_writes_is_denied() {
   return v;
 }
 
-fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes(slot) {
   set deref(slot) = 7_u64;
   return 1_u64;
 }
@@ -561,11 +636,11 @@ command fn main() -> status: own ExitStatus pure {
 /// second one has to.
 #[test]
 fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied_by_condition_two() {
-    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
-fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes(slot) {
   set deref(slot) = 7_u64;
   return 1_u64;
 }
@@ -604,7 +679,7 @@ fn may_suspend_release_wrappers_on_distinct_capabilities_are_permitted() {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first second) {
+fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
@@ -630,12 +705,12 @@ fn a_propagating_first_statement_is_denied_by_condition_four() {
   return cvt<u32, u8>(v);
 }
 
-fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes('o) {
+fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
   set deref(slot) = 9_u8;
   return 1_u64;
 }
 
-fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes('o) {
+fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes(slot) {
   let narrowed = propagate narrow(v: v);
   let stamped = stamp<'o>(slot: move slot);
   return Ok<unit, NarrowError>(value: unit);
@@ -708,7 +783,7 @@ fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   return values[bounded];
 }
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       let w = deref(leaf_w);
@@ -791,7 +866,7 @@ fn a_pure_builtin_between_two_calls_keeps_the_pair() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads('b), writes('b) {
+fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);
@@ -832,7 +907,7 @@ command fn main() -> status: own ExitStatus pure {
 /// requires the post-`set` one.
 #[test]
 fn an_interposed_write_into_the_second_callees_read_is_denied_by_condition_two() {
-    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
@@ -872,12 +947,12 @@ command fn main() -> status: own ExitStatus pure {
 /// live store/store race between the lane and the calling thread.
 #[test]
 fn an_interposed_write_over_the_first_callees_write_is_denied_by_condition_two() {
-    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes(slot) {
   set deref(slot) = 7_u64;
   return 1_u64;
 }
 
-fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
@@ -919,7 +994,7 @@ command fn main() -> status: own ExitStatus pure {
 /// order gives 15. No callee row is involved on either side.
 #[test]
 fn an_interposed_write_under_the_second_calls_operand_read_is_denied_by_condition_two() {
-    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
@@ -970,7 +1045,7 @@ command fn main() -> status: own ExitStatus pure {
 /// stop admitting the shape the asymmetry was derived to admit.
 #[test]
 fn an_interposed_write_over_the_first_calls_operand_read_is_permitted() {
-    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
@@ -1005,7 +1080,7 @@ fn an_interposed_read_of_the_first_calls_result_is_denied_by_condition_one() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads('b), writes('b) {
+fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);
@@ -1048,7 +1123,7 @@ command fn main() -> status: own ExitStatus pure {
 /// be stated in terms of a schedule, so it denies.
 #[test]
 fn a_second_call_reading_an_interposed_binding_is_denied_by_condition_one() {
-    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
@@ -1088,16 +1163,16 @@ command fn main() -> status: own ExitStatus pure {
 /// difference, and before the window rule it was not even reported.
 #[test]
 fn an_interposed_propagate_is_denied_by_condition_four() {
-    let source = br#"fn peek['o](slot: &'o u8) -> result: own u64 reads('o) {
+    let source = br#"fn peek['o](slot: &'o u8) -> result: own u64 reads(slot) {
   return cvt<u8, u64>(deref(slot));
 }
 
-fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes('o) {
+fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
   set deref(slot) = 9_u8;
   return 1_u64;
 }
 
-fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads('o), writes('o) {
+fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
   let seen = peek<'o>(slot: b);
   let narrowed = propagate outcome;
   let stamped = stamp<'o>(slot: move a);
@@ -1132,11 +1207,11 @@ command fn main() -> status: own ExitStatus pure {
 /// the control: it interposes too, and only the claim's trap edge denies.
 #[test]
 fn an_interposed_claim_is_denied_by_condition_four() {
-    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
-fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads('r), traps {
+fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other), traps {
   let size = len(values);
   let bounded = 0_u64;
   loop @select_bound {
@@ -1190,7 +1265,7 @@ fn an_interposed_match_is_denied_by_condition_two() {
   High(w: u64);
 }
 
-fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
@@ -1237,7 +1312,7 @@ command fn main() -> status: own ExitStatus pure {
 /// program point. Before the loans half existed this pair was permitted.
 #[test]
 fn read_only_unique_borrows_of_one_place_are_denied_by_their_loans() {
-    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads('c) {
+    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
 
@@ -1312,7 +1387,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// window reports.
 #[test]
 fn an_interposed_borrow_binding_refuses_the_window() {
-    let source = br#"fn bump['r](cell: &uniq 'r u64) -> result: own u64 reads('r), writes('r) {
+    let source = br#"fn bump['r](cell: &uniq 'r u64) -> result: own u64 reads(cell), writes(cell) {
   let was = deref(cell);
   set deref(cell) = was +wrap 1_u64;
   return was;

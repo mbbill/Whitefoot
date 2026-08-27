@@ -566,7 +566,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
     #[test]
     fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
-            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {{
+            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
@@ -621,7 +621,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   return values[bounded];
 }}
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {{
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
@@ -697,7 +697,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
         // Condition 2: two `&uniq` actuals resolve to one place, so the line
         // has to name both actuals as the writer wrote them.
         let overlapping =
-            b"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads('r), writes('r) {
+            b"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads(slot), writes(slot) {
   let seen = deref(slot);
   set deref(slot) = 7_u64;
   return seen;
@@ -729,7 +729,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first second) {
+fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
@@ -754,12 +754,12 @@ command fn main() -> status: own ExitStatus pure {
   return cvt<u32, u8>(v);
 }
 
-fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes('o) {
+fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
   set deref(slot) = 9_u8;
   return 1_u64;
 }
 
-fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes('o) {
+fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes(slot) {
   let narrowed = propagate narrow(v: v);
   let stamped = stamp<'o>(slot: move slot);
   return Ok<unit, NarrowError>(value: unit);
@@ -916,7 +916,7 @@ command fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two() {
         let source =
-            b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads('s), writes('s) {
+            b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
@@ -982,7 +982,7 @@ command fn main() -> status: own ExitStatus pure {
     /// contributes 10 where a full-range fold contributes 70.
     #[test]
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
-        let source = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
+        let source = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1021,7 +1021,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
         // The same loop with the give removed is permitted, so the refusal is
         // about the exit edge and not about the shape.
-        let contained = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
+        let contained = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1125,7 +1125,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     #[test]
     fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
         let source = format!(
-            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {{
+            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
@@ -1308,7 +1308,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // attempt on the return edge. [QUAL-1] qualification now maps
         // each identity to an approved implementation and the [QUAL-3]
         // bootstrap supplies the standard inputs, so the program emits.
-        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
+        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
@@ -1332,7 +1332,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -1354,21 +1354,28 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         assert_eq!(failure.kind(), CompilationFailureKind::Source);
         assert_eq!(failure.rule_id(), Some("FN-7"));
 
-        // Capability rows are checked in both directions. These two bodies
-        // exhibit no authority action, so each declaration is an ordinary
-        // EFF-2 declared-but-unexhibited rejection.
-        for source in [
-            b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
-            b"fn probe['f](file: &'f ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        // State rows are checked in definition order. The valid but unused
+        // `reads(args)` path reaches EFF-2's exact-row check. `writes(file)`
+        // names a shared parameter, so EFF-1 rejects that malformed row before
+        // a body can be compared with it.
+        for (source, rule) in [
+            (
+                b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
+                "EFF-2",
+            ),
+            (
+                b"fn probe['f](file: &'f ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                "EFF-1",
+            ),
         ] {
             let failure = compile(
                 &[SourceInput::new("rejected.wf", source)],
                 CompilerLimits::default(),
             )
-            .expect_err("an undeclarable category must reject citing EFF-2");
+            .expect_err("the invalid state row must reject at its earliest rule");
             assert_eq!(failure.stage(), CompilationStage::Semantics);
             assert_eq!(failure.kind(), CompilationFailureKind::Source);
-            assert_eq!(failure.rule_id(), Some("EFF-2"));
+            assert_eq!(failure.rule_id(), Some(rule));
         }
     }
 

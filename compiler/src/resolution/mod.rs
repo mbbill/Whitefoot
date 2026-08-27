@@ -18,16 +18,14 @@ pub use engine::{resolve, resolve_with_inventory};
 
 pub use catalog::{
     Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemAuthority, SystemAuthorityAttribution, SystemAuthorityFacet, SystemAuthorityFamily,
-    SystemAuthorityFragment, SystemAuthorityPairRelation, SystemConstructor, SystemEntity,
-    SystemField, SystemNominal, SystemOperation, SystemParameter, SystemParameterMode,
-    SystemRelease, SystemReleaseAction, SystemReleaseAuthority, SystemReleaseRow,
-    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultAuthority,
-    SystemResultPayload, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction, TargetCompletion,
-    TargetDispatch, TargetMilestones, operation_region_effects, system_authority_pair_relation,
-    system_constructor_declaration, system_constructor_index, system_constructors, system_entity,
-    system_nominal_index, system_nominals, system_operation_index, system_operations,
-    system_release_row, system_resource_contract,
+    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemParameter,
+    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
+    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
+    SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction, TargetCompletion,
+    TargetDispatch, TargetMilestones, operation_state_effects, system_constructor_declaration,
+    system_constructor_index, system_constructors, system_entity, system_nominal_index,
+    system_nominals, system_operation_index, system_operations, system_release_row,
+    system_resource_contract,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -279,7 +277,7 @@ pub enum DependentDeclarationRole {
     ContractMember,
 }
 
-/// Lexical-use roles U01 through U19.
+/// Lexical-use roles retained by name resolution.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LexicalUseRole {
     /// U01: nominal or generic type.
@@ -300,10 +298,10 @@ pub enum LexicalUseRole {
     ModeRegion,
     /// U08: explicit region type argument.
     TypeArgumentRegion,
-    /// U09: region named in an effect.
-    EffectRegion,
-    /// A direct formal capability parameter named in an effect.
-    EffectCapability,
+    /// U09: formal value parameter at the root of a state-effect path.
+    EffectRoot,
+    /// Region whose arena allocation list an effect row extends.
+    EffectAllocationRegion,
     /// U10: region named by a borrow expression.
     BorrowRegion,
     /// U11: break target.
@@ -324,7 +322,7 @@ pub enum LexicalUseRole {
     GenericNumericSuffix,
 }
 
-/// Deferred-use roles X04 through X09.
+/// Deferred member and field uses resolved by the semantic owner type.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeferredUseRole {
     /// X04: construction field or named-call argument.
@@ -339,6 +337,8 @@ pub enum DeferredUseRole {
     LawName,
     /// X09: complete law argument.
     LawArgument,
+    /// A statically selected field after an effect-path root.
+    EffectField,
 }
 
 /// Exact source origin of one resolver role.
@@ -672,7 +672,7 @@ pub enum ResolutionRule {
     Const2,
     /// Region uniqueness or lookup.
     Own3,
-    /// Capability-parameter effect lookup.
+    /// Parameter-rooted state-effect lookup.
     Eff1,
     /// Operation-family or callee lookup.
     Op1,

@@ -223,7 +223,7 @@ static int test_capacity_and_product_state(void) {
     CHECK(phase == WF_COMPLETION_TERMINAL_PHASE);
     CHECK((milestones & WF_COMPLETION_RESULT_READY) != 0);
     CHECK((milestones & WF_COMPLETION_PAYLOAD_RELEASED) != 0);
-    CHECK((milestones & WF_COMPLETION_AUTHORITY_RELEASED) != 0);
+    CHECK((milestones & WF_COMPLETION_RESOURCE_RELEASED) != 0);
     CHECK((milestones & WF_COMPLETION_TERMINAL) != 0);
     CHECK(
         wf_completion_consume(
@@ -385,6 +385,97 @@ static int test_exactly_one_terminal_under_race(void) {
     return 0;
 }
 
+#define CLAIM_RACERS 32
+
+typedef struct claim_race_context {
+    wf_completion_runtime *runtime;
+    _Atomic unsigned *start;
+    wf_completion_token token;
+    enum wf_completion_claim_result result;
+} claim_race_context;
+
+static void *claim_racer(void *opaque) {
+    claim_race_context *context = opaque;
+    while (atomic_load_explicit(context->start, memory_order_acquire) == 0) {
+        sched_yield();
+    }
+    context->result = wf_completion_claim(
+        context->runtime,
+        &context->token
+    );
+    return NULL;
+}
+
+static int test_concurrent_single_claims_are_unique(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[CLAIM_RACERS];
+    wf_completion_event events[CLAIM_RACERS];
+    pthread_t threads[CLAIM_RACERS];
+    claim_race_context contexts[CLAIM_RACERS];
+    unsigned char seen[CLAIM_RACERS] = {0};
+    int values[CLAIM_RACERS];
+    wf_completion_publication publication;
+    wf_completion_token refused;
+    _Atomic unsigned start;
+    size_t index;
+
+    atomic_init(&start, 0);
+    CHECK(
+        wf_completion_runtime_init(&runtime, slots, CLAIM_RACERS) == 0
+    );
+    for (index = 0; index < CLAIM_RACERS; ++index) {
+        contexts[index].runtime = &runtime;
+        contexts[index].start = &start;
+        contexts[index].result = WF_COMPLETION_CLAIM_INVALID;
+        CHECK(
+            pthread_create(
+                &threads[index],
+                NULL,
+                claim_racer,
+                &contexts[index]
+            ) == 0
+        );
+    }
+    atomic_store_explicit(&start, 1, memory_order_release);
+    for (index = 0; index < CLAIM_RACERS; ++index) {
+        CHECK(pthread_join(threads[index], NULL) == 0);
+        CHECK(contexts[index].result == WF_COMPLETION_CLAIMED);
+        CHECK(contexts[index].token.slot < CLAIM_RACERS);
+        CHECK(contexts[index].token.generation == 1);
+        CHECK(seen[contexts[index].token.slot] == 0);
+        seen[contexts[index].token.slot] = 1;
+    }
+    CHECK(
+        wf_completion_claim(&runtime, &refused)
+        == WF_COMPLETION_CLAIM_WAIT_CAPACITY
+    );
+
+    for (index = 0; index < CLAIM_RACERS; ++index) {
+        values[index] = (int)index;
+        CHECK(accept_operation(&runtime, contexts[index].token) == 0);
+        publication = integer_publication(&values[index]);
+        CHECK(
+            wf_completion_publish_terminal(
+                &runtime,
+                contexts[index].token,
+                &publication
+            ) == WF_COMPLETION_PUBLISHED
+        );
+    }
+    CHECK(drain_exact(&runtime, CLAIM_RACERS, events) == 0);
+    for (index = 0; index < CLAIM_RACERS; ++index) {
+        CHECK(
+            consume_integer(
+                &runtime,
+                contexts[index].token,
+                values[index]
+            ) == 0
+        );
+    }
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
 typedef struct park_context {
     wf_completion_runtime *runtime;
     uint64_t epoch;
@@ -423,221 +514,6 @@ static int wait_until_parked(wf_completion_runtime *runtime) {
 static void record_host_wake(void *context) {
     _Atomic unsigned *count = context;
     atomic_fetch_add_explicit(count, 1, memory_order_relaxed);
-}
-
-typedef struct claim_context {
-    wf_completion_runtime *runtime;
-    wf_completion_token token;
-    enum wf_completion_claim_result result;
-} claim_context;
-
-static void *claim_on_other_lane(void *opaque) {
-    claim_context *context = opaque;
-    context->result = wf_completion_claim(context->runtime, &context->token);
-    return NULL;
-}
-
-typedef struct batch_claim_context {
-    wf_completion_runtime *runtime;
-    wf_completion_token tokens[2];
-    enum wf_completion_claim_result result;
-} batch_claim_context;
-
-static void *claim_batch_on_other_lane(void *opaque) {
-    batch_claim_context *context = opaque;
-    context->result = wf_completion_claim_many(
-        context->runtime,
-        context->tokens,
-        2
-    );
-    return NULL;
-}
-
-static int wait_until_atomic_mask(
-    const _Atomic unsigned *value,
-    unsigned mask
-) {
-    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
-    unsigned attempts;
-    for (attempts = 0; attempts < 5000; ++attempts) {
-        if ((atomic_load_explicit(value, memory_order_acquire) & mask) != 0) {
-            return 0;
-        }
-        (void)nanosleep(&delay, NULL);
-    }
-    return 1;
-}
-
-static int test_batch_admission_wake_is_not_capacity(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[4];
-    wf_completion_token retry;
-    wf_completion_event events[4];
-    wf_completion_publication publication;
-    wf_completion_statistics before;
-    wf_completion_statistics after;
-    claim_context single;
-    batch_claim_context batch;
-    park_context parked;
-    pthread_t single_thread;
-    pthread_t batch_thread;
-    pthread_t park_thread;
-    _Atomic unsigned host_wakes;
-    uint64_t epoch_before;
-    int values[4] = {11, 12, 13, 14};
-    size_t index;
-
-    atomic_init(&host_wakes, 0);
-    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(
-        wf_completion_set_wake_callback(
-            &runtime,
-            record_host_wake,
-            &host_wakes
-        ) == 0
-    );
-
-    /* Pin a real single claim inside its slot critical section. The batch can
-     * then close its gate but cannot reserve until that claimant leaves. */
-    CHECK(pthread_mutex_lock(&slots[0].publication_lock) == 0);
-    single.runtime = &runtime;
-    single.result = WF_COMPLETION_CLAIM_INVALID;
-    CHECK(
-        pthread_create(
-            &single_thread,
-            NULL,
-            claim_on_other_lane,
-            &single
-        ) == 0
-    );
-    CHECK(wait_until_atomic_mask(&runtime.single_claimers, 1u) == 0);
-
-    batch.runtime = &runtime;
-    batch.result = WF_COMPLETION_CLAIM_INVALID;
-    CHECK(
-        pthread_create(
-            &batch_thread,
-            NULL,
-            claim_batch_on_other_lane,
-            &batch
-        ) == 0
-    );
-    CHECK(wait_until_atomic_mask(&runtime.batch_claiming, 1u) == 0);
-
-    before = wf_completion_statistics_snapshot(&runtime);
-    epoch_before = wf_completion_wake_epoch(&runtime);
-    CHECK(
-        wf_completion_claim(&runtime, &retry)
-        == WF_COMPLETION_CLAIM_WAIT_ADMISSION
-    );
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(after.claim_admission_waits == before.claim_admission_waits + 1);
-    CHECK(after.claim_capacity_waits == before.claim_capacity_waits);
-
-    parked.runtime = &runtime;
-    parked.epoch = epoch_before;
-    parked.result = WF_COMPLETION_PARK_FAILED;
-    CHECK(pthread_create(&park_thread, NULL, park_scheduler, &parked) == 0);
-    CHECK(wait_until_parked(&runtime) == 0);
-
-    CHECK(pthread_mutex_unlock(&slots[0].publication_lock) == 0);
-    CHECK(pthread_join(single_thread, NULL) == 0);
-    CHECK(pthread_join(batch_thread, NULL) == 0);
-    CHECK(pthread_join(park_thread, NULL) == 0);
-    CHECK(single.result == WF_COMPLETION_CLAIMED);
-    CHECK(batch.result == WF_COMPLETION_CLAIMED);
-    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
-
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(after.claims == before.claims + 3);
-    CHECK(after.claim_admission_waits == before.claim_admission_waits + 1);
-    CHECK(after.claim_capacity_waits == before.claim_capacity_waits);
-    CHECK(after.admission_notifications == before.admission_notifications + 1);
-    CHECK(after.capacity_notifications == before.capacity_notifications);
-    CHECK(after.wake_signals == before.wake_signals + 1);
-    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
-    CHECK(wf_completion_claim(&runtime, &retry) == WF_COMPLETION_CLAIMED);
-
-    CHECK(accept_operation(&runtime, single.token) == 0);
-    publication = integer_publication(&values[0]);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, single.token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    for (index = 0; index < 2; ++index) {
-        CHECK(accept_operation(&runtime, batch.tokens[index]) == 0);
-        publication = integer_publication(&values[index + 1]);
-        CHECK(
-            wf_completion_publish_terminal(
-                &runtime,
-                batch.tokens[index],
-                &publication
-            ) == WF_COMPLETION_PUBLISHED
-        );
-    }
-    CHECK(accept_operation(&runtime, retry) == 0);
-    publication = integer_publication(&values[3]);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, retry, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(drain_exact(&runtime, 4, events) == 0);
-    CHECK(consume_integer(&runtime, single.token, values[0]) == 0);
-    for (index = 0; index < 2; ++index) {
-        CHECK(
-            consume_integer(
-                &runtime,
-                batch.tokens[index],
-                values[index + 1]
-            ) == 0
-        );
-    }
-    CHECK(consume_integer(&runtime, retry, values[3]) == 0);
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(after.capacity_notifications == before.capacity_notifications + 4);
-    CHECK(after.admission_notifications == before.admission_notifications + 1);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
-}
-
-static int test_failed_batch_does_not_invent_capacity(void) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[2];
-    wf_completion_token occupied;
-    wf_completion_token refused[2];
-    wf_completion_event event;
-    wf_completion_publication publication;
-    wf_completion_statistics before;
-    wf_completion_statistics after;
-    uint64_t epoch_before;
-    int value = 29;
-
-    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(wf_completion_claim(&runtime, &occupied) == WF_COMPLETION_CLAIMED);
-    before = wf_completion_statistics_snapshot(&runtime);
-    epoch_before = wf_completion_wake_epoch(&runtime);
-    CHECK(
-        wf_completion_claim_many(&runtime, refused, 2)
-        == WF_COMPLETION_CLAIM_WAIT_CAPACITY
-    );
-    after = wf_completion_statistics_snapshot(&runtime);
-    CHECK(after.claims == before.claims);
-    CHECK(after.claim_capacity_waits == before.claim_capacity_waits + 1);
-    CHECK(after.claim_admission_waits == before.claim_admission_waits);
-    CHECK(after.capacity_notifications == before.capacity_notifications);
-    CHECK(after.admission_notifications == before.admission_notifications);
-    CHECK(wf_completion_wake_epoch(&runtime) == epoch_before);
-
-    CHECK(accept_operation(&runtime, occupied) == 0);
-    publication = integer_publication(&value);
-    CHECK(
-        wf_completion_publish_terminal(&runtime, occupied, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    CHECK(drain_exact(&runtime, 1, &event) == 0);
-    CHECK(consume_integer(&runtime, occupied, value) == 0);
-    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    return 0;
 }
 
 static int test_unified_wake_epoch(void) {
@@ -720,7 +596,7 @@ static int test_unified_wake_epoch(void) {
     return 0;
 }
 
-static int test_linux_native_free_batch_avoids_fallback_thread(
+static int test_linux_independent_operations_use_available_target(
     const char *scratch_directory
 ) {
 #if defined(__linux__)
@@ -730,15 +606,16 @@ static int test_linux_native_free_batch_avoids_fallback_thread(
     int error_code;
     uint64_t native_before;
     uint64_t fallback_before;
+    uint64_t native_after;
+    uint64_t fallback_after;
     char path[256];
     int descriptor;
-    int claimed;
 
     CHECK(
         snprintf(
             path,
             sizeof(path),
-            "%s/wf-completion-native-batch-%ld",
+            "%s/wf-completion-native-operations-%ld",
             scratch_directory,
             (long)getpid()
         ) > 0
@@ -749,36 +626,41 @@ static int test_linux_native_free_batch_avoids_fallback_thread(
     CHECK(write(descriptor, "xy", 2) == 2);
     native_before = wf__completion_linux_io_uring_submissions();
     fallback_before = wf__completion_file_fallback_submissions();
-    claimed = wf__completion_file_batch_claim(tokens, 2, 0);
-    if (claimed == 0) {
-        CHECK(getenv("WF_REQUIRE_LINUX_IO_URING") == NULL);
-        CHECK(close(descriptor) == 0);
-        CHECK(unlink(path) == 0);
-        return 0;
-    }
-    CHECK(wf__completion_target_helper_count() == 0);
-    wf__completion_file_pread_submit_reserved(
-        descriptor,
-        &bytes[0],
-        1,
-        0,
-        &tokens[0]
+
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            &bytes[0],
+            1,
+            0,
+            &tokens[0]
+        ) == 1
     );
-    wf__completion_file_pread_submit_reserved(
-        descriptor,
-        &bytes[1],
-        1,
-        1,
-        &tokens[1]
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            &bytes[1],
+            1,
+            1,
+            &tokens[1]
+        ) == 1
     );
     wf__completion_file_join(&tokens[0], &value, &error_code);
     CHECK(value == 1 && error_code == 0);
     wf__completion_file_join(&tokens[1], &value, &error_code);
     CHECK(value == 1 && error_code == 0);
     CHECK(bytes[0] == 'x' && bytes[1] == 'y');
-    CHECK(wf__completion_linux_io_uring_submissions() == native_before + 2);
-    CHECK(wf__completion_file_fallback_submissions() == fallback_before);
-    CHECK(wf__completion_target_helper_count() == 0);
+
+    native_after = wf__completion_linux_io_uring_submissions();
+    fallback_after = wf__completion_file_fallback_submissions();
+    if (native_after == native_before + 2) {
+        CHECK(fallback_after == fallback_before);
+        CHECK(wf__completion_target_helper_count() == 0);
+    } else {
+        CHECK(getenv("WF_REQUIRE_LINUX_IO_URING") == NULL);
+        CHECK(native_after == native_before);
+        CHECK(fallback_after == fallback_before + 2);
+    }
     CHECK(close(descriptor) == 0);
     CHECK(unlink(path) == 0);
 #else
@@ -1206,531 +1088,205 @@ static int test_bridge_independent_positioned_reads(
     return 0;
 }
 
-static int test_ordered_output_batch(const char *scratch_directory) {
-    wf_completion_token first;
-    wf_completion_token second;
-    int64_t first_value = -1;
-    int64_t second_value = -1;
-    int first_error = -1;
-    int second_error = -1;
-    const unsigned char a = 'A';
-    const unsigned char b = 'B';
-    unsigned char bytes[2] = {0};
+static int test_bridge_open_status_and_close_are_typed_operations(
+    const char *scratch_directory
+) {
+    wf_completion_token token;
+    unsigned char status[WF_FILE_STATUS_CAPACITY];
+    uint64_t status_size = 0;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
     char path[256];
-    struct stat status;
-    uint64_t logical_root = (uint64_t)(uintptr_t)&first;
-    uint64_t batch;
     int descriptor;
 
+    CHECK(scratch_directory != NULL);
     CHECK(
         snprintf(
             path,
             sizeof(path),
-            "%s/wf-completion-ordered-%ld",
+            "%s/wf-completion-typed-lifecycle-%ld",
             scratch_directory,
             (long)getpid()
         ) > 0
     );
     (void)unlink(path);
-    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
-    CHECK(descriptor >= 0);
-    batch = wf__completion_output_batch_begin(logical_root, 2);
-    CHECK(batch != 0);
-    wf__completion_output_batch_submit(batch, descriptor, &a, 1, &first);
-    wf__completion_output_batch_submit(batch, descriptor, &b, 1, &second);
-    CHECK(fstat(descriptor, &status) == 0);
-    CHECK(status.st_size == 0);
-    wf__completion_output_batch_commit(batch);
 
-    if (wf__completion_target_helper_count() != 0) {
-        unsigned attempt;
-        struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
-        for (attempt = 0; attempt < 5000; ++attempt) {
-            CHECK(fstat(descriptor, &status) == 0);
-            /* The helper records its execution immediately after the target
-             * call returns. File size can become visible in the few
-             * instructions before that counter increment, so observe both
-             * facts before treating the helper-path witness as complete. */
-            if (status.st_size == 2
-                && wf__completion_target_helper_executions() >= 2) {
-                break;
-            }
-            (void)nanosleep(&delay, NULL);
-        }
-        CHECK(status.st_size == 2);
-        CHECK(wf__completion_target_helper_executions() >= 2);
-    } else {
-        CHECK(wf__completion_target_helper_executions() == 0);
-    }
-
-    /* Joining the second reservation first still cannot execute it ahead of
-     * the first physical write. */
-    wf__completion_file_join(&second, &second_value, &second_error);
-    wf__completion_file_join(&first, &first_value, &first_error);
-    CHECK(first_value == 1 && first_error == 0);
-    CHECK(second_value == 1 && second_error == 0);
-    CHECK(pread(descriptor, bytes, sizeof(bytes), 0) == 2);
-    CHECK(bytes[0] == 'A' && bytes[1] == 'B');
-    CHECK(close(descriptor) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
-static int test_reserved_free_batch_inline_outcomes(void) {
-    wf_completion_token tokens[2];
-    int64_t value;
-    int error_code;
-    unsigned char byte = 0;
-    uint64_t submissions = wf__completion_file_submissions();
-
-    CHECK(wf__completion_file_batch_claim(tokens, 2, 1) == 1);
-    /* Empty wins before offset validation and performs no host transfer. */
-    wf__completion_file_pread_submit_reserved(
-        -1,
-        &byte,
-        0,
-        UINT64_MAX,
-        &tokens[0]
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_CREAT | O_EXCL | O_RDWR,
+            0600u,
+            1u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
     );
-    /* A nonempty unrepresentable offset completes the already-reserved token
-     * with the portable EINVAL input class, also without target handoff. */
-    wf__completion_file_pread_submit_reserved(
-        -1,
-        &byte,
-        1,
-        UINT64_MAX,
-        &tokens[1]
+    wf__completion_file_open_join(
+        &token,
+        &value,
+        &error_code,
+        &open_outcome
     );
-    wf__completion_file_join(&tokens[0], &value, &error_code);
+    CHECK(
+        value >= 0 && error_code == 0
+        && open_outcome == WF_FILE_OPEN_SUCCEEDED
+    );
+    descriptor = (int)value;
+
+    CHECK(wf__completion_file_status_submit(descriptor, &token) == 1);
+    wf__completion_file_status_join(
+        &token,
+        &value,
+        &error_code,
+        status,
+        sizeof(status),
+        &status_size
+    );
     CHECK(value == 0 && error_code == 0);
-    wf__completion_file_join(&tokens[1], &value, &error_code);
-    CHECK(value == -1 && error_code == EINVAL);
-    CHECK(wf__completion_file_submissions() == submissions);
+    CHECK(status_size == sizeof(struct stat));
+
+    CHECK(wf__completion_file_close_submit(descriptor, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    descriptor = (int)wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(
+        descriptor >= 0 && error_code == 0
+        && open_outcome == WF_FILE_OPEN_SUCCEEDED
+    );
+    CHECK(
+        wf__completion_file_status_direct(
+            descriptor,
+            status,
+            sizeof(status)
+        ) == 0
+    );
+    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+    CHECK(unlink(path) == 0);
     return 0;
 }
 
-static int test_ordered_failure_releases_the_later_bundle(
+static int test_bridge_capacity_falls_back_per_operation(void) {
+    wf_completion_token tokens[64];
+    wf_completion_token refused;
+    int64_t value = -1;
+    int error_code = -1;
+    size_t index;
+
+    for (index = 0; index < 64; ++index) {
+        CHECK(
+            wf__completion_file_pread_submit(
+                -1,
+                NULL,
+                0,
+                0,
+                &tokens[index]
+            ) == 1
+        );
+    }
+    CHECK(
+        wf__completion_file_pread_submit(-1, NULL, 0, 0, &refused)
+        == 0
+    );
+    for (index = 0; index < 64; ++index) {
+        wf__completion_file_join(&tokens[index], &value, &error_code);
+        CHECK(value == 0 && error_code == 0);
+    }
+    return 0;
+}
+
+static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     const char *scratch_directory
 ) {
-    wf_completion_token first;
-    wf_completion_token second;
-    int64_t first_value = 0;
-    int64_t second_value = 0;
-    int first_error = 0;
-    int second_error = 0;
-    const unsigned char b = 'B';
-    unsigned char observed = 0;
+    wf_completion_token token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
     char path[256];
-    uint64_t logical_root = (uint64_t)(uintptr_t)&second;
-    uint64_t batch;
-    int descriptor;
 
+    CHECK(scratch_directory != NULL);
     CHECK(
         snprintf(
             path,
             sizeof(path),
-            "%s/wf-completion-ordered-failure-%ld",
+            "%s/wf-completion-nonregular-%ld",
             scratch_directory,
             (long)getpid()
         ) > 0
     );
     (void)unlink(path);
-    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
-    CHECK(descriptor >= 0);
-    batch = wf__completion_output_batch_begin(logical_root, 2);
-    CHECK(batch != 0);
-    wf__completion_output_batch_submit(batch, -1, &b, 1, &first);
-    wf__completion_output_batch_submit(batch, descriptor, &b, 1, &second);
-    wf__completion_output_batch_commit(batch);
-    wf__completion_file_join(&first, &first_value, &first_error);
-    wf__completion_file_join(&second, &second_value, &second_error);
-    CHECK(first_value == -1 && first_error == EBADF);
-    CHECK(second_value == 1 && second_error == 0);
-    CHECK(pread(descriptor, &observed, 1, 0) == 1);
-    CHECK(observed == 'B');
-    CHECK(close(descriptor) == 0);
-    CHECK(unlink(path) == 0);
-    return 0;
-}
+    CHECK(mkfifo(path, 0600) == 0);
 
-typedef struct ordered_drain_context {
-    int descriptor;
-    size_t count;
-} ordered_drain_context;
-
-static void *drain_ordered_pipe_later(void *opaque) {
-    ordered_drain_context *context = opaque;
-    unsigned char bytes[4096];
-    struct timespec delay = {.tv_sec = 0, .tv_nsec = 5000000};
-    size_t total = 0;
-    (void)nanosleep(&delay, NULL);
-    while (total < context->count) {
-        ssize_t received = read(
-            context->descriptor,
-            bytes + total,
-            context->count - total
-        );
-        if (received <= 0) {
-            break;
-        }
-        total += (size_t)received;
-    }
-    return NULL;
-}
-
-static int test_ordered_partial_write_releases_the_later_bundle(
-    const char *scratch_directory
-) {
-    wf_completion_token first;
-    wf_completion_token second;
-    int64_t first_value = 0;
-    int64_t second_value = 0;
-    int first_error = 0;
-    int second_error = 0;
-    unsigned char fill[4096];
-    unsigned char drain[4096];
-    unsigned char *payload;
-    const unsigned char b = 'B';
-    unsigned char observed = 0;
-    char path[256];
-    uint64_t logical_root = (uint64_t)(uintptr_t)&first;
-    uint64_t batch;
-    long pipe_buf;
-    size_t drained = 0;
-    size_t request_count;
-    int pipe_descriptors[2];
-    int flags;
-    int descriptor;
-    pthread_t reader;
-    ordered_drain_context reader_context;
-
-    memset(fill, 'f', sizeof(fill));
-    CHECK(pipe(pipe_descriptors) == 0);
-    flags = fcntl(pipe_descriptors[1], F_GETFL, 0);
-    CHECK(flags >= 0);
-    CHECK(fcntl(pipe_descriptors[1], F_SETFL, flags | O_NONBLOCK) == 0);
-    for (;;) {
-        ssize_t written = write(
-            pipe_descriptors[1],
-            fill,
-            sizeof(fill)
-        );
-        if (written > 0) {
-            continue;
-        }
-        CHECK(written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK));
-        break;
-    }
-    pipe_buf = fpathconf(pipe_descriptors[1], _PC_PIPE_BUF);
-    CHECK(pipe_buf > 0 && (size_t)pipe_buf <= sizeof(drain));
-    while (drained < (size_t)pipe_buf) {
-        ssize_t received = read(
-            pipe_descriptors[0],
-            drain + drained,
-            (size_t)pipe_buf - drained
-        );
-        CHECK(received > 0);
-        drained += (size_t)received;
-    }
-    request_count = (size_t)pipe_buf * 2u;
-    payload = malloc(request_count);
-    CHECK(payload != NULL);
-    memset(payload, 'A', request_count);
+    value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    errno = 0;
+    CHECK(fcntl((int)value, F_GETFD) == -1);
+    CHECK(errno == EBADF);
 
     CHECK(
-        snprintf(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
             path,
-            sizeof(path),
-            "%s/wf-completion-ordered-partial-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
     );
-    (void)unlink(path);
-    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
-    CHECK(descriptor >= 0);
-    batch = wf__completion_output_batch_begin(logical_root, 2);
-    CHECK(batch != 0);
-    wf__completion_output_batch_submit(
-        batch,
-        pipe_descriptors[1],
-        payload,
-        request_count,
-        &first
+    wf__completion_file_open_join(
+        &token,
+        &value,
+        &error_code,
+        &open_outcome
     );
-    wf__completion_output_batch_submit(
-        batch,
-        descriptor,
-        &b,
-        1,
-        &second
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    errno = 0;
+    CHECK(fcntl((int)value, F_GETFD) == -1);
+    CHECK(errno == EBADF);
+
+    value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        scratch_directory,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
     );
-    reader_context.descriptor = pipe_descriptors[0];
-    reader_context.count = (size_t)pipe_buf;
-    CHECK(
-        pthread_create(
-            &reader,
-            NULL,
-            drain_ordered_pipe_later,
-            &reader_context
-        ) == 0
-    );
-    wf__completion_output_batch_commit(batch);
-    wf__completion_file_join(&first, &first_value, &first_error);
-    wf__completion_file_join(&second, &second_value, &second_error);
-    CHECK(pthread_join(reader, NULL) == 0);
-    CHECK(first_error == 0);
-    CHECK(first_value > 0 && (uint64_t)first_value < request_count);
-    CHECK(second_value == 1 && second_error == 0);
-    CHECK(pread(descriptor, &observed, 1, 0) == 1);
-    CHECK(observed == 'B');
-    free(payload);
-    CHECK(close(descriptor) == 0);
-    CHECK(close(pipe_descriptors[0]) == 0);
-    CHECK(close(pipe_descriptors[1]) == 0);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
+    errno = 0;
+    CHECK(fcntl((int)value, F_GETFD) == -1);
+    CHECK(errno == EBADF);
+
     CHECK(unlink(path) == 0);
-    return 0;
-}
-
-typedef struct ordered_capacity_context {
-    uint64_t key;
-    uint32_t expected;
-    _Atomic unsigned returned;
-    uint64_t result;
-} ordered_capacity_context;
-
-static void *begin_after_ordered_capacity(void *opaque) {
-    ordered_capacity_context *context = opaque;
-    context->result = wf__completion_output_batch_begin(
-        context->key,
-        context->expected
-    );
-    atomic_store_explicit(&context->returned, 1, memory_order_release);
-    return NULL;
-}
-
-static int test_ordered_root_capacity_makes_progress(void) {
-    wf_completion_token tokens[WF_ORDERED_OUTPUT_ROOT_CAPACITY][2];
-    uint64_t batches[WF_ORDERED_OUTPUT_ROOT_CAPACITY];
-    wf_completion_token extra[2];
-    ordered_capacity_context context;
-    pthread_t waiter;
-    struct timespec delay = {.tv_sec = 0, .tv_nsec = 2000000};
-    size_t root;
-    size_t member;
-
-    memset(&context, 0, sizeof(context));
-    atomic_init(&context.returned, 0);
-    context.key = (uint64_t)(uintptr_t)&extra[0];
-    context.expected = 2;
-    for (root = 0; root < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++root) {
-        uint64_t key = (uint64_t)(uintptr_t)&tokens[root][0];
-        batches[root] = wf__completion_output_batch_begin(key, 2);
-        CHECK(batches[root] != 0);
-        for (member = 0; member < 2; ++member) {
-            wf__completion_output_batch_submit(
-                batches[root],
-                -1,
-                NULL,
-                0,
-                &tokens[root][member]
-            );
-        }
-    }
-    CHECK(
-        pthread_create(
-            &waiter,
-            NULL,
-            begin_after_ordered_capacity,
-            &context
-        ) == 0
-    );
-    (void)nanosleep(&delay, NULL);
-    CHECK(atomic_load_explicit(&context.returned, memory_order_acquire) == 0);
-    wf__completion_output_batch_commit(batches[0]);
-    CHECK(pthread_join(waiter, NULL) == 0);
-    CHECK(context.result != 0);
-    for (member = 0; member < 2; ++member) {
-        wf__completion_output_batch_submit(
-            context.result,
-            -1,
-            NULL,
-            0,
-            &extra[member]
-        );
-    }
-    wf__completion_output_batch_commit(context.result);
-    for (root = 1; root < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++root) {
-        wf__completion_output_batch_commit(batches[root]);
-    }
-    for (root = 0; root < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++root) {
-        for (member = 0; member < 2; ++member) {
-            int64_t value;
-            int error_code;
-            wf__completion_file_join(
-                &tokens[root][member],
-                &value,
-                &error_code
-            );
-            CHECK(value == 0 && error_code == 0);
-        }
-    }
-    for (member = 0; member < 2; ++member) {
-        int64_t value;
-        int error_code;
-        wf__completion_file_join(
-            &extra[member],
-            &value,
-            &error_code
-        );
-        CHECK(value == 0 && error_code == 0);
-    }
-    return 0;
-}
-
-static int test_ordered_batch_claims_are_all_or_none(void) {
-    enum { BATCHES = 4, MEMBERS = 16 };
-    wf_completion_token tokens[BATCHES][MEMBERS];
-    wf_completion_token extra[MEMBERS];
-    uint64_t batches[BATCHES];
-    ordered_capacity_context context;
-    pthread_t waiter;
-    struct timespec delay = {.tv_sec = 0, .tv_nsec = 2000000};
-    uint64_t before;
-    size_t batch;
-    size_t member;
-
-    memset(&context, 0, sizeof(context));
-    atomic_init(&context.returned, 0);
-    context.key = (uint64_t)(uintptr_t)&extra[0];
-    context.expected = MEMBERS;
-    before = wf__completion_publications();
-    for (batch = 0; batch < BATCHES; ++batch) {
-        if (getenv("WF_COMPLETION_TRACE") != NULL) {
-            fprintf(stderr, "completion harness: claim pressure batch %zu\n", batch);
-        }
-        batches[batch] = wf__completion_output_batch_begin(
-            (uint64_t)(uintptr_t)&tokens[batch][0],
-            MEMBERS
-        );
-        CHECK(batches[batch] != 0);
-        for (member = 0; member < MEMBERS; ++member) {
-            wf__completion_output_batch_submit(
-                batches[batch],
-                -1,
-                NULL,
-                0,
-                &tokens[batch][member]
-            );
-        }
-    }
-    CHECK(wf__completion_publications() == before);
-    if (getenv("WF_COMPLETION_TRACE") != NULL) {
-        fprintf(stderr, "completion harness: pressure slots full\n");
-    }
-    CHECK(
-        pthread_create(
-            &waiter,
-            NULL,
-            begin_after_ordered_capacity,
-            &context
-        ) == 0
-    );
-    (void)nanosleep(&delay, NULL);
-    CHECK(atomic_load_explicit(&context.returned, memory_order_acquire) == 0);
-    CHECK(wf__completion_publications() == before);
-
-    if (getenv("WF_COMPLETION_TRACE") != NULL) {
-        fprintf(stderr, "completion harness: commit first pressure batch\n");
-    }
-    wf__completion_output_batch_commit(batches[0]);
-    for (member = 0; member < MEMBERS; ++member) {
-        int64_t value;
-        int error_code;
-        wf__completion_file_join(
-            &tokens[0][member],
-            &value,
-            &error_code
-        );
-        CHECK(value == 0 && error_code == 0);
-        if (getenv("WF_COMPLETION_TRACE") != NULL) {
-            fprintf(stderr, "completion harness: joined first member %zu\n", member);
-        }
-    }
-    if (getenv("WF_COMPLETION_TRACE") != NULL) {
-        fprintf(stderr, "completion harness: join capacity waiter\n");
-    }
-    CHECK(pthread_join(waiter, NULL) == 0);
-    CHECK(context.result != 0);
-    for (member = 0; member < MEMBERS; ++member) {
-        wf__completion_output_batch_submit(
-            context.result,
-            -1,
-            NULL,
-            0,
-            &extra[member]
-        );
-    }
-    wf__completion_output_batch_commit(context.result);
-    for (batch = 1; batch < BATCHES; ++batch) {
-        wf__completion_output_batch_commit(batches[batch]);
-    }
-    for (batch = 1; batch < BATCHES; ++batch) {
-        for (member = 0; member < MEMBERS; ++member) {
-            int64_t value;
-            int error_code;
-            wf__completion_file_join(
-                &tokens[batch][member],
-                &value,
-                &error_code
-            );
-            CHECK(value == 0 && error_code == 0);
-        }
-    }
-    for (member = 0; member < MEMBERS; ++member) {
-        int64_t value;
-        int error_code;
-        wf__completion_file_join(
-            &extra[member],
-            &value,
-            &error_code
-        );
-        CHECK(value == 0 && error_code == 0);
-    }
-    return 0;
-}
-
-static int test_ordered_logical_root_reuse_is_generation_bound(void) {
-    wf_completion_token tokens[2];
-    uint64_t logical_root = (uint64_t)(uintptr_t)&tokens[0];
-    uint64_t previous = 0;
-    unsigned iteration;
-    for (iteration = 0; iteration < 128; ++iteration) {
-        uint64_t batch = wf__completion_output_batch_begin(logical_root, 2);
-        size_t member;
-        CHECK(batch != 0 && batch != previous);
-        previous = batch;
-        for (member = 0; member < 2; ++member) {
-            wf__completion_output_batch_submit(
-                batch,
-                -1,
-                NULL,
-                0,
-                &tokens[member]
-            );
-        }
-        wf__completion_output_batch_commit(batch);
-        for (member = 0; member < 2; ++member) {
-            int64_t value;
-            int error_code;
-            wf__completion_file_join(
-                &tokens[member],
-                &value,
-                &error_code
-            );
-            CHECK(value == 0 && error_code == 0);
-        }
-    }
     return 0;
 }
 
@@ -2046,9 +1602,12 @@ static int test_native_contract_inventory(void) {
 static int test_darwin_directory_progress_is_internal(void) {
 #if defined(__APPLE__)
     int descriptors[2];
+    wf_completion_token token;
     unsigned char readiness = 'r';
     unsigned char byte = 0;
     int64_t position = 0;
+    int64_t value = -1;
+    int error_code = -1;
     wf_directory_host_calls = 0;
     wf_directory_poll_calls = 0;
     wf_directory_poll_descriptor = -1;
@@ -2069,6 +1628,26 @@ static int test_darwin_directory_progress_is_internal(void) {
     CHECK(wf_directory_poll_descriptor == descriptors[0]);
     CHECK(wf_directory_poll_events == POLLIN);
     CHECK(wf_directory_poll_timeout == -1);
+    CHECK(byte == 'd');
+    CHECK(position == 17);
+
+    wf_directory_host_calls = 0;
+    wf_directory_poll_calls = 0;
+    byte = 0;
+    position = 0;
+    CHECK(
+        wf__completion_directory_next_submit(
+            descriptors[0],
+            &byte,
+            1,
+            &position,
+            &token
+        ) == 1
+    );
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 1 && error_code == 0);
+    CHECK(wf_directory_host_calls == 3);
+    CHECK(wf_directory_poll_calls == 1);
     CHECK(byte == 'd');
     CHECK(position == 17);
     CHECK(close(descriptors[0]) == 0);
@@ -2150,22 +1729,17 @@ int main(int argc, char **argv) {
     RUN_TEST(test_capacity_and_product_state());
     RUN_TEST(test_generation_and_duplicate_terminal());
     RUN_TEST(test_exactly_one_terminal_under_race());
-    RUN_TEST(test_batch_admission_wake_is_not_capacity());
-    RUN_TEST(test_failed_batch_does_not_invent_capacity());
+    RUN_TEST(test_concurrent_single_claims_are_unique());
     RUN_TEST(test_unified_wake_epoch());
     RUN_TEST(test_one_epoch_wakes_every_announced_scheduler());
     RUN_TEST(test_drain_wakes_the_registered_token_owner());
     RUN_TEST(test_bounded_drain_and_lane_independence());
-    RUN_TEST(test_linux_native_free_batch_avoids_fallback_thread(argv[1]));
+    RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
     RUN_TEST(test_single_thread_file_progress_and_backpressure(argv[1]));
     RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
-    RUN_TEST(test_ordered_output_batch(argv[1]));
-    RUN_TEST(test_reserved_free_batch_inline_outcomes());
-    RUN_TEST(test_ordered_failure_releases_the_later_bundle(argv[1]));
-    RUN_TEST(test_ordered_partial_write_releases_the_later_bundle(argv[1]));
-    RUN_TEST(test_ordered_root_capacity_makes_progress());
-    RUN_TEST(test_ordered_batch_claims_are_all_or_none());
-    RUN_TEST(test_ordered_logical_root_reuse_is_generation_bound());
+    RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
+    RUN_TEST(test_bridge_capacity_falls_back_per_operation());
+    RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());

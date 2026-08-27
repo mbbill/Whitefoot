@@ -389,12 +389,12 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_moved_holder_consume_precedes_its_projected_call_write() {
-    let source = br#"fn overwrite['r](out: &uniq 'r i32) -> result: own unit writes('r) {
+    let source = br#"fn overwrite['r](out: &uniq 'r i32) -> result: own unit writes(out) {
   set deref(out) = 1_i32;
   return unit;
 }
 
-fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) contract {
+fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads(out), writes(out) contract {
   ensures ieq(result, deref(out));
 } {
   let before = deref(out);
@@ -402,7 +402,7 @@ fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) cont
   return before;
 }
 
-fn plain['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) {
+fn plain['r](out: &uniq 'r i32) -> result: own i32 reads(out), writes(out) {
   let before = deref(out);
   overwrite<'r>(out: move out);
   return before;
@@ -554,7 +554,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
-    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) contract {
+    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   define capacity = len(deref(destination));
   define admitted = ile(filled, capacity);
   requires admitted;
@@ -773,13 +773,13 @@ fn a_borrowed_formal_substitution_consumes_its_one_formal_deref() {
   value: i32;
 }
 
-fn observe['r](pair: &'r Pair) -> result: own i32 reads('r) contract {
+fn observe['r](pair: &'r Pair) -> result: own i32 reads(pair.value) contract {
   ensures ieq(result, deref(pair).value);
 } {
   return deref(pair).value;
 }
 
-fn caller['r](pair: &'r Pair) -> result: own i32 reads('r) contract {
+fn caller['r](pair: &'r Pair) -> result: own i32 reads(pair.value) contract {
   ensures ieq(result, deref(pair).value);
 } {
   let observed = observe<'r>(pair: pair);
@@ -800,14 +800,14 @@ fn a_moved_unique_actual_cannot_publish_a_stale_postcondition_relation() {
   changed: i32;
 }
 
-fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads('r), writes('r) contract {
+fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads(pair.kept), writes(pair.changed) contract {
   ensures ieq(result, deref(pair).kept);
 } {
   set deref(pair).changed = 1_i32;
   return deref(pair).kept;
 }
 
-fn caller(pair: own Pair) -> result: own i32 pure contract {
+fn caller(pair: own Pair) -> result: own i32 reads(pair.kept), writes(pair.changed) contract {
   ensures ieq(result, pair.kept);
 } {
   region 'r {
@@ -1244,7 +1244,7 @@ fn call_actual(outer: own i32) -> result: own unit pure {
   return unit;
 }
 
-fn projected(cell: own Cell, replacement: own i32) -> result: own unit pure {
+fn projected(cell: own Cell, replacement: own i32) -> result: own unit writes(cell.value) {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set cell.value = payload;
@@ -1414,13 +1414,13 @@ struct Values {
   items: array<u8, 2>;
 }
 
-fn from_box(owner: own box<Pair>) -> result: own i32 pure contract {
+fn from_box(owner: own box<Pair>) -> result: own i32 reads(owner) contract {
   ensures ieq(result, deref(owner).value);
 } {
   return deref(owner).value;
 }
 
-fn from_shared['r](owner: &'r Pair) -> result: own i32 reads('r) contract {
+fn from_shared['r](owner: &'r Pair) -> result: own i32 reads(owner.value) contract {
   ensures ieq(result, deref(owner).value);
 } {
   return deref(owner).value;
@@ -1446,7 +1446,7 @@ fn a_holder_alias_does_not_change_the_selected_return_term_identity() {
   value: i32;
 }
 
-fn from_shared_alias['r](owner: &'r Pair) -> result: own i32 reads('r) contract {
+fn from_shared_alias['r](owner: &'r Pair) -> result: own i32 reads(owner.value) contract {
   ensures ieq(result, deref(owner).value);
 } {
   let alias = owner;

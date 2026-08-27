@@ -250,6 +250,12 @@ fn collect_tail_chain(
                 return None;
             }
             let completion = completion_file_operation(*operation)?;
+            if !matches!(
+                completion,
+                CompletionFileOperation::Read | CompletionFileOperation::Write
+            ) {
+                return None;
+            }
             stages.push(TailStage {
                 function: ordinal,
                 kind: TailKind::System {

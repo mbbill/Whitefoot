@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "SYS-8: a short success is not end of input. A file shorter than the requested range yields ReadBytes(next) with start < next < end, and only the next call, which observes no available byte, states ReadEnd. Exactly [start, next) may have changed and the rest of the buffer is unchanged.";
   let page = buffer_new(8_u64, 90_u8);
   region 'a {
@@ -8,7 +8,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                let permit = reserve_file<'c>(factory: &uniq 'c files);
+                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     region 'f {
                       region 'd {

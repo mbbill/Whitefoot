@@ -62,7 +62,7 @@ use crate::{DeclarationId, NodePath, SemanticCompilerFailure, SyntaxCoordinate};
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EntailmentCallee {
     pub(crate) parameter_modes: Vec<CheckedMode>,
-    pub(crate) parameter_writes: Vec<bool>,
+    pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
 }
 
 impl EntailmentCallee {
@@ -72,20 +72,22 @@ impl EntailmentCallee {
     /// that actual. Slice element writes have no [SET-1] target form in the
     /// current compiler, so an owned slice parameter never projects a write.
     pub(crate) fn from_signature(
-        parameters: impl Iterator<Item = CheckedMode>,
-        writes: &[crate::DeclarationId],
+        parameters: impl Iterator<Item = (crate::DeclarationId, CheckedMode)>,
+        writes: &[super::model::CheckedStatePath],
     ) -> Self {
-        let parameter_modes = parameters.collect::<Vec<_>>();
+        let parameters = parameters.collect::<Vec<_>>();
         Self {
-            parameter_writes: parameter_modes
+            parameter_writes: parameters
                 .iter()
-                .copied()
-                .map(|mode| match mode {
-                    CheckedMode::Unique(region) => writes.contains(&region),
-                    CheckedMode::Own | CheckedMode::Shared(_) => false,
+                .map(|(declaration, _)| {
+                    writes
+                        .iter()
+                        .filter(|path| path.root == *declaration)
+                        .map(|path| path.fields.clone())
+                        .collect()
                 })
                 .collect(),
-            parameter_modes,
+            parameter_modes: parameters.into_iter().map(|(_, mode)| mode).collect(),
         }
     }
 }

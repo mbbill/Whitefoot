@@ -1,6 +1,6 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> written: own u64 writes('r), traps contract {
+const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out), traps contract {
   define out_length = len(deref(out));
   define source_length = len(source);
   requires ile(source_length, out_length);

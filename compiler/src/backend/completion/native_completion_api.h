@@ -22,13 +22,13 @@
 enum wf_completion_milestone {
     WF_COMPLETION_RESULT_READY = 1u << 0,
     WF_COMPLETION_PAYLOAD_RELEASED = 1u << 1,
-    WF_COMPLETION_AUTHORITY_RELEASED = 1u << 2,
+    WF_COMPLETION_RESOURCE_RELEASED = 1u << 2,
     WF_COMPLETION_TERMINAL = 1u << 3
 };
 
 #define WF_COMPLETION_OWNERSHIP_COMPLETE                                      \
     (WF_COMPLETION_RESULT_READY | WF_COMPLETION_PAYLOAD_RELEASED               \
-     | WF_COMPLETION_AUTHORITY_RELEASED | WF_COMPLETION_TERMINAL)
+     | WF_COMPLETION_RESOURCE_RELEASED | WF_COMPLETION_TERMINAL)
 
 typedef struct wf_completion_runtime wf_completion_runtime;
 

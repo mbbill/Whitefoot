@@ -2,7 +2,7 @@ struct Wrap {
   out: buffer<u8>;
 }
 
-fn probe['r](w: &uniq 'r Wrap, src: own buffer<u8>) -> result: own u64 writes('r) {
+fn probe['r](w: &uniq 'r Wrap, src: own buffer<u8>) -> result: own u64 writes(w.out) {
   let n = len(src);
   let i = 0_u64;
   let o = 0_u64;

@@ -55,18 +55,6 @@ pub(super) fn with_ir_for<ResultValue>(
     with_mutated_ir_for(source, inventory, |program| run(program))
 }
 
-pub(super) fn with_ir_overlap<ResultValue>(
-    source: &[u8],
-    overlap: OverlapLowering,
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        &IrProgram<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    with_mutated_ir_for_overlap(source, crate::Inventory::ACTIVE, overlap, |program| {
-        run(program)
-    })
-}
-
 fn with_mutated_ir_for<ResultValue>(
     source: &[u8],
     inventory: crate::Inventory,
@@ -120,7 +108,7 @@ fn with_mutated_ir_for_overlap<ResultValue>(
 }
 
 /// Reads one argument's bytes and returns their wrapping sum as the status.
-const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 allocates(heap) {
+const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 reads(value), allocates(heap) {
   region 'v {
     let length = host_bytes_len<'v>(value: &'v value);
     let bytes = buffer_new(length, 0_u8);
@@ -492,19 +480,27 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
 
 #[test]
 fn every_release_action_emits_exactly_its_contract() {
-    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {
+    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
     // The one native close attempt is the `DirectoryRead` release; `Args`,
-    // both `Output` owners, and the returned `ExitStatus` release with no host
-    // call at all [SYS-5].
-    assert_eq!(llvm.matches("call i32 @close(i32").count(), 1);
-    assert!(llvm.contains("declare i32 @close(i32)"));
+    // both `Output` owners, `FileFactory`, and the returned `ExitStatus`
+    // release with no host call at all [SYS-5].
+    assert_eq!(
+        llvm.matches("call i32 @wf__completion_file_close_direct(i32")
+            .count(),
+        1
+    );
+    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
     // A logical consume and a source detach are explicit releases that emit
     // no code; the drop marker is still present for each owner.
-    assert_eq!(llvm.matches("  ; drop %v").count(), 4);
+    assert_eq!(llvm.matches("  ; drop %v").count(), 5);
+    assert!(
+        llvm.contains("i32 %cwd, i32 1, i32 2, i1 true"),
+        "the bootstrap must supply the proof-only FileFactory after stderr"
+    );
 }
 
 #[test]
@@ -652,11 +648,12 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
 #[test]
 fn a_target_without_directory_relative_resolution_rejects_component_opening() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+      let permit = reserve_file<'c>(factory: &uniq 'c files);
+      match open_file<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
         Ok(value: file) => {
         }
         Err(error: problem) => {
@@ -687,11 +684,11 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -714,11 +711,11 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
         Ok(value: next) => {
           if ieq(next, 3_u64) {
             return exit_status(code: 0_u8);
@@ -760,9 +757,10 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 
 #[test]
 fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'c {
-    match open_directory_source<'c>(directory: &'c cwd) {
+    let permit = reserve_file<'c>(factory: &uniq 'c files);
+    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
       }
       Err(error: problem) => {
@@ -793,7 +791,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "fstat",
+            "wf__completion_file_status_direct",
             144,
             4,
         ),
@@ -803,7 +801,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "fstat$INODE64",
+            "wf__completion_file_status_direct",
             144,
             4,
         ),
@@ -813,7 +811,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0000_4000,
             0x0000_c000,
             0x0000_8800,
-            "fstat",
+            "wf__completion_file_status_direct",
             128,
             16,
         ),
@@ -823,7 +821,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0001_0000,
             0x0003_0000,
             0x0002_0800,
-            "fstat",
+            "wf__completion_file_status_direct",
             144,
             24,
         ),
@@ -893,11 +891,11 @@ fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
 
 #[test]
 fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd out), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -980,7 +978,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
         ));
     });
 
-    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args), writes(out), allocates(heap) {
+    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
@@ -992,7 +990,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1042,11 +1040,12 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+      let permit = reserve_file<'c>(factory: &uniq 'c files);
+      match open_file<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
         Ok(value: file) => {
         }
         Err(error: problem) => {
@@ -1068,29 +1067,24 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             let llvm = emit_llvm_for_target(program, target)
                 .expect("open_file must qualify and emit")
                 .into_string();
-            let status = target.file_status_symbol();
-            assert!(llvm.contains(&format!(
-                "call i32 @{status}(i32 %descriptor, ptr %file.status)"
-            )));
-            assert!(llvm.contains("%file.kind = and i32 %mode, 61440"));
-            assert!(llvm.contains("%regular = icmp eq i32 %file.kind, 32768"));
-            assert!(llvm.contains("br i1 %regular, label %live, label %kind.failure"));
-            assert_eq!(
-                llvm.matches("call i32 @close(i32 %descriptor)").count(),
-                2,
-                "each provisional-error path must make one close attempt"
+            assert!(llvm.contains("define private i1 @wf.sys.reserve_file.v1() alwaysinline"));
+            assert!(llvm.contains("call i1 @wf.sys.reserve_file.v1()"));
+            assert!(
+                !llvm.contains("@wf.sys.open_file.v1(i1"),
+                "the proof-only permit must not enter the qualified open ABI"
             );
-            assert!(llvm.contains(
-                "%inspection.close = call i32 @close(i32 %descriptor)\n  \
-                 br label %inspection.error"
-            ));
-            assert!(llvm.contains(
-                "%kind.close = call i32 @close(i32 %descriptor)\n  \
-                 br label %kind.select"
-            ));
-            assert!(!llvm.contains("%inspection.released"));
-            assert!(!llvm.contains("%kind.released"));
-            assert!(!llvm.contains("tcb.defect:"));
+            assert!(llvm.contains("i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"));
+            assert!(llvm.contains("@wf.sys.open_file.completion"));
+            assert!(llvm.contains("i32 3, label %kind.directory.return"));
+            assert!(llvm.contains("i32 4, label %kind.other.return"));
+            assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("S_ISREG(status.st_mode)"));
+            assert_eq!(
+                crate::COMPLETION_FILE_ADAPTER_SOURCE
+                    .matches("(void)close(descriptor);")
+                    .count(),
+                2,
+                "status failure and nonregular classification each close once"
+            );
             let _optimized = host_optimized_module(&llvm);
         }
     });
@@ -1098,14 +1092,15 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 
 #[test]
 fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region 'c {
-    match open_directory_source<'c>(directory: &'c cwd) {
+    let permit = reserve_file<'c>(factory: &uniq 'c files);
+    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
         region 'l {
           region 'd {
-            let outcome = directory_next<'l, 'd>(source: &'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+            let outcome = directory_next<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
           }
         }
       }
@@ -1123,7 +1118,11 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
             .expect("Darwin must qualify and emit directory_next")
             .into_string()
     });
-    assert_eq!(llvm.matches("%record.extent = zext").count(), 1);
+    assert_eq!(
+        llvm.matches("%record.extent = zext").count(),
+        2,
+        "the direct wrapper and completion mapper validate the same native record"
+    );
     assert!(llvm.contains("%bounded.batch = icmp ule i64 %filled, %extent"));
     assert!(llvm.contains("br i1 %bounded.batch, label %normalize, label %tcb.defect"));
     assert!(llvm.contains("%sized = icmp uge i64 %record.extent, %needed"));

@@ -277,7 +277,7 @@ fn element_position_replace_through_a_unique_holder_accepts() {
   fill: u64;
 }
 
-fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a), writes('a) {
+fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = ilt(count, cap);

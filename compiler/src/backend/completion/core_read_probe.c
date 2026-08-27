@@ -22,10 +22,9 @@
  * Isolated generic-core and positioned-read qualification probe.
  *
  * This executable deliberately links only runtime.c and file_adapter.c.  It
- * must remain independent of bridge.c, the generated-code ABI, and every
- * Ordered Output implementation.  The Makefile fixes the complete source
- * whitelist and supplements it with an nm guard after these behavioural
- * checks pass.
+ * must remain independent of bridge.c and the generated-code ABI.  The
+ * Makefile fixes the complete source whitelist and supplements it with an nm
+ * guard after these behavioural checks pass.
  */
 
 #define CHECK(condition)                                                      \

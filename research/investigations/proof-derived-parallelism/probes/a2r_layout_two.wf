@@ -22,7 +22,7 @@ fn build(depth: own u64, w: own f64) -> result: own box<LNode> allocates(heap), 
   return box_new(move branch);
 }
 
-fn measure_words['w, 'k](words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads('w 'k), traps {
+fn measure_words['w, 'k](words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads(words, kern), traps {
   let min_width = 0.0_f64;
   let max_width = 0.0_f64;
   let k = 0_u64;
@@ -80,7 +80,7 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn layout['b, 'w, 'k](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads('b 'w 'k), writes('b), traps {
+fn layout['b, 'w, 'k](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words, kern), writes(node), traps {
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));

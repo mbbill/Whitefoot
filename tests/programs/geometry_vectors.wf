@@ -4,7 +4,7 @@ struct Vector3<T: Float> {
   z: T;
 }
 
-fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T pure {
+fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T reads(left.x, left.y, left.z, right.x, right.y, right.z) {
   let total = 0_T;
   let x_product = fmul.strict(left.x, right.x);
   let after_x = fadd.strict(total, x_product);

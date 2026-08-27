@@ -471,7 +471,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() {
     let conjoined =
-        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
@@ -490,7 +490,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let separate =
-        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
@@ -534,7 +534,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
     let source =
-        br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+        br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
@@ -559,7 +559,7 @@ command fn main() -> status: own ExitStatus pure {
     // sibling pair eligible.
     assert!(summary.claims.is_empty());
     let else_edge =
-        br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+        br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
@@ -593,7 +593,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn band_over_derived_bindings_proves_no_unnamed_bound() {
     let uncovered =
-        br#"fn read_three['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+        br#"fn read_three['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let far = at +wrap 2_u64;
   let room = len(deref(input));
@@ -621,7 +621,7 @@ command fn main() -> status: own ExitStatus pure {
         summary.obligations
     );
     let disjoined =
-        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);

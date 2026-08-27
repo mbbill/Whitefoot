@@ -51,7 +51,7 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn layout['b](node: &uniq 'b box<LNode>, inh: own f64) -> result: own f64 reads('b), writes('b) {
+fn layout['b](node: &uniq 'b box<LNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));

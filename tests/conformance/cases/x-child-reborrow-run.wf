@@ -2,7 +2,7 @@ struct Counter {
   value: u64;
 }
 
-fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r), traps {
+fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(out), writes(out), traps {
   let room = len(deref(out));
   let first_ok = ilt(0_u64, room);
   claim first_in_range: first_ok because "premises: main supplies a two-byte buffer through the parent and child unique borrows\nderivation: index 0_u64 is strictly below that preserved buffer length\nconclusion: first_ok is true\nchecker gap: ENT does not publish the borrowed buffer length through the child call\nconsumers: the following child-reborrow write needs this upper Range component";
@@ -10,7 +10,7 @@ fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('
   return unit;
 }
 
-fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r), traps {
+fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(out), writes(out), traps {
   region 'byte_child {
     write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
   }
@@ -21,13 +21,13 @@ fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('
   return unit;
 }
 
-fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
+fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
   let next = deref(counter).value +wrap 1_u64;
   set deref(counter).value = next;
   return unit;
 }
 
-fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
+fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
   region 'counter_child {
     bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
   }

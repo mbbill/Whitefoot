@@ -471,10 +471,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
     let source = br#"contract LengthSum {
-  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads('left 'right);
+  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads(x, y);
 }
 
-fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads('b 'a) {
+fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads(second, first) {
   let first_length = len(deref(first));
   let second_length = len(deref(second));
   return first_length +wrap second_length;
@@ -499,10 +499,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_alpha_equality_includes_slice_type_regions() {
     let source = br#"contract ByteReader {
-  fn first['source](values: own slice<'source, u8>) -> result: own u8 reads('source);
+  fn first['source](values: own slice<'source, u8>) -> result: own u8 reads(values);
 }
 
-fn read_first['input](bytes: own slice<'input, u8>) -> result: own u8 reads('input) {
+fn read_first['input](bytes: own slice<'input, u8>) -> result: own u8 reads(bytes) {
   let room = len(bytes);
   let ok = ilt(0_u64, room);
   if ok {
@@ -531,10 +531,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_ordinal_swap_is_not_alpha_equal() {
     let source = br#"contract FirstLength {
-  fn length['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads('left);
+  fn length['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads(x);
 }
 
-fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads('b) {
+fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads(second) {
   return len(deref(second));
 }
 
@@ -587,5 +587,63 @@ command fn main() -> status: own ExitStatus pure {
         SemanticIssueKind::BorrowedSliceResult {
             mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",
         },
+    );
+}
+
+#[test]
+fn contract_effect_paths_compare_parameter_and_field_ordinals() {
+    let accepted = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+contract Touch {
+  fn touch['contract](value: &uniq 'contract Pair) -> result: own unit reads(value.left), writes(value.right);
+}
+
+fn apply['implementation](input: &uniq 'implementation Pair) -> result: own unit reads(input.left), writes(input.right) {
+  let observed = deref(input).left;
+  set deref(input).right = observed;
+  return unit;
+}
+
+conform Pair: Touch {
+  touch = apply;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(accepted, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "contract paths must alpha-normalize parameter and field ordinals: {outcome:?}"
+        );
+    });
+
+    let mut wrong = accepted.to_vec();
+    let row = b"reads(input.left), writes(input.right)";
+    let at = wrong
+        .windows(row.len())
+        .position(|window| window == row)
+        .expect("fixture contains the implementation row");
+    wrong.splice(
+        at..at + row.len(),
+        b"reads(input.left), writes(input.left)".iter().copied(),
+    );
+    let assignment = b"set deref(input).right = observed;";
+    let at = wrong
+        .windows(assignment.len())
+        .position(|window| window == assignment)
+        .expect("fixture contains the implementation assignment");
+    wrong.splice(
+        at..at + assignment.len(),
+        b"set deref(input).left = observed;".iter().copied(),
+    );
+    assert_rule(
+        &wrong,
+        SemanticRule::Fn3,
+        SemanticIssueKind::IncompatibleConformanceFunction,
     );
 }

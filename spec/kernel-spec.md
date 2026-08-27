@@ -3,8 +3,8 @@
 Status: CANDIDATE v0.37 supersedes v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (137 remain); grammar productions +0/-0 (74 remain), while the `effect` production loses two alternatives and admits direct formal-capability operands in `reads` and `writes`; unique fixed lowercase grammar atoms net -2 because `external` and `blocks` become ordinary IDENT spellings; writer operation spellings +3/-3 (`read_at`, `open_directory_source`, and `directory_next` replace the cursor-shaped spellings); one system nominal spelling changes from `DirectoryList` to `DirectorySource`; runtime-trap families +0/-0; entry forms +0/-0; contract block forms +0/-0; system operations +0 and declaration records -5, from 199 to 194, because positioned read adds `file_offset` while the backend-only `Interrupted` and `WouldBlock` outcome constructors and their four fields are removed; exception clauses +0/-0. Existing effect, system, release, trap, and overlap rules are amended. Outside interaction is represented by owned capabilities, ordinary borrows, capability-parameterized effect rows, and compiler-derived family fragment summaries. Trusted operation contracts, not source effects, state suspension and completion milestones. Direct system calls may participate in [PAR-1] when their memory, loans, authority fragments, dataflow, and exits permit it. No writer-visible world region, blocking call family, callback, task, future, or scheduling marker is added.
-Selection ground: first-principles derivation recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`. The rejected experimental revision globally serialized independent capabilities and measured approximately 24 to 30 percent slower in its recorded comparisons. The candidate instead preserves one completion-only language model, makes family authority rather than a global world object decide concurrency, and gives a false claim no cost or gate on a correct execution path.
+META-5 delta declaration: numbered rules +0/-0 (137 remain); grammar productions +1/-0 (75 remain), because `reads` and `writes` stop accepting REGIONID and the new `effect_path` production admits only formal-rooted static struct paths; unique fixed lowercase grammar atoms net -2 because `external` and `blocks` become ordinary IDENT spellings; writer operation spellings +4/-3 (`read_at`, `open_directory_source`, and `directory_next` replace the cursor-shaped spellings, and `reserve_file` is added); two opaque system nominal spellings are added (`FileFactory` and `FilePermit`) while one changes from `DirectoryList` to `DirectorySource`; runtime-trap families +0/-0; entry forms +0/-0; contract block forms +0/-0; system operations +1 and declaration records +4, from 199 to 203, because positioned read adds `file_offset`, each of four open operations adds one `permit` parameter, file reservation adds one operation, one region, and one parameter, and the backend-only `Interrupted` and `WouldBlock` outcome constructors and their four fields are removed; exception clauses +0/-0. Existing effect, system, release, trap, and overlap rules are amended. Ordinary owned values, borrows, places, and one formal-path effect row represent every Whitefoot-observable state transition, including system I/O. Trusted operation contracts state only suspension, completion milestones, and target qualification. Direct system calls participate in [PAR-1] under the same effect, loan, dataflow, and exit permission as user calls. No writer-visible world region, capability category, blocking call family, callback, task, future, or scheduling marker is added.
+Selection ground: first-principles derivation recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`. The rejected experimental revision globally serialized independent outside actions and measured approximately 24 to 30 percent slower in its recorded comparisons. A later capability-root and family-fragment candidate avoided that global serialization but duplicated ownership, alias, and concurrency semantics already present in ordinary places and loans. This candidate supersedes both: it preserves one completion-only target model, lets ordinary ownership and effect-path overlap decide concurrency, and gives a false claim no cost or gate on a correct execution path.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
@@ -106,8 +106,8 @@ An out-of-range integer, a leading-zero integer, a noncanonical float spelling, 
 
 [LEX-1] Lexicon policy: surface names label checked invariants, stated in this document self-containedly.
 Names are never borrowed from backend IR vocabulary (e.g. `noalias`), which names lowering consequences, not source invariants; and a name is borrowed from another language's convention only where a divergence census shows the semantics genuinely match.
-Ruling of record: the exclusive borrow mode is `uniq` (uniqueness-type lineage), not `mut` (Rust divergence: exclusivity is the invariant; mutation is only its permission, and the name breaks under future interior-mutability capabilities).
-DEFERRED with recorded delta: the two-axis mode vocabulary (exclusivity x write-permission, adding frozen/exclusive-read and capability-gated shared-write).
+Ruling of record: the exclusive borrow mode is `uniq` (uniqueness-type lineage), not `mut` (Rust divergence: exclusivity is the invariant; mutation is only its permission, and the name breaks under a future explicitly bounded interior-mutation form).
+DEFERRED with recorded delta: the two-axis mode vocabulary (exclusivity x write-permission, adding frozen/exclusive-read and an explicitly bounded shared-write form).
 
 ## 3. Grammar
 
@@ -376,7 +376,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | nominal-type TYPEID | source `struct_decl` and `enum_decl` names; PRE-1 nominal types; admitted system nominal types [SYS-1]; lexical type `gparam`s overlay this domain while live | `type` TYPEID and the TYPEID suffix of a FORM-5 generic numeric literal admit a live type generic where that form requires one, otherwise a nominal type |
 | constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; admitted system constructors [SYS-1], classified as struct-constructor or enum-variant | the leading TYPEID of `construct` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
 | contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the optional bound TYPEID of a type `gparam` and the contract TYPEID of `conform_decl` |
-| REGIONID | `region_params` and `region_stmt` | every REGIONID in `type`, `mode`, `targ`, `effect`, and `borrow_expr` |
+| REGIONID | `region_params` and `region_stmt` | every REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` |
 | LABEL | `loop_stmt`; `for_stmt` | `break_stmt` |
 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
@@ -610,7 +610,7 @@ For `p` rooted at a named `const` item [CONST-2]: any region `'a` is legal; immu
 A counted binder may be copied and may be shared-borrowed only into a region introduced inside its body, but it may not be moved, uniquely borrowed, or otherwise transferred to a callee as a writable place; source writes are independently forbidden by [SET-1].
 These restrictions are checked for each enclosing loop, so nesting never grants an outer binding or region to an inner body.
 
-[OWN-12] Calls (OWN-CALL cluster): at a call, declared region parameters are substituted with the caller's region arguments, which must be live; argument borrows are live accesses of their resolved places for the duration of the call and are judged under OWN-5 (two `&uniq` arguments whose resolved places overlap are an error); the callee's effect row, instantiated at the actual regions, is checked against the caller's live borrows under OWN-5.
+[OWN-12] Calls (OWN-CALL cluster): at a call, declared region parameters are substituted with the caller's region arguments, which must be live; argument borrows are live accesses of their resolved places for the duration of the call and are judged under OWN-5 (two `&uniq` arguments whose resolved places overlap are an error); the callee's effect paths are projected through the corresponding actual places under [EFF-2] and checked against the caller's live borrows under OWN-5. Region substitution controls loan liveness and type equality only; it never supplies effect identity.
 When an argument is a statement-scoped or candidate-position child reborrow [OWN-6], its suspended ancestor holder is excluded from this effect-row overlap check, since the child, not the ancestor, holds the claim for the call; every non-ancestor live borrow is still checked.
 
 [OWN-13] Match ownership: a non-place expression scrutinee is an owned temporary (moved into the match).
@@ -668,14 +668,14 @@ A `const` item [CONST-2] is never dropped.
 Every other frame-resident owned value [STOR-1] has no release action.
 Each of these memory-reclamation actions carries the empty effect row.
 
-A compiler-owned resource family additionally fixes exactly one release action in its normative family contract.
-That action carries an ordinary memory-effect row and compiler-owned target and authority contracts.
-The memory row and the authority access are the two inputs to [EFF-2]'s release contribution; the target contract states whether the action may suspend; and the family contract states which fragment the release consumes and which milestone retires it.
-A type whose action carries an empty memory row may still contribute `reads(parameter)` or `writes(parameter)` when its release reaches a capability supplied by the enclosing function.
+A compiler-owned system resource type additionally fixes exactly one release action in its normative type contract.
+That action carries one ordinary state-effect row and one compiler-owned target contract.
+The state-effect row is [EFF-2]'s release contribution; the target contract states whether the action may suspend and which completion milestone releases each retained loan.
+The release row uses the table-local subject `owner`. When release consumes state supplied by one formal parameter path, [EFF-2] substitutes that path for `owner`; when it consumes a fresh local owner, the action remains local and contributes no enclosing effect.
 No source construct selects, replaces, supplies, suppresses, reorders, duplicates, or observes a release action, and no release action is conditional on a source declaration.
 
 There are no finalizers in the writer-registered sense: no source declaration, annotation, attribute, contract, conformance, or binding attaches a writer-defined action to a value's release, and this specification defines no construct that could.
-This clause does not forbid the compiler-owned release action above, which is fixed by the language and its family contracts rather than registered by a writer.
+This clause does not forbid the compiler-owned release action above, which is fixed by the language and its system type contracts rather than registered by a writer.
 
 A successful SET-1 assignment replaces one copy value and therefore derives no drop, release, finalizer, or cleanup edge; an affine `set` target is rejected before checked-program construction [STOR-1].
 A successful [SET-2] commit likewise derives no drop, release, finalizer, or cleanup edge: the previous value is not destroyed, and its later release, if its binding is abandoned, is that binding's ordinary scope-exit action under this rule.
@@ -963,13 +963,14 @@ The language defines no numeric frame limit, and `array_new` remains pure becaus
 
 ## 8. Functions, generics, contracts
 
-[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the named result's mode and type, memory- and capability-parameterized effect row, region parameters, the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates with their complete/unasserted/S4-blinded dispositions, the derived [PRV-2] provenance column, and compiler-derived target and family-fragment summaries.
+[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the named result's mode and type, one formal-path state-effect row, region parameters, the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates with their complete/unasserted/S4-blinded dispositions, the derived [PRV-2] provenance column, one compiler-derived result-state routing summary, and one compiler-derived target summary.
 The result binder's spelling is mandatory but ignored by callable-signature equality and denotes no runtime storage.
 The written templates are checked interface claims rather than trusted declarations; a caller consults only their verified finite summaries and never a callee body.
 The provenance column is derived from the checked body and closed-unit fixed point, never written.
-The written capability operands state which formal capability values the function reads or changes. The checker derives the exact same set from direct system contracts, releases, and calls and checks it in both directions under [EFF-2].
-The target summary states `never-suspends` or `may-suspend`; the family-fragment summary refines each written capability access into the family fragment, coexistence relation, attribution rule, and completion milestones of every reachable system action.
-Those summaries are derived from exact system contracts and the finite concrete call graph, never written, inferred from a spelling, or weakened by a declaration. They distinguish, for example, an ordered send reservation from an exclusive control transition even though both are written as `writes(connection)` at the source boundary.
+The written effect paths state which parameter-supplied state the function observes or changes. The checker derives the exact same set from body accesses, direct system contracts, releases, and calls and checks it in both directions under [EFF-2].
+The result-state routing summary records, for each ordinary owned state leaf the result may carry, whether that value is fresh or is the same value supplied by one or more formal parameter leaves. It is derived from existing move, construction, match, return, and ownership flow; it adds no source syntax, identity, parent relation, permission, or runtime field. A caller uses it only to preserve those existing value identities when a later effect or compiler-derived release acts through the returned owner. A result with no state leaf has the empty summary.
+The target summary states `never-suspends` or `may-suspend` and, for each reachable suspending action, the applicable `result-ready` components, `loan-released(formal path)` facts, and `terminal`; a release with no writer result has no `result-ready` milestone.
+That summary is derived from exact system contracts and the finite concrete call graph, never written, inferred from a spelling, or weakened by a declaration. It describes suspension and ownership handoff only; it grants no access and supplies no concurrency or alias judgment.
 Adding a protected parameter datum or payload projection to that column is a caller-visible interface change, exactly as strengthening the requirement GoalTemplate or RelationTemplate is.
 A generic function carries the same boundary with its written type and const parameters, and each concrete [FN-2] instance substitutes them before its calls and body are re-checked.
 A `fn_sig` has neither kind of template.
@@ -1089,13 +1090,13 @@ The bound function has no `generics` child or `contract_block`.
 Region parameters are permitted and are not a `generics` child.
 Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, result mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals.
 The two mandatory result-binder spellings are ignored by that equality.
-This replacement applies inside modes, types, and effect payloads; type components then use the preceding exact concrete-type identity recursively.
-After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to six capabilities: the set of declared read regions, the set of declared write regions, the set of read capability-parameter ordinals, the set of written capability-parameter ordinals, the allocation set whose members are `heap` and each `arena` region, and the presence or absence of `traps`; `pure` is six empty capabilities.
-Region entries use their alpha-mapped declaration identities and capability operands use their zero-based parameter ordinals.
-Equality requires all six capabilities to be equal.
-A `fn_sig` has no body and no compiler-derived release, so it declares these capabilities without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a capability the bound function contributes only through release.
-Compiler-derived target and authority summaries are not writer declarations and do not participate in source contract equality. After a conformance selects a concrete bound function, ordinary closed-world propagation uses that function's derived summaries at every call.
-Source occurrence order and repeated occurrences do not affect this equality, but no capability may be omitted or added; there is no effect subtyping or semantic implication.
+This replacement applies inside modes, types, and arena-allocation payloads; type components then use the preceding exact concrete-type identity recursively.
+After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to four components: the set of declared read paths, the set of declared write paths, the allocation set whose members are `heap` and each alpha-mapped `arena` region, and the presence or absence of `traps`; `pure` is four empty components.
+An effect path uses its root parameter's zero-based ordinal followed by its static source-struct field ordinals. Parameter and field spellings do not create signature identity.
+Equality requires all four components to be equal.
+A `fn_sig` has no body and no compiler-derived release, so it declares these components without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a path the bound function contributes only through release.
+The compiler-derived target summary is not a writer declaration and does not participate in source contract equality. After a conformance selects a concrete bound function, ordinary closed-world propagation uses that function's derived summary at every call.
+Source occurrence order and repeated occurrences do not affect this equality, but no path, allocation, or trap component may be omitted or added; there is no effect subtyping or semantic implication.
 Parameter identifiers and region identifiers themselves need not have equal spellings.
 There is no parameter or result variance, mode coercion, effect subtyping, omitted effect, default, receiver, implicit subject parameter, or `Self` substitution.
 Any mismatch is an FN-3 rejection.
@@ -1184,7 +1185,7 @@ Rejection-rate measurement is a registered experiment.
 That declaration is the unit's sole entry and must carry the exact fixed `command` program-kind marker.
 It is nongeneric, declares no region parameters, and has no `contract_block`.
 Its mandatory result binder is writer-named and its written result is exactly `own ExitStatus`.
-Its written effect row is any subset of capability-parameter `reads` and `writes` targeting its own labelled inputs, `allocates(heap)`, and `traps`, in [EFF-1] canonical order; `pure` is the empty subset and no REGIONID or arena allocation is admitted.
+Its written effect row is any subset of `reads` and `writes` paths rooted in its own labelled inputs, `allocates(heap)`, and `traps`, in [EFF-1] canonical order; `pure` is the empty subset and no arena allocation is admitted.
 The entry is invoked exactly once by program start [PROG-3].
 A source `call` whose callee resolves to it is a hard FN-7 rejection: its standard inputs are supplied only at start and source has no second entry route.
 No other `fn_decl` may carry `program_kind` or `input_label`, and a main without `command` is not an alternate entry form.
@@ -1194,9 +1195,10 @@ The closed standard-input table for kind `command` is:
 | ordinal | label | written mode and type | supplied value |
 |---|---|---|---|
 | 0 | `command.args` | `own Args` | the immutable invocation-argument snapshot |
-| 1 | `command.cwd` | `own DirectoryRead` | the read capability for the initial working directory |
+| 1 | `command.cwd` | `own DirectoryRead` | the initial working-directory state |
 | 2 | `command.stdout` | `own Output` | the standard output sink |
 | 3 | `command.stderr` | `own Output` | the standard error sink |
+| 4 | `command.files` | `own FileFactory` | the source of one-shot file-open permits |
 
 Every value parameter of main carries an `input_label` and selects one row of that table.
 Its label tail equals that row's tail and the written mode and type equal the row exactly; the `command` prefix is fixed by grammar and there is no conversion, default, or inferred mode [TYPE-4, TYPE-5].
@@ -1208,12 +1210,12 @@ An unknown, repeated, or out-of-order label, a mode or type differing from its r
 No label tail is a member of [OP-1]'s `ModeWords`, because [GRAM-1] would form `command.` plus that tail as one operation-name token.
 The system declaration domain is admitted to every compilation unit under [SYS-3]; entry validation therefore never changes which system names exist or lets an invalid entry steal an earlier undeclared-name diagnostic.
 
-The one canonical byte sequence for a complete four-input entry header whose body immediately returns is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {` because the normal return edge performs the directory capability's compiler-derived close.
+The one canonical byte sequence for a complete five-input entry header whose body immediately returns is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {` because the normal return edge performs the directory state's compiler-derived close while the file factory's logical consume has an empty row.
 The [FORM-2] rule renders it without amendment; `program_kind`, `input_label`, and `result_binding` introduce no formatting boundary.
 
-The entry states a program's complete standard-input access in its own signature, so no system value reaches another function except as a written parameter [FN-1]: there is no ambient authority, and no entry-supplied aggregate that source can own, name, or pass.
+The entry states a program's complete standard-input access in its own signature, so no system value reaches another function except as a written parameter [FN-1]: there is no ambient system state, and no entry-supplied aggregate that source can own, name, or pass.
 There is no global state and no `'static` region in v0: ambient mutable globals would (a) erode the noalias fact base every function otherwise gets from parameter-only reachability (P0; carding backlog: GlobalsAA-class evidence), (b) create hidden inter-function channels invisible in signatures (W3, FN-1 signatures-as-trust-unit), and (c) pre-seed shared state for the future concurrency layer (T1).
-Immutable `const` items [CONST-2] are permitted and are not global mutable state: being read-only they never erode the noalias fact base (reads of frozen rodata add no aliasing hazard), create no hidden inter-function channel (the value is source-determined in the closed unit), and are Shareable-by-construction [CAP-1]; no `'static` region is introduced (borrows of const-rooted places obey the OWN-10 const clause), and there remains no writer-mutable global and no `static mut` analog.
+Immutable `const` items [CONST-2] are permitted and are not global mutable state: being read-only they never erode the noalias fact base (reads of frozen rodata add no aliasing hazard), create no hidden inter-function channel (the value is source-determined in the closed unit), and may be shared under ordinary immutable borrows [CAP-1]; no `'static` region is introduced (borrows of const-rooted places obey the OWN-10 const clause), and there remains no writer-mutable global and no `static mut` analog.
 A standard input is not global state: it is one written parameter of one function, owned and moved under the ordinary rules.
 
 A missing entry is an FN-7 rejection at `BundleRoot` [DIAG-1].
@@ -1341,30 +1343,33 @@ No candidate is individually committed or retracted and no second flow walk or n
 Every successful selected-return proof and caller establishment extends [DIAG-2]'s one derivation DAG.
 Postconditions add no runtime operation, hidden check, assume, optimizer license, serialized certificate, portable identity, alternate lowering path, or ABI field.
 
-## 9. Effects (gated on exemplar carding before ratification)
+## 9. Effects (candidate unified-state revision)
 
 [EFF-1] Row grammar: the `effects` and `effect` productions of the fence below, in exactly this canonical order (reads, writes, allocates, traps).
 
 ```wf-ebnf EFF-1
 effects := "pure" | effect ("," effect)*
-effect := "reads" "(" (REGIONID | IDENT)+ ")" | "writes" "(" (REGIONID | IDENT)+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "traps"
+effect := "reads" "(" effect_path ("," effect_path)* ")"
+        | "writes" "(" effect_path ("," effect_path)* ")"
+        | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "traps"
+effect_path := IDENT ("." IDENT)*
 ```
 
 A category appears at most once in one row.
 `pure` is the unique spelling of the empty row.
 Frame residency (STOR-1) is not an allocation by definition.
-The spellings `external` and `blocks` are not grammar atoms, effects, retired spellings, or reserved words. They satisfy IDENT wherever any other lowercase identifier does.
+The spellings `external`, `blocks`, `memory`, `world`, and `capability` are not grammar atoms, effects, retired spellings, or reserved words. They satisfy IDENT wherever any other lowercase identifier does.
 
-Within `reads` and `writes`, a REGIONID names ordinary Whitefoot storage reached through that borrow lifetime and an IDENT names one direct formal capability parameter of the same signature. Each IDENT must resolve to that parameter and its complete type must carry one system capability root or facet under [SYS-2]; a local, result binder, unrelated declaration, copy-only value, or parameter with no capability contract is an EFF-1 rejection.
-A capability operand names logical authority rather than the parameter binding's storage. It is valid for `own`, shared-borrow, and exclusive-borrow parameters alike, so `writes(output)` remains expressible when `output` is owned and `writes(source)` remains independent of the lifetime used to borrow `source`.
-This candidate admits a direct formal IDENT only. A field or payload capability path requires a later grammar and projection delta; no implicit whole-aggregate target is inferred.
+Every `effect_path` is rooted at one formal value parameter of the same callable. Each suffix selects one statically known source-struct field from the preceding type. A root resolving to a local, result binder, unrelated declaration, or non-parameter declaration is an EFF-1 rejection. An unknown field, an enum payload, a dynamic subscript, a dereference spelling, and every other place form are outside this candidate grammar. A bare parameter names the complete state that parameter supplies; a field path names only that structural substate.
 
-The row describes ordinary Whitefoot memory, capability authority, allocation, and the sole writer-reachable trap. It does not describe a host scheduling mechanism.
-Outside interaction is represented by system capability values, the capability operands above, and the compiler-derived target and family-fragment summaries of [FN-1, SYS-2]. Those summaries refine a concrete capability supplier instead of collapsing every operation into one payload-free category.
+For a borrow parameter, its effect path names the borrowed referent rather than the local reference representation. For a direct `slice<'r, T>` parameter, it names the viewed backing state rather than the descriptor. For an `own` parameter, the path names the incoming owned state. Merely moving, returning, or structurally repacking that value does not observe or change it; an operation which reads or changes its contents exhibits the corresponding path. A REGIONID never names effect identity: regions state loan liveness and outlives relations only.
+
+The row describes observations and changes of ordinary Whitefoot state, allocation, and the sole writer-reachable trap. It does not distinguish memory from outside state and does not describe a host scheduling mechanism. Opaque system resources, buffers, aggregates, factories, permits, clocks, and Sources all use the same path, exactness, call-substitution, and ownership rules. No type or path carries a writer-visible capability category.
+`reads(path)` means the operation observes that state. `writes(path)` means the operation replaces or advances that state. They remain independent exact facts: an operation which observes prior state while changing it names the path in both categories, while a complete overwrite need only write it.
 Whether a target uses a native completion queue, readiness, polling, a bounded blocking helper, an interrupt, or inline completion is target data [QUAL-1], not a source effect.
 
 [EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its body-syntactic contribution and its release contribution.
-The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains a `claim` or a call to an operation or function whose selected row includes `traps`; it exhibits reads, writes, and allocations per the operation table and borrow modes the body uses.
+The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains a `claim` or a call to an operation or function whose selected row includes `traps`; it exhibits reads, writes, and allocations from the resolved accesses, calls, and allocation operations the body uses.
 Proof-required exact integer operations, integer domain queries, proved allocation operations, and proved system-range operations contribute no `traps`, because source acceptance precedes lowering and admits no runtime fallback.
 A bare operator inside a `const` [CONST-1] is const evaluation under `const-reject`, not a trapping-mode operation, and contributes nothing to any effect row.
 An optional `contract_block` consists only of erased definitions and proof clauses [FN-8, FN-9]; it contributes no read, write, allocation, or trapping category.
@@ -1374,79 +1379,64 @@ A `for_stmt` endpoint and body contribute their ordinary source occurrences unde
 Its compiler-owned captures, binder initialization, header comparison, and representable hidden update contribute no read, write, allocation, or trapping effect.
 Function-body attribution and call-boundary projection are separate judgments.
 
-While one function body is checked, every exhibited read or write is attributed after holder resolution and [OWN-5] slice-view provenance.
-An ultimate storage root in an own-mode binding of the current function contributes no region read or write, even when reached through a local borrow or local slice view.
-A named const root and `immutable-const` likewise contribute no region read; the storage is permanently read-only [CONST-2].
-Caller storage reached through an incoming borrow parameter in formal region `'r` contributes `reads('r)` or, for an admitted access through `&uniq`, `writes('r)`.
-A formal-slice origin naming any incoming parameter whose direct type is `slice<'r, T>` contributes `reads('r)` when its viewed storage is read, regardless of whether the descriptor parameter's mode is `own`, `&'d`, or `&uniq 'd`.
-The descriptor's mode region `'d` still governs the descriptor borrow, but dereferencing that holder does not replace the viewed data origin with the descriptor place.
-The slice descriptor itself is not the viewed storage root, and [SET-1] admits no write through it.
-A multi-origin slice access contributes the union from every origin by these same clauses.
-Binding, moving, passing, returning, reborrowing, and slicing never replace an ultimate origin with a local region spelling.
+While one function body is checked, every exhibited read or write is attributed after ordinary place resolution, holder resolution, and [OWN-5] slice-view provenance.
+An access to a borrowed referent, direct slice backing, or incoming owned state contributes the most precise formal-rooted static struct path [EFF-1] admits for that state. A dynamic element or range access maps to its nearest statically nameable enclosing path because [EFF-1] admits no dynamic selector.
+A read through a shared, exclusive, or owned parameter may exhibit `reads(path)`. A write may exhibit `writes(path)` only when ordinary ownership already grants exclusive or owned access to that state. The effect path grants no permission, changes no loan extent, and cannot narrow a borrow of a whole aggregate to one field.
+A named const root and `immutable-const` contribute no read effect because their state is permanently fixed [CONST-2]. Moving, returning, or repacking an incoming owner without inspecting or changing it contributes no effect. A fresh local own binding contributes no enclosing read or write effect, even when reached through a local borrow, local slice, or later local move.
 
-At a call boundary, each callee or operation `reads` or `writes` entry first retains its formal region declaration identity.
-Before any region-argument substitution, that identity selects each occurrence in a formal parameter's written mode or direct `slice` type and therefore the corresponding actual argument projection.
-A mode-region occurrence projects a borrow actual through its resolved descriptor or referent place under [OWN-6].
-A direct-slice-type region occurrence projects the actual slice value's complete [OWN-5] origin set; when the actual is a borrow of a slice descriptor, holder resolution first reaches that descriptor value and then uses its underlying slice origins.
-If one formal declaration occurs in both the mode and direct slice type, both projections are conservatively included.
-Only after these occurrence-selected projections are fixed are origins and the effect entry mapped into the caller.
-Distinct formal declarations remain distinct for this selection even when the call supplies the same caller region for both; substituting region spellings first never widens the supplier set.
-Current-function own roots and immutable const storage contribute no enclosing region effect; roots supplied by the current function's incoming borrow or slice parameters contribute their formal origin regions.
-A later read through an `own slice` call result uses FN-1's signature-derived substituted origin union and therefore exhibits every current-function formal-region read that any permitted returned source would exhibit; the callee body cannot narrow this at the caller.
-Thus a callee write through a local child reborrow of incoming `&uniq 'r` storage makes the caller exhibit `writes('r)`, while the same callee write through a child reborrow of current-function owned storage adds no caller region effect.
-A local region spelling never appears in an enclosing function effect row merely because it was used to form a borrow, reborrow, slice, or arena value.
+A direct `slice<'r, T>` parameter names its viewed backing state rather than its descriptor. Reading through it contributes `reads(parameter)`; a slice derived from an incoming buffer or slice parameter retains that formal-rooted origin, and a multi-origin slice contributes the deduplicated union of every formal-rooted origin. The descriptor's own mode region still governs its loan, but no lifetime spelling enters an effect row.
+Binding, moving, passing, returning, borrowing, reborrowing, and slicing preserve the existing resolved place identity. This is the same identity tracking already required by ownership and move checking; EFF-2 adds no parent link, result ancestry, resource root, or second provenance system.
 
-Capability attribution is a distinct projection over logical authority.
-Each system operation and release names its capability-parameter ordinal and read or write use in [SYS-2]. At a direct system call that ordinal selects the corresponding actual value's compiler-retained capability origin. A move preserves the origin, a borrow refers to the same origin, a successful factory result mints the fresh origin its contract declares, and a family facet preserves its declared common root and role.
-At a user call, each capability operand in the callee row selects the corresponding actual parameter and follows that actual's retained origin in the same way. If the origin is one direct capability parameter of the current function, the call exhibits `reads(parameter)` or `writes(parameter)`. If it is a fresh local root, the action is local to that root unless its mint contract also names a parent coordination domain; an action which changes the minted object's externally reachable identity or content then projects to that declared parent origin as well.
-No spelling, native handle, path equality, or missing alias record supplies an origin. An origin or mint projection which the closed system and function contracts cannot determine is a source-independent unsupported compiler capability, never an empty effect or a global fallback identity.
+At a user or system call, each callee effect path selects its root formal's actual argument and appends its static field suffix to that actual's resolved place. Holder resolution then reaches the borrowed referent, and a slice actual projects through its complete [OWN-5] origin set. A projection rooted in one of the current function's formals contributes the corresponding current-function path. A projection rooted only in fresh local state contributes no enclosing effect.
+Thus a callee write through a child reborrow of incoming `&uniq` storage reaches the incoming formal path, while the same callee write through fresh local storage frames out. Equal lifetime arguments never merge two suppliers because lifetimes do not participate in this substitution.
 
-Compiler-derived release participates in the same attribution. Releasing an incoming owned capability exhibits the release contract's read or write of that formal parameter; releasing a fresh local capability retains its local or parent projection. This contribution is checked against the written row in both directions and is retained even though no release call appears in source.
+Resource-producing calls follow the same rule. For example, `reserve_file<'r>(factory: &uniq 'r factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
+Framing an action on fresh local state out of the enclosing signature means only that it contributes no formal-rooted boundary path. The checked call still retains its instantiated nonempty effect on that local place. Eliminating it requires the ordinary closed-state, escape, result, release, and observer proof which justifies deleting any stateful call; absence from the enclosing row alone proves none of those facts. A target operation is lowered with its qualified physical side effects intact. The mandatory direct write on the creating factory, namespace, allocator, or permit prevents the enclosing call from becoming `pure` merely because the produced owner stayed local [EFF-5].
 
 The release contribution collects the effects of compiler-derived release.
-Under [STOR-3] each type fixes one compiler-derived release action together with that action's memory-effect row.
+Under [STOR-3] each type fixes one compiler-derived release action together with that action's state-effect row.
 For the function being checked, the release contribution is the union of the effect rows of every release action that may run on any edge of the conservative structural normal-control graph defined in [FN-1].
 A release contributes when it may run on at least one such edge; running on only some paths never weakens it, and no path condition, constant evaluation, discharged law, optimizer fact, or backend reachability judgment removes an edge from that graph.
 An owner moved or returned on one `match` arm and released on another therefore contributes its release row to the enclosing function, and so does a release derived on only one arm of any other branch, one `give` edge, one propagation edge, or one loop exit.
 On each normal edge every owner has exactly one disposition — moved or returned, consumed by an explicit consuming operation, or released by exactly one compiler-derived release action — so one owner contributes at most one release per edge, and an owner consumed on that edge contributes no release there.
 Release actions run only on normal edges; a trap runs none and contributes nothing [EFF-4].
-A release-derived memory or capability effect inside a callee belongs to that callee's row and reaches the caller only through the ordinary call-boundary projection of the callee's declared row; it is never attributed to two functions. The release's target and family-fragment summaries propagate separately under [FN-1].
+A release action substitutes its released owner's resolved identity for the type contract's table-local `owner` path. Releasing an incoming owner, including one first moved through local bindings, therefore reaches that incoming formal path; releasing a fresh local owner frames out. A release-derived effect inside a callee belongs to that callee's row and reaches the caller only through the ordinary call-boundary projection of the callee's declared row; it is never attributed to two functions. The release's suspension and milestone summary propagates separately under [FN-1].
 
-This attribution reads only the memory and capability release rows [STOR-3] fixes, and it does not retrofit memory reclamation into effect rows.
-A `box<T>` drop, a `buffer<T>` drop, an `arena<'r, T>` region release, and the absent drop of a `const` item [CONST-2] each carry the empty release row and therefore contribute nothing to any function's exhibited row; only a resource family whose contract fixes a nonempty release row contributes one.
-The family-fragment summary refines this effect-row projection. Its closed-world derivation maps the same capability supplier to the exact caller place, root, role, fragment, coexistence relation, attribution, and milestones at each call and composes that mapping through user calls [FN-1, SYS-2].
+This attribution reads only the release rows [STOR-3] fixes, and it does not retrofit memory reclamation into effect rows.
+A `box<T>` drop, a `buffer<T>` drop, an `arena<'r, T>` region release, and the absent drop of a `const` item [CONST-2] each carry the empty release row and therefore contribute nothing to any function's exhibited row; only a system resource type whose contract fixes a nonempty release row contributes one.
 
 A [SET-1] commit is one write under this attribution, and a [SET-2] commit is one read and one write of the same target origin.
 A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment.
 Effects exhibited while evaluating the target and right-hand side contribute normally; an accepted target subscript is discharged [OP-4] and contributes no `traps`.
-Rows are checked both ways against the exhibited memory and capability row defined above: undeclared-but-exhibited and declared-but-unexhibited are both errors, and an entry contributed only by the release contribution is checked exactly like one written in the body.
+Rows are checked both ways against the exhibited row defined above: undeclared-but-exhibited and declared-but-unexhibited are both errors, and an entry contributed only by the release contribution is checked exactly like one written in the body.
 A mismatch involving the release contribution has no offending source occurrence, so it is a hard error citing EFF-2 using `SourceNode` at that function's `effects` node, with `SourceCoordinate` equal to that node's complete checked half-open source extent; the diagnostic additionally renders the parameter or binding whose release contributed the category, and the restructuring `declare the release effects of every resource this function may release, or move the owner out`.
 When more than one owner establishes that premise, the reported one follows DIAG-1's implementation-defined deterministic traversal.
 A function whose body and release contribution are empty may therefore declare `pure` while carrying an erased contract.
 An explicit body `claim` still contributes `traps` to that caller.
 
 Canonically, a nongeneric function whose only parameter is `own ReadFile` and whose complete body is exactly `return unit;` declares `writes(file)`.
-Its compiler-derived release contributes that capability write, a `may-suspend` target action, and an exclusive whole-resource fragment on the function-return edge. Declaring `pure` is an undeclared-but-exhibited EFF-2 rejection.
+Its compiler-derived release contributes that state write and a `may-suspend` target action on the function-return edge. Declaring `pure` is an undeclared-but-exhibited EFF-2 rejection.
 This shape cannot be reduced further: [FN-1] requires the body's normal exit to be unreachable, so a function with an empty body is separately rejected and is not the canonical case.
 
 [EFF-3] A call whose row is `pure` and whose derived target summary is `never-suspends` licenses deduplication and reordering with equal arguments.
 Elimination of an unused such call additionally requires a termination proof; v0 provides no termination checker, so unused calls are not eliminated.
-The source spelling `pure` excludes traps and all memory reads, memory writes, capability reads, capability writes, and allocations; it does not promise termination.
-No optimization may erase, duplicate, speculate, or reorder a capability action except where that action's family contract and [EFF-5] license the exact transformation.
+The source spelling `pure` excludes traps, state reads, state writes, and allocations; it does not promise termination.
+A call that exhibits `writes(path)` may remain observable even when its result is unused. A call on fresh local state retains that instantiated effect even though it frames out of the enclosing signature. No optimization may erase, duplicate, speculate, or reorder either call unless ordinary effect-path overlap, closed-state, escape, ownership, control, result, release, and surviving-observer proofs establish the exact transformation; system state receives no separate effect category or observability tag.
 
 [EFF-4] Trap is abort: there is no unwinding and no post-violation language cleanup.
 The exact [DIAG-3] trap record is the sole mandatory post-violation language output.
 
-[EFF-5] Every outside action obeys its resource family's authority and attribution contract.
-Each action projects to one concrete logical capability root and one family-defined fragment. Separate successful capability-producing operations mint separate logical roots unless their contract explicitly preserves one source root. Host paths, hard links, duplicated descriptors, redirected streams, and other environment-created aliases neither merge nor separate logical roots in the language proof.
+[EFF-5] Every Whitefoot-observable system interaction is one ordinary state access under [EFF-1] and ordinary ownership under [OWN-1] through [OWN-12]. There is no second outside-state permission, root, fragment, coexistence relation, or global world object.
 
-Two simultaneously live fragments have exactly one declared relation. `free` fragments may proceed and complete in either order. `ordered` fragments receive their family attribution in the order fixed by the contract, while target completion and writer resumption may occur in either order. `exclusive` fragments may not be admitted simultaneously; a later action waits until the conflicting fragment's authority-release milestone.
-No global order exists between different logical roots. Source order creates an outside order only where ordinary value, control, ownership, memory, or one family contract creates it.
+A system operation whose behavior or result can depend on evolving state carries the occurrence through at least one `own` or `&uniq` state parameter and exhibits `writes(path)` for that transition. Other inputs whose own Whitefoot-visible state stays stable for the complete loan may be shared and read normally; no shared object receives an interior-mutation exception. In particular, a file open consumes and writes a one-shot `FilePermit`, while the `DirectoryRead` and path or component bytes are stable selector inputs borrowed through `&`. An operation which creates a system resource or consumes finite quota must receive the factory, allocator, permit, or other changed state as an ordinary parameter and exhibit its write directly. No source operation obtains mutable system state from ambient process context.
 
-The compiler derives every user function's authority summary from direct system contracts and exact call substitution. Unknown root, fragment, relation, attribution, or milestone information fails closed for overlap and optimization but does not reject otherwise valid source.
-A target handle, descriptor number, source spelling, or backend queue is never authority evidence. Conversely, two distinct owned capability roots are distinct language authorities even if the surrounding environment later makes them contact the same physical object.
+The returned owner of a successful resource-producing operation is a fresh ordinary value. It carries no hidden ancestry to the parameter that produced it. The producing operation's direct parameter effect records the factory or namespace transition, while later actions on the returned local value frame out in the enclosing function exactly as actions on fresh local memory do [EFF-2]. Moves and borrows use their existing ownership identity and add no language feature.
 
-Reordering, deduplication, coalescing, hoisting, sinking, speculation, and elimination are licensed only when the complete memory, target, authority, attribution, milestone, and control contracts preserve the same program observations. Facts-off compilation remains correct and may choose the sequential submission schedule without changing source acceptance.
+The trusted target adapter, including any C implementation, must honor the same ownership boundary. Submission may retain only the loans recorded for that call; it may neither copy an affine owner nor access a retained referent after the target contract publishes `loan-released(path)` for that referent. Native completion rings, readiness tables, helper mailboxes, and device queues are target-private protocol state and are never exposed as ordinary shared Whitefoot storage [QUAL-1].
+
+Two actions may overlap only when [PAR-1] or [PAR-2] proves that their ordinary places, loans, value dependencies, and exits permit it. Separate owned values are separate language places even when host paths, hard links, duplicated descriptors, redirected streams, or another process make their native implementations contact the same physical object. Those environment aliases neither merge nor separate Whitefoot places.
+
+Reordering, deduplication, coalescing, hoisting, sinking, speculation, and elimination are licensed only when the complete state effects, loans, target milestones, result dependencies, and control flow preserve the same program observations. Facts-off compilation remains correct and may choose the sequential submission schedule without changing source acceptance.
 
 ## 10. Errors
 
@@ -1994,16 +1984,16 @@ Identical bound source bytes reaching the same failing claim site produce byte-i
 Dynamic call-stack attribution, artifact identity, successful-check reports, lifetime reports, check-density reports, and optimizer-development reports are not normative outputs.
 An implementation may provide additional developer output only on a separately selected channel that cannot alter, prefix, suffix, or replace the mandatory trap record.
 
-## 13. Capabilities and execution overlap (capability stub; concurrency layer pending)
+## 13. Execution overlap
 
-[CAP-1] Type-level capability predicates of the Send/Sync class exist in the kernel vocabulary: `Shareable` (safe to share across threads) and `Sendable` (safe to transfer). v0 defines no thread construct, so no kernel type is required to declare them; the predicates reserve the vocabulary the concurrency layer will bind.
-Data-race impossibility is D1 law; general race conditions are out of scope (C004 amended scope).
+[CAP-1] The kernel defines no writer-visible capability category and no system-specific concurrency permission. `own`, `&`, `&uniq`, place overlap, and the ordinary effect row are the complete authority and interference vocabulary available to [PAR-1] and [PAR-2].
+This version defines no thread construct. A later thread construct must derive transfer and sharing permission from these same ownership rules and the represented type; it may not add hidden shared mutation to an opaque system type. Data-race impossibility is D1 law; general race conditions are out of scope (C004 amended scope).
 
 [PAR-1] An implementation may execute two statements of one block with overlapping execution only when the permission this rule defines holds for that ordered pair.
 Permission holds for the ordered pair (s1, s2), where s1 precedes s2 in one block, exactly when all of the following hold.
 Each of s1 and s2 is a `let_stmt` whose selected `ordinary_let_rhs` is one call of a declared function [FN-1] or one system operation [SYS-2]; a recursive or mutually recursive user callee is admitted on the same terms as any other.
 No argument of s2 reads a binding s1 defines.
-The two calls have disjoint footprints under [OWN-7]: one call's written footprint is the places its callee row's `writes` entries reach through its actual arguments under the [EFF-2] call-boundary projection, together with the places its consumed `own` arguments name and the caller region each `allocates(arena 'r)` entry names after region substitution, and its read footprint is the places that row's `reads` entries reach under the same projection; the written footprint of s1 overlaps neither footprint of s2, and the written footprint of s2 overlaps neither footprint of s1.
+The two calls have disjoint footprints under [OWN-7]: one call's written footprint is the places its callee row's `writes` paths reach through its actual arguments under the [EFF-2] call-boundary projection, together with the places its consumed `own` arguments name and the caller region each `allocates(arena 'r)` entry names after region substitution, and its read footprint is the places that row's `reads` paths reach under the same projection; the written footprint of s1 overlaps neither footprint of s2, and the written footprint of s2 overlaps neither footprint of s1.
 Evaluating a statement's own argument expressions is part of that statement and therefore part of the overlap, so each call's written footprint also overlaps no place the other statement's argument expressions read; taking the address of a place is not reading it, and both directions are required because which statement's argument evaluation an overlap moves is the implementation's choice.
 Each statement additionally holds, for the duration of its call, a loan on the resolved place of every argument written as a borrow [OWN-12]: a `&uniq 'r` argument holds an exclusive loan and a `&'r` argument a shared loan, whatever that argument's parameter region does or does not carry in the callee's row.
 A loan of one statement denies permission against an overlapping loan or footprint element of the other exactly where [OWN-5] denies the corresponding pair of a live loan and an overlapping access: an exclusive loan denies against every overlapping loan, written or read footprint element, and argument-expression read of the other statement, and a shared loan denies against every overlapping exclusive loan and written footprint element; two overlapping shared loans deny nothing.
@@ -2011,27 +2001,26 @@ The reason is [OWN-5] itself: every borrow this rule judges is live and usable a
 A footprint element whose caller place the implementation does not resolve overlaps every place, and so does a place read by an argument expression whose caller place the implementation does not resolve, and so does the loan of a borrow-written argument whose caller place the implementation does not resolve, so an unresolved element denies permission rather than granting it.
 Every statement written between s1 and s2 is part of the permitted window and is judged by these same conditions: it is an ordinary value `let_stmt`, a `let_stmt` whose selected right-hand side is one call judged exactly as a member is, or a `set` or `replace` statement; its written, read, and argument-expression footprints and its loans are formed exactly as a member's are; and no written footprint, read footprint, or loan of a member may stand against any other window statement, nor any intervening statement's against a member, where the conditions above deny the pair; two intervening statements owe each other nothing, because both admitted schedules run the intervening statements in source order on the thread that did not take the hand-out, so no two of them ever overlap — with one exception on the member side, owed to the same pair of admitted schedules as the argument-evaluation sentence above: no obligation runs between an intervening statement's written footprint or loan and s1's own argument-expression reads, because either admitted schedule completes s1's argument evaluation before any intervening statement runs.
 A statement of any other form between the members denies permission, a statement carrying an exit edge denies permission, and a non-call statement that forms a borrow denies permission, so every loan live inside a permitted window is one an argument of a judged call holds.
-Every call and compiler-derived release in the window has a complete target and family-authority summary [FN-1, SYS-2]. Every pair of simultaneously live authority fragments has the `free` or `ordered` relation under [EFF-5]; an `exclusive` pair denies permission. An unknown capability supplier, fragment, coexistence relation, attribution rule, or required milestone denies permission rather than becoming a global action or an empty footprint.
-The target summary does not itself deny permission. A `may-suspend` member selects completion lowering when the implementation actualizes the window; a target that cannot actualize that complete lowering executes the otherwise valid window sequentially or reports an unsupported target capability, never a source rejection.
+Every call and compiler-derived release in the window has a complete target summary [FN-1, SYS-2]. The summary does not grant or deny permission; effects and loans already decide interference. A `may-suspend` member selects completion lowering when the implementation actualizes the window, and each retained argument loan remains live until that member's corresponding `loan-released(path)` milestone. A target that cannot actualize that complete lowering executes the otherwise valid window sequentially or reports an unsupported target lowering, never a source rejection.
 Every normal continuation of s1 reaches s2, so no edge out of s1 leaves the enclosing block or function without first reaching s2, and every normal continuation of each intervening statement likewise reaches s2.
 Permission for a chain of three or more statements is exactly permission for every ordered pair the chain contains.
 
-Under a permitted overlap every observable is one permitted by executing s1 and s2 in source order under the same family contracts: bindings and ordinary memory equal the source-order result, and each outside occurrence retains the logical root, fragment, attribution, and ordering [EFF-5] assigns it. Target completion order, the lane that harvests a completion, and writer resumption order are not observations unless an ordinary dependency exposes their results in that order.
+Under a permitted overlap, bindings and every Whitefoot state place equal the source-order result. Writes to distinct places have no additional cross-place order merely because their target implementations are externally observable [EFF-5]. Target completion order, the lane that harvests a completion, and writer resumption order are not observations unless an ordinary dependency exposes their results in that order.
 That identity is conditional on contract compliance, exactly as [SCOPE-3]'s freedom from undefined behavior is conditional on its trusted computing base.
 For an execution in which no executed `claim` is false it holds in every execution, not in a typical execution or in some execution.
 An execution in which some executed `claim` is false is erroneous: the program has violated the sole writer-reachable language runtime contract [SCOPE-4], and this rule then requires exactly the following of that execution.
 The process writes exactly one complete [DIAG-3] record, naming one `claim` whose predicate evaluated false, and then aborts the whole process without unwinding and without language cleanup [TRAP-1].
 No second record, and no partial or interleaved record, is written.
-Which such `claim` that record names may depend on the schedule. The schedule may also select which already permitted outside actions became visible before process termination; those actions retain their own family attribution and safety contracts and are not rolled back.
-Nothing else narrows for an erroneous execution: it has no undefined behavior [SCOPE-3], and no overlapped pair reaches one ordinary-memory place or one exclusive authority fragment except as the conditions above admit.
+Which such `claim` that record names may depend on the schedule. The schedule may also select which already permitted state transitions became visible before process termination; those transitions retain their system operation contracts and are not rolled back.
+Nothing else narrows for an erroneous execution: it has no undefined behavior [SCOPE-3], and no overlapped pair reaches one state place or violates one ordinary loan except as the conditions above admit.
 No permission, submission, completion, or fast path reads a trap latch or pays any other cost whose purpose is to stabilize this erroneous execution. A correct program executes no false `claim`, so the impossible branch cannot narrow or surcharge its execution [SCOPE-4].
 The number of workers, the identity of the host thread that executes a statement, the schedule, and whether an overlap was performed at all are not observable, and no rule of this specification is stated in terms of them.
 An implementation that overlaps nothing therefore conforms: this permission is never an obligation, and no program depends on it being taken.
-When an execution of s1 or s2 reaches a false-claim trap instead of its continuation, what survives is exactly what the erroneous-execution clauses above fix: one complete [DIAG-3] record, abort without unwinding or cleanup, unconditional memory safety, and only family-valid outside actions. This rule does not promise source-order intermediate values or a deterministic partial outside trace for the defective execution.
+When an execution of s1 or s2 reaches a false-claim trap instead of its continuation, what survives is exactly what the erroneous-execution clauses above fix: one complete [DIAG-3] record, abort without unwinding or cleanup, unconditional memory safety, and only system-contract-valid state transitions. This rule does not promise source-order intermediate values or a deterministic partial outside trace for the defective execution.
 Exhaustion of the execution resources an implementation spends on overlapping is a resource condition under [SCOPE-3] and is not an observable of this rule.
 This rule depends on [DIAG-3]'s record shape: that record names no worker, host thread, or dynamic call stack, so a permitted overlap cannot change its bytes.
 Every construct of this specification defines one total sequential order over its operand evaluations, and this rule is a consumer of that order rather than a relaxation of it.
-This rule binds neither [CAP-1] predicate, because its disjointness condition admits concurrent access only to places no permitted overlap writes.
+This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no additional sharing classification.
 
 [PAR-2] An implementation may execute two iterations of one `for_stmt` body with overlapping execution, and may recombine that loop's accumulator across them, only when the permission this rule defines holds for that counted loop.
 Permission holds for a `for_stmt` L exactly when all of the following hold, writing B for L's body and forming every written, read, and operand-read footprint of a statement of B exactly as [PAR-1] forms one.
@@ -2040,10 +2029,10 @@ That operation is one operation fixed for the accumulator across the whole of B,
 Every place a footprint of B writes is either that accumulator's whole place or is rooted in a binding B itself introduces, so no two iterations write one place except through that accumulator.
 Every place a footprint of B holds an exclusive loan on — its statements' argument borrows holding loans exactly as [PAR-1]'s do — is rooted in a binding B itself introduces, so no two iterations hold exclusive loans on one place; a shared loan needs no condition of its own, because the written condition above leaves the accumulator as the one enclosing place any iteration writes and an accumulator any borrow reaches is refused by the accumulator condition; and a non-call statement of B that forms a borrow denies permission, exactly as one denies a [PAR-1] window.
 A footprint element whose caller place the implementation does not resolve overlaps every place, so an unresolved element denies permission rather than granting it.
-Every call and compiler-derived release in B has a complete target and authority summary, and for every two distinct iterations every simultaneously live authority-fragment pair has the `free` or `ordered` relation under [EFF-5]. An `exclusive` or unknown pair denies permission. A `may-suspend` action requires a completion lowering that retains every iteration's payload and authority until its declared milestones; an implementation without that lowering executes the loop sequentially.
+Every call and compiler-derived release in B has a complete target summary. Effects and ordinary loans decide interference between iterations exactly as they do between [PAR-1] calls. A `may-suspend` action requires a completion lowering that retains every iteration's argument loans until its declared milestones; an implementation without that lowering executes the loop sequentially.
 Every normal continuation of every statement of B reaches L's compiler-owned binder update, so no statement of B is a `return_stmt`, a `give_stmt`, a `break_stmt` naming L or a loop enclosing L, or a `let_stmt` selecting `propagate_let_rhs` [FN-1, GIVE-1, ERR-3].
 
-Under a permitted overlap every ordinary-memory observable is the one produced by executing L's iterations in index order, and every outside occurrence retains the root, fragment, attribution, and order its family contract assigns under [EFF-5].
+Under a permitted overlap every state-place observable is the one produced by executing L's iterations in index order. Distinct places gain no extra cross-place order from the target mechanism [EFF-5].
 Write a0 for the accumulator's value on the true header edge entering the first executed iteration, and t0 through tm for the values the second operand of its writes evaluates to, in the order those writes execute across L's iterations taken in index order.
 Source order computes the accumulator's value at L's continuation as the left-nested application of that operation to a0 then t0 through tm where its writes place the accumulator in the first operand position, and as the right-nested application to t0 through tm then a0 where they place it in the second.
 An implementation may instead apply that operation over any binary tree whose leaves are a0 and t0 through tm, each occurring exactly once and in any order, together with any number of leaves holding that operation's identity element.
@@ -2057,7 +2046,7 @@ An implementation that overlaps nothing therefore conforms: this permission is n
 When an execution of one iteration does not reach its continuation, the overlapped execution produces exactly the observables the index-order execution produces before that point and produces none after it.
 Exhaustion of the execution resources an implementation spends on overlapping is a resource condition under [SCOPE-3] and is not an observable of this rule.
 Permission over the iterations of a `for_stmt` written inside B is exactly this rule applied to that loop; no rule of this specification joins two index ranges into one iteration space.
-This rule binds neither [CAP-1] predicate, because its conditions admit concurrent access only to places no permitted overlap writes and to one accumulator whose every write it recombines under one associative total operation.
+This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no additional sharing classification for the accumulator or any other place.
 
 ## 14. Gated family (writer-visible stub)
 
@@ -2164,7 +2153,7 @@ That ordinal is the entry's identity in a diagnostic origin [DIAG-1].
 
 The notation here is normative record notation and is not writable source.
 
-Eight opaque nominal types: `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, and `DirectorySource`.
+Ten opaque nominal types: `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, `DirectorySource`, `FileFactory`, and `FilePermit`.
 Each contributes one nominal-type entry and no constructor entry.
 An opaque type has no writer-visible field, variant, literal, size, alignment, or representation.
 It is a complete written `type` under [GRAM-3] as a bare TYPEID with no `targs`, carries no region and no type parameter, and is therefore region-free under [STOR-5].
@@ -2239,64 +2228,47 @@ enum ListOutcome {
 }
 ```
 
-Fifteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
+Sixteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
 
 ```
-fn args_count['a](args: &'a Args) -> result: own u64 reads('a args);
-fn arg_get['a](args: &'a Args, position: own u64) -> result: own Result<HostString, ArgError> reads('a args);
-fn host_bytes_len['v](value: &'v HostString) -> result: own u64 reads('v);
-fn host_copy_bytes['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads('v 'd), writes('d);
-fn host_utf8_len['v](value: &'v HostString) -> result: own Result<u64, Utf8Error> reads('v);
-fn host_copy_utf8['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads('v 'd), writes('d);
+fn args_count['a](args: &'a Args) -> result: own u64 reads(args);
+fn arg_get['a](args: &'a Args, position: own u64) -> result: own Result<HostString, ArgError> reads(args);
+fn host_bytes_len['v](value: &'v HostString) -> result: own u64 reads(value);
+fn host_copy_bytes['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination);
+fn host_utf8_len['v](value: &'v HostString) -> result: own Result<u64, Utf8Error> reads(value);
+fn host_copy_utf8['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value, destination), writes(destination);
 fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
-fn open_read['c, 'p](root: &'c DirectoryRead, path: &'p RelativePath) -> result: own Result<ReadFile, IoError> reads('c 'p root);
-fn read_at['f, 'd](file: &'f ReadFile, destination: &uniq 'd buffer<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome reads('f 'd file), writes('d);
-fn write_once['o, 's](output: &'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads('o 's), writes(output);
+fn open_read['c, 'p](permit: own FilePermit, root: &'c DirectoryRead, path: &'p RelativePath) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(permit);
+fn read_at['f, 'd](file: &'f ReadFile, destination: &uniq 'd buffer<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome reads(file, destination), writes(destination);
+fn write_once['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output);
 fn exit_status(code: own u8) -> result: own ExitStatus pure;
-fn open_directory['c, 'n](root: &'c DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads('c 'n root);
-fn open_directory_source['c](directory: &'c DirectoryRead) -> result: own Result<DirectorySource, IoError> reads('c directory);
-fn directory_next['l, 'd](source: &'l DirectorySource, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own ListOutcome reads('l 'd), writes('d source);
-fn open_file['c, 'n](root: &'c DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads('c 'n root);
+fn open_directory['c, 'n](permit: own FilePermit, root: &'c DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(permit, root, name), writes(permit);
+fn open_directory_source['c](permit: own FilePermit, directory: &'c DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(permit, directory), writes(permit);
+fn directory_next['l, 'd](source: &uniq 'l DirectorySource, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own ListOutcome reads(source, destination), writes(source, destination);
+fn open_file['c, 'n](permit: own FilePermit, root: &'c DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit);
+fn reserve_file['f](factory: &uniq 'f FileFactory) -> result: own FilePermit reads(factory), writes(factory);
 ```
 
-The inventory is therefore exactly sixteen nominal types, forty enum-variant constructors, sixty-three variant fields, fifteen operations, twenty-one operation region parameters, and thirty-nine operation value parameters.
+The inventory is therefore exactly eighteen nominal types, forty enum-variant constructors, sixty-three variant fields, sixteen operations, twenty-two operation region parameters, and forty-four operation value parameters.
 
-Each operation's declared region entries are fixed by its own signature: every borrow parameter of formal region `'r` contributes `reads('r)`, and every `&uniq 'r` memory destination through which the operation changes ordinary Whitefoot storage additionally contributes `writes('r)`.
-Each capability operand is fixed separately by the operation's authority table: a snapshot or lookup fragment contributes `reads(parameter)`, while an ordered, exclusive, lifecycle, or content-changing fragment contributes `writes(parameter)`.
-The rows above are exactly those memory and capability derivations; a system operation's row is declaration data and is never derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
+Each operation's state access is fixed by its own signature. Immutable invocation and host-string state is observed through shared parameters and contributes `reads(parameter)`. Every buffer or system resource the operation changes is supplied through `&uniq` and contributes `writes(parameter)`. The lifetime on each borrow states only how long that loan lives and never appears in the row.
+The rows above are exactly those state accesses; a system operation's row is declaration data and is never derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
 Each operation's result components and writable `&uniq` parameter components additionally carry the following closed [PRV-1] provenance classes as declaration data; these classes do not add to or modify an operation signature or effect row.
 No system operation allocates.
 
-Each operation additionally carries one compiler-owned target contract and one family-authority contract. These records are not source syntax and do not change contract equality.
-The target contract is `never-suspends` for `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`, `host_utf8_len`, `host_copy_utf8`, `relative_path`, and `exit_status`. It is `may-suspend` for `open_read`, `read_at`, `write_once`, `open_directory`, `open_directory_source`, `directory_next`, and `open_file`.
-A `may-suspend` operation is a finite one-shot operation. Its logical record exists before target handoff and carries separate `result-ready`, `payload-released`, `authority-released`, and `terminal` milestone facts. In this first system slice all four facts are published by the same exactly-once terminal transition. Keeping them distinct is required contract structure, not a promise that later families publish them together.
-The operation result becomes an ordinary usable source value only when `result-ready`, and every borrow held for the call remains live until the corresponding payload or authority milestone. The call's ownership-complete requirement is the conjunction of result-ready, payload-released, and authority-released.
+Each operation additionally carries one compiler-owned target contract. This record is not source syntax and does not change contract equality.
+The target contract is `never-suspends` for `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`, `host_utf8_len`, `host_copy_utf8`, `relative_path`, `exit_status`, and `reserve_file`. It is `may-suspend` for `open_read`, `read_at`, `write_once`, `open_directory`, `open_directory_source`, `directory_next`, and `open_file`.
+A `may-suspend` operation is a finite one-shot operation. Its logical record exists before target handoff and carries separate `result-ready`, one `loan-released(path)` fact for every retained borrow, and `terminal` milestones. In this first system slice all applicable facts are published by the same exactly-once terminal transition. Keeping them distinct is required contract structure, not a promise that later operations publish them together.
+The operation result becomes an ordinary usable source value only when its `result-ready` fact holds, and each borrow held for the call remains live until its own `loan-released(path)` fact holds. The call's ownership-complete requirement is the conjunction of its result fact and every loan-release fact the caller regains.
 
-The first-slice authority projections are:
-
-```wf-sys
-| operation | capability supplier and fragment | simultaneous relation |
-|---|---|---|
-| `args_count` | `args`: immutable invocation snapshot | free with snapshot reads on the same root |
-| `arg_get` | `args`: immutable invocation snapshot | free with snapshot reads on the same root |
-| `open_read` | `root`: directory lookup | free with directory lookup on the same root |
-| `read_at` | `file`: positioned read fragment | free with positioned reads on the same root |
-| `write_once` | `output`: next output reservation | ordered with output writes on the same root |
-| `open_directory` | `root`: directory lookup | free with directory lookup on the same root |
-| `open_directory_source` | `directory`: directory lookup | free with directory lookup on the same root |
-| `directory_next` | `source`: next directory-batch reservation | ordered with directory batches on the same root |
-| `open_file` | `root`: directory lookup | free with directory lookup on the same root |
-```
-
-Every writable destination or source payload keeps its ordinary [OWN-5] loan independently of this table. A successful operation which returns `ReadFile`, `DirectoryRead`, or `DirectorySource` mints one fresh logical capability root. Two such roots remain distinct language authorities even when environment aliasing makes their native objects contact the same storage [EFF-5].
-An operation not in the table has no outside authority fragment in this slice. Its ordinary memory effects and provenance contract still apply.
+Every borrow keeps its ordinary [OWN-5] loan until the target contract releases it. `reserve_file` returns one fresh ordinary `FilePermit`; a successful open which returns `ReadFile`, `DirectoryRead`, or `DirectorySource` likewise produces one fresh ordinary owned value. Each result has its own binding identity and no compiler-retained parent relation to the parameter that produced it [EFF-2].
 
 Submission has exactly three internal outcomes. `inline-terminal` publishes every promised milestone and guarantees that no later completion can arrive. `target-owned` transfers the complete operation bundle to the qualified adapter. `wait-capacity` transfers nothing to the target and retains the bundle in the runtime so another ready frame can run until bounded target capacity is available. No source value observes which outcome occurred.
 A qualified target may implement this contract with native completion, readiness plus a nonblocking attempt, polling, interrupts, or a bounded blocking helper. A helper executes only the typed target adapter and publishes milestones; it never executes a writer function or writer continuation. Target completion publication may make a stackless writer frame runnable, but target code never invokes that frame directly.
 No submission, completion, or target path tests a trap latch or records trap-specific state [SCOPE-4].
 
 ```wf-prov
-| operation | result component class | writable `&uniq` or capability-write parameter component class |
+| operation | result component class | written parameter component class |
 |---|---|---|
 | `args_count` | plain result external | — |
 | `arg_get` | `Ok(value:)` external; `Err(error:)` external | — |
@@ -2313,6 +2285,7 @@ No submission, completion, or target path tests a trap latch or records trap-spe
 | `open_directory_source` | `Ok(value:)` external; `Err(error:)` external | — |
 | `directory_next` | `ListBytes(next:)` dependent; `ListBytes(entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component | `destination` external |
 | `open_file` | `Ok(value:)` external; `Err(error:)` external | — |
+| `reserve_file` | plain result internal | `factory` internal |
 ```
 
 A plain-result cell fixes that result's sole aggregate component.
@@ -2320,7 +2293,7 @@ A named payload cell fixes exactly that direct variant-field projection; a paylo
 An external class seeds the unconditional-external bit; an internal class seeds no bit.
 A dependent class denotes the join of the concrete call's `start` actual and one sanitized internal host count, as fixed by [SYS-9]; it seeds exactly that instantiated join rather than a declaration-global bit.
 No unlisted result, projection, parameter, field, or component inherits an external class by association.
-The third column is provenance only. A capability write does not become an ordinary memory write, but the boundary action still gives that formal component an unconditional external origin for PRV-1 composition; memory footprints, loans, and authority fragments remain the separate judgments [EFF-2, EFF-5].
+The third column is provenance only. The boundary action gives that formally written component an unconditional external origin for PRV-1 composition; the same ordinary effect paths and loans already describe interference [EFF-2, EFF-5].
 The internal success components are exactly the program-bounded entry counts fixed by [SYS-9].
 
 Every system operation is nongeneric: it declares no type parameter and no const parameter, so no `targ` in a system-operation call is a `type` or a `const`.
@@ -2328,7 +2301,7 @@ A call whose callee resolves to a system operation writes its region arguments a
 Positional operands are not admitted.
 A system operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise; a conformance binds only a top-level source function.
 
-The inventory contributes exactly one hundred and ninety-four declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
+The inventory contributes exactly two hundred and three declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
 Exactly the nominal types, the constructors, and the operations enter the source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1].
 The field and parameter records are owner-local: a field record enters only its owning constructor's table and a parameter record only its owning operation signature, and neither is visible to source lookup.
 
@@ -2368,33 +2341,33 @@ The exact operation names, signatures, buffer and range preconditions, and outco
 
 [HOST-3] The first system slice defines exactly one host-string type.
 Its value is an opaque inline lease — a private code-unit address and length carried in the value itself — over immutable backing supplied by the command invocation, and a relative path constructed from one retains that same inline representation [PATH-1].
-A lease owns no code-unit storage, several live leases may denote the same backing code units, and its compiler-derived release is a logical consume with no host call and no external effect [STOR-3].
+A lease owns no code-unit storage, several live leases may denote the same backing code units, and its compiler-derived release is a logical consume with no host call and no state effect [STOR-3].
 Its backing is the command-lifetime argument snapshot that [QUAL-2] requires of every qualified target.
 Because that backing strictly outlives every value derived from it, a lease denotes valid code units however it is bound, moved, matched, returned, passed, or stored, and no source-level rule relates a lease to its backing: a lease is neither a borrow nor a region-bearing type, so [STOR-5] places no restriction on storing one and [OWN-5] provenance does not describe it.
 That guarantee is a property of the target, enforced at qualification, and is not a judgment over source.
-A producer whose backing is not command-lifetime yields no value of this type: it introduces a distinct owned-backing string resource with its own release action and its own family contract, because storage class is a function of type [STOR-1] and one type carries exactly one release action.
+A producer whose backing is not command-lifetime yields no value of this type: it introduces a distinct owned-backing string resource with its own release action and its own type contract, because storage class is a function of type [STOR-1] and one type carries exactly one release action.
 Conversion between the two types is an explicit later operation with its own delta [META-5]; no implicit retype, coercion, or representation change relates them [TYPE-4].
 Retention of lease identity in the checked program [DIAG-2] serves auditing and lowering; it is not a source-acceptance judgment and refuses no program.
 
 [PATH-1] A relative path is an opaque value whose code units are admitted by construction from one host string and are never assembled, split, or concatenated as source text.
 Construction consumes its input host string on success and on failure.
-It succeeds exactly when the complete code-unit sequence contains no NUL code unit and begins with no target-root prefix, where a target-root prefix is a code-unit sequence the selected target resolves against a filesystem root, drive, device, or other namespace root rather than against a supplied directory capability.
+It succeeds exactly when the complete code-unit sequence contains no NUL code unit and begins with no target-root prefix, where a target-root prefix is a code-unit sequence the selected target resolves against a filesystem root, drive, device, or other namespace root rather than against a supplied directory state.
 The exact target-root prefix set is target data fixed by that target's qualification record [QUAL-1]; a Unix-family leading separator and a Windows-family drive or UNC prefix are members of their targets' sets.
 Success retypes the same inline lease [HOST-3] with no allocation, no copy, and no code-unit change; failure yields no path value.
 Construction preserves every admitted code unit exactly — including `.` and `..` components and every separator — and performs no normalization, canonicalization, case folding, prefix stripping, or component collapse.
 A path component type, an absolute path type, and every operation that decomposes, enumerates, joins, or displays a path are DEFERRED additions with their own deltas [META-5].
 The first slice constructs one relative path from one host string and supplies it to a directory-relative operation [PATH-2].
 
-[PATH-2] A directory-read capability names one directory object, and a directory-relative operation resolves a relative path against it through the target's own directory-relative resolution.
+[PATH-2] A `DirectoryRead` state value names one directory object, and a directory-relative operation resolves a relative path against it through the target's own directory-relative resolution.
 A directory-relative operation resolves either one relative path value or one caller-supplied single path component [SYS-14]; both are resolved through the target's own directory-relative facility and neither is concatenated onto a prefix.
-The capability bound to the command's working-directory entry input is process-equivalent: resolution follows `.` and `..` components, symbolic links, reparse points, and mount transitions exactly as the surrounding process namespace does, so a resolved object may lie outside the directory that capability names.
+The value bound to the command's working-directory entry input is process-equivalent: resolution follows `.` and `..` components, symbolic links, reparse points, and mount transitions exactly as the surrounding process namespace does, so a resolved object may lie outside the directory that value names.
 That is the complete promise this type makes, and it is not a confinement claim.
 An implementation presents no stronger one: a target implements directory-relative resolution with its own directory-relative facility, never by concatenating a prefix onto a path and resolving the result against an ambient working directory, and a target with no directory-relative facility fails qualification for the directory-relative semantic IDs [QUAL-1] rather than emulating them.
-A confined directory capability — one guaranteeing that lexical traversal, links, mount transitions, and rename races cannot escape a granted root — is a DEFERRED addition with its own distinct type and contract [META-5]; a value's confinement promise is fixed by its type and never changes at runtime.
-Absolute paths, cross-root operations, and target-root prefixes require their own inputs and operations, and a directory-read capability admits none of them [PATH-1].
+A confined directory state type, one guaranteeing that lexical traversal, links, mount transitions, and rename races cannot escape a granted root, is a DEFERRED addition with its own distinct contract [META-5]; a value's confinement promise is fixed by its type and never changes at runtime.
+Absolute paths, cross-root operations, and target-root prefixes require their own inputs and operations, and `DirectoryRead` admits none of them [PATH-1].
 
 [QUAL-1] Every system operation has exactly one target-independent semantic ID owned by this specification.
-That ID's record binds the operation's signature, complete outcome set, ownership transitions, memory effects [EFF-1], family authority and attribution, capacity behavior, completion milestones, compiler-derived cleanup [STOR-3], target action, and required target guarantees [QUAL-2].
+That ID's record binds the operation's signature, complete outcome set, ownership transitions, state effects [EFF-1], capacity behavior, completion milestones, compiler-derived cleanup [STOR-3], target action, and required target guarantees [QUAL-2].
 The checked program carries only the semantic ID [DIAG-2]: an operation's identity comes from resolution in the system declaration domain, and no source function name or spelling, logical path [PROG-2], project, corpus, test, or signature lookalike ever selects, adds, or removes one.
 A separate target-qualification table maps each `(specification version, semantic ID, target, program kind)` to exactly one approved implementation version and one private ABI symbol.
 The compiler consults that table after selecting the exact target and ABI [STOR-6] and before emitting any use of the operation.
@@ -2417,7 +2390,7 @@ A target that has such a facility but for which the table [QUAL-1] holds no appr
 Qualification failure and startup refusal both occur before entry [PROG-3], so neither is a source-returned status, a recoverable outcome, or a trap [TRAP-1].
 
 [QUAL-3] For a natively compiled command, selection is static for the whole build: [QUAL-1] fixes the approved implementation of each semantic ID at compile time, and the emitted program contains no runtime operation-ID switch, target tag, per-call dispatch table, instance handle table, or handle lookup that selects among implementations.
-A synchronous transfer lowers to its required source and target checks [STOR-6], at most one direct host call, one count or outcome check, and a cold outcome mapper reached only on failure.
+An `inline-terminal` transfer lowers to its required source and target checks [STOR-6], at most one direct host attempt, one count or outcome check, and a cold outcome mapper reached only on failure; it remains one completion-contract outcome rather than a second blocking source mode.
 That path performs no heap allocation, no copy of the transferred data, no global system lock acquisition, and no per-call signal-disposition operation.
 The compiler wrapper is inlined, or any remaining call is shown to be immaterial, as a condition of qualification.
 One-time per-invocation normalization belongs to the command bootstrap before entry rather than to any transfer: on the first native command targets that bootstrap owns the process and installs the ignored disposition for the write-to-closed-pipe signal, so a closed output destination reaches source as a recoverable outcome [ERR-4].
@@ -2426,76 +2399,53 @@ This rule fixes the required emitted shape; the evidence establishing it is insp
 [TRAP-1] A failing executed claim in a program holding system resources retains [SCOPE-4] and [EFF-4] exactly: the runtime attempts the mandatory [DIAG-3] record and then aborts the whole process without unwinding and without running language cleanup; no status is produced [PROG-3].
 No release, close, flush, detach, or completion action fixed by a system resource contract [STOR-3] runs after a failed claim, and no source-visible cleanup, handler, or recovery point exists.
 Process-local memory, native descriptors, and every other process-local system object held at that moment are reclaimed by operating-system process teardown, which is a property of the host inside the [SCOPE-3] trusted computing base rather than a language cleanup guarantee.
-External effects already performed are not rolled back: bytes already written remain written, an object already created remains created, and a persistent object or already-started external work retains the semantics its own family gives it.
+State transitions already performed are not rolled back: bytes already written remain written, an object already created remains created, and a persistent object or already-started target operation retains its own system contract.
 A host that requires a Whitefoot instance to fail without ending its process runs that instance in a separate process.
-Because a trap ends the owning process, no instance resource table, per-instance reaper, or pending-operation transfer is required, and none appears on a synchronous transfer path [QUAL-3].
+Because a trap ends the owning process, no instance resource table, per-instance reaper, or pending-operation transfer is required, and none appears on an `inline-terminal` transfer path [QUAL-3].
 Host-surviving in-process trap containment is a DEFERRED language amendment with its own delta [META-5].
 
-[SYS-4] Each system type has exactly one kind, one `Sendable` judgment, and one `Shareable` judgment [CAP-1].
-Every first-slice system type permits shared borrows, so permitting a shared borrow is not what separates the kinds.
-An immutable value has no cursor, sequence position, or caller-visible mutation; owning storage does not make it a resource.
-A shared capability owns no caller-visible cursor or sequence position that a later call consumes, and its shared operations may observe outside state or create an independent owned resource.
-A stateful resource identifies one live stateful object. Shared borrows keep that logical root alive while family reservations state whether simultaneous operations are free, ordered, or exclusive [EFF-5]. A whole-root control transition consumes the owner.
+[SYS-4] System types introduce no state-kind or capability classification.
+Every operation signature directly states its ordinary parameter modes and exact state effects, which are the complete source facts used by ownership, effect checking, and overlap. A stable observation may use `&` plus `reads(path)`; an operation which advances, consumes, acknowledges, clears, or otherwise changes state uses `&uniq` or `own` and declares `writes(path)`. These are ordinary [OWN-2, EFF-1] judgments rather than properties inferred from the nominal type name.
 
-```wf-sys
-| type | kind | Sendable | Shareable |
-|---|---|---|---|
-| `Args` | immutable value | yes | yes |
-| `HostString` | immutable value | yes, on the command-lifetime argv backing | yes, on the command-lifetime argv backing |
-| `RelativePath` | immutable value | yes, on the command-lifetime argv backing | yes, on the command-lifetime argv backing |
-| `DirectoryRead` | shared capability | yes | yes |
-| `ReadFile` | shared random-access capability | yes | yes |
-| `Output` | ordered Sink | yes | yes |
-| `ExitStatus` | immutable value | yes | yes |
-| `DirectorySource` | ordered Source | yes | yes |
-```
+The system catalog may keep target-only representation and release data for an opaque type [SYS-2, SYS-5]. That data selects construction, target lowering, and compiler-derived release, but it grants no source access and forms no second type hierarchy.
+A later operation that duplicates or splits a resource exists only when it returns ordinary owned values whose independence is part of that operation's complete semantic contract. The first slice declares none, so no system value is duplicated, split, attenuated, or converted, and no integer right mask is exposed to source.
 
-`ExitStatus` is Sendable and Shareable because it is an immutable command code with no interior state.
-`HostString` and `RelativePath` are Sendable and Shareable because their backing is immutable and outlives the invocation [HOST-3, QUAL-2]; the judgment is a judgment about that backing, so a later string type with separately owned backing rederives both predicates from its own representation and inherits neither [SYS-9].
-`ReadFile` is Shareable because every `read_at` carries its own explicit offset and its file fragments are free; ordinary destination loans remain independent.
-`Output` and `DirectorySource` are Shareable because a shared borrow only keeps the root alive. Their family-owned ordered reservations fix byte or batch attribution before target completion can race, and the owner cannot be consumed while any shared operation borrow remains live.
-
-These are declared capability predicates.
-This specification defines no thread construct, so no program's acceptance depends on them; they fix what a concurrency layer may assume and what a later type may not inherit.
-
-Kind is a type-contract distinction and introduces no writer-visible keyword.
-`own`, `&'r`, and `&uniq 'r` [OWN-2] express every use of every kind.
-A family operation that duplicates, splits, or attenuates a resource exists only when its alias, ordering, cleanup, and concurrent-use rules are complete; the first slice declares none, so no system value is duplicated, split, attenuated, or converted, and no integer right mask is exposed to source.
-
-[SYS-5] Every system resource family declares one completion policy.
+[SYS-5] Every system resource type declares one completion policy.
 This specification defines exactly one: release-complete.
 Under it, compiler-derived release is the complete language obligation for the type, and a source program needs no terminal operation to discharge ownership.
-`Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, and `DirectorySource` are all release-complete, so this specification defines no exact-use checking obligation.
+`Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, `DirectorySource`, `FileFactory`, and `FilePermit` are all release-complete, so this specification defines no exact-use checking obligation.
 
 Two further policy classes are named and reserved without machinery.
 Explicitly-abandonable means the type exposes a consuming abandon operation whose contract permits loss of unfinished external work, so abandonment is a source action rather than an accidental affine discard.
 Completion-required means every normal or recoverable exit must consume the owner through a terminal transition.
 This specification declares no type under either class and defines no operation, checker obligation, or diagnostic for either; naming them fixes the vocabulary a later buffered output, atomic replacement, pending operation, or child process must use rather than silently inheriting release-complete [SYS-12].
 
-The consuming release action of each system type is exactly:
+The consuming release action of each system type is fixed by the following table. The table-local path `owner` is substituted under [EFF-2] and is not source syntax:
 
 ```wf-sys
-| type | release action | memory row | target and authority contract |
+| type | release action | state row | target contract |
 |---|---|---|---|
-| `Args` | logical consume | none | never-suspends; no fragment |
-| `HostString` | logical consume of an inline lease | none | never-suspends; no fragment |
-| `RelativePath` | logical consume of an inline lease | none | never-suspends; no fragment |
-| `DirectoryRead` | at most one native close attempt | none | may-suspend; exclusive whole root |
-| `ReadFile` | at most one native close attempt | none | may-suspend; exclusive whole root |
-| `Output` | logical source detach | none | never-suspends; no fragment |
-| `ExitStatus` | logical consume | none | never-suspends; no fragment |
-| `DirectorySource` | at most one native close attempt | none | may-suspend; exclusive whole root |
+| `Args` | logical consume | none | never-suspends |
+| `HostString` | logical consume of an inline lease | none | never-suspends |
+| `RelativePath` | logical consume of an inline lease | none | never-suspends |
+| `DirectoryRead` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
+| `ReadFile` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
+| `Output` | logical source detach | none | never-suspends |
+| `ExitStatus` | logical consume | none | never-suspends |
+| `DirectorySource` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
+| `FileFactory` | logical consume | none | never-suspends |
+| `FilePermit` | logical consume | none | never-suspends |
 ```
 
-A logical consume performs no host call, no target call, no handle lookup, no byte copy, and no external effect.
+A logical consume performs no host call, no target call, no handle lookup, no byte copy, and no state effect.
 A native close attempt discards only the close diagnostic and never retries an ambiguous close: a consuming close invalidates the source handle on success and on error, because the native descriptor may already be closed and reusable.
-Its one-shot terminal transition publishes payload-released, authority-released, and terminal together; it carries no writer result. A consuming caller cannot continue past the release until ownership-complete, but a scheduler lane need not remain occupied while the target owns the close.
+Its one-shot terminal transition consumes the moved owner and carries no writer result. A consuming caller cannot continue past the release until `terminal`, but a scheduler lane need not remain occupied while the target owns the close.
 `Output`'s logical source detach neither closes nor flushes the host descriptor [SYS-12].
 Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, `ReadOutcome`, and `ListOutcome` have no release action and take no row above, and a `ReadOutcome`, `ListOutcome`, or `Result` carrying a system value releases that value by this table.
 
 A release action is compiler-derived and explicit in the checked program [STOR-3, DIAG-2].
 `flush`, `sync`, directory sync, atomic commit, and final handle release are different semantic operations; this specification declares none of them, and release is never a substitute for one.
-Whole-process abort performs no release: a trap runs no language cleanup and returns no status [PROG-3, EFF-4, SCOPE-4], and the operating system reclaims process-local memory and handles while external writes are not rolled back.
+Whole-process abort performs no release: a trap runs no language cleanup and returns no status [PROG-3, EFF-4, SCOPE-4], and the operating system reclaims process-local memory and handles while completed system-state writes are not rolled back.
 
 [SYS-6] Each system operation declares its own outcome type; there is no shared outcome union.
 An operation with exactly two outcomes returns a [PRE-1] `Result<T, E>` instantiation and declares no new constructor spelling.
@@ -2520,6 +2470,7 @@ The complete inventory is:
 | `open_directory_source` | `own Result<DirectorySource, IoError>` |
 | `directory_next` | `own ListOutcome` |
 | `open_file` | `own Result<ReadFile, IoError>` |
+| `reserve_file` | `own FilePermit`; total, no failure outcome |
 ```
 
 `InvalidIndex` states that the requested argument index is not present and returns no value.
@@ -2550,8 +2501,8 @@ The detail is copy data in the transfer sense: it allocates nothing, owns nothin
 A payload-carrying variant is affine under [OWN-1], so an `IoError` value, like a `ReadOutcome` value, is moved or matched rather than copied; that affinity is a consequence of the declared source form and is not a cleanup obligation.
 No class carries a message, a buffer, or any heap-backed payload.
 
-[SYS-8] `read_at`, `write_once`, `directory_next`, `host_copy_bytes`, `host_copy_utf8`, `open_directory`, and `open_file` are the complete range-bearing system-operation family.
-Each reads one caller-owned initialized `buffer<u8>` through a call-scoped borrow and names a half-open range `[start, end)` in that buffer; every resource and buffer owner remains with the caller on every outcome.
+[SYS-8] `read_at`, `write_once`, `directory_next`, `host_copy_bytes`, `host_copy_utf8`, `open_directory`, and `open_file` are the complete range-bearing system-operation set.
+Each accesses one caller-owned initialized `buffer<u8>` through a call-scoped borrow and names a half-open range `[start, end)` in that buffer; every resource and buffer owner remains with the caller on every outcome.
 
 Every call to a member of this family carries exactly two independent [ENT-6] obligations in this order: `start <= end`, then `end <= len(deref(buffer))`, where `buffer` is that operation's declared buffer parameter.
 Both obligations are queried in the caller's pre-transfer state and must be derived independently; neither is a premise for the other.
@@ -2564,9 +2515,9 @@ For an empty range, `read_at` returns `ReadBytes(start)`, `write_once` returns `
 For an empty copy range, a zero-length source succeeds with `Ok(start)` and a nonempty source returns its ordinary too-small outcome without writing.
 For `open_directory` and `open_file`, an empty range is ordinary invalid component content and returns `Err(InvalidPath(code: 0_u32, origin: 0_u8))` before any host call.
 
-For a nonempty range, `read_at`, `write_once`, and `directory_next` make at most one progress-producing host transfer attempt for the admitted reservation.
+For a nonempty range, `read_at`, `write_once`, and `directory_next` make at most one progress-producing host transfer attempt for the admitted call.
 If a host interruption reports no progress, the target adapter resumes the same operation without publishing a writer outcome; if an attempt reports progress, the operation returns that progress immediately and never hides a later failure by attempting again.
-Host readiness or nonblocking refusal is target scheduling state and produces no `WouldBlock` writer outcome. A readiness adapter waits for the next readiness fact and retries the same admitted operation while retaining its payload and authority.
+Host readiness or nonblocking refusal is target scheduling state and produces no `WouldBlock` writer outcome. A readiness adapter waits for the next readiness fact and retries the same admitted operation while retaining its operation record and argument loans.
 `read_at` performs a positioned read beginning at `file_offset` and never observes or changes an implicit file cursor. It returns `ReadBytes(next)` only for `next > start`. A `file_offset` which the qualified target cannot represent returns `ReadFailed(InvalidInput(...))` before target handoff.
 `write_once` never reports an unchanged endpoint after a nonempty host attempt: a host zero-length write is `Err(WriteZero())`.
 A short success is not end of input; only `ReadEnd` states that no byte was available at the observed end.
@@ -2578,7 +2529,7 @@ No entry is ever split across two attempts and no record is ever reported withou
 
 Buffer and cursor disposition is exact.
 Every successful transfer payload is an absolute endpoint `next`, not a count, and satisfies `start <= next <= end`; the checked program establishes both relations on the matching successful edge [ENT-3.S10].
-On `ReadBytes(next)` exactly `[start, next)` may have changed, every other byte of the buffer is unchanged, and the file cursor advances by exactly `next - start`.
+On `ReadBytes(next)` exactly `[start, next)` may have changed and every other byte of the buffer is unchanged; `ReadFile` has no implicit byte cursor or observation counter to advance.
 On `ReadEnd` and on `ReadFailed` no byte of the buffer changes, because an attempt that made progress reports `ReadBytes` instead.
 On every recoverable failure of `write_once` and of both copy operations the whole buffer is unchanged.
 On `ListBytes(next, entries)` any byte in `[start, end)` may have changed, every byte of the buffer outside that range is unchanged, `[start, next)` is the portable entry-record prefix holding exactly `entries` complete records, and the enumeration cursor advances past exactly the entries those records name.
@@ -2615,28 +2566,32 @@ On `Ok(length)`, a `host_copy_utf8` on the same host string neither returns `Utf
 The one-host-string-type rule, the command-lifetime backing, the distinct owned-backing type for any other producer, and the no-implicit-retype consequence are [HOST-3]; release is a logical consume with no target call [SYS-5].
 No system value stores an ordinary source borrow or needs a runtime handle-table lookup.
 
-[SYS-10] `DirectoryRead` is a shared capability with one state.
-It is live from its entry binding or from the `open_directory` that created it until its release, and has no other transition: this specification declares no attenuation, duplicate, split, or explicit close operation for it, so no other state is reachable.
+[SYS-10] `FileFactory`, `FilePermit`, and `DirectoryRead` are ordinary affine opaque values; none is a writer-visible capability category.
+Program start supplies one `FileFactory` only when the entry selects `command.files`. `reserve_file` takes a call-scoped `&uniq FileFactory`, exhibits `reads(factory), writes(factory)`, and returns one fresh `FilePermit`. The factory loan ends when that inline operation returns, so a caller may reserve several permits through short sequential loans and then move those permits into independent long-running opens.
 
-Opening creates aliases only downward.
-`open_read` and `open_file` each create an independent `ReadFile` logical root and do not alias the capability.
-`open_directory` creates an independent `DirectoryRead` naming the child directory object, and `open_directory_source` creates an independent `DirectorySource` with its own ordered batch domain; neither aliases the capability it was opened against, and releasing either leaves that capability live.
-Two `DirectoryRead` values may denote the same directory object, and nothing infers separateness from a native handle or from a separate open.
+A `FilePermit` authorizes exactly one attempt by `open_read`, `open_file`, `open_directory`, or `open_directory_source`. Each operation takes `permit: own FilePermit`, exhibits `reads(permit), writes(permit)`, and consumes it on every success or recoverable-failure outcome. This first slice never returns or recycles the permit. Reserving it promises no native descriptor, handle-table entry, kernel memory, or host quota: host exhaustion remains the ordinary `ResourceExhausted` member of the open operation's typed `IoError` result.
 
-Its completion policy is release-complete [SYS-5], on the same ground as `ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory capability cannot invalidate an already opened file and cannot promise durability.
+`DirectoryRead` is a stable directory-selector resource with one live state. It is live from its entry binding or from the `open_directory` that created it until its release. This specification declares no duplicate, split, or explicit close operation for it.
 
-Any number of `open_read`, `open_file`, `open_directory`, and `open_directory_source` calls may progress concurrently through shared borrows of one `DirectoryRead`, exposing no ordering relative to one another.
-Each either creates its own `ReadFile`, `DirectoryRead`, or `DirectorySource`, or fails, and none observes another's effect.
+`open_read`, `open_file`, and `open_directory` borrow `DirectoryRead` through `&` as `root`; `open_directory_source` borrows it through `&` as `directory`. They exhibit `reads(root)` or `reads(directory)` and do not change that value. The changing observation occurrence belongs to the consumed `FilePermit`, not to hidden mutation behind the shared directory borrow [EFF-5]. The directory owner remains live on every outcome.
 
-Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined root are [PATH-2]; the `command.cwd` instance is shareable for open operations.
+On success, `open_read` and `open_file` each return one fresh `ReadFile`, `open_directory` returns one fresh `DirectoryRead`, and `open_directory_source` returns one fresh `DirectorySource`. The returned owner has its own ordinary binding identity, carries no parent relation to the directory argument, and can be released without changing that argument. Two values may still contact the same host directory or file; nothing infers host separateness from a native handle or separate open [EFF-5].
 
-A capability `open_directory` returns names the object the target's own directory-relative resolution reached for that component, with the process equivalence and the deferred confinement [PATH-2] already fixes.
+Its completion policy is release-complete [SYS-5], on the same ground as `ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory state cannot invalidate an already opened file and cannot promise durability.
+
+Two opens using two distinct owned permits may overlap through shared loans of the same `DirectoryRead` when their other ordinary loans, data dependencies, and exits permit it. Reserving those permits does not keep a long factory loan alive. Operations on distinct directory values may likewise overlap even when the host environment later makes those values contact one physical object.
+
+`FileFactory` and `FilePermit` have proof-only target representation. `reserve_file` performs no host call and returns a harmless opaque value; a qualified open wrapper consumes that value in the checked program but passes no extra argument to the native open facility. Thus explicit authority changes source ownership and effect facts without adding a native open hot-path ABI argument [QUAL-3]. Both types release by logical consume with the empty row [SYS-5].
+
+Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined form are [PATH-2].
+
+A `DirectoryRead` value returned by `open_directory` names the object the target's own directory-relative resolution reached for that component, with the process equivalence and the deferred confinement [PATH-2] already fixes.
 Two `DirectoryRead` values may denote the same directory object however they were produced, and a program that descends must exclude the self and parent components itself: nothing in this specification detects a cycle.
 
-[SYS-11] `ReadFile` is a shared random-access capability with one live state.
-`open_read` and `open_file` each mint one logical root. A separate open therefore supplies separate language authority even when the host environment makes two roots contact the same filesystem object [EFF-5].
-`read_at` is call-scoped and leaves the file owner and destination owner live on every outcome. Its positioned transfer and buffer semantics are [SYS-8]. Any number of read fragments on one root are free, so calls with disjoint destination loans may progress concurrently; overlapping destination loans remain forbidden by [OWN-5].
-This specification declares no implicit cursor. Sequential access is written by advancing an explicit offset from typed outcomes; a persistent read-ahead Source is a separate family surface rather than hidden state in this type.
+[SYS-11] `ReadFile` is a random-access state resource with one live state.
+`open_read` and `open_file` each return one fresh ordinary owner. Separate owners remain distinct Whitefoot places even when the host environment makes them contact the same filesystem object [EFF-5].
+`read_at` is call-scoped, takes `&ReadFile` and `&uniq buffer<u8>`, exhibits `reads(file, destination), writes(destination)`, and leaves both owners live on every outcome. The explicit offset removes an implicit byte cursor, so the operation observes but does not advance the `ReadFile` state. Its positioned transfer and buffer semantics are [SYS-8].
+Several reads through the same `ReadFile` may overlap when their destination loans and other ordinary dependencies permit it. Sequential access is written by advancing an explicit offset from typed outcomes; a persistent read-ahead Source is a separate system type rather than hidden state in this type. Environment-created changes to the same physical file do not merge or mutate Whitefoot places [EFF-5].
 
 `ReadFile` is release-complete [SYS-5].
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about bytes already observed and no durability guarantee.
@@ -2644,26 +2599,26 @@ This specification declares no separate explicit-close operation.
 A later consuming close may expose that diagnostic, but it must consume the owner on every outcome and may not change derived-release semantics.
 Whole-process abort relies on operating-system teardown [SYS-5].
 
-[SYS-12] `Output` is an ordered Sink with one live logical root.
-The standard output and standard error entry bindings supply separate affine roots. Host redirection may make them contact one physical sink, but environment aliasing does not merge their language authority or introduce a cross-root order [EFF-5].
-`write_once` takes a shared borrow and obtains the next ordered reservation on that Output root. Several calls may be pending. Reservation order, fixed before target handoff in source attribution order, determines the byte sequence; target completion and writer resumption order do not. An `Ok(next)` means exactly that the local output facility accepted the prefix `[start, next)`: it promises neither line atomicity, peer acknowledgement, nor storage durability.
+[SYS-12] `Output` is a state resource with one live state.
+The standard output and standard error entry bindings supply separate affine owners. Host redirection may make them contact one physical sink, but environment aliasing does not merge their Whitefoot places or introduce a cross-value order [EFF-5].
+`write_once` takes `&uniq Output`, reads the current output state and supplied payload, and exhibits `reads(output, source), writes(output)`. The exclusive loan remains live until `loan-released(output)`, so another write through the same `Output` begins only after the first operation has completed its access. Source order on one value therefore follows ordinary ownership without an ordered queue or a second attribution mechanism. An `Ok(next)` means exactly that the local output facility accepted the prefix `[start, next)`: it promises neither line atomicity, peer acknowledgement, nor storage durability.
 
-The target may use one bounded queue and may combine adjacent reservations into one physical vectored write. A partial physical success completes every whole earlier reservation, records progress for at most one following reservation, and leaves later reservations pending in their original order. Every failure reported for one reservation reaches that call's typed outcome; queue capacity pressure remains internal `wait-capacity`, not `WouldBlock`.
-`Output` is therefore release-complete [SYS-5]: compiler-derived release only detaches the source capability and reports nothing.
+Writes through distinct `Output` values may overlap under [PAR-1]. Every failure reported for one call reaches that call's typed outcome; target capacity pressure remains internal `wait-capacity`, not `WouldBlock`.
+`Output` is release-complete [SYS-5]: compiler-derived release only detaches the source state and reports nothing.
 It does not close the host descriptor, it does not flush, and it makes no target call; operating-system process teardown closes the native descriptors afterwards.
 
 That policy has one stated limitation.
 A failure a host surfaces only at descriptor close or at writeback — delayed allocation, a network filesystem, a late out-of-space condition — is outside this specification's error model and can be lost, so a redirected command may return a successful `ExitStatus` after a failed writeback.
-This is a stated limitation of the family contract, not a silently weakened guarantee.
+This is a stated limitation of the type contract, not a silently weakened guarantee.
 Strengthening it is a later buffered or durable output type, which is completion-required [SYS-5] and must expose its own flush or finish operation; it does not inherit this policy.
 
 A broken pipe reaches `write_once` as `BrokenPipe` through the bootstrap signal normalization [QUAL-3] fixes; a deployment the bootstrap does not own obtains an equivalent guarantee under its own qualification [QUAL-3].
 
-Terminal control, color, and console mode are separate capabilities that this specification does not declare.
+Terminal control, color, and console mode require separate system state types that this specification does not declare.
 The mandatory trap record uses its own runtime channel [SCOPE-4, DIAG-3]; it never flushes an `Output` and source code cannot reach it.
 
 [SYS-13] `ExitStatus` is an opaque immutable value carrying one portable command code.
-`exit_status(code)` is its one constructor: it is total and pure, every `u8` is a valid command code, so the closed code range is 0 through 255 and there is no failure outcome, no allocation, no host call, and no external effect.
+`exit_status(code)` is its one constructor: it is total and pure, every `u8` is a valid command code, so the closed code range is 0 through 255 and there is no failure outcome, no allocation, no host call, and no state effect.
 `ExitStatus` is release-complete and its release is a logical consume [SYS-5].
 
 The type is opaque rather than an alias for `u8`.
@@ -2672,11 +2627,10 @@ There are no implicit conversions [TYPE-4] and every value's type is exactly wha
 The target maps the returned code exactly onto the host process status.
 Startup failure before entry and a trap are outside this mapping [PROG-3]: a trap performs no language cleanup and returns no status [EFF-4, SCOPE-4].
 
-[SYS-14] `DirectorySource` is an ordered Source with one live logical root.
-`open_directory_source` creates it with one ordered batch domain over the directory object the supplied capability names.
-A separate `open_directory_source` on the same capability creates a separate logical Source root. Environment aliasing may make both enumerate the same physical directory, but it does not merge their attribution domains [EFF-5].
+[SYS-14] `DirectorySource` is a state resource with one live enumeration state.
+`open_directory_source` consumes one `FilePermit`, takes `&DirectoryRead`, exhibits `reads(permit, directory), writes(permit)`, and on success returns one fresh `DirectorySource` over the directory object the supplied value names. A separate call with a separate permit returns a separate ordinary owner. Environment aliasing may make two Sources enumerate the same physical directory, but it does not merge their Whitefoot places [EFF-5].
 
-`directory_next` is call-scoped and leaves the Source and destination owners live on every outcome; its transfer, cursor, and buffer semantics are [SYS-8]. Several calls may be pending through shared borrows. Their ordered reservations assign directory batches in reservation order, while target completion and writer resumption may occur in either order after each assigned batch is ready.
+`directory_next` is call-scoped, takes `&uniq DirectorySource` and `&uniq buffer<u8>`, exhibits `reads(source, destination), writes(source, destination)`, and leaves both owners live on every outcome; its transfer, cursor, and buffer semantics are [SYS-8]. Only one call through one Source may be pending because the exclusive source loan remains live until `loan-released(source)`. Calls through distinct Sources may overlap under [PAR-1].
 It reports the entries the host reported, in the host's own order: this specification fixes no enumeration order, promises no stability across two enumerations of the same directory, and states no relationship to a concurrent change of that directory's content.
 A program that needs a deterministic order sorts what it collected.
 
@@ -2693,7 +2647,7 @@ An entry name reaches source only as those bytes.
 This specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] and a path value is an inline lease over that snapshot [PATH-1].
 `open_directory` and `open_file` therefore take a caller-owned name range rather than a path value, and path composition remains the DEFERRED addition [PATH-1] states.
 Each call first discharges [SYS-8]'s two static range obligations; neither operation has a runtime range check or `traps` effect.
-Each then validates `[start, end)` as one component before any host call: a component that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `Err(InvalidPath(code: 0_u32, origin: 0_u8))`, no host call, and no capability.
+Each then validates `[start, end)` as one component before any host call: a component that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `Err(InvalidPath(code: 0_u32, origin: 0_u8))`, no host call, and no resource value.
 A valid range for which the directory-relative open itself fails yields the target-mapped [SYS-7] error, as `open_read` does.
 After `open_file` obtains a provisional descriptor, descriptor-status inspection is required before publication: inspection failure returns its target-mapped [SYS-7] error, a successfully inspected directory returns `Err(IsDirectory(code: 0_u32, origin: 0_u8))`, and every other successfully inspected non-regular object returns `Err(Other(code: 0_u32, origin: 0_u8))`.
 Before returning any of those post-open errors, `open_file` makes exactly one native close attempt, discards its close diagnostic without retry as [SYS-5] requires, and returns the inspection or synthetic classification error unchanged.

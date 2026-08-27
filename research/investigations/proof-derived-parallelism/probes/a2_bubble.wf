@@ -13,7 +13,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);

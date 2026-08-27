@@ -1,4 +1,4 @@
-fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own u64 reads('r), traps {
+fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own u64 reads(input), traps {
   let length: own u64 = len<u8>(deref(input));
   let offset: own u64 = 0_u64;
   loop @scan {
@@ -24,7 +24,7 @@ fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own u64 reads('r), t
   return length;
 }
 
-fn scan ['r](input: &'r buffer<u8>) -> own u64 reads('r), traps {
+fn scan ['r](input: &'r buffer<u8>) -> own u64 reads(input), traps {
   let quarter: own u64 = find_byte<'r>(input: input, needle: 251_u8);
   let half: own u64 = find_byte<'r>(input: input, needle: 252_u8);
   let end: own u64 = find_byte<'r>(input: input, needle: 253_u8);

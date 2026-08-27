@@ -1,4 +1,4 @@
-fn takesref['r](x: &'r i32) -> function_result: own i32 reads('r) {
+fn takesref['r](x: &'r i32) -> function_result: own i32 reads(x) {
   doc "Parameter x is a shared borrow &'r i32 [FN-1].";
   return deref(x);
 }

@@ -2,7 +2,7 @@ fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
   return &uniq 'r0 deref(x);
 }
 
-fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+fn bump['r](n: &uniq 'r i32) -> own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }

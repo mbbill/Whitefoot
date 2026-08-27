@@ -13,9 +13,9 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 /// `committed_tables_are_derived_from_the_active_grammar`.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 74);
-    assert_eq!(DECISIONS.len(), 95);
-    assert_eq!(SELECT_ROWS.len(), 3_679);
+    assert_eq!(productions().len(), 75);
+    assert_eq!(DECISIONS.len(), 94);
+    assert_eq!(SELECT_ROWS.len(), 3_668);
     assert_eq!(diagnostic_terminal_order().len(), 103);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
@@ -24,11 +24,13 @@ fn complete_inventory_is_pinned() {
     assert_eq!(productions()[15], Production::ResultRoute);
     assert_eq!(productions()[46], Production::ForStmt);
     assert_eq!(productions()[73], Production::Effect);
+    assert_eq!(productions()[74], Production::EffectPath);
     assert_eq!(Production::ForStmt.index(), 69);
     assert_eq!(Production::RequiresClause.index(), 70);
     assert_eq!(Production::EnsuresClause.index(), 71);
     assert_eq!(Production::ResultRoute.index(), 72);
     assert_eq!(Production::ReplaceLetRhs.index(), 73);
+    assert_eq!(Production::EffectPath.index(), 74);
     assert_eq!(DECISIONS[55].production(), Production::ForStmt);
     assert_eq!(DECISIONS[55].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[18].production(), Production::ContractBlock);
@@ -71,7 +73,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 95);
+    assert_eq!(decisions, 94);
 }
 
 #[test]
@@ -157,7 +159,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 95);
+    assert_eq!(DECISIONS.len(), 94);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -201,6 +203,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_679);
+    assert_eq!(total_rows, 3_668);
     assert!(saw_atom_only);
 }

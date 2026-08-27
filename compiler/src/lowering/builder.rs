@@ -334,12 +334,12 @@ fn lower_function<'program>(
     } else {
         builder.lower_statements(&function.body, None)?;
     }
-    let authority_orders = builder.authority_orders();
     let overlaps = builder.overlaps();
+    let completion_steps = builder.completion_steps();
     builder.finish(
         function.symbol.clone(),
         overlaps,
-        authority_orders,
+        completion_steps,
         None,
         function.target_action,
     )
@@ -499,7 +499,7 @@ impl<'program> IrBuilder<'program> {
         self,
         name: String,
         overlaps: Vec<IrOverlap>,
-        authority_orders: Vec<IrAuthorityOrder>,
+        completion_steps: Vec<IrCompletionStep>,
         synthesis: Option<IrSynthesis>,
         target_action: crate::TargetAction,
     ) -> Result<IrFunction, LoweringFailure> {
@@ -525,7 +525,7 @@ impl<'program> IrBuilder<'program> {
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
             overlaps,
-            authority_orders,
+            completion_steps,
             synthesis,
             target_action,
         })
@@ -608,27 +608,14 @@ impl<'program> IrBuilder<'program> {
     /// A prefix of a permitted chain is itself permitted: the chain's every
     /// ordered pair was judged, so every ordered pair of the prefix was too.
     fn overlaps(&self) -> Vec<IrOverlap> {
+        if self.overlap != OverlapLowering::On {
+            return Vec::new();
+        }
         let Some(permissions) = self.permissions else {
             return Vec::new();
         };
         let mut overlaps = Vec::new();
         for run in &permissions.runs {
-            // OutputSequence is the first ordered family this lowering can
-            // carry. Its bounded batch actualizer reserves every member before
-            // commit. Other ordered families stay explicit in authority_orders
-            // but form no overlap.
-            let ordered_attribution = if run.authority_order.is_empty() {
-                None
-            } else if run.ordered_members_only
-                && run.sites.len() <= ORDERED_OUTPUT_BATCH_MEMBERS
-                && run.authority_order.iter().all(|order| {
-                    order.edge.attribution == crate::SystemAuthorityAttribution::OutputBytes
-                })
-            {
-                Some(crate::SystemAuthorityAttribution::OutputBytes)
-            } else {
-                continue;
-            };
             let mut members = Vec::new();
             let mut home = None;
             for site in &run.sites {
@@ -646,21 +633,83 @@ impl<'program> IrBuilder<'program> {
                 }
             }
             if members.len() >= 2 {
-                if self.overlap == OverlapLowering::Completion
-                    && members[..members.len() - 1]
-                        .iter()
-                        .any(|member| !self.direct_may_suspend_system_call(*member))
-                {
-                    continue;
-                }
-                overlaps.push(IrOverlap {
-                    members,
-                    ordered_attribution,
-                    dispatch_last: false,
-                });
+                overlaps.push(IrOverlap { members });
             }
         }
         overlaps
+    }
+
+    /// Lowers consecutive-call completion schedules after every source
+    /// binding has acquired its final IR value.
+    ///
+    /// Permission records ordinary dependencies for every call in a schedule.
+    /// This stage narrows submission to direct may-suspend system calls. Inline
+    /// and user calls remain ordinary steps so independent writer work can run
+    /// between a submission and the schedule's final join.
+    fn completion_steps(&self) -> Vec<IrCompletionStep> {
+        let Some(permissions) = self.permissions else {
+            return Vec::new();
+        };
+        let mut lowered = Vec::new();
+        let mut start = 0;
+        while start < permissions.completion_steps.len() {
+            let Some(relative_end) = permissions.completion_steps[start..]
+                .iter()
+                .position(|step| !step.has_later_independent_call)
+            else {
+                break;
+            };
+            let end = start + relative_end;
+            let source = &permissions.completion_steps[start..=end];
+            let resolved = source
+                .iter()
+                .map(|step| {
+                    self.call_results
+                        .get(&step.site.binding)
+                        .copied()
+                        .map(|(block, value)| (step, block, value))
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(resolved) = resolved else {
+                start = end + 1;
+                continue;
+            };
+            let Some(home) = resolved.first().map(|(_, block, _)| *block) else {
+                start = end + 1;
+                continue;
+            };
+            if resolved.iter().any(|(_, block, _)| *block != home) {
+                start = end + 1;
+                continue;
+            }
+
+            let submitted = resolved
+                .iter()
+                .filter(|(step, _, value)| {
+                    step.has_later_independent_call && self.direct_may_suspend_system_call(*value)
+                })
+                .map(|(step, _, value)| (step.site.binding, *value))
+                .collect::<HashMap<_, _>>();
+            if submitted.is_empty() {
+                start = end + 1;
+                continue;
+            }
+            for (ordinal, (step, _, value)) in resolved.iter().enumerate() {
+                let wait_for = step
+                    .wait_for
+                    .iter()
+                    .filter_map(|binding| submitted.get(binding).copied())
+                    .collect();
+                lowered.push(IrCompletionStep::new(
+                    *value,
+                    wait_for,
+                    submitted.contains_key(&step.site.binding),
+                    ordinal + 1 == resolved.len(),
+                ));
+            }
+            start = end + 1;
+        }
+        lowered
     }
 
     fn direct_may_suspend_system_call(&self, value: IrValueId) -> bool {
@@ -676,57 +725,6 @@ impl<'program> IrBuilder<'program> {
                 )
             })
         })
-    }
-
-    fn authority_orders(&self) -> Vec<IrAuthorityOrder> {
-        let Some(permissions) = self.permissions else {
-            return Vec::new();
-        };
-        let mut orders = Vec::new();
-        for pair in &permissions.pairs {
-            let (Some((_, earlier)), Some((_, later))) = (
-                self.call_results.get(&pair.first.binding),
-                self.call_results.get(&pair.second.binding),
-            ) else {
-                continue;
-            };
-            for edge in &pair.authority_order {
-                let lowered = IrAuthorityOrder {
-                    earlier: *earlier,
-                    later: *later,
-                    family: edge.earlier.family,
-                    earlier_fragment: edge.earlier.fragment,
-                    later_fragment: edge.later.fragment,
-                    attribution: edge.attribution,
-                };
-                if !orders.contains(&lowered) {
-                    orders.push(lowered);
-                }
-            }
-        }
-        for run in &permissions.runs {
-            for order in &run.authority_order {
-                let (Some((_, earlier)), Some((_, later))) = (
-                    self.call_results.get(&order.earlier),
-                    self.call_results.get(&order.later),
-                ) else {
-                    continue;
-                };
-                let edge = &order.edge;
-                let lowered = IrAuthorityOrder {
-                    earlier: *earlier,
-                    later: *later,
-                    family: edge.earlier.family,
-                    earlier_fragment: edge.earlier.fragment,
-                    later_fragment: edge.later.fragment,
-                    attribution: edge.attribution,
-                };
-                if !orders.contains(&lowered) {
-                    orders.push(lowered);
-                }
-            }
-        }
-        orders
     }
 
     fn lower_statements(

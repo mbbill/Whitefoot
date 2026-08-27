@@ -1,4 +1,4 @@
-fn fill_range['d](dst: &uniq 'd buffer<u8>, lo: own u64, hi: own u64) -> result: own unit reads('d), writes('d) {
+fn fill_range['d](dst: &uniq 'd buffer<u8>, lo: own u64, hi: own u64) -> result: own unit reads(dst), writes(dst) {
   for @f i in lo..hi {
     let room = len(deref(dst));
     let ok = ilt(i, room);

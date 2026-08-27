@@ -5,9 +5,10 @@
 /*
  * Compiler-owned finite file-completion bridge.
  *
- * The emitted module can submit only the typed read/write descriptors below.
- * There is deliberately no callback, function pointer, or generic thunk in
- * this ABI: a file helper can execute only file_adapter.c's closed switch.
+ * The emitted module can submit only the typed open/read/write/status/close
+ * and directory descriptors below. There is deliberately no callback,
+ * function pointer, or generic thunk in this ABI: a file helper can execute
+ * only file_adapter.c's closed switch.
  *
  * A weak LLVM fallback makes an emitted module independently linkable.  When
  * this strong unit is linked, one bounded process runtime supplies stable
@@ -30,8 +31,9 @@
 #include <string.h>
 #include <unistd.h>
 
-#define WF_BRIDGE_SLOT_COUNT WF_FILE_BATCH_MEMBER_CAPACITY
-#define WF_BRIDGE_QUEUE_COUNT WF_FILE_BATCH_MEMBER_CAPACITY
+#define WF_BRIDGE_OPERATION_CAPACITY 64u
+#define WF_BRIDGE_SLOT_COUNT WF_BRIDGE_OPERATION_CAPACITY
+#define WF_BRIDGE_QUEUE_COUNT WF_BRIDGE_OPERATION_CAPACITY
 #define WF_BRIDGE_MAX_HELPERS 8u
 #define WF_BRIDGE_DRAIN_BUDGET 16u
 
@@ -42,7 +44,6 @@ static wf_file_work wf_bridge_queue[WF_BRIDGE_QUEUE_COUNT];
 static pthread_t wf_bridge_helpers[WF_BRIDGE_MAX_HELPERS];
 static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
 static pthread_once_t wf_bridge_file_once = PTHREAD_ONCE_INIT;
-static pthread_once_t wf_bridge_ordered_once = PTHREAD_ONCE_INIT;
 static pthread_once_t wf_bridge_target_once = PTHREAD_ONCE_INIT;
 static int wf_bridge_error;
 static int wf_bridge_file_error;
@@ -57,43 +58,8 @@ static unsigned wf_bridge_linux_ready;
 enum wf_bridge_route {
     WF_BRIDGE_ROUTE_NONE = 0,
     WF_BRIDGE_ROUTE_FILE_FALLBACK = 1,
-    WF_BRIDGE_ROUTE_LINUX_IO_URING = 2,
-    WF_BRIDGE_ROUTE_ORDERED_OUTPUT = 3
+    WF_BRIDGE_ROUTE_LINUX_IO_URING = 2
 };
-
-
-
-enum wf_ordered_output_root_state {
-    WF_ORDERED_OUTPUT_FREE = 0,
-    WF_ORDERED_OUTPUT_RESERVING = 1,
-    WF_ORDERED_OUTPUT_COMMITTED = 2
-};
-
-typedef struct wf_ordered_output_item {
-    wf_completion_token token;
-    wf_file_request request;
-} wf_ordered_output_item;
-
-typedef struct wf_ordered_output_root {
-    enum wf_ordered_output_root_state state;
-    uint64_t key;
-    uint64_t logical_root;
-    size_t expected;
-    size_t submitted;
-    size_t next;
-    unsigned executing;
-    wf_completion_token reserved[WF_ORDERED_OUTPUT_MEMBER_CAPACITY];
-    wf_ordered_output_item items[WF_ORDERED_OUTPUT_MEMBER_CAPACITY];
-} wf_ordered_output_root;
-
-typedef struct wf_ordered_output_adapter {
-    wf_ordered_output_root roots[WF_ORDERED_OUTPUT_ROOT_CAPACITY];
-    pthread_mutex_t lock;
-} wf_ordered_output_adapter;
-
-static wf_ordered_output_adapter wf_bridge_ordered;
-static unsigned wf_bridge_ordered_ready;
-static _Atomic uint64_t wf_bridge_ordered_generation;
 
 static pthread_mutex_t wf_bridge_target_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wf_bridge_target_available = PTHREAD_COND_INITIALIZER;
@@ -103,10 +69,6 @@ static unsigned wf_bridge_target_stopping;
 static _Atomic uint64_t wf_bridge_target_epoch;
 static _Atomic uint64_t wf_bridge_target_executions;
 
-static int wf_bridge_ensure_ordered(void);
-static size_t wf_ordered_output_progress(size_t budget);
-static size_t wf_ordered_output_pending(void);
-static int wf_ordered_output_shutdown(void);
 static int wf_bridge_ensure_target_helpers(void);
 static void wf_bridge_notify_target(void);
 static void wf_bridge_shutdown_target_helpers(void);
@@ -135,152 +97,7 @@ static size_t wf_bridge_helper_count(void) {
     return (size_t)parsed;
 }
 
-static wf_ordered_output_root *wf_ordered_find_locked(uint64_t key) {
-    size_t index;
-    for (index = 0; index < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++index) {
-        if (wf_bridge_ordered.roots[index].state != WF_ORDERED_OUTPUT_FREE
-            && wf_bridge_ordered.roots[index].key == key) {
-            return &wf_bridge_ordered.roots[index];
-        }
-    }
-    return NULL;
-}
-
-static int wf_ordered_take_locked(
-    size_t *root_index,
-    wf_ordered_output_item *item
-) {
-    size_t index;
-    for (index = 0; index < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++index) {
-        wf_ordered_output_root *root = &wf_bridge_ordered.roots[index];
-        if (root->state == WF_ORDERED_OUTPUT_COMMITTED
-            && root->executing == 0 && root->next < root->expected
-            && root->submitted == root->expected) {
-            root->executing = 1;
-            *root_index = index;
-            *item = root->items[root->next];
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static void wf_ordered_run(
-    size_t root_index,
-    const wf_ordered_output_item *item
-) {
-    wf_file_result result;
-    wf_completion_publication publication;
-    enum wf_completion_publish_result published;
-    int final;
-    if (item->request.operation.write.count == 0) {
-        memset(&result, 0, sizeof(result));
-        result.kind = WF_FILE_WRITE;
-        result.value = 0;
-    } else {
-        result = wf_file_execute_direct(&item->request);
-    }
-    publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
-    publication.terminal_kind = result.error_code == 0 ? 1u : 2u;
-    publication.result = &result;
-    publication.result_size = sizeof(result);
-
-    /* The final root retirement must precede terminal publication: that
-     * publication may make the caller runnable immediately, and a loop may
-     * then reuse the same alloca-derived logical-root address. The opaque
-     * batch generation plus this release order closes that ABA window. */
-    (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-    {
-        wf_ordered_output_root *root =
-            &wf_bridge_ordered.roots[root_index];
-        if (root->state != WF_ORDERED_OUTPUT_COMMITTED
-            || root->executing == 0 || root->next >= root->expected) {
-            (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-            abort();
-        }
-        final = root->next + 1 == root->expected;
-        if (final) {
-            memset(root, 0, sizeof(*root));
-        }
-    }
-    (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-    if (final) {
-        wf_completion_notify_capacity(&wf_bridge_runtime);
-    }
-
-    published = wf_completion_publish_terminal(
-        &wf_bridge_runtime,
-        item->token,
-        &publication
-    );
-    if (published != WF_COMPLETION_PUBLISHED) {
-        abort();
-    }
-
-    if (!final) {
-        (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-        {
-            wf_ordered_output_root *root =
-                &wf_bridge_ordered.roots[root_index];
-            if (root->state != WF_ORDERED_OUTPUT_COMMITTED
-                || root->executing == 0 || root->next >= root->expected) {
-                (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-                abort();
-            }
-            root->next += 1;
-            root->executing = 0;
-        }
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        wf_completion_notify_capacity(&wf_bridge_runtime);
-    }
-}
-
-static void wf_bridge_initialize_ordered(void) {
-    int error;
-    memset(&wf_bridge_ordered, 0, sizeof(wf_bridge_ordered));
-    atomic_init(&wf_bridge_ordered_generation, 0);
-    error = pthread_mutex_init(&wf_bridge_ordered.lock, NULL);
-    if (error != 0) {
-        return;
-    }
-    if (!wf_bridge_ensure_target_helpers()) {
-        (void)pthread_mutex_destroy(&wf_bridge_ordered.lock);
-        memset(&wf_bridge_ordered, 0, sizeof(wf_bridge_ordered));
-        return;
-    }
-    wf_bridge_ordered_ready = 1;
-}
-
-static int wf_bridge_ensure_ordered(void) {
-    return pthread_once(
-               &wf_bridge_ordered_once,
-               wf_bridge_initialize_ordered
-           ) == 0
-        && wf_bridge_ordered_ready != 0;
-}
-
-static size_t wf_ordered_output_progress(size_t budget) {
-    size_t progressed = 0;
-    while (progressed < budget) {
-        size_t root_index;
-        wf_ordered_output_item item;
-        (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-        if (!wf_ordered_take_locked(&root_index, &item)) {
-            (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-            break;
-        }
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        wf_ordered_run(root_index, &item);
-        progressed += 1;
-    }
-    return progressed;
-}
-
 static int wf_bridge_target_progress_one(void) {
-    if (wf_bridge_ordered_ready != 0
-        && wf_ordered_output_progress(1u) != 0) {
-        return 1;
-    }
     return wf_bridge_file_ready != 0
         && wf_file_adapter_progress(&wf_bridge_adapter, 1u) != 0;
 }
@@ -374,37 +191,6 @@ static void wf_bridge_shutdown_target_helpers(void) {
     wf_bridge_target_helper_count = 0;
 }
 
-static size_t wf_ordered_output_pending(void) {
-    size_t pending = 0;
-    size_t index;
-    if (wf_bridge_ordered_ready == 0) {
-        return 0;
-    }
-    (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-    for (index = 0; index < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++index) {
-        if (wf_bridge_ordered.roots[index].state
-            != WF_ORDERED_OUTPUT_FREE) {
-            pending += 1;
-        }
-    }
-    (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-    return pending;
-}
-
-static int wf_ordered_output_shutdown(void) {
-    int first_error = 0;
-    if (wf_bridge_ordered_ready == 0 || wf_ordered_output_pending() != 0) {
-        return EBUSY;
-    }
-    {
-        int error = pthread_mutex_destroy(&wf_bridge_ordered.lock);
-        if (first_error == 0 && error != 0) {
-            first_error = error;
-        }
-    }
-    return first_error;
-}
-
 static void wf_bridge_initialize_file(void) {
     wf_bridge_file_error = wf_file_adapter_init(
         &wf_bridge_adapter,
@@ -428,16 +214,12 @@ static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
     }
-    if (wf_bridge_file_ready != 0 || wf_bridge_ordered_ready != 0) {
+    if (wf_bridge_file_ready != 0) {
         wf_bridge_shutdown_target_helpers();
     }
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
         wf_bridge_file_ready = 0;
-    }
-    if (wf_bridge_ordered_ready != 0) {
-        (void)wf_ordered_output_shutdown();
-        wf_bridge_ordered_ready = 0;
     }
 #if defined(__linux__)
     if (wf_bridge_linux_ready != 0) {
@@ -517,7 +299,7 @@ static int wf_bridge_progress(void) {
         if (error != 0) {
             /* Target ownership has already transferred. Falling back now
              * would duplicate an operation, and ignoring the error would
-             * strand its capability forever. A target-runtime failure is a
+             * strand its owned operation forever. A target-runtime failure is a
              * fail-stop TCB defect, not a writer-visible IoError. */
             abort();
         }
@@ -526,8 +308,14 @@ static int wf_bridge_progress(void) {
 #endif
     /* Native CQ reaping comes first after a kernel wake. It can make a saved
      * writer frame ready before the bounded target/compute passes below. */
-    progressed |= wf_bridge_target_progress_one();
     progressed |= wf_bridge_drain() != 0;
+    /* A scheduler lane executes a blocking fallback request only when no
+     * target helper exists. With helpers, taking an unrelated request here
+     * could block the exact writer which is waiting to consume a completion
+     * they have already published. */
+    if (wf_bridge_target_helper_count == 0) {
+        progressed |= wf_bridge_target_progress_one();
+    }
     progressed |= wf__par_help_once() != 0;
     return progressed;
 }
@@ -569,72 +357,8 @@ void wf__writer_scheduler_notify(void) {
 }
 
 static int wf_bridge_claim(wf_completion_token *token) {
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        enum wf_completion_claim_result claimed = wf_completion_claim(
-            &wf_bridge_runtime,
-            token
-        );
-        if (claimed == WF_COMPLETION_CLAIMED) {
-            return 1;
-        }
-        if (claimed != WF_COMPLETION_CLAIM_WAIT_CAPACITY
-            && claimed != WF_COMPLETION_CLAIM_WAIT_ADMISSION) {
-            return 0;
-        }
-        if (!wf_bridge_progress()) {
-            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && (wf_bridge_file_ready == 0
-                    || wf_file_adapter_queued(&wf_bridge_adapter) == 0)) {
-                wf_bridge_park(epoch);
-            }
-        }
-    }
-}
-
-int wf__completion_file_batch_claim(
-    void *token_storage,
-    uint32_t count,
-    uint32_t requires_fallback
-) {
-    wf_completion_token *tokens = token_storage;
-    if (tokens == NULL || count < 2u
-        || count > WF_FILE_BATCH_MEMBER_CAPACITY
-        || pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
-        || wf_bridge_ready == 0) {
-        return 0;
-    }
-#if defined(__linux__)
-    if ((requires_fallback != 0 && !wf_bridge_ensure_file())
-        || (requires_fallback == 0 && wf_bridge_linux_ready == 0)) {
-        return 0;
-    }
-#else
-    (void)requires_fallback;
-    if (!wf_bridge_ensure_file()) {
-        return 0;
-    }
-#endif
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        enum wf_completion_claim_result claimed = wf_completion_claim_many(
-            &wf_bridge_runtime,
-            tokens,
-            (size_t)count
-        );
-        if (claimed == WF_COMPLETION_CLAIMED) {
-            return 1;
-        }
-        if (claimed != WF_COMPLETION_CLAIM_WAIT_CAPACITY) {
-            return 0;
-        }
-        if (!wf_bridge_progress()) {
-            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && wf_file_adapter_queued(&wf_bridge_adapter) == 0) {
-                wf_bridge_park(epoch);
-            }
-        }
-    }
+    return wf_completion_claim(&wf_bridge_runtime, token)
+        == WF_COMPLETION_CLAIMED;
 }
 
 static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
@@ -700,14 +424,13 @@ static int wf_bridge_publish_inline_file(
 static int wf_bridge_submit_file(
     const wf_file_request *request,
     wf_completion_token *token,
-    void *dependent_frame,
-    int reserved
+    void *dependent_frame
 ) {
     if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
         || wf_bridge_ready == 0 || !wf_bridge_ensure_file()) {
         return 0;
     }
-    if (reserved == 0 && !wf_bridge_claim(token)) {
+    if (!wf_bridge_claim(token)) {
         return 0;
     }
     if (wf_bridge_file_request_is_empty(request)) {
@@ -747,9 +470,6 @@ static int wf_bridge_submit_file(
             return 1;
         }
         if (submitted != WF_FILE_WAIT_CAPACITY) {
-            if (reserved != 0) {
-                abort();
-            }
             return 0;
         }
         if (!wf_bridge_progress()) {
@@ -767,8 +487,7 @@ static int wf_bridge_submit_linux_pread(
     uint64_t count,
     uint64_t file_offset,
     wf_completion_token *token,
-    void *dependent_frame,
-    int reserved
+    void *dependent_frame
 ) {
     wf_linux_file_request request;
     if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
@@ -782,7 +501,7 @@ static int wf_bridge_submit_linux_pread(
     request.buffer.read_buffer = buffer;
     request.count = (size_t)count;
     request.offset = file_offset;
-    if (reserved == 0 && !wf_bridge_claim(token)) {
+    if (!wf_bridge_claim(token)) {
         return 0;
     }
     if (wf_completion_set_adapter_tag(
@@ -820,7 +539,7 @@ static int wf_bridge_submit_linux_pread(
         if (submitted != WF_LINUX_IO_URING_WAIT_CAPACITY) {
             /* `linux_ready` and the request checks above close every honest
              * pre-ownership fallback. Reaching another result after claiming
-             * the bundle is an internal adapter/core contract defect. */
+             * the operation is an internal adapter/core contract defect. */
             abort();
         }
         if (!wf_bridge_progress()) {
@@ -851,8 +570,7 @@ int wf__completion_file_read_submit(
     return wf_bridge_submit_file(
         &request,
         (wf_completion_token *)token_storage,
-        NULL,
-        0
+        NULL
     );
 }
 
@@ -876,8 +594,7 @@ int wf__completion_file_pread_submit(
             count,
             file_offset,
             (wf_completion_token *)token_storage,
-            NULL,
-            0
+            NULL
         );
         if (native >= 0) {
             return native;
@@ -896,8 +613,7 @@ int wf__completion_file_pread_submit(
     return wf_bridge_submit_file(
         &request,
         (wf_completion_token *)token_storage,
-        NULL,
-        0
+        NULL
     );
 }
 
@@ -927,94 +643,109 @@ int wf__completion_file_write_submit(
     return wf_bridge_submit_file(
         &request,
         (wf_completion_token *)token_storage,
-        NULL,
-        0
+        NULL
     );
 }
 
-void wf__completion_file_pread_submit_reserved(
+int wf__completion_file_open_at_submit(
+    int directory,
+    const char *path,
+    int flags,
+    unsigned mode,
+    unsigned has_mode,
+    unsigned expected_kind,
+    void *token_storage
+) {
+    wf_file_request request;
+    if (token_storage == NULL || path == NULL || has_mode > 1u
+        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
+        return 0;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = directory;
+    request.operation.open_at.path = path;
+    request.operation.open_at.flags = flags;
+    request.operation.open_at.mode = mode;
+    request.operation.open_at.has_mode = has_mode;
+    request.operation.open_at.expected_kind =
+        (enum wf_file_expected_kind)expected_kind;
+    return wf_bridge_submit_file(
+        &request,
+        (wf_completion_token *)token_storage,
+        NULL
+    );
+}
+
+int wf__completion_file_status_submit(
+    int descriptor,
+    void *token_storage
+) {
+    wf_file_request request;
+    if (token_storage == NULL) {
+        return 0;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_STATUS;
+    request.operation.status.descriptor = descriptor;
+    return wf_bridge_submit_file(
+        &request,
+        (wf_completion_token *)token_storage,
+        NULL
+    );
+}
+
+int wf__completion_file_close_submit(
+    int descriptor,
+    void *token_storage
+) {
+    wf_file_request request;
+    if (token_storage == NULL) {
+        return 0;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_CLOSE;
+    request.operation.close.descriptor = descriptor;
+    return wf_bridge_submit_file(
+        &request,
+        (wf_completion_token *)token_storage,
+        NULL
+    );
+}
+
+int wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
-    uint64_t file_offset,
+    int64_t *position,
     void *token_storage
 ) {
-    wf_completion_token *token = token_storage;
+#if defined(__APPLE__)
     wf_file_request request;
-    if (token == NULL || (buffer == NULL && count != 0)) {
-        abort();
+    if (token_storage == NULL || position == NULL
+        || (buffer == NULL && count != 0)
+        || (uint64_t)(size_t)count != count) {
+        return 0;
     }
-    if (count == 0) {
-        (void)wf_bridge_publish_inline_file(
-            *token,
-            NULL,
-            WF_FILE_PREAD,
-            0,
-            0
-        );
-        return;
-    }
-    if (file_offset > (uint64_t)INT64_MAX) {
-        (void)wf_bridge_publish_inline_file(
-            *token,
-            NULL,
-            WF_FILE_PREAD,
-            -1,
-            EINVAL
-        );
-        return;
-    }
-#if defined(__linux__)
-    {
-        int native = wf_bridge_submit_linux_pread(
-            descriptor,
-            buffer,
-            count,
-            file_offset,
-            token,
-            NULL,
-            1
-        );
-        if (native >= 0) {
-            if (native != 1) {
-                abort();
-            }
-            return;
-        }
-    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_GETDIRENTRIES64;
+    request.operation.getdirentries64.descriptor = descriptor;
+    request.operation.getdirentries64.buffer = buffer;
+    request.operation.getdirentries64.count = (size_t)count;
+    request.operation.getdirentries64.position = position;
+    return wf_bridge_submit_file(
+        &request,
+        (wf_completion_token *)token_storage,
+        NULL
+    );
+#else
+    (void)descriptor;
+    (void)buffer;
+    (void)count;
+    (void)position;
+    (void)token_storage;
+    return 0;
 #endif
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = buffer;
-    request.operation.pread.count = (size_t)count;
-    request.operation.pread.offset = (int64_t)file_offset;
-    if ((uint64_t)request.operation.pread.count != count
-        || !wf_bridge_submit_file(&request, token, NULL, 1)) {
-        abort();
-    }
-}
-
-void wf__completion_file_write_submit_reserved(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage
-) {
-    wf_completion_token *token = token_storage;
-    wf_file_request request;
-    if (token == NULL || (buffer == NULL && count != 0)) {
-        abort();
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-    if ((uint64_t)request.operation.write.count != count
-        || !wf_bridge_submit_file(&request, token, NULL, 1)) {
-        abort();
-    }
 }
 
 int wf__completion_file_pread_submit_writer(
@@ -1039,8 +770,7 @@ int wf__completion_file_pread_submit_writer(
             count,
             file_offset,
             (wf_completion_token *)token_storage,
-            frame,
-            0
+            frame
         );
         if (native >= 0) {
             return native;
@@ -1059,8 +789,7 @@ int wf__completion_file_pread_submit_writer(
     return wf_bridge_submit_file(
         &request,
         (wf_completion_token *)token_storage,
-        frame,
-        0
+        frame
     );
 }
 
@@ -1087,8 +816,7 @@ int wf__completion_file_write_submit_writer(
     return wf_bridge_submit_file(
         &request,
         (wf_completion_token *)token_storage,
-        frame,
-        0
+        frame
     );
 }
 
@@ -1115,8 +843,7 @@ int64_t wf__completion_file_pread_direct(
             count,
             (uint64_t)file_offset,
             &token,
-            NULL,
-            0
+            NULL
         );
         if (submitted == 1) {
             int64_t value;
@@ -1160,6 +887,73 @@ int64_t wf__completion_file_write_direct(
     return wf_bridge_return_direct(wf_file_execute_direct(&request));
 }
 
+int wf__completion_file_open_at_direct(
+    int directory,
+    const char *path,
+    int flags,
+    unsigned mode,
+    unsigned has_mode,
+    unsigned expected_kind,
+    int *error_code,
+    unsigned *open_outcome
+) {
+    wf_file_request request;
+    wf_file_result result;
+    if (path == NULL || has_mode > 1u
+        || expected_kind > WF_FILE_EXPECT_DIRECTORY || error_code == NULL
+        || open_outcome == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = directory;
+    request.operation.open_at.path = path;
+    request.operation.open_at.flags = flags;
+    request.operation.open_at.mode = mode;
+    request.operation.open_at.has_mode = has_mode;
+    request.operation.open_at.expected_kind =
+        (enum wf_file_expected_kind)expected_kind;
+    result = wf_file_execute_direct(&request);
+    *error_code = result.error_code;
+    *open_outcome = (unsigned)result.open_outcome;
+    return (int)wf_bridge_return_direct(result);
+}
+
+int wf__completion_file_status_direct(
+    int descriptor,
+    void *status,
+    uint64_t status_capacity
+) {
+    wf_file_request request;
+    wf_file_result result;
+    if (status == NULL
+        || (uint64_t)(size_t)status_capacity != status_capacity) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_STATUS;
+    request.operation.status.descriptor = descriptor;
+    result = wf_file_execute_direct(&request);
+    if (result.value == 0) {
+        if ((uint64_t)result.status_size > status_capacity) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        memcpy(status, result.status, result.status_size);
+    }
+    return (int)wf_bridge_return_direct(result);
+}
+
+int wf__completion_file_close_direct(int descriptor) {
+    wf_file_request request;
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_CLOSE;
+    request.operation.close.descriptor = descriptor;
+    return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
+}
+
 int64_t wf__completion_directory_next_direct(
     int descriptor,
     void *buffer,
@@ -1190,129 +984,9 @@ int64_t wf__completion_directory_next_direct(
 #endif
 }
 
-uint64_t wf__completion_output_batch_begin(
-    uint64_t logical_root,
-    uint32_t expected
-) {
-    if (logical_root == 0 || expected < 2
-        || expected > WF_ORDERED_OUTPUT_MEMBER_CAPACITY
-        || pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
-        || wf_bridge_ready == 0 || !wf_bridge_ensure_ordered()) {
-        return 0;
-    }
-    for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        size_t index;
-        (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-        for (index = 0; index < WF_ORDERED_OUTPUT_ROOT_CAPACITY; ++index) {
-            wf_ordered_output_root *root =
-                &wf_bridge_ordered.roots[index];
-            if (root->state == WF_ORDERED_OUTPUT_FREE) {
-                memset(root, 0, sizeof(*root));
-                if (wf_completion_claim_many(
-                        &wf_bridge_runtime,
-                        root->reserved,
-                        expected
-                    ) == WF_COMPLETION_CLAIMED) {
-                    uint64_t generation = atomic_fetch_add_explicit(
-                        &wf_bridge_ordered_generation,
-                        1,
-                        memory_order_relaxed
-                    ) + 1u;
-                    if (generation == 0) {
-                        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-                        abort();
-                    }
-                    root->state = WF_ORDERED_OUTPUT_RESERVING;
-                    root->key = generation;
-                    root->logical_root = logical_root;
-                    root->expected = expected;
-                    (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-                    return generation;
-                }
-                memset(root, 0, sizeof(*root));
-                break;
-            }
-        }
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        if (!wf_bridge_progress()) {
-            wf_bridge_park(epoch);
-        }
-    }
-}
-
-void wf__completion_output_batch_submit(
-    uint64_t root_key,
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage
-) {
-    wf_completion_token *token = token_storage;
-    wf_file_request request;
-    wf_ordered_output_root *root;
-    enum wf_completion_transition_result transition;
-    if (token == NULL || (buffer == NULL && count != 0)
-        || (uint64_t)(size_t)count != count) {
-        abort();
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-
-    (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-    root = wf_ordered_find_locked(root_key);
-    if (root == NULL || root->state != WF_ORDERED_OUTPUT_RESERVING
-        || root->submitted >= root->expected) {
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        abort();
-    }
-    *token = root->reserved[root->submitted];
-    transition = wf_completion_set_adapter_tag(
-        &wf_bridge_runtime,
-        *token,
-        WF_BRIDGE_ROUTE_ORDERED_OUTPUT
-    );
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        abort();
-    }
-    transition = wf_completion_begin_submit(&wf_bridge_runtime, *token);
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        abort();
-    }
-    transition = wf_completion_target_accepted(&wf_bridge_runtime, *token);
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        abort();
-    }
-    root->items[root->submitted].token = *token;
-    root->items[root->submitted].request = request;
-    root->submitted += 1;
-    (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-}
-
-void wf__completion_output_batch_commit(uint64_t root_key) {
-    wf_ordered_output_root *root;
-    (void)pthread_mutex_lock(&wf_bridge_ordered.lock);
-    root = wf_ordered_find_locked(root_key);
-    if (root == NULL || root->state != WF_ORDERED_OUTPUT_RESERVING
-        || root->submitted != root->expected) {
-        (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-        abort();
-    }
-    root->state = WF_ORDERED_OUTPUT_COMMITTED;
-    (void)pthread_mutex_unlock(&wf_bridge_ordered.lock);
-    wf_bridge_notify_target();
-}
-
-int wf__completion_file_take(
+static int wf_bridge_take_file_result(
     const void *token_storage,
-    int64_t *value,
-    int *error_code
+    wf_file_result *file_result
 ) {
     wf_completion_token token;
     enum wf_bridge_route route;
@@ -1326,7 +1000,7 @@ int wf__completion_file_take(
     } result;
     wf_completion_outcome outcome;
     enum wf_completion_consume_result consumed;
-    if (token_storage == NULL || value == NULL || error_code == NULL) {
+    if (token_storage == NULL || file_result == NULL) {
         abort();
     }
     token = *(const wf_completion_token *)token_storage;
@@ -1346,24 +1020,95 @@ int wf__completion_file_take(
         abort();
     }
     route = (enum wf_bridge_route)outcome.adapter_tag;
-    if (route == WF_BRIDGE_ROUTE_FILE_FALLBACK
-        || route == WF_BRIDGE_ROUTE_ORDERED_OUTPUT) {
+    if (route == WF_BRIDGE_ROUTE_FILE_FALLBACK) {
         if (outcome.result_size != sizeof(result.file)) {
             abort();
         }
-        *value = result.file.value;
-        *error_code = result.file.error_code;
+        *file_result = result.file;
 #if defined(__linux__)
     } else if (route == WF_BRIDGE_ROUTE_LINUX_IO_URING) {
         if (outcome.result_size != sizeof(result.linux)) {
             abort();
         }
-        *value = result.linux.value;
-        *error_code = result.linux.error_code;
+        memset(file_result, 0, sizeof(*file_result));
+        file_result->kind = result.linux.kind == WF_LINUX_FILE_READ_AT
+            ? WF_FILE_PREAD
+            : WF_FILE_PWRITE;
+        file_result->value = result.linux.value;
+        file_result->error_code = result.linux.error_code;
 #endif
     } else {
         abort();
     }
+    return 1;
+}
+
+int wf__completion_file_take(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code
+) {
+    wf_file_result result;
+    if (value == NULL || error_code == NULL) {
+        abort();
+    }
+    if (!wf_bridge_take_file_result(token_storage, &result)) {
+        return 0;
+    }
+    *value = result.value;
+    *error_code = result.error_code;
+    return 1;
+}
+
+int wf__completion_file_take_status(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    void *status,
+    uint64_t status_capacity,
+    uint64_t *status_size
+) {
+    wf_file_result result;
+    if (value == NULL || error_code == NULL || status == NULL
+        || status_size == NULL
+        || (uint64_t)(size_t)status_capacity != status_capacity) {
+        abort();
+    }
+    if (!wf_bridge_take_file_result(token_storage, &result)) {
+        return 0;
+    }
+    if (result.kind != WF_FILE_STATUS
+        || (uint64_t)result.status_size > status_capacity) {
+        abort();
+    }
+    if (result.status_size != 0) {
+        memcpy(status, result.status, result.status_size);
+    }
+    *value = result.value;
+    *error_code = result.error_code;
+    *status_size = (uint64_t)result.status_size;
+    return 1;
+}
+
+static int wf_bridge_take_open(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
+) {
+    wf_file_result result;
+    if (value == NULL || error_code == NULL || open_outcome == NULL) {
+        abort();
+    }
+    if (!wf_bridge_take_file_result(token_storage, &result)) {
+        return 0;
+    }
+    if (result.kind != WF_FILE_OPEN_AT) {
+        abort();
+    }
+    *value = result.value;
+    *error_code = result.error_code;
+    *open_outcome = (unsigned)result.open_outcome;
     return 1;
 }
 
@@ -1400,6 +1145,91 @@ void wf__completion_file_join(
         }
     }
 }
+
+void wf__completion_file_open_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
+) {
+    for (;;) {
+        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_bridge_take_open(
+                token_storage,
+                value,
+                error_code,
+                open_outcome
+            )) {
+            return;
+        }
+        if (!wf_bridge_progress()) {
+            if (wf_bridge_drain() != 0) {
+                continue;
+            }
+            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
+                && (wf_bridge_file_ready == 0
+                    || wf_file_adapter_queued(&wf_bridge_adapter) == 0)) {
+                enum wf_completion_consume_wait_result wait =
+                    wf_completion_wait_to_consume(
+                        &wf_bridge_runtime,
+                        *(const wf_completion_token *)token_storage
+                    );
+                if (wait == WF_COMPLETION_CONSUME_READY) {
+                    continue;
+                }
+                if (wait != WF_COMPLETION_CONSUME_WAIT_REGISTERED) {
+                    abort();
+                }
+                wf_bridge_park(epoch);
+            }
+        }
+    }
+}
+
+void wf__completion_file_status_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    void *status,
+    uint64_t status_capacity,
+    uint64_t *status_size
+) {
+    for (;;) {
+        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf__completion_file_take_status(
+                token_storage,
+                value,
+                error_code,
+                status,
+                status_capacity,
+                status_size
+            )) {
+            return;
+        }
+        if (!wf_bridge_progress()) {
+            if (wf_bridge_drain() != 0) {
+                continue;
+            }
+            if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
+                && (wf_bridge_file_ready == 0
+                    || wf_file_adapter_queued(&wf_bridge_adapter) == 0)) {
+                enum wf_completion_consume_wait_result wait =
+                    wf_completion_wait_to_consume(
+                        &wf_bridge_runtime,
+                        *(const wf_completion_token *)token_storage
+                    );
+                if (wait == WF_COMPLETION_CONSUME_READY) {
+                    continue;
+                }
+                if (wait != WF_COMPLETION_CONSUME_WAIT_REGISTERED) {
+                    abort();
+                }
+                wf_bridge_park(epoch);
+            }
+        }
+    }
+}
+
 void wf__writer_run_root(void *frame) {
     while (!wf__writer_is_done(frame)) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);

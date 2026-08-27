@@ -1,4 +1,4 @@
-fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -6,7 +6,7 @@ fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pu
   return bytes[index];
 }
 
-fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -15,7 +15,7 @@ fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 
   return value;
 }
 
-fn bridge_top(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn bridge_top(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;

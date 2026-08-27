@@ -1,4 +1,4 @@
-//! [EFF-2] capability-parameter effects and release attribution.
+//! [EFF-2] state-parameter effects and release attribution.
 //!
 //! The exhibited row is the union of the syntactic contribution and the
 //! release contribution: the effect rows of every compiler-derived release
@@ -7,10 +7,19 @@
 
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
-use super::super::model::CheckedResultAuthorityOrigin;
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::super::model::{CheckedResultStateOrigin, CheckedResultStatePath};
+use super::{assert_rule, with_semantics};
 
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
+
+fn root(parameter: u32) -> CheckedResultStatePath {
+    CheckedResultStatePath {
+        result_fields: Vec::new(),
+        result_variant: None,
+        parameter,
+        parameter_fields: Vec::new(),
+    }
+}
 
 fn assert_complete(source: &[u8]) {
     with_semantics(source, |outcome| {
@@ -78,21 +87,20 @@ fn a_borrowed_resource_parameter_contributes_no_release_row() {
     // owner has one [EFF-2, STOR-3]. The same body under a borrowed parameter
     // is therefore exactly `pure`.
     assert_complete(BORROWED_ACCEPT);
-    // And exactly `pure`: declaring the owner's row over a borrow is
-    // declared-but-unexhibited. No release contributed the categories, so this
-    // is the ordinary mismatch rather than the release-attributed diagnostic.
+    // A shared loan cannot authorize a state transition. The signature is
+    // rejected at EFF-1 before release attribution is considered.
     assert_rule(
         BORROWED_REJECT,
-        SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        SemanticRule::Eff1,
+        SemanticIssueKind::InvalidEffectRow,
     );
 }
 
 #[test]
 fn over_declaring_the_release_row_rejects_likewise() {
     // Preserve the old test's declared-but-unexhibited direction under the
-    // capability-row model: Args release is empty and the body performs no
-    // capability action, so `reads(args)` is an exact over-declaration.
+    // state-row model: Args release is empty and the body performs no
+    // state action, so `reads(args)` is an exact over-declaration.
     assert_rule(
         b"fn ignore_arguments(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
@@ -101,7 +109,52 @@ fn over_declaring_the_release_row_rejects_likewise() {
 }
 
 #[test]
-fn an_immutable_borrowing_helper_names_only_the_snapshot_capability() {
+fn file_reservation_and_open_project_only_their_explicit_inputs() {
+    assert_complete(
+        br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region 'state {
+    let permit = reserve_file<'state>(factory: &uniq 'state files);
+    let opened = open_directory_source<'state>(permit: move permit, directory: &'state cwd);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+}
+
+#[test]
+fn file_reservation_projects_the_factory_without_an_open() {
+    assert_complete(
+        br#"command fn main(command.files as files: own FileFactory) -> status: own ExitStatus reads(files), writes(files) {
+  region 'state {
+    let permit = reserve_file<'state>(factory: &uniq 'state files);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+}
+
+#[test]
+fn unused_file_authority_releases_by_logical_consume() {
+    assert_complete(
+        br#"fn discard_factory(factory: own FileFactory) -> result: own unit pure {
+  return unit;
+}
+
+fn discard_permit(permit: own FilePermit) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+}
+
+#[test]
+fn an_immutable_borrowing_helper_names_only_the_snapshot_state() {
     // The local borrow region still does not escape into the row. The new
     // authority component is `reads(args)`, independently of that lifetime.
     assert_complete(
@@ -118,7 +171,7 @@ fn a_release_on_one_match_arm_contributes_its_row() {
     // The release contribution is the union over every normal edge of the
     // conservative structural graph [FN-1]: only the `Ok` arm ever holds a
     // `ReadFile`, and `IoError` has no release action [SYS-5], yet the
-    // one-arm release still contributes its exact capability write.
+    // one-arm release still contributes its exact state write.
     assert_complete(CONDITIONAL_UNION_ACCEPT);
     // Running on only some paths never weakens the contribution: omitting
     // the row is an undeclared-but-exhibited rejection naming the arm
@@ -128,7 +181,7 @@ fn a_release_on_one_match_arm_contributes_its_row() {
 
 #[test]
 fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
-    // [FN-3] normalizes a row to six capabilities and compares `external`
+    // [FN-3] normalizes a row to six state identities and compares `external`
     // and `blocks` by presence exactly as `traps`: a `pure` member cannot
     // bind a function that exhibits a category only through release.
     assert_rule(
@@ -161,7 +214,7 @@ fn memory_reclamation_contributes_no_release_row() {
 fn release_attribution_is_transitive_over_owned_content() {
     // Release of a value is release of its components [SYS-5]: a
     // `box<ReadFile>` drop frees the box with the empty row and releases the
-    // boxed `ReadFile` with its fixed capability-release row, so the row is
+    // boxed `ReadFile` with its fixed state-release row, so the row is
     // exhibited through the indirection.
     assert_complete(
         b"fn stash(file: own ReadFile) -> result: own unit writes(file), allocates(heap) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
@@ -190,9 +243,9 @@ fn the_two_categories_keep_eff1_canonical_order_and_multiplicity() {
 }
 
 #[test]
-fn user_calls_substitute_capability_formals_to_actual_origins() {
-    // A moved capability keeps its direct formal origin, and the callee's
-    // capability subject projects back to that caller formal.
+fn user_calls_substitute_state_formals_to_actual_origins() {
+    // A moved state keeps its direct formal origin, and the callee's
+    // state subject projects back to that caller formal.
     assert_complete(
         b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit writes(file) {\n  let moved = move file;\n  release_read_file(file: move moved);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
@@ -211,14 +264,14 @@ const PASS_OUTPUT_PREFIX: &str = r#"fn pass_output(output: own Output) -> result
 
 fn pass_output_program(effects: &str) -> Vec<u8> {
     format!(
-        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own Output) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once<'o, 's>(output: &'o same, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own Output) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once<'o, 's>(output: &uniq 'o same, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
 
 #[test]
 fn a_user_result_cannot_wash_an_output_formal_origin() {
-    let accepted = pass_output_program("writes(out), allocates(heap)");
+    let accepted = pass_output_program("reads(out), writes(out), allocates(heap)");
     assert_complete(&accepted);
     let washed = pass_output_program("allocates(heap)");
     assert_rule(
@@ -231,11 +284,9 @@ fn a_user_result_cannot_wash_an_output_formal_origin() {
             panic!("the pass-through program must check: {outcome:?}");
         };
         assert_eq!(
-            program.data.functions[0].result_authority_origin,
-            CheckedResultAuthorityOrigin::Finite {
-                may_absent: false,
-                may_fresh: false,
-                formals: vec![0],
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0)],
             }
         );
     });
@@ -301,16 +352,17 @@ fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> r
 "#
     };
     format!(
-        "{chooser}command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "{chooser}command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
 
 #[test]
 fn a_control_flow_result_projects_to_every_possible_formal() {
-    let accepted = choose_output_program("writes(out err), allocates(heap)", false);
+    let accepted =
+        choose_output_program("reads(out, err), writes(out, err), allocates(heap)", false);
     assert_complete(&accepted);
-    let narrowed = choose_output_program("writes(out), allocates(heap)", false);
+    let narrowed = choose_output_program("reads(out), writes(out), allocates(heap)", false);
     assert_rule(
         &narrowed,
         SemanticRule::Eff2,
@@ -321,11 +373,9 @@ fn a_control_flow_result_projects_to_every_possible_formal() {
             panic!("the finite-origin choice must check: {outcome:?}");
         };
         assert_eq!(
-            program.data.functions[0].result_authority_origin,
-            CheckedResultAuthorityOrigin::Finite {
-                may_absent: false,
-                may_fresh: false,
-                formals: vec![0, 1],
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0), root(1)],
             }
         );
     });
@@ -346,13 +396,13 @@ fn delivered_wrapper(output: own Output, first: own Bool) -> result: own Output 
   return delivered(output: move output, first: first);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   let selected = delivered_wrapper(output: move out, first: flag);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+      let written = write_once<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -371,13 +421,13 @@ fn a_recursive_pass_through_reaches_the_formal_fixed_point() {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   let selected = recursive_pass(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+      let written = write_once<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -400,13 +450,13 @@ fn mutual_b(output: own Output, stop: own Bool) -> result: own Output pure {
   return mutual_a(output: move output, stop: stop);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   let selected = mutual_b(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+      let written = write_once<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -417,9 +467,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
 
 #[test]
 fn a_fresh_and_formal_result_join_remains_a_finite_origin_set() {
-    let source = br#"fn choose_file['r, 'p](existing: own Result<ReadFile, IoError>, root: &'r DirectoryRead, path: &'p RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads('r 'p root), writes(existing) {
+    let source = br#"fn choose_file['r, 'p](existing: own Result<ReadFile, IoError>, permit: own FilePermit, root: &'r DirectoryRead, path: &'p RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(existing, permit) {
   if fresh {
-    return open_read<'r, 'p>(root: root, path: path);
+    return open_read<'r, 'p>(permit: move permit, root: root, path: path);
   } else {
     return move existing;
   }
@@ -434,18 +484,16 @@ command fn main() -> status: own ExitStatus pure {
             panic!("fresh/formal origin union must check: {outcome:?}");
         };
         assert_eq!(
-            program.data.functions[0].result_authority_origin,
-            CheckedResultAuthorityOrigin::Finite {
-                may_absent: true,
-                may_fresh: true,
-                formals: vec![0],
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0)],
             }
         );
     });
 }
 
 #[test]
-fn an_unclosed_recursive_origin_is_explicitly_unsupported() {
+fn an_unclosed_recursive_origin_no_longer_creates_a_language_stop() {
     let source = br#"fn unclosed(output: own Output) -> result: own Output pure {
   return unclosed(output: move output);
 }
@@ -455,20 +503,31 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(
-        source,
-        crate::UnsupportedSemanticFeature::CapabilityResultOrigin,
-    );
+    assert_complete(source);
 }
 
 #[test]
-fn a_multi_root_capability_aggregate_is_explicitly_unsupported() {
+fn a_multi_state_aggregate_releases_each_structural_leaf() {
     let source = br#"struct Pair {
   first: ReadFile;
   second: ReadFile;
 }
 
-fn dispose(pair: own Pair) -> result: own unit pure {
+fn pass_pair(pair: own Pair) -> result: own Pair pure {
+  return move pair;
+}
+
+fn dispose(pair: own Pair) -> result: own unit writes(pair.first, pair.second) {
+  let same = pass_pair(pair: move pair);
+  return unit;
+}
+
+fn pack(first: own ReadFile, second: own ReadFile) -> result: own Pair pure {
+  return Pair(first: move first, second: move second);
+}
+
+fn dispose_inputs(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
+  let pair = pack(first: move first, second: move second);
   return unit;
 }
 
@@ -476,14 +535,219 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(
-        source,
-        crate::UnsupportedSemanticFeature::CapabilityResultOrigin,
-    );
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("two structural state leaves must survive an ordinary result move: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![
+                    CheckedResultStatePath {
+                        result_fields: vec![0],
+                        result_variant: None,
+                        parameter: 0,
+                        parameter_fields: vec![0],
+                    },
+                    CheckedResultStatePath {
+                        result_fields: vec![1],
+                        result_variant: None,
+                        parameter: 0,
+                        parameter_fields: vec![1],
+                    },
+                ],
+            }
+        );
+    });
 }
 
 #[test]
-fn a_source_error_precedes_the_multi_root_capability_stop() {
+fn ordinary_affine_types_and_embedded_copy_fields_preserve_result_identity() {
+    let source = br#"struct Record {
+  label: HostString;
+  count: u64;
+}
+
+fn pass_host(value: own HostString) -> result: own HostString pure {
+  return move value;
+}
+
+fn pass_path(value: own RelativePath) -> result: own RelativePath pure {
+  return move value;
+}
+
+fn pass_factory(value: own FileFactory) -> result: own FileFactory pure {
+  return move value;
+}
+
+fn pass_buffer(value: own buffer<u8>) -> result: own buffer<u8> pure {
+  return move value;
+}
+
+fn pass_record(value: own Record) -> result: own Record pure {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("ordinary affine pass-throughs must check: {outcome:?}");
+        };
+        for name in ["pass_host", "pass_path", "pass_factory", "pass_buffer"] {
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .unwrap_or_else(|| panic!("missing function {name}"));
+            assert_eq!(
+                function.result_state_origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![root(0)],
+                },
+                "{name} must use the ordinary owner-transfer route"
+            );
+        }
+        let record = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "pass_record")
+            .expect("pass_record function");
+        assert_eq!(
+            record.result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![
+                    CheckedResultStatePath {
+                        result_fields: vec![0],
+                        result_variant: None,
+                        parameter: 0,
+                        parameter_fields: vec![0],
+                    },
+                    CheckedResultStatePath {
+                        result_fields: vec![1],
+                        result_variant: None,
+                        parameter: 0,
+                        parameter_fields: vec![1],
+                    },
+                ],
+            },
+            "the copy field remains a structural leaf inside an affine owner"
+        );
+    });
+}
+
+#[test]
+fn replace_routes_the_old_field_and_residual_releases_independently() {
+    let source = br#"struct Pair {
+  first: ReadFile;
+  second: ReadFile;
+}
+
+fn replace_first(pair: own Pair, replacement: own ReadFile) -> result: own ReadFile reads(pair.first), writes(pair.first, pair.second, replacement) {
+  let previous = replace pair.first = move replacement;
+  return move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("field replacement must keep the old and residual owners distinct: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![CheckedResultStatePath {
+                    result_fields: Vec::new(),
+                    result_variant: None,
+                    parameter: 0,
+                    parameter_fields: vec![0],
+                }],
+            }
+        );
+    });
+}
+
+#[test]
+fn direct_aggregate_construction_releases_every_input_leaf() {
+    let accepted = br#"struct Pair {
+  first: ReadFile;
+  second: ReadFile;
+}
+
+fn dispose(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
+  let pair = Pair(first: move first, second: move second);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(accepted);
+    let missing_second = br#"struct Pair {
+  first: ReadFile;
+  second: ReadFile;
+}
+
+fn dispose(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first) {
+  let pair = Pair(first: move first, second: move second);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_release_mismatch(missing_second, "pair", b"writes(first)");
+}
+
+#[test]
+fn match_payload_binders_receive_only_the_selected_constructor_payload() {
+    let source = br#"enum Choice {
+  Left(file: ReadFile);
+  Right(file: ReadFile);
+}
+
+fn select_left(left: own ReadFile, unrelated: own ReadFile) -> result: own ReadFile writes(unrelated) {
+  let choice = Left(file: move left);
+  match move choice {
+    Left(file: selected) => {
+      return move selected;
+    }
+    Right(file: impossible) => {
+      return move impossible;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!(
+                "an unselected payload must not inherit the selected payload's origin: {outcome:?}"
+            );
+        };
+        assert_eq!(
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0)],
+            }
+        );
+    });
+}
+
+#[test]
+fn a_source_error_still_precedes_state_origin_analysis() {
     let source = br#"struct Pair {
   first: ReadFile;
   second: ReadFile;
@@ -509,12 +773,12 @@ fn an_unrelated_loop_does_not_destroy_a_formal_origin() {
   return move output;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let selected = through_loop(output: move out);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+      let written = write_once<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -525,11 +789,16 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
 
 #[test]
 fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
-    let source = br#"fn loop_choice['r, 'p](selected: own Result<ReadFile, IoError>, root: &'r DirectoryRead, path: &'p RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads('r 'p root), writes(selected) {
+    let source = br#"fn loop_choice['p](selected: own Result<ReadFile, IoError>, factory: own FileFactory, root: own DirectoryRead, path: &'p RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads(selected, factory, root, path), writes(selected, factory, root) {
   loop @once {
     if refresh {
-      let replacement = open_read<'r, 'p>(root: root, path: path);
-      let discarded = replace selected = move replacement;
+      region 'reservation {
+        let permit = reserve_file<'reservation>(factory: &uniq 'reservation factory);
+        region 'lookup {
+          let replacement = open_read<'lookup, 'p>(permit: move permit, root: &'lookup root, path: path);
+          let discarded = replace selected = move replacement;
+        }
+      }
     }
     break @once;
   }
@@ -545,18 +814,16 @@ command fn main() -> status: own ExitStatus pure {
             panic!("loop origin update must check: {outcome:?}");
         };
         assert_eq!(
-            program.data.functions[0].result_authority_origin,
-            CheckedResultAuthorityOrigin::Finite {
-                may_absent: true,
-                may_fresh: true,
-                formals: vec![0],
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![root(0)],
             }
         );
     });
 }
 
 #[test]
-fn an_optional_capability_result_can_prove_that_its_only_route_is_absent() {
+fn an_optional_state_result_can_prove_that_its_only_route_is_absent() {
     let source = br#"fn no_file() -> result: own Result<ReadFile, IoError> pure {
   let problem = Other(code: 0_u32, origin: 0_u8);
   return Err<ReadFile, IoError>(error: move problem);
@@ -569,13 +836,11 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("a proved Err-only optional capability must check: {outcome:?}");
+            panic!("a proved Err-only optional state must check: {outcome:?}");
         };
         assert_eq!(
-            program.data.functions[0].result_authority_origin,
-            CheckedResultAuthorityOrigin::Finite {
-                may_absent: true,
-                may_fresh: false,
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
                 formals: Vec::new(),
             }
         );
@@ -593,14 +858,14 @@ fn an_optional_result_projects_its_present_formal_and_keeps_its_absent_route() {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   match maybe_output(output: move out, present: flag) {
     Ok(value: selected) => {
       let bytes = buffer_new(1_u64, 65_u8);
       region 'o {
         region 's {
-          let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+          let written = write_once<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
         }
       }
     }
@@ -615,22 +880,25 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
             panic!("optional formal origin must check: {outcome:?}");
         };
         assert_eq!(
-            program.data.functions[0].result_authority_origin,
-            CheckedResultAuthorityOrigin::Finite {
-                may_absent: true,
-                may_fresh: false,
-                formals: vec![0],
+            program.data.functions[0].result_state_origin,
+            CheckedResultStateOrigin::Finite {
+                formals: vec![CheckedResultStatePath {
+                    result_fields: vec![0],
+                    result_variant: Some(0),
+                    parameter: 0,
+                    parameter_fields: Vec::new(),
+                }],
             }
         );
     });
 }
 
 #[test]
-fn eff1_rejects_a_copy_only_parameter_as_a_capability_subject() {
+fn a_copy_only_parameter_is_a_valid_path_but_must_be_exhibited() {
     assert_rule(
         b"fn probe(value: own u64) -> result: own unit reads(value) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff1,
-        SemanticIssueKind::InvalidEffectRow,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
     );
 }
 
@@ -638,5 +906,31 @@ fn eff1_rejects_a_copy_only_parameter_as_a_capability_subject() {
 fn external_and_blocks_are_ordinary_function_and_parameter_names() {
     assert_complete(
         b"fn external(blocks: own Args) -> result: own u64 reads(blocks) {\n  region 'a {\n    let total = args_count<'a>(args: &'a blocks);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+    );
+}
+
+#[test]
+fn borrowing_one_owned_struct_field_projects_only_that_field_effect() {
+    assert_complete(
+        br#"struct Pair {
+  first: buffer<u8>;
+  second: buffer<u8>;
+}
+
+fn length['v](value: &'v buffer<u8>) -> result: own u64 reads(value) {
+  return len(deref(value));
+}
+
+fn read_second(pair: own Pair) -> result: own unit reads(pair.second) {
+  region 'second {
+    let count = length<'second>(value: &'second pair.second);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
     );
 }

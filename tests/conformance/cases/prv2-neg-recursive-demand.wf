@@ -2,7 +2,7 @@ fn clamp_three(value: own u64) -> return_value: own u64 pure {
   return imin(value, 3_u64);
 }
 
-fn recursive_read(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> return_value: own u8 traps {
+fn recursive_read(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> return_value: own u8 reads(bytes), traps {
   let finished = ieq(remaining, 0_u64);
   if finished {
     let room = len(bytes);

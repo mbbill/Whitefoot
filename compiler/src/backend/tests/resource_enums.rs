@@ -124,7 +124,7 @@ fn option_buffer_some_none_and_transfer_execute() {
   return unit;
 }
 
-fn consume(value: own Option<buffer<u8>>) -> result: own u8 pure {
+fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
   match move value {
     None() => {
       return 0_u8;

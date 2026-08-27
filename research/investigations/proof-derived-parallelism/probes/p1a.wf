@@ -51,7 +51,7 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 reads('w) {
+fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 reads(words) {
   doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged and the whole function is claim-free.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
@@ -74,7 +74,7 @@ fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 r
   return fadd.strict(total, widest);
 }
 
-fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads('w), traps {
+fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads(words), traps {
   doc "The same walk over a caller-supplied prefix. The bound comes from the caller, so the index obligation needs a claim, which is exactly what makes every call closure through this function permitted but not actualizable.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
@@ -99,7 +99,7 @@ fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> re
   return fadd.strict(total, widest);
 }
 
-fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f64) -> result: own f64 reads('b 'w), writes('b) {
+fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
   doc "Folds the box tree, writing each node's resolved height into its own slot. The two child calls are the permitted and actualizable pair: neither reads what the other defines, their written footprints are the disjoint sibling subtrees, neither carries a capability access or may-suspend target action, and no exit of the first skips the second.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
@@ -126,7 +126,7 @@ fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f6
   }
 }
 
-fn layout_banded['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads('b 'w), writes('b), traps {
+fn layout_banded['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words), writes(node), traps {
   doc "The same fold whose per-node measure takes a caller-supplied band. Its child pair satisfies every permission condition too, but a claim site is reachable from both callees, so the pair is permitted and not actualizable.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
@@ -167,7 +167,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one 64-bit value as sixteen lowercase hexadecimal digits, most significant first.";
   let cursor = at;
   let rest = value;
@@ -190,7 +190,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap), traps {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes.";
   let tree = build(depth: 6_u64, w: 512.0_f64);
   let words = buffer_new(8192_u64, 0.25_f64);

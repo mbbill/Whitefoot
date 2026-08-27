@@ -508,13 +508,13 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd out), allocates(heap) {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt<u64, u8>(written);
           match narrowed {
@@ -542,11 +542,12 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
     let arms = class_arms(12, named, default);
     format!(
-        r#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {{
+        r#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
     region 'n {{
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
+      let permit = reserve_file<'c>(factory: &uniq 'c files);
+      match open_file<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
         Ok(value: file) => {{
           return exit_status(code: 24_u8);
         }}
@@ -615,18 +616,23 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     let native = super::compile(RELEASES_ONE_DIRECTORY);
     let deterministic = emit_for_deterministic_target(RELEASES_ONE_DIRECTORY);
 
-    assert!(native.contains("declare i32 @close(i32)"));
+    assert!(native.contains("declare i32 @wf__completion_file_close_direct(i32)"));
     assert!(native.contains("declare i32 @open(ptr, i32, ...)"));
     assert!(!native.contains("wf_test"));
 
     assert!(deterministic.contains("declare i32 @wf_test_close(i32)"));
     assert!(deterministic.contains("declare i32 @wf_test_open(ptr, i32, ...)"));
     // The redirect is complete: no use site keeps calling the native facility.
-    assert!(!deterministic.contains("@close(i32 "));
+    assert!(!deterministic.contains("@wf__completion_file_close_direct(i32 "));
     assert!(!deterministic.contains("@open(ptr "));
 
     // One release, one close attempt, on either target [SYS-5].
-    assert_eq!(native.matches("call i32 @close(i32").count(), 1);
+    assert_eq!(
+        native
+            .matches("call i32 @wf__completion_file_close_direct(i32")
+            .count(),
+        1
+    );
     assert_eq!(
         deterministic.matches("call i32 @wf_test_close(i32").count(),
         1
@@ -637,8 +643,12 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     // emits.
     assert_eq!(
         native
-            .replace("@close", "@wf_test_close")
-            .replace("@open", "@wf_test_open"),
+            .replace("@wf__completion_file_close_direct", "@wf_test_close")
+            .replace("@open", "@wf_test_open")
+            .replace(
+                "declare i32 @wf_test_open(ptr, i32, ...)\ndeclare i32 @wf_test_close(i32)",
+                "declare i32 @wf_test_close(i32)\ndeclare i32 @wf_test_open(ptr, i32, ...)",
+            ),
         deterministic
     );
 }
@@ -957,7 +967,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     // facility, but only the operation row has a target column: the record
     // writer is the compiler's own and must never be scriptable, or a forced
     // short write could truncate a trap record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap), traps {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
   let bytes = buffer_new(1_u64, 65_u8);
   let bounded = 0_u64;
   let step = 0_u64;
@@ -972,7 +982,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
   let successor = bounded + 1_u64;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1019,11 +1029,11 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{
-      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
         Ok(value: written) => {{
           let narrowed = cvt<u64, u8>(written);
           match narrowed {{

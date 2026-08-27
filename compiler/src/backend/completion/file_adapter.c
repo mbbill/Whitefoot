@@ -54,7 +54,9 @@ static int wf_file_request_valid(const wf_file_request *request) {
     }
     switch (request->kind) {
     case WF_FILE_OPEN_AT:
-        return request->operation.open_at.path != NULL;
+        return request->operation.open_at.path != NULL
+            && request->operation.open_at.expected_kind
+                <= WF_FILE_EXPECT_DIRECTORY;
     case WF_FILE_READ:
         return request->operation.read.buffer != NULL
             || request->operation.read.count == 0;
@@ -141,11 +143,21 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
      * never become writer-visible outcomes. */
     switch (request->kind) {
     case WF_FILE_OPEN_AT:
+        if (request->operation.open_at.expected_kind
+            > WF_FILE_EXPECT_DIRECTORY) {
+            result.error_code = EINVAL;
+            result.open_outcome = WF_FILE_OPEN_FAILED;
+            return result;
+        }
         if (request->operation.open_at.has_mode != 0) {
             result.value = openat(
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
-                request->operation.open_at.flags,
+                request->operation.open_at.flags
+                    | (request->operation.open_at.expected_kind
+                               == WF_FILE_EXPECT_REGULAR
+                           ? O_NONBLOCK
+                           : 0),
                 (mode_t)request->operation.open_at.mode
             );
         } else {
@@ -153,7 +165,38 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags
+                    | (request->operation.open_at.expected_kind
+                               == WF_FILE_EXPECT_REGULAR
+                           ? O_NONBLOCK
+                           : 0)
             );
+        }
+        if (result.value < 0) {
+            result.open_outcome = WF_FILE_OPEN_FAILED;
+            break;
+        }
+        if (request->operation.open_at.expected_kind != WF_FILE_EXPECT_ANY) {
+            struct stat status;
+            int descriptor = (int)result.value;
+            if (fstat(descriptor, &status) != 0) {
+                int status_error = errno;
+                (void)close(descriptor);
+                result.error_code = status_error;
+                result.open_outcome = WF_FILE_OPEN_STATUS_FAILED;
+                return result;
+            }
+            if ((request->operation.open_at.expected_kind
+                        == WF_FILE_EXPECT_REGULAR
+                    && !S_ISREG(status.st_mode))
+                || (request->operation.open_at.expected_kind
+                        == WF_FILE_EXPECT_DIRECTORY
+                    && !S_ISDIR(status.st_mode))) {
+                (void)close(descriptor);
+                result.open_outcome = S_ISDIR(status.st_mode)
+                    ? WF_FILE_OPEN_IS_DIRECTORY
+                    : WF_FILE_OPEN_OTHER_KIND;
+                return result;
+            }
         }
         break;
     case WF_FILE_READ:
@@ -332,7 +375,10 @@ static void wf_file_run_work(
     wf_file_result result = wf_file_execute_direct(&work->request);
     wf_completion_publication publication = {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
-        .terminal_kind = result.error_code == 0 ? 1u : 2u,
+        .terminal_kind = result.error_code == 0
+                && result.open_outcome == WF_FILE_OPEN_SUCCEEDED
+            ? 1u
+            : 2u,
         .result = &result,
         .result_size = sizeof(result),
     };

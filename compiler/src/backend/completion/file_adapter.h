@@ -37,6 +37,20 @@ enum wf_file_operation_kind {
 #endif
 };
 
+enum wf_file_expected_kind {
+    WF_FILE_EXPECT_ANY = 0,
+    WF_FILE_EXPECT_REGULAR = 1,
+    WF_FILE_EXPECT_DIRECTORY = 2
+};
+
+enum wf_file_open_outcome {
+    WF_FILE_OPEN_SUCCEEDED = 0,
+    WF_FILE_OPEN_FAILED = 1,
+    WF_FILE_OPEN_STATUS_FAILED = 2,
+    WF_FILE_OPEN_IS_DIRECTORY = 3,
+    WF_FILE_OPEN_OTHER_KIND = 4
+};
+
 typedef struct wf_file_request {
     enum wf_file_operation_kind kind;
     union {
@@ -46,6 +60,7 @@ typedef struct wf_file_request {
             int flags;
             unsigned mode;
             unsigned has_mode;
+            enum wf_file_expected_kind expected_kind;
         } open_at;
         struct {
             int descriptor;
@@ -90,6 +105,7 @@ typedef struct wf_file_result {
     enum wf_file_operation_kind kind;
     int64_t value;
     int error_code;
+    enum wf_file_open_outcome open_outcome;
     size_t status_size;
     unsigned char status[WF_FILE_STATUS_CAPACITY];
 } wf_file_result;

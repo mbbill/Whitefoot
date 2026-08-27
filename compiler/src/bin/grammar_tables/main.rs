@@ -110,6 +110,8 @@ const ENUM_ORDER: &[&str] = &[
     "requires_clause",
     "ensures_clause",
     "result_route",
+    "replace_let_rhs",
+    "effect_path",
 ];
 
 /// v0.33 deliberately replaces the old pseudo-statement contract grammar.

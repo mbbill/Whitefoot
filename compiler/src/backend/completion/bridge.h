@@ -4,10 +4,6 @@
 #include <stdint.h>
 #include "writer_scheduler.h"
 
-#define WF_ORDERED_OUTPUT_ROOT_CAPACITY 16u
-#define WF_ORDERED_OUTPUT_MEMBER_CAPACITY 16u
-#define WF_FILE_BATCH_MEMBER_CAPACITY 64u
-
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -34,24 +30,31 @@ int wf__completion_file_write_submit(
     void *token_storage
 );
 
-/* Reserves one independent file group all-or-none before any member owns a
- * completion slot. `token_storage` is a contiguous token array. */
-int wf__completion_file_batch_claim(
-    void *token_storage,
-    uint32_t count,
-    uint32_t requires_fallback
+int wf__completion_file_open_at_submit(
+    int directory,
+    const char *path,
+    int flags,
+    unsigned mode,
+    unsigned has_mode,
+    unsigned expected_kind,
+    void *token_storage
 );
-void wf__completion_file_pread_submit_reserved(
+
+int wf__completion_file_status_submit(
+    int descriptor,
+    void *token_storage
+);
+
+int wf__completion_file_close_submit(
+    int descriptor,
+    void *token_storage
+);
+
+int wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
-    uint64_t file_offset,
-    void *token_storage
-);
-void wf__completion_file_write_submit_reserved(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
+    int64_t *position,
     void *token_storage
 );
 
@@ -87,6 +90,32 @@ int64_t wf__completion_file_write_direct(
     uint64_t count
 );
 
+int wf__completion_file_open_at_direct(
+    int directory,
+    const char *path,
+    int flags,
+    unsigned mode,
+    unsigned has_mode,
+    unsigned expected_kind,
+    int *error_code,
+    unsigned *open_outcome
+);
+
+void wf__completion_file_open_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
+);
+
+int wf__completion_file_status_direct(
+    int descriptor,
+    void *status,
+    uint64_t status_capacity
+);
+
+int wf__completion_file_close_direct(int descriptor);
+
 /* Darwin's qualified directory facility through the same target-progress
  * normalization as typed file operations. EINTR and readiness refusal never
  * cross this ABI as writer-visible errors. */
@@ -97,29 +126,34 @@ int64_t wf__completion_directory_next_direct(
     int64_t *position
 );
 
-uint64_t wf__completion_output_batch_begin(
-    uint64_t logical_root,
-    uint32_t expected
-);
-void wf__completion_output_batch_submit(
-    uint64_t root_key,
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage
-);
-void wf__completion_output_batch_commit(uint64_t root_key);
-
 void wf__completion_file_join(
     const void *token_storage,
     int64_t *value,
     int *error_code
 );
 
+void wf__completion_file_status_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    void *status,
+    uint64_t status_capacity,
+    uint64_t *status_size
+);
+
 int wf__completion_file_take(
     const void *token_storage,
     int64_t *value,
     int *error_code
+);
+
+int wf__completion_file_take_status(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    void *status,
+    uint64_t status_capacity,
+    uint64_t *status_size
 );
 
 void wf__writer_run_root(void *frame);

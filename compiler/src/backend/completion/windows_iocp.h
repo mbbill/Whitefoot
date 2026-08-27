@@ -77,6 +77,9 @@ typedef struct wf_windows_iocp_statistics {
     uint64_t publication_failures;
 } wf_windows_iocp_statistics;
 
+/* Target-private protocol state.  The shared completion port and OVERLAPPED
+ * entries are not Whitefoot memory and never cross the generated-code ABI.
+ * Only the buffer loan carried by a typed request enters an owned operation. */
 typedef struct wf_windows_iocp_adapter {
     wf_completion_runtime *runtime;
     HANDLE port;

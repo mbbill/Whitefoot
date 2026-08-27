@@ -8,10 +8,10 @@ use crate::{
 
 use super::super::model::{
     CheckedConformance, CheckedConformanceBinding, CheckedContract, CheckedContractLaw,
-    CheckedContractLawKind, CheckedContractMember, CheckedContractParameter,
-    CheckedEffectCapabilities, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
-    CheckedLawDerivation, CheckedLawIdentity, CheckedMode, CheckedStatement, CheckedType,
-    CheckedValue, ConformanceId, ContractId, IntegerType,
+    CheckedContractLawKind, CheckedContractMember, CheckedContractParameter, CheckedEffects,
+    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedLawDerivation,
+    CheckedLawIdentity, CheckedMode, CheckedStatement, CheckedType, CheckedValue, ConformanceId,
+    ContractId, IntegerType,
 };
 use super::generics::GenericSubstitution;
 use super::{
@@ -36,15 +36,19 @@ enum NormalizedMode {
     Unique(usize),
 }
 
-/// One [FN-3] effect normalization. Capability-parameter operands join this
-/// record in the capability-effect step; this slice keeps the four existing
-/// memory/allocation/trap components exact.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct NormalizedStatePath {
+    parameter: usize,
+    fields: Vec<u32>,
+}
+
+/// One [FN-3] effect normalization. Parameter declarations are local compiler
+/// identities, so callable equality compares parameter ordinals plus field
+/// ordinals instead.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct NormalizedEffects {
-    region_reads: Vec<usize>,
-    region_writes: Vec<usize>,
-    capability_reads: Vec<usize>,
-    capability_writes: Vec<usize>,
+    reads: Vec<NormalizedStatePath>,
+    writes: Vec<NormalizedStatePath>,
     allocates_heap: bool,
     allocates_arenas: Vec<usize>,
     traps: bool,
@@ -530,12 +534,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 }
 
-fn checked_effects(effects: &EffectSet) -> CheckedEffectCapabilities {
-    CheckedEffectCapabilities {
-        region_reads: effects.region_reads.clone(),
-        region_writes: effects.region_writes.clone(),
-        capability_reads: effects.capability_reads.clone(),
-        capability_writes: effects.capability_writes.clone(),
+fn checked_effects(effects: &EffectSet) -> CheckedEffects {
+    CheckedEffects {
+        reads: effects.reads.clone(),
+        writes: effects.writes.clone(),
         allocates_heap: effects.allocates_heap,
         allocates_arenas: effects.allocates_arenas.clone(),
         traps: effects.traps,
@@ -652,26 +654,28 @@ fn normalize_effects(
     parameters: &[ParameterSignature],
 ) -> Result<NormalizedEffects, CheckStop> {
     Ok(NormalizedEffects {
-        region_reads: normalize_regions(&effects.region_reads, regions)?,
-        region_writes: normalize_regions(&effects.region_writes, regions)?,
-        capability_reads: normalize_capabilities(&effects.capability_reads, parameters)?,
-        capability_writes: normalize_capabilities(&effects.capability_writes, parameters)?,
+        reads: normalize_state_paths(&effects.reads, parameters)?,
+        writes: normalize_state_paths(&effects.writes, parameters)?,
         allocates_heap: effects.allocates_heap,
         allocates_arenas: normalize_regions(&effects.allocates_arenas, regions)?,
         traps: effects.traps,
     })
 }
 
-fn normalize_capabilities(
-    selected: &[DeclarationId],
+fn normalize_state_paths(
+    selected: &[super::super::model::CheckedStatePath],
     parameters: &[ParameterSignature],
-) -> Result<Vec<usize>, CheckStop> {
+) -> Result<Vec<NormalizedStatePath>, CheckStop> {
     let mut normalized = selected
         .iter()
         .map(|selected| {
             parameters
                 .iter()
-                .position(|parameter| parameter.declaration == *selected)
+                .position(|parameter| parameter.declaration == selected.root)
+                .map(|parameter| NormalizedStatePath {
+                    parameter,
+                    fields: selected.fields.clone(),
+                })
                 .ok_or(SemanticCompilerFailure::InvalidResolution)
         })
         .collect::<Result<Vec<_>, _>>()?;

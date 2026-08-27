@@ -40,6 +40,7 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
             "command.cwd".to_owned(),
             "command.stdout".to_owned(),
             "command.stderr".to_owned(),
+            "command.files".to_owned(),
         ],
     }
 }
@@ -193,7 +194,7 @@ fn an_admitted_command_entry_completes_semantic_checking() {
     // compiler-derived close; every other input release row is empty [SYS-5].
     for source in [
         &b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
-        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n"[..],
         // A subset in strictly increasing table-ordinal order, skipping rows.
         &b"command fn main(command.args as args: own Args, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
     ] {
@@ -417,12 +418,12 @@ fn arg_get_calls_are_checked_by_the_same_general_rule() {
         declared_parameters: vec!["args".to_owned(), "position".to_owned()],
     };
     assert_rule(
-        b"fn probe['a](args: &'a Args) -> result: own unit reads('a) {\n  let value = arg_get<'a>(args: args);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['a](args: &'a Args) -> result: own unit reads(args) {\n  let value = arg_get<'a>(args: args);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         declared.clone(),
     );
     assert_rule(
-        b"fn probe['a](args: &'a Args) -> result: own unit reads('a) {\n  let value = arg_get<'a>(args: args, offset: 0_u64);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['a](args: &'a Args) -> result: own unit reads(args) {\n  let value = arg_get<'a>(args: args, offset: 0_u64);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         declared,
     );

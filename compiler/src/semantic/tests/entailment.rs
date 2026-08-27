@@ -2547,7 +2547,7 @@ fn below(value: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       let item = values[i];
@@ -2681,7 +2681,7 @@ fn need_ready(value: own Bool) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(flags: own Flags) -> result: own unit pure {
+fn caller(flags: own Flags) -> result: own unit reads(flags.ready) {
   if flags.ready {
     need_ready(value: flags.ready);
   } else {
@@ -2900,7 +2900,7 @@ struct Pair {
   other: u64;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       return values[i];
@@ -3091,7 +3091,7 @@ fn eat(p: own Pair) -> result: own unit pure {
   return unit;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       eat(p: move p);
@@ -3135,7 +3135,7 @@ struct Pair {
   other: u64;
 }
 
-fn read(values: own array<i32, count>, p: own Pair) -> result: own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair) -> result: own i32 reads(p.count), writes(p.count, p.other) {
   if ilt(p.count, 4_u64) {
     set p.other = 9_u64;
     let kept = values[p.count];
@@ -3170,7 +3170,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_callee_writing_through_a_unique_borrow_kills_facts_on_that_place() {
     let source = br#"const count: u64 = 4_u64;
 
-fn bump['w](p: &uniq 'w u64) -> result: own unit writes('w) {
+fn bump['w](p: &uniq 'w u64) -> result: own unit writes(p) {
   set deref(p) = 9_u64;
   return unit;
 }
@@ -3208,7 +3208,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_callee_with_no_writes_row_kills_nothing() {
     let source = br#"const count: u64 = 4_u64;
 
-fn peek['r](p: &'r u64) -> result: own u64 reads('r) {
+fn peek['r](p: &'r u64) -> result: own u64 reads(p) {
   return deref(p);
 }
 
@@ -5522,7 +5522,7 @@ fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap) {
   return values[b[0_u64]];
 }
 
-fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> result: own u8 reads('r) {
+fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> result: own u8 reads(order) {
   return values[order[0_u64]];
 }
 
@@ -5635,7 +5635,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_slice_of_carries_its_source_length() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>) -> result: own u8 pure {
+fn read(values: own array<u8, count>) -> result: own u8 reads(values) {
   region 'view {
     let window = slice_of(&'view values);
     return window[3_u64];
@@ -6883,9 +6883,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads('o 's), writes(output) {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: start, end: end) {
+    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -6932,12 +6932,12 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
     // so an endpoint equal to the table length proves nothing.
     let source = br#"const count: u64 = 4_u64;
 
-fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes(output) {
+fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len(deref(source));
   let enough = ile(3_u64, source_length);
   if enough {
     region 'attempt {
-      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -6949,12 +6949,12 @@ fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes(output) {
+fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len(deref(source));
   let enough = ile(4_u64, source_length);
   if enough {
     region 'attempt {
-      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -6966,7 +6966,7 @@ fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(4_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
@@ -7094,12 +7094,12 @@ fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
     // path discipline as S7's checked-arithmetic origin.
     let source = br#"const count: u64 = 4_u64;
 
-fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), writes(output) contract {
+fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires ile(3_u64, capacity);
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &'attempt output, source: source, start: 0_u64, end: 3_u64);
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: 3_u64);
     match outcome {
       Ok(value: written) => {
         let sample = table[written];
@@ -7111,12 +7111,12 @@ fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8,
   return unit;
 }
 
-fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), writes(output) contract {
+fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires ile(limit, capacity);
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &'attempt output, source: source, start: 0_u64, end: limit);
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: limit);
     set limit = 9_u64;
     match outcome {
       Ok(value: written) => {
@@ -7129,7 +7129,7 @@ fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, c
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(3_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
@@ -7163,7 +7163,7 @@ fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
     // `Result`, so the observing arm is named per operation [ENT-3] S10.
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   let table = array_new<u8, count>(0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
@@ -7172,7 +7172,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                let permit = reserve_file<'c>(factory: &uniq 'c files);
+                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(64_u64, 0_u8);
                     region 'f {
@@ -8046,7 +8047,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_undischarged_subscript_is_an_op4_rejection_with_the_exact_residual() {
-    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 pure {
+    let source =
+        br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 reads(values) {
   return values[i];
 }
 
@@ -8236,13 +8238,13 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    // The searching `wfgrep.wf` uses active `open_file` [SYS-11], so
-    // its bundle names the inventory that declares it; the other two are
-    // active-inventory sources.
+    // Every frozen source now names the active inventory. In particular,
+    // `wfgrep.wf` reserves a FilePermit before each typed open, so the older
+    // pre-permit `OpenByName` inventory can no longer resolve that bundle.
     let inventories = [
         crate::Inventory::ACTIVE,
         crate::Inventory::ACTIVE,
-        crate::Inventory::OpenByName,
+        crate::Inventory::ACTIVE,
     ];
     let expected_claims: [&[(&str, &str)]; 3] = [
         &[("parse", "byte_in_source"), ("parse", "events_behind_scan")],
@@ -8831,7 +8833,7 @@ fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
   value: box<u64>;
 }
 
-fn probe(holder: own Holder) -> result: own unit pure {
+fn probe(holder: own Holder) -> result: own unit reads(holder.value) {
   for @items i in deref(holder.value)..1_u64 {
   }
   return unit;
@@ -8873,7 +8875,7 @@ fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn probe(limit: own Limit) -> result: own unit pure {
+fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.upper) {
   region 'r {
     let holder = &uniq 'r limit;
     for @items i in 0_u64..deref(holder).upper {
@@ -8902,7 +8904,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
-    let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit pure {
+    let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit reads(holder) {
   for @items i in deref(deref(holder))..1_u64 {
   }
   return unit;
@@ -8933,7 +8935,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
-    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads('r) {
+    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads(holder) {
   for @items i in deref(deref(deref(holder)))..1_u64 {
   }
   return unit;
@@ -8966,7 +8968,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
-    let source = br#"fn probe(holder: own box<u64>) -> result: own unit pure {
+    let source = br#"fn probe(holder: own box<u64>) -> result: own unit reads(holder) {
   for @items i in deref(holder)..1_u64 {
   }
   return unit;
@@ -9425,7 +9427,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
-    let source = br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads('r) contract {
+    let source =
+        br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads(value) contract {
   define positive = igt(deref(deref(value)), 0_i32);
   define small = ilt(deref(deref(value)), 10_i32);
   define complete = band(positive, small);
@@ -9507,7 +9510,7 @@ fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
   return unit;
 }
 
-fn mutate['r](value: &uniq 'r Bool) -> result: own unit writes('r) {
+fn mutate['r](value: &uniq 'r Bool) -> result: own unit writes(value) {
   set deref(value) = False();
   return unit;
 }
@@ -9625,7 +9628,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn contradiction_survives_effectful_prepared_call_writes_before_fn8() {
-    let source = br#"fn rewrite['r](out: &uniq 'r i32) -> result: own i32 writes('r) contract {
+    let source = br#"fn rewrite['r](out: &uniq 'r i32) -> result: own i32 writes(out) contract {
   ensures ieq(result, 0_i32);
 } {
   set deref(out) = 0_i32;
@@ -9918,7 +9921,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
     let source =
-        br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r) contract {
+        br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads(value), writes(value) contract {
   requires ilt(deref(value), 10_u64);
 } {
   let old = deref(value);
@@ -9969,14 +9972,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
-    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r) contract {
+    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
   requires ilt(deref(value), 10_u64);
 } {
   let seen = deref(value);
   return unit;
 }
 
-fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r) contract {
+fn update['r](value: &uniq 'r u64) -> result: own unit reads(value), writes(value) contract {
   requires ilt(deref(value), 10_u64);
 } {
   region 'first {
@@ -10232,5 +10235,40 @@ command fn main() -> status: own ExitStatus pure {
         }
         concrete_lengths.sort_unstable();
         assert_eq!(concrete_lengths, vec![2, 5]);
+    });
+}
+
+#[test]
+fn a_call_writing_one_struct_field_preserves_facts_about_its_sibling() {
+    let source = br#"struct Pair {
+  token: HostString;
+  left: u64;
+  right: u64;
+}
+
+fn write_left['r](pair: &uniq 'r Pair, value: own u64) -> result: own unit writes(pair.left) {
+  set deref(pair).left = value;
+  return unit;
+}
+
+fn preserve_right(pair: own Pair, values: own array<u8, 4>) -> result: own u8 reads(pair.right), writes(pair.left) contract {
+  define room = len(values);
+  requires ilt(pair.right, room);
+} {
+  region 'write {
+    write_left<'write>(pair: &uniq 'write pair, value: 0_u64);
+  }
+  return values[pair.right];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "writing pair.left must not kill the retained bound on pair.right: {outcome:?}"
+        );
     });
 }

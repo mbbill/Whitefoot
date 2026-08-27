@@ -1,183 +1,165 @@
-# Current Plan: capability-based completion I/O
+# Current Plan: unified-state completion I/O
 
-Status: IMPLEMENTED AND GATED CANDIDATE on
-`codex/io-model-completion-rebuild`; exact-byte owner review and activation
-remain.
+Status: IMPLEMENTED AND VALIDATED WORK-BRANCH CANDIDATE on
+`codex/io-first-principles`.
 
 Active language authority: v0.36,
 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-
-This plan starts from main revision
-`eab81a335addfb0ae060735771d4e98891dec2ea` and the settled first-principles
-record. The v0.37 specification at `spec/kernel-spec.md` is a work-branch
-candidate which supersedes the exact active v0.36 bytes. It is not a
-merge-ready ACTIVE identity.
+The edited `spec/kernel-spec.md` is an unapproved candidate. It does not become
+active and nothing merges to `main` until the owner approves the exact revision
+and canonical `make check` passes on that revision.
 
 ## Objective
 
-Let ordinary Whitefoot calls keep independent outside operations in flight
-without giving the writer a blocking API, async syntax, scheduling marker,
-future, callback, global world identity, or unsafe escape. The compiler proves
-which capability fragments may coexist. The runtime chooses inline, native
-completion, scheduler progress, or a bounded target-only helper from target
-facts and measured cost.
-
-The deciding example is two positioned reads:
+Whitefoot exposes I/O as ordinary calls over ordinary values:
 
 ```whitefoot
-let left = read_at(file: &file, destination: &uniq left_bytes, file_offset: 0_u64, start: 0_u64, end: left_end);
-let right = read_at(file: &file, destination: &uniq right_bytes, file_offset: 4096_u64, start: 0_u64, end: right_end);
+fn write_once['o, 's](
+  output: &uniq 'o Output,
+  source: &'s buffer<u8>,
+  start: own u64,
+  end: own u64
+) -> result: own Result<u64, IoError>
+reads(output, source), writes(output);
 ```
 
-The file fragments are Free and the destination loans are disjoint, so both
-operations may be submitted. Changing the two destinations to one buffer makes
-ordinary memory proof refuse the overlap. Changing the calls to two writes on
-one Output produces Ordered reservations instead: both may be pending, but
-source attribution fixes byte order.
+The writer supplies values, `own`, `move`, borrows, exact effects, and typed
+outcomes. The compiler keeps independent operations in flight. The target
+publishes completion. The scheduler runs writer code only after the required
+ordinary ownership returns.
 
-## Selected design
+Completion is the only writer-visible I/O model. Direct, inline, readiness,
+helper, io_uring, and IOCP paths are target lowerings of that model.
+
+## Settled language boundary
+
+1. `reads` and `writes` name formal parameters or static fields rooted in a
+   formal parameter. They no longer accept a lifetime.
+2. A lifetime states only loan duration and outlives relations.
+3. `own`, `move`, `&`, and `&uniq` provide all authority. Files, sockets,
+   Outputs, clocks, factories, permits, and Sources are ordinary opaque affine
+   values rather than a capability language category.
+4. The language has one state/effect system. It has no `memory` or `world`
+   effect tag and no `external` or `blocks` atom.
+5. A fine effect path describes checked behavior. It never narrows the loan
+   written in the parameter or actual argument.
+6. Changing state machines use `own` or `&uniq`. Independent work is exposed
+   through distinct ordinary owned values, fields, borrows, or permits.
+7. No logical-root registry, family/fragment table, Free/Ordered/Exclusive
+   relation, or Output-specific ordering edge participates in permission.
+8. A factory or reserve call exhibits its own effect. Later operations on its
+   local result frame locally; they are not relabelled through child-to-parent
+   ancestry.
+9. Existing move semantics transfers identity. The compiler may retain
+   internal summaries needed to check calls and release, but the language gains
+   no lineage or generative-identity feature.
+10. A false claim is impossible in a correctly reviewed program and adds no
+    cost, metadata, gate, wake, or serialization to a correct operation path.
+11. File opens consume ordinary one-shot `FilePermit` owners produced by a
+    total inline `reserve_file(&uniq FileFactory)`. `DirectoryRead` remains a
+    shared stable selector, so two permits allow two opens through one
+    directory without a long directory or factory loan.
+12. The first permit is proof-only and burns on every open outcome. It reserves
+    no host quota; `ResourceExhausted` remains a typed open result, and backend
+    lowering erases the permit before the native open ABI.
 
 The complete derivation is in
-`research/investigations/io-model/FIRST-PRINCIPLES.md`, the concrete API in
-`DESIGN.md`, the experimental-branch audit in `IMPLEMENTATION-AUDIT.md`, and
-measurements in `RESULTS.md` under the same investigation directory.
+`research/investigations/io-model/FIRST-PRINCIPLES.md`; the concise selected
+design is in `research/investigations/io-model/DESIGN.md`.
 
-The selected boundaries are:
+## Retained implementation substrate
 
-1. `external` and `blocks` are not effects or reserved words.
-2. `reads` and `writes` may name an ordinary region or one direct formal
-   capability parameter. Borrow lifetime and logical authority remain
-   separate identities.
-3. Each system family refines a capability access into a logical root,
-   fragment, and Free, Ordered, or Exclusive relation.
-4. A finite operation has distinct result-ready, payload-released,
-   authority-released, and terminal facts even when one transition publishes
-   all four.
-5. Capacity is bounded. `wait-capacity` transfers nothing to the target and is
-   not a writer-visible `WouldBlock` result.
-6. Target code publishes results and wakes the scheduler. It never invokes a
-   writer continuation or receives a writer function pointer.
-7. A false claim cannot occur in a correct program, so no normal operation
-   path reads a trap latch or carries trap-specific state.
-8. Completion I/O is the shipped default. `--par` additionally enables
-   compute overlap; pure compute output is byte-identical to the strict
-   sequential reference and links no completion runtime.
+The former completion candidate established useful target/runtime work. The
+rebuild retained and requalified:
 
-## Implemented
+- finite generation-checked operation records;
+- one terminal publisher and monotonic result-ready, per-path loan-release,
+  and terminal milestones;
+- release/acquire result publication and drain-before-resume;
+- announce, recheck, then park with one compute/completion sleeping decision;
+- target callbacks and helpers which receive typed operation bundles and never
+  execute writer code;
+- pure-compute link isolation;
+- selective stackless lowering and direct/inline depth-one specialization;
+- real Linux io_uring operations, bounded macOS helper fallback, and the
+  Windows IOCP/OVERLAPPED foundation; and
+- deterministic hostile-race, sanitizer, target, and performance probes.
 
-### Language and compiler
+The historical measurements in the I/O investigation remain evidence only for
+the components they actually measured.
 
-- v0.37 capability-effect grammar, resolution, type checking, exact
-  checked-both-ways rows, contract equality, release contribution, call
-  substitution, and command-entry support.
-- Closed-world capability-result origin fixed point with optional, fresh, and
-  finite formal-origin components. Moves, match/give, recursive wrappers,
-  loop backedges, and releases cannot wash an existing root into a fresh one.
-  The executable implementation is complete for values carrying at most one
-  runtime root. A product that may carry several roots reaches an explicit
-  `CapabilityResultOrigin` unsupported result only after ordinary source
-  judgments; it is never published with an empty effect or authority summary.
-- Compiler-derived target-action and family-fragment summaries through the
-  concrete call graph. Relations come from a family-owned fragment-pair table,
-  not from either fragment alone; Ordered edges retain their attribution.
-- Direct system calls in proof-derived pair and loop analysis, with memory,
-  operand, loan, consumed-value, capability, and exit facts kept separate.
-- Ordered reservation edges retained in checked metadata and IR. Direct
-  same-block Output runs of 2–16 calls are admitted all-or-none, submitted in
-  source attribution order, and committed as one batch. DirectorySource and
-  unsupported shapes retain their edge and execute sequentially. Nonadjacent
-  same-root edges survive through unrelated members.
-- `read_at` with explicit offset and Free same-root reads;
-  `DirectorySource` with Ordered `directory_next`; shared Ordered Output.
-- `Interrupted` and `WouldBlock` removed from writer outcomes. No-progress
-  interruption and readiness refusal stay inside target progress.
+## Replaced or deleted
 
-### Runtime and target adapters
+- REGIONID/capability mixed effect operands;
+- separate memory and capability effect sets;
+- `CapabilityResultOrigin` and any I/O-specific root propagation;
+- family-fragment and Ordered permission;
+- shared writer-visible mutation of Output or DirectorySource;
+- ordered Output batches, fixed 2-16 or 2-64 group concepts, and whole-group
+  waits;
+- legacy bridge APIs which expose roots, families, or batch ordering; and
+- compiler/runtime branches which treat a direct system call as a different
+  source-language call class.
 
-- Preallocated bounded operation slots and target queues.
-- Independent direct file groups of 2–64 operations reserve every completion
-  slot all-or-none before target handoff, including the source-last member.
-  This removes partial-admission hold-and-wait while preserving free target
-  execution. Empty ranges complete reserved tokens without a host transfer.
-- Captured generation checked before result storage changes.
-- Product milestone state, exactly-one terminal publication, release/acquire
-  result visibility, bounded drain, and lane-independent consume.
-- One wake epoch for compute, target work, completion, admission, and capacity;
-  completion-before-wait causes no syscall wake. Linux parks on one epoll set
-  containing the io_uring fd and an eventfd. The eventfd remains a broadcast
-  level fact until every already-announced waiter has left, preventing one
-  waiter from consuming another token owner's wake.
-- POSIX wakes one announced scheduler when exactly one is parked and broadcasts
-  one epoch transition when several are parked. A completed target event is
-  drained before its dependent writer frame enters the ready queue; that
-  enqueue publishes its own compute epoch before any lane can park.
-- An ordinary join registers its exact token only across the final
-  recheck-to-park window. If another lane drains that token, the drainer clears
-  the registration and publishes the consumability transition; uncontended
-  drains pay no extra epoch.
-- Typed POSIX/macOS helper fallback with zero-helper scheduler progress.
-- Real Linux io_uring positioned read/write submissions, CQE-driven wake, and
-  publication, executed on Linux 6.8.0 aarch64. Fatal post-handoff progress
-  errors fail-stop instead of falling back or hanging.
-- Real Windows overlapped ReadFile/WriteFile plus shared IOCP and a Win32-native
-  completion core. The PE strict-cross-links, while production qualification
-  remains fail-closed until it runs on Windows.
-- Direct `read_at` and `write_once` overlap lowering plus a selective stackless
-  slice: one single-block root suspension through zero-state tail wrappers to
-  a file leaf can resume on any scheduler lane. Branches, loops, multiple
-  suspension points, indirect calls, and non-tail suspended children retain
-  the correct synchronous ABI.
+## Completed implementation sequence
 
-### Evidence
+1. Rewrite the first-principles, design, current-plan, roadmap, specification,
+   and compiler-facing documentation so they state one model without a
+   superseded sibling.
+2. Replace effect syntax and semantic storage with parameter-rooted static
+   paths. Normalize contracts by parameter and field ordinal.
+3. Project user and system call effects directly onto actual resolved places,
+   including slices and reborrows. Preserve ordinary owner identity across
+   moves, results, aggregates, and compiler-derived release only where the
+   existing value flow requires it.
+4. Remove I/O capability origins, family relations, and Ordered IR edges.
+   Permission continues to check data, control, operand reads, effects, actual
+   loans, consumed owners, and exits.
+5. Change advancing system APIs to `own` or `&uniq`. Keep shared positioned
+   reads and shared directory selectors where the mapped value itself has no
+   consumed cursor or observation state; carry each file-open occurrence in an
+   owned one-shot permit.
+6. Replace batch actualization with dependency-driven submission. A successor
+   becomes eligible when its exact value and loan requirements return, without
+   waiting for unrelated operations.
+7. Remove the legacy bridge and group admission surfaces while retaining the
+   qualified single-operation completion core and target-private channels.
+8. Migrate all compiler tests, conformance cases, maintained programs, and
+   documentation to the same candidate bytes.
+9. Run the complete verification matrix and measure the cleaned runtime again.
 
-- Completion core hostile harness, ASan/UBSan, repeated W0/W1/W4 stress,
-  all-or-none batch pressure, staggered private-token multi-waiter wake,
-  stale publication, terminal race, completion-before-wait, and zero-helper
-  progress. The final exact-token drain fix passed 50/50 consecutive W0 runs
-  after the unfixed binary had reproduced the deadlock at run 6.
-- Compiler shape and executable tests prove that helpers receive typed target
-  requests, not writer thunks, and that the second independent operation runs
-  before a blocked first operation completes.
-- Conformance structure 29/29, coverage 137/137, and native adapter
-  `Pass=500 Skip=1 Fail=0`, with no verdict changes or deleted cases.
-- Final matched O3 measurement: 35.85 ns for a core round trip; cached pread
-  completion-progress adds 64.7 ns over direct. A one-waiter completion resume
-  measured 1.625 us against condvar 1.542 us. These results retain direct
-  depth-one specialization and reject a universal blocking-helper path.
-- Rust library 1301/1301, maintained programs 56/56, conformance structure
-  29/29, coverage 137/137, and native adapter `Pass=500 Skip=1 Fail=0`.
+## Evidence obtained
 
-## Remaining sequence
+The candidate now proves:
 
-1. Replace the current multi-root capability stop with a per-release-leaf
-   origin tree, preserving each field through construct, move, projection,
-   match, replace, call substitution, and derived release.
-2. Generalize selective stackless lowering to branches, loops, multiple
-   suspension points, indirect calls, and non-tail suspended children.
-3. Actualize DirectorySource Ordered batches and the remaining finite
-   may-suspend system operations without adding a writer-visible wait form.
-4. Run cold-file, high-latency, network, and native Linux comparisons; run the
-   Windows probe on a Windows runner and close its bounded multi-waiter wake
-   proof before changing its qualification bit.
-5. Add the designed network, timer, cancellation, deadline, and
-   finish-required file-output catalog rows only with their target slices.
-6. Before any merge, convert the candidate to an exact ACTIVE identity,
-   archive v0.36 byte-for-byte, record the exact owner-approved spec and
-   conformance boundary in `governance/APPROVALS.md`, and run canonical
-   `make check` on that exact revision.
+- two parameters sharing one lifetime remain separate effect subjects;
+- an owned resource parameter is directly nameable in an effect;
+- a field effect preserves sibling facts without narrowing a whole-object loan;
+- two distinct outputs overlap and two unique loans of one output do not;
+- a later same-output call starts after the earlier loan returns without
+  waiting for unrelated I/O;
+- a moved incoming owner is attributed correctly at call and release;
+- no local fresh child requires a factory ancestry or hidden authority table;
+- two short factory loans can mint two affine permits, and those permits admit
+  two opens through one shared `DirectoryRead` without a retained factory loan;
+- permit move is single-use, host exhaustion stays a typed open result, and no
+  permit argument reaches the native open ABI;
+- completion-before-wait, stale generation, duplicate terminal, capacity,
+  cancellation, and multi-waiter races preserve every owner and loan;
+- pure compute links and executes no completion machinery;
+- API success, empty, partial, EOF, failure, untouched-tail, and defined
+  release outcomes are correct; finish/recycle APIs remain outside this first
+  slice;
+- macOS executes its qualified fallback path; the retained Linux io_uring path
+  has its existing native evidence but was not re-executed on this Mac; and
+  Windows remains honestly fail-closed until native execution evidence exists;
+- focused tests, maintained programs, conformance, sanitizers, stress, and
+  every independently runnable component behind the specification archive
+  gate pass; and
+- cleaned fast paths are measured against the best matched native shape.
 
-Every technical target of canonical `make check` has passed independently on
-the candidate bytes. The canonical root invocation stops only at
-`spec-archive-integrity`, which deliberately rejects CANDIDATE status before
-activation.
-
-## Non-negotiable boundaries
-
-- No merge into `main` without owner approval of the exact revision.
-- No trap-path tax on a correct operation.
-- No whole writer wrapper on an I/O helper.
-- No unbounded operation, completion, event, or payload queue.
-- No target mechanism exposed as writer syntax.
-- No environment alias fact promoted into language authority.
-- No unsupported target reported as invalid source.
-- No test, verdict, check, or failure path weakened to obtain a green gate.
+No test, verdict, check, or failure path was weakened to make the candidate
+green. Canonical `make check` intentionally stops at the candidate archive
+identity; after owner-approved activation, the exact merge revision must pass
+that canonical entry point. No merge into `main` occurs without owner approval
+of the exact revision.

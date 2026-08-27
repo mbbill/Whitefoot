@@ -133,7 +133,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_checks(
-        br#"fn walk['l, 'u](lower: &'l u64, upper: &'u u64) -> result: own unit reads('l 'u) {
+        br#"fn walk['l, 'u](lower: &'l u64, upper: &'u u64) -> result: own unit reads(lower, upper) {
   for @items i in deref(lower)..deref(upper) {
   }
   return unit;
@@ -172,7 +172,7 @@ command fn main() -> status: own ExitStatus pure {
   lower: u64;
 }
 
-fn probe['r](bounds: own Bounds, upper: &'r u64) -> result: own unit reads('r) {
+fn probe['r](bounds: own Bounds, upper: &'r u64) -> result: own unit reads(bounds.lower, upper) {
   for @items i in bounds.lower..deref(upper) {
   }
   return unit;
@@ -217,7 +217,7 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     );
 
     assert_rule(
-        br#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes('r) {
+        br#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }

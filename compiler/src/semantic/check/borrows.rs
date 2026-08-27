@@ -8,7 +8,7 @@ use crate::{
 
 use super::super::model::{
     CheckedBufferRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSliceOrigin,
-    CheckedType,
+    CheckedStatePath, CheckedType,
 };
 use super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ParameterSignature,
@@ -168,21 +168,27 @@ impl SliceInfo {
             .collect()
     }
 
-    pub(super) fn effect_regions(&self) -> Vec<DeclarationId> {
-        let mut regions = Vec::new();
+    pub(super) fn effect_places(&self) -> Vec<ResolvedPlace> {
+        let mut places = Vec::new();
         for origin in &self.origins {
-            let region = match origin {
-                CheckedSliceOrigin::SourcePlace { origin_region, .. } => *origin_region,
-                CheckedSliceOrigin::FormalSlice { region, .. } => Some(*region),
+            let place = match origin {
+                CheckedSliceOrigin::SourcePlace { root, fields, .. } => Some(ResolvedPlace {
+                    root: *root,
+                    fields: fields.clone(),
+                }),
+                CheckedSliceOrigin::FormalSlice { parameter, .. } => Some(ResolvedPlace {
+                    root: *parameter,
+                    fields: Vec::new(),
+                }),
                 CheckedSliceOrigin::ImmutableConst => None,
             };
-            if let Some(region) = region
-                && !regions.contains(&region)
+            if let Some(place) = place
+                && !places.contains(&place)
             {
-                regions.push(region);
+                places.push(place);
             }
         }
-        regions
+        places
     }
 }
 
@@ -193,6 +199,82 @@ pub(super) fn push_slice_origin(origins: &mut Vec<CheckedSliceOrigin>, origin: C
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Converts a resolved runtime place into the source-expressible static
+    /// state path at a callable boundary. Struct fields remain precise;
+    /// enum payloads and owned indirection are represented by their nearest
+    /// expressible parent because EFF-1 deliberately has no such projection.
+    pub(super) fn state_path(
+        &self,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<CheckedStatePath, CheckStop> {
+        let mut ty = bindings
+            .get(&place.root)
+            .map(|binding| binding.ty)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let mut fields = Vec::new();
+        for field in &place.fields {
+            let CheckedType::Nominal(nominal) = ty else {
+                break;
+            };
+            let CheckedNominalKind::Struct {
+                fields: declared_fields,
+            } = &self.nominal(nominal)?.kind
+            else {
+                break;
+            };
+            let selected = declared_fields
+                .get(*field as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            fields.push(*field);
+            ty = selected.ty;
+        }
+        Ok(CheckedStatePath {
+            root: place.root,
+            fields,
+        })
+    }
+
+    /// Instantiates one resolved place onto the current function's incoming
+    /// formal identities. Fresh local owners yield no enclosing effect;
+    /// moved affine owners retain their structural formal sources; a scalar
+    /// borrow parameter falls back to its direct parameter place.
+    pub(super) fn effect_paths_for_place(
+        &self,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+        let canonical = self.state_path(place, bindings)?;
+        let binding = bindings
+            .get(&place.root)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if let Some(origins) = &binding.state_origins {
+            if origins.unknown && !self.deriving_result_state_origin.get() {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            let mut paths = origins
+                .clone()
+                .projected(&canonical.fields)
+                .formals
+                .into_iter()
+                .map(|origin| origin.source)
+                .collect::<Vec<_>>();
+            paths.sort();
+            paths.dedup();
+            return Ok(paths);
+        }
+        let parameter = self.resolved.declarations().iter().any(|declaration| {
+            declaration.id() == place.root && declaration.role() == DeclarationRole::Parameter
+        });
+        if parameter
+            && (binding.mode != CheckedMode::Own || matches!(binding.ty, CheckedType::Slice { .. }))
+        {
+            Ok(vec![canonical])
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
     pub(super) fn parse_region_parameters(
         &self,
         function: NodeId,
@@ -497,14 +579,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
-                    capability_origins: local.capability_origins.clone(),
+                    state_origins: local.state_origins.clone(),
                     nominal,
                 }
             }
             CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
-                capability_origins: local.capability_origins.clone(),
+                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: slice
                     .as_ref()
@@ -862,7 +944,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
-                    capability_origins: local.capability_origins.clone(),
+                    state_origins: local.state_origins.clone(),
                     nominal,
                 }
             }

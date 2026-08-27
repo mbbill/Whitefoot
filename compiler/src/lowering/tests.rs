@@ -274,14 +274,10 @@ fn assert_contract(
     assert_eq!(contract.backing, backing);
 }
 
-const fn close_row(family: crate::SystemAuthorityFamily) -> SystemReleaseRow {
+const fn close_row() -> SystemReleaseRow {
     SystemReleaseRow {
         target_action: crate::TargetAction::MAY_SUSPEND,
-        capability_write: true,
-        authority: crate::SystemReleaseAuthority::Known(crate::SystemAuthorityFacet {
-            family,
-            fragment: crate::SystemAuthorityFragment::WholeResource,
-        }),
+        state_write: true,
     }
 }
 
@@ -335,14 +331,14 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             program,
             SystemResourceType::DirectoryRead,
             NativeCloseAttempt,
-            close_row(crate::SystemAuthorityFamily::DirectoryRead),
+            close_row(),
             Opaque,
         );
         assert_contract(
             program,
             SystemResourceType::ReadFile,
             NativeCloseAttempt,
-            close_row(crate::SystemAuthorityFamily::ReadFile),
+            close_row(),
             Opaque,
         );
         assert_contract(
@@ -363,7 +359,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             program,
             SystemResourceType::DirectorySource,
             NativeCloseAttempt,
-            close_row(crate::SystemAuthorityFamily::DirectorySource),
+            close_row(),
             Opaque,
         );
 
@@ -413,7 +409,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             assert_eq!(
                 drop.release().row,
                 if action == NativeCloseAttempt {
-                    close_row(resource.authority_family().expect("close resource family"))
+                    close_row()
                 } else {
                     SystemReleaseRow::EMPTY
                 }
@@ -454,7 +450,7 @@ fn a_move_keeps_the_resource_identity_and_its_release() {
 fn a_struct_field_release_reaches_the_contained_resource() {
     let source = format!(
         "struct Holder {{\n  file: ReadFile;\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit writes(holder) {{\n  return unit;\n}}\n\n\
+         fn release_holder(holder: own Holder) -> result: own unit writes(holder.file) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -475,19 +471,13 @@ fn a_struct_field_release_reaches_the_contained_resource() {
             field.release().action,
             Some(SystemReleaseAction::NativeCloseAttempt)
         );
-        assert_eq!(
-            field.release().row,
-            close_row(crate::SystemAuthorityFamily::ReadFile)
-        );
+        assert_eq!(field.release().row, close_row());
         assert_ne!(field.value(), function.parameters()[0].0);
         // The struct itself has no release action of its own, and its row is
         // the union of what its owned content may run.
         assert_eq!(dropped_resource(program, *aggregate), None);
         assert_eq!(aggregate.release().action, None);
-        assert_eq!(
-            aggregate.release().row,
-            close_row(crate::SystemAuthorityFamily::ReadFile)
-        );
+        assert_eq!(aggregate.release().row, close_row());
         assert_eq!(aggregate.value(), function.parameters()[0].0);
     });
 }
@@ -509,10 +499,33 @@ fn an_enum_release_carries_the_union_of_its_components_rows() {
         // the union of the rows its variants may run.
         assert_eq!(dropped_resource(program, *drop), None);
         assert_eq!(drop.release().action, None);
-        assert_eq!(
-            drop.release().row,
-            close_row(crate::SystemAuthorityFamily::ReadFile)
-        );
+        assert_eq!(drop.release().row, close_row());
+    });
+}
+
+#[test]
+fn an_unused_state_writing_call_reaches_ir() {
+    let source = format!(
+        "struct Pair {{\n  left: u64;\n}}\n\n\
+         fn mutate['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {{\n  \
+         set deref(pair).left = 1_u64;\n  return unit;\n}}\n\n\
+         fn wrapper['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {{\n  \
+         mutate<'r>(pair: move pair);\n  return unit;\n}}\n\n\
+         {COMMAND_ENTRY}"
+    );
+    with_ir(source.as_bytes(), |program| {
+        let wrapper = function(program, "wrapper");
+        assert!(wrapper.blocks().iter().any(|block| {
+            block.instructions().iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    IrInstruction::Define {
+                        operation: IrOperation::Call { function: 0, .. },
+                        ..
+                    }
+                )
+            })
+        }));
     });
 }
 
@@ -599,7 +612,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
         "fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
          requires flag;\n}} {{\n  return unit;\n}}\n\n\
          fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
-         -> result: own unit writes(first second), traps {{\n  \
+         -> result: own unit writes(first, second), traps {{\n  \
          let not_ready = bnot(ready);\n  \
          let tautology = bor(ready, not_ready);\n  \
          claim ordering_probe: tautology because \"premises: ready is the current function's ordinary Bool parameter, not_ready is its Boolean negation, and tautology is their disjunction\\nderivation: every Bool is either true or false, so ready or its negation is always true\\nconclusion: tautology is true\\nchecker gap: ENT decomposes established Boolean expressions but does not synthesize excluded middle for an opaque Bool parameter\\nconsumers: the following need_true call requires this exact tautology\";\n  \
@@ -642,7 +655,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
 
 #[test]
 fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(source.as_bytes(), |program| {
         let main = function(program, "main");
         let block = only_block(main);
@@ -669,7 +682,7 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
 
         // Every release occupies the position its normal edge gives it,
         // after the operations that precede it in source order [EFF-5], and
-        // the four standard inputs release in reverse declaration order with
+        // the five standard inputs release in reverse declaration order with
         // the actions [SYS-5] fixes for their types.
         let drops = return_drops(main);
         let actions: Vec<Option<SystemReleaseAction>> =
@@ -677,6 +690,7 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
         assert_eq!(
             actions,
             vec![
+                Some(SystemReleaseAction::LogicalConsume),
                 Some(SystemReleaseAction::SourceDetach),
                 Some(SystemReleaseAction::SourceDetach),
                 Some(SystemReleaseAction::NativeCloseAttempt),
@@ -690,6 +704,7 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
         assert_eq!(
             resources,
             vec![
+                Some(SystemResourceType::FileFactory),
                 Some(SystemResourceType::Output),
                 Some(SystemResourceType::Output),
                 Some(SystemResourceType::DirectoryRead),

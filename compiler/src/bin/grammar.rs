@@ -390,8 +390,8 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 74);
-        assert_eq!(report.decisions, 95);
+        assert_eq!(report.productions, 75);
+        assert_eq!(report.decisions, 94);
         assert_eq!(report.terminals, 103);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
@@ -452,8 +452,10 @@ mod tests {
     fn changed_effect_order_fails_closed() {
         let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
-            r#"effect := "reads" "(" (REGIONID | IDENT)+ ")" | "writes" "(" (REGIONID | IDENT)+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "traps""#,
-            r#"effect := "writes" "(" (REGIONID | IDENT)+ ")" | "reads" "(" (REGIONID | IDENT)+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "traps""#,
+            r#"effect := "reads" "(" effect_path ("," effect_path)* ")"
+        | "writes" "(" effect_path ("," effect_path)* ")""#,
+            r#"effect := "writes" "(" effect_path ("," effect_path)* ")"
+        | "reads" "(" effect_path ("," effect_path)* ")""#,
             1,
         );
         assert_ne!(changed, active);

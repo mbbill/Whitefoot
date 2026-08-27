@@ -9,26 +9,28 @@ Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
 This document carries active v0.36 guidance plus the v0.37 work-branch
-candidate's capability-effect and completion-I/O forms.
+candidate's unified-state completion-I/O forms.
 
-Capability boundary: the current backend emits no effect-derived attributes or
-alias metadata, performs no proof-driven check elision, has no termination
-checker or `willreturn` derivation, and does not implement arenas. The speed
-rationales in P1–P4 and P7–P9 therefore include historical measurements or
-future hypotheses; each entry labels the current boundary. P6 and P10 already
-state their exact v0.17 status.
+Implementation boundary: the current backend emits no effect-derived
+attributes or alias metadata, performs no proof-driven check elision, has no
+termination checker or `willreturn` derivation, and does not implement arenas.
+The speed rationales in P1–P4 and P7–P9 therefore include historical
+measurements or future hypotheses; each entry labels the current boundary. P6
+and P10 already state their exact v0.17 status.
 
 Each entry: problem shape -> candidate or validated pattern -> current or
 historical speed rationale -> what it would replace in mainstream languages.
 
 ## P1. Command buffer (write intents)
 
-Problem: deep code needs to mutate shared long-lived state (pool, arena,
-world), and no clean exclusive window exists at depth.
-Pattern: deep functions are `pure` or `reads('p)`; they compute and RETURN
+Problem: deep code needs to mutate shared long-lived state such as a pool,
+arena, or process resource, and no clean exclusive window exists at depth.
+Pattern: deep functions are `pure` or `reads(state)`; they compute and RETURN
 write intents as plain values. Exactly one shallow function holds the single
 `&uniq` and applies the intents. Effect rows make the architecture checkable:
-grep the signatures — one `writes('p)` in the system.
+grep the signatures and find one `writes(state)` in the system. In active
+v0.36 those subjects are still written as lifetimes; the candidate names the
+formal state directly.
 Current value: exact effect rows make scattered writes visible and reject a
 false architectural summary. Potential speed: the retired channel-2 experiment
 mapped read-only/pure code to memory attributes for hoisting, CSE, and call
@@ -252,7 +254,8 @@ one back, but the callable boundary cannot say which one it chose.
 `fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> selected: &uniq 'r Node` is rejected
 at its own `rtype` [FN-1]: two parameters share the result's region and kind,
 so no caller can root the returned claim, and a result no caller can bind is
-the declaration's error rather than the caller's. Pattern status: active v0.34 guidance.
+the declaration's error rather than the caller's. Pattern status: active v0.36
+guidance, introduced before v0.36 and preserved there.
 
 Decide which fix applies by asking why there are two sources. If the sources
 are structurally distinct — a node and its scratch buffer, a subject and its
@@ -265,11 +268,13 @@ the caller: return the decision as an owned value — a two-variant enum, or an
 index into a pool (P2) — and let the caller re-borrow from the place the
 decision names.
 
-The worked shape for the data-dependent case is three parts. The callee
-`fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads('r)` reads both weights
-through its shared borrows and returns `Left()` or `Right()`; it takes shared
-borrows, so both sources may name one region and nothing is ambiguous — a
-returned owned value has no provenance. The caller binds
+The worked shape for the data-dependent case is three parts. In active v0.36,
+the callee
+`fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads('r)` reads both
+weights through its shared borrows and returns `Left()` or `Right()`. In the
+v0.37 candidate its effect is `reads(a, b)`; `'r` remains only the shared loan
+lifetime. Both forms take shared borrows, so the returned owned decision has no
+borrow provenance. The caller binds
 `let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes
 the exclusive borrow it actually wants inside the taken arm, from `left` or
 from `right` by name. The result is longer than the rejected one-liner and

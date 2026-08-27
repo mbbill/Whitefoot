@@ -45,9 +45,7 @@ fn prov_rows() -> Vec<ProvRow> {
     let mut lines = body.lines();
     assert_eq!(
         lines.next(),
-        Some(
-            "| operation | result component class | writable `&uniq` or capability-write parameter component class |"
-        ),
+        Some("| operation | result component class | written parameter component class |"),
         "the first row of a wf-prov fence is its column schema"
     );
     assert_eq!(lines.next(), Some("|---|---|---|"));
@@ -145,20 +143,28 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
             let mut ordinals: Vec<usize> = row
                 .parameter_class
                 .split("; ")
-                .map(|entry| {
+                .filter_map(|entry| {
                     let (name, class) = entry
                         .split_once(' ')
                         .unwrap_or_else(|| panic!("{entry} names a parameter and a class"));
-                    assert_eq!(class, "external", "{entry} is not an external write");
                     let name = name.trim_matches('`');
-                    declared
+                    let ordinal = declared
                         .iter()
                         .position(|parameter| parameter.name == name)
-                        .unwrap_or_else(|| panic!("{} declares no parameter {name}", row.operation))
+                        .unwrap_or_else(|| {
+                            panic!("{} declares no parameter {name}", row.operation)
+                        });
+                    match class {
+                        "external" => Some(ordinal),
+                        "internal" => None,
+                        other => panic!("{entry} has unknown parameter class {other}"),
+                    }
                 })
                 .collect();
             ordinals.sort_unstable();
-            writing_rows += 1;
+            if !ordinals.is_empty() {
+                writing_rows += 1;
+            }
             ordinals
         };
         assert_eq!(
@@ -171,9 +177,10 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     }
 
     // All four result classes appear, so a table that collapsed to one class
-    // would not pass the loop vacuously. The five writing rows include
+    // would not pass the loop vacuously. The five external-writing rows include
     // `read_at` and `directory_next`, whose external memory write is only the
-    // destination; capability authority is classified separately.
+    // destination. `reserve_file` still writes its factory in EFF-2, but the
+    // proof-only transition is internal in this PRV table.
     assert_eq!(result_classes.len(), 4);
     assert_eq!(writing_rows, 5);
     // An ordinal past every inventory fails closed rather than defaulting to
@@ -351,6 +358,18 @@ fn dependencies<'program>(
         .unwrap_or_else(|| panic!("missing dependencies for {name}"))
 }
 
+fn write_dependency<'dependencies>(
+    dependencies: &'dependencies FunctionDependencies,
+    parameter: usize,
+    fields: &[u32],
+) -> &'dependencies ProvenanceDependency {
+    &dependencies.writes[parameter]
+        .iter()
+        .find(|write| write.fields == fields)
+        .unwrap_or_else(|| panic!("missing write path {parameter}:{fields:?}"))
+        .dependency
+}
+
 fn projection(value: &ValueDependencies, selector: DatumSelector) -> &[ParameterDatum] {
     &value
         .components
@@ -458,7 +477,7 @@ fn coordinate_bytes<'source>(
 #[test]
 fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
     let source =
-        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -485,7 +504,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
 #[test]
 fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_external_provenance() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -521,7 +540,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
     let source =
-        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -681,7 +700,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
 #[test]
 fn a_two_hop_bridge_diagnostic_retains_every_boundary_and_terminal_origin() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -689,7 +708,7 @@ fn a_two_hop_bridge_diagnostic_retains_every_boundary_and_terminal_origin() {
   return unit;
 }
 
-fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -697,7 +716,7 @@ fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pu
   return bytes[index];
 }
 
-fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -706,7 +725,7 @@ fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 
   return value;
 }
 
-fn bridge_top(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn bridge_top(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -762,7 +781,7 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
 
 #[test]
 fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_continuation() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -770,7 +789,7 @@ fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_conti
   return unit;
 }
 
-fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -871,7 +890,7 @@ fn a_cross_function_system_result_retains_every_result_and_let_carrier() {
   }
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   let position = count_arguments(args: move args);
   set deref(output) = position;
   return unit;
@@ -918,7 +937,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
 #[test]
 fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
-    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> result: own u64 reads('v 'd), writes('d) contract {
+    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> result: own u64 reads(value, destination), writes(destination) contract {
   define capacity = len(deref(destination));
   requires ile(4_u64, capacity);
 } {
@@ -1013,7 +1032,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
 #[test]
 fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carrier() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1062,7 +1081,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 #[test]
 fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
     let source =
-        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1115,7 +1134,7 @@ fn a_borrowed_match_payload_deref_reconstructs_a_prv3_carrier() {
   Item(value: u64);
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1172,7 +1191,7 @@ enum Wrap {
   Data(values: array<u64, count>);
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1227,7 +1246,7 @@ fn a_parameter_backed_user_result_keeps_distinct_result_and_substitution_edges()
   return copied;
 }
 
-fn store_relay['r](output: &uniq 'r u64, outside: own u64) -> result: own unit writes('r) {
+fn store_relay['r](output: &uniq 'r u64, outside: own u64) -> result: own unit writes(output) {
   let position = relay(value: outside);
   set deref(output) = position;
   return unit;
@@ -1280,7 +1299,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 #[test]
 fn a_parameter_backed_user_write_keeps_distinct_write_and_substitution_edges() {
     let source =
-        br#"fn store['r](output: &uniq 'r u64, value: own u64) -> result: own unit writes('r) {
+        br#"fn store['r](output: &uniq 'r u64, value: own u64) -> result: own unit writes(output) {
   set deref(output) = value;
   return unit;
 }
@@ -1349,7 +1368,7 @@ fn a_selected_payload_witness_never_uses_an_external_sibling_root_path() {
   Second(value: u64);
 }
 
-fn store_two['f, 's](first_output: &uniq 'f u64, second_output: &uniq 's u64, args: own Args) -> result: own unit reads(args), writes('f 's) {
+fn store_two['f, 's](first_output: &uniq 'f u64, second_output: &uniq 's u64, args: own Args) -> result: own unit reads(args), writes(first_output, second_output) {
   region 'a {
     let first = args_count<'a>(args: &'a args);
     let second = args_count<'a>(args: &'a args);
@@ -1416,7 +1435,7 @@ fn an_external_result_payload_keeps_selectors_through_value_delivery_and_outer_e
   Missing();
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes(output) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1552,7 +1571,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_subjectless_leaf_still_retains_its_structural_bridge() {
-    let source = br#"fn first(values: own buffer<u8>) -> result: own u8 pure contract {
+    let source = br#"fn first(values: own buffer<u8>) -> result: own u8 reads(values) contract {
   define room = len(values);
   requires ilt(0_u64, room);
 } {
@@ -1951,12 +1970,12 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn call_write_dependencies_compose_through_a_moved_unique_parameter() {
     let source =
-        br#"fn write['r](out: &uniq 'r u64, value: own u64) -> result: own unit writes('r) {
+        br#"fn write['r](out: &uniq 'r u64, value: own u64) -> result: own unit writes(out) {
   set deref(out) = value;
   return unit;
 }
 
-fn proxy['r](out: &uniq 'r u64, value: own u64) -> result: own unit writes('r) {
+fn proxy['r](out: &uniq 'r u64, value: own u64) -> result: own unit writes(out) {
   write<'r>(out: move out, value: value);
   return unit;
 }
@@ -1979,8 +1998,11 @@ command fn main() -> status: own ExitStatus pure {
                 .iter()
                 .find(|dependencies| dependencies.function == id)
                 .unwrap_or_else(|| panic!("missing dependencies for {name}"));
-            assert_eq!(dependencies.writes[0].parameters.datums, expected);
-            assert!(dependencies.writes[1].parameters.datums.is_empty());
+            assert_eq!(
+                write_dependency(dependencies, 0, &[]).parameters.datums,
+                expected
+            );
+            assert!(dependencies.writes[1].is_empty());
         }
         assert_eq!(program.provenance.call_argument_dispositions.len(), 2);
         assert!(
@@ -1999,12 +2021,52 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn call_write_dependencies_preserve_the_selected_struct_field() {
+    let source = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn write_left['r](pair: &uniq 'r Pair, value: own u64) -> result: own unit writes(pair.left) {
+  set deref(pair).left = value;
+  return unit;
+}
+
+fn proxy['r](pair: &uniq 'r Pair, value: own u64) -> result: own unit writes(pair.left) {
+  write_left<'r>(pair: move pair, value: value);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    checked(source, |program| {
+        let expected = vec![ParameterDatum {
+            ordinal: 1,
+            selector: DatumSelector::Plain,
+        }];
+        for name in ["write_left", "proxy"] {
+            let dependencies = dependencies(program, name);
+            assert_eq!(dependencies.writes[0].len(), 1);
+            assert_eq!(dependencies.writes[0][0].fields, vec![0]);
+            assert_eq!(
+                dependencies.writes[0][0].dependency.parameters.datums,
+                expected
+            );
+            assert!(dependencies.writes[1].is_empty());
+        }
+    });
+}
+
+#[test]
 fn a_unique_match_payload_write_resolves_to_the_scrutinee_root() {
     let source = br#"enum Payload {
   Item(value: u64);
 }
 
-fn update['r](input: &uniq 'r Payload, replacement: own u64) -> result: own unit reads('r), writes('r) {
+fn update['r](input: &uniq 'r Payload, replacement: own u64) -> result: own unit reads(input), writes(input) {
   match deref(input) {
     Item(value: selected) => {
       set deref(selected) = replacement;
@@ -2027,13 +2089,13 @@ command fn main() -> status: own ExitStatus pure {
             .find(|dependencies| dependencies.function == update)
             .expect("update dependencies");
         assert_eq!(
-            dependencies.writes[0].parameters.datums,
+            write_dependency(dependencies, 0, &[]).parameters.datums,
             vec![ParameterDatum {
                 ordinal: 1,
                 selector: DatumSelector::Plain,
             }]
         );
-        assert!(dependencies.writes[1].parameters.datums.is_empty());
+        assert!(dependencies.writes[1].is_empty());
     });
 }
 
@@ -2043,7 +2105,7 @@ fn a_unique_boxed_match_payload_write_resolves_to_the_outer_scrutinee_root() {
   Item(value: u64);
 }
 
-fn update['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own unit reads('r), writes('r) {
+fn update['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own unit reads(input), writes(input) {
   match deref(deref(input)) {
     Item(value: selected) => {
       set deref(selected) = replacement;
@@ -2052,7 +2114,7 @@ fn update['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own
   return unit;
 }
 
-fn proxy['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own unit reads('r), writes('r) {
+fn proxy['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own unit reads(input), writes(input) {
   update<'r>(input: move input, replacement: replacement);
   return unit;
 }
@@ -2072,13 +2134,13 @@ command fn main() -> status: own ExitStatus pure {
                 .find(|dependencies| dependencies.function == function)
                 .unwrap_or_else(|| panic!("missing dependencies for {name}"));
             assert_eq!(
-                dependencies.writes[0].parameters.datums,
+                write_dependency(dependencies, 0, &[]).parameters.datums,
                 vec![ParameterDatum {
                     ordinal: 1,
                     selector: DatumSelector::Plain,
                 }]
             );
-            assert!(dependencies.writes[1].parameters.datums.is_empty());
+            assert!(dependencies.writes[1].is_empty());
         }
     });
 }
@@ -2334,12 +2396,12 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn system_results_and_writes_add_no_parameter_datum() {
-    let source = br#"fn publish['o, 's](output: &'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes(output) contract {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires ile(count, capacity);
 } {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: 0_u64, end: count) {
+    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -2349,10 +2411,10 @@ fn system_results_and_writes_add_no_parameter_datum() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
-    publish<'publication, 'publication>(output: &'publication out, source: &'publication batch, count: 1_u64);
+    publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -2372,13 +2434,15 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
         };
         let dependencies = dependencies(program, "publish");
         assert!(
-            dependencies.writes[0].parameters.datums.is_empty(),
+            write_dependency(dependencies, 0, &[])
+                .parameters
+                .datums
+                .is_empty(),
             "a system write does not derive the written resource from call arguments"
         );
         assert!(
-            dependencies.writes[0].unconditional_external,
-            "the SYS-2 write_once output component is unconditional external: dependencies={dependencies:#?} authority={:#?}",
-            publish.authority_summary
+            write_dependency(dependencies, 0, &[]).unconditional_external,
+            "the SYS-2 write_once output component is unconditional external: dependencies={dependencies:#?}"
         );
         for arm in arms {
             for binder in &arm.binders {

@@ -1,4 +1,4 @@
-fn overwrite['r](out: &uniq 'r buffer<u8>, replacement: own buffer<u8>) -> function_result: own unit writes('r) {
+fn overwrite['r](out: &uniq 'r buffer<u8>, replacement: own buffer<u8>) -> function_result: own unit writes(out) {
   set deref(out) = move replacement;
   return unit;
 }

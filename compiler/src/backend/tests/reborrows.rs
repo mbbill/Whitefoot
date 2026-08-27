@@ -89,7 +89,7 @@ fn extension_chains_execute_and_write_the_owners_storage() {
   return &uniq 'r0 deref(x);
 }
 
-fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
+fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -121,7 +121,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
     let llvm = compile(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -165,7 +165,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect['r](packet: &'r Packet) -> result: own i32 reads('r) {
+fn inspect['r](packet: &'r Packet) -> result: own i32 reads(packet) {
   match deref(packet) {
     Data(item: payload) => {
       return deref(payload).left;

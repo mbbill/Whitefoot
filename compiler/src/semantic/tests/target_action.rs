@@ -38,7 +38,7 @@ fn system_catalog_actions_have_one_shot_ownership_completion() {
             operation.target_action.completion
         );
         assert_eq!(
-            milestones.authority_released,
+            milestones.ownership_released,
             operation.target_action.completion
         );
         assert_eq!(milestones.terminal, operation.target_action.completion);
@@ -46,226 +46,40 @@ fn system_catalog_actions_have_one_shot_ownership_completion() {
 }
 
 #[test]
-fn authority_catalog_names_the_supplier_family_and_fragment() {
-    use crate::{
-        SystemAuthorityAttribution as Attribution, SystemAuthorityFamily as Family,
-        SystemAuthorityFragment as Fragment, SystemAuthorityPairRelation as Relation,
-    };
-
-    let expected = [
-        (
-            "args_count",
-            Family::Invocation,
-            Fragment::InvocationSnapshot,
-            Relation::Free,
-        ),
-        (
-            "arg_get",
-            Family::Invocation,
-            Fragment::InvocationSnapshot,
-            Relation::Free,
-        ),
-        (
-            "open_read",
-            Family::DirectoryRead,
-            Fragment::DirectoryLookup,
-            Relation::Free,
-        ),
-        (
-            "read_at",
-            Family::ReadFile,
-            Fragment::FileRandomRead,
-            Relation::Free,
-        ),
-        (
-            "write_once",
-            Family::Output,
-            Fragment::OutputSequence,
-            Relation::Ordered(Attribution::OutputBytes),
-        ),
-        (
-            "open_directory",
-            Family::DirectoryRead,
-            Fragment::DirectoryLookup,
-            Relation::Free,
-        ),
-        (
-            "open_directory_source",
-            Family::DirectoryRead,
-            Fragment::DirectoryLookup,
-            Relation::Free,
-        ),
-        (
-            "directory_next",
-            Family::DirectorySource,
-            Fragment::DirectoryCursor,
-            Relation::Ordered(Attribution::DirectoryEntries),
-        ),
-        (
-            "open_file",
-            Family::DirectoryRead,
-            Fragment::DirectoryLookup,
-            Relation::Free,
-        ),
-    ];
-    for operation in crate::SYSTEM_OPERATIONS {
-        let selected = expected
+fn system_catalog_projects_one_unified_state_row() {
+    let row = |name| {
+        crate::SYSTEM_OPERATIONS
             .iter()
-            .find(|(name, _, _, _)| *name == operation.spelling);
-        match (operation.authority, selected) {
-            (None, None) => {}
-            (Some(authority), Some((_, family, fragment, relation))) => {
-                assert_eq!(authority.parameter, 0);
-                assert_eq!(authority.family, *family);
-                assert_eq!(authority.fragment, *fragment);
-                assert_eq!(
-                    crate::system_authority_pair_relation(*family, *fragment, *fragment),
-                    Some(*relation)
-                );
-            }
-            pair => panic!("authority mismatch for {}: {pair:?}", operation.spelling),
-        }
-    }
-}
-
-#[test]
-fn tcp_model_witness_has_pair_owned_relations() {
-    use crate::{
-        SystemAuthorityAttribution as Attribution,
-        SystemAuthorityFamily::Tcp,
-        SystemAuthorityFragment::{TcpControl, TcpReceive, TcpSend},
-        SystemAuthorityPairRelation::{Exclusive, Free, Ordered},
-        system_authority_pair_relation,
+            .find(|operation| operation.spelling == name)
+            .unwrap_or_else(|| panic!("missing system operation {name}"))
     };
+    let write = row("write_once");
+    assert_eq!(crate::operation_state_effects(write), (vec![0, 1], vec![0]));
+    assert!(matches!(
+        write.parameters[0].mode,
+        crate::SystemParameterMode::UniqueBorrow(_)
+    ));
+
+    let next = row("directory_next");
     assert_eq!(
-        system_authority_pair_relation(Tcp, TcpReceive, TcpReceive),
-        Some(Ordered(Attribution::TcpReceiveBytes))
+        crate::operation_state_effects(next),
+        (vec![0, 1], vec![0, 1])
     );
-    assert_eq!(
-        system_authority_pair_relation(Tcp, TcpSend, TcpSend),
-        Some(Ordered(Attribution::TcpSendBytes))
-    );
-    assert_eq!(
-        system_authority_pair_relation(Tcp, TcpReceive, TcpSend),
-        Some(Free)
-    );
-    assert_eq!(
-        system_authority_pair_relation(Tcp, TcpSend, TcpReceive),
-        Some(Free)
-    );
-    for fragment in [TcpReceive, TcpSend, TcpControl] {
-        assert_eq!(
-            system_authority_pair_relation(Tcp, TcpControl, fragment),
-            Some(Exclusive)
-        );
-        assert_eq!(
-            system_authority_pair_relation(Tcp, fragment, TcpControl),
-            Some(Exclusive)
-        );
-    }
+    assert!(matches!(
+        next.parameters[0].mode,
+        crate::SystemParameterMode::UniqueBorrow(_)
+    ));
 }
 
 #[test]
-fn current_family_tables_are_total_and_whole_resource_is_exclusive() {
-    use crate::{
-        SystemAuthorityAttribution as Attribution, SystemAuthorityFamily as Family,
-        SystemAuthorityFragment as Fragment, SystemAuthorityPairRelation as Relation,
-        system_authority_pair_relation,
-    };
-    for (family, fragment, self_relation) in [
-        (
-            Family::Invocation,
-            Fragment::InvocationSnapshot,
-            Relation::Free,
-        ),
-        (
-            Family::DirectoryRead,
-            Fragment::DirectoryLookup,
-            Relation::Free,
-        ),
-        (Family::ReadFile, Fragment::FileRandomRead, Relation::Free),
-        (
-            Family::Output,
-            Fragment::OutputSequence,
-            Relation::Ordered(Attribution::OutputBytes),
-        ),
-        (
-            Family::DirectorySource,
-            Fragment::DirectoryCursor,
-            Relation::Ordered(Attribution::DirectoryEntries),
-        ),
-    ] {
-        assert_eq!(
-            system_authority_pair_relation(family, fragment, fragment),
-            Some(self_relation)
-        );
-        for pair in [
-            (Fragment::WholeResource, Fragment::WholeResource),
-            (Fragment::WholeResource, fragment),
-            (fragment, Fragment::WholeResource),
-        ] {
-            assert_eq!(
-                system_authority_pair_relation(family, pair.0, pair.1),
-                Some(Relation::Exclusive)
-            );
-        }
-    }
-    assert_eq!(
-        system_authority_pair_relation(
-            Family::Output,
-            Fragment::OutputSequence,
-            Fragment::DirectoryCursor,
-        ),
-        None
-    );
-}
-
-#[test]
-fn combining_release_rows_from_multiple_families_is_unknown() {
-    let close = |family| crate::SystemReleaseRow {
+fn release_rows_union_state_transitions_without_a_second_identity_system() {
+    let close = crate::SystemReleaseRow {
         target_action: crate::TargetAction::MAY_SUSPEND,
-        capability_write: true,
-        authority: crate::SystemReleaseAuthority::Known(crate::SystemAuthorityFacet {
-            family,
-            fragment: crate::SystemAuthorityFragment::WholeResource,
-        }),
+        state_write: true,
     };
-    let combined = close(crate::SystemAuthorityFamily::DirectoryRead)
-        .union(close(crate::SystemAuthorityFamily::ReadFile));
-    assert_eq!(combined.authority, crate::SystemReleaseAuthority::Unknown);
-}
-
-#[test]
-fn repeated_uses_deduplicate_by_parameter_family_and_fragment_only() {
-    let source = br#"fn twice(output: own Output) -> result: own unit writes(output), allocates(heap) {
-  let bytes = buffer_new(1_u64, 65_u8);
-  region 'o {
-    region 's {
-      let first = write_once<'o, 's>(output: &'o output, source: &'s bytes, start: 0_u64, end: 1_u64);
-      let second = write_once<'o, 's>(output: &'o output, source: &'s bytes, start: 0_u64, end: 1_u64);
-    }
-  }
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("repeated authority-use fixture must check: {outcome:?}");
-        };
-        let [usage] = program.data.functions[0].authority_summary.uses.as_slice() else {
-            panic!("two same-fragment calls must retain one deduplicated use");
-        };
-        assert_eq!(usage.parameter, 0);
-        assert_eq!(usage.family, crate::SystemAuthorityFamily::Output);
-        assert_eq!(
-            usage.fragment,
-            crate::SystemAuthorityFragment::OutputSequence
-        );
-    });
+    let combined = close.union(crate::SystemReleaseRow::EMPTY);
+    assert!(combined.state_write);
+    assert_eq!(combined.target_action, crate::TargetAction::MAY_SUSPEND);
 }
 
 #[test]
@@ -315,11 +129,11 @@ fn residual_projection_releases_contribute_to_target_action() {
   data: buffer<u8>;
 }
 
-fn take_data(holder: own Holder) -> result: own buffer<u8> writes(holder) {
+fn take_data(holder: own Holder) -> result: own buffer<u8> writes(holder.file) {
   return move holder.data;
 }
 
-fn forward(holder: own Holder) -> result: own buffer<u8> writes(holder) {
+fn forward(holder: own Holder) -> result: own buffer<u8> writes(holder.file) {
   return take_data(holder: move holder);
 }
 
@@ -327,7 +141,7 @@ fn consume(data: own buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-fn pass_data(holder: own Holder) -> result: own unit writes(holder) {
+fn pass_data(holder: own Holder) -> result: own unit writes(holder.file) {
   consume(data: move holder.data);
   return unit;
 }

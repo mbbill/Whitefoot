@@ -1118,7 +1118,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_ordinary_admission_error_precedes_non_residuality() {
     let source = format!(
-        r#"fn read(values: own buffer<i32>, i: own u64, theorem: own Bool) -> result: own i32 traps {{
+        r#"fn read(values: own buffer<i32>, i: own u64, theorem: own Bool) -> result: own i32 reads(values), traps {{
   claim unrelated: theorem because "{REJECTION_REVIEW}";
   return values[i];
 }}
@@ -1134,7 +1134,7 @@ command fn main() -> status: own ExitStatus pure {{
 #[test]
 fn exact_claim_lifecycle_precedes_a_later_ordinary_admission_error() {
     let source = format!(
-        r#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {{
+        r#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 reads(values), traps {{
   claim redundant: True() because "{REJECTION_REVIEW}";
   return values[i];
 }}
@@ -1581,7 +1581,7 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn a_write_through_a_moved_unique_holder_kills_an_earlier_claim_fact() {
-    let source = r#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes('r) {
+    let source = r#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes(target) {
   set deref(target) = 100_u64;
   return unit;
 }

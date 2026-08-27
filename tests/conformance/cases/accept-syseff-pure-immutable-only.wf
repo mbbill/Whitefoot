@@ -1,5 +1,5 @@
 fn count_arguments(args: own Args) -> result: own u64 reads(args) {
-  doc "Args is immutable, so its snapshot-read fragment is Free, but args_count still reads the explicit logical capability. The exact row is reads(args), independent of the borrow lifetime.";
+  doc "Args is immutable, but args_count still observes the parameter-supplied argument snapshot. The exact row is reads(args), independent of the borrow lifetime.";
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return total;

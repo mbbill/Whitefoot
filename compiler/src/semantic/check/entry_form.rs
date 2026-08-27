@@ -47,16 +47,17 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
 /// [FN-7]'s closed standard-input table for kind `command`, in table-ordinal
 /// order. Ordinal identity, never type identity, selects the supplied value:
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
-const COMMAND_INPUTS: [StandardInput; 4] = [
+const COMMAND_INPUTS: [StandardInput; 5] = [
     input("args", "own Args", "Args"),
     input("cwd", "own DirectoryRead", "DirectoryRead"),
     input("stdout", "own Output", "Output"),
     input("stderr", "own Output", "Output"),
+    input("files", "own FileFactory", "FileFactory"),
 ];
 
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
-const COMMAND_EFFECTS: &str = "capability-parameter reads/writes over selected command inputs, \
+const COMMAND_EFFECTS: &str = "parameter-rooted reads/writes over selected command inputs, \
      `allocates(heap)`, and `traps` in EFF-1 canonical order";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -377,10 +378,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Reports whether every category written in a `command` entry's row is
     /// admitted by that kind row.
     ///
-    /// The admitted set is capability-parameter `reads`/`writes`,
-    /// `allocates(heap)`, and `traps`; `pure` is the empty subset. A memory
-    /// region entry and an arena allocation still fail here. EFF-1 separately
-    /// resolves every IDENT to an exact capability-bearing formal.
+    /// The admitted set is parameter-rooted `reads`/`writes`,
+    /// `allocates(heap)`, and `traps`; `pure` is the empty subset. Arena
+    /// allocation still fails here. EFF-1 separately resolves and type-checks
+    /// every state path.
     fn command_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
         if self.has_fixed(effects, FixedTerminal::Pure)? {
             return Ok(true);
@@ -389,10 +390,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let admitted = if self.has_fixed(effect, FixedTerminal::Reads)?
                 || self.has_fixed(effect, FixedTerminal::Writes)?
             {
-                let path = self.tree.path(effect)?;
-                !self.resolved.lexical_uses().iter().any(|usage| {
-                    usage.role() == LexicalUseRole::EffectRegion && usage.origin().node() == path
-                })
+                true
             } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
                 self.has_fixed(effect, FixedTerminal::Heap)?
                     && !self.has_fixed(effect, FixedTerminal::Arena)?

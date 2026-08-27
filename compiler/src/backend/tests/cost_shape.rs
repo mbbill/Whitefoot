@@ -54,7 +54,7 @@
 //! | raw argument bytes | `the_raw_byte_route_carries_no_unicode_gate` |
 //! | UTF-8 text conversion | absence side gated here; the presence side is the `run-syshost-copyutf8-*` conformance cases. The Windows column the row also names has no implementation in the first slice, so it is not inspectable and is not claimed. |
 //! | `RelativePath` construction | `relative_path_retypes_the_lease_without_allocating` |
-//! | `open_read` | `open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor` |
+//! | `open_read` | `open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor` |
 //! | `read_at` / `write_once` | `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` |
 //! | `DirectoryRead`/`ReadFile` release | `every_release_close_is_one_discarded_attempt` |
 //! | value releases | `releasing_a_value_or_an_output_reaches_no_host_facility` |
@@ -103,7 +103,7 @@ const WFGREP: &[u8] = include_bytes!("../../../../tests/programs/wfgrep.wf");
 fn modules() -> &'static (String, String) {
     static MODULES: OnceLock<(String, String)> = OnceLock::new();
     MODULES.get_or_init(|| {
-        with_ir_for(WFGREP, crate::Inventory::OpenByName, |program| {
+        with_ir_for(WFGREP, crate::Inventory::FilePermits, |program| {
             (
                 emit_llvm(program)
                     .expect("lowered program must emit")
@@ -148,6 +148,9 @@ const DECLARED_FUNCTIONS: &[&str] = &[
     "put_decimal",
     "report_failure",
     "search_file",
+    "open_source_from_factory",
+    "open_file_from_factory",
+    "open_directory_from_factory",
     "walk",
 ];
 
@@ -381,6 +384,7 @@ const SELECTED_ROWS: &[(u32, &str)] = &[
     (12, "open_directory_source"),
     (13, "directory_next"),
     (14, "open_file"),
+    (15, "reserve_file"),
 ];
 
 /// §9.1 row 1 — target selection is one link-time table decision.
@@ -524,14 +528,16 @@ fn relative_path_retypes_the_lease_without_allocating() {
 }
 
 /// §9.1 row 6 — `open_read` is one direct native open-relative operation on
-/// the capability's own descriptor.
+/// the supplied directory value's own descriptor.
 #[test]
-fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
+fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
     let row = approved_row(emitted(), "wf.sys.open_read.v1");
-    // The directory descriptor is the capability's; the path pointer is the
+    // The directory descriptor is the supplied value's; the path pointer is the
     // lease itself. No concatenation, no ambient working-directory lookup.
     assert!(row.contains("%text = extractvalue { ptr, i64 } %path, 0"));
-    assert!(row.contains("call i32 (i32, ptr, i32, ...) @openat(i32 %root, ptr %text, i32 0)"));
+    assert!(row.contains(
+        "call i32 @wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+    ));
     for forbidden in [
         "@calloc",
         "@malloc",
@@ -545,25 +551,31 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
             "the open path must not reach {forbidden}:\n{row}"
         );
     }
-    // In the finished program every source open site is one direct `openat`
-    // against a bound `DirectoryRead`, and the only other open is the
+    // In the finished program every source open site is one typed direct
+    // completion call against a bound `DirectoryRead`; the native adapter
+    // below that call owns `openat`. The only native open visible here is the
     // bootstrap's one-time acquisition of the initial directory [QUAL-3].
     // The search has exactly five open sites, derived from the source and not
     // from the module: `main` opens the search root with `open_directory` and,
     // when that root is not a directory, the same name with `open_read`;
     // `walk` opens one enumeration with `open_directory_source`, each child directory with
     // `open_directory`, and each regular file with `open_file`.
-    assert_eq!(program().matches("@openat(").count(), 5);
+    assert_eq!(
+        program()
+            .matches("@wf__completion_file_open_at_direct(")
+            .count(),
+        5
+    );
     assert_eq!(program().matches("@open(").count(), 1);
     assert!(program().contains("@open(ptr nonnull @.wf.sys.working.directory"));
-    let opening = basic_block(entry(), "@openat(");
+    let opening = basic_block(entry(), "@wf__completion_file_open_at_direct(");
     let host_calls: Vec<_> = call_targets(opening)
         .into_iter()
         .filter(|target| !target.starts_with("llvm."))
         .collect();
     assert_eq!(
         host_calls,
-        vec!["openat"],
+        vec!["wf__completion_file_open_at_direct"],
         "the open is the only host call on its path:\n{opening}"
     );
     // The entry's first open is the search root's, which the name route
@@ -579,7 +591,7 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
     // Its failure arm is the cold mapper, reached only when the open failed.
     assert!(
         opening.contains("%cwd"),
-        "the dirfd is the capability's own"
+        "the dirfd is the supplied directory's own"
     );
 }
 
@@ -744,29 +756,33 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectorySource`,
-    // and `ReadFile`. The program holds all three, so all three appear. The
-    // emitted `open_file` helper has two mutually exclusive provisional-error
-    // cleanup paths, independently locked in `system.rs`; the host optimizer
-    // tail-merges those paths into one physical close site in this whole
-    // program. That site is distinguished below from resource releases.
-    let closes = program().matches("@close(").count();
-    assert!(
-        closes >= 4,
-        "three closing resource kinds and one tail-merged provisional cleanup must appear:\n{}",
+    // and `ReadFile`. Across the command and its retained helper definitions,
+    // the optimizer retains nine compiler-derived release sites. FilePermit
+    // itself erases before emission. The typed file adapter now validates a
+    // provisional descriptor before publishing it as a Whitefoot value, so
+    // its failure cleanup belongs to the adapter rather than to this IR.
+    let closes = program()
+        .matches("@wf__completion_file_close_direct(")
+        .count();
+    assert_eq!(
+        closes,
+        9,
+        "all nine closing return edges must remain:\n{}",
         program()
     );
     // Every close result is named once and never read again. Nothing compares
     // it, branches on it, or feeds it to a retry: the diagnostic is discarded,
     // which makes "never retry an ambiguous fd close" a property of emitted
     // code rather than a convention [SYS-5]. This applies equally to normal
-    // resource releases and to `open_file`'s tail-merged provisional cleanup.
+    // resource releases. A provisional descriptor that fails type validation
+    // is closed inside the typed file adapter before this IR can observe it.
     // Value names are function-local, so each function is read on its own.
     let mut releases = 0;
     let mut provisional_cleanups = 0;
     for function in program_functions() {
         for line in function.lines() {
             let trimmed = line.trim_start();
-            if !trimmed.contains("@close(") {
+            if !trimmed.contains("@wf__completion_file_close_direct(") {
                 continue;
             }
             let name = trimmed
@@ -791,11 +807,14 @@ fn every_release_close_is_one_discarded_attempt() {
             );
         }
     }
-    assert!(
-        releases >= 3,
-        "all three closing resource kinds must release"
+    assert_eq!(
+        releases, 9,
+        "all nine resource closes must be compiler-derived releases"
     );
-    assert_eq!(provisional_cleanups, 1);
+    assert_eq!(
+        provisional_cleanups, 0,
+        "typed-open validation must keep provisional cleanup outside Whitefoot IR"
+    );
     assert_eq!(releases + provisional_cleanups, closes);
 }
 
@@ -812,6 +831,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     for forbidden in [
         "@close(i32 1)",
         "@close(i32 2)",
+        "@wf__completion_file_close_direct(i32 1)",
+        "@wf__completion_file_close_direct(i32 2)",
         "@fflush",
         "@fclose",
         "@fsync",
@@ -861,6 +882,9 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // The first slice's own host operations, including the [SYS-14]
             // enumeration facility this target's [QUAL-1] row names.
             | "openat" | "fstat" | "pread" | "write" | "close"
+            | "wf__completion_file_open_at_direct"
+            | "wf__completion_file_status_direct"
+            | "wf__completion_file_close_direct"
             | "wf__completion_file_pread_direct" | "wf__completion_file_write_direct"
             | "wf__completion_directory_next_direct"
             // Darwin's native error-slot access on failed host operations.

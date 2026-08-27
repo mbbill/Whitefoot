@@ -1,4 +1,4 @@
-fn scan ['r](input: &'r buffer<u8>) -> own u64 reads('r), traps {
+fn scan ['r](input: &'r buffer<u8>) -> own u64 reads(input), traps {
   let length: own u64 = len<u8>(deref(input));
   let offset: own u64 = 0_u64;
   let lines: own u64 = 0_u64;

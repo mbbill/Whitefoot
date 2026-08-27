@@ -32,7 +32,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     element_type: element.ty(),
                     holder: Some(declaration),
                     resolved,
-                    origin_region: borrow.origin_region,
                     borrow_kind: Some(borrow.kind),
                 }))
             }

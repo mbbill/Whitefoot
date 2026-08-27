@@ -71,6 +71,11 @@ typedef struct wf_linux_io_uring_statistics {
     uint64_t host_wake_writes;
 } wf_linux_io_uring_statistics;
 
+/* Target-private protocol state.  The mmap pointers below name shared
+ * kernel/runtime queue pages; they are never Whitefoot buffers and never
+ * cross the generated-code ABI.  A request buffer crosses this boundary only
+ * through wf_linux_file_request after its loan has moved into one owned
+ * completion operation. */
 typedef struct wf_linux_io_uring_adapter {
     wf_completion_runtime *runtime;
     wf_linux_io_uring_entry *entries;

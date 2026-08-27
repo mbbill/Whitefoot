@@ -90,20 +90,22 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 //
 // [PAR-1] may now include a direct system operation. Static qualification
 // still selects only the target implementation of that semantic identity;
-// permission separately proves ordinary memory, loans, capability fragments,
-// dataflow, and exits. A `may-suspend` record selects completion lowering only
+// permission separately proves ordinary state paths, loans, dataflow, and
+// exits. A `may-suspend` record selects completion lowering only
 // when the backend has a typed adapter for the exact operation. Otherwise the
 // valid source retains its sequential qualified call or reports unsupported
-// target capability; no row is fabricated and no source rejection changes.
+// target support; no row is fabricated and no source rejection changes.
 //
 // Runtime queues, operation slots, and scheduler frames carry no semantic ID
 // of their own. A file helper accepts a closed typed target descriptor, never
 // an outlined writer function. Native completion and the bounded helper
 // fallback therefore implement rows selected here without becoming alternate
 // system declarations or a second qualification path.
-// v0.37 review (2026-08-26): source effects now name concrete capability
-// parameters while target suspension remains compiler-owned; this changes no
-// native representation. The three renamed operations retain ordinals 8, 12,
+// v0.37 review (2026-08-27): source effects now name concrete state
+// parameters while target suspension remains compiler-owned. FileFactory and
+// FilePermit use a proof-only bit representation; reserve_file returns that
+// harmless value inline, and the open wrappers erase it before the native ABI.
+// The three renamed operations retain ordinals 8, 12,
 // and 13. Ordinal 8 adds one u64 file offset and binds to pread instead of
 // cursor-mutating read. DirectorySource keeps the descriptor representation
 // and close release of the former traversal source. Interrupted and WouldBlock
@@ -115,7 +117,7 @@ const REVIEWED_FOR: &str = "v0.37";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.
-const RESOURCE_COUNT: usize = 8;
+const RESOURCE_COUNT: usize = 10;
 
 /// The [HOST-1] code-unit family a qualified target's host strings belong to.
 ///
@@ -173,7 +175,7 @@ impl HostFacilities {
     /// through.
     const fn close(self) -> &'static str {
         match self {
-            Self::Native => "close",
+            Self::Native => "wf__completion_file_close_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_close",
         }
@@ -183,19 +185,27 @@ impl HostFacilities {
     /// [PATH-2].
     const fn file_open(self) -> &'static str {
         match self {
-            Self::Native => "openat",
+            Self::Native => "wf__completion_file_open_at_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_openat",
         }
     }
 
     /// The descriptor-status facility used to validate that `open_file`
-    /// produced the regular-file capability its semantic row promises.
-    const fn file_status(self, native: &'static str) -> &'static str {
+    /// produced the regular-file value its semantic row promises.
+    const fn file_status(self, _native: &'static str) -> &'static str {
         match self {
-            Self::Native => native,
+            Self::Native => "wf__completion_file_status_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_fstat",
+        }
+    }
+
+    const fn uses_typed_completion_file_adapter(self) -> bool {
+        match self {
+            Self::Native => true,
+            #[cfg(test)]
+            Self::DeterministicTest => false,
         }
     }
 
@@ -538,6 +548,8 @@ pub(crate) enum ResourceRepresentation {
     Descriptor,
     /// One portable command code [SYS-13].
     CommandCode,
+    /// A proof-only affine value with no target resource representation.
+    ProofToken,
 }
 
 impl ResourceRepresentation {
@@ -546,7 +558,7 @@ impl ResourceRepresentation {
         match self {
             Self::InlineLease | Self::ArgumentVector => 16,
             Self::Descriptor => 4,
-            Self::CommandCode => 1,
+            Self::CommandCode | Self::ProofToken => 1,
         }
     }
 
@@ -555,7 +567,7 @@ impl ResourceRepresentation {
         match self {
             Self::InlineLease | Self::ArgumentVector => 8,
             Self::Descriptor => 4,
-            Self::CommandCode => 1,
+            Self::CommandCode | Self::ProofToken => 1,
         }
     }
 
@@ -565,6 +577,7 @@ impl ResourceRepresentation {
             Self::InlineLease | Self::ArgumentVector => "{ ptr, i64 }",
             Self::Descriptor => "i32",
             Self::CommandCode => "i8",
+            Self::ProofToken => "i1",
         }
     }
 }
@@ -702,7 +715,7 @@ impl SystemTarget {
     }
 
     /// The target descriptor-status facility and record coordinates used to
-    /// validate `open_file` before the capability reaches source.
+    /// validate `open_file` before the resource reaches source.
     pub(crate) const fn file_status_symbol(self) -> &'static str {
         self.host.file_status(self.native_file_status_symbol)
     }
@@ -713,6 +726,12 @@ impl SystemTarget {
 
     pub(crate) const fn file_status_mode_offset(self) -> u64 {
         self.file_status_mode_offset
+    }
+
+    /// Whether the selected target reaches file open/status/close through the
+    /// typed completion adapter ABI rather than the deterministic test shim.
+    pub(crate) const fn uses_typed_completion_file_adapter(self) -> bool {
+        self.host.uses_typed_completion_file_adapter()
     }
 
     /// The same target close facility resource release uses. An `open_file`
@@ -1047,6 +1066,9 @@ pub(crate) const fn qualified_representation(
         | SystemResourceType::Output
         | SystemResourceType::DirectorySource => ResourceRepresentation::Descriptor,
         SystemResourceType::ExitStatus => ResourceRepresentation::CommandCode,
+        SystemResourceType::FileFactory | SystemResourceType::FilePermit => {
+            ResourceRepresentation::ProofToken
+        }
     }
 }
 
@@ -1060,6 +1082,8 @@ const fn resource_index(resource: SystemResourceType) -> usize {
         SystemResourceType::Output => 5,
         SystemResourceType::ExitStatus => 6,
         SystemResourceType::DirectorySource => 7,
+        SystemResourceType::FileFactory => 8,
+        SystemResourceType::FilePermit => 9,
     }
 }
 
@@ -1118,7 +1142,9 @@ fn resource_guarantees(resource: SystemResourceType) -> &'static [TargetGuarante
         SystemResourceType::DirectorySource => DIRECTORY,
         SystemResourceType::ReadFile
         | SystemResourceType::Output
-        | SystemResourceType::ExitStatus => &[],
+        | SystemResourceType::ExitStatus
+        | SystemResourceType::FileFactory
+        | SystemResourceType::FilePermit => &[],
     }
 }
 
@@ -1165,6 +1191,7 @@ fn operation_row(
         12 => "wf.sys.open_directory_source.v1",
         13 => "wf.sys.directory_next.v1",
         14 => "wf.sys.open_file.v1",
+        15 => "wf.sys.reserve_file.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };
@@ -1194,7 +1221,7 @@ fn resource_row(
     let representation = qualified_representation(contract.resource);
     let release = match contract.resource {
         // At most one direct native close attempt; `Output` detaches the
-        // source capability without closing or flushing the descriptor
+        // source value without closing or flushing the descriptor
         // [SYS-12], and every other type releases with a logical consume.
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
@@ -1205,7 +1232,9 @@ fn resource_row(
         | SystemResourceType::HostString
         | SystemResourceType::RelativePath
         | SystemResourceType::Output
-        | SystemResourceType::ExitStatus => ReleaseImplementation::NoCode,
+        | SystemResourceType::ExitStatus
+        | SystemResourceType::FileFactory
+        | SystemResourceType::FilePermit => ReleaseImplementation::NoCode,
     };
     // The approved release code and the [SYS-5] action the checked program
     // carries must be the same action. Emission reads the checked program's

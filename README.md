@@ -36,9 +36,19 @@ priorities and repository discipline.
 Kernel specification v0.36 remains the active language authority, SHA-256
 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
 On this work branch the stable [specification path](spec/kernel-spec.md)
-contains a v0.37 CANDIDATE at SHA-256
-`0cd75e5846986c583fb6453d861a6f3f72170d2b05b1cd2540f6850ab587f4c0`.
-It is valid branch work and not a merge-ready ACTIVE identity.
+contains an in-progress v0.37 candidate for unified-state completion I/O. Its
+bytes are changing during the rebuild. It is valid branch work and not a
+merge-ready ACTIVE identity.
+
+The selected candidate uses ordinary opaque values, `own`, `move`, `&`, and
+`&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
+their static struct fields rather than lifetimes. Resource types do not form a
+separate language capability category. There is no separate `world`,
+`capability-root`, `family-fragment`, or `Ordered` permission system. Completion is
+an internal lowering and target contract beneath ordinary calls. File opening
+uses ordinary one-shot `FilePermit` owners from an explicit `FileFactory`;
+directory selectors remain shared and permit proof data is erased before the
+native open ABI.
 
 The safe-Rust compiler currently implements one ordinary path:
 
@@ -64,7 +74,7 @@ The detailed implemented surface is maintained in the
 [compiler README](compiler/README.md); the Direction Outline summarizes it only
 at the level needed to choose projects and research. Valid language that a
 growing compiler does not yet implement stops as an explicit unsupported
-capability; it is not reported as invalid Whitefoot.
+compiler feature; it is not reported as invalid Whitefoot.
 
 ## Repository layout
 
@@ -93,10 +103,10 @@ The gate builds and tests the compiler, exercises the native completion
 harness, validates conformance structure and rule coverage, runs every
 non-pending conformance case through the native compile-run adapter, checks the
 maintained research fixtures, and verifies the specification/archive identity
-chain. On this candidate branch the current native conformance result is
-Pass=500, Skip=1. Canonical `make check` deliberately rejects `CANDIDATE`
-status at the archive-identity step; branch work uses
-`make spec-candidate-integrity`, while a merge revision must carry the exact
+chain. Gate results are revision-specific, so this overview carries no floating
+pass count while the candidate bytes are changing. Canonical `make check`
+deliberately rejects `CANDIDATE` status at the archive-identity step; branch
+work uses `make spec-candidate-integrity`, while a merge revision must carry the exact
 owner-approved ACTIVE identity and outgoing archive. A green result states
 only what the selected gate exercises and is not a completeness claim.
 

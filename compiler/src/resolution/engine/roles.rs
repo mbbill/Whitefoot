@@ -452,14 +452,37 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
+        Production::EffectPath => {
+            let Some((root, fields)) = names.split_first() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            add_complete(
+                classified,
+                owner,
+                *root,
+                RawRoleKind::LexicalUse(LexicalUseRole::EffectRoot),
+                roles,
+                complete_counts,
+            )?;
+            for field in fields {
+                add_complete(
+                    classified,
+                    owner,
+                    *field,
+                    RawRoleKind::DeferredUse(DeferredUseRole::EffectField),
+                    roles,
+                    complete_counts,
+                )?;
+            }
+        }
         Production::Effect if !names.is_empty() => add_names_by_predicate(
             classified,
             owner,
             &names,
             TerminalPredicate::RegionIdentifier,
-            RawRoleKind::LexicalUse(LexicalUseRole::EffectRegion),
-            TerminalPredicate::Identifier,
-            RawRoleKind::LexicalUse(LexicalUseRole::EffectCapability),
+            RawRoleKind::LexicalUse(LexicalUseRole::EffectAllocationRegion),
+            TerminalPredicate::RegionIdentifier,
+            RawRoleKind::LexicalUse(LexicalUseRole::EffectAllocationRegion),
             roles,
             complete_counts,
         )?,

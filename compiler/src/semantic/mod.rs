@@ -1191,9 +1191,6 @@ pub enum UnsupportedSemanticFeature {
     /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
     /// function that would carry an arena value to execution stops here.
     ArenaRuntime,
-    /// A capability-bearing user result whose closed-world origin equation
-    /// cannot yet be represented as fresh roots plus a finite formal set.
-    CapabilityResultOrigin,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

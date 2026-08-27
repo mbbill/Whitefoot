@@ -1,8 +1,12 @@
 # Completion I/O implementation audit
 
-Status: evidence for the clean rebuild. This audit compares experimental
-revision `d822851c276438df92b0c730b807524ec42aec9f` with the settled derivation
-in `FIRST-PRINCIPLES.md`. It does not make the experimental branch normative.
+Status: historical implementation evidence. This audit compares experimental
+revision `d822851c276438df92b0c730b807524ec42aec9f` with the design which
+preceded the owner-confirmed unified-state revision of 2026-08-26. Its runtime
+measurements and findings about writer-code helpers remain evidence. Its
+positive references to capability roots, family fragments, and ordered
+attribution are superseded by `FIRST-PRINCIPLES.md` and `DESIGN.md`; they are
+not requirements for the current rebuild.
 
 ## The deciding example
 
@@ -105,8 +109,8 @@ specialization has the following boundary:
    judgment. Their authority projects to concrete capability places and
    family fragments, never to one global world object.
 4. A finite one-shot operation uses bounded stable storage and reports at
-   least result-ready, payload-released, authority-released, and terminal
-   milestones. The first file specialization may publish all four together,
+   least result-ready, one loan-released fact per retained argument, and
+   terminal milestones. The first file specialization may publish them together,
    but the common state cannot collapse them into one unnamed bit.
 5. A helper fallback executes only a target adapter. Writer continuations run
    on scheduler lanes.

@@ -1,4 +1,4 @@
-fn accumulate ['r] (acc: &uniq 'r u64, addend: &'r u64, n: own u64) -> own unit reads('r), writes('r) {
+fn accumulate ['r] (acc: &uniq 'r u64, addend: &'r u64, n: own u64) -> own unit reads(acc, addend), writes(acc) {
   doc "acc = (acc ^ addend) * K, iterated n times; noalias comes from &uniq/&.";
   let i: own u64 = 0_u64;
   loop @l {

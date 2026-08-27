@@ -1,4 +1,4 @@
-fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> return_value: own u64 reads('v 'd), writes('d) contract {
+fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> return_value: own u64 reads(value, destination), writes(destination) contract {
   define capacity = len(deref(destination));
   requires ile(4_u64, capacity);
 } {

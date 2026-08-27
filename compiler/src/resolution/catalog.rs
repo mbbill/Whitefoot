@@ -159,7 +159,7 @@ pub(crate) fn operation_spelling(id: OperationFamilyId) -> Option<&'static str> 
 pub struct SystemNominal {
     /// Exact TYPEID spelling.
     pub spelling: &'static str,
-    /// `true` for the eight opaque types, `false` for the eight outcome enums.
+    /// `true` for the ten opaque types, `false` for the eight outcome enums.
     pub opaque: bool,
 }
 
@@ -194,275 +194,25 @@ pub struct SystemOperation {
     pub parameters: &'static [SystemParameter],
     /// Result type; every [SYS-2] result mode is `own`.
     pub result: SystemTypeRef,
-    /// Value-parameter ordinals whose logical capability authority is read.
-    /// These are separate from ordinary borrow-region memory effects.
-    pub capability_reads: &'static [u8],
-    /// Value-parameter ordinals whose logical capability authority is written.
-    /// These are separate from ordinary borrow-region memory effects.
-    pub capability_writes: &'static [u8],
+    /// Extra value-parameter state observations not implied by borrow mode.
+    pub state_reads: &'static [u8],
+    /// Extra value-parameter state transitions not implied by borrow mode.
+    pub state_writes: &'static [u8],
     /// Compiler-owned execution contract for this operation. This is target
     /// metadata, never a source effect or a source-visible ordering token.
     pub target_action: TargetAction,
-    /// Family authority projected through one capability parameter, if this
-    /// operation reaches outside state.
-    pub authority: Option<SystemAuthority>,
-    /// Where the operation's result authority comes from. This is independent
-    /// of the authority used while executing the operation: a factory may read
-    /// one parent capability while minting a fresh result root.
-    pub result_authority: SystemResultAuthority,
+    /// Whether the operation's result contains fresh opaque state. Fresh
+    /// state has no incoming-formal origin and carries no parent relation.
+    pub result_state_origin: SystemResultStateOrigin,
 }
 
-/// The logical authority origin of a system operation's result.
+/// Whether a system operation's result contains fresh opaque state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SystemResultAuthority {
-    /// The result type carries no logical capability root.
+pub enum SystemResultStateOrigin {
+    /// The result type carries no opaque state identity.
     None,
-    /// A successful result mints a fresh logical root.
+    /// A successful result contains state supplied by no input formal.
     Fresh,
-    /// Any result capability preserves the named value parameter's root.
-    Parameter(u8),
-}
-
-/// One family-defined outside-state fragment.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SystemAuthorityFragment {
-    /// The lifecycle of one complete resource root.
-    WholeResource,
-    /// Immutable command-invocation argument snapshot reads.
-    InvocationSnapshot,
-    /// Namespace lookup through a directory capability.
-    DirectoryLookup,
-    /// Random-access reads through one file capability.
-    FileRandomRead,
-    /// One output capability's ordered byte sequence.
-    OutputSequence,
-    /// One directory-list capability's sequential cursor.
-    DirectoryCursor,
-    /// One future full-duplex connection's receive direction.
-    TcpReceive,
-    /// One future full-duplex connection's send direction.
-    TcpSend,
-    /// Whole-connection control for close, reset, and reconfiguration.
-    TcpControl,
-}
-
-impl SystemAuthorityFragment {
-    /// Stable developer-channel spelling.
-    #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        match self {
-            Self::WholeResource => "whole-resource",
-            Self::InvocationSnapshot => "invocation-snapshot",
-            Self::DirectoryLookup => "directory-lookup",
-            Self::FileRandomRead => "file-random-read",
-            Self::OutputSequence => "output-sequence",
-            Self::DirectoryCursor => "directory-cursor",
-            Self::TcpReceive => "tcp-receive",
-            Self::TcpSend => "tcp-send",
-            Self::TcpControl => "tcp-control",
-        }
-    }
-}
-
-/// The family which owns a fragment algebra and its same-root pair table.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SystemAuthorityFamily {
-    /// Immutable command-invocation state.
-    Invocation,
-    /// Directory lookup and whole-directory control.
-    DirectoryRead,
-    /// Positioned file reads and whole-file control.
-    ReadFile,
-    /// Ordered output bytes and whole-output control.
-    Output,
-    /// Ordered directory enumeration and whole-source control.
-    DirectorySource,
-    /// Future full-duplex TCP facets, retained as a model-level witness.
-    Tcp,
-}
-
-impl SystemAuthorityFamily {
-    /// Stable developer-channel spelling.
-    #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        match self {
-            Self::Invocation => "invocation",
-            Self::DirectoryRead => "directory-read",
-            Self::ReadFile => "read-file",
-            Self::Output => "output",
-            Self::DirectorySource => "directory-source",
-            Self::Tcp => "tcp",
-        }
-    }
-
-    const fn contains(self, fragment: SystemAuthorityFragment) -> bool {
-        match self {
-            Self::Invocation => matches!(
-                fragment,
-                SystemAuthorityFragment::WholeResource
-                    | SystemAuthorityFragment::InvocationSnapshot
-            ),
-            Self::DirectoryRead => matches!(
-                fragment,
-                SystemAuthorityFragment::WholeResource | SystemAuthorityFragment::DirectoryLookup
-            ),
-            Self::ReadFile => matches!(
-                fragment,
-                SystemAuthorityFragment::WholeResource | SystemAuthorityFragment::FileRandomRead
-            ),
-            Self::Output => matches!(
-                fragment,
-                SystemAuthorityFragment::WholeResource | SystemAuthorityFragment::OutputSequence
-            ),
-            Self::DirectorySource => matches!(
-                fragment,
-                SystemAuthorityFragment::WholeResource | SystemAuthorityFragment::DirectoryCursor
-            ),
-            Self::Tcp => matches!(
-                fragment,
-                SystemAuthorityFragment::TcpReceive
-                    | SystemAuthorityFragment::TcpSend
-                    | SystemAuthorityFragment::TcpControl
-            ),
-        }
-    }
-}
-
-/// Family-defined attribution identity for an ordered same-root pair.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SystemAuthorityAttribution {
-    /// Source-order bytes in one Output sink.
-    OutputBytes,
-    /// Source-order batches from one DirectorySource cursor.
-    DirectoryEntries,
-    /// Future TCP receive-stream attribution.
-    TcpReceiveBytes,
-    /// Future TCP send-stream attribution.
-    TcpSendBytes,
-}
-
-impl SystemAuthorityAttribution {
-    /// Stable developer-channel spelling.
-    #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        match self {
-            Self::OutputBytes => "output-bytes",
-            Self::DirectoryEntries => "directory-entries",
-            Self::TcpReceiveBytes => "tcp-receive-bytes",
-            Self::TcpSendBytes => "tcp-send-bytes",
-        }
-    }
-}
-
-/// How one ordered pair of live fragments on the same family root coexists.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SystemAuthorityPairRelation {
-    /// Reservations can execute concurrently without an ordering edge.
-    Free,
-    /// Reservations coexist under the named family-attribution order.
-    Ordered(SystemAuthorityAttribution),
-    /// At most one reservation may be live.
-    Exclusive,
-}
-
-impl SystemAuthorityPairRelation {
-    /// Stable developer-channel spelling.
-    #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        match self {
-            Self::Free => "free",
-            Self::Ordered(_) => "ordered",
-            Self::Exclusive => "exclusive",
-        }
-    }
-}
-
-/// Returns the closed same-root relation for one family's fragment pair.
-/// Invalid family/fragment combinations are unknown and therefore return
-/// `None`; permission treats that as an overlap denial.
-#[must_use]
-pub const fn system_authority_pair_relation(
-    family: SystemAuthorityFamily,
-    left: SystemAuthorityFragment,
-    right: SystemAuthorityFragment,
-) -> Option<SystemAuthorityPairRelation> {
-    if !family.contains(left) || !family.contains(right) {
-        return None;
-    }
-    if matches!(left, SystemAuthorityFragment::WholeResource)
-        || matches!(right, SystemAuthorityFragment::WholeResource)
-        || matches!(left, SystemAuthorityFragment::TcpControl)
-        || matches!(right, SystemAuthorityFragment::TcpControl)
-    {
-        return Some(SystemAuthorityPairRelation::Exclusive);
-    }
-    match (family, left, right) {
-        (
-            SystemAuthorityFamily::Invocation,
-            SystemAuthorityFragment::InvocationSnapshot,
-            SystemAuthorityFragment::InvocationSnapshot,
-        )
-        | (
-            SystemAuthorityFamily::DirectoryRead,
-            SystemAuthorityFragment::DirectoryLookup,
-            SystemAuthorityFragment::DirectoryLookup,
-        )
-        | (
-            SystemAuthorityFamily::ReadFile,
-            SystemAuthorityFragment::FileRandomRead,
-            SystemAuthorityFragment::FileRandomRead,
-        )
-        | (
-            SystemAuthorityFamily::Tcp,
-            SystemAuthorityFragment::TcpReceive,
-            SystemAuthorityFragment::TcpSend,
-        )
-        | (
-            SystemAuthorityFamily::Tcp,
-            SystemAuthorityFragment::TcpSend,
-            SystemAuthorityFragment::TcpReceive,
-        ) => Some(SystemAuthorityPairRelation::Free),
-        (
-            SystemAuthorityFamily::Output,
-            SystemAuthorityFragment::OutputSequence,
-            SystemAuthorityFragment::OutputSequence,
-        ) => Some(SystemAuthorityPairRelation::Ordered(
-            SystemAuthorityAttribution::OutputBytes,
-        )),
-        (
-            SystemAuthorityFamily::DirectorySource,
-            SystemAuthorityFragment::DirectoryCursor,
-            SystemAuthorityFragment::DirectoryCursor,
-        ) => Some(SystemAuthorityPairRelation::Ordered(
-            SystemAuthorityAttribution::DirectoryEntries,
-        )),
-        (
-            SystemAuthorityFamily::Tcp,
-            SystemAuthorityFragment::TcpReceive,
-            SystemAuthorityFragment::TcpReceive,
-        ) => Some(SystemAuthorityPairRelation::Ordered(
-            SystemAuthorityAttribution::TcpReceiveBytes,
-        )),
-        (
-            SystemAuthorityFamily::Tcp,
-            SystemAuthorityFragment::TcpSend,
-            SystemAuthorityFragment::TcpSend,
-        ) => Some(SystemAuthorityPairRelation::Ordered(
-            SystemAuthorityAttribution::TcpSendBytes,
-        )),
-        _ => None,
-    }
-}
-
-/// The capability supplier and family fragment of one system action.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct SystemAuthority {
-    /// Zero-based value-parameter ordinal supplying the logical root.
-    pub parameter: u8,
-    /// Resource family which owns the fragment-pair contract.
-    pub family: SystemAuthorityFamily,
-    /// Family-defined fragment reserved by the operation.
-    pub fragment: SystemAuthorityFragment,
 }
 
 /// How one target action returns control to its Whitefoot continuation.
@@ -474,10 +224,10 @@ pub enum TargetDispatch {
     MaySuspend,
 }
 
-/// The milestone that restores the action's transferred authority.
+/// The milestone that restores the action's transferred ownership bundle.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TargetCompletion {
-    /// No authority escapes the native call; completion is its return.
+    /// No ownership escapes the native call; completion is its return.
     CallReturn,
     /// One finite operation completes when its ownership bundle is restored.
     OwnershipComplete,
@@ -490,8 +240,8 @@ pub struct TargetMilestones {
     pub result_ready: TargetCompletion,
     /// When payload loans return to their owner.
     pub payload_released: TargetCompletion,
-    /// When authority reservations return to their owner.
-    pub authority_released: TargetCompletion,
+    /// When transferred owners and loans return to their owner.
+    pub ownership_released: TargetCompletion,
     /// When no later completion fact can arrive.
     pub terminal: TargetCompletion,
 }
@@ -501,7 +251,7 @@ pub struct TargetMilestones {
 pub struct TargetAction {
     /// Whether the action can suspend its Whitefoot continuation.
     pub dispatch: TargetDispatch,
-    /// The milestone at which its transferred authority becomes usable again.
+    /// The milestone at which its transferred ownership becomes usable again.
     pub completion: TargetCompletion,
     /// Product-state milestone contract. The first system slice publishes all
     /// four facts together while retaining their distinct meanings.
@@ -516,7 +266,7 @@ impl TargetAction {
         milestones: TargetMilestones {
             result_ready: TargetCompletion::CallReturn,
             payload_released: TargetCompletion::CallReturn,
-            authority_released: TargetCompletion::CallReturn,
+            ownership_released: TargetCompletion::CallReturn,
             terminal: TargetCompletion::CallReturn,
         },
     };
@@ -528,7 +278,7 @@ impl TargetAction {
         milestones: TargetMilestones {
             result_ready: TargetCompletion::OwnershipComplete,
             payload_released: TargetCompletion::OwnershipComplete,
-            authority_released: TargetCompletion::OwnershipComplete,
+            ownership_released: TargetCompletion::OwnershipComplete,
             terminal: TargetCompletion::OwnershipComplete,
         },
     };
@@ -633,6 +383,8 @@ const READ_OUTCOME: u8 = 12;
 const IO_ERROR: u8 = 13;
 const DIRECTORY_SOURCE: u8 = 14;
 const LIST_OUTCOME: u8 = 15;
+const FILE_FACTORY: u8 = 16;
+const FILE_PERMIT: u8 = 17;
 
 /// The traversal surface switch [SYS-2, SYS-14], activated as v0.32.
 ///
@@ -677,13 +429,16 @@ pub enum Inventory {
     /// The active v0.33 inventory: [`Inventory::Traversal`] plus the
     /// [SYS-11] `open_file` operation.
     OpenByName,
+    /// The active unified-state file-open surface: [`Inventory::OpenByName`]
+    /// plus the explicit file factory, one-shot permit, and reservation row.
+    FilePermits,
 }
 
 impl Inventory {
     /// The inventory the shipped compilation path selects, fixed by the two
     /// switches above and read once, by `compile` and `resolve`.
     pub const ACTIVE: Self = if OPEN_BY_NAME {
-        Self::OpenByName
+        Self::FilePermits
     } else if TRAVERSAL_SURFACE {
         Self::Traversal
     } else {
@@ -694,7 +449,8 @@ impl Inventory {
     const fn nominals(self) -> usize {
         match self {
             Self::Base => BASE_NOMINALS,
-            Self::Traversal | Self::OpenByName => SYSTEM_NOMINALS.len(),
+            Self::Traversal | Self::OpenByName => OPEN_BY_NAME_NOMINALS,
+            Self::FilePermits => SYSTEM_NOMINALS.len(),
         }
     }
 
@@ -702,7 +458,7 @@ impl Inventory {
     const fn constructors(self) -> usize {
         match self {
             Self::Base => BASE_CONSTRUCTORS,
-            Self::Traversal | Self::OpenByName => SYSTEM_CONSTRUCTORS.len(),
+            Self::Traversal | Self::OpenByName | Self::FilePermits => SYSTEM_CONSTRUCTORS.len(),
         }
     }
 
@@ -711,7 +467,8 @@ impl Inventory {
         match self {
             Self::Base => BASE_OPERATIONS,
             Self::Traversal => TRAVERSAL_OPERATIONS,
-            Self::OpenByName => SYSTEM_OPERATIONS.len(),
+            Self::OpenByName => OPEN_BY_NAME_OPERATIONS,
+            Self::FilePermits => SYSTEM_OPERATIONS.len(),
         }
     }
 }
@@ -728,13 +485,17 @@ const BASE_OPERATIONS: usize = 11;
 /// The v0.32 operation count: the prefix of [`SYSTEM_OPERATIONS`] that
 /// specification declared.
 const TRAVERSAL_OPERATIONS: usize = 14;
+/// The v0.33-v0.36 operation count before explicit file-open authority.
+const OPEN_BY_NAME_OPERATIONS: usize = 15;
+/// The v0.33-v0.36 nominal count before explicit file-open authority.
+const OPEN_BY_NAME_NOMINALS: usize = 16;
 
 /// The [SYS-2] nominal types in normative table order.
 ///
 /// The first fourteen are v0.31's; the last two are v0.32's traversal-surface
 /// additions and are admitted only under
 /// [`TRAVERSAL_SURFACE`].
-pub const SYSTEM_NOMINALS: [SystemNominal; 16] = [
+pub const SYSTEM_NOMINALS: [SystemNominal; 18] = [
     nominal("Args", true),
     nominal("HostString", true),
     nominal("RelativePath", true),
@@ -751,6 +512,8 @@ pub const SYSTEM_NOMINALS: [SystemNominal; 16] = [
     nominal("IoError", false),
     nominal("DirectorySource", true),
     nominal("ListOutcome", false),
+    nominal("FileFactory", true),
+    nominal("FilePermit", true),
 ];
 
 /// The [SYS-2] nominal types one inventory state admits.
@@ -892,14 +655,13 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 /// surface's, admitted under [`TRAVERSAL_SURFACE`]; the last is the
 /// active v0.33 file-open-by-name addition, admitted under [`OPEN_BY_NAME`].
 ///
-/// Each row registers its region and value parameters, result type, separate
-/// capability subjects, target action, and family authority fragment. System
+/// Each row registers its region and value parameters, result type, unified
+/// state subjects and target action. System
 /// operations cannot exhibit `traps`: partial domains are static call-site
-/// obligations and host failures are typed outcomes. Ordinary memory-region
-/// entries are derived mechanically from parameter modes — every borrow of
-/// `'r` contributes `reads('r)`, and each `&uniq 'r` destination additionally
-/// contributes `writes('r)` — by [`operation_region_effects`].
-pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
+/// obligations and host failures are typed outcomes. State entries are the
+/// exact stored declaration row and are rendered as formal-parameter paths by
+/// [`operation_state_effects`].
+pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
     SystemOperation {
         spelling: "args_count",
         regions: &["'a"],
@@ -909,15 +671,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             SystemTypeRef::Nominal(ARGS),
         )],
         result: SystemTypeRef::U64,
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0],
+        state_writes: &[],
         target_action: TargetAction::INLINE,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::Invocation,
-            fragment: SystemAuthorityFragment::InvocationSnapshot,
-        }),
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "arg_get",
@@ -931,15 +688,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("position", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(HOST_STRING, ARG_ERROR),
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0],
+        state_writes: &[],
         target_action: TargetAction::INLINE,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::Invocation,
-            fragment: SystemAuthorityFragment::InvocationSnapshot,
-        }),
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "host_bytes_len",
@@ -950,11 +702,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             SystemTypeRef::Nominal(HOST_STRING),
         )],
         result: SystemTypeRef::U64,
-        capability_reads: &[],
-        capability_writes: &[],
+        state_reads: &[0],
+        state_writes: &[],
         target_action: TargetAction::INLINE,
-        authority: None,
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "host_copy_bytes",
@@ -974,11 +725,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(COPY_ERROR),
-        capability_reads: &[],
-        capability_writes: &[],
+        state_reads: &[0, 1],
+        state_writes: &[1],
         target_action: TargetAction::INLINE,
-        authority: None,
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "host_utf8_len",
@@ -989,11 +739,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             SystemTypeRef::Nominal(HOST_STRING),
         )],
         result: ok_u64(UTF8_ERROR),
-        capability_reads: &[],
-        capability_writes: &[],
+        state_reads: &[0],
+        state_writes: &[],
         target_action: TargetAction::INLINE,
-        authority: None,
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "host_copy_utf8",
@@ -1013,11 +762,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(UTF8_COPY_ERROR),
-        capability_reads: &[],
-        capability_writes: &[],
+        state_reads: &[0, 1],
+        state_writes: &[1],
         target_action: TargetAction::INLINE,
-        authority: None,
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "relative_path",
@@ -1028,16 +776,20 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             SystemTypeRef::Nominal(HOST_STRING),
         )],
         result: ok_nominal(RELATIVE_PATH, PATH_ERROR),
-        capability_reads: &[],
-        capability_writes: &[],
+        state_reads: &[],
+        state_writes: &[],
         target_action: TargetAction::INLINE,
-        authority: None,
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "open_read",
         regions: &["'c", "'p"],
         parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(FILE_PERMIT),
+            ),
             parameter(
                 "root",
                 SystemParameterMode::Borrow(0),
@@ -1050,15 +802,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             ),
         ],
         result: ok_nominal(READ_FILE, IO_ERROR),
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0, 1, 2],
+        state_writes: &[0],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::DirectoryRead,
-            fragment: SystemAuthorityFragment::DirectoryLookup,
-        }),
-        result_authority: SystemResultAuthority::Fresh,
+        result_state_origin: SystemResultStateOrigin::Fresh,
     },
     SystemOperation {
         spelling: "read_at",
@@ -1079,15 +826,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: SystemTypeRef::Nominal(READ_OUTCOME),
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0, 1],
+        state_writes: &[1],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::ReadFile,
-            fragment: SystemAuthorityFragment::FileRandomRead,
-        }),
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "write_once",
@@ -1095,7 +837,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         parameters: &[
             parameter(
                 "output",
-                SystemParameterMode::Borrow(0),
+                SystemParameterMode::UniqueBorrow(0),
                 SystemTypeRef::Nominal(OUTPUT),
             ),
             parameter(
@@ -1107,15 +849,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(IO_ERROR),
-        capability_reads: &[],
-        capability_writes: &[0],
+        state_reads: &[0, 1],
+        state_writes: &[0],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::Output,
-            fragment: SystemAuthorityFragment::OutputSequence,
-        }),
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     SystemOperation {
         spelling: "exit_status",
@@ -1126,17 +863,21 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             SystemTypeRef::U8,
         )],
         result: SystemTypeRef::Nominal(EXIT_STATUS),
-        capability_reads: &[],
-        capability_writes: &[],
+        state_reads: &[],
+        state_writes: &[],
         target_action: TargetAction::INLINE,
-        authority: None,
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     // The three traversal-surface candidate rows [SYS-14].
     SystemOperation {
         spelling: "open_directory",
         regions: &["'c", "'n"],
         parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(FILE_PERMIT),
+            ),
             parameter(
                 "root",
                 SystemParameterMode::Borrow(0),
@@ -1151,34 +892,31 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(DIRECTORY_READ, IO_ERROR),
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0, 1, 2],
+        state_writes: &[0],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::DirectoryRead,
-            fragment: SystemAuthorityFragment::DirectoryLookup,
-        }),
-        result_authority: SystemResultAuthority::Fresh,
+        result_state_origin: SystemResultStateOrigin::Fresh,
     },
     SystemOperation {
         spelling: "open_directory_source",
         regions: &["'c"],
-        parameters: &[parameter(
-            "directory",
-            SystemParameterMode::Borrow(0),
-            SystemTypeRef::Nominal(DIRECTORY_READ),
-        )],
+        parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(FILE_PERMIT),
+            ),
+            parameter(
+                "directory",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(DIRECTORY_READ),
+            ),
+        ],
         result: ok_nominal(DIRECTORY_SOURCE, IO_ERROR),
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0, 1],
+        state_writes: &[0],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::DirectoryRead,
-            fragment: SystemAuthorityFragment::DirectoryLookup,
-        }),
-        result_authority: SystemResultAuthority::Fresh,
+        result_state_origin: SystemResultStateOrigin::Fresh,
     },
     SystemOperation {
         spelling: "directory_next",
@@ -1186,7 +924,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         parameters: &[
             parameter(
                 "source",
-                SystemParameterMode::Borrow(0),
+                SystemParameterMode::UniqueBorrow(0),
                 SystemTypeRef::Nominal(DIRECTORY_SOURCE),
             ),
             parameter(
@@ -1198,15 +936,10 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: SystemTypeRef::Nominal(LIST_OUTCOME),
-        capability_reads: &[],
-        capability_writes: &[0],
+        state_reads: &[0, 1],
+        state_writes: &[0, 1],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::DirectorySource,
-            fragment: SystemAuthorityFragment::DirectoryCursor,
-        }),
-        result_authority: SystemResultAuthority::None,
+        result_state_origin: SystemResultStateOrigin::None,
     },
     // The active file-open-by-name row [SYS-11]: `open_read`'s sibling
     // over a caller-owned single path component, taking exactly the name
@@ -1215,6 +948,11 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         spelling: "open_file",
         regions: &["'c", "'n"],
         parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(FILE_PERMIT),
+            ),
             parameter(
                 "root",
                 SystemParameterMode::Borrow(0),
@@ -1229,68 +967,34 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(READ_FILE, IO_ERROR),
-        capability_reads: &[0],
-        capability_writes: &[],
+        state_reads: &[0, 1, 2],
+        state_writes: &[0],
         target_action: TargetAction::MAY_SUSPEND,
-        authority: Some(SystemAuthority {
-            parameter: 0,
-            family: SystemAuthorityFamily::DirectoryRead,
-            fragment: SystemAuthorityFragment::DirectoryLookup,
-        }),
-        result_authority: SystemResultAuthority::Fresh,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "reserve_file",
+        regions: &["'f"],
+        parameters: &[parameter(
+            "factory",
+            SystemParameterMode::UniqueBorrow(0),
+            SystemTypeRef::Nominal(FILE_FACTORY),
+        )],
+        result: SystemTypeRef::Nominal(FILE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        target_action: TargetAction::INLINE,
+        result_state_origin: SystemResultStateOrigin::Fresh,
     },
 ];
 
-/// Derives one operation's `reads`/`writes` region entries from its modes.
-///
-/// Returns the zero-based declared region-parameter indices carried by
-/// `reads` and by `writes`, each in declared region-parameter order — the
-/// mechanical [SYS-2] derivation, not a hand-curated table.
-pub fn operation_region_effects(operation: &SystemOperation) -> (Vec<u8>, Vec<u8>) {
-    let mut reads = Vec::new();
-    let mut writes = Vec::new();
-    for region in 0..operation.regions.len() {
-        let Ok(region) = u8::try_from(region) else {
-            continue;
-        };
-        let borrowed = operation.parameters.iter().any(|parameter| {
-            matches!(
-                parameter.mode,
-                SystemParameterMode::Borrow(index) | SystemParameterMode::UniqueBorrow(index)
-                    if index == region
-            )
-        });
-        let written = operation.parameters.iter().any(|parameter| {
-            matches!(parameter.mode, SystemParameterMode::UniqueBorrow(index) if index == region)
-        });
-        if borrowed {
-            reads.push(region);
-        }
-        if written {
-            writes.push(region);
-        }
-    }
-    (reads, writes)
-}
-
-/// Compiler-owned execution metadata for a type's derived release action.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SystemAuthorityFacet {
-    /// Resource family which owns the fragment algebra.
-    pub family: SystemAuthorityFamily,
-    /// Fragment reserved by the action.
-    pub fragment: SystemAuthorityFragment,
-}
-
-/// Family authority retained by a compiler-derived release row.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SystemReleaseAuthority {
-    /// The release touches no outside authority.
-    None,
-    /// The release reserves this exact family fragment.
-    Known(SystemAuthorityFacet),
-    /// Aggregate release reaches more than one authority root or family.
-    Unknown,
+/// Returns one operation's exact unified state effects as value-parameter
+/// ordinals.
+pub fn operation_state_effects(operation: &SystemOperation) -> (Vec<u8>, Vec<u8>) {
+    (
+        operation.state_reads.to_vec(),
+        operation.state_writes.to_vec(),
+    )
 }
 
 /// Compiler-owned execution metadata for a type's derived release action.
@@ -1298,18 +1002,15 @@ pub enum SystemReleaseAuthority {
 pub struct SystemReleaseRow {
     /// Whether releasing this value may suspend its continuation.
     pub target_action: TargetAction,
-    /// Whether release changes the released value's logical capability root.
-    pub capability_write: bool,
-    /// Family authority reserved while the release is in flight.
-    pub authority: SystemReleaseAuthority,
+    /// Whether release changes the released value's state.
+    pub state_write: bool,
 }
 
 impl SystemReleaseRow {
     /// The empty release row: a logical consume or detach with no host call.
     pub const EMPTY: Self = Self {
         target_action: TargetAction::INLINE,
-        capability_write: false,
-        authority: SystemReleaseAuthority::None,
+        state_write: false,
     };
 
     /// Conservatively combines release metadata from owned components.
@@ -1317,21 +1018,7 @@ impl SystemReleaseRow {
     pub const fn union(self, other: Self) -> Self {
         Self {
             target_action: self.target_action.union(other.target_action),
-            capability_write: self.capability_write || other.capability_write,
-            authority: match (self.authority, other.authority) {
-                (SystemReleaseAuthority::Unknown, _)
-                | (_, SystemReleaseAuthority::Unknown)
-                | (SystemReleaseAuthority::Known(_), SystemReleaseAuthority::Known(_)) => {
-                    SystemReleaseAuthority::Unknown
-                }
-                (SystemReleaseAuthority::Known(authority), SystemReleaseAuthority::None)
-                | (SystemReleaseAuthority::None, SystemReleaseAuthority::Known(authority)) => {
-                    SystemReleaseAuthority::Known(authority)
-                }
-                (SystemReleaseAuthority::None, SystemReleaseAuthority::None) => {
-                    SystemReleaseAuthority::None
-                }
-            },
+            state_write: self.state_write || other.state_write,
         }
     }
 }
@@ -1346,7 +1033,7 @@ pub enum SystemResourceType {
     HostString,
     /// One relative path admitted by construction from a host string [PATH-1].
     RelativePath,
-    /// One directory-read capability [PATH-2, SYS-10].
+    /// One directory-read state object [PATH-2, SYS-10].
     DirectoryRead,
     /// One shareable open file for positioned reads [SYS-11].
     ReadFile,
@@ -1356,35 +1043,10 @@ pub enum SystemResourceType {
     ExitStatus,
     /// One ordered directory-entry source [SYS-14].
     DirectorySource,
-}
-
-impl SystemResourceType {
-    /// Whether a value of this type carries one logical outside-authority
-    /// root that may be named by a capability-parameter effect operand.
-    #[must_use]
-    pub const fn carries_authority(self) -> bool {
-        matches!(
-            self,
-            Self::Args
-                | Self::DirectoryRead
-                | Self::ReadFile
-                | Self::Output
-                | Self::DirectorySource
-        )
-    }
-
-    /// Family of the logical authority root carried by this resource type.
-    #[must_use]
-    pub const fn authority_family(self) -> Option<SystemAuthorityFamily> {
-        match self {
-            Self::Args => Some(SystemAuthorityFamily::Invocation),
-            Self::DirectoryRead => Some(SystemAuthorityFamily::DirectoryRead),
-            Self::ReadFile => Some(SystemAuthorityFamily::ReadFile),
-            Self::Output => Some(SystemAuthorityFamily::Output),
-            Self::DirectorySource => Some(SystemAuthorityFamily::DirectorySource),
-            Self::HostString | Self::RelativePath | Self::ExitStatus => None,
-        }
-    }
+    /// One explicit source of one-shot file-open permits.
+    FileFactory,
+    /// One affine, one-shot authorization for a single file-open attempt.
+    FilePermit,
 }
 
 /// The [SYS-5] consuming release action of one system resource type.
@@ -1506,6 +1168,16 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
             SystemReleaseAction::NativeCloseAttempt,
             SystemResourceBacking::Opaque,
         ),
+        FILE_FACTORY => (
+            SystemResourceType::FileFactory,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        FILE_PERMIT => (
+            SystemResourceType::FilePermit,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
         _ => return None,
     };
     let row = match action {
@@ -1513,13 +1185,7 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
         // a source detach make no target call and perform no external effect.
         SystemReleaseAction::NativeCloseAttempt => SystemReleaseRow {
             target_action: TargetAction::MAY_SUSPEND,
-            capability_write: true,
-            authority: SystemReleaseAuthority::Known(SystemAuthorityFacet {
-                family: resource
-                    .authority_family()
-                    .expect("native-close resources carry one authority family"),
-                fragment: SystemAuthorityFragment::WholeResource,
-            }),
+            state_write: true,
         },
         SystemReleaseAction::LogicalConsume | SystemReleaseAction::SourceDetach => {
             SystemReleaseRow::EMPTY
@@ -1537,7 +1203,7 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
 ///
 /// `DirectoryRead`, `ReadFile`, and `DirectorySource` release with
 /// at most one native close attempt with `may-suspend` target metadata and an
-/// exclusive whole-root capability write; every other system
+/// exclusive whole-root state write; every other system
 /// type — the remaining
 /// opaque types' logical consume or detach and every outcome enum, which has
 /// no release action and takes no row in the [SYS-5] table — carries the
@@ -1631,7 +1297,7 @@ pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> 
 /// The active specification's complete inventory is one hundred ninety-four
 /// records; the retained prefix states are smaller exact table prefixes.
 pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclarationRecord> {
-    let mut records = Vec::with_capacity(194);
+    let mut records = Vec::with_capacity(203);
     let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
         let Ok(ordinal) = u8::try_from(records.len()) else {
             unreachable!("the closed SYS-2 inventory fits one byte of ordinals");
@@ -1735,7 +1401,7 @@ mod tests {
         DeclarationClass, Inventory, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
         ReservedNameClass, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
         SystemDeclarationId, SystemEntity, SystemParameterMode, SystemResultPayload, SystemTypeRef,
-        operation_region_effects, reserved_name, system_constructors, system_declarations,
+        operation_state_effects, reserved_name, system_constructors, system_declarations,
         system_entity, system_nominals, system_operations,
     };
 
@@ -1744,7 +1410,8 @@ mod tests {
         // [SYS-2]: fourteen nominal types, thirty-nine enum-variant
         // constructors, sixty variant fields, eleven operations, fourteen
         // operation region parameters, and twenty-six operation value
-        // parameters — one hundred sixty-two records in preorder.
+        // parameters — the active open signature adds its one permit record
+        // while this legacy membership probe keeps the earlier operation set.
         let nominals = system_nominals(Inventory::Base);
         let constructors = system_constructors(Inventory::Base);
         let operations = system_operations(Inventory::Base);
@@ -1771,11 +1438,11 @@ mod tests {
                 .iter()
                 .map(|operation| operation.parameters.len())
                 .sum::<usize>(),
-            26
+            27
         );
 
         let records = system_declarations(Inventory::Base);
-        assert_eq!(records.len(), 162);
+        assert_eq!(records.len(), 163);
         assert!(
             records
                 .iter()
@@ -1808,7 +1475,7 @@ mod tests {
                 .iter()
                 .filter(|record| record.lookup_class().is_none())
                 .count(),
-            100
+            101
         );
 
         // Deterministic preorder spot checks used by diagnostic origins.
@@ -1822,7 +1489,7 @@ mod tests {
             (108, "Other"),
             (111, "args_count"),
             (140, "open_read"),
-            (160, "exit_status"),
+            (161, "exit_status"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
@@ -1931,9 +1598,9 @@ mod tests {
         }
         assert_eq!(
             (nominals, constructors, operations, owner_local),
-            (14, 37, 11, 100)
+            (14, 37, 11, 101)
         );
-        assert!(system_entity(SystemDeclarationId::new(162), Inventory::Base).is_none());
+        assert!(system_entity(SystemDeclarationId::new(163), Inventory::Base).is_none());
         assert!(system_entity(SystemDeclarationId::new(u8::MAX), Inventory::Base).is_none());
     }
 
@@ -1971,11 +1638,11 @@ mod tests {
                 .iter()
                 .map(|operation| operation.parameters.len())
                 .sum::<usize>(),
-            35
+            38
         );
 
         let records = system_declarations(Inventory::Traversal);
-        assert_eq!(records.len(), 187);
+        assert_eq!(records.len(), 190);
         assert!(
             records
                 .iter()
@@ -1991,10 +1658,10 @@ mod tests {
             (116, "ListEnd"),
             (117, "ListFailed"),
             (119, "args_count"),
-            (168, "exit_status"),
-            (170, "open_directory"),
-            (177, "open_directory_source"),
-            (180, "directory_next"),
+            (169, "exit_status"),
+            (171, "open_directory"),
+            (179, "open_directory_source"),
+            (183, "directory_next"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
@@ -2030,18 +1697,16 @@ mod tests {
         }
         assert_eq!(
             (nominals, constructors, operations, owner_local),
-            (16, 40, 14, 117)
+            (16, 40, 14, 120)
         );
-        assert!(system_entity(SystemDeclarationId::new(187), Inventory::Traversal).is_none());
+        assert!(system_entity(SystemDeclarationId::new(190), Inventory::Traversal).is_none());
     }
 
     /// The active [SYS-11] file-open-by-name row's own counted totals.
     ///
-    /// v0.33 adds one operation and nothing else, so the delta is
-    /// exactly one operation record, its two region-parameter records, and
-    /// its four value-parameter records: 187 + 7 = 194. Because the row is
-    /// appended, every ordinal the active inventory assigns is unchanged,
-    /// which is the property the differential program tests rest on.
+    /// This retained membership probe stops before the active factory and
+    /// permit rows. Its open operations nevertheless use the active signature,
+    /// so their one permit parameter is included in these counted totals.
     #[test]
     fn open_by_name_candidate_inventory_matches_its_counted_totals() {
         let nominals = system_nominals(Inventory::OpenByName);
@@ -2062,27 +1727,28 @@ mod tests {
                 .iter()
                 .map(|operation| operation.parameters.len())
                 .sum::<usize>(),
-            39
+            43
         );
 
         let records = system_declarations(Inventory::OpenByName);
-        assert_eq!(records.len(), 194);
+        assert_eq!(records.len(), 198);
         // Every active-inventory record keeps its exact ordinal and spelling.
         for (ordinal, record) in system_declarations(Inventory::Traversal).iter().enumerate() {
             assert_eq!(records[ordinal].spelling(), record.spelling());
         }
         for (ordinal, spelling) in [
-            (187, "open_file"),
-            (188, "'c"),
-            (189, "'n"),
-            (190, "root"),
-            (191, "name"),
-            (192, "start"),
-            (193, "end"),
+            (190, "open_file"),
+            (191, "'c"),
+            (192, "'n"),
+            (193, "permit"),
+            (194, "root"),
+            (195, "name"),
+            (196, "start"),
+            (197, "end"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
-        let open_file = SystemDeclarationId::new(187);
+        let open_file = SystemDeclarationId::new(190);
         let Some(SystemEntity::Operation(operation)) =
             system_entity(open_file, Inventory::OpenByName)
         else {
@@ -2092,16 +1758,52 @@ mod tests {
         assert_eq!(operation.target_action, super::TargetAction::MAY_SUSPEND);
         // Off, the same ordinal is past the inventory and names nothing.
         assert!(system_entity(open_file, Inventory::Traversal).is_none());
-        assert!(system_entity(SystemDeclarationId::new(194), Inventory::OpenByName).is_none());
+        assert!(system_entity(SystemDeclarationId::new(198), Inventory::OpenByName).is_none());
+    }
+
+    #[test]
+    fn file_permit_inventory_matches_the_active_counted_totals() {
+        let nominals = system_nominals(Inventory::FilePermits);
+        let constructors = system_constructors(Inventory::FilePermits);
+        let operations = system_operations(Inventory::FilePermits);
+        assert_eq!(nominals.len(), 18);
+        assert_eq!(nominals.iter().filter(|nominal| nominal.opaque).count(), 10);
+        assert_eq!(constructors.len(), 40);
+        assert_eq!(operations.len(), 16);
+        assert_eq!(
+            operations
+                .iter()
+                .map(|operation| operation.regions.len())
+                .sum::<usize>(),
+            22
+        );
+        assert_eq!(
+            operations
+                .iter()
+                .map(|operation| operation.parameters.len())
+                .sum::<usize>(),
+            44
+        );
+        let records = system_declarations(Inventory::FilePermits);
+        assert_eq!(records.len(), 203);
+        let reserve = SystemDeclarationId::new(200);
+        let Some(SystemEntity::Operation(operation)) =
+            system_entity(reserve, Inventory::FilePermits)
+        else {
+            panic!("the final active ordinal must name reserve_file");
+        };
+        assert_eq!(operation.spelling, "reserve_file");
+        assert_eq!(operation.target_action, super::TargetAction::INLINE);
+        assert!(system_entity(SystemDeclarationId::new(203), Inventory::FilePermits).is_none());
     }
 
     #[test]
     fn system_inventory_matches_independent_extraction_from_exact() {
         let spec = crate::ACTIVE_KERNEL_SPEC_TEXT;
 
-        // The eight opaque nominal types, from the [SYS-2] prose sentence.
+        // The ten opaque nominal types, from the [SYS-2] prose sentence.
         let opaque_sentence = spec
-            .split_once("Eight opaque nominal types: ")
+            .split_once("Ten opaque nominal types: ")
             .expect("exact SYS-2 opaque sentence")
             .1
             .split_once('.')
@@ -2263,33 +1965,21 @@ mod tests {
         rendered.push_str(&parameters.join(", "));
         rendered.push_str(") -> result: own ");
         rendered.push_str(&render_type(operation.result));
-        let (reads, writes) = operation_region_effects(operation);
+        let (reads, writes) = operation_state_effects(operation);
         let mut effects = Vec::new();
-        if !reads.is_empty() || !operation.capability_reads.is_empty() {
-            let mut subjects: Vec<_> = reads
+        if !reads.is_empty() {
+            let subjects: Vec<_> = reads
                 .iter()
-                .map(|region| operation.regions[usize::from(*region)])
+                .map(|ordinal| operation.parameters[usize::from(*ordinal)].name)
                 .collect();
-            subjects.extend(
-                operation
-                    .capability_reads
-                    .iter()
-                    .map(|ordinal| operation.parameters[usize::from(*ordinal)].name),
-            );
-            effects.push(format!("reads({})", subjects.join(" ")));
+            effects.push(format!("reads({})", subjects.join(", ")));
         }
-        if !writes.is_empty() || !operation.capability_writes.is_empty() {
-            let mut subjects: Vec<_> = writes
+        if !writes.is_empty() {
+            let subjects: Vec<_> = writes
                 .iter()
-                .map(|region| operation.regions[usize::from(*region)])
+                .map(|ordinal| operation.parameters[usize::from(*ordinal)].name)
                 .collect();
-            subjects.extend(
-                operation
-                    .capability_writes
-                    .iter()
-                    .map(|ordinal| operation.parameters[usize::from(*ordinal)].name),
-            );
-            effects.push(format!("writes({})", subjects.join(" ")));
+            effects.push(format!("writes({})", subjects.join(", ")));
         }
         if effects.is_empty() {
             effects.push("pure".to_owned());

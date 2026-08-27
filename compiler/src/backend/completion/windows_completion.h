@@ -26,8 +26,7 @@ enum wf_completion_phase {
 enum wf_completion_claim_result {
     WF_COMPLETION_CLAIMED = 0,
     WF_COMPLETION_CLAIM_WAIT_CAPACITY = 1,
-    WF_COMPLETION_CLAIM_WAIT_ADMISSION = 2,
-    WF_COMPLETION_CLAIM_INVALID = 3
+    WF_COMPLETION_CLAIM_INVALID = 2
 };
 
 enum wf_completion_consume_result {
@@ -97,7 +96,6 @@ typedef struct wf_completion_slot {
 typedef struct wf_completion_statistics {
     uint64_t claims;
     uint64_t claim_capacity_waits;
-    uint64_t claim_admission_waits;
     uint64_t target_capacity_waits;
     uint64_t publications;
     uint64_t stale_publications;
@@ -108,7 +106,6 @@ typedef struct wf_completion_statistics {
     uint64_t wake_signals;
     uint64_t compute_notifications;
     uint64_t capacity_notifications;
-    uint64_t admission_notifications;
 } wf_completion_statistics;
 
 struct wf_completion_runtime {
@@ -132,7 +129,6 @@ struct wf_completion_runtime {
 
     volatile LONG64 stat_claims;
     volatile LONG64 stat_claim_capacity_waits;
-    volatile LONG64 stat_claim_admission_waits;
     volatile LONG64 stat_target_capacity_waits;
     volatile LONG64 stat_publications;
     volatile LONG64 stat_stale_publications;
@@ -143,7 +139,6 @@ struct wf_completion_runtime {
     volatile LONG64 stat_wake_signals;
     volatile LONG64 stat_compute_notifications;
     volatile LONG64 stat_capacity_notifications;
-    volatile LONG64 stat_admission_notifications;
     wf_completion_ready_callback ready_frame;
 };
 
@@ -180,11 +175,6 @@ void wf_windows_completion_iocp_wait_end(wf_completion_runtime *runtime);
 enum wf_completion_claim_result wf_completion_claim(
     wf_completion_runtime *runtime,
     wf_completion_token *token
-);
-enum wf_completion_claim_result wf_completion_claim_many(
-    wf_completion_runtime *runtime,
-    wf_completion_token *tokens,
-    size_t count
 );
 
 size_t wf_completion_drain(

@@ -11,7 +11,7 @@ pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
   right: buffer<u64>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads('r), writes('r) {
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right), writes(left, right) {
   let left_room = len(deref(left));
   let right_room = len(deref(right));
   let index_value = 0_u64;
@@ -35,7 +35,7 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   return unit;
 }
 
-fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads('r) {
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) {
   let left_room = len(deref(left));
   let right_room = len(deref(right));
   let index_value = 0_u64;
@@ -140,13 +140,13 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
 #[test]
 fn borrowed_column_effect_rows_are_exact() {
     let wrong = BORROWED_COLUMNS
-        .windows(b"reads('r), writes('r)".len())
-        .position(|window| window == b"reads('r), writes('r)")
+        .windows(b"reads(left, right), writes(left, right)".len())
+        .position(|window| window == b"reads(left, right), writes(left, right)")
         .expect("fixture contains fill effects");
     let mut source = BORROWED_COLUMNS.to_vec();
     source.splice(
-        wrong..wrong + b"reads('r), writes('r)".len(),
-        b"reads('r)".iter().copied(),
+        wrong..wrong + b"reads(left, right), writes(left, right)".len(),
+        b"reads(left, right)".iter().copied(),
     );
     with_semantics(&source, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -158,7 +158,7 @@ fn borrowed_column_effect_rows_are_exact() {
 
 #[test]
 fn borrowed_buffer_length_exhibits_a_read_of_its_storage_origin() {
-    let source = br#"fn length['r](values: &'r buffer<u8>) -> result: own u64 reads('r) {
+    let source = br#"fn length['r](values: &'r buffer<u8>) -> result: own u64 reads(values) {
   return len(deref(values));
 }
 
@@ -243,7 +243,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
     let source =
-        br#"fn write['r](out: &uniq 'r buffer<u8>) -> result: own unit reads('r), writes('r) {
+        br#"fn write['r](out: &uniq 'r buffer<u8>) -> result: own unit reads(out), writes(out) {
   let room = len(deref(out));
   let ok = ilt(0_u64, room);
   if ok {
@@ -252,7 +252,7 @@ fn call_effects_preserve_the_incoming_storage_origin() {
   return unit;
 }
 
-fn proxy['r](out: &uniq 'r buffer<u8>) -> result: own unit reads('r), writes('r) {
+fn proxy['r](out: &uniq 'r buffer<u8>) -> result: own unit reads(out), writes(out) {
   write<'r>(out: move out);
   return unit;
 }
@@ -270,6 +270,53 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn state_paths_separate_identity_from_lifetime_and_substitute_fields() {
+    let accepted = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn select_left['r](left: &'r Pair, right: &'r Pair) -> result: own u64 reads(left.left) {
+  return deref(left).left;
+}
+
+fn bump_left['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.left) {
+  set deref(pair).left = deref(pair).left +wrap 1_u64;
+  return unit;
+}
+
+fn forward['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.left) {
+  bump_left<'r>(pair: move pair);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(accepted, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "parameter and field state paths must check independently of lifetime reuse: {outcome:?}"
+        );
+    });
+
+    let mut wrong = accepted.to_vec();
+    let declaration = b"fn forward['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.left)";
+    let at = wrong
+        .windows(declaration.len())
+        .position(|window| window == declaration)
+        .expect("fixture contains the forwarding declaration");
+    let replacement = b"fn forward['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.right)";
+    wrong.splice(at..at + declaration.len(), replacement.iter().copied());
+    assert_rule(
+        &wrong,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+}
+
+#[test]
 fn borrowed_struct_fields_keep_projection_provenance_and_exact_effects() {
     let source = br#"struct Pool {
   left: buffer<u64>;
@@ -277,11 +324,11 @@ fn borrowed_struct_fields_keep_projection_provenance_and_exact_effects() {
   count: u64;
 }
 
-fn count['r](pool: &'r Pool) -> result: own u64 reads('r) {
+fn count['r](pool: &'r Pool) -> result: own u64 reads(pool.count) {
   return deref(pool).count;
 }
 
-fn first['r](pool: &'r Pool) -> result: own u64 reads('r) {
+fn first['r](pool: &'r Pool) -> result: own u64 reads(pool.left) {
   let room = len(deref(pool).left);
   let ok = ilt(0_u64, room);
   if ok {
@@ -291,7 +338,7 @@ fn first['r](pool: &'r Pool) -> result: own u64 reads('r) {
   }
 }
 
-fn update['r](pool: &uniq 'r Pool) -> result: own unit reads('r), writes('r) {
+fn update['r](pool: &uniq 'r Pool) -> result: own unit reads(pool.right), writes(pool.right, pool.count) {
   let room = len(deref(pool).right);
   let ok = ilt(0_u64, room);
   if ok {
@@ -368,8 +415,8 @@ command fn main() -> status: own ExitStatus pure {
 
 /// [SET-1] states the shared-borrow referent among the cases it hands to
 /// another rule — "A shared-borrow referent ... is not writable [OWN-5]" —
-/// and keeps only the residue of its writability relation. The rejection is
-/// unconditional either way; the citation is [OWN-5].
+/// and keeps only the residue of its writability relation. The unified state
+/// row rejects the impossible shared write before body checking reaches it.
 #[test]
 fn shared_struct_borrows_cannot_write_copy_fields() {
     assert_rule(
@@ -377,7 +424,7 @@ fn shared_struct_borrows_cannot_write_copy_fields() {
   value: u64;
 }
 
-fn invalid['r](counter: &'r Counter) -> result: own unit writes('r) {
+fn invalid['r](counter: &'r Counter) -> result: own unit writes(counter) {
   set deref(counter).value = 1_u64;
   return unit;
 }
@@ -386,8 +433,8 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Own5,
-        SemanticIssueKind::BorrowConflict,
+        SemanticRule::Eff1,
+        SemanticIssueKind::InvalidEffectRow,
     );
 }
 
@@ -508,7 +555,7 @@ fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
   value: u64;
 }
 
-fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r) {
+fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(out), writes(out) {
   let room = len(deref(out));
   let first_ok = ilt(0_u64, room);
   if first_ok {
@@ -517,7 +564,7 @@ fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('
   return unit;
 }
 
-fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r) {
+fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(out), writes(out) {
   region 'byte_child {
     write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
   }
@@ -529,13 +576,13 @@ fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('
   return unit;
 }
 
-fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
+fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
   let next = deref(counter).value +wrap 1_u64;
   set deref(counter).value = next;
   return unit;
 }
 
-fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
+fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
   region 'counter_child {
     bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
   }
@@ -698,12 +745,12 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // it into a system operation whose own parameter is that same mode
     // [SYS-2]. An opaque resource has no source-visible content, so its
     // borrow is the value itself.
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes(output) contract {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires ile(count, capacity);
 } {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: 0_u64, end: count) {
+    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -713,7 +760,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
     publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
@@ -742,15 +789,15 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
         ));
     });
 
-    // The row is checked both ways: Output authority is attributed to the
-    // direct capability formal independently of the borrow lifetime.
-    let declared = b"reads('o 's), writes(output)";
+    // The row is checked both ways: source observation and output transition
+    // are independent of their loan lifetimes.
+    let declared = b"reads(output, source), writes(output)";
     let at = source
         .windows(declared.len())
         .position(|window| window == declared)
         .expect("fixture declares the publish row");
     let mut narrowed = source.to_vec();
-    narrowed.splice(at..at + declared.len(), b"reads('o 's)".iter().copied());
+    narrowed.splice(at..at + declared.len(), b"reads(source)".iter().copied());
     assert_rule(
         &narrowed,
         SemanticRule::Eff2,
@@ -768,16 +815,16 @@ fn scalar_and_enum_borrows_check_read_write_and_match_through_the_holder() {
   Void();
 }
 
-fn read_scalar['r](p: &'r i32) -> result: own i32 reads('r) {
+fn read_scalar['r](p: &'r i32) -> result: own i32 reads(p) {
   return deref(p);
 }
 
-fn bump['r](p: &uniq 'r i32) -> result: own unit writes('r) {
+fn bump['r](p: &uniq 'r i32) -> result: own unit writes(p) {
   set deref(p) = 9_i32;
   return unit;
 }
 
-fn score['r](c: &'r Cell) -> result: own i32 reads('r) {
+fn score['r](c: &'r Cell) -> result: own i32 reads(c) {
   match deref(c) {
     Full(v: x) => {
       return deref(x);
@@ -947,12 +994,12 @@ fn scalar_borrow_parameter_effect_rows_are_exact_in_both_directions() {
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn bump['r](p: &uniq 'r i32) -> result: own unit reads('r) {\n  set deref(p) = 9_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn bump['r](p: &uniq 'r i32) -> result: own unit reads(p) {\n  set deref(p) = 9_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn quiet['r](p: &'r i32) -> result: own unit reads('r) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn quiet['r](p: &'r i32) -> result: own unit reads(p) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -1023,7 +1070,7 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
         },
     );
     assert_rule(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn pick['r](holder: &'r Packet) -> result: &'r i32 reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n      return &'r deref(payload);\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn pick['r](holder: &'r Packet) -> result: &'r i32 reads(holder) {\n  match deref(holder) {\n    Data(value: payload) => {\n      return &'r deref(payload);\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own14,
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
@@ -1042,7 +1089,7 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
 #[test]
 fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -1058,7 +1105,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
         UnsupportedSemanticFeature::RegionsAndBorrows,
     );
     assert_rule(
-        br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes('s) {
+        br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes(n) {
   set deref(n) = 1_i32;
   return unit;
 }
@@ -1131,7 +1178,7 @@ fn suspended_uniq_match_roots_do_not_resume() {
     );
     // A returned reborrow is not created through a suspended holder.
     assert_rule(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn peek['r](holder: &uniq 'r Packet) -> result: &uniq 'r Packet reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n    }\n  }\n  return &uniq 'r deref(holder);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn peek['r](holder: &uniq 'r Packet) -> result: &uniq 'r Packet reads(holder) {\n  match deref(holder) {\n    Data(value: payload) => {\n    }\n  }\n  return &uniq 'r deref(holder);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
@@ -1205,7 +1252,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     // own-returning callee under the unchanged v0.7 child rule.
     let mut grandchild = PASSTHRU.to_vec();
     grandchild.extend_from_slice(
-        b"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    region 'c {\n      bump<'c>(n: &uniq 'c deref(r));\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    region 'c {\n      bump<'c>(n: &uniq 'c deref(r));\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&grandchild, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {

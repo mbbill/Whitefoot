@@ -29,12 +29,12 @@ fn bs_new() -> result: own ByteString allocates(heap) {
   return ByteString(buf: move empty, fill: 0_u64);
 }
 
-deny_claims fn bs_len['a](s: &'a ByteString) -> result: own u64 reads('a) {
+deny_claims fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
   doc "Reports how many bytes the string holds.";
   return deref(s).fill;
 }
 
-deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads('a) {
+deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
   let within = ilt(index, stored);
@@ -49,7 +49,7 @@ deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Opt
   return None<u8>();
 }
 
-fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads('a), writes('a), allocates(heap) {
+fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
@@ -77,7 +77,7 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   return unit;
 }
 
-fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> result: own unit reads('d 'm), writes('d), allocates(heap) {
+fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends every byte of one static message, growing the destination as needed.";
   let count = len(text);
   for @append at in 0_u64..count {
@@ -89,7 +89,7 @@ fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> r
   return unit;
 }
 
-fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -> result: own unit reads('d 's), writes('d), allocates(heap) {
+fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -> result: own unit reads(destination.buf, destination.fill, source.buf, source.fill), writes(destination.buf, destination.fill), allocates(heap) {
   doc "Appends every byte of one byte string to another.";
   let count = 0_u64;
   region 'measure {
@@ -111,7 +111,7 @@ fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -
   return unit;
 }
 
-deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n) {
+deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill) {
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan.";
   let hay_length = deref(haystack).fill;
   let needle_length = deref(needle).fill;
@@ -167,7 +167,7 @@ deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString)
   return None<u64>();
 }
 
-fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own unit reads('a), writes('a), allocates(heap) {
+fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends the decimal spelling of one unsigned value, least significant digit extracted first.";
   let scratch = buffer_new(20_u64, 48_u8);
   let written = 0_u64;
@@ -214,7 +214,7 @@ fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own un
   return unit;
 }
 
-fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes(output) contract {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires ile(length, source_length);
 } {
@@ -227,7 +227,7 @@ fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -240,7 +240,7 @@ fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Builds one byte string from literals, concatenates, searches it, and publishes the measured report.";
   let subject = bs_new();
   region 'head_view {
@@ -392,7 +392,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus wri
   let report_within_capacity = ile(published, report_capacity);
   if report_within_capacity {
     region 'publish {
-      match publish_all<'publish, 'publish>(output: &'publish out, source: &'publish report.buf, length: published) {
+      match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
         Ok(value: done) => {
         }
         Err(error: problem) => {

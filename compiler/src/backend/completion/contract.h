@@ -9,12 +9,12 @@
  * target adapters publish bytes and milestone facts, and the scheduler alone
  * decides which saved Whitefoot frame becomes runnable.
  *
- * All storage is supplied by the embedding runtime.  Claiming an operation can
- * therefore ask the scheduler to retry after real slot-capacity release or
- * after a short all-or-none batch-admission gate reopens, but can never grow a
- * hidden queue.  A token names both a slot and its generation.  The generation
- * is checked while the slot publication lock is held and before any result
- * byte is written.
+ * All storage is supplied by the embedding runtime.  Claiming one operation
+ * can therefore ask the scheduler to retry only after real slot-capacity
+ * release; it can never grow a hidden queue or reserve a compiler-invented
+ * operation group.  A token names both a slot and its generation.  The
+ * generation is checked while the slot publication lock is held and before
+ * any result byte is written.
  */
 
 #include <pthread.h>
@@ -30,18 +30,18 @@ extern "C" {
 #define WF_COMPLETION_RESULT_CAPACITY 256u
 
 /* These facts are independent even when a simple adapter publishes all four
- * in one terminal transition.  Future split-milestone families must not turn
+ * in one terminal transition.  Future split-milestone operations must not turn
  * this product back into one DONE bit. */
 enum wf_completion_milestone {
     WF_COMPLETION_RESULT_READY = 1u << 0,
     WF_COMPLETION_PAYLOAD_RELEASED = 1u << 1,
-    WF_COMPLETION_AUTHORITY_RELEASED = 1u << 2,
+    WF_COMPLETION_RESOURCE_RELEASED = 1u << 2,
     WF_COMPLETION_TERMINAL = 1u << 3
 };
 
 #define WF_COMPLETION_OWNERSHIP_COMPLETE                                      \
     (WF_COMPLETION_RESULT_READY | WF_COMPLETION_PAYLOAD_RELEASED               \
-     | WF_COMPLETION_AUTHORITY_RELEASED | WF_COMPLETION_TERMINAL)
+     | WF_COMPLETION_RESOURCE_RELEASED | WF_COMPLETION_TERMINAL)
 
 enum wf_completion_phase {
     WF_COMPLETION_FREE = 0,
@@ -62,8 +62,7 @@ typedef struct wf_completion_token {
 enum wf_completion_claim_result {
     WF_COMPLETION_CLAIMED = 0,
     WF_COMPLETION_CLAIM_WAIT_CAPACITY = 1,
-    WF_COMPLETION_CLAIM_WAIT_ADMISSION = 2,
-    WF_COMPLETION_CLAIM_INVALID = 3
+    WF_COMPLETION_CLAIM_INVALID = 2
 };
 
 enum wf_completion_transition_result {
@@ -124,7 +123,7 @@ enum wf_completion_park_result {
 
 typedef struct wf_completion_publication {
     uint32_t milestones;
-    /* Family-defined, nonzero terminal outcome discriminator. */
+    /* Operation-defined, nonzero terminal outcome discriminator. */
     uint32_t terminal_kind;
     const void *result;
     size_t result_size;
@@ -169,7 +168,6 @@ typedef struct wf_completion_slot {
 typedef struct wf_completion_statistics {
     uint64_t claims;
     uint64_t claim_capacity_waits;
-    uint64_t claim_admission_waits;
     uint64_t target_capacity_waits;
     uint64_t publications;
     uint64_t stale_publications;
@@ -181,7 +179,6 @@ typedef struct wf_completion_statistics {
     uint64_t compute_notifications;
     uint64_t target_notifications;
     uint64_t capacity_notifications;
-    uint64_t admission_notifications;
 } wf_completion_statistics;
 
 typedef struct wf_completion_runtime {
@@ -191,14 +188,6 @@ typedef struct wf_completion_runtime {
     _Atomic size_t drain_cursor;
     _Atomic size_t ready_events;
 
-    /* Batch admission closes its gate, waits for the short single-claimer
-     * critical sections already in progress, then reserves all requested
-     * slots or none. `batch_claiming` also carries one conservative bit saying
-     * a single claimant observed the closed gate. Ordinary claims never take
-     * this mutex. */
-    pthread_mutex_t batch_claim_lock;
-    _Atomic unsigned batch_claiming;
-    _Atomic unsigned single_claimers;
     pthread_mutex_t wake_lock;
     pthread_cond_t wake_condition;
     _Atomic uint64_t wake_epoch;
@@ -206,7 +195,6 @@ typedef struct wf_completion_runtime {
 
     _Atomic uint64_t stat_claims;
     _Atomic uint64_t stat_claim_capacity_waits;
-    _Atomic uint64_t stat_claim_admission_waits;
     _Atomic uint64_t stat_target_capacity_waits;
     _Atomic uint64_t stat_publications;
     _Atomic uint64_t stat_stale_publications;
@@ -218,7 +206,6 @@ typedef struct wf_completion_runtime {
     _Atomic uint64_t stat_compute_notifications;
     _Atomic uint64_t stat_target_notifications;
     _Atomic uint64_t stat_capacity_notifications;
-    _Atomic uint64_t stat_admission_notifications;
     wf_completion_wake_callback wake_callback;
     void *wake_context;
 } wf_completion_runtime;
@@ -246,15 +233,6 @@ int wf_completion_set_wake_callback(
 enum wf_completion_claim_result wf_completion_claim(
     wf_completion_runtime *runtime,
     wf_completion_token *token
-);
-
-/* Claims exactly `count` slots or none. Batch claimers serialize only with
- * other batches; a short atomic gate drains in-progress single claimers before
- * the all-or-none scan, so independent single operations pay no global mutex. */
-enum wf_completion_claim_result wf_completion_claim_many(
-    wf_completion_runtime *runtime,
-    wf_completion_token *tokens,
-    size_t count
 );
 
 /* Adapter handoff protocol.  begin accepts READY or WAIT_CAPACITY.  A target

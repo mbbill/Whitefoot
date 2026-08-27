@@ -59,6 +59,11 @@ spec:
 completion-test: completion-core-read-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
+	@if $(NM) "$(COMPLETION_TMP)/harness" | \
+		grep -Eq 'wf_completion_claim_many|wf__completion_file_batch_claim|wf__completion_file_.*_submit_reserved|wf__completion_output_batch'; then \
+		echo "completion runtime exports removed group/root machinery" >&2; \
+		exit 1; \
+	fi
 	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
 	WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
 	WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
@@ -105,8 +110,8 @@ completion-core-read-test: completion-core-read-source-boundary
 		-o "$(COMPLETION_TMP)/core-read-probe"
 	"$(COMPLETION_TMP)/core-read-probe" "$(COMPLETION_TMP)"
 	@if $(NM) "$(COMPLETION_TMP)/core-read-probe" | \
-		grep -Eq 'wf__completion_output_batch|wf_ordered_output|wf_bridge_ordered|wf__writer_run_root|wf__completion_file_pread_submit'; then \
-		echo "isolated completion core/read probe links bridge or Ordered Output symbols" >&2; \
+		grep -Eq 'wf__writer_run_root|wf__completion_file_pread_submit'; then \
+		echo "isolated completion core/read probe links the generated-code bridge" >&2; \
 		exit 1; \
 	fi
 	@echo "completion core/read bridge isolation: PASS"

@@ -201,7 +201,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_callee_writing_iteration_own_storage_is_permitted() {
     let source =
-        b"fn bump['s](slot: &uniq 's u64, x: own u64) -> result: own u64 reads('s), writes('s) {
+        b"fn bump['s](slot: &uniq 's u64, x: own u64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = deref(slot) +wrap x;
   return deref(slot);
 }
@@ -273,7 +273,7 @@ fn nested_counted_loops_are_each_judged_on_their_own_terms() {
 /// runs, so it is no trap site an overlapped schedule could select between.
 #[test]
 fn a_claim_outside_the_loop_leaves_it_eligible() {
-    let source = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads('s), traps {
+    let source = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src), traps {
   let room = len(deref(src));
   let bounded_limit = imin(limit, room);
   let fits = ile(bounded_limit, room);
@@ -633,7 +633,7 @@ fn a_stencil_is_denied_by_condition_two() {
 #[test]
 fn a_callee_writing_enclosing_storage_is_denied_by_condition_two() {
     let source =
-        b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads('s), writes('s) {
+        b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
@@ -684,67 +684,67 @@ command fn main() -> status: own ExitStatus pure {
 // Completion actualization boundary
 // ----------------------------------------------------------------------
 
-/// A may-suspend wrapper does not invalidate the loop permission. The current
-/// splitter has no stackless continuation for the loop body, so it records the
-/// permission and deliberately supplies no actualization payload.
+/// A wrapper which deliberately keeps a unique factory loan across a
+/// may-suspend open cannot overlap across loop iterations. This is an ordinary
+/// loan consequence of that wrapper signature, not a property of the system
+/// open API, whose permit and directory inputs are independent.
 #[test]
-fn a_may_suspend_wrapper_keeps_permission_but_declines_actualization() {
-    let source = b"fn probe['c](root: &'c DirectoryRead) -> result: own u64 reads('c root) {
-  match open_directory_source<'c>(directory: root) {
-    Ok(value: listing) => {
-      return 1_u64;
-    }
-    Err(error: refused) => {
-      return 0_u64;
+fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
+    let source = b"fn probe['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
+  region 'reserve {
+    let permit = reserve_file<'f>(factory: move factory);
+    match open_directory_source<'c>(permit: move permit, directory: root) {
+      Ok(value: listing) => {
+        return 1_u64;
+      }
+      Err(error: refused) => {
+        return 0_u64;
+      }
     }
   }
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan i in 0_u64..4_u64 {
     region 'probe_call {
-      let seen = probe<'probe_call>(root: &'probe_call cwd);
+      let seen = probe<'probe_call, 'probe_call>(factory: &uniq 'probe_call files, root: &'probe_call cwd);
       set total = total +wrap seen;
     }
   }
   return exit_status(code: 0_u8);
 }
 ";
-    let judged = permitted(source, "main");
-    assert!(
-        judged.actualization.is_none(),
-        "the current loop splitter must not run a may-suspend body on a compute thunk"
-    );
+    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
 }
 
-/// A direct may-suspend system operation follows the same boundary. Direct
-/// system calls participate in permission; lack of stackless loop lowering
-/// narrows only actualization.
+/// A direct advancing Source operation follows the same boundary. Its unique
+/// Source and destination loans, rather than a system-only relation, prevent
+/// loop-iteration overlap.
 #[test]
-fn a_direct_may_suspend_system_call_keeps_permission_but_declines_actualization() {
-    let source =
-        b"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
-  let total = 0_u64;
-  for @scan i in 0_u64..4_u64 {
-    region 'attempt {
-      match open_directory_source<'attempt>(directory: &'attempt cwd) {
-        Ok(value: listing) => {
-        }
-        Err(error: refused) => {
+fn a_direct_directory_state_transition_keeps_its_unique_loan() {
+    let source = b"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let destination = buffer_new(1_u64, 0_u8);
+  region 'open {
+    let permit = reserve_file<'open>(factory: &uniq 'open files);
+    match open_directory_source<'open>(permit: move permit, directory: &'open cwd) {
+      Ok(value: listing) => {
+        let total = 0_u64;
+        for @scan i in 0_u64..4_u64 {
+          region 'attempt {
+            let outcome = directory_next<'attempt, 'attempt>(source: &uniq 'attempt listing, destination: &uniq 'attempt destination, start: 0_u64, end: 1_u64);
+          }
+          set total = total +wrap 1_u64;
         }
       }
+      Err(error: refused) => {
+      }
     }
-    set total = total +wrap 1_u64;
   }
   return exit_status(code: 0_u8);
 }
 ";
-    let judged = permitted(source, "main");
-    assert!(
-        judged.actualization.is_none(),
-        "direct completion work needs stackless loop continuation support"
-    );
+    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
 }
 
 // ----------------------------------------------------------------------
@@ -878,7 +878,7 @@ fn a_give_delivering_inside_the_body_is_permitted() {
 #[test]
 fn a_give_in_the_body_is_denied_by_condition_four() {
     let source =
-        b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
+        b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -915,7 +915,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     // The same loop with the give removed is permitted, so the refusal is
     // about the edge and not about the shape.
     let contained =
-        b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
+        b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1087,7 +1087,7 @@ command fn main() -> status: own ExitStatus traps {
 /// apart; this one may not.
 #[test]
 fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
-    let structural = b"fn tally['s](src: &'s buffer<u64>) -> result: own u64 reads('s) {
+    let structural = b"fn tally['s](src: &'s buffer<u64>) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let total = 0_u64;
   for @sum i in 0_u64..count {
@@ -1105,7 +1105,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return exit_status(code: 0_u8);
 }
 ";
-    let claimed = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads('s), traps {
+    let claimed = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src), traps {
   let room = len(deref(src));
   let bounded_limit = imin(limit, room);
   let fits = ile(bounded_limit, room);
@@ -1127,7 +1127,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 }
 "#;
     let branched =
-        b"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads('s) {
+        b"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   let total = 0_u64;
   for @sum i in 0_u64..limit {
@@ -1177,7 +1177,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// write, is what denies it.
 #[test]
 fn a_read_only_unique_borrow_of_outer_storage_is_denied_by_its_loan() {
-    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads('c) {
+    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
 
@@ -1203,7 +1203,7 @@ command fn main() -> status: own ExitStatus pure {
 /// a reduction.
 #[test]
 fn a_shared_borrow_of_outer_storage_stays_permitted() {
-    let source = br#"fn peek['c](cell: &'c u64) -> result: own u64 reads('c) {
+    let source = br#"fn peek['c](cell: &'c u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
 

@@ -10,7 +10,7 @@ mod generics;
 mod nominal_instances;
 mod nominals;
 mod requires;
-mod result_authority;
+mod result_state_origin;
 mod strict;
 mod support;
 mod types;
@@ -40,12 +40,12 @@ use super::goal::{
     GoalOperation, GoalProjection, first_ephemeral_argument, render_goal,
 };
 use super::model::{
-    BindingId, CheckedCapabilityOrigins, CheckedConst, CheckedConstant, CheckedConstantId,
-    CheckedContract, CheckedExpression, CheckedFlatElement, CheckedFunction,
-    CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
-    CheckedResultAuthorityOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStatement,
-    CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
-    ValueInitializerKind, evaluate_const_operation,
+    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
+    CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
+    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedResultStateOrigin,
+    CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins, CheckedStatement, CheckedType,
+    CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId, ValueInitializerKind,
+    evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -305,10 +305,10 @@ struct LocalBinding {
     declaration: DeclarationId,
     mode: CheckedMode,
     ty: CheckedType,
-    /// The finite direct-formal origin set of this value's logical authority.
-    /// `None` is reserved for a type carrying no capability; a fresh root is a
-    /// present set with `may_fresh` and no formals.
-    capability_origins: Option<CheckedCapabilityOrigins>,
+    /// Structural incoming-formal attribution for this affine value. `None`
+    /// is reserved for a value with no ownership identity; a fresh owner has a
+    /// present empty set.
+    state_origins: Option<CheckedStateOrigins>,
     live: bool,
     loop_depth: usize,
     /// Compiler-updated counted binders are readable source bindings but are
@@ -345,8 +345,8 @@ impl LocalBinding {
         let mut right = other.clone();
         left.slice_loans.clear();
         right.slice_loans.clear();
-        left.capability_origins = None;
-        right.capability_origins = None;
+        left.state_origins = None;
+        right.state_origins = None;
         left.suspended = false;
         right.suspended = false;
         left == right
@@ -360,9 +360,9 @@ impl LocalBinding {
             self.push_slice_loan(loan.clone());
         }
         self.suspended |= other.suspended;
-        match (&mut self.capability_origins, &other.capability_origins) {
+        match (&mut self.state_origins, &other.state_origins) {
             (Some(left), Some(right)) => left.union(right),
-            (None, Some(right)) => self.capability_origins = Some(right.clone()),
+            (None, Some(right)) => self.state_origins = Some(right.clone()),
             (Some(_), None) | (None, None) => {}
         }
     }
@@ -434,10 +434,8 @@ impl TypedExpression {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct EffectSet {
-    region_reads: Vec<DeclarationId>,
-    region_writes: Vec<DeclarationId>,
-    capability_reads: Vec<DeclarationId>,
-    capability_writes: Vec<DeclarationId>,
+    reads: Vec<super::model::CheckedStatePath>,
+    writes: Vec<super::model::CheckedStatePath>,
     allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
     traps: bool,
@@ -445,44 +443,32 @@ struct EffectSet {
 
 impl EffectSet {
     const NONE: Self = Self {
-        region_reads: Vec::new(),
-        region_writes: Vec::new(),
-        capability_reads: Vec::new(),
-        capability_writes: Vec::new(),
+        reads: Vec::new(),
+        writes: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
         traps: false,
     };
     const TRAPS: Self = Self {
-        region_reads: Vec::new(),
-        region_writes: Vec::new(),
-        capability_reads: Vec::new(),
-        capability_writes: Vec::new(),
+        reads: Vec::new(),
+        writes: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
         traps: true,
     };
     const ALLOCATES_HEAP: Self = Self {
-        region_reads: Vec::new(),
-        region_writes: Vec::new(),
-        capability_reads: Vec::new(),
-        capability_writes: Vec::new(),
+        reads: Vec::new(),
+        writes: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
         traps: false,
     };
     fn union(mut self, other: Self) -> Self {
-        for region in other.region_reads {
-            self.add_region_read(region);
+        for path in other.reads {
+            self.add_read(path);
         }
-        for region in other.region_writes {
-            self.add_region_write(region);
-        }
-        for capability in other.capability_reads {
-            self.add_capability_read(capability);
-        }
-        for capability in other.capability_writes {
-            self.add_capability_write(capability);
+        for path in other.writes {
+            self.add_write(path);
         }
         self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
@@ -492,31 +478,17 @@ impl EffectSet {
         self
     }
 
-    fn add_region_read(&mut self, region: DeclarationId) {
-        if !self.region_reads.contains(&region) {
-            self.region_reads.push(region);
-            self.region_reads.sort_unstable();
+    fn add_read(&mut self, path: super::model::CheckedStatePath) {
+        if !self.reads.contains(&path) {
+            self.reads.push(path);
+            self.reads.sort_unstable();
         }
     }
 
-    fn add_region_write(&mut self, region: DeclarationId) {
-        if !self.region_writes.contains(&region) {
-            self.region_writes.push(region);
-            self.region_writes.sort_unstable();
-        }
-    }
-
-    fn add_capability_read(&mut self, capability: DeclarationId) {
-        if !self.capability_reads.contains(&capability) {
-            self.capability_reads.push(capability);
-            self.capability_reads.sort_unstable();
-        }
-    }
-
-    fn add_capability_write(&mut self, capability: DeclarationId) {
-        if !self.capability_writes.contains(&capability) {
-            self.capability_writes.push(capability);
-            self.capability_writes.sort_unstable();
+    fn add_write(&mut self, path: super::model::CheckedStatePath) {
+        if !self.writes.contains(&path) {
+            self.writes.push(path);
+            self.writes.sort_unstable();
         }
     }
 
@@ -582,13 +554,13 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     function_templates: Vec<FunctionTemplate>,
     templates_by_declaration: HashMap<DeclarationId, usize>,
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
-    /// Closed-world result-authority summaries for the currently selected
+    /// Closed-world structural state origins for the currently selected
     /// concrete or symbolic function inventory, indexed by FunctionId.
-    result_authority_origins: RefCell<Vec<CheckedResultAuthorityOrigin>>,
+    result_state_origins: RefCell<Vec<CheckedResultStateOrigin>>,
     /// The preliminary body pass records enough checked control/data flow to
-    /// derive the summaries but deliberately postpones EFF-2 equality and an
-    /// Unknown-result capability stop until the summaries reach a fixed point.
-    deriving_result_authority: Cell<bool>,
+    /// derive the summaries but deliberately postpones EFF-2 equality until
+    /// the summaries reach a fixed point.
+    deriving_result_state_origin: Cell<bool>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
     /// Hash-consed symbolic const operations [CONST-1 candidate]. Written by
@@ -837,8 +809,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             function_templates: Vec::new(),
             templates_by_declaration: HashMap::new(),
             functions_by_declaration: HashMap::new(),
-            result_authority_origins: RefCell::new(Vec::new()),
-            deriving_result_authority: Cell::new(false),
+            result_state_origins: RefCell::new(Vec::new()),
+            deriving_result_state_origin: Cell::new(false),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
             derived_consts: RefCell::new(Vec::new()),
@@ -880,7 +852,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_function_signatures(&items)?;
         self.admit_postcondition_selectors()?;
         self.validate_generic_templates()?;
-        self.derive_result_authority_origins()?;
+        self.derive_result_state_origins()?;
         let nominal_count_before_function_checking = self.nominals.len();
         let main = self.main_id()?;
         let strict_markers = self.strict_declaration_markers()?;
@@ -1198,10 +1170,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .map(|signature| PermissionSignature {
                 region_parameters: signature.region_parameters.clone(),
-                reads: signature.declared_effects.region_reads.clone(),
-                writes: signature.declared_effects.region_writes.clone(),
-                capability_reads: signature.declared_effects.capability_reads.clone(),
-                capability_writes: signature.declared_effects.capability_writes.clone(),
+                reads: signature.declared_effects.reads.clone(),
+                writes: signature.declared_effects.writes.clone(),
                 allocates_arenas: signature.declared_effects.allocates_arenas.clone(),
             })
             .collect::<Vec<_>>();
@@ -1487,7 +1457,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.collect_function_signatures(items)?;
             self.admit_postcondition_selectors()?;
             self.validate_generic_templates()?;
-            self.derive_result_authority_origins()?;
+            self.derive_result_state_origins()?;
             for index in 0..self.signatures.len() {
                 self.check_function_interning_nominals(index)?;
             }
@@ -1580,8 +1550,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             next_binding = next_binding
                 .checked_add(1)
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            let (minimum_capabilities, maximum_capabilities) =
-                self.type_capability_cardinality(parameter.ty)?;
+            let state_leaves = self.type_state_leaf_paths(parameter.ty)?;
             bindings.insert(
                 parameter.declaration,
                 LocalBinding {
@@ -1589,9 +1558,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: parameter.declaration,
                     mode: parameter.mode,
                     ty: parameter.ty,
-                    capability_origins: (maximum_capabilities == 1).then(|| {
-                        CheckedCapabilityOrigins::formal(parameter.declaration)
-                            .with_may_absent(minimum_capabilities == 0)
+                    state_origins: (!state_leaves.is_empty()).then(|| {
+                        CheckedStateOrigins::formal_leaves(parameter.declaration, state_leaves)
                     }),
                     live: true,
                     loop_depth: 0,
@@ -1669,46 +1637,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 kind: SemanticIssueKind::FunctionFallthrough,
             }));
         }
-        let mut multi_capability_path = None;
-        for parameter in &signature.parameters {
-            if self.type_capability_cardinality(parameter.ty)?.1 > 1 {
-                multi_capability_path = Some(parameter.node_path.clone());
-                break;
-            }
-        }
-        if multi_capability_path.is_none()
-            && self.type_capability_cardinality(signature.result)?.1 > 1
-        {
-            multi_capability_path = Some(self.tree.path(signature.node)?.clone());
-        }
-        if multi_capability_path.is_none() {
-            multi_capability_path = self.first_multi_capability_expression(&checked.statements)?;
-        }
-        let multi_root_bindings =
-            self.multi_capability_bindings(&parameters, &checked.statements)?;
         // The exhibited row is the union of exactly two contributions
         // [EFF-2]: the syntactic contribution of the body and the release
         // contribution of every compiler-derived release recorded on a normal
         // body edge [STOR-3]. A requirement is a signature obligation, not an
         // executed declaration occurrence.
-        let syntactic = if self.deriving_result_authority.get() {
+        let syntactic = if self.deriving_result_state_origin.get() {
             checked.effects.clone()
         } else {
             self.written_body_effects(signature, checked.effects.clone())
         };
         let mut release_sites = Vec::new();
-        self.collect_release_sites(
-            &checked.statements,
-            &mut release_sites,
-            &multi_root_bindings,
-        )?;
+        self.collect_release_sites(&checked.statements, &mut release_sites)?;
         let mut release = EffectSet::NONE;
         for site in &release_sites {
             release = release.union(site.effects.clone());
         }
         let exhibited = syntactic.clone().union(release.clone());
-        if !self.deriving_result_authority.get() && exhibited != signature.declared_effects {
-            // A capability contributed only by a release has no offending
+        if !self.deriving_result_state_origin.get() && exhibited != signature.declared_effects {
+            // A state transition contributed only by a release has no offending
             // source occurrence. Keep the owner-bearing diagnostic for that
             // case even though the current system releases have empty memory
             // rows; later resource families may carry an ordinary memory row.
@@ -1777,24 +1724,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .collect()
         };
         // TEMPORARY capability stop, judged only after every source rejection
-        // above had its chance. The current origin record names every possible
-        // root of a value carrying at most one capability, but does not yet
-        // retain one origin per leaf of a product carrying several roots.
-        // Such a value is never published to lowering with an empty row: the
-        // preliminary fixed-point pass may carry conservative scratch, while
-        // this final pass stops the clean function explicitly.
-        if !self.deriving_result_authority.get()
-            && let Some(path) = multi_capability_path
-        {
-            return self.unsupported(
-                UnsupportedSemanticFeature::CapabilityResultOrigin,
-                self.tree
-                    .node_with_path(&path)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            );
-        }
-
-        // TEMPORARY capability stop, judged only after every source rejection
         // above had its chance: arena-typed parameters check under their
         // ownership and [STOR-4] confinement rules, but the region-tied
         // allocation and release lowering is not implemented yet, so a clean
@@ -1819,18 +1748,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             parameters,
             result_mode: signature.result_mode,
             result: signature.result,
-            result_authority_origin: self
-                .result_authority_origins
+            result_state_origin: self
+                .result_state_origins
                 .borrow()
                 .get(signature.id.0 as usize)
                 .cloned()
-                .unwrap_or(CheckedResultAuthorityOrigin::Unknown),
+                .unwrap_or(CheckedResultStateOrigin::Unknown),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             declared_traps: signature.declared_effects.traps,
             declared_allocates_heap: signature.declared_effects.allocates_heap,
-            declared_capability_writes: signature.declared_effects.capability_writes.clone(),
+            declared_state_writes: signature.declared_effects.writes.clone(),
             target_action: crate::TargetAction::INLINE,
-            authority_summary: Default::default(),
             requirements,
             postconditions,
             body: checked.statements,
@@ -1883,8 +1811,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
             callees.push(EntailmentCallee::from_signature(
-                signature.parameters.iter().map(|parameter| parameter.mode),
-                &signature.declared_effects.region_writes,
+                signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| (parameter.declaration, parameter.mode)),
+                &signature.declared_effects.writes,
             ));
         }
         Ok(callees)

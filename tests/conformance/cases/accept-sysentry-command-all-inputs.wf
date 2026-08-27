@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {
-  doc "A command entry selecting every standard input row in table-ordinal order [FN-7]; `command.stdout` and `command.stderr` are two distinct inputs of one type [SYS-12], and the declared row is exactly the release contribution of the DirectoryRead close attempt [SYS-10, EFF-2].";
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {
+  doc "A command entry selecting every standard input row in table-ordinal order [FN-7]; `command.stdout` and `command.stderr` are two distinct inputs of one type [SYS-12], `command.files` supplies the ordinary file factory [SYS-10], and the declared row is exactly the release contribution of the DirectoryRead close attempt because FileFactory release is a logical consume [SYS-5, EFF-2].";
   return exit_status(code: 0_u8);
 }

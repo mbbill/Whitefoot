@@ -4,7 +4,7 @@ use super::*;
 fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
     let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads('r), traps {
+fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values), traps {
   let offset = 0_u64;
   let total = 0_u64;
   let length = len(values);
@@ -105,7 +105,7 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
   return slice_of(&'r fixed);
 }
 
-fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data) contract {
+fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) contract {
   define room = len(deref(value));
   requires ilt(0_u64, room);
 } {

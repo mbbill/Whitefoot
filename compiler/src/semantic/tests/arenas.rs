@@ -164,7 +164,7 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
     // A `uniq` child in the arena's own region, and the same borrow under a
     // nested region: `'r` outlives-or-equals both.
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -180,7 +180,7 @@ command fn main() -> status: own ExitStatus traps {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -200,7 +200,7 @@ command fn main() -> status: own ExitStatus traps {
     // A shared borrow in argument position, and a `let`-bound holder, which
     // OWN-14 rejected outright as a non-argument reborrow position.
     assert_unsupported(
-        br#"fn peek['r](n: &'r i32) -> result: own i32 reads('r) {
+        br#"fn peek['r](n: &'r i32) -> result: own i32 reads(n) {
   return deref(n);
 }
 
@@ -250,7 +250,7 @@ fn arena_content_borrows_keep_their_region_rejections() {
     );
     // A caller-supplied region is never comparable to a local arena's [OWN-3].
     assert_rule(
-        br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes('s) {
+        br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes(n) {
   set deref(n) = 1_i32;
   return unit;
 }

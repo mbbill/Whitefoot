@@ -23,11 +23,11 @@
 //!    or that accumulator. An element write, a field of enclosing storage, a
 //!    callee row projecting onto enclosing storage, an arena append, and every
 //!    write this judgment cannot resolve all deny.
-//! 3. **Complete target and family summaries.** Every call and derived release
-//!    in B identifies its target action and family-owned authority fragments.
-//!    Unknown or exclusive cross-iteration fragment pairs deny. A may-suspend
-//!    target keeps the permission but requires a completion-capable loop
-//!    actualizer; this version otherwise leaves the loop sequential.
+//! 3. **Complete target summaries.** Every call and derived release in B
+//!    identifies its target action. Ordinary effects and loans have already
+//!    denied every conflicting cross-iteration access. A may-suspend target
+//!    keeps the permission but requires a completion-capable loop actualizer;
+//!    this version otherwise leaves the loop sequential.
 //! 4. **No exit edge.** No `return`, `give`, `propagate` `Err` edge, or
 //!    `break` naming L or an enclosing loop leaves the loop, so every
 //!    iteration of the whole range runs.

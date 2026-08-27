@@ -74,7 +74,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: binder_declaration_id,
                     mode: CheckedMode::Own,
                     ty: CheckedType::Integer(IntegerType::U64),
-                    capability_origins: None,
+                    state_origins: None,
                     live: true,
                     loop_depth: scope.loops.len() + 1,
                     compiler_updated: true,

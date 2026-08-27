@@ -184,8 +184,8 @@ fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
 /// search layer is claim-free because it must be.
 #[test]
 fn a_claim_injected_into_the_strict_search_is_a_clm3_rejection() {
-    let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n) {";
-    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n), traps {";
+    let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill) {";
+    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill), traps {";
     let entry = "command fn main() -> status: own ExitStatus allocates(heap) {";
     let trapping_entry = "command fn main() -> status: own ExitStatus allocates(heap), traps {";
     let anchor = "  let last = hay_length -wrap needle_length;\n";

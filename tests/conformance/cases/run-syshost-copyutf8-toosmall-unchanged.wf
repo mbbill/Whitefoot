@@ -1,4 +1,4 @@
-fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8 reads('b), traps {
+fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8 reads(bytes), traps {
   let offset = 0_u64;
   let room = len(deref(bytes));
   loop @sentinel {

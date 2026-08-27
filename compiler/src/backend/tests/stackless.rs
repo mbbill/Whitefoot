@@ -6,46 +6,46 @@ use super::{build_linked_executable, compile, test_directory};
 
 const WRITER_SCHEDULER_PROBE: &str = include_str!("../completion/writer_scheduler_probe.c");
 
-const STACKLESS_WRAPPER: &[u8] = br#"fn publish['o, 's](output: &'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads('o 's), writes(output) contract {
+const STACKLESS_WRAPPER: &[u8] = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = ile(start, end);
   define capacity = len(deref(source));
   requires ordered;
   requires ile(end, capacity);
 } {
-  return write_once<'o, 's>(output: output, source: source, start: start, end: end);
+  return write_once<'o, 's>(output: move output, source: source, start: start, end: end);
 }
 
-fn relay['o, 's](output: &'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads('o 's), writes(output) contract {
+fn relay['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = ile(start, end);
   define capacity = len(deref(source));
   requires ordered;
   requires ile(end, capacity);
 } {
-  return publish<'o, 's>(output: output, source: source, start: start, end: end);
+  return publish<'o, 's>(output: move output, source: source, start: start, end: end);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'io {
-    let outcome = relay<'io, 'io>(output: &'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+    let outcome = relay<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
 "#;
 
-const STACKLESS_EMPTY_WRAPPER: &[u8] = br#"fn publish['o, 's](output: &'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads('o 's), writes(output) contract {
+const STACKLESS_EMPTY_WRAPPER: &[u8] = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = ile(start, end);
   define capacity = len(deref(source));
   requires ordered;
   requires ile(end, capacity);
 } {
-  return write_once<'o, 's>(output: output, source: source, start: start, end: end);
+  return write_once<'o, 's>(output: move output, source: source, start: start, end: end);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'io {
-    let outcome = publish<'io, 'io>(output: &'io out, source: &'io bytes, start: 0_u64, end: 0_u64);
+    let outcome = publish<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 0_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -159,10 +159,10 @@ __attribute__((destructor)) static void report_writer_resume(void) {
 #[test]
 fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
     let llvm = compile(
-        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'io {
-    match write_once<'io, 'io>(output: &'io out, source: &'io bytes, start: 0_u64, end: 1_u64) {
+    match write_once<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64) {
       Ok(value: written) => {
       }
       Err(error: problem) => {

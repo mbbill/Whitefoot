@@ -7,10 +7,10 @@
 //! host's own facilities, exactly as a shipped command would.
 
 use super::support::{
-    build_program, compile_program, compile_program_rejection_without_traversal_surface,
-    compile_program_with_open_by_name, compile_program_with_traversal_surface,
-    compile_rejection_with_traversal_surface, fixture_directory,
+    build_program, compile_program, compile_program_rejection_with, compile_rejection,
+    fixture_directory,
 };
+use whitefoot::Inventory;
 
 /// The traversal program itself: a recursive walk of the invocation
 /// directory that collects every entry's kind and relative path into the
@@ -19,11 +19,11 @@ use super::support::{
 /// The fixture is a real three-level tree, so a green run establishes that
 /// `open_directory_source` produced an independent enumeration handle, that `directory_next`
 /// normalized the host's own records into the portable form, and that
-/// `open_directory` opened each child capability by name bytes with no path
+/// `open_directory` opened each child ordinary directory value by name bytes with no path
 /// value ever formed.
 #[test]
 fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
-    let llvm = compile_program_with_traversal_surface("dir_walk.wf");
+    let llvm = compile_program("dir_walk.wf");
     // The three approved implementations and the compiler-owned target
     // progress wrapper, by symbol rather than by any source name [QUAL-1].
     assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
@@ -58,7 +58,7 @@ fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
 /// delivered rather than filtered.
 #[test]
 fn an_empty_tree_publishes_nothing_after_the_self_and_parent_entries_are_skipped() {
-    let llvm = compile_program_with_traversal_surface("dir_walk.wf");
+    let llvm = compile_program("dir_walk.wf");
     let program = build_program(&llvm);
     let fixture = fixture_directory();
     let output = program.run(fixture.path(), &[]);
@@ -71,7 +71,7 @@ fn an_empty_tree_publishes_nothing_after_the_self_and_parent_entries_are_skipped
 /// recoverable outcome, not a trap.
 #[test]
 fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
-    let llvm = compile_program_with_traversal_surface("dir_walk.wf");
+    let llvm = compile_program("dir_walk.wf");
     let program = build_program(&llvm);
     let fixture = fixture_directory();
     fixture.write(b"a.txt", b"first\n");
@@ -98,64 +98,42 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     );
 }
 
-/// Admission is decided by the inventory the specification declares, never
-/// by the compiler recognizing a source shape: the identical traversal source
-/// compiles against the inventory that declares its operations and is an
-/// undeclared name against the one that does not. The shipped path is the
-/// declaring one, so the program is an ordinary program there.
+/// The current traversal source requires the complete file-permit inventory,
+/// not just the older traversal rows. This is an honest source dependency:
+/// its entry receives FileFactory and every open calls reserve_file.
 #[test]
-fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
-    assert_eq!(
-        compile_program("dir_walk.wf"),
-        compile_program_with_traversal_surface("dir_walk.wf"),
-        "the shipped inventory and the explicitly named one disagree"
-    );
-    let failure = compile_program_rejection_without_traversal_surface("dir_walk.wf");
+fn the_traversal_source_requires_the_complete_file_permit_inventory() {
+    let _ = compile_program("dir_walk.wf");
+    let failure = compile_program_rejection_with("dir_walk.wf", Inventory::OpenByName);
     assert!(
-        failure.contains("UnresolvedUse") && failure.contains("open_directory_source"),
-        "the base inventory must reject the traversal spellings as undeclared names: {failure}"
+        failure.contains("UnresolvedUse")
+            && (failure.contains("FileFactory") || failure.contains("reserve_file")),
+        "the pre-permit inventory must reject the explicit authority surface: {failure}"
     );
 }
 
-/// Every traversal-era program keeps its exact emitted module when the final
-/// `open_file` row is appended, because appending only adds a declaration: no
-/// earlier spelling, ordinal, or lowering decision moves. Both sides are
-/// compiled against explicitly named inventories, so this is the inventory
-/// differential and not one inventory compared with itself.
-#[test]
-fn appending_open_file_leaves_every_traversal_program_byte_identical() {
-    // `wfgrep.wf` is no longer an earlier program because its recursive search
-    // uses `open_file` itself. `prefix_expression.wf` remains the
-    // system-touching witness: nine earlier system-surface spellings and no
-    // `open_file`, so it exercises the property — appending the final row
-    // moves no earlier spelling, ordinal, or lowering decision — where a
-    // program that touches no system operation at all cannot detect a moved
-    // ordinal.
-    // `raw_deflate_boundary.wf` has more system references still, but is not a
-    // standalone compilation unit, which is what this entry compiles.
-    for name in ["prefix_expression.wf", "byte_string.wf", "growable_vec.wf"] {
-        assert_eq!(
-            compile_program_with_traversal_surface(name),
-            compile_program_with_open_by_name(name),
-            "{name} emits different bytes once the open_file row is appended"
-        );
-    }
-}
+// The former byte-identical comparison between the traversal and open-by-name
+// inventories was retired with the file-permit amendment. The amendment adds
+// two nominal types and changes every open signature, so byte identity across
+// those superseded inventories is no longer a valid invariant. Catalog tests
+// retain their exact counted membership; current programs compile only against
+// the complete active inventory.
 
 /// A held enumeration handle is affine like every other system resource: a
 /// source that uses one after moving it is rejected, and the rejection comes
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
-    match open_directory_source<'listing>(directory: &'listing cwd) {
+    let permit = reserve_file<'listing>(factory: &uniq 'listing files);
+    match open_directory_source<'listing>(permit: move permit, directory: &'listing cwd) {
       Ok(value: list) => {
         let taken = move list;
         region 'step {
-          match directory_next<'step, 'step>(source: &'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+          match directory_next<'step, 'step>(source: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
@@ -172,7 +150,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let failure = compile_rejection_with_traversal_surface(&[("moved_list.wf", source)]);
+    let failure = compile_rejection(&[("moved_list.wf", source)]);
     assert!(
         failure.contains("Semantics"),
         "expected an ownership rejection, got {failure}"
@@ -198,7 +176,7 @@ fn program_bytes_still_cannot_become_a_path_value() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let failure = compile_rejection_with_traversal_surface(&[("buffer_path.wf", source)]);
+    let failure = compile_rejection(&[("buffer_path.wf", source)]);
     assert!(
         failure.contains("Semantics"),
         "expected a type rejection, got {failure}"
@@ -210,14 +188,15 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
-    match open_directory_source<'listing>(directory: &'listing cwd) {
+    let permit = reserve_file<'listing>(factory: &uniq 'listing files);
+    match open_directory_source<'listing>(permit: move permit, directory: &'listing cwd) {
       Ok(value: list) => {
         region 'step {
-          match directory_next<'step, 'step>(source: &'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+          match directory_next<'step, 'step>(source: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
@@ -232,7 +211,7 @@ fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let failure = compile_rejection_with_traversal_surface(&[("partial_list.wf", source)]);
+    let failure = compile_rejection(&[("partial_list.wf", source)]);
     assert!(
         failure.contains("Semantics"),
         "expected an exhaustiveness rejection, got {failure}"
@@ -244,11 +223,12 @@ fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
 ///
 /// This is structural evidence about the emitted implementation rather than a
 /// runtime observation: the rejection path is a separate block that
-/// constructs the portable class and returns, and the one `openat` call site
-/// is reachable only after the length and byte scan admitted the range.
+/// constructs the portable class and returns, and the one typed completion
+/// call site is reachable only after the length and byte scan admitted the
+/// range. The target adapter below this emitted boundary owns `openat`.
 #[test]
 fn the_component_validation_precedes_every_host_call() {
-    let llvm = compile_program_with_traversal_surface("dir_walk.wf");
+    let llvm = compile_program("dir_walk.wf");
     let start = llvm
         .find("@wf.sys.open_directory.v1(")
         .expect("the emitted open_directory implementation");
@@ -262,14 +242,16 @@ fn the_component_validation_precedes_every_host_call() {
     assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));
 
     let open_block = shim.find("\nopen:\n").expect("the admitted-name block");
-    let host_call = shim.find("@openat").expect("the directory-relative open");
+    let host_call = shim
+        .find("@wf__completion_file_open_at_direct")
+        .expect("the typed directory-relative open");
     assert!(
         host_call > open_block,
         "the host call must be reachable only from the admitted-name block"
     );
     let invalid_block = shim.find("\ninvalid:\n").expect("the rejection block");
     assert!(
-        !shim[invalid_block..].contains("@openat"),
+        !shim[invalid_block..].contains("@wf__completion_file_open_at_direct"),
         "the rejection path must make no host call"
     );
 }

@@ -8,8 +8,8 @@ use crate::{
 
 use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
 use super::super::super::super::model::{
-    CheckedCapabilityOrigins, CheckedExpression, CheckedMode, CheckedNominalKind,
-    CheckedResultBorrow, CheckedSliceOrigin, CheckedType,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
+    CheckedStateOrigins, CheckedType,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
@@ -111,7 +111,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut checked_slices = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
-        let mut capability_origins = Vec::with_capacity(fields.len());
+        let mut state_origins = Vec::with_capacity(fields.len());
+        let mut argument_places = Vec::with_capacity(fields.len());
         let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
@@ -119,13 +120,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // Payload-free allocation and trap capabilities transfer by presence
         // at a call boundary [EFF-2]; region entries are projected below.
         let mut effects = EffectSet {
-            region_reads: Vec::new(),
-            region_writes: Vec::new(),
-            capability_reads: Vec::new(),
-            capability_writes: Vec::new(),
             allocates_heap: signature.declared_effects.allocates_heap,
-            allocates_arenas: Vec::new(),
             traps: signature.declared_effects.traps,
+            ..EffectSet::NONE
         };
         let result_candidate = self.result_borrow_candidate(signature);
         for (ordinal, (field, parameter)) in
@@ -180,7 +177,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
-            capability_origins.push(self.capability_origins_of_value(&argument, bindings)?);
+            state_origins.push(self.state_origins_of_value(&argument, bindings)?);
+            argument_places.push(
+                argument
+                    .accesses
+                    .iter()
+                    .map(|access| access.place.clone())
+                    .collect::<Vec<_>>(),
+            );
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             goal_arguments.push(self.call_goal_argument(
@@ -207,12 +211,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_call_borrow_overlap(node, &checked_borrows, &checked_slices)?;
         self.project_call_effects(
             node,
+            function,
             signature,
             &actual_regions,
             &checked_borrows,
             &checked_slices,
             &argument_holders,
-            &capability_origins,
+            &state_origins,
+            &argument_places,
             bindings,
             &mut effects,
         )?;
@@ -694,12 +700,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn project_call_effects(
         &self,
         node: NodeId,
+        caller: &FunctionSignature,
         signature: &FunctionSignature,
         actual_regions: &[DeclarationId],
         borrows: &[Option<BorrowInfo>],
         slices: &[Option<SliceInfo>],
         holders: &[Option<DeclarationId>],
-        capability_origins: &[Option<CheckedCapabilityOrigins>],
+        state_origins: &[Option<CheckedStateOrigins>],
+        argument_places: &[Vec<ResolvedPlace>],
         bindings: &HashMap<DeclarationId, LocalBinding>,
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
@@ -716,77 +724,85 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         for (access, declared) in [
-            (
-                AccessKind::Read,
-                &signature.declared_effects.capability_reads,
-            ),
-            (
-                AccessKind::Write,
-                &signature.declared_effects.capability_writes,
-            ),
+            (AccessKind::Read, &signature.declared_effects.reads),
+            (AccessKind::Write, &signature.declared_effects.writes),
         ] {
             for formal in declared {
                 let index = signature
                     .parameters
                     .iter()
-                    .position(|parameter| parameter.declaration == *formal)
+                    .position(|parameter| parameter.declaration == formal.root)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let origins = capability_origins
+                let parameter = signature
+                    .parameters
                     .get(index)
-                    .and_then(Option::as_ref)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                for origin in &origins.formals {
+                let mut actual_paths = Vec::new();
+
+                if parameter.mode != CheckedMode::Own {
+                    let borrow = borrows
+                        .get(index)
+                        .and_then(Option::as_ref)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    let mut place = borrow.place.clone();
+                    place.fields.extend_from_slice(&formal.fields);
+                    self.check_loan_access(
+                        bindings,
+                        holders.get(index).copied().flatten(),
+                        &place,
+                        access,
+                        node,
+                    )?;
+                    for path in self.effect_paths_for_place(&place, bindings)? {
+                        actual_paths.push(path);
+                    }
+                } else if matches!(parameter.ty, CheckedType::Slice { .. }) {
+                    let slice = slices
+                        .get(index)
+                        .and_then(Option::as_ref)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    for (mut place, _) in slice.source_places() {
+                        place.fields.extend_from_slice(&formal.fields);
+                        self.check_loan_access(
+                            bindings,
+                            holders.get(index).copied().flatten(),
+                            &place,
+                            access,
+                            node,
+                        )?;
+                    }
+                    for mut place in slice.effect_places() {
+                        place.fields.extend_from_slice(&formal.fields);
+                        actual_paths.extend(self.effect_paths_for_place(&place, bindings)?);
+                    }
+                }
+
+                for place in argument_places.get(index).into_iter().flatten() {
+                    let mut path = self.state_path(place, bindings)?;
+                    path.fields.extend_from_slice(&formal.fields);
+                    actual_paths.push(path);
+                }
+                if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
+                    if origins.unknown && !self.deriving_result_state_origin.get() {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    for origin in origins.clone().projected(&formal.fields).formals {
+                        actual_paths.push(origin.source);
+                    }
+                }
+
+                for path in actual_paths {
+                    if !caller
+                        .parameters
+                        .iter()
+                        .any(|parameter| parameter.declaration == path.root)
+                    {
+                        continue;
+                    }
                     match access {
-                        AccessKind::Read => effects.add_capability_read(*origin),
-                        AccessKind::Write => effects.add_capability_write(*origin),
+                        AccessKind::Read => effects.add_read(path),
+                        AccessKind::Write => effects.add_write(path),
                         _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-                    }
-                }
-            }
-        }
-        for (parameter, ((borrow, slice), holder)) in signature
-            .parameters
-            .iter()
-            .zip(borrows.iter().zip(slices).zip(holders))
-        {
-            let mode_region = match parameter.mode {
-                CheckedMode::Own => None,
-                CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
-            };
-            let slice_region = match parameter.ty {
-                CheckedType::Slice { region, .. } => Some(region),
-                _ => None,
-            };
-            for (access, declared) in [
-                (AccessKind::Read, &signature.declared_effects.region_reads),
-                (AccessKind::Write, &signature.declared_effects.region_writes),
-            ] {
-                if mode_region.is_some_and(|region| declared.contains(&region)) {
-                    let borrow = borrow
-                        .as_ref()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.check_loan_access(bindings, *holder, &borrow.place, access, node)?;
-                    if let Some(origin) = borrow.origin_region {
-                        match access {
-                            AccessKind::Read => effects.add_region_read(origin),
-                            AccessKind::Write => effects.add_region_write(origin),
-                            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-                        }
-                    }
-                }
-                if slice_region.is_some_and(|region| declared.contains(&region)) {
-                    let slice = slice
-                        .as_ref()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    for (place, _) in slice.source_places() {
-                        self.check_loan_access(bindings, *holder, &place, access, node)?;
-                    }
-                    for origin in slice.effect_regions() {
-                        match access {
-                            AccessKind::Read => effects.add_region_read(origin),
-                            AccessKind::Write => effects.add_region_write(origin),
-                            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-                        }
                     }
                 }
             }

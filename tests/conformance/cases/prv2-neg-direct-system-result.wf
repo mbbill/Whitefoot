@@ -2,7 +2,7 @@ fn clamp_three(value: own u64) -> return_value: own u64 pure {
   return imin(value, 3_u64);
 }
 
-fn claimed_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 traps {
+fn claimed_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes), traps {
   let room = len(bytes);
   let inside = ilt(index, room);
   claim index_in_bytes: inside because "premises: every reachable caller passes index returned by clamp_three, whose body computes imin(args_count, 3_u64), and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(index, room) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound across the caller boundary\nconsumers: the following bytes[index] subscript requires this exact bound";

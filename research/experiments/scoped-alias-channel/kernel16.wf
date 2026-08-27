@@ -17,7 +17,7 @@ struct Wide {
   c15: buffer<u64>;
 }
 
-fn kernel ['r] (s: &uniq 'r Wide) -> own unit reads('r), writes('r), traps {
+fn kernel ['r] (s: &uniq 'r Wide) -> own unit reads(s.c0, s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.c9, s.c10, s.c11, s.c12, s.c13, s.c14, s.c15), writes(s.c0, s.c1, s.c2, s.c3), traps {
   let l0: own u64 = len<u64>(deref(s).c0);
   let l1: own u64 = len<u64>(deref(s).c1);
   let l2: own u64 = len<u64>(deref(s).c2);

@@ -1,4 +1,4 @@
-fn digit_total['r](digits: &'r buffer<u8>, total_seed: own u64) -> own u64 reads('r), traps {
+fn digit_total['r](digits: &'r buffer<u8>, total_seed: own u64) -> own u64 reads(digits), traps {
   let size = len(deref(digits));
   let offset = 0_u64;
   let total = total_seed;

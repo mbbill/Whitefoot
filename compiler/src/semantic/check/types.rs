@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
@@ -9,11 +9,10 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedCapabilityOrigins, CheckedConst, CheckedConstant, CheckedConstantId,
-    CheckedExpression, CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind,
-    CheckedParameter, CheckedResultAuthorityOrigin, CheckedSetTarget, CheckedStatement,
-    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, NominalId,
-    evaluate_const_operation,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFlatElement,
+    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
+    CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
+    ConstOperation, FloatType, IntegerType, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -22,13 +21,13 @@ use super::{
 };
 
 #[derive(Clone, Debug)]
-enum CapabilityOriginResolution {
+enum StateOriginResolution {
     Absent,
-    Finite(CheckedCapabilityOrigins),
+    Finite(CheckedStateOrigins),
     Unknown(crate::NodePath),
 }
 
-impl CapabilityOriginResolution {
+impl StateOriginResolution {
     fn union(&mut self, other: Self) {
         match (&mut *self, other) {
             (Self::Unknown(_), _) => {}
@@ -37,6 +36,13 @@ impl CapabilityOriginResolution {
             (Self::Finite(left), Self::Finite(right)) => left.union(&right),
             (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
         }
+    }
+
+    fn projected(mut self, fields: &[u32]) -> Self {
+        if let Self::Finite(origins) = self {
+            self = Self::Finite(origins.projected(fields));
+        }
+        self
     }
 }
 
@@ -472,19 +478,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut declared = EffectSet::NONE;
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
-                for region in self.effect_regions(effect)? {
-                    declared.add_region_read(region);
-                }
-                for capability in self.effect_capabilities(effect, parameters)? {
-                    declared.add_capability_read(capability);
+                for path in self.effect_paths(effect, parameters)? {
+                    declared.add_read(path);
                 }
                 0
             } else if self.has_fixed(effect, FixedTerminal::Writes)? {
-                for region in self.effect_regions(effect)? {
-                    declared.add_region_write(region);
-                }
-                for capability in self.effect_capabilities(effect, parameters)? {
-                    declared.add_capability_write(capability);
+                for path in self.effect_paths(effect, parameters)? {
+                    if parameters
+                        .iter()
+                        .find(|parameter| parameter.declaration == path.root)
+                        .is_some_and(|parameter| matches!(parameter.mode, CheckedMode::Shared(_)))
+                    {
+                        return self.issue_node(
+                            SemanticRule::Eff1,
+                            effect,
+                            SemanticIssueKind::InvalidEffectRow,
+                        );
+                    }
+                    declared.add_write(path);
                 }
                 1
             } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
@@ -493,7 +504,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declared.allocates_heap = true;
                     }
                 }
-                for region in self.effect_regions(effect)? {
+                for region in self.effect_allocation_regions(effect)? {
                     declared.add_arena_allocation(region);
                 }
                 2
@@ -515,14 +526,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(declared)
     }
 
-    fn effect_regions(&self, node: NodeId) -> Result<Vec<crate::DeclarationId>, CheckStop> {
+    fn effect_allocation_regions(
+        &self,
+        node: NodeId,
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
         let path = self.tree.path(node)?;
         let mut uses = self
             .resolved
             .lexical_uses()
             .iter()
             .filter(|usage| {
-                usage.role() == LexicalUseRole::EffectRegion && usage.origin().node() == path
+                usage.role() == LexicalUseRole::EffectAllocationRegion
+                    && usage.origin().node() == path
             })
             .collect::<Vec<_>>();
         uses.sort_by_key(|usage| usage.origin().role_ordinal());
@@ -537,23 +552,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect()
     }
 
-    fn effect_capabilities(
+    fn effect_paths(
         &self,
         node: NodeId,
         parameters: &[ParameterSignature],
-    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
-        let path = self.tree.path(node)?;
-        let mut uses = self
-            .resolved
-            .lexical_uses()
-            .iter()
-            .filter(|usage| {
-                usage.role() == LexicalUseRole::EffectCapability && usage.origin().node() == path
-            })
-            .collect::<Vec<_>>();
-        uses.sort_by_key(|usage| usage.origin().role_ordinal());
-        let mut capabilities = Vec::with_capacity(uses.len());
-        for usage in uses {
+    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+        let mut paths = Vec::new();
+        for path_node in self.tree.children_with(node, Production::EffectPath)? {
+            let path = self.tree.path(path_node)?;
+            let usage = self
+                .resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage| {
+                    usage.role() == LexicalUseRole::EffectRoot && usage.origin().node() == path
+                })
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::Value,
@@ -571,87 +585,122 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::InvalidEffectRow,
                 );
             };
-            if !self.type_carries_one_capability(parameter.ty)? {
-                return self.issue_node(
-                    SemanticRule::Eff1,
-                    node,
-                    SemanticIssueKind::InvalidEffectRow,
+            let mut ty = parameter.ty;
+            let mut fields = Vec::new();
+            let mut field_uses = self
+                .resolved
+                .deferred_uses()
+                .iter()
+                .filter(|field| {
+                    field.role() == crate::DeferredUseRole::EffectField
+                        && field.origin().node() == path
+                })
+                .collect::<Vec<_>>();
+            field_uses.sort_by_key(|field| field.origin().role_ordinal());
+            for field_use in field_uses {
+                let CheckedType::Nominal(nominal) = ty else {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        path_node,
+                        SemanticIssueKind::InvalidEffectRow,
+                    );
+                };
+                let CheckedNominalKind::Struct {
+                    fields: declared_fields,
+                } = &self.nominal(nominal)?.kind
+                else {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        path_node,
+                        SemanticIssueKind::InvalidEffectRow,
+                    );
+                };
+                let Some((ordinal, field)) = declared_fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, field)| field.name == field_use.spelling())
+                else {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        path_node,
+                        SemanticIssueKind::InvalidEffectRow,
+                    );
+                };
+                fields.push(
+                    u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                 );
+                ty = field.ty;
             }
-            capabilities.push(declaration);
+            paths.push(CheckedStatePath {
+                root: declaration,
+                fields,
+            });
         }
-        Ok(capabilities)
+        Ok(paths)
     }
 
-    /// EFF-1 admits a direct formal only when its complete type carries one
-    /// unambiguous system authority root. The count is capped at two because
-    /// only zero, exactly one, and ambiguous-many affect this judgment.
-    pub(super) fn type_carries_one_capability(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(self.type_capability_root_count(ty)? == 1)
-    }
-
-    pub(super) fn type_capability_root_count(&self, ty: CheckedType) -> Result<u8, CheckStop> {
-        Ok(self.type_capability_cardinality(ty)?.1)
-    }
-
-    pub(super) fn type_capability_cardinality(
-        &self,
-        ty: CheckedType,
-    ) -> Result<(u8, u8), CheckStop> {
-        let mut visiting = HashSet::new();
-        self.capability_cardinality(ty, &mut visiting)
+    pub(super) fn type_carries_identity(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        Ok(!self.type_state_leaf_paths(ty)?.is_empty())
     }
 
     /// Follows a checked value through moves, borrows, and closed-world call
-    /// summaries to every direct formal which may supply its one runtime root.
-    pub(super) fn capability_origins_of_value(
+    /// summaries to every direct formal path which may supply its state leaves.
+    pub(super) fn state_origins_of_value(
         &self,
         value: &TypedExpression,
         bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<CheckedCapabilityOrigins>, CheckStop> {
-        let (_, maximum) = self.type_capability_cardinality(value.expression.ty())?;
-        if maximum != 1 {
+    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
+        if !self.type_carries_identity(value.expression.ty())? {
             return Ok(None);
         }
-        let root = value
-            .borrow
-            .as_ref()
-            .map(|borrow| borrow.place.root)
-            .or(value.holder)
-            .or_else(|| value.accesses.first().map(|access| access.place.root));
-        let rooted = root.and_then(|root| {
+        let rooted = if let Some(borrow) = value.borrow.as_ref() {
             bindings
-                .get(&root)
-                .and_then(|binding| binding.capability_origins.clone())
-        });
-        let origins = rooted.map_or_else(
-            || self.expression_capability_origins(&value.expression),
-            CapabilityOriginResolution::Finite,
-        );
-        self.finish_capability_origins(
+                .get(&borrow.place.root)
+                .and_then(|binding| binding.state_origins.clone())
+                .map(|origins| origins.projected(&borrow.place.fields))
+        } else if let Some(holder) = value.holder {
+            bindings
+                .get(&holder)
+                .and_then(|binding| binding.state_origins.clone())
+        } else if value.accesses.len() == 1 {
+            let access = &value.accesses[0];
+            bindings
+                .get(&access.place.root)
+                .and_then(|binding| binding.state_origins.clone())
+                .map(|origins| origins.projected(&access.place.fields))
+        } else {
+            None
+        };
+        let origins = match self.expression_state_origins(&value.expression) {
+            StateOriginResolution::Absent => {
+                rooted.map_or(StateOriginResolution::Absent, StateOriginResolution::Finite)
+            }
+            explicit => explicit,
+        };
+        self.finish_state_origins(
             origins,
             value.expression.ty(),
             value.expression.carrier().cloned(),
         )
     }
 
-    pub(super) fn give_capability_origins(
+    pub(super) fn give_state_origins(
         &self,
         arms: &[CheckedMatchArm],
         result_type: CheckedType,
-    ) -> Result<Option<CheckedCapabilityOrigins>, CheckStop> {
-        let mut origins = CapabilityOriginResolution::Absent;
+    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
+        let mut origins = StateOriginResolution::Absent;
         let mut fallback = None;
         for arm in arms {
-            self.collect_give_capability_origins(&arm.body, &mut origins, &mut fallback);
+            self.collect_give_state_origins(&arm.body, &mut origins, &mut fallback);
         }
-        self.finish_capability_origins(origins, result_type, fallback)
+        self.finish_state_origins(origins, result_type, fallback)
     }
 
-    fn collect_give_capability_origins(
+    fn collect_give_state_origins(
         &self,
         statements: &[CheckedStatement],
-        origins: &mut CapabilityOriginResolution,
+        origins: &mut StateOriginResolution,
         fallback: &mut Option<crate::NodePath>,
     ) {
         for statement in statements {
@@ -660,11 +709,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if fallback.is_none() {
                         *fallback = value.carrier().cloned();
                     }
-                    origins.union(self.expression_capability_origins(value));
+                    origins.union(self.expression_state_origins(value));
                 }
                 CheckedStatement::Match { arms, .. } => {
                     for arm in arms {
-                        self.collect_give_capability_origins(&arm.body, origins, fallback);
+                        self.collect_give_state_origins(&arm.body, origins, fallback);
                     }
                 }
                 // A nested value initializer owns its own give set.
@@ -672,7 +721,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Loop { body, .. }
                 | CheckedStatement::CountedRange { body, .. }
                 | CheckedStatement::Region { body, .. } => {
-                    self.collect_give_capability_origins(body, origins, fallback);
+                    self.collect_give_state_origins(body, origins, fallback);
                 }
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
@@ -687,93 +736,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    fn finish_capability_origins(
+    fn finish_state_origins(
         &self,
-        origins: CapabilityOriginResolution,
+        origins: StateOriginResolution,
         ty: CheckedType,
-        fallback: Option<crate::NodePath>,
-    ) -> Result<Option<CheckedCapabilityOrigins>, CheckStop> {
-        let (minimum, maximum) = self.type_capability_cardinality(ty)?;
-        if maximum == 0 {
+        _fallback: Option<crate::NodePath>,
+    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
+        if !self.type_carries_identity(ty)? {
             return Ok(None);
         }
-        if maximum != 1 {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        }
         match origins {
-            CapabilityOriginResolution::Absent if minimum == 0 => {
-                Ok(Some(CheckedCapabilityOrigins {
-                    may_absent: true,
-                    may_fresh: false,
-                    formals: Vec::new(),
-                }))
-            }
-            CapabilityOriginResolution::Absent => {
-                let path = fallback.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let node = self
-                    .tree
-                    .node_with_path(&path)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.unsupported(UnsupportedSemanticFeature::CapabilityResultOrigin, node)
-            }
-            CapabilityOriginResolution::Finite(mut origins) => {
-                origins.may_absent &= minimum == 0;
-                if minimum == 0 {
-                    origins.may_absent = true;
-                }
-                Ok(Some(origins))
-            }
-            CapabilityOriginResolution::Unknown(path) if self.deriving_result_authority.get() => {
-                let _ = path;
-                Ok(Some(CheckedCapabilityOrigins::fresh()))
-            }
-            CapabilityOriginResolution::Unknown(path) => {
-                let node = self
-                    .tree
-                    .node_with_path(&path)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.unsupported(UnsupportedSemanticFeature::CapabilityResultOrigin, node)
-            }
+            StateOriginResolution::Absent => Ok(Some(CheckedStateOrigins::fresh())),
+            StateOriginResolution::Finite(origins) => Ok(Some(origins)),
+            StateOriginResolution::Unknown(_) => Ok(Some(CheckedStateOrigins::unknown())),
         }
     }
 
-    fn expression_capability_origins(
-        &self,
-        expression: &CheckedExpression,
-    ) -> CapabilityOriginResolution {
+    fn expression_state_origins(&self, expression: &CheckedExpression) -> StateOriginResolution {
         match expression {
-            CheckedExpression::Binding {
-                capability_origins, ..
-            }
-            | CheckedExpression::Project {
-                capability_origins, ..
-            }
-            | CheckedExpression::BorrowSystemResource {
-                capability_origins, ..
-            } => capability_origins.clone().map_or(
-                CapabilityOriginResolution::Absent,
-                CapabilityOriginResolution::Finite,
-            ),
+            CheckedExpression::Binding { state_origins, .. }
+            | CheckedExpression::Project { state_origins, .. }
+            | CheckedExpression::BorrowSystemResource { state_origins, .. } => state_origins
+                .clone()
+                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
             CheckedExpression::SystemCall {
-                operation,
-                arguments,
-                call,
-                ..
+                operation, call, ..
             } => match crate::SYSTEM_OPERATIONS
                 .get(usize::from(*operation))
-                .map(|operation| operation.result_authority)
+                .map(|operation| operation.result_state_origin)
             {
-                Some(crate::SystemResultAuthority::None) => CapabilityOriginResolution::Absent,
-                Some(crate::SystemResultAuthority::Fresh) => {
-                    CapabilityOriginResolution::Finite(CheckedCapabilityOrigins::fresh())
+                Some(crate::SystemResultStateOrigin::None) => StateOriginResolution::Absent,
+                Some(crate::SystemResultStateOrigin::Fresh) => {
+                    StateOriginResolution::Finite(CheckedStateOrigins::fresh())
                 }
-                Some(crate::SystemResultAuthority::Parameter(ordinal)) => {
-                    arguments.get(usize::from(ordinal)).map_or_else(
-                        || CapabilityOriginResolution::Unknown(call.clone()),
-                        |argument| self.expression_capability_origins(argument),
-                    )
-                }
-                None => CapabilityOriginResolution::Unknown(call.clone()),
+                None => StateOriginResolution::Unknown(call.clone()),
             },
             CheckedExpression::UserCall {
                 function,
@@ -781,398 +777,161 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 call,
                 ..
             } => match self
-                .result_authority_origins
+                .result_state_origins
                 .borrow()
                 .get(function.0 as usize)
                 .cloned()
             {
-                Some(CheckedResultAuthorityOrigin::NoCapability) => {
-                    CapabilityOriginResolution::Absent
-                }
-                Some(CheckedResultAuthorityOrigin::Finite {
-                    may_absent,
-                    may_fresh,
-                    formals,
-                }) => {
-                    let finite = CheckedCapabilityOrigins {
-                        may_absent,
-                        may_fresh,
+                Some(CheckedResultStateOrigin::NoState) => StateOriginResolution::Absent,
+                Some(CheckedResultStateOrigin::Finite { formals }) => {
+                    let finite = CheckedStateOrigins {
+                        unknown: false,
                         formals: Vec::new(),
                     };
-                    let mut resolved = CapabilityOriginResolution::Finite(finite);
+                    let mut resolved = StateOriginResolution::Finite(finite);
                     for formal in formals {
-                        let Some(argument) = arguments.get(formal as usize) else {
-                            return CapabilityOriginResolution::Unknown(call.clone());
+                        let Some(argument) = arguments.get(formal.parameter as usize) else {
+                            return StateOriginResolution::Unknown(call.clone());
                         };
-                        resolved.union(self.expression_capability_origins(argument));
+                        let mut mapped = self
+                            .expression_state_origins(argument)
+                            .projected(&formal.parameter_fields);
+                        if let StateOriginResolution::Finite(origins) = &mut mapped {
+                            for origin in &mut origins.formals {
+                                let mut value_fields = formal.result_fields.clone();
+                                value_fields.extend_from_slice(&origin.value_fields);
+                                origin.value_fields = value_fields;
+                                if formal.result_variant.is_some() {
+                                    origin.variant = formal.result_variant;
+                                }
+                            }
+                        }
+                        resolved.union(mapped);
                     }
                     resolved
                 }
-                Some(CheckedResultAuthorityOrigin::Unknown) | None => {
-                    CapabilityOriginResolution::Unknown(call.clone())
+                Some(CheckedResultStateOrigin::Unknown) | None => {
+                    StateOriginResolution::Unknown(call.clone())
                 }
             },
+            CheckedExpression::ConstructStruct { fields, .. } => {
+                let mut origins = StateOriginResolution::Absent;
+                for (ordinal, field) in fields.iter().enumerate() {
+                    let mut field_origins = self.expression_state_origins(field);
+                    if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return expression.carrier().cloned().map_or(
+                                StateOriginResolution::Absent,
+                                StateOriginResolution::Unknown,
+                            );
+                        };
+                        for origin in &mut field_origins.formals {
+                            origin.value_fields.insert(0, ordinal);
+                        }
+                    }
+                    origins.union(field_origins);
+                }
+                origins
+            }
+            CheckedExpression::ConstructEnum {
+                variant, fields, ..
+            } => {
+                let mut origins = StateOriginResolution::Absent;
+                for (field, value) in fields.iter().enumerate() {
+                    let Ok(field) = u32::try_from(field) else {
+                        return expression.carrier().cloned().map_or(
+                            StateOriginResolution::Absent,
+                            StateOriginResolution::Unknown,
+                        );
+                    };
+                    let mut field_origins = self.expression_state_origins(value);
+                    if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
+                        for origin in &mut field_origins.formals {
+                            origin.value_fields.insert(0, field);
+                            origin.variant = Some(*variant);
+                        }
+                    }
+                    origins.union(field_origins);
+                }
+                origins
+            }
+            CheckedExpression::BoxNew { value, .. } | CheckedExpression::ArenaNew { value, .. } => {
+                let mut origins = self.expression_state_origins(value);
+                if let StateOriginResolution::Finite(origins) = &mut origins {
+                    for origin in &mut origins.formals {
+                        origin.value_fields.clear();
+                        origin.variant = None;
+                    }
+                }
+                origins
+            }
             _ => {
-                let mut origins = CapabilityOriginResolution::Absent;
+                let mut origins = StateOriginResolution::Absent;
                 for child in super::super::model::expression_children(expression) {
-                    origins.union(self.expression_capability_origins(child));
+                    origins.union(self.expression_state_origins(child));
                 }
                 origins
             }
         }
     }
 
-    fn capability_cardinality(
+    pub(super) fn type_state_leaf_paths(
         &self,
         ty: CheckedType,
-        visiting: &mut HashSet<NominalId>,
-    ) -> Result<(u8, u8), CheckStop> {
-        let CheckedType::Nominal(id) = ty else {
-            return Ok(match ty {
-                CheckedType::Buffer { element } => {
-                    // A buffer can hold arbitrarily many elements. Even when
-                    // its element type carries one root, the complete buffer
-                    // type does not identify one direct capability.
-                    if self.capability_cardinality(element.ty(), visiting)?.1 == 0 {
-                        (0, 0)
-                    } else {
-                        (0, 2)
-                    }
-                }
-                CheckedType::Unit
-                | CheckedType::Bool
-                | CheckedType::Integer(_)
-                | CheckedType::Float(_)
-                | CheckedType::Generic(_)
-                | CheckedType::GenericInt(_)
-                | CheckedType::GenericFloat(_)
-                | CheckedType::Array { .. }
-                | CheckedType::Slice { .. } => (0, 0),
-                CheckedType::Nominal(_) => unreachable!(),
-            });
-        };
-        if !visiting.insert(id) {
-            let mut reachable = HashSet::new();
-            return Ok(
-                if self.type_reaches_system_capability(ty, &mut reachable)? {
-                    (0, 2)
-                } else {
-                    (0, 0)
-                },
-            );
-        }
-        let cardinality = match &self.nominal(id)?.kind {
-            CheckedNominalKind::SystemResource { nominal } => {
-                if crate::system_resource_contract(*nominal)
-                    .is_some_and(|contract| contract.resource.carries_authority())
-                {
-                    (1, 1)
-                } else {
-                    (0, 0)
-                }
-            }
-            CheckedNominalKind::Struct { fields } => {
-                self.capability_fields_cardinality(fields.iter().map(|field| field.ty), visiting)?
-            }
-            CheckedNominalKind::Enum { variants } => {
-                let mut minimum = 2_u8;
-                let mut maximum = 0_u8;
-                for variant in variants {
-                    let (variant_minimum, variant_maximum) = self.capability_fields_cardinality(
-                        variant.fields.iter().map(|field| field.ty),
-                        visiting,
-                    )?;
-                    minimum = minimum.min(variant_minimum);
-                    maximum = maximum.max(variant_maximum);
-                }
-                if variants.is_empty() {
-                    (0, 0)
-                } else {
-                    (minimum, maximum)
-                }
-            }
-            CheckedNominalKind::Box { referent } => {
-                self.capability_cardinality(*referent, visiting)?
-            }
-            CheckedNominalKind::Arena { content, .. } => {
-                if self.capability_cardinality(*content, visiting)?.1 == 0 {
-                    (0, 0)
-                } else {
-                    (0, 2)
-                }
-            }
-            CheckedNominalKind::ArenaStorage => (0, 0),
-        };
-        visiting.remove(&id);
-        Ok(cardinality)
+    ) -> Result<Vec<Vec<u32>>, CheckStop> {
+        self.identity_leaf_paths(ty, false)
     }
 
-    /// Graph reachability used only to classify a recursive cardinality
-    /// cycle. A pure recursive SCC contributes no capability merely because
-    /// it is recursive; a cycle which can reach a real system authority stays
-    /// conservatively many until per-leaf recursive origins exist.
-    fn type_reaches_system_capability(
+    fn identity_leaf_paths(
         &self,
         ty: CheckedType,
-        visited: &mut HashSet<NominalId>,
-    ) -> Result<bool, CheckStop> {
-        if let CheckedType::Buffer { element } = ty {
-            return self.type_reaches_system_capability(element.ty(), visited);
+        embedded: bool,
+    ) -> Result<Vec<Vec<u32>>, CheckStop> {
+        if self.is_copy_type(ty)? {
+            return Ok(embedded.then(Vec::new).into_iter().collect());
         }
-        let CheckedType::Nominal(id) = ty else {
-            return Ok(false);
+        let paths = match ty {
+            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                CheckedNominalKind::Struct { fields } => {
+                    if fields.is_empty() {
+                        return Ok(vec![Vec::new()]);
+                    }
+                    let mut paths = Vec::new();
+                    for (ordinal, field) in fields.iter().enumerate() {
+                        let ordinal = u32::try_from(ordinal)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                        for mut path in self.identity_leaf_paths(field.ty, true)? {
+                            path.insert(0, ordinal);
+                            paths.push(path);
+                        }
+                    }
+                    paths
+                }
+                CheckedNominalKind::Enum { .. }
+                | CheckedNominalKind::Box { .. }
+                | CheckedNominalKind::Arena { .. }
+                | CheckedNominalKind::ArenaStorage
+                | CheckedNominalKind::SystemResource { .. } => vec![Vec::new()],
+            },
+            // A slice's identity is its already-tracked backing place, never
+            // the descriptor binding. Region-bearing storage fields are
+            // rejected before this point, so the embedded case is defensive.
+            CheckedType::Slice { .. } if !embedded => Vec::new(),
+            CheckedType::Array { .. }
+            | CheckedType::Slice { .. }
+            | CheckedType::Buffer { .. }
+            | CheckedType::Generic(_) => vec![Vec::new()],
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => {
+                // The copy case returned above.
+                Vec::new()
+            }
         };
-        if !visited.insert(id) {
-            return Ok(false);
-        }
-        match &self.nominal(id)?.kind {
-            CheckedNominalKind::SystemResource { nominal } => {
-                Ok(crate::system_resource_contract(*nominal)
-                    .is_some_and(|contract| contract.resource.carries_authority()))
-            }
-            CheckedNominalKind::Struct { fields } => {
-                for field in fields {
-                    if self.type_reaches_system_capability(field.ty, visited)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            CheckedNominalKind::Enum { variants } => {
-                for field in variants.iter().flat_map(|variant| &variant.fields) {
-                    if self.type_reaches_system_capability(field.ty, visited)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            CheckedNominalKind::Box { referent } => {
-                self.type_reaches_system_capability(*referent, visited)
-            }
-            CheckedNominalKind::Arena { content, .. } => {
-                self.type_reaches_system_capability(*content, visited)
-            }
-            CheckedNominalKind::ArenaStorage => Ok(false),
-        }
-    }
-
-    fn capability_fields_cardinality(
-        &self,
-        fields: impl Iterator<Item = CheckedType>,
-        visiting: &mut HashSet<NominalId>,
-    ) -> Result<(u8, u8), CheckStop> {
-        let mut minimum = 0_u8;
-        let mut maximum = 0_u8;
-        for field in fields {
-            let (field_minimum, field_maximum) = self.capability_cardinality(field, visiting)?;
-            minimum = minimum.saturating_add(field_minimum).min(2);
-            maximum = maximum.saturating_add(field_maximum).min(2);
-            if minimum == 2 && maximum == 2 {
-                return Ok((2, 2));
-            }
-        }
-        Ok((minimum, maximum))
-    }
-
-    /// First source carrier whose runtime value may contain several logical
-    /// capability roots. This is a final capability checkpoint, not a source
-    /// judgment; callers run it only after all ordinary source checks.
-    pub(super) fn first_multi_capability_expression(
-        &self,
-        statements: &[CheckedStatement],
-    ) -> Result<Option<crate::NodePath>, CheckStop> {
-        for statement in statements {
-            let mut expressions = Vec::new();
-            match statement {
-                CheckedStatement::Let { value, .. }
-                | CheckedStatement::Evaluate(value)
-                | CheckedStatement::DropExpression { value, .. }
-                | CheckedStatement::Claim {
-                    condition: value, ..
-                }
-                | CheckedStatement::Return { value, .. }
-                | CheckedStatement::Give { value, .. } => expressions.push(value),
-                CheckedStatement::PropagateLet { scrutinee, .. }
-                | CheckedStatement::Match { scrutinee, .. }
-                | CheckedStatement::ValueMatchLet { scrutinee, .. } => {
-                    expressions.push(scrutinee);
-                }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
-                    match target {
-                        CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            expressions.push(&target.offset);
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            expressions.push(&target.offset);
-                        }
-                    }
-                    expressions.push(value);
-                }
-                CheckedStatement::CountedRange { lower, upper, .. } => {
-                    expressions.push(lower);
-                    expressions.push(upper);
-                }
-                CheckedStatement::Loop { .. }
-                | CheckedStatement::Break { .. }
-                | CheckedStatement::Region { .. } => {}
-            }
-            for expression in expressions {
-                if let Some(path) = self.first_multi_capability_child(expression)? {
-                    return Ok(Some(path));
-                }
-            }
-            match statement {
-                CheckedStatement::Match { arms, .. }
-                | CheckedStatement::ValueMatchLet { arms, .. } => {
-                    for arm in arms {
-                        if let Some(path) = self.first_multi_capability_expression(&arm.body)? {
-                            return Ok(Some(path));
-                        }
-                    }
-                }
-                CheckedStatement::Loop { body, .. }
-                | CheckedStatement::CountedRange { body, .. }
-                | CheckedStatement::Region { body, .. } => {
-                    if let Some(path) = self.first_multi_capability_expression(body)? {
-                        return Ok(Some(path));
-                    }
-                }
-                CheckedStatement::Let { .. }
-                | CheckedStatement::PropagateLet { .. }
-                | CheckedStatement::Set { .. }
-                | CheckedStatement::Replace { .. }
-                | CheckedStatement::Evaluate(_)
-                | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Claim { .. }
-                | CheckedStatement::Return { .. }
-                | CheckedStatement::Give { .. }
-                | CheckedStatement::Break { .. } => {}
-            }
-        }
-        Ok(None)
-    }
-
-    fn first_multi_capability_child(
-        &self,
-        expression: &CheckedExpression,
-    ) -> Result<Option<crate::NodePath>, CheckStop> {
-        if self.type_capability_cardinality(expression.ty())?.1 > 1 {
-            return expression
-                .carrier()
-                .cloned()
-                .map(Some)
-                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
-        }
-        for child in super::super::model::expression_children(expression) {
-            if let Some(path) = self.first_multi_capability_child(child)? {
-                return Ok(Some(path));
-            }
-        }
-        Ok(None)
-    }
-
-    /// Exact binding identities whose complete runtime value may carry more
-    /// than one capability root. Release attribution uses this only to keep
-    /// preliminary scratch failure-atomic until the final unsupported stop;
-    /// it never licenses a checked function for publication.
-    pub(super) fn multi_capability_bindings(
-        &self,
-        parameters: &[CheckedParameter],
-        statements: &[CheckedStatement],
-    ) -> Result<HashSet<BindingId>, CheckStop> {
-        let mut bindings = HashSet::new();
-        for parameter in parameters {
-            self.record_multi_capability_binding(&mut bindings, parameter.binding, parameter.ty)?;
-        }
-        self.collect_multi_capability_bindings(statements, &mut bindings)?;
-        Ok(bindings)
-    }
-
-    fn record_multi_capability_binding(
-        &self,
-        bindings: &mut HashSet<BindingId>,
-        binding: BindingId,
-        ty: CheckedType,
-    ) -> Result<(), CheckStop> {
-        if self.type_capability_cardinality(ty)?.1 > 1 {
-            bindings.insert(binding);
-        }
-        Ok(())
-    }
-
-    fn collect_multi_capability_bindings(
-        &self,
-        statements: &[CheckedStatement],
-        bindings: &mut HashSet<BindingId>,
-    ) -> Result<(), CheckStop> {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Let { binding, value, .. } => {
-                    self.record_multi_capability_binding(bindings, *binding, value.ty())?;
-                }
-                CheckedStatement::PropagateLet {
-                    binding, ok_type, ..
-                } => {
-                    self.record_multi_capability_binding(bindings, *binding, *ok_type)?;
-                }
-                CheckedStatement::Replace {
-                    binding, target, ..
-                } => {
-                    self.record_multi_capability_binding(bindings, *binding, target.ty())?;
-                }
-                CheckedStatement::ValueMatchLet {
-                    binding,
-                    result_type,
-                    ..
-                } => {
-                    self.record_multi_capability_binding(bindings, *binding, *result_type)?;
-                }
-                CheckedStatement::Set { .. }
-                | CheckedStatement::Evaluate(_)
-                | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Claim { .. }
-                | CheckedStatement::Return { .. }
-                | CheckedStatement::Give { .. }
-                | CheckedStatement::Break { .. }
-                | CheckedStatement::CountedRange { .. }
-                | CheckedStatement::Loop { .. }
-                | CheckedStatement::Match { .. }
-                | CheckedStatement::Region { .. } => {}
-            }
-            match statement {
-                CheckedStatement::Match { arms, .. }
-                | CheckedStatement::ValueMatchLet { arms, .. } => {
-                    for arm in arms {
-                        for binder in &arm.binders {
-                            self.record_multi_capability_binding(
-                                bindings,
-                                binder.binding,
-                                binder.ty,
-                            )?;
-                        }
-                        self.collect_multi_capability_bindings(&arm.body, bindings)?;
-                    }
-                }
-                CheckedStatement::Loop { body, .. }
-                | CheckedStatement::CountedRange { body, .. }
-                | CheckedStatement::Region { body, .. } => {
-                    self.collect_multi_capability_bindings(body, bindings)?;
-                }
-                CheckedStatement::Let { .. }
-                | CheckedStatement::PropagateLet { .. }
-                | CheckedStatement::Set { .. }
-                | CheckedStatement::Replace { .. }
-                | CheckedStatement::Evaluate(_)
-                | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Claim { .. }
-                | CheckedStatement::Return { .. }
-                | CheckedStatement::Give { .. }
-                | CheckedStatement::Break { .. } => {}
-            }
-        }
-        Ok(())
+        Ok(paths)
     }
 
     pub(super) fn parse_const_expression_with(

@@ -1049,14 +1049,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
-    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r) contract {
+    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
   requires igt(deref(value), 0_u64);
 } {
   let copied = deref(value);
   return unit;
 }
 
-fn proxy['r](value: &'r u64) -> result: own unit reads('r) {
+fn proxy['r](value: &'r u64) -> result: own unit reads(value) {
   region 'child {
     observe<'child>(value: &'child deref(value));
   }

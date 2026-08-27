@@ -54,7 +54,6 @@ struct CheckedBufferPlace {
     element_type: CheckedType,
     holder: Option<DeclarationId>,
     resolved: ResolvedPlace,
-    origin_region: Option<DeclarationId>,
     borrow_kind: Option<BorrowKind>,
 }
 
@@ -534,8 +533,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     AccessKind::Read,
                     atoms[0],
                 )?;
-                if let Some(region) = buffer.origin_region {
-                    effects.add_region_read(region);
+                for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
+                    effects.add_read(path);
                 }
             }
             CheckedIndexedPlace::Slice(slice) => {
@@ -547,8 +546,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         AccessKind::Read,
                         atoms[0],
                     )?;
-                    if let Some(region) = descriptor.origin_region {
-                        effects.add_region_read(region);
+                    for path in self.effect_paths_for_place(&descriptor.place, bindings)? {
+                        effects.add_read(path);
                     }
                 }
                 for (place, _) in slice.slice.source_places() {
@@ -560,8 +559,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         atoms[0],
                     )?;
                 }
-                for region in slice.slice.effect_regions() {
-                    effects.add_region_read(region);
+                for place in slice.slice.effect_places() {
+                    for path in self.effect_paths_for_place(&place, bindings)? {
+                        effects.add_read(path);
+                    }
                 }
             }
         }
@@ -724,8 +725,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 target_domain: CheckedTargetDomainObligation::ElementAddress,
             },
             CheckedIndexedPlace::Buffer(buffer) => {
-                if let Some(region) = buffer.origin_region {
-                    effects.add_region_read(region);
+                for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
+                    effects.add_read(path);
                 }
                 CheckedExpression::BufferIndex {
                     carrier: self.tree.path(use_node)?.clone(),
@@ -736,13 +737,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedIndexedPlace::Slice(slice) => {
-                if let Some(descriptor) = &slice.descriptor
-                    && let Some(region) = descriptor.origin_region
-                {
-                    effects.add_region_read(region);
+                if let Some(descriptor) = &slice.descriptor {
+                    for path in self.effect_paths_for_place(&descriptor.place, bindings)? {
+                        effects.add_read(path);
+                    }
                 }
-                for region in slice.slice.effect_regions() {
-                    effects.add_region_read(region);
+                for place in slice.slice.effect_places() {
+                    for path in self.effect_paths_for_place(&place, bindings)? {
+                        effects.add_read(path);
+                    }
                 }
                 CheckedExpression::SliceIndex {
                     carrier: self.tree.path(use_node)?.clone(),
@@ -873,12 +876,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             }
             CheckedIndexedPlace::Buffer(buffer) => {
-                if let Some(region) = buffer.origin_region {
-                    effects.add_region_write(region);
+                for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
+                    effects.add_write(path.clone());
                     if for_replace {
                         // [SET-2, EFF-2]: one read and one write of the
                         // target's ultimate storage origin.
-                        effects.add_region_read(region);
+                        effects.add_read(path);
                     }
                 }
                 (
@@ -1046,7 +1049,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         root: declaration,
                         fields: resolved_fields,
                     },
-                    origin_region: None,
                     borrow_kind: None,
                 }))
             }

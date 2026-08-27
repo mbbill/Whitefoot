@@ -10,7 +10,7 @@ enum PoolError {
   ArithmeticOverflow();
 }
 
-fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result<u64, PoolError> reads('r), writes('r) {
+fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right, pool.count), writes(pool.left, pool.right, pool.count) {
   doc "Build a complete tree bottom-up in two parallel buffers; index zero is the null sentinel.";
   let leaves = ishl.wrap(1_u64, depth);
   let start = deref(pool).count;
@@ -104,7 +104,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
   return Ok<u64, PoolError>(value: start);
 }
 
-fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own Result<u64, PoolError> reads('r) {
+fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right) {
   let left_room = len(deref(pool).left);
   let left_ok = ilt(root, left_room);
   if left_ok {

@@ -15,7 +15,8 @@ use crate::{
 
 use super::super::model::{
     BindingId, CheckedBooleanOperation, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode,
-    CheckedStatement, CheckedType, ClaimJustification, ClaimSite, ValueInitializerKind,
+    CheckedSetTarget, CheckedStatement, CheckedType, ClaimJustification, ClaimSite,
+    ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -165,10 +166,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedStatement::Evaluate(value.expression)
                 } else {
                     let release = self.release_of_type(value.expression.ty())?;
-                    let capability_origins = self.capability_origins_of_value(&value, bindings)?;
+                    let state_origins = self.state_origins_of_value(&value, bindings)?;
                     CheckedStatement::DropExpression {
                         value: value.expression,
-                        capability_origins,
+                        state_origins,
                         release,
                     }
                 };
@@ -532,9 +533,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // rejection could be reached. It now lives at the delivery site,
             // in `reject_slice_valued_delivery`, so the rule has one home and
             // no capability stop stands in front of it.
-            let capability_origins = self
-                .type_carries_one_capability(expected)?
-                .then(|| self.give_capability_origins(&matched.arms, expected))
+            let state_origins = self
+                .type_carries_identity(expected)?
+                .then(|| self.give_state_origins(&matched.arms, expected))
                 .transpose()?
                 .flatten();
             if matched.can_continue
@@ -546,7 +547,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             declaration: declaration_id,
                             mode,
                             ty: expected,
-                            capability_origins,
+                            state_origins,
                             live: true,
                             loop_depth: scope.loops.len(),
                             compiler_updated: false,
@@ -659,7 +660,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let borrow = self.borrow_for_destination(mode, &value, node)?;
-        let capability_origins = self.capability_origins_of_value(&value, bindings)?;
+        let state_origins = self.state_origins_of_value(&value, bindings)?;
         if bindings
             .insert(
                 declaration_id,
@@ -668,7 +669,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: declaration_id,
                     mode,
                     ty: expected,
-                    capability_origins,
+                    state_origins,
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
@@ -742,10 +743,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let replacement_origins = self.capability_origins_of_value(&value, bindings)?;
-        let previous_origins = bindings
+        let replacement_origins = self.state_origins_of_value(&value, bindings)?;
+        let previous_whole_origins = bindings
             .get(&target_declaration)
-            .and_then(|binding| binding.capability_origins.clone());
+            .and_then(|binding| binding.state_origins.clone());
+        let target_fields = match &target {
+            CheckedSetTarget::Place(place) => Some(place.fields.as_slice()),
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+        };
+        let previous_origins = match (previous_whole_origins.clone(), target_fields) {
+            (Some(origins), Some(fields)) => Some(origins.projected(fields)),
+            (origins, None) => origins,
+            (None, Some(_)) => None,
+        };
+        let target_carries_identity = self.type_carries_identity(target.ty())?;
         // The moved-out value's sole owner is the fresh ordinary binding;
         // the target root stays live [SET-2, OWN-1].
         if bindings
@@ -756,7 +767,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: declaration_id,
                     mode: CheckedMode::Own,
                     ty: target.ty(),
-                    capability_origins: previous_origins,
+                    state_origins: target_carries_identity
+                        .then_some(previous_origins)
+                        .flatten(),
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
@@ -770,11 +783,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        if self.type_carries_one_capability(target.ty())? {
+        if target_carries_identity {
+            let updated = match (previous_whole_origins, target_fields) {
+                (Some(origins), Some(fields)) => {
+                    Some(origins.replace_path(fields, replacement_origins))
+                }
+                (_, Some(_)) => replacement_origins,
+                (origins, None) => origins,
+            };
             bindings
                 .get_mut(&target_declaration)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .capability_origins = replacement_origins;
+                .state_origins = updated;
         }
         Ok(Self::continuing_statement(
             CheckedStatement::Replace {
@@ -817,7 +837,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: region,
                         mode: CheckedMode::Own,
                         ty: CheckedType::Nominal(storage),
-                        capability_origins: None,
+                        state_origins: None,
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
@@ -946,9 +966,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for (fields, ty, release) in self.released_paths(paths)? {
                     drops.push(CheckedDrop {
                         binding: local.binding,
+                        state_origins: local
+                            .state_origins
+                            .clone()
+                            .map(|origins| origins.projected(&fields)),
                         fields,
                         ty,
-                        capability_origins: local.capability_origins.clone(),
                         release,
                     });
                 }
@@ -1021,9 +1044,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expression: &CheckedExpression,
         effects: &EffectSet,
     ) -> Result<(), CheckStop> {
-        let effectful = !effects.region_writes.is_empty()
-            || !effects.capability_reads.is_empty()
-            || !effects.capability_writes.is_empty()
+        let effectful = !effects.writes.is_empty()
             || effects.allocates_heap
             || !effects.allocates_arenas.is_empty()
             || effects.traps;

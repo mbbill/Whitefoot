@@ -1,4 +1,4 @@
-fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;

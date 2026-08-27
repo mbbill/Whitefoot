@@ -79,12 +79,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?;
         }
         let mut effects = EffectSet::NONE;
-        if let Some(region) = place
-            .borrow
-            .as_ref()
-            .and_then(|borrow| borrow.origin_region)
-        {
-            effects.add_region_read(region);
+        for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+            effects.add_read(path);
         }
         let (mode, borrow, holder) = if copy {
             (CheckedMode::Own, None, None)
@@ -194,14 +190,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             use_node,
         )?;
         let mut effects = EffectSet::NONE;
-        if let Some(region) = borrow.origin_region {
-            effects.add_region_read(region);
+        for path in self.effect_paths_for_place(&resolved, bindings)? {
+            effects.add_read(path);
         }
         let expression = if !fields.is_empty() {
             CheckedExpression::Project {
                 carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
-                capability_origins: local.capability_origins.clone(),
+                state_origins: local
+                    .state_origins
+                    .clone()
+                    .map(|origins| origins.projected(&fields)),
                 fields: fields.clone(),
                 ty,
                 consume_root: false,
@@ -217,7 +216,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Binding {
                 carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
-                capability_origins: local.capability_origins.clone(),
+                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: Vec::new(),
                 consume_root: false,
@@ -343,7 +342,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 expression: CheckedExpression::Binding {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
-                    capability_origins: local.capability_origins.clone(),
+                    state_origins: local.state_origins.clone(),
                     ty: local.ty,
                     slice_origins: local
                         .slice

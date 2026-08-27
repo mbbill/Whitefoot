@@ -492,7 +492,7 @@ n: slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 enum Choice<T> { doc "choice"; None(); Some(value: T); }
 contract Contract<T> {
 doc "contract";
-fn member['r](x: own T) -> result: own T reads('r), writes('r), allocates(heap arena 'r), traps;
+fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(heap arena 'r), traps;
 law associative(member);
 law identity(member, 0_i32);
 }
@@ -506,7 +506,7 @@ command fn entry(command.args as arguments: own i32, command.cwd as directory: o
 return unit;
 }
 fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
--> result: own unit reads('r), writes('r), allocates(heap arena 'r), traps
+-> result: own unit reads(shared, unique), writes(unique), allocates(heap arena 'r), traps
 contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
@@ -565,7 +565,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 74);
+    assert_eq!(productions().len(), 75);
     assert_eq!(
         parsed
             .tree

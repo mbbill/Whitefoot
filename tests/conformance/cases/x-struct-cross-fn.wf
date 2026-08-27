@@ -3,7 +3,7 @@ struct Vec2 {
   y: i32;
 }
 
-fn sum_xy(v: own Vec2) -> function_result: own i32 pure {
+fn sum_xy(v: own Vec2) -> function_result: own i32 reads(v.x, v.y) {
   doc "TYPE-5: read the fields of an own struct parameter and return their sum.";
   let s = v.x +wrap v.y;
   return s;

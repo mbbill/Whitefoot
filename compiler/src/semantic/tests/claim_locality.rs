@@ -1269,7 +1269,7 @@ fn an_intermediate_reborrow_holder_cannot_launder_a_boundary_result() {
     use super::super::entailment::FunctionEntailment;
     use super::super::model::{
         BindingId, CheckedBodyDisposition, CheckedExpression, CheckedFunction, CheckedMode,
-        CheckedParameter, CheckedResultAuthorityOrigin, CheckedResultBorrow, CheckedStatement,
+        CheckedParameter, CheckedResultBorrow, CheckedResultStateOrigin, CheckedStatement,
         CheckedType, CheckedValue, FunctionId, IntegerType,
     };
     use crate::{DeclarationId, NodePath};
@@ -1300,13 +1300,12 @@ fn an_intermediate_reborrow_holder_cannot_launder_a_boundary_result() {
         }],
         result_mode: CheckedMode::Own,
         result: CheckedType::Unit,
-        result_authority_origin: CheckedResultAuthorityOrigin::NoCapability,
+        result_state_origin: CheckedResultStateOrigin::NoState,
         slice_return_ceiling: Vec::new(),
         declared_traps: true,
         declared_allocates_heap: false,
-        declared_capability_writes: Vec::new(),
+        declared_state_writes: Vec::new(),
         target_action: crate::TargetAction::INLINE,
-        authority_summary: Default::default(),
         requirements: Vec::new(),
         postconditions: Vec::new(),
         body: vec![
@@ -1722,7 +1721,7 @@ fn a_claim_function_resolves_fields_through_an_opaque_unique_struct_parameter() 
   count: u64;
 }}
 
-fn write['r](pool: &uniq 'r Pool, seed: own u64, witnesses: own array<u64, 4>) -> result: own u64 reads('r), writes('r), traps {{
+fn write['r](pool: &uniq 'r Pool, seed: own u64, witnesses: own array<u64, 4>) -> result: own u64 reads(pool.values, pool.count), writes(pool.values), traps {{
   let slot = deref(pool).count;
   let room = len(deref(pool).values);
   let bounded = seed % 4_u64;

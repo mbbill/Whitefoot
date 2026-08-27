@@ -1,4 +1,4 @@
-fn use3['r](a: own i32, b: &'r i32, c: &uniq 'r i32) -> return_value: own i32 reads('r) {
+fn use3['r](a: own i32, b: &'r i32, c: &uniq 'r i32) -> return_value: own i32 reads(b) {
   doc "GRAM-3: the three modes own / &'r / &uniq 'r written on i32 params.";
   let x = a +wrap deref(b);
   return x;

@@ -1,13 +1,14 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), traps {
-  doc "`directory_next` itself takes a shared `DirectorySource` borrow, and family-owned Ordered reservations let several calls coexist without exposing the cursor [SYS-14]. This negative case deliberately requests two unnecessary simultaneous unique borrows of that owner; ordinary OWN-5 exclusivity rejects those borrows without implying that the operation requires unique access.";
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap), traps {
+  doc "`directory_next` takes an exclusive `DirectorySource` borrow because advancing enumeration changes that source's state. This negative case deliberately requests two simultaneous unique borrows of the same owner, so ordinary OWN-5 exclusivity rejects them.";
   let entries = buffer_new(1024_u64, 0_u8);
   region 'c {
-    match open_directory_source<'c>(directory: &'c cwd) {
+    let permit = reserve_file<'c>(factory: &uniq 'c files);
+    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
         region 'b {
           let first = &uniq 'b list;
           let second = &uniq 'b list;
-          match directory_next<'b, 'b>(source: &'b deref(first), destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
+          match directory_next<'b, 'b>(source: &uniq 'b deref(first), destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
             ListBytes(next: bytes, entries: reported) => {
               return exit_status(code: 0_u8);
             }

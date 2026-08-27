@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize ['r] (out: &uniq 'r Summary, b: own buffer<u8>) -> own unit writes('r), traps {
+fn summarize ['r] (out: &uniq 'r Summary, b: own buffer<u8>) -> own unit writes(out.lines, out.words, out.bytes, out.first_space, out.last_space), traps {
   doc "Summarize one ordered byte chunk; empty chunks use bytes=0 as the identity marker.";
   let n: own u64 = len<u8>(b);
   let i: own u64 = 0_u64;
@@ -101,7 +101,7 @@ fn summarize ['r] (out: &uniq 'r Summary, b: own buffer<u8>) -> own unit writes(
   return unit;
 }
 
-fn combine ['r] (out: &uniq 'r Summary, a: &'r Summary, b: &'r Summary) -> own unit reads('r), writes('r) {
+fn combine ['r] (out: &uniq 'r Summary, a: &'r Summary, b: &'r Summary) -> own unit reads(a.lines, a.words, a.bytes, a.first_space, a.last_space, b.lines, b.words, b.bytes, b.first_space, b.last_space), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
   doc "Ordered associative merge. It is deliberately not commutative.";
   match ieq<u64>(deref(a).bytes, 0_u64) {
     True() => {

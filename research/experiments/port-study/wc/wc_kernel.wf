@@ -30,7 +30,7 @@ fn count_lines (b: own buffer<u8>) -> own u64 traps {
   return lines;
 }
 
-fn count_all ['r] (out: &uniq 'r Counts, b: own buffer<u8>) -> own unit writes('r), traps {
+fn count_all ['r] (out: &uniq 'r Counts, b: own buffer<u8>) -> own unit writes(out.lines, out.words, out.bytes), traps {
   doc "full lines/words/bytes state machine, POSIX C-locale space set; results via out-borrow (C-ABI-clean)";
   let n: own u64 = len<u8>(b);
   let i: own u64 = 0_u64;

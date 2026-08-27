@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "Drains one named file through one reusable initialized buffer and reports a witness of what it read.";
   let page = buffer_new(4096_u64, 0_u8);
   let arguments = 0_u64;
@@ -19,7 +19,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'open_call {
-              match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
+              let permit = reserve_file<'open_call>(factory: &uniq 'open_call files);
+              match open_read<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
                 Ok(value: file) => {
                   let file_offset = 0_u64;
                   loop @chunks {

@@ -18,7 +18,7 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure {
   return n;
 }
 
-fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes(output) contract {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires ile(length, source_length);
 } {
@@ -31,7 +31,7 @@ fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -44,7 +44,7 @@ fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args), writes(out), allocates(heap), traps {
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap), traps {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected boundary walk with a typed exhaustion status.";
   let selector = 111_u8;
   let choice = buffer_new(8_u64, 0_u8);
@@ -187,7 +187,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let phase_fits = ile(count, phase_room);
   if phase_fits {
     region 'phase_publish {
-      match publish_all<'phase_publish, 'phase_publish>(output: &'phase_publish out, source: &'phase_publish found, length: count) {
+      match publish_all<'phase_publish, 'phase_publish>(output: &uniq 'phase_publish out, source: &'phase_publish found, length: count) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -238,7 +238,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         if hostile_lead {
           set scratch[0_u64] = 88_u8;
           region 'lead_write {
-            match publish_all<'lead_write, 'lead_write>(output: &'lead_write out, source: &'lead_write scratch, length: 1_u64) {
+            match publish_all<'lead_write, 'lead_write>(output: &uniq 'lead_write out, source: &'lead_write scratch, length: 1_u64) {
               Ok(value: lead_published) => {
               }
               Err(error: lead_problem) => {
@@ -250,7 +250,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         if hostile_tail {
           set scratch[0_u64] = 89_u8;
           region 'tail_write {
-            match publish_all<'tail_write, 'tail_write>(output: &'tail_write out, source: &'tail_write scratch, length: 1_u64) {
+            match publish_all<'tail_write, 'tail_write>(output: &uniq 'tail_write out, source: &'tail_write scratch, length: 1_u64) {
               Ok(value: tail_published) => {
               }
               Err(error: tail_problem) => {

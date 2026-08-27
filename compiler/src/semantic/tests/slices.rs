@@ -9,7 +9,7 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn first['r](values: own slice<'r, u8>) -> result: own u8 reads('r) {
+fn first['r](values: own slice<'r, u8>) -> result: own u8 reads(values) {
   let length = len(values);
   let nonempty = ilt(0_u64, length);
   if nonempty {
@@ -83,6 +83,50 @@ command fn main() -> status: own ExitStatus pure {
             panic!("missing slice read effect must be rejected: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
+    });
+}
+
+#[test]
+fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
+    let source = br#"fn touch_after_move(value: own buffer<u8>) -> result: own u8 reads(value), writes(value) {
+  let moved = move value;
+  region 'access {
+    let holder = &uniq 'access moved;
+    let room = len(deref(holder));
+    let nonempty = ilt(0_u64, room);
+    if nonempty {
+      let byte = deref(holder)[0_u64];
+      set deref(holder)[0_u64] = byte;
+      return byte;
+    } else {
+      return 0_u8;
+    }
+  }
+}
+
+fn slice_after_move(value: own buffer<u8>) -> result: own u8 reads(value) {
+  let moved = move value;
+  region 'view {
+    let view = slice_of(&'view moved);
+    let room = len(view);
+    let nonempty = ilt(0_u64, room);
+    if nonempty {
+      return view[0_u64];
+    } else {
+      return 0_u8;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "a local lifetime must not erase the moved formal owner: {outcome:?}"
+        );
     });
 }
 
@@ -621,7 +665,7 @@ fn returned_slice_origins_drive_effects_and_alias_conflicts() {
   return move value;
 }
 
-fn first['r](value: own slice<'r, u8>) -> result: own u8 reads('r) {
+fn first['r](value: own slice<'r, u8>) -> result: own u8 reads(value) {
   let returned = pass<'r>(value: move value);
   let room = len(returned);
   let ok = ilt(0_u64, room);
@@ -728,7 +772,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
 
-    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data) {
+    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) {
   let room = len(deref(value));
   let ok = ilt(0_u64, room);
   if ok {
@@ -738,7 +782,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data) {
+fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) {
   return first<'descriptor, 'data>(value: value);
 }
 

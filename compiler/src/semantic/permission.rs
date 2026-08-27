@@ -62,13 +62,11 @@
 //!    s2 out has already completed s1. The operand half is one-sided for s1
 //!    and two-sided for s2. Getting this wrong conservatively costs only
 //!    denials; getting it wrong permissively is a race.
-//! 3. **Complete target and family summaries.** Every call and derived release
-//!    in the window identifies the target action and each family-owned
-//!    authority fragment it can use. An unknown or exclusive fragment pair
-//!    denies; an ordered pair records the edge its actualizer must preserve.
-//!    A may-suspend target does not deny permission: it selects completion
-//!    lowering when one exists, otherwise the permitted window stays
-//!    sequential.
+//! 3. **Target support does not alter legality.** A may-suspend target does not
+//!    deny permission: it selects completion lowering when one exists,
+//!    otherwise the permitted window stays sequential. State conflicts and
+//!    lifetime exclusion have already been decided by conditions 2 and the
+//!    ordinary loans above.
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
@@ -128,13 +126,12 @@
 use super::loop_permission::LoopPermission;
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
+    CheckedSliceSource, CheckedStatePath, CheckedStatement, FunctionId, expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
 use crate::{
-    DeclarationId, NodePath, SYSTEM_OPERATIONS, SystemAuthorityAttribution, SystemAuthorityFamily,
-    SystemAuthorityFragment, SystemAuthorityPairRelation, SystemParameterMode, TargetAction,
-    operation_region_effects, system_authority_pair_relation,
+    DeclarationId, NodePath, SYSTEM_OPERATIONS, SystemParameterMode, TargetAction,
+    operation_state_effects,
 };
 
 /// The declared effect row and region parameters of one concrete function, as
@@ -143,12 +140,8 @@ use crate::{
 pub(crate) struct PermissionSignature {
     /// Formal region parameters in declaration order.
     pub(crate) region_parameters: Vec<DeclarationId>,
-    pub(crate) reads: Vec<DeclarationId>,
-    pub(crate) writes: Vec<DeclarationId>,
-    /// Direct formal capability subjects declared read by the callable row.
-    pub(crate) capability_reads: Vec<DeclarationId>,
-    /// Direct formal capability subjects declared written by the callable row.
-    pub(crate) capability_writes: Vec<DeclarationId>,
+    pub(crate) reads: Vec<CheckedStatePath>,
+    pub(crate) writes: Vec<CheckedStatePath>,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
 }
 
@@ -198,7 +191,7 @@ pub(crate) enum Access {
     /// before any arena program compiles. An `arena<'r, T>` is a
     /// [`CheckedType::Nominal`], not a variant [`Footprint`] derives a region
     /// from, so an `own arena<'r, T>` parameter carries no mode region and no
-    /// slice region: a callee row that declares `writes('r)` projects nothing
+    /// slice state: a callee row that declares `writes(arena)` projects nothing
     /// onto it, and only the handle's consumed place is recorded. Every arena
     /// program stops today at `UnsupportedSemanticFeature::ArenaRuntime`, so
     /// nothing reaches this gap; the arena lane must close it rather than
@@ -215,7 +208,7 @@ pub(crate) enum Access {
 /// A loan is not a use. The callee's declared row says what the callee *does*
 /// through the borrow; the loan says what the borrow *forbids everyone else*
 /// while it is live. The two are independent: `fn peek(c: &uniq 'c u64)
-/// reads('c)` projects a read and holds an exclusive loan, and a `pure`
+/// reads(cell)` projects a read and holds an exclusive loan, and a `pure`
 /// callee projects nothing and still holds one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Loan {
@@ -223,28 +216,6 @@ pub(crate) struct Loan {
     pub(crate) place: ResolvedPlace,
     /// The actual's source node, for citation.
     pub(crate) argument: NodePath,
-}
-
-/// One family-defined authority reservation projected onto its concrete
-/// caller capability. Logical capability identity is the resolved place;
-/// environment aliasing is deliberately outside this judgment.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct AuthorityAccess {
-    pub(crate) place: ResolvedPlace,
-    pub(crate) family: SystemAuthorityFamily,
-    pub(crate) fragment: SystemAuthorityFragment,
-    /// The capability actual's source node, for diagnostics.
-    pub(crate) argument: NodePath,
-}
-
-/// One source-order reservation edge required by an `ordered` family
-/// relation. Permission records it even when the current lowering declines to
-/// actualize the pair.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct AuthorityOrderEdge {
-    pub(crate) earlier: AuthorityAccess,
-    pub(crate) later: AuthorityAccess,
-    pub(crate) attribution: SystemAuthorityAttribution,
 }
 
 /// The two borrow modes [OWN-2], as [OWN-5] grades their exclusion.
@@ -381,13 +352,6 @@ pub(crate) enum Denial {
         right: NodePath,
         sides: (PairSide, PairSide),
     },
-    /// Condition 2: two reservations of one logical authority fragment cannot
-    /// coexist under the family contract available to this lowering.
-    Authority {
-        left: AuthorityAccess,
-        right: AuthorityAccess,
-        sides: (PairSide, PairSide),
-    },
     /// Condition 2, fail-closed: the row projects an access through an actual
     /// whose caller place this analysis cannot resolve, or an operand reads
     /// storage it cannot resolve.
@@ -415,7 +379,6 @@ impl Denial {
             Self::Dataflow { .. } => 1,
             Self::Footprint { .. }
             | Self::Loan { .. }
-            | Self::Authority { .. }
             | Self::UnresolvedFootprint { .. }
             | Self::InterposedForm { .. } => 2,
             Self::SkippingExit { .. } => 4,
@@ -469,7 +432,6 @@ pub(crate) struct PermissionPair {
     pub(crate) first: PermissionSite,
     pub(crate) second: PermissionSite,
     pub(crate) verdict: PermissionVerdict,
-    pub(crate) authority_order: Vec<AuthorityOrderEdge>,
 }
 
 /// A maximal chain of at least two adjacent call statements every ordered
@@ -478,20 +440,22 @@ pub(crate) struct PermissionPair {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionRun {
     pub(crate) sites: Vec<PermissionSite>,
-    /// Complete source-order authority edges inside this run. A nonempty set
-    /// is permission to overlap only for an actualizer that honors them.
-    pub(crate) authority_order: Vec<PermissionRunAuthorityOrder>,
-    /// False when an authority-bearing interposed statement is not itself a
-    /// run member. Permission still holds, but a member-only batch cannot
-    /// actualize the complete ordered window.
-    pub(crate) ordered_members_only: bool,
 }
 
+/// One source-ordered call step in a dependency-driven completion schedule.
+///
+/// The sites in one schedule are consecutive plain `let` call statements.
+/// `wait_for` names only earlier calls whose ordinary value, memory access, or
+/// loan conflicts with this call.  It contains no resource family or target
+/// operation identity; lowering later decides which direct may-suspend calls
+/// have an executable completion route.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PermissionRunAuthorityOrder {
-    pub(crate) earlier: BindingId,
-    pub(crate) later: BindingId,
-    pub(crate) edge: AuthorityOrderEdge,
+pub(crate) struct PermissionCompletionStep {
+    pub(crate) site: PermissionSite,
+    pub(crate) wait_for: Vec<BindingId>,
+    /// At least one immediately following call may run before this call's
+    /// result and loans return. The final call of a schedule is false.
+    pub(crate) has_later_independent_call: bool,
 }
 
 /// Every analyzed pair and eligible chain of one concrete function, in source
@@ -501,6 +465,10 @@ pub(crate) struct FunctionPermissions {
     pub(crate) function: String,
     pub(crate) pairs: Vec<PermissionPair>,
     pub(crate) runs: Vec<PermissionRun>,
+    /// Consecutive call schedules whose waits are ordinary dependency edges.
+    /// This table is intentionally absent from the developer pair ledger: it
+    /// is a lowering view of the same verdicts, not another permission rule.
+    pub(crate) completion_steps: Vec<PermissionCompletionStep>,
     /// The [PAR-2] verdict of every counted loop of this function, in source
     /// order. The pair judgment above is computed exactly as it was before
     /// these existed, and nothing here is lowered by this version.
@@ -672,6 +640,7 @@ impl<'check> Program<'check> {
             function: function.name.clone(),
             pairs: Vec::new(),
             runs: Vec::new(),
+            completion_steps: Vec::new(),
             loops: Vec::new(),
         };
         let mut blocks = vec![function.body.as_slice()];
@@ -692,6 +661,12 @@ impl<'check> Program<'check> {
                 .statement
                 .components()
                 .cmp(right.sites[0].statement.components())
+        });
+        permissions.completion_steps.sort_by(|left, right| {
+            left.site
+                .statement
+                .components()
+                .cmp(right.site.statement.components())
         });
         // The loop judgment runs last and reads the finished verdicts, so a
         // loop that already holds an eligible pair is never told to become
@@ -744,19 +719,64 @@ impl<'check> Program<'check> {
         };
         for ordinal in 0..windows.candidates.len() - 1 {
             let verdict = self.judge(&windows, ordinal, ordinal + 1);
-            let authority_order = if verdict.is_eligible() {
-                self.window_authority_order(&windows, ordinal, ordinal + 1)
-            } else {
-                Vec::new()
-            };
             permissions.pairs.push(PermissionPair {
                 first: self.site(&windows.candidates[ordinal]),
                 second: self.site(&windows.candidates[ordinal + 1]),
                 verdict,
-                authority_order,
             });
         }
         self.collect_runs(&windows, permissions);
+        self.collect_completion_steps(&windows, permissions);
+    }
+
+    /// Builds maximal schedules of consecutive plain call statements.
+    ///
+    /// Adjacent eligibility is enough to keep the writer moving from one site
+    /// to the next. Every later site then records all earlier members whose
+    /// ordinary pair verdict is denied. For `A(out), B(err), C(out)`, this
+    /// yields no wait before B and exactly A before C.
+    fn collect_completion_steps(
+        &self,
+        windows: &BlockWindows<'check>,
+        permissions: &mut FunctionPermissions,
+    ) {
+        let candidates = &windows.candidates;
+        let mut start = 0;
+        while start + 1 < candidates.len() {
+            let first = &candidates[start];
+            let second = &candidates[start + 1];
+            if first.exit.is_some()
+                || second.exit.is_some()
+                || first.index + 1 != second.index
+                || !self.judge(windows, start, start + 1).is_eligible()
+            {
+                start += 1;
+                continue;
+            }
+
+            let mut end = start + 1;
+            while end + 1 < candidates.len()
+                && candidates[end].exit.is_none()
+                && candidates[end + 1].exit.is_none()
+                && candidates[end].index + 1 == candidates[end + 1].index
+                && self.judge(windows, end, end + 1).is_eligible()
+            {
+                end += 1;
+            }
+
+            for current in start..=end {
+                let wait_for = (start..current)
+                    .filter(|earlier| !self.judge(windows, *earlier, current).is_eligible())
+                    .map(|earlier| candidates[earlier].binding)
+                    .collect();
+                permissions.completion_steps.push(PermissionCompletionStep {
+                    site: self.site(&candidates[current]),
+                    wait_for,
+                    has_later_independent_call: current < end,
+                });
+            }
+            start = end + 1;
+        }
     }
 
     /// Grows maximal chains whose every ordered pair is permitted and
@@ -781,77 +801,17 @@ impl<'check> Program<'check> {
                 end += 1;
             }
             if end > start {
-                let mut authority_order = Vec::new();
-                for later in start + 1..=end {
-                    for earlier in start..later {
-                        authority_order.extend(
-                            authority_order_edges(
-                                &windows.footprints[earlier],
-                                &windows.footprints[later],
-                            )
-                            .into_iter()
-                            .map(|edge| PermissionRunAuthorityOrder {
-                                earlier: group[earlier].binding,
-                                later: group[later].binding,
-                                edge,
-                            }),
-                        );
-                    }
-                }
-                let member_indices = group[start..=end]
-                    .iter()
-                    .map(|candidate| candidate.index)
-                    .collect::<Vec<_>>();
-                let ordered_members_only = windows
-                    .statements
-                    .get(group[start].index..=group[end].index)
-                    .unwrap_or_default()
-                    .iter()
-                    .enumerate()
-                    .all(|(offset, statement)| {
-                        let index = group[start].index + offset;
-                        member_indices.contains(&index)
-                            || statement
-                                .as_ref()
-                                .is_ok_and(|statement| statement.footprint.authorities.is_empty())
-                    });
                 permissions.runs.push(PermissionRun {
                     sites: group[start..=end]
                         .iter()
                         .map(|candidate| self.site(candidate))
                         .collect(),
-                    authority_order,
-                    ordered_members_only,
                 });
                 start = end + 1;
             } else {
                 start += 1;
             }
         }
-    }
-
-    fn window_authority_order(
-        &self,
-        windows: &BlockWindows<'check>,
-        first_ordinal: usize,
-        second_ordinal: usize,
-    ) -> Vec<AuthorityOrderEdge> {
-        let first = &windows.candidates[first_ordinal];
-        let second = &windows.candidates[second_ordinal];
-        let left = &windows.footprints[first_ordinal];
-        let right = &windows.footprints[second_ordinal];
-        let mut edges = authority_order_edges(left, right);
-        for record in windows
-            .statements
-            .get(first.index + 1..second.index)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|classified| classified.as_ref().ok())
-        {
-            edges.extend(authority_order_edges(left, &record.footprint));
-            edges.extend(authority_order_edges(&record.footprint, right));
-        }
-        edges
     }
 
     fn site(&self, candidate: &Candidate<'check>) -> PermissionSite {
@@ -1185,39 +1145,6 @@ impl<'check> Program<'check> {
             }
         }
 
-        if callee.authority_summary.unknown {
-            footprint.unresolved = Some(candidate.call.clone());
-        }
-        for usage in &callee.authority_summary.uses {
-            let index = usage.parameter as usize;
-            let Some(parameter) = callee.parameters.get(index) else {
-                footprint.unresolved = Some(candidate.call.clone());
-                continue;
-            };
-            if !signature.capability_reads.contains(&parameter.declaration)
-                && !signature.capability_writes.contains(&parameter.declaration)
-            {
-                footprint.unresolved = Some(candidate.call.clone());
-                continue;
-            }
-            let (Some(argument), Some(node)) = (
-                candidate.arguments.get(index),
-                candidate.argument_nodes.get(index),
-            ) else {
-                footprint.unresolved = Some(candidate.call.clone());
-                continue;
-            };
-            match argument_place(places, argument).or_else(|| consumed_place(places, argument)) {
-                Some(place) => footprint.authorities.push(AuthorityAccess {
-                    place,
-                    family: usage.family,
-                    fragment: usage.fragment,
-                    argument: node.clone(),
-                }),
-                None => footprint.unresolved = Some(node.clone()),
-            }
-        }
-
         for (index, parameter) in callee.parameters.iter().enumerate() {
             let Some(argument) = candidate.arguments.get(index) else {
                 footprint.unresolved = Some(candidate.call.clone());
@@ -1227,10 +1154,6 @@ impl<'check> Program<'check> {
                 .argument_nodes
                 .get(index)
                 .unwrap_or(candidate.call);
-            let mode_region = match parameter.mode {
-                CheckedMode::Own => None,
-                CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
-            };
             // The loans half [OWN-5, OWN-12]. A borrow-mode parameter's
             // actual is an argument borrow live for the whole call, so it
             // holds a loan on its resolved place whatever the row declares. A
@@ -1253,34 +1176,6 @@ impl<'check> Program<'check> {
                     None => footprint.unresolved = Some(node.clone()),
                 }
             }
-            let slice_region = match parameter.ty {
-                CheckedType::Slice { region, .. } => Some(region),
-                _ => None,
-            };
-            let carries = |declared: &[DeclarationId]| {
-                mode_region.is_some_and(|region| declared.contains(&region))
-                    || slice_region.is_some_and(|region| declared.contains(&region))
-            };
-            let written = carries(&signature.writes);
-            let read = carries(&signature.reads);
-            if written || read {
-                match argument_place(places, argument) {
-                    Some(place) => {
-                        let access = Access::Place {
-                            place,
-                            argument: node.clone(),
-                        };
-                        if written {
-                            footprint.writes.push(access.clone());
-                        }
-                        if read {
-                            footprint.reads.push(access);
-                        }
-                    }
-                    None => footprint.unresolved = Some(node.clone()),
-                }
-                continue;
-            }
             // A consumed `own` actual transfers caller storage into the
             // callee. The affine discipline already forbids two consumers of
             // one place; the footprint states it rather than assuming it.
@@ -1291,6 +1186,42 @@ impl<'check> Program<'check> {
                     place,
                     argument: node.clone(),
                 });
+            }
+        }
+
+        for (written, declared) in [(false, &signature.reads), (true, &signature.writes)] {
+            for path in declared {
+                let Some(index) = callee
+                    .parameters
+                    .iter()
+                    .position(|parameter| parameter.declaration == path.root)
+                else {
+                    footprint.unresolved = Some(candidate.call.clone());
+                    continue;
+                };
+                let (Some(argument), Some(node)) = (
+                    candidate.arguments.get(index),
+                    candidate.argument_nodes.get(index),
+                ) else {
+                    footprint.unresolved = Some(candidate.call.clone());
+                    continue;
+                };
+                match argument_place(places, argument).or_else(|| consumed_place(places, argument))
+                {
+                    Some(mut place) => {
+                        place.fields.extend_from_slice(&path.fields);
+                        let access = Access::Place {
+                            place,
+                            argument: node.clone(),
+                        };
+                        if written {
+                            footprint.writes.push(access);
+                        } else {
+                            footprint.reads.push(access);
+                        }
+                    }
+                    None => footprint.unresolved = Some(node.clone()),
+                }
             }
         }
 
@@ -1308,8 +1239,8 @@ impl<'check> Program<'check> {
     }
 
     /// Projects one direct system call through the same caller-place model as
-    /// a user call. The catalog's borrow modes are the complete authority
-    /// boundary: there is no synthetic global-world access.
+    /// a user call. The catalog's ordinary parameter paths and borrow modes
+    /// are complete: there is no synthetic global-world access.
     fn system_call_footprint(
         &self,
         places: &PlaceMap,
@@ -1328,27 +1259,7 @@ impl<'check> Program<'check> {
             footprint.unresolved = Some(candidate.call.clone());
             return footprint;
         }
-        let (reads, writes) = operation_region_effects(operation);
-
-        if let Some(authority) = operation.authority {
-            let index = usize::from(authority.parameter);
-            let (Some(argument), Some(node)) = (
-                candidate.arguments.get(index),
-                candidate.argument_nodes.get(index),
-            ) else {
-                footprint.unresolved = Some(candidate.call.clone());
-                return footprint;
-            };
-            match argument_place(places, argument) {
-                Some(place) => footprint.authorities.push(AuthorityAccess {
-                    place,
-                    family: authority.family,
-                    fragment: authority.fragment,
-                    argument: node.clone(),
-                }),
-                None => footprint.unresolved = Some(node.clone()),
-            }
-        }
+        let (reads, writes) = operation_state_effects(operation);
 
         for (index, parameter) in operation.parameters.iter().enumerate() {
             let Some(argument) = candidate.arguments.get(index) else {
@@ -1359,12 +1270,10 @@ impl<'check> Program<'check> {
                 footprint.unresolved = Some(candidate.call.clone());
                 return footprint;
             };
-            let (mode_region, strength) = match parameter.mode {
-                SystemParameterMode::Own => (None, None),
-                SystemParameterMode::Borrow(region) => (Some(region), Some(LoanStrength::Shared)),
-                SystemParameterMode::UniqueBorrow(region) => {
-                    (Some(region), Some(LoanStrength::Exclusive))
-                }
+            let strength = match parameter.mode {
+                SystemParameterMode::Own => None,
+                SystemParameterMode::Borrow(_) => Some(LoanStrength::Shared),
+                SystemParameterMode::UniqueBorrow(_) => Some(LoanStrength::Exclusive),
             };
 
             if let Some(strength) = strength {
@@ -1378,10 +1287,15 @@ impl<'check> Program<'check> {
                 }
             }
 
-            let written = mode_region.is_some_and(|region| writes.contains(&region));
-            let read = mode_region.is_some_and(|region| reads.contains(&region));
+            let Ok(ordinal) = u8::try_from(index) else {
+                footprint.unresolved = Some(node.clone());
+                continue;
+            };
+            let written = writes.contains(&ordinal);
+            let read = reads.contains(&ordinal);
             if written || read {
-                match argument_place(places, argument) {
+                match argument_place(places, argument).or_else(|| consumed_place(places, argument))
+                {
                     Some(place) => {
                         let access = Access::Place {
                             place,
@@ -1428,9 +1342,6 @@ pub(super) struct Footprint {
     /// The [OWN-5] loans this statement's argument borrows hold for the
     /// duration of its call, independent of what its callee's row declares.
     pub(super) loans: Vec<Loan>,
-    /// Family authority reservations held until the operation's declared
-    /// authority-release milestone.
-    pub(super) authorities: Vec<AuthorityAccess>,
     /// Storage this statement's own operand expressions read on the calling
     /// thread, before the call. An overlap moves some statement's operand
     /// evaluation across another's call, and which one moves is the
@@ -1470,9 +1381,6 @@ fn footprint_conflict(
     later_side: PairSide,
     earlier_operands: bool,
 ) -> Option<Denial> {
-    if let Some(denial) = authority_conflict(earlier, earlier_side, later, later_side) {
-        return Some(denial);
-    }
     if let Some(denial) = loan_conflict(earlier, earlier_side, later, later_side, earlier_operands)
     {
         return Some(denial);
@@ -1545,61 +1453,6 @@ fn footprint_conflict(
         }
     }
     None
-}
-
-/// Family authority is independent of ordinary memory and of borrow loans.
-/// Distinct logical capability places coexist. On one place the owning
-/// family's closed fragment-pair table decides Free, Ordered, or Exclusive;
-/// a family mismatch or invalid fragment pair is unknown and denies.
-fn authority_conflict(
-    earlier: &Footprint,
-    earlier_side: PairSide,
-    later: &Footprint,
-    later_side: PairSide,
-) -> Option<Denial> {
-    for left in &earlier.authorities {
-        for right in &later.authorities {
-            if !left.place.overlaps(&right.place) {
-                continue;
-            }
-            let relation = (left.family == right.family)
-                .then(|| system_authority_pair_relation(left.family, left.fragment, right.fragment))
-                .flatten();
-            let known_coexistence = matches!(
-                relation,
-                Some(SystemAuthorityPairRelation::Free | SystemAuthorityPairRelation::Ordered(_))
-            );
-            if !known_coexistence {
-                return Some(Denial::Authority {
-                    left: left.clone(),
-                    right: right.clone(),
-                    sides: (earlier_side, later_side),
-                });
-            }
-        }
-    }
-    None
-}
-
-fn authority_order_edges(earlier: &Footprint, later: &Footprint) -> Vec<AuthorityOrderEdge> {
-    let mut edges = Vec::new();
-    for left in &earlier.authorities {
-        for right in &later.authorities {
-            if !left.place.overlaps(&right.place) || left.family != right.family {
-                continue;
-            }
-            if let Some(SystemAuthorityPairRelation::Ordered(attribution)) =
-                system_authority_pair_relation(left.family, left.fragment, right.fragment)
-            {
-                edges.push(AuthorityOrderEdge {
-                    earlier: left.clone(),
-                    later: right.clone(),
-                    attribution,
-                });
-            }
-        }
-    }
-    edges
 }
 
 /// The loans half of the same condition: each statement's [OWN-5] loans

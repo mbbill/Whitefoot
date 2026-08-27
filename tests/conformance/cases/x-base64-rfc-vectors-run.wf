@@ -21,7 +21,7 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
   return Err<u64, IndexError>(error: error);
 }
 
-fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads('r), traps {
+fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values), traps {
   let room = len(deref(values));
   match require_index(index: index, limit: room) {
     Ok(value: admitted) => {
@@ -34,7 +34,7 @@ fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<
   }
 }
 
-fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads('r), writes('r), traps {
+fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values), traps {
   let room = len(deref(values));
   match require_index(index: index, limit: room) {
     Ok(value: admitted) => {
@@ -47,7 +47,7 @@ fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -
   }
 }
 
-fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads('r), writes('r), traps contract {
+fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out), traps contract {
   define required_out_length = len(deref(out));
   define required_input_length = len(input);
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);

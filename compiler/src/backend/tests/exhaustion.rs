@@ -48,7 +48,7 @@ const MIXED_DEFINITIONS: &[u8] = br#"enum Chain {
   More(next: box<Chain>);
 }
 
-fn depth['r](chain: &'r box<Chain>) -> result: own u64 reads('r) {
+fn depth['r](chain: &'r box<Chain>) -> result: own u64 reads(chain) {
   match deref(deref(chain)) {
     End() => {
       return 0_u64;

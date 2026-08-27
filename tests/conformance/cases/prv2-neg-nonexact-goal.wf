@@ -1,4 +1,4 @@
-fn read_strict(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+fn read_strict(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -6,7 +6,7 @@ fn read_strict(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pu
   return bytes[index];
 }
 
-fn call_with_nonstrict_goal(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure {
+fn call_with_nonstrict_goal(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 reads(bytes) {
   doc "A non-strict branch fact is not the callee's exact strict goal; full-state FN-8 rejection runs before any PRV-2 target is formed.";
   let room = len(bytes);
   let maybe_inside = ile(index, room);

@@ -10,7 +10,7 @@ fn optvec_new(capacity: own u64) -> result: own OptVec allocates(heap) contract 
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
-fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a), writes('a) {
+fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = ilt(count, cap);
@@ -32,7 +32,7 @@ fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a)
   return unit;
 }
 
-fn optvec_pop['a](v: &uniq 'a OptVec) -> result: own u32 reads('a), writes('a) {
+fn optvec_pop['a](v: &uniq 'a OptVec) -> result: own u32 reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
   let nonempty = igt(count, 0_u64);
   if nonempty {

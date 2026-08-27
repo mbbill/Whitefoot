@@ -358,7 +358,7 @@ fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
 /// so the infix path is held to the citation the position already produced.
 #[test]
 fn an_infix_returned_from_a_borrow_result_is_an_fn1_rejection() {
-    let infix = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads('r) {
+    let infix = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads(x) {
   let b = 7_u64;
   return a +wrap b;
 }
@@ -368,7 +368,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_rule(infix, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
-    let plain = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads('r) {
+    let plain = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads(x) {
   return a;
 }
 

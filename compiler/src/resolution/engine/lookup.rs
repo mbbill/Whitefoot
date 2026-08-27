@@ -237,9 +237,9 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::TypeRegion
         | LexicalUseRole::ModeRegion
         | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectRegion
+        | LexicalUseRole::EffectAllocationRegion
         | LexicalUseRole::BorrowRegion => vec![DeclarationClass::Region],
-        LexicalUseRole::EffectCapability => vec![DeclarationClass::Value],
+        LexicalUseRole::EffectRoot => vec![DeclarationClass::Value],
         LexicalUseRole::BreakLabel => vec![DeclarationClass::Label],
         LexicalUseRole::Const => {
             vec![DeclarationClass::NamedConst, DeclarationClass::ConstGeneric]
@@ -278,9 +278,9 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         LexicalUseRole::TypeRegion
         | LexicalUseRole::ModeRegion
         | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectRegion
+        | LexicalUseRole::EffectAllocationRegion
         | LexicalUseRole::BorrowRegion => vec![DeclarationClass::Region],
-        LexicalUseRole::EffectCapability => vec![DeclarationClass::Value],
+        LexicalUseRole::EffectRoot => vec![DeclarationClass::Value],
         LexicalUseRole::BreakLabel => vec![DeclarationClass::Label],
         LexicalUseRole::Const
         | LexicalUseRole::ConstValue
@@ -313,9 +313,9 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         LexicalUseRole::TypeRegion
         | LexicalUseRole::ModeRegion
         | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectRegion
+        | LexicalUseRole::EffectAllocationRegion
         | LexicalUseRole::BorrowRegion => ResolutionRule::Own3,
-        LexicalUseRole::EffectCapability => ResolutionRule::Eff1,
+        LexicalUseRole::EffectRoot => ResolutionRule::Eff1,
         LexicalUseRole::Const => ResolutionRule::Const1,
         LexicalUseRole::ConstValue => ResolutionRule::Const2,
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,

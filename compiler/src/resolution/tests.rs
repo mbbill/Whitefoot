@@ -600,11 +600,11 @@ fn every_unit_receives_the_system_domain_before_entry_validation() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 194);
+        assert_eq!(resolved.system_declarations().len(), 203);
         for (role, spelling, ordinal) in [
             (LexicalUseRole::Type, "Args", 0),
             (LexicalUseRole::Type, "ExitStatus", 6),
-            (LexicalUseRole::IdentifierCallee, "exit_status", 168),
+            (LexicalUseRole::IdentifierCallee, "exit_status", 171),
         ] {
             let usage = resolved
                 .lexical_uses()
@@ -662,7 +662,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach system inventory: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 194);
+        assert_eq!(resolved.system_declarations().len(), 203);
     });
 }
 
@@ -679,7 +679,7 @@ fn a_kind_declaring_unit_resolves_the_complete_system_lookup_inventory() {
   return exit_status(code: 0_u8);
 }
 
-fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectorySource, p: own ListOutcome) -> result: own unit pure {
+fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectorySource, p: own ListOutcome, q: own FileFactory, r: own FilePermit) -> result: own unit pure {
   return unit;
 }
 
@@ -691,13 +691,14 @@ fn calls(x: own u64) -> result: own unit pure {
   host_utf8_len(value: x);
   host_copy_utf8(value: x, destination: x, start: x, end: x);
   relative_path(value: x);
-  open_read(root: x, path: x);
+  open_read(permit: x, root: x, path: x);
   read_at(file: x, destination: x, file_offset: x, start: x, end: x);
   write_once(output: x, source: x, start: x, end: x);
-  open_directory(root: x, name: x, start: x, end: x);
-  open_directory_source(directory: x);
+  open_directory(permit: x, root: x, name: x, start: x, end: x);
+  open_directory_source(permit: x, directory: x);
   directory_next(source: x, destination: x, start: x, end: x);
-  open_file(root: x, name: x, start: x, end: x);
+  open_file(permit: x, root: x, name: x, start: x, end: x);
+  reserve_file(factory: x);
   return unit;
 }
 
@@ -767,35 +768,38 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
             ("IoError", 13),
             ("DirectorySource", 14),
             ("ListOutcome", 15),
+            ("FileFactory", 16),
+            ("FilePermit", 17),
         ] {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
         for (spelling, ordinal) in [
-            ("args_count", 119),
-            ("arg_get", 122),
-            ("host_bytes_len", 126),
-            ("host_copy_bytes", 129),
-            ("host_utf8_len", 136),
-            ("host_copy_utf8", 139),
-            ("relative_path", 146),
-            ("open_read", 148),
-            ("read_at", 153),
-            ("write_once", 161),
-            ("exit_status", 168),
-            ("open_directory", 170),
-            ("open_directory_source", 177),
-            ("directory_next", 180),
-            ("open_file", 187),
+            ("args_count", 121),
+            ("arg_get", 124),
+            ("host_bytes_len", 128),
+            ("host_copy_bytes", 131),
+            ("host_utf8_len", 138),
+            ("host_copy_utf8", 141),
+            ("relative_path", 148),
+            ("open_read", 150),
+            ("read_at", 156),
+            ("write_once", 164),
+            ("exit_status", 171),
+            ("open_directory", 173),
+            ("open_directory_source", 181),
+            ("directory_next", 185),
+            ("open_file", 192),
+            ("reserve_file", 200),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
-        expect(LexicalUseRole::Construct, "NotFound", 29);
-        expect(LexicalUseRole::ArmVariant, "ReadBytes", 24);
-        expect(LexicalUseRole::ArmVariant, "ReadEnd", 26);
-        expect(LexicalUseRole::ArmVariant, "ReadFailed", 27);
-        expect(LexicalUseRole::ArmVariant, "ListBytes", 113);
-        expect(LexicalUseRole::ArmVariant, "ListEnd", 116);
-        expect(LexicalUseRole::ArmVariant, "ListFailed", 117);
+        expect(LexicalUseRole::Construct, "NotFound", 31);
+        expect(LexicalUseRole::ArmVariant, "ReadBytes", 26);
+        expect(LexicalUseRole::ArmVariant, "ReadEnd", 28);
+        expect(LexicalUseRole::ArmVariant, "ReadFailed", 29);
+        expect(LexicalUseRole::ArmVariant, "ListBytes", 115);
+        expect(LexicalUseRole::ArmVariant, "ListEnd", 118);
+        expect(LexicalUseRole::ArmVariant, "ListFailed", 119);
     });
 }
 
@@ -822,7 +826,7 @@ fn system_names_are_reserved_even_without_a_valid_entry() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 119
+            DeclarationOrigin::System(id) if id.ordinal() == 121
         ));
     });
 }
@@ -857,7 +861,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             assert_eq!(conflicts[0].class(), DeclarationClass::Function);
             assert!(matches!(
                 conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 119
+                DeclarationOrigin::System(id) if id.ordinal() == 121
             ));
         });
     }
@@ -912,7 +916,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 26
+            DeclarationOrigin::System(id) if id.ordinal() == 28
         ));
     });
 
@@ -937,7 +941,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 126
+            DeclarationOrigin::System(id) if id.ordinal() == 128
         ));
     });
 }
@@ -1021,7 +1025,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
         first,
         vec![
             ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 168)
+            ("exit_status".to_owned(), 171)
         ]
     );
     assert_eq!(first, targets("first.wf"));
@@ -1512,7 +1516,7 @@ fn probe() -> result: own unit pure {
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
     let source = br#"contract Bound {
-  fn member['sig](value: &'sig i32) -> result: own i32 reads('sig);
+  fn member['sig](value: &'sig i32) -> result: own i32 reads(value);
   law identity(member, 0_i32);
 }
 
@@ -1542,11 +1546,11 @@ conform Package<i32, one>: Bound {
   member = implementation;
 }
 
-fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads('call) {
+fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads(arg) {
   return arg;
 }
 
-fn viewer['v](values: own slice<'v, i32>, capability: own Args) -> result: own unit reads('v capability) {
+fn viewer['v](values: own slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
   return unit;
 }
 
@@ -1645,8 +1649,8 @@ fn probe() -> result: own unit traps {
             LexicalUseRole::TypeRegion,
             LexicalUseRole::ModeRegion,
             LexicalUseRole::TypeArgumentRegion,
-            LexicalUseRole::EffectRegion,
-            LexicalUseRole::EffectCapability,
+            LexicalUseRole::EffectAllocationRegion,
+            LexicalUseRole::EffectRoot,
             LexicalUseRole::BorrowRegion,
             LexicalUseRole::BreakLabel,
             LexicalUseRole::Const,
@@ -1705,12 +1709,11 @@ fn probe() -> result: own unit traps {
 }
 
 #[test]
-fn effect_capability_operands_resolve_to_the_exact_formal_parameter() {
-    let source =
-        b"fn publish(output: own Output) -> result: own unit writes(output) {\n  return unit;\n}\n";
+fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
+    let source = b"struct Holder {\n  output: Output;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("a direct capability formal must resolve: {outcome:?}");
+            panic!("a parameter-rooted state path must resolve: {outcome:?}");
         };
         let parameter = resolved
             .declarations()
@@ -1720,9 +1723,9 @@ fn effect_capability_operands_resolve_to_the_exact_formal_parameter() {
         let usage = resolved
             .lexical_uses()
             .iter()
-            .find(|usage| usage.role() == LexicalUseRole::EffectCapability)
-            .expect("the effect capability use exists");
-        assert_eq!(usage.spelling(), "output");
+            .find(|usage| usage.role() == LexicalUseRole::EffectRoot)
+            .expect("the effect root use exists");
+        assert_eq!(usage.spelling(), "holder");
         assert_eq!(
             usage.target(),
             ResolvedTarget::Source {
@@ -1730,6 +1733,12 @@ fn effect_capability_operands_resolve_to_the_exact_formal_parameter() {
                 class: DeclarationClass::Value,
             }
         );
+        let field = resolved
+            .deferred_uses()
+            .iter()
+            .find(|usage| usage.role() == DeferredUseRole::EffectField)
+            .expect("the static effect field is retained");
+        assert_eq!(field.spelling(), "output");
     });
 }
 
@@ -1747,11 +1756,11 @@ fn unresolved_and_body_local_effect_targets_reject_under_eff1() {
             assert!(matches!(
                 issue.kind(),
                 ResolutionIssueKind::UnresolvedUse {
-                    role: LexicalUseRole::EffectCapability,
+                    role: LexicalUseRole::EffectRoot,
                     ..
                 }
                     | ResolutionIssueKind::InvisibleUse {
-                        role: LexicalUseRole::EffectCapability,
+                        role: LexicalUseRole::EffectRoot,
                         ..
                     }
             ));
@@ -2325,6 +2334,18 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
             "DirectorySource",
             SystemResourceType::DirectorySource,
             SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "FileFactory",
+            SystemResourceType::FileFactory,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "FilePermit",
+            SystemResourceType::FilePermit,
+            SystemReleaseAction::LogicalConsume,
             SystemResourceBacking::Opaque,
         ),
     ];

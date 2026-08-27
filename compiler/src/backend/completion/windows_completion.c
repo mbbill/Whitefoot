@@ -200,45 +200,6 @@ enum wf_completion_claim_result wf_completion_claim(
     return result;
 }
 
-enum wf_completion_claim_result wf_completion_claim_many(
-    wf_completion_runtime *runtime,
-    wf_completion_token *tokens,
-    size_t count
-) {
-    size_t available = 0;
-    size_t index;
-    if (runtime == NULL || tokens == NULL || count == 0
-        || runtime->slots == NULL || count > runtime->slot_count) {
-        return WF_COMPLETION_CLAIM_INVALID;
-    }
-    AcquireSRWLockExclusive(&runtime->claim_lock);
-    for (index = 0; index < runtime->slot_count; ++index) {
-        wf_completion_slot *slot = &runtime->slots[index];
-        AcquireSRWLockShared(&slot->publication_lock);
-        if (slot->phase == WF_COMPLETION_FREE
-            && slot->generation != UINT64_MAX) {
-            available += 1;
-        }
-        ReleaseSRWLockShared(&slot->publication_lock);
-    }
-    if (available < count) {
-        ReleaseSRWLockExclusive(&runtime->claim_lock);
-        InterlockedIncrement64(&runtime->stat_claim_capacity_waits);
-        return WF_COMPLETION_CLAIM_WAIT_CAPACITY;
-    }
-    for (index = 0; index < count; ++index) {
-        if (wf_windows_claim_one_locked(runtime, &tokens[index])
-            != WF_COMPLETION_CLAIMED) {
-            /* The admission lock makes this unreachable unless the core's
-             * own invariants are broken.  Partial batch exposure would be
-             * unsound, so fail-stop rather than returning a partial claim. */
-            abort();
-        }
-    }
-    ReleaseSRWLockExclusive(&runtime->claim_lock);
-    return WF_COMPLETION_CLAIMED;
-}
-
 static enum wf_completion_transition_result wf_windows_transition(
     wf_completion_runtime *runtime,
     wf_completion_token token,
@@ -768,8 +729,6 @@ wf_completion_statistics wf_completion_statistics_snapshot(
     statistics.claims = WF_WINDOWS_STAT(runtime->stat_claims);
     statistics.claim_capacity_waits =
         WF_WINDOWS_STAT(runtime->stat_claim_capacity_waits);
-    statistics.claim_admission_waits =
-        WF_WINDOWS_STAT(runtime->stat_claim_admission_waits);
     statistics.target_capacity_waits =
         WF_WINDOWS_STAT(runtime->stat_target_capacity_waits);
     statistics.publications = WF_WINDOWS_STAT(runtime->stat_publications);
@@ -786,8 +745,6 @@ wf_completion_statistics wf_completion_statistics_snapshot(
         WF_WINDOWS_STAT(runtime->stat_compute_notifications);
     statistics.capacity_notifications =
         WF_WINDOWS_STAT(runtime->stat_capacity_notifications);
-    statistics.admission_notifications =
-        WF_WINDOWS_STAT(runtime->stat_admission_notifications);
 #undef WF_WINDOWS_STAT
     return statistics;
 }

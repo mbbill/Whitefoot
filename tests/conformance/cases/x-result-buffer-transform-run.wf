@@ -2,7 +2,7 @@ enum DecodeError {
   ZeroByte();
 }
 
-fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, DecodeError> allocates(heap), traps {
+fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, DecodeError> reads(input), allocates(heap), traps {
   let length = len(input);
   let output = buffer_new(length, 0_u8);
   let offset = 0_u64;
@@ -37,7 +37,7 @@ fn abandon(result: own Result<buffer<u8>, DecodeError>) -> function_result: own 
   return unit;
 }
 
-fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads('r), traps {
+fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads(value), traps {
   let length = len(deref(value));
   let expected_length = ieq(length, 3_u64);
   if expected_length {

@@ -1038,17 +1038,18 @@ impl IrBlock {
     }
 }
 
-/// Whether lowering actualizes the permission judgment's overlap groups.
+/// Whether lowering actualizes permission-derived overlap schedules.
 ///
 /// The judgment itself is pure and always runs: `--par-ledger` reports the same
 /// verdicts either way, and no accepted program changes. This selects only
-/// whether a permitted group reaches the IR as an overlap group, and therefore
-/// whether the backend outlines a call, offers a lane, and joins it.
+/// whether a permitted compute group or direct completion schedule reaches the
+/// IR, and therefore whether the backend submits or outlines work.
 ///
 /// `Completion` is the shipped default: it actualizes only compiler-owned
 /// finite target operations and leaves pure compute output byte-identical to
-/// `Off`. Compute outlining remains opt-in because it is not free. The batch
-/// audit measured that lowering alone — no runtime linked, `WF_WORKERS` unset —
+/// `Off`. Compute outlining remains opt-in because it is not free. The compute
+/// audit measured that lowering alone, with no runtime linked and
+/// `WF_WORKERS` unset,
 /// at about 1.2x on the layout demo and 2.1x on `fib(38)`: an outlined call
 /// passes its arguments through a memory frame, is reached through a function
 /// pointer, and so cannot be inlined. `Off` remains only the exact sequential
@@ -1066,14 +1067,14 @@ pub enum OverlapLowering {
     On,
 }
 
-/// One group of sibling calls whose evaluations may be overlapped [PAR-1
-/// candidate].
+/// One group of pure sibling calls whose evaluations may be overlapped
+/// [PAR-1 candidate].
 ///
 /// The members are the values those calls define, in source order, all in one
-/// block of one function. A compute group may hand out every member but the
-/// last. A supported completion group reserves bounded storage all-or-none and
-/// dispatches every member, including the source-last one. Every dispatched member
-/// is joined at the last definition before any value use or block exit.
+/// block of one function. The compute scheduler may hand out every member but
+/// the last, runs that source-last member on the calling lane, and joins the
+/// handed-out calls before any value use or block exit. Direct target
+/// operations use [`IrCompletionStep`] instead of this group representation.
 ///
 /// The group is a permission the target stage may take, never an obligation:
 /// a target that hands nothing out emits exactly the sequential code, because
@@ -1082,8 +1083,6 @@ pub enum OverlapLowering {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrOverlap {
     members: Vec<IrValueId>,
-    ordered_attribution: Option<crate::SystemAuthorityAttribution>,
-    dispatch_last: bool,
 }
 
 impl IrOverlap {
@@ -1104,78 +1103,54 @@ impl IrOverlap {
             .split_last()
             .map_or(&[][..], |(_, earlier)| earlier)
     }
+}
 
-    /// Every member dispatched before the join. Ordered completion groups
-    /// include the source-last member because it may not run ahead inline.
-    pub fn dispatched(&self) -> &[IrValueId] {
-        if self.ordered_attribution.is_some() || self.dispatch_last {
-            &self.members
-        } else {
-            self.handed_out()
+/// One source-ordered call step in a direct completion schedule.
+///
+/// `wait_for` contains only earlier operations whose ordinary result or loan
+/// must be returned before this call is reached.  A submitted operation has
+/// at least one later statement which the permission judgment proved can run
+/// while it is in flight.  This is target-independent scheduling metadata: it
+/// names SSA values and carries no resource family or I/O-specific identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrCompletionStep {
+    call: IrValueId,
+    wait_for: Vec<IrValueId>,
+    submit: bool,
+    finish: bool,
+}
+
+impl IrCompletionStep {
+    pub(crate) fn new(
+        call: IrValueId,
+        wait_for: Vec<IrValueId>,
+        submit: bool,
+        finish: bool,
+    ) -> Self {
+        Self {
+            call,
+            wait_for,
+            submit,
+            finish,
         }
     }
 
-    /// Family attribution whose order this actualization must honor.
-    pub const fn ordered_attribution(&self) -> Option<crate::SystemAuthorityAttribution> {
-        self.ordered_attribution
+    pub(crate) const fn call(&self) -> IrValueId {
+        self.call
     }
 
-    /// Returns the target-completion view in which the source-last member is
-    /// submitted before the common join rather than run inline.
-    pub(crate) fn dispatch_every_member(mut self) -> Self {
-        self.dispatch_last = true;
-        self
-    }
-}
-
-/// One source-order family reservation edge retained in IR whether a supported
-/// actualizer consumes it or the target conservatively declines the overlap.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IrAuthorityOrder {
-    earlier: IrValueId,
-    later: IrValueId,
-    family: crate::SystemAuthorityFamily,
-    earlier_fragment: crate::SystemAuthorityFragment,
-    later_fragment: crate::SystemAuthorityFragment,
-    attribution: crate::SystemAuthorityAttribution,
-}
-
-impl IrAuthorityOrder {
-    /// The earlier call result in source reservation order.
-    pub const fn earlier(self) -> IrValueId {
-        self.earlier
+    pub(crate) fn wait_for(&self) -> &[IrValueId] {
+        &self.wait_for
     }
 
-    /// The later call result in source reservation order.
-    pub const fn later(self) -> IrValueId {
-        self.later
+    pub(crate) const fn submit(&self) -> bool {
+        self.submit
     }
 
-    /// Family which owns this pair relation.
-    pub const fn family(self) -> crate::SystemAuthorityFamily {
-        self.family
-    }
-
-    /// Earlier fragment in the ordered pair.
-    pub const fn earlier_fragment(self) -> crate::SystemAuthorityFragment {
-        self.earlier_fragment
-    }
-
-    /// Later fragment in the ordered pair.
-    pub const fn later_fragment(self) -> crate::SystemAuthorityFragment {
-        self.later_fragment
-    }
-
-    /// Attribution identity carried by this ordered pair.
-    pub const fn attribution(self) -> crate::SystemAuthorityAttribution {
-        self.attribution
+    pub(crate) const fn finish(&self) -> bool {
+        self.finish
     }
 }
-
-/// Greatest number of source-ordered OutputSequence members one bounded
-/// runtime root reservation can admit atomically.
-pub(crate) const ORDERED_OUTPUT_BATCH_MEMBERS: usize = 16;
-pub(crate) const FREE_COMPLETION_BATCH_MEMBERS: usize = 64;
 
 /// How large a lane frame a handed-out call is granted, in bytes.
 ///
@@ -1211,7 +1186,7 @@ pub struct IrFunction {
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,
     overlaps: Vec<IrOverlap>,
-    authority_orders: Vec<IrAuthorityOrder>,
+    completion_steps: Vec<IrCompletionStep>,
     synthesis: Option<IrSynthesis>,
     target_action: crate::TargetAction,
 }
@@ -1249,9 +1224,9 @@ impl IrFunction {
         &self.overlaps
     }
 
-    /// Ordered family reservation edges retained for a future actualizer.
-    pub fn authority_orders(&self) -> &[IrAuthorityOrder] {
-        &self.authority_orders
+    /// Direct calls whose ordinary dependencies admit completion submission.
+    pub(crate) fn completion_steps(&self) -> &[IrCompletionStep] {
+        &self.completion_steps
     }
 
     pub(crate) fn contains_buffer(&self) -> bool {

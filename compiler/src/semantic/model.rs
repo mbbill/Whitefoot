@@ -837,69 +837,145 @@ pub(crate) enum CheckedSliceOrigin {
     },
 }
 
-/// The finite set of caller-formal capability roots a checked value may carry.
+/// The finite set of caller-formal state paths a checked value may carry.
 ///
-/// `may_fresh` is independent of the formal set: a control-flow join may
-/// select either a newly minted invocation-local root or one of the listed
-/// caller roots. An empty formal set therefore does not by itself mean that
-/// the value's type carries no capability.
+/// An empty formal set means every identity in the value is invocation-local;
+/// the value's affine type, not this attribution summary, says whether such an
+/// identity exists.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct CheckedCapabilityOrigins {
-    pub(crate) may_absent: bool,
-    pub(crate) may_fresh: bool,
-    pub(crate) formals: Vec<DeclarationId>,
+pub(crate) struct CheckedStateOrigins {
+    pub(crate) unknown: bool,
+    pub(crate) formals: Vec<CheckedStateOrigin>,
 }
 
-impl CheckedCapabilityOrigins {
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CheckedStateOrigin {
+    /// Path inside the value carrying this origin.
+    pub(crate) value_fields: Vec<u32>,
+    /// Selected enum variant while the origin is still correlated with a
+    /// direct constructor or match. `None` is the conservative whole-enum
+    /// route used at callable boundaries.
+    pub(crate) variant: Option<u32>,
+    /// Exact incoming formal state leaf supplying it.
+    pub(crate) source: CheckedStatePath,
+}
+
+impl CheckedStateOrigins {
     pub(crate) fn fresh() -> Self {
         Self {
-            may_absent: false,
-            may_fresh: true,
+            unknown: false,
             formals: Vec::new(),
         }
     }
 
-    pub(crate) fn formal(formal: DeclarationId) -> Self {
+    pub(crate) fn formal_leaves(formal: DeclarationId, leaves: Vec<Vec<u32>>) -> Self {
         Self {
-            may_absent: false,
-            may_fresh: false,
-            formals: vec![formal],
+            unknown: false,
+            formals: leaves
+                .into_iter()
+                .map(|fields| CheckedStateOrigin {
+                    value_fields: fields.clone(),
+                    variant: None,
+                    source: CheckedStatePath {
+                        root: formal,
+                        fields,
+                    },
+                })
+                .collect(),
         }
-    }
-
-    pub(crate) fn with_may_absent(mut self, may_absent: bool) -> Self {
-        self.may_absent = may_absent;
-        self
     }
 
     pub(crate) fn union(&mut self, other: &Self) {
-        self.may_absent |= other.may_absent;
-        self.may_fresh |= other.may_fresh;
+        self.unknown |= other.unknown;
         for formal in &other.formals {
             if !self.formals.contains(formal) {
-                self.formals.push(*formal);
+                self.formals.push(formal.clone());
             }
         }
         self.formals.sort();
+    }
+
+    pub(crate) fn unknown() -> Self {
+        Self {
+            unknown: true,
+            formals: Vec::new(),
+        }
+    }
+
+    pub(crate) fn projected(mut self, fields: &[u32]) -> Self {
+        self.formals.retain_mut(|formal| {
+            if !formal.value_fields.starts_with(fields) {
+                return false;
+            }
+            formal.value_fields.drain(..fields.len());
+            true
+        });
+        self
+    }
+
+    pub(crate) fn enum_payload(mut self, variant: u32, field: u32) -> Self {
+        self.formals.retain_mut(|origin| match origin.variant {
+            Some(actual) if actual != variant => false,
+            Some(_) => {
+                if origin.value_fields.first() != Some(&field) {
+                    return false;
+                }
+                origin.value_fields.remove(0);
+                origin.variant = None;
+                true
+            }
+            // A formal whole-enum route cannot distinguish variants. Keep it
+            // conservatively, but expose it as the selected payload's root.
+            None => {
+                origin.value_fields.clear();
+                true
+            }
+        });
+        self
+    }
+
+    pub(crate) fn replace_path(mut self, fields: &[u32], replacement: Option<Self>) -> Self {
+        if fields.is_empty() {
+            return replacement.unwrap_or_else(Self::fresh);
+        }
+        self.formals
+            .retain(|origin| !origin.value_fields.starts_with(fields));
+        if let Some(mut replacement) = replacement {
+            self.unknown |= replacement.unknown;
+            for mut origin in replacement.formals.drain(..) {
+                let mut value_fields = fields.to_vec();
+                value_fields.extend_from_slice(&origin.value_fields);
+                origin.value_fields = value_fields;
+                if !self.formals.contains(&origin) {
+                    self.formals.push(origin);
+                }
+            }
+            self.formals.sort();
+        }
+        self
     }
 }
 
 /// Closed-world origin summary for one concrete function result.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedResultAuthorityOrigin {
-    /// The complete result type carries no logical capability root.
-    NoCapability,
-    /// Every result capability comes from this finite origin set.
+pub(crate) enum CheckedResultStateOrigin {
+    /// The complete result type carries no opaque state identity.
+    NoState,
+    /// Every result state identity comes from this finite origin set.
     Finite {
-        /// At least one returning route carries no capability root.
-        may_absent: bool,
-        /// At least one returning route may mint a fresh invocation-local root.
-        may_fresh: bool,
-        /// Zero-based formal ordinals which may supply the returned root.
-        formals: Vec<u32>,
+        /// Formal paths which may supply the returned state.
+        formals: Vec<CheckedResultStatePath>,
     },
     /// The current compiler could not close the result-origin equation.
     Unknown,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CheckedResultStatePath {
+    pub(crate) result_fields: Vec<u32>,
+    pub(crate) result_variant: Option<u32>,
+    pub(crate) parameter: u32,
+    pub(crate) parameter_fields: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -911,7 +987,7 @@ pub(crate) enum CheckedSliceSource {
     Buffer(CheckedBufferRoot),
     /// An array reached in `arena<'r, T>` content through `deref` [OWN-5,
     /// OWN-10]. Semantic checking admits it; the arena runtime lowering is
-    /// not implemented yet, and the temporary arena-parameter capability
+    /// not implemented yet, and the temporary arena-parameter implementation
     /// stop keeps it from reaching lowering.
     ArenaContent {
         binding: BindingId,
@@ -959,7 +1035,7 @@ pub(crate) enum CheckedExpression {
     Binding {
         carrier: NodePath,
         binding: BindingId,
-        capability_origins: Option<CheckedCapabilityOrigins>,
+        state_origins: Option<CheckedStateOrigins>,
         ty: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
         /// The owning checker admitted this occurrence as an affine consume.
@@ -1168,7 +1244,7 @@ pub(crate) enum CheckedExpression {
     BorrowSystemResource {
         carrier: NodePath,
         binding: BindingId,
-        capability_origins: Option<CheckedCapabilityOrigins>,
+        state_origins: Option<CheckedStateOrigins>,
         nominal: NominalId,
     },
     /// The same address, taken from a binding that already holds one: a borrow
@@ -1200,7 +1276,7 @@ pub(crate) enum CheckedExpression {
     Project {
         carrier: NodePath,
         binding: BindingId,
-        capability_origins: Option<CheckedCapabilityOrigins>,
+        state_origins: Option<CheckedStateOrigins>,
         fields: Vec<u32>,
         ty: CheckedType,
         consume_root: bool,
@@ -1348,7 +1424,7 @@ pub(crate) struct CheckedDrop {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
-    pub(crate) capability_origins: Option<CheckedCapabilityOrigins>,
+    pub(crate) state_origins: Option<CheckedStateOrigins>,
     pub(crate) release: crate::SystemRelease,
 }
 
@@ -1356,7 +1432,7 @@ pub(crate) struct CheckedDrop {
 pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
-    pub(crate) capability_origins: Option<CheckedCapabilityOrigins>,
+    pub(crate) state_origins: Option<CheckedStateOrigins>,
     pub(crate) release: crate::SystemRelease,
 }
 
@@ -1459,7 +1535,7 @@ pub(crate) enum CheckedStatement {
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
         value: CheckedExpression,
-        capability_origins: Option<CheckedCapabilityOrigins>,
+        state_origins: Option<CheckedStateOrigins>,
         release: crate::SystemRelease,
     },
     /// A named executed proof residual [CLM-1]. The claim name is the DIAG-3
@@ -1541,6 +1617,16 @@ pub(crate) struct CheckedParameter {
     pub(crate) slice_origins: Vec<CheckedSliceOrigin>,
 }
 
+/// One callable-boundary state identity.
+///
+/// `root` is a formal value-parameter declaration and `fields` are source
+/// struct ordinals.  Lifetimes deliberately do not participate in identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CheckedStatePath {
+    pub(crate) root: DeclarationId,
+    pub(crate) fields: Vec<u32>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedFunction {
     pub(crate) id: FunctionId,
@@ -1553,20 +1639,15 @@ pub(crate) struct CheckedFunction {
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
-    /// Closed-world logical-authority origin of this function's result.
-    pub(crate) result_authority_origin: CheckedResultAuthorityOrigin,
+    /// Closed-world state origin of this function's result.
+    pub(crate) result_state_origin: CheckedResultStateOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     pub(crate) declared_traps: bool,
     pub(crate) declared_allocates_heap: bool,
-    /// Direct formal capability subjects named by `writes(...)`. Provenance
-    /// consumes this boundary fact before target/fragment summaries are
-    /// derived later in the pipeline.
-    pub(crate) declared_capability_writes: Vec<DeclarationId>,
+    /// Formal state paths named by `writes(...)`.
+    pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Conservative fixed-point summary of every reachable target action.
     pub(crate) target_action: crate::TargetAction,
-    /// Concrete family-authority uses projected onto this function's formal
-    /// capability parameters. Unknown propagation fails closed in PAR.
-    pub(crate) authority_summary: CheckedAuthoritySummary,
     /// Callable-boundary predicates in `requires_clause` source order.
     pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
     /// Verified-relation surfaces in `ensures_clause` source order. H1
@@ -1581,21 +1662,6 @@ pub(crate) struct CheckedFunction {
     /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]
     pub(crate) entailment: super::entailment::FunctionEntailment,
-}
-
-/// One family authority use at a callable boundary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedAuthorityUse {
-    pub(crate) parameter: u32,
-    pub(crate) family: crate::SystemAuthorityFamily,
-    pub(crate) fragment: crate::SystemAuthorityFragment,
-}
-
-/// Closed-world authority summary of one concrete function.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct CheckedAuthoritySummary {
-    pub(crate) uses: Vec<CheckedAuthorityUse>,
-    pub(crate) unknown: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1620,11 +1686,9 @@ pub(crate) struct CheckedGenericRequirement {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedEffectCapabilities {
-    pub(crate) region_reads: Vec<DeclarationId>,
-    pub(crate) region_writes: Vec<DeclarationId>,
-    pub(crate) capability_reads: Vec<DeclarationId>,
-    pub(crate) capability_writes: Vec<DeclarationId>,
+pub(crate) struct CheckedEffects {
+    pub(crate) reads: Vec<CheckedStatePath>,
+    pub(crate) writes: Vec<CheckedStatePath>,
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
     pub(crate) traps: bool,
@@ -1644,7 +1708,7 @@ pub(crate) struct CheckedContractMember {
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    pub(crate) effects: CheckedEffectCapabilities,
+    pub(crate) effects: CheckedEffects,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -59,28 +59,44 @@ const OPEN_DIRECTORY: u8 = 11;
 const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
 const OPEN_FILE: u8 = 14;
+const RESERVE_FILE: u8 = 15;
 
 /// The finite system operations the first typed file adapter can actualize.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CompletionFileOperation {
+    OpenRead,
     Read,
     Write,
+    OpenDirectory,
+    OpenDirectorySource,
+    DirectoryNext,
+    OpenFile,
 }
 
 pub(super) fn completion_file_operation(
     operation: crate::IrSystemOperation,
 ) -> Option<CompletionFileOperation> {
     match operation.ordinal() {
+        OPEN_READ => Some(CompletionFileOperation::OpenRead),
         READ_ONCE => Some(CompletionFileOperation::Read),
         WRITE_ONCE => Some(CompletionFileOperation::Write),
+        OPEN_DIRECTORY => Some(CompletionFileOperation::OpenDirectory),
+        OPEN_LIST => Some(CompletionFileOperation::OpenDirectorySource),
+        LIST_ONCE => Some(CompletionFileOperation::DirectoryNext),
+        OPEN_FILE => Some(CompletionFileOperation::OpenFile),
         _ => None,
     }
 }
 
 pub(super) const fn completion_mapper_symbol(operation: CompletionFileOperation) -> &'static str {
     match operation {
+        CompletionFileOperation::OpenRead => OPEN_READ_COMPLETION_MAPPER,
         CompletionFileOperation::Read => READ_COMPLETION_MAPPER,
         CompletionFileOperation::Write => WRITE_COMPLETION_MAPPER,
+        CompletionFileOperation::OpenDirectory => OPEN_DIRECTORY_COMPLETION_MAPPER,
+        CompletionFileOperation::OpenDirectorySource => OPEN_LIST_COMPLETION_MAPPER,
+        CompletionFileOperation::DirectoryNext => DIRECTORY_NEXT_COMPLETION_MAPPER,
+        CompletionFileOperation::OpenFile => OPEN_FILE_COMPLETION_MAPPER,
     }
 }
 
@@ -108,9 +124,16 @@ const IO_ERROR_MAPPER: &str = "wf.sys.io.error";
 /// execution choices produce the same qualified Whitefoot outcome.
 const READ_COMPLETION_MAPPER: &str = "wf.sys.read.completion";
 const WRITE_COMPLETION_MAPPER: &str = "wf.sys.write.completion";
+const OPEN_READ_COMPLETION_MAPPER: &str = "wf.sys.open_read.completion";
+const OPEN_DIRECTORY_COMPLETION_MAPPER: &str = "wf.sys.open_directory.completion";
+const OPEN_LIST_COMPLETION_MAPPER: &str = "wf.sys.open_directory_source.completion";
+const DIRECTORY_NEXT_COMPLETION_MAPPER: &str = "wf.sys.directory_next.completion";
+const OPEN_FILE_COMPLETION_MAPPER: &str = "wf.sys.open_file.completion";
+pub(super) const OPEN_EXPECT_REGULAR: u32 = 1;
+pub(super) const OPEN_EXPECT_DIRECTORY: u32 = 2;
 
 /// The private constant naming the initial working directory.
-const WORKING_DIRECTORY: &str = "@.wf.sys.working.directory";
+pub(super) const WORKING_DIRECTORY: &str = "@.wf.sys.working.directory";
 
 /// Everything the qualified system interface adds to one module.
 pub(super) struct SystemEmission {
@@ -212,7 +235,7 @@ pub(super) fn emit_system_interface(
             OPEN_READ => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
-                definitions.push_str(&emit_open_read(implementation, &shape, target)?);
+                definitions.push_str(&emit_open_read(program, implementation, &shape, target)?);
             }
             READ_ONCE => {
                 let shape = read_outcome_shape(program, result)?;
@@ -239,7 +262,12 @@ pub(super) fn emit_system_interface(
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
                 needs_working_directory = true;
-                definitions.push_str(&emit_open_directory_source(implementation, &shape, target)?);
+                definitions.push_str(&emit_open_directory_source(
+                    program,
+                    implementation,
+                    &shape,
+                    target,
+                )?);
             }
             LIST_ONCE => {
                 let shape = list_outcome_shape(program, result)?;
@@ -256,6 +284,7 @@ pub(super) fn emit_system_interface(
                 record_io_error(&mut io_error, shape.err_type)?;
                 definitions.push_str(&emit_open_file(program, implementation, &shape, target)?);
             }
+            RESERVE_FILE => definitions.push_str(&emit_reserve_file(implementation)),
             _ => return Err(BackendFailure::InvalidIr),
         }
         for declaration in operation_declarations(ordinal, target)? {
@@ -270,9 +299,6 @@ pub(super) fn emit_system_interface(
         definitions.push_str(&emit_io_error_mapper(program, error, target)?);
     }
 
-    // Which facility a close or a directory open reaches is the target column
-    // of the [QUAL-1] row, so both symbols come from the qualification rather
-    // than from a fixed name here.
     if let Some(symbol) = native_release_symbol(program, qualification)? {
         declarations.insert(format!("declare i32 @{symbol}(i32)"));
     }
@@ -336,30 +362,47 @@ fn operation_declarations(
         // prefix concatenated onto a path and resolved against an ambient
         // working directory.
         OPEN_READ | OPEN_LIST => {
-            return Ok(vec![format!(
-                "declare i32 @{}(i32, ptr, i32, ...)",
-                target.file_open_symbol()
-            )]);
+            let symbol = target.file_open_symbol();
+            return Ok(vec![
+                if target.uses_typed_completion_file_adapter() {
+                    format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                } else {
+                    format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
+                },
+                "declare void @abort() noreturn".to_owned(),
+            ]);
         }
         OPEN_DIRECTORY => {
+            let symbol = target.file_open_symbol();
             return Ok(vec![
-                format!(
-                    "declare i32 @{}(i32, ptr, i32, ...)",
-                    target.file_open_symbol()
-                ),
+                if target.uses_typed_completion_file_adapter() {
+                    format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                } else {
+                    format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
+                },
                 "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
+                "declare void @abort() noreturn".to_owned(),
             ]);
         }
         OPEN_FILE => {
-            return Ok(vec![
-                format!(
-                    "declare i32 @{}(i32, ptr, i32, ...)",
-                    target.file_open_symbol()
-                ),
-                format!("declare i32 @{}(i32, ptr)", target.file_status_symbol()),
-                format!("declare i32 @{}(i32)", target.close_symbol()),
+            let open = target.file_open_symbol();
+            let mut declarations = vec![
+                if target.uses_typed_completion_file_adapter() {
+                    format!("declare i32 @{open}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                } else {
+                    format!("declare i32 @{open}(i32, ptr, i32, ...)")
+                },
                 "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
-            ]);
+                "declare void @abort() noreturn".to_owned(),
+            ];
+            if !target.uses_typed_completion_file_adapter() {
+                declarations.push(format!(
+                    "declare i32 @{}(i32, ptr)",
+                    target.file_status_symbol()
+                ));
+                declarations.push(format!("declare i32 @{}(i32)", target.close_symbol()));
+            }
+            return Ok(declarations);
         }
         READ_ONCE => {
             return Ok(vec![
@@ -1162,6 +1205,7 @@ fn native_error(target: SystemTarget, prefix: &str) -> (String, String) {
 }
 
 fn emit_open_read(
+    program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
@@ -1182,7 +1226,7 @@ fn emit_open_read(
         ..
     } = shape;
     let (read_error, error) = native_error(target, "failure");
-    // [PATH-2]: the path is resolved against the capability's own directory
+    // [PATH-2]: the path is resolved against the supplied value's own directory
     // object through the target's own directory-relative facility. Nothing is
     // concatenated onto it and no ambient working directory is consulted, so a
     // resolved object may lie outside that directory exactly as the process
@@ -1193,12 +1237,40 @@ fn emit_open_read(
     // elements the target terminates, [SYS-9] takes the lease length as that
     // element's exact length, and [PATH-1] admits no embedded NUL and retypes
     // the same lease with no copy. Nothing is allocated or copied here.
-    Ok(format!(
-        "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
+    let mapper = emit_open_completion_mapper(
+        program,
+        shape,
+        OPEN_READ_COMPLETION_MAPPER,
+        SystemResourceType::ReadFile,
+    )?;
+    let wrapper = if target.uses_typed_completion_file_adapter() {
+        format!(
+            "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
+             entry:\n  \
+             %open.error.slot = alloca i32, align 4\n  \
+             %open.outcome.slot = alloca i32, align 4\n  \
+             %text = extractvalue {path} %path, 0\n  \
+             %descriptor = call {file} @{open}({directory} %root, ptr %text, i32 {flags}, \
+             i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}, ptr %open.error.slot, \
+             ptr %open.outcome.slot)\n  \
+             %raw.descriptor = sext {file} %descriptor to i64\n  \
+             %open.error = load i32, ptr %open.error.slot, align 4\n  \
+             %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
+             %mapped = call {llvm} @{OPEN_READ_COMPLETION_MAPPER}(i64 %raw.descriptor, \
+             i32 %open.error, i32 %open.outcome)\n  \
+             ret {llvm} %mapped\n\
+             }}\n\n",
+            symbol = implementation.symbol(),
+            open = target.file_open_symbol(),
+            flags = target.file_open_flags(),
+        )
+    } else {
+        format!(
+            "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
          entry:\n  \
          %text = extractvalue {path} %path, 0\n  \
-         %descriptor = call {file} (i32, ptr, i32, ...) @{open}({directory} %root, ptr %text, \
-         i32 {flags})\n  \
+         %descriptor = call {file} @{open}({directory} %root, \
+         ptr %text, i32 {flags}, i32 0, i32 0)\n  \
          %opened = icmp sge {file} %descriptor, 0\n  \
          br i1 %opened, label %live, label %failure\n\
          live:\n  \
@@ -1213,9 +1285,91 @@ fn emit_open_read(
          %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err\n\
          }}\n\n",
-        symbol = implementation.symbol(),
-        open = target.file_open_symbol(),
-        flags = target.file_open_flags()
+            symbol = implementation.symbol(),
+            open = target.file_open_symbol(),
+            flags = target.file_open_flags()
+        )
+    };
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_open_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+    symbol: &str,
+    resource: SystemResourceType,
+) -> Result<String, BackendFailure> {
+    let opened = representation(resource);
+    if shape.ok_llvm != opened {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let classes = io_error_classes(program, *err_type)?;
+    let directory_class = classes
+        .iter()
+        .find(|class| class.spelling == "IsDirectory")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let other_class = classes
+        .iter()
+        .find(|class| class.spelling == "Other")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let (directory_value, directory_error) =
+        io_error_value(err_llvm, directory_class, "kind.directory", "0", "0");
+    let (other_value, other_error) = io_error_value(err_llvm, other_class, "kind.other", "0", "0");
+    Ok(format!(
+        "define private {llvm} @{symbol}(i64 %raw.descriptor, i32 %error, \
+         i32 %open.outcome) alwaysinline {{\n\
+         entry:\n  \
+         switch i32 %open.outcome, label %tcb.defect [\n  \
+           i32 0, label %live\n  \
+           i32 1, label %open.failure\n  \
+           i32 2, label %status.failure\n  \
+           i32 3, label %kind.directory.return\n  \
+           i32 4, label %kind.other.return\n  \
+         ]\n\
+         live:\n  \
+         %descriptor = trunc i64 %raw.descriptor to {opened}\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {opened} %descriptor, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         open.failure:\n  \
+         %open.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
+         {ORIGIN_DIRECTORY_OPEN})\n  \
+         %open.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %open.result = insertvalue {llvm} %open.tag, {err_llvm} %open.error, {err_index}\n  \
+         ret {llvm} %open.result\n\
+         status.failure:\n  \
+         %status.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
+         {ORIGIN_DESCRIPTOR_STATUS})\n  \
+         %status.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %status.result = insertvalue {llvm} %status.tag, {err_llvm} %status.error, \
+         {err_index}\n  \
+         ret {llvm} %status.result\n\
+         kind.directory.return:\n\
+         {directory_value}  \
+         %kind.directory.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.directory.result = insertvalue {llvm} %kind.directory.result.tag, {err_llvm} \
+         {directory_error}, {err_index}\n  \
+         ret {llvm} %kind.directory.result\n\
+         kind.other.return:\n\
+         {other_value}  \
+         %kind.other.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.other.result = insertvalue {llvm} %kind.other.result.tag, {err_llvm} \
+         {other_error}, {err_index}\n  \
+         ret {llvm} %kind.other.result\n\
+         tcb.defect:\n  \
+         call void @abort()\n  \
+         unreachable\n\
+         }}\n\n"
     ))
 }
 
@@ -1601,7 +1755,13 @@ fn emit_open_directory(
     shape: &OutcomeShape,
     target: SystemTarget,
 ) -> Result<String, BackendFailure> {
-    emit_open_by_name(
+    let mapper = emit_open_completion_mapper(
+        program,
+        shape,
+        OPEN_DIRECTORY_COMPLETION_MAPPER,
+        SystemResourceType::DirectoryRead,
+    )?;
+    let wrapper = emit_open_by_name(
         program,
         implementation,
         shape,
@@ -1609,7 +1769,8 @@ fn emit_open_directory(
         SystemResourceType::DirectoryRead,
         target.component_directory_open_flags(),
         false,
-    )
+    )?;
+    Ok(format!("{mapper}{wrapper}"))
 }
 
 /// Emits the approved implementation of active `open_file` [SYS-11].
@@ -1625,7 +1786,13 @@ fn emit_open_file(
     shape: &OutcomeShape,
     target: SystemTarget,
 ) -> Result<String, BackendFailure> {
-    emit_open_by_name(
+    let mapper = emit_open_completion_mapper(
+        program,
+        shape,
+        OPEN_FILE_COMPLETION_MAPPER,
+        SystemResourceType::ReadFile,
+    )?;
+    let wrapper = emit_open_by_name(
         program,
         implementation,
         shape,
@@ -1633,7 +1800,111 @@ fn emit_open_file(
         SystemResourceType::ReadFile,
         target.component_file_open_flags(),
         true,
-    )
+    )?;
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+#[allow(dead_code)]
+fn emit_open_file_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let file = representation(SystemResourceType::ReadFile);
+    if shape.ok_llvm != file {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let classes = io_error_classes(program, *err_type)?;
+    let directory_class = classes
+        .iter()
+        .find(|class| class.spelling == "IsDirectory")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let other_class = classes
+        .iter()
+        .find(|class| class.spelling == "Other")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let (directory_value, directory_error) =
+        io_error_value(err_llvm, directory_class, "kind.directory", "0", "0");
+    let (other_value, other_error) = io_error_value(err_llvm, other_class, "kind.other", "0", "0");
+    let (inspection_read_error, inspection_error) = native_error(target, "inspection");
+    let status = target.file_status_symbol();
+    let status_call = if target.uses_typed_completion_file_adapter() {
+        format!(
+            "call i32 @{status}(i32 %descriptor, ptr %file.status, i64 {})",
+            target.file_status_size()
+        )
+    } else {
+        format!("call i32 @{status}(i32 %descriptor, ptr %file.status)")
+    };
+    Ok(format!(
+        "define private {llvm} @{OPEN_FILE_COMPLETION_MAPPER}(i64 %raw.descriptor, \
+         i32 %open.error) alwaysinline {{\n\
+         entry:\n  \
+         %file.status = alloca [{status_size} x i8], align 8\n  \
+         %opened = icmp sge i64 %raw.descriptor, 0\n  \
+         br i1 %opened, label %inspect, label %open.failure\n\
+         inspect:\n  \
+         %descriptor = trunc i64 %raw.descriptor to {file}\n  \
+         %inspection.result = {status_call}\n  \
+         %inspection.ok = icmp eq i32 %inspection.result, 0\n  \
+         br i1 %inspection.ok, label %classify, label %inspection.failure\n\
+         classify:\n  \
+         %mode.at = getelementptr inbounds i8, ptr %file.status, i64 {mode_offset}\n  \
+         %mode.native = load i16, ptr %mode.at, align 2\n  \
+         %mode = zext i16 %mode.native to i32\n  \
+         %file.kind = and i32 %mode, 61440\n  \
+         %regular = icmp eq i32 %file.kind, 32768\n  \
+         br i1 %regular, label %live, label %kind.failure\n\
+         live:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {file} %descriptor, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         open.failure:\n  \
+         %open.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %open.error, i8 \
+         {ORIGIN_DIRECTORY_OPEN})\n  \
+         %open.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %open.outcome = insertvalue {llvm} %open.tag, {err_llvm} %open.mapped, {err_index}\n  \
+         ret {llvm} %open.outcome\n\
+         inspection.failure:\n\
+         {inspection_read_error}  \
+         %inspection.close = call i32 @{close}(i32 %descriptor)\n  \
+         %inspection.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {inspection_error}, \
+         i8 {ORIGIN_DESCRIPTOR_STATUS})\n  \
+         %inspection.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %inspection.outcome = insertvalue {llvm} %inspection.tag, {err_llvm} \
+         %inspection.mapped, {err_index}\n  \
+         ret {llvm} %inspection.outcome\n\
+         kind.failure:\n  \
+         %kind.directory = icmp eq i32 %file.kind, 16384\n  \
+         %kind.close = call i32 @{close}(i32 %descriptor)\n  \
+         br i1 %kind.directory, label %kind.directory.return, label %kind.other.return\n\
+         kind.directory.return:\n\
+         {directory_value}  \
+         %kind.directory.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.directory.outcome = insertvalue {llvm} %kind.directory.result.tag, {err_llvm} \
+         {directory_error}, {err_index}\n  \
+         ret {llvm} %kind.directory.outcome\n\
+         kind.other.return:\n\
+         {other_value}  \
+         %kind.other.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.other.outcome = insertvalue {llvm} %kind.other.result.tag, {err_llvm} \
+         {other_error}, {err_index}\n  \
+         ret {llvm} %kind.other.outcome\n\
+         }}\n\n",
+        status_size = target.file_status_size(),
+        mode_offset = target.file_status_mode_offset(),
+        close = target.close_symbol(),
+    ))
 }
 
 /// Emits one open-by-name implementation [SYS-11, SYS-14].
@@ -1642,7 +1913,7 @@ fn emit_open_file(
 /// [HOST-3]'s command-lifetime backing and [PATH-1]'s inline lease are
 /// untouched. The validated component is copied into one bounded stack slot
 /// only to terminate it for the target's own directory-relative facility,
-/// which then resolves it against the capability's directory object exactly
+/// which then resolves it against the supplied directory object exactly
 /// as `open_read` does [PATH-2].
 fn emit_open_by_name(
     program: &IrProgram<'_, '_, '_>,
@@ -1687,6 +1958,11 @@ fn emit_open_by_name(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
+    if target.uses_typed_completion_file_adapter() {
+        prologue.push_str(
+            "  %open.error.slot = alloca i32, align 4\n  %open.outcome.slot = alloca i32, align 4\n",
+        );
+    }
     let entry = range_entry(&prologue);
     let component = component_validation(
         &buffer,
@@ -1711,9 +1987,18 @@ fn emit_open_by_name(
             io_error_value(err_llvm, directory_class, "kind.directory", "0", "0");
         let (other_value, other_error) =
             io_error_value(err_llvm, other_class, "kind.other", "0", "0");
+        let status = target.file_status_symbol();
+        let status_call = if target.uses_typed_completion_file_adapter() {
+            format!(
+                "call i32 @{status}(i32 %descriptor, ptr %file.status, i64 {})",
+                target.file_status_size()
+            )
+        } else {
+            format!("call i32 @{status}(i32 %descriptor, ptr %file.status)")
+        };
         format!(
             "inspect:\n  \
-             %inspection.result = call i32 @{status}(i32 %descriptor, ptr %file.status)\n  \
+             %inspection.result = {status_call}\n  \
              %inspection.ok = icmp eq i32 %inspection.result, 0\n  \
              br i1 %inspection.ok, label %classify, label %inspection.failure\n\
              classify:\n  \
@@ -1753,13 +2038,48 @@ fn emit_open_by_name(
              {other_error}, \
              {err_index}\n  \
              ret {llvm} %kind.other.outcome\n",
-            status = target.file_status_symbol(),
-            mode_offset = target.file_status_mode_offset(),
             close = target.close_symbol(),
+            mode_offset = target.file_status_mode_offset(),
         )
     } else {
         String::new()
     };
+    if target.uses_typed_completion_file_adapter() {
+        let (mapper, expected_kind) = if require_regular {
+            (OPEN_FILE_COMPLETION_MAPPER, OPEN_EXPECT_REGULAR)
+        } else {
+            (OPEN_DIRECTORY_COMPLETION_MAPPER, OPEN_EXPECT_DIRECTORY)
+        };
+        return Ok(format!(
+            "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
+             i64 %end) alwaysinline {{\n\
+             {entry}\
+             {component}\
+             open:\n  \
+             call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, \
+             i1 false)\n  \
+             %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
+             store i8 0, ptr %terminator, align 1\n  \
+             %descriptor = call {opened} @{open}({directory} %root, ptr %component, i32 {flags}, \
+             i32 0, i32 0, i32 {expected_kind}, ptr %open.error.slot, \
+             ptr %open.outcome.slot)\n  \
+             %raw.descriptor = sext {opened} %descriptor to i64\n  \
+             %open.error = load i32, ptr %open.error.slot, align 4\n  \
+             %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
+             %mapped = call {llvm} @{mapper}(i64 %raw.descriptor, i32 %open.error, \
+             i32 %open.outcome)\n  \
+             ret {llvm} %mapped\n\
+             invalid:\n\
+             {invalid_value}  \
+             %rejected.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} \
+             {invalid_error}, {err_index}\n  \
+             ret {llvm} %rejected.outcome\n\
+             }}\n\n",
+            symbol = implementation.symbol(),
+            open = target.file_open_symbol(),
+        ));
+    }
     Ok(format!(
         "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
          i64 %end) alwaysinline {{\n\
@@ -1769,8 +2089,8 @@ fn emit_open_by_name(
          call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, i1 false)\n  \
          %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
          store i8 0, ptr %terminator, align 1\n  \
-         %descriptor = call {opened} (i32, ptr, i32, ...) @{open}({directory} %root, \
-         ptr %component, i32 {flags})\n  \
+         %descriptor = call {opened} @{open}({directory} %root, \
+         ptr %component, i32 {flags}, i32 0, i32 0)\n  \
          %opened = icmp sge {opened} %descriptor, 0\n  \
          br i1 %opened, label %{opened_target}, label %failure\n\
          {validation}\
@@ -1800,11 +2120,12 @@ fn emit_open_by_name(
 /// Emits the approved implementation of `open_directory_source` [SYS-14].
 ///
 /// One enumeration handle is an independent descriptor opened against the
-/// capability's own directory object through the same directory-relative
+/// supplied value's own directory object through the same directory-relative
 /// facility [PATH-2], named by the self component. It therefore carries its
-/// own cursor and aliases the capability no more than `open_read`'s
+/// own cursor and aliases the directory value no more than `open_read`'s
 /// `ReadFile` does [SYS-10].
 fn emit_open_directory_source(
+    program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
@@ -1824,11 +2145,38 @@ fn emit_open_directory_source(
         ..
     } = shape;
     let (read_error, error) = native_error(target, "failure");
-    Ok(format!(
-        "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
+    let mapper = emit_open_completion_mapper(
+        program,
+        shape,
+        OPEN_LIST_COMPLETION_MAPPER,
+        SystemResourceType::DirectorySource,
+    )?;
+    let wrapper = if target.uses_typed_completion_file_adapter() {
+        format!(
+            "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
+             entry:\n  \
+             %open.error.slot = alloca i32, align 4\n  \
+             %open.outcome.slot = alloca i32, align 4\n  \
+             %descriptor = call {list} @{open}({directory} %directory, \
+             ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0, \
+             i32 {OPEN_EXPECT_DIRECTORY}, ptr %open.error.slot, ptr %open.outcome.slot)\n  \
+             %raw.descriptor = sext {list} %descriptor to i64\n  \
+             %open.error = load i32, ptr %open.error.slot, align 4\n  \
+             %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
+             %mapped = call {llvm} @{OPEN_LIST_COMPLETION_MAPPER}(i64 %raw.descriptor, \
+             i32 %open.error, i32 %open.outcome)\n  \
+             ret {llvm} %mapped\n\
+             }}\n\n",
+            symbol = implementation.symbol(),
+            open = target.file_open_symbol(),
+            flags = target.directory_open_flags(),
+        )
+    } else {
+        format!(
+            "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
          entry:\n  \
-         %descriptor = call {list} (i32, ptr, i32, ...) @{open}({directory} %directory, \
-         ptr {WORKING_DIRECTORY}, i32 {flags})\n  \
+         %descriptor = call {list} @{open}({directory} %directory, \
+         ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0)\n  \
          %opened = icmp sge {list} %descriptor, 0\n  \
          br i1 %opened, label %live, label %failure\n\
          live:\n  \
@@ -1843,10 +2191,12 @@ fn emit_open_directory_source(
          %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err\n\
          }}\n\n",
-        symbol = implementation.symbol(),
-        open = target.file_open_symbol(),
-        flags = target.directory_open_flags()
-    ))
+            symbol = implementation.symbol(),
+            open = target.file_open_symbol(),
+            flags = target.directory_open_flags()
+        )
+    };
+    Ok(format!("{mapper}{wrapper}"))
 }
 
 /// Emits the approved implementation of `directory_next` [SYS-14].
@@ -1904,7 +2254,8 @@ fn emit_directory_next(
     let native_symlink = enumeration.native_symlink();
     let native_unknown = enumeration.native_unknown();
     let component_limit = target.component_limit();
-    Ok(format!(
+    let mapper = emit_directory_next_completion_mapper(program, shape, target)?;
+    let wrapper = format!(
         "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %start, \
          i64 %end) alwaysinline {{\n\
          {entry}\
@@ -2035,6 +2386,164 @@ fn emit_directory_next(
          }}\n\n",
         symbol = implementation.symbol(),
         root = target.root_prefix(),
+    );
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_directory_next_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &ListOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let enumeration = target
+        .directory_enumeration()
+        .ok_or(BackendFailure::InvalidIr)?;
+    let ListOutcomeShape {
+        llvm,
+        bytes_tag,
+        bytes_index,
+        end_tag,
+        failed_tag,
+        failed_index,
+        failed_llvm,
+        ..
+    } = shape;
+    let entries_index = bytes_index + 1;
+    Ok(format!(
+        "define private {llvm} @{DIRECTORY_NEXT_COMPLETION_MAPPER}(i64 %filled, i32 %error, \
+         {buffer} %destination, i64 %start, i64 %extent) alwaysinline {{\n\
+         entry:\n  \
+         %base = extractvalue {buffer} %destination, 0\n  \
+         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %progress = icmp sgt i64 %filled, 0\n  \
+         br i1 %progress, label %sanitize, label %quiet\n\
+         sanitize:\n  \
+         %bounded.batch = icmp ule i64 %filled, %extent\n  \
+         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
+         quiet:\n  \
+         %ended = icmp eq i64 %filled, 0\n  \
+         br i1 %ended, label %exhausted, label %failure\n\
+         exhausted:\n  \
+         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
+         ret {llvm} %exhausted.outcome\n\
+         failure:\n  \
+         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {ORIGIN_READ})\n  \
+         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
+         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
+         {failed_index}\n  \
+         ret {llvm} %failed.outcome\n\
+         normalize:\n  \
+         br label %walk\n\
+         walk:\n  \
+         %source = phi i64 [ 0, %normalize ], [ %source.next, %step ]\n  \
+         %written = phi i64 [ 0, %normalize ], [ %written.next, %step ]\n  \
+         %entries = phi i64 [ 0, %normalize ], [ %entries.next, %step ]\n  \
+         %complete = icmp eq i64 %source, %filled\n  \
+         br i1 %complete, label %done, label %record\n\
+         record:\n  \
+         %remaining = sub nuw i64 %filled, %source\n  \
+         %headerless = icmp ult i64 %remaining, {name_offset}\n  \
+         br i1 %headerless, label %tcb.defect, label %header\n\
+         header:\n  \
+         %entry.record = getelementptr inbounds i8, ptr %window, i64 %source\n  \
+         %record.extent.at = getelementptr inbounds i8, ptr %entry.record, \
+         i64 {record_length_offset}\n  \
+         %record.extent.native = load i16, ptr %record.extent.at, align 1\n  \
+         %record.extent = zext i16 %record.extent.native to i64\n  \
+         %named.at = getelementptr inbounds i8, ptr %entry.record, i64 {name_length_offset}\n  \
+         %named.native = load i16, ptr %named.at, align 1\n  \
+         %named = zext i16 %named.native to i64\n  \
+         %kind.at = getelementptr inbounds i8, ptr %entry.record, i64 {entry_type_offset}\n  \
+         %kind.native = load i8, ptr %kind.at, align 1\n  \
+         %kind.value = zext i8 %kind.native to i64\n  \
+         %needed = add i64 {name_offset}, %named\n  \
+         %sized = icmp uge i64 %record.extent, %needed\n  \
+         %bounded = icmp ule i64 %record.extent, %remaining\n  \
+         %advancing = icmp uge i64 %record.extent, 1\n  \
+         %nameable = icmp ule i64 %named, {component_limit}\n  \
+         %naming = icmp uge i64 %named, 1\n  \
+         %named.usable = and i1 %nameable, %naming\n  \
+         %consistent = and i1 %sized, %bounded\n  \
+         %progressive = and i1 %advancing, %named.usable\n  \
+         %usable = and i1 %consistent, %progressive\n  \
+         br i1 %usable, label %room, label %tcb.defect\n\
+         room:\n  \
+         %portable = add i64 {ENTRY_HEADER}, %named\n  \
+         %after = add i64 %written, %portable\n  \
+         %fits = icmp ule i64 %after, %extent\n  \
+         br i1 %fits, label %record.header, label %tcb.defect\n\
+         record.header:\n  \
+         %regular = icmp eq i64 %kind.value, {native_regular}\n  \
+         %directory = icmp eq i64 %kind.value, {native_directory}\n  \
+         %symlink = icmp eq i64 %kind.value, {native_symlink}\n  \
+         %unclassified = icmp eq i64 %kind.value, {native_unknown}\n  \
+         %kind.other = select i1 %regular, i8 {KIND_REGULAR}, i8 {KIND_OTHER}\n  \
+         %kind.directory = select i1 %directory, i8 {KIND_DIRECTORY}, i8 %kind.other\n  \
+         %kind.symlink = select i1 %symlink, i8 {KIND_SYMLINK}, i8 %kind.directory\n  \
+         %kind.portable = select i1 %unclassified, i8 {KIND_UNKNOWN}, i8 %kind.symlink\n  \
+         %target.record = getelementptr inbounds i8, ptr %window, i64 %written\n  \
+         store i8 %kind.portable, ptr %target.record, align 1\n  \
+         %target.named.low = getelementptr inbounds i8, ptr %target.record, i64 1\n  \
+         %target.named.high = getelementptr inbounds i8, ptr %target.record, i64 2\n  \
+         %named.short = trunc i64 %named to i16\n  \
+         %named.low = trunc i16 %named.short to i8\n  \
+         %named.high.part = lshr i16 %named.short, 8\n  \
+         %named.high = trunc i16 %named.high.part to i8\n  \
+         store i8 %named.low, ptr %target.named.low, align 1\n  \
+         store i8 %named.high, ptr %target.named.high, align 1\n  \
+         %target.name = getelementptr inbounds i8, ptr %target.record, i64 {ENTRY_HEADER}\n  \
+         %source.name = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
+         br label %copy\n\
+         copy:\n  \
+         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.store ]\n  \
+         %copy.done = icmp uge i64 %copied, %named\n  \
+         br i1 %copy.done, label %step, label %copy.step\n\
+         copy.step:\n  \
+         %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
+         %copy.byte = load i8, ptr %copy.from, align 1\n  \
+         %copy.nul = icmp eq i8 %copy.byte, 0\n  \
+         %copy.separator = icmp eq i8 %copy.byte, {root}\n  \
+         %copy.invalid = or i1 %copy.nul, %copy.separator\n  \
+         br i1 %copy.invalid, label %tcb.defect, label %copy.store\n\
+         copy.store:\n  \
+         %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
+         store i8 %copy.byte, ptr %copy.to, align 1\n  \
+         %copied.next = add i64 %copied, 1\n  \
+         br label %copy\n\
+         step:\n  \
+         %source.next = add i64 %source, %record.extent\n  \
+         %written.next = add i64 %written, %portable\n  \
+         %entries.next = add i64 %entries, 1\n  \
+         br label %walk\n\
+         done:\n  \
+         %next = add nuw i64 %start, %written\n  \
+         %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %bytes.endpoint = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
+         %bytes.outcome = insertvalue {llvm} %bytes.endpoint, i64 %entries, {entries_index}\n  \
+         ret {llvm} %bytes.outcome\n\
+         tcb.defect:\n  \
+         call void @abort()\n  \
+         unreachable\n\
+         }}\n\n",
+        name_offset = enumeration.name_offset(),
+        record_length_offset = enumeration.record_length_offset(),
+        name_length_offset = enumeration.name_length_offset(),
+        entry_type_offset = enumeration.entry_type_offset(),
+        native_regular = enumeration.native_regular(),
+        native_directory = enumeration.native_directory(),
+        native_symlink = enumeration.native_symlink(),
+        native_unknown = enumeration.native_unknown(),
+        component_limit = target.component_limit(),
+        root = target.root_prefix(),
     ))
 }
 
@@ -2106,6 +2615,20 @@ fn emit_exit_status(implementation: ApprovedImplementation) -> String {
         "define private {status} @{}(i8 %code) alwaysinline {{\n\
          entry:\n  \
          ret {status} %code\n\
+         }}\n\n",
+        implementation.symbol()
+    )
+}
+
+/// The reservation value exists only in Whitefoot's ownership proof. The
+/// implementation performs no target action and returns one harmless opaque
+/// bit; target open wrappers erase the consumed permit before native calls.
+fn emit_reserve_file(implementation: ApprovedImplementation) -> String {
+    let permit = representation(SystemResourceType::FilePermit);
+    format!(
+        "define private {permit} @{}() alwaysinline {{\n\
+         entry:\n  \
+         ret {permit} true\n\
          }}\n\n",
         implementation.symbol()
     )
@@ -2322,6 +2845,11 @@ pub(super) fn emit_entry(
             3 => {
                 supplied.push("i32 2".to_owned());
             }
+            // FileFactory is a proof-only affine entry value. Supplying it
+            // performs no host allocation and carries no native handle.
+            4 => {
+                supplied.push("i1 true".to_owned());
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -2398,6 +2926,7 @@ fn expected_input(ordinal: u8) -> Result<SystemResourceType, BackendFailure> {
         0 => Ok(SystemResourceType::Args),
         1 => Ok(SystemResourceType::DirectoryRead),
         2 | 3 => Ok(SystemResourceType::Output),
+        4 => Ok(SystemResourceType::FileFactory),
         _ => Err(BackendFailure::InvalidIr),
     }
 }
@@ -2451,6 +2980,9 @@ impl FunctionEmitter<'_, '_> {
             if argument_type != catalog_ir_type(self.program, parameter.ty)? {
                 return Err(BackendFailure::InvalidIr);
             }
+            if proof_only_resource(self.program, argument_type)? {
+                continue;
+            }
             let rendered_type = llvm_type(self.program, argument_type)?;
             rendered.push(format!("{rendered_type} {}", value_name(*argument)));
         }
@@ -2464,6 +2996,24 @@ impl FunctionEmitter<'_, '_> {
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
+}
+
+/// Whether one checked system argument has no target ABI representation.
+pub(super) fn proof_only_resource(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<bool, BackendFailure> {
+    let IrType::Nominal(id) = ty else {
+        return Ok(false);
+    };
+    let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
+    let IrNominalKind::SystemResource(contract) = nominal.kind() else {
+        return Ok(false);
+    };
+    Ok(matches!(
+        qualified_representation(contract.resource),
+        super::super::qualification::ResourceRepresentation::ProofToken
+    ))
 }
 
 /// Emits one type's compiler-derived [SYS-5] release action.

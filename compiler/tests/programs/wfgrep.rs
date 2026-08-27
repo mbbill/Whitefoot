@@ -21,8 +21,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::support::{
-    CompiledProgram, build_program, compile_program_rejection_with,
-    compile_program_with_open_by_name, compile_program_with_traversal_surface, fixture_directory,
+    CompiledProgram, build_program, compile_program, compile_program_rejection_with,
+    fixture_directory,
 };
 use whitefoot::Inventory;
 
@@ -41,7 +41,7 @@ const BUFFER_LENGTH: usize = 4096;
 /// fixture directory, never in the artifact.
 fn wfgrep_module() -> &'static str {
     static MODULE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    MODULE.get_or_init(|| compile_program_with_open_by_name("wfgrep.wf"))
+    MODULE.get_or_init(|| compile_program("wfgrep.wf"))
 }
 
 fn wfgrep() -> &'static CompiledProgram {
@@ -447,11 +447,11 @@ fn an_enumerated_symbolic_link_is_not_followed() {
 
 /// Admission is decided by the inventory the specification declares, never by
 /// the compiler recognizing a source shape: the identical search source
-/// compiles against the inventory that declares `open_file` and is an
-/// undeclared name against the active one that does not.
+/// compiles against the complete active inventory and is an undeclared name
+/// against the pre-permit inventory.
 #[test]
-fn the_search_source_is_admitted_only_by_the_declaring_inventory() {
-    let llvm = compile_program_with_open_by_name("wfgrep.wf");
+fn the_search_source_requires_the_complete_file_permit_inventory() {
+    let llvm = compile_program("wfgrep.wf");
     // The approved implementations, by symbol rather than by any source name
     // [QUAL-1].
     assert!(llvm.contains("@wf.sys.open_file.v1"));
@@ -460,29 +460,15 @@ fn the_search_source_is_admitted_only_by_the_declaring_inventory() {
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
     assert!(llvm.contains("@wf.sys.read_at.v1"));
 
-    let failure = compile_program_rejection_with("wfgrep.wf", Inventory::Traversal);
+    let failure = compile_program_rejection_with("wfgrep.wf", Inventory::OpenByName);
     assert!(
-        failure.contains("UnresolvedUse") && failure.contains("open_file"),
-        "the active inventory must reject `open_file` as an undeclared name: {failure}"
+        failure.contains("UnresolvedUse")
+            && (failure.contains("FileFactory") || failure.contains("reserve_file")),
+        "the pre-permit inventory must reject explicit file authority: {failure}"
     );
 }
 
-/// Every earlier program keeps its exact emitted module when the `open_file`
-/// row is appended, because appending only adds a declaration: no earlier
-/// ordinal moves and no earlier program resolves a different entity.
-#[test]
-fn every_earlier_program_keeps_its_module_when_open_file_is_appended() {
-    for name in [
-        "dir_walk.wf",
-        "byte_string.wf",
-        "utf8parse.wf",
-        "percent_decode.wf",
-        "sha256_abc.wf",
-    ] {
-        assert_eq!(
-            compile_program_with_traversal_surface(name),
-            compile_program_with_open_by_name(name),
-            "{name} emits a different module once the open_file row is appended"
-        );
-    }
-}
+// The old traversal/open-by-name byte differential ended when the file-permit
+// amendment changed open signatures and added nominal types. It is not muted:
+// its premise no longer exists. The active-inventory program tests and catalog
+// count/ordinal tests now cover the two separate obligations.
