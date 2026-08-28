@@ -6,40 +6,31 @@ WINDOWS_OBJDUMP ?= objdump
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
-# Every gate target that executes a compiled program runs it with core dumps
-# turned off, and that is the single largest thing this Makefile does for the
-# gate's wall time.
+# Every gate target that executes a compiled program runs it with the core
+# file limit at zero.
 #
 # Cases here are deliberately about programs that die: a false claim aborts
 # [DIAG-3], an exhausted stack faults [PROG-3], a lowering with its joins
 # removed is expected to crash. One gate run therefore kills a few hundred
-# processes on purpose, and on a host that hands each one to a crash-report
-# handler the gate pays to have a core written and analyzed for every one and
-# reads none of them. That is where the Linux gate's time went: the same
-# library suite took 1016 seconds on the four-core `ubuntu-24.04` runner and 55
-# on the three-core `macos-14` runner beside it, and the whole difference sat
-# in the five cases that spawn dying programs — 18 milliseconds a spawn there
-# against about five seconds here.
+# processes on purpose, and on a host that writes or analyses a core for each
+# one the gate pays for evidence nothing reads. Measured in batch 0093, that is
+# where the Linux gate's time went: the same library suite took 1016 seconds on
+# the four-core `ubuntu-24.04` runner and 55 on the three-core `macos-14`
+# runner beside it, and the whole difference sat in the five cases that spawn
+# dying programs.
 #
-# `ulimit -c 1` on Linux is not a typo and not a smaller limit than zero. When
-# `kernel.core_pattern` begins with a pipe — `ubuntu-24.04` names
-# `systemd-coredump` — the kernel deliberately ignores `RLIMIT_CORE` and dumps
-# anyway, because the limit is about writing a file and a pipe writes none. The
-# single exception is the value 1, which `fs/coredump.c` reads as "skip this
-# dump"; it exists so a crashing core handler cannot recurse, and it is the one
-# way a process that is not root can decline a piped dump. A soft limit of zero
-# suppresses nothing there, and zero is already what the runner starts with.
-# Everywhere else 1 is below the minimum size of any core and declines the dump
-# the ordinary way, so the rule is one sentence with one exception rather than
-# two policies.
+# This limit is the portable half of declining that, and it is not the whole of
+# it. A Linux `kernel.core_pattern` that begins with a pipe — which
+# `ubuntu-24.04` has, naming `systemd-coredump` — makes the kernel ignore
+# RLIMIT_CORE entirely, because the limit is about the size of a file and a
+# pipe writes none. A host in that state has to change the pattern, which needs
+# root; `.github/workflows/gate.yml` does exactly that in one step and says so
+# there. What this line covers is every host whose pattern names a file, where
+# a limit of zero declines the dump the ordinary way.
 #
 # Nothing a case asserts depends on a core file existing: the signal that kills
 # the process, its exit status and its record channel are all unchanged.
-ifeq ($(shell uname -s),Linux)
-NO_CORE_DUMPS := ulimit -c 1;
-else
 NO_CORE_DUMPS := ulimit -c 0;
-endif
 
 # The library suite, split by cost class rather than by subject. The modules
 # named here are the ones whose cases link a program and then run it tens or

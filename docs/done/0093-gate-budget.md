@@ -181,3 +181,112 @@ registry and the research experiments' build directory — crates with real
 dependencies whose lock files change perhaps twice a year — keyed on the lock
 files alone, so the exact key hits and nothing is written on an ordinary
 commit. Restore fell from 17.6 s to under a second.
+
+## The budget, where it cannot flake
+
+Three mechanisms, none of them inside a test:
+
+- **`timeout-minutes: 8` on every CI job.** Eight is the ceiling, not the
+  target; the target is five. A job that reaches eight has a defect worth
+  failing over rather than waiting out, and this batch's first restructured run
+  proved the mechanism by failing exactly the one job that was still over.
+- **A "ten largest gaps" step at the end of every job**, written to the job
+  summary, so the case that grew is named in the run that grew it. It is a
+  ranking of *gaps* and says so: cargo runs a target's cases on as many threads
+  as the host has cores, so a gap is a lower bound on the wall of the case that
+  closed it. That is enough for the job it has — a case that goes from
+  milliseconds to minutes closes a minutes-long gap on any host — and it costs
+  no test time, which a real per-case measurement on stable Rust would. The
+  step runs `if: always()`, so a job that was cancelled at its timeout still
+  reports what it had reached.
+- **`make check` ends with the wall of each stage**, and `make -C compiler
+  check` with its own six. That is the local half of the same signal.
+
+No test asserts a wall time, and none acquired one here. A wall-clock assertion
+inside a test fails on a loaded machine and passes on an idle one, which makes
+it a flake generator wearing a budget's clothes.
+
+## Judgment calls
+
+- **The five sampling modules are named by measurement, not by subject.**
+  `exhaustion`, `loop_split`, `parallel`, `stackless` and `trap_latch` are in
+  `SAMPLING_MODULES` because their cases link a program and run it many times,
+  which is the cost class the split exists to schedule. The alternative — move
+  them into their own `tests/*.rs` integration target so cargo schedules them
+  as a separate binary — would have meant making a large part of the compiler's
+  internals public to reach them, which is a change to the crate's shape made
+  for a scheduler's benefit.
+- **The partition is checked, not asserted.** A list of module prefixes in a
+  Makefile is exactly the kind of thing that goes stale silently: rename a
+  module and its cases quietly move into the fast half, or out of the gate
+  altogether if a filter stops matching. `test-partition` costs one `--list`
+  and turns that into a failure.
+- **Early exit only where the claim is existential.** Three of the trap-latch
+  cases assert a property of *every* run — a racing pair writes exactly one
+  record, the sequential schedule names one claim every run, one false claim
+  reports the same bytes at every worker count — and they still make every run
+  they made before. Their cost was cut by removing what each run was paying
+  for, not by sampling less. Only the four grant observations and the
+  joins-removed control, whose assertions are `> 0` and `at least one`, stop
+  early.
+- **The gap ranking says it is a gap ranking.** An exact per-case table on
+  stable Rust means either `--test-threads=1`, which costs more wall than the
+  report saves, or nightly's `--report-time`. A ranking of gaps under the
+  ordinary parallel run costs nothing and catches the regression that matters —
+  a case that grows by minutes. Calling it a duration table would have been the
+  comfortable lie.
+- **No test learned to look at a clock.** The budget is enforced by
+  `timeout-minutes` outside the process. A wall-clock assertion inside a test
+  fails on a loaded machine and passes on an idle one.
+
+## Not done
+
+- **The Linux gate is still red at `conformance-run`, on the documented
+  target-qualification gap, and this batch does not touch it.** Six cases reach
+  `TargetQualification(MissingMapping(Operation(12)))` because Linux has no
+  approved [SYS-14] directory-enumeration row: `sys14-list-outcome-exhaustive`,
+  `sys14-list-zero-range`, `sys14-directory-release`, `sys14-entry-kind-closed`,
+  `accept-sysfile-two-permits-shared-directory` and
+  `accept-par3-staged-denied-opaque-cursor`. Batch 0090 recorded five; the sixth
+  is an `accept` case added since. The corpus is compiler- and host-independent
+  by design and giving it a per-target axis would be a change to conformance
+  evidence made to turn a job green.
+- **The conformance adapter still runs its five hundred cases in one serial
+  case.** At the gate profile that is 24 to 29 seconds, comfortably inside the
+  job, and making it concurrent would be a change to conformance collection
+  wiring made for speed rather than for evidence.
+- **The gate-profile build is now the floor of four jobs.** 40 to 70 seconds on
+  Linux and 50 to 55 on macOS, paid four times in parallel. Nothing here
+  removes it: the compiler crate has no dependencies, so there is nothing a
+  cache can warm, and sharing one build between jobs costs more in artifact
+  transfer than it saves.
+- **The two stack-exhaustion cases still run programs until the stack is
+  gone.** That is what they are, and the time is the recursion's, not a
+  handler's.
+
+## Approval classes
+
+Under the four rules in `AGENTS.md`:
+
+- **Rule 2** — the exact revision to be merged needs owner approval, as every
+  merge does.
+- **Rule 3** — the exact revision must pass `make check`. It does, on the
+  maintainer's machine, ending `== WHITEFOOT ALL TESTS GREEN ==`;
+  `cargo clippy --all-targets --locked --offline -- -D warnings` and
+  `cargo fmt --all -- --check` are clean.
+- **No specification change.** `spec/kernel-spec.md` is untouched and no
+  archive moves.
+- **No conformance verdict change.** No case, manifest, adapter or runner under
+  `tests/conformance/` is touched, and the adapter reports the same tally on
+  each host it reported before: `Pass=509 Skip=1` locally and on macOS,
+  `Pass=503 Fail=6 Skip=1` on Linux.
+- **One conformance-adjacent edit, flagged rather than decided here.** The
+  `conformance-run` recipe in `Makefile` is collection wiring, and this batch
+  changes exactly two things in it: it names `--profile gate`, and it prefixes
+  `NO_CORE_DUMPS`. Neither touches a case, a manifest, the adapter or the
+  runner, and the reported verdicts are identical on every host. If the owner
+  reads that as conformance evidence under rule 4, the merge record is those
+  two edits to that one recipe and nothing else. This record does not write an
+  approval entry; `governance/APPROVALS.md` is the owner's at merge time.
+- **The CI files are `.github/workflows/gate.yml` only.**
+  `.github/workflows/io-hosts.yml` is untouched.

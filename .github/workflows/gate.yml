@@ -139,6 +139,30 @@ jobs:
             cargo fetch --locked --manifest-path "$manifest"
           done
 
+      # A gate that proves programs die is a gate that makes the kernel run
+      # `kernel.core_pattern` a few hundred times. On `ubuntu-24.04` that
+      # pattern pipes every crash to `systemd-coredump`, which reads the dying
+      # process, compresses a core and journals it, and the crashing task waits
+      # for it. Measured in batch 0093 on this runner: one case that runs an
+      # aborting program forty times took 398 seconds with the pattern as the
+      # image ships it, against 0.5 seconds for the same case on the macOS
+      # runner, whose kernel writes no core. That single line was nine tenths
+      # of the Linux gate.
+      #
+      # RLIMIT_CORE cannot decline a piped dump — the kernel ignores it for
+      # pipes, because the limit bounds a file and a pipe writes none, and the
+      # one value it does honour, 1, is above this runner's hard limit of zero.
+      # So the disposition is set here, where root is available: an ordinary
+      # file pattern, which the soft limit of zero the runner already has, and
+      # which `Makefile` sets anyway, then declines in the ordinary way. No
+      # case asserts anything about a core file; what each asserts is the
+      # signal, the exit status and the record channel, none of which moves.
+      - name: Decline core dumps
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.core_pattern=core
+          cat /proc/sys/kernel/core_pattern
+
       - name: Record the host
         run: |
           uname -a
@@ -203,21 +227,27 @@ jobs:
           cat "$GITHUB_STEP_SUMMARY"
 
   # TEMPORARY, batch 0093. The discriminating measurement for where the Linux
-  # gate's time goes: one case, one tree, one host, run under four different
-  # core-dump dispositions. `ulimit -c` is already 0 on this runner, and
-  # `kernel.core_pattern` pipes to `systemd-coredump`; the kernel ignores
-  # RLIMIT_CORE for a *piped* pattern except for the magic value 1, so a
-  # soft limit of zero is expected to change nothing and a limit of one is
-  # expected to skip the handler. `coredumpctl` says directly how many dumps
-  # each arm produced, so the answer is read off the mechanism and not only
-  # off the clock. Delete this job once its numbers are in
-  # `docs/done/0093-gate-budget.md`.
+  # gate's time went. Two questions, in order:
+  #
+  #   1. is the cost the host's core-dump disposition, or something Whitefoot
+  #      emits? A three-line C program whose whole body is `abort()`, run
+  #      twenty times under each of the two patterns, answers that without any
+  #      compiler in the picture;
+  #   2. what does the case that dominated the Linux gate cost under the
+  #      pattern the gate now sets?
+  #
+  # Already answered by run 33143948885 on this same tree and not repeated
+  # here: the case costs 398 seconds with the runner's own `ulimit -c` of 0 and
+  # 398 seconds with `ulimit -c 0` set explicitly — the soft limit is a no-op,
+  # because the kernel ignores RLIMIT_CORE for a piped pattern. Delete this job
+  # once its numbers are in `docs/done/0093-gate-budget.md`.
   core-dump-cost:
     name: core-dump cost (ubuntu-24.04)
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 30
     env:
       CASE: backend::tests::trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record
+      PIPED: '|/usr/lib/systemd/systemd-coredump %P %u %g %s %t 9223372036854775808 %h %d'
     steps:
       - uses: actions/checkout@v4
       - name: Install the host toolchain
@@ -231,28 +261,25 @@ jobs:
           echo "core_pattern: $(cat /proc/sys/kernel/core_pattern)"
           echo "soft core limit: $(ulimit -c)"
           echo "hard core limit: $(ulimit -H -c)"
-          coredumpctl list --no-pager | tail -3 || true
-      - name: Arm 1 — the host as it comes
+      - name: Twenty aborts, no Whitefoot involved
         run: |
-          cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
-          coredumpctl list --no-pager | wc -l
-      - name: Arm 2 — soft core limit 0
-        run: |
-          ulimit -c 0
-          cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
-          coredumpctl list --no-pager | wc -l
-      - name: Arm 3 — soft core limit 1, the kernel's skip-the-pipe value
-        run: |
-          ulimit -c 1
-          cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
-          coredumpctl list --no-pager | wc -l
-      - name: Arm 4 — core_pattern a plain name, soft limit 0
-        run: |
+          printf '#include <stdlib.h>\nint main(void) { abort(); }\n' > "$RUNNER_TEMP/abort_probe.c"
+          cc -o "$RUNNER_TEMP/abort_probe" "$RUNNER_TEMP/abort_probe.c"
+          echo "== the pattern the image ships: $(cat /proc/sys/kernel/core_pattern)"
+          time sh -c 'i=0; while [ $i -lt 20 ]; do "$0" || true; i=$((i+1)); done' "$RUNNER_TEMP/abort_probe"
           sudo sysctl -w kernel.core_pattern=core
+          echo "== the pattern the gate sets: $(cat /proc/sys/kernel/core_pattern)"
+          time sh -c 'i=0; while [ $i -lt 20 ]; do "$0" || true; i=$((i+1)); done' "$RUNNER_TEMP/abort_probe"
+      - name: The racing-claim case under the pattern the gate sets
+        run: |
+          cat /proc/sys/kernel/core_pattern
           ulimit -c 0
           cd compiler
           time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
-          coredumpctl list --no-pager | wc -l
+      - name: The racing-claim case under the pattern the image ships
+        run: |
+          sudo sysctl -w kernel.core_pattern="$PIPED"
+          cat /proc/sys/kernel/core_pattern
+          ulimit -c 0
+          cd compiler
+          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"

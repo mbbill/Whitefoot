@@ -22,11 +22,7 @@ CHECK_STAGES := repository-invariants approval-history-integrity spec-append-onl
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
 # Kept identical to `compiler/Makefile`'s, which carries the explanation.
-ifeq ($(shell uname -s),Linux)
-NO_CORE_DUMPS := ulimit -c 1;
-else
 NO_CORE_DUMPS := ulimit -c 0;
-endif
 
 check:
 	@mkdir -p "$(STAGE_DIR)"
