@@ -840,11 +840,7 @@ static int drain_and_consume_file(
 ) {
     wf_completion_event event;
     wf_completion_outcome outcome;
-    /* The named token's own event, which is what a joining scheduler harvests.
-     * A sweep would answer with whichever event it met first, and the order two
-     * pending events are met in is not a promise the core makes — asserting one
-     * would pin the sweep's cursor rather than this operation's completion. */
-    CHECK(wf_completion_drain_token(runtime, token, &event) == 1);
+    CHECK(drain_exact(runtime, 1, &event) == 0);
     CHECK(event.token.slot == token.slot);
     CHECK(event.token.generation == token.generation);
     CHECK(

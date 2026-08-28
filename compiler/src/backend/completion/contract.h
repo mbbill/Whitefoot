@@ -188,11 +188,6 @@ typedef struct wf_completion_runtime {
     _Atomic size_t drain_cursor;
     _Atomic size_t ready_events;
 
-    /* The slot of the most recent publication, plus one; zero when there is
-     * none to name.  A hint and nothing more: the sweep below still finds
-     * every event, and this only saves it from looking. */
-    _Atomic uint32_t drain_hint;
-
     pthread_mutex_t wake_lock;
     pthread_cond_t wake_condition;
     _Atomic uint64_t wake_epoch;
