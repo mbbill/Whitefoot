@@ -1198,6 +1198,11 @@ depends on where in the table it ran, and the interleaved schedule does not
 cancel that, because it reverses order between passes rather than restoring
 the cache between them.
 
+The batch-0092 section already recorded this happening — "Their macOS uncached
+probes refused the label **before** the tables ran, not only after" — on the
+runs it reproduced against; this section had it the other way round and is
+corrected here.
+
 What that costs is stated with the bar below rather than hidden here: it does
 not touch the warm or many-files halves, and it means the cold rows are not a
 reading of a cold bar.

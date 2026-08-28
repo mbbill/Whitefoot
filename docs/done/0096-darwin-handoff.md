@@ -665,8 +665,11 @@ by this batch.
   runtime would have needed another pair of `io-bench` runs to say anything the
   wall-clock tables do not already say, and the tables are what the bar is read
   from.
-- **The two cold rows.** Both miss, at 1.394 and 1.283 times `N.pool8`, and the
-  attribution table has a column for only one of them: `cold 64K h8`. There it
+- **The two cold rows.** Neither is read: the draw they would be read from had
+  its uncached label refused before both cold tables. On the mixture that was
+  measured they stand at 1.394 and 1.283 times `N.pool8`, so nothing in it
+  suggests the bar is met, and the attribution table has a column for only one
+  of them: `cold 64K h8`. There it
   says the path charges about 5 us an operation against a 168 us host call, of
   which the wake latency alone — enqueue to a helper being scheduled to run the
   work — is 38.5 us. On a three-core runner eight helpers is more threads than
@@ -675,7 +678,6 @@ by this batch.
   measured; closing either would need its own instrumented run.
 - **Windows.** The IOCP adapter is untouched. `completion-windows` links and
   passes as before; none of the Darwin helper-path work applies to it.
-
 - **The many-files workload.** It is recorded and it is still slower under C
   than under S. This batch narrowed it and did not close it; the reason is the
   one batch 0092 reached, that a 17 us `openat` is not a wait worth a handoff.
