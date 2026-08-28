@@ -483,7 +483,27 @@ got:    SemanticIssue { rule: Eff1, … kind: InvalidEffectRow { reason: "an eff
         "fn touch(pair: own Pair) -> out: own u64 reads(pair.middle) {"
 ```
 
-The literal was restored and the test passes again.
+The literal was restored and the test passes again. Two later rounds repeated
+the proof on two further literals, each in a different file and a different
+rule, and each failed the table naming its own probe: `GRAM2_CONTRACT_ORDER_FIX`
+in `compiler/src/syntax/parser/diagnostic.rs` with its closing clause shortened
+fails at `define-written-after-requires.wf`, and `COLLIDES_WITH_LIVE_OUTER` in
+`compiler/src/resolution/engine/inventory.rs` with `", or close the block that
+declares the outer one before this point"` deleted fails at
+`shadows-a-consumed-binding.wf`:
+
+```text
+test driver::pinned_sentences::every_diagnostic_sentence_is_pinned_by_a_probe ... FAILED
+
+shadows-a-consumed-binding.wf: the rendered rejection no longer carries this sentence.
+wanted: … still collides with it. Rename the inner declaration, or close the block that
+        declares the outer one before this point
+got:    ResolutionIssue { rule: Type6, … mechanical_fix: "… still collides with it. Rename the
+        inner declaration" } at shadows-a-consumed-binding.wf:13:9 in line
+        "    let permit = Ticket(seq: 2_u64);"
+```
+
+Both literals were restored and the table passes.
 
 **Coverage was measured, not asserted.** Enumerating every string literal in
 `compiler/src` production code at the branch base and at the branch tip — test
@@ -505,6 +525,15 @@ by one, and the module header states it:
 | `no operand in position {index} for this row` | needs more operands than the selected row takes; [OP-1] rejects the arity first |
 | [EFF-1]'s non-parameter-root reason and its repair | needs an effect root that resolves to a value and is not a parameter; the resolver rejects every such root as an unresolved `EffectRoot` use first |
 | `slice_of`'s "a borrow of a runtime value binding or a named const" pair | needs a place base resolving to neither class; a `PlaceBase` use admits only those two |
+
+Four independent enumerations were run over this branch, differing in how they
+extract a literal: from the added lines of `git diff`, from the whole file at
+each revision with `#[cfg(test)] mod` regions stripped, with and without a
+minimum length, splitting format templates or not. They report 88, 98, 99, and
+107 added production literals, because each counts a different thing, and every
+one of them lands inside the same seven unreachable arms — no method finds an
+undocumented gap. The disagreement is about what to call a sentence; the
+agreement is about which sentences no test asserts.
 
 Three further sentences belong to the staged-permission report, which an
 *accepted* program prints through the notice channel rather than through a
@@ -773,22 +802,23 @@ These are recorded, not decided.
 
 ## Gate results
 
-Local canonical `make check` on macOS, green in both rounds. The first round
-ran at `7aa6819d`, 160 s wall; the second ran at `a4087723`, 203 s wall, which
-is every item of this record including the pinning corpus. The commits after it
-change this file and two doc comments, and CI runs the same entry point on the
-branch tip.
+Local canonical `make check` on macOS, green in all three rounds. The first ran
+at `7aa6819d`, 160 s wall; the second at `a4087723`, 203 s wall, which is every
+item of this record including the pinning corpus; the third at `efdf130f` — the
+branch tip, and every byte of this batch — 260 s wall, with the stage times
+below. The only commit after that run is the one that adds this paragraph, and
+CI runs the same entry point on the branch tip.
 
 ```text
 repository-invariants             0 s
-approval-history-integrity        1 s
+approval-history-integrity        2 s
 spec-append-only                  0 s
 spec-archive-integrity            1 s
 spec-digest-sync                  0 s
-conformance                       0 s
-compiler                        138 s
+conformance                       1 s
+compiler                        202 s
 research-tests                    6 s
-conformance-run                  57 s
+conformance-run                  48 s
 == WHITEFOOT ALL TESTS GREEN ==
 ```
 
