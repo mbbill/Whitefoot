@@ -44,8 +44,9 @@ already keeps, and the reason no module that stages no loop changes by a byte.
 `compiler/src/backend/completion/linux_io_uring.c`. Staging a submission-queue
 entry is a store to a page the kernel already maps, so it costs no system call;
 `io_uring_enter` is what tells the kernel the entry exists. Probe A measured
-15,360 enters against 2,048 deferred, and 15.6 ms of system CPU off a program
-whose wall time fell by the same amount (§9.1).
+15,360 enters against 2,048 deferred, taking 15.6 ms of system CPU and 14.4 ms
+of wall time off the eight-wide program — in a barrier-bound single-lane
+program the saved kernel CPU is all on the critical path (§9.1).
 
 The doorbell now rings from four places, and between them they are what makes
 deferring safe:
