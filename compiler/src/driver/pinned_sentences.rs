@@ -15,8 +15,9 @@
 //! and this table proves no sentence is missing from that set. A sentence
 //! removed from the compiler fails here; a sentence reworded fails here.
 //!
-//! Six sentences are not rows, because no source program reaches them. Each is
-//! a defensive arm behind an earlier rejection, and the claim is checkable:
+//! Seven sentences are not rows, because no source program reaches them. Each
+//! is a defensive arm behind an earlier rejection, and the claim is checkable
+//! one by one:
 //!
 //! - `'region#{}` in `check::expressions::region_spelling` renders a region
 //!   whose declaration is unreachable; every region in a checked mode came

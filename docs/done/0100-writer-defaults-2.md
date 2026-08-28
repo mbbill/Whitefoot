@@ -441,7 +441,7 @@ sentences *are* the product of items 1–11, so that was the whole batch
 unprotected.
 
 `compiler/src/driver/pinned_sentences.rs` is the answer and the single home for
-it. It is one table-driven test over a corpus of minimal sources — 55 rows —
+it. It is one table-driven test over a corpus of minimal sources — 64 rows —
 where each row carries the source, the rule its rejection must cite, and the
 exact rendered fragments the diagnostic must contain:
 
