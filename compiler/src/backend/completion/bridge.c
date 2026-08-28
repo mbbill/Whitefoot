@@ -1513,6 +1513,36 @@ uint64_t wf__completion_file_fallback_submissions(void) {
         : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter).submissions;
 }
 
+/* `io_uring_enter` calls this process made to carry staged submissions.  With
+ * the doorbell deferred this stays far below the submission count, and the
+ * distance between the two is what deferring bought. */
+uint64_t wf__completion_linux_io_uring_submission_enters(void) {
+#if defined(__linux__)
+    if (wf_bridge_linux_ready != 0) {
+        return wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter)
+            .submission_enters;
+    }
+#endif
+    return 0;
+}
+
+/* Opens the host refused for want of a descriptor that this runtime retired
+ * work for and re-attempted once, over both target routes. */
+uint64_t wf__completion_open_exhaustion_retries(void) {
+    uint64_t retries = wf_bridge_file_ready == 0
+        ? 0
+        : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter)
+            .exhaustion_retries;
+#if defined(__linux__)
+    if (wf_bridge_linux_ready != 0) {
+        retries += wf_linux_io_uring_statistics_snapshot(
+            &wf_bridge_linux_adapter
+        ).exhaustion_retries;
+    }
+#endif
+    return retries;
+}
+
 uint64_t wf__completion_file_demoted_opens(void) {
     return atomic_load_explicit(&wf_bridge_demoted_opens, memory_order_relaxed);
 }

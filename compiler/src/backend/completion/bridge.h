@@ -182,6 +182,13 @@ uint64_t wf__completion_target_helper_count(void);
 uint64_t wf__completion_target_helper_executions(void);
 uint64_t wf__completion_publications(void);
 uint64_t wf__completion_linux_io_uring_submissions(void);
+/* `io_uring_enter` calls that carried staged submissions to the kernel.  The
+ * doorbell is deferred, so this is far below the submission count and the
+ * distance between them is what deferring bought. */
+uint64_t wf__completion_linux_io_uring_submission_enters(void);
+/* Opens the host refused for want of a descriptor that the runtime retired
+ * owned work for and re-attempted once before publishing an outcome. */
+uint64_t wf__completion_open_exhaustion_retries(void);
 
 #if defined(__cplusplus)
 }

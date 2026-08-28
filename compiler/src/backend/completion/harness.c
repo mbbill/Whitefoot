@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -31,6 +32,10 @@
 /* The bridge's whole process-wide operation capacity. A test which means to
  * reach the capacity boundary must name the same number the bridge does. */
 #define WF_HARNESS_OPERATION_CAPACITY 64u
+/* The private storage the window query affords one loop before the compiler's
+ * ceiling and the loop's own slot size apply.  A test which means to reach
+ * that boundary must name the same number the bridge does. */
+#define WF_HARNESS_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
 
 #define CHECK(condition)                                                      \
     do {                                                                      \
@@ -2524,6 +2529,467 @@ static int test_capacity_release_wakes_before_blocking_work(void) {
     return 0;
 }
 
+/* The runtime's own bound on how many iterations of one loop may be in flight
+ * at once.
+ *
+ * The rules this checks are the only ones a lowering may rely on: every
+ * argument is a bound and none can raise the answer, a zero argument places no
+ * bound, and one is always a legal answer.  That last one is what makes the
+ * query safe to emit at all — a loop whose window came back as zero would have
+ * no legal schedule, and the sequential program is always a legal schedule. */
+static int test_completion_window_answers_at_the_boundaries(void) {
+    uint64_t unconstrained = wf__completion_window(0, 0, 0);
+    uint64_t budget = WF_HARNESS_WINDOW_BYTE_BUDGET;
+    uint64_t two;
+
+    /* The runtime never offers its whole operation capacity to one loop: a
+     * loop holding every record would push the rest of the program onto the
+     * capacity-wait path, where a full ring degrades to a blocking direct
+     * call. */
+    CHECK(unconstrained >= 1u);
+    CHECK(unconstrained <= WF_HARNESS_OPERATION_CAPACITY / 2u);
+
+    /* A trip count of one is a loop with nothing to overlap. */
+    CHECK(wf__completion_window(1, 0, 0) == 1u);
+    /* The compiler's own static cap is honoured exactly. */
+    CHECK(wf__completion_window(0, 0, 1) == 1u);
+    CHECK(wf__completion_window(0, 0, 2) == (unconstrained < 2u ? unconstrained : 2u));
+    CHECK(wf__completion_window(3, 0, 0) == (unconstrained < 3u ? unconstrained : 3u));
+    /* Neither a huge trip count nor a huge ceiling raises the runtime's own
+     * answer: every argument is a minimum with it, never a request. */
+    CHECK(wf__completion_window(UINT64_MAX, 0, 0) == unconstrained);
+    CHECK(wf__completion_window(0, 0, UINT64_MAX) == unconstrained);
+    CHECK(wf__completion_window(UINT64_MAX, 0, UINT64_MAX) == unconstrained);
+
+    /* The byte budget. One slot of the whole budget affords one iteration;
+     * half of it affords two; a slot larger than the budget affords none, and
+     * the floor turns that into the sequential program rather than into a
+     * schedule with no slots. */
+    CHECK(wf__completion_window(0, budget, 0) == 1u);
+    CHECK(wf__completion_window(0, budget + 1u, 0) == 1u);
+    CHECK(wf__completion_window(0, UINT64_MAX, 0) == 1u);
+    /* The design's own example: a loop privatizing a 16 MiB buffer gets one. */
+    CHECK(wf__completion_window(0, 16u * 1024u * 1024u, 0) == 1u);
+    two = budget / 2u;
+    CHECK(wf__completion_window(0, two, 0) == (unconstrained < 2u ? unconstrained : 2u));
+
+    /* The smallest argument decides, whichever one it is. */
+    CHECK(wf__completion_window(2, budget / 8u, 8) == 2u);
+    CHECK(wf__completion_window(8, budget / 2u, 8) == (unconstrained < 2u ? unconstrained : 2u));
+    CHECK(wf__completion_window(8, budget / 8u, 2) == 2u);
+
+    /* One is always legal: no combination of arguments answers zero. */
+    CHECK(wf__completion_window(0, 0, 0) >= 1u);
+    CHECK(wf__completion_window(1, UINT64_MAX, 1) == 1u);
+    CHECK(wf__completion_window(UINT64_MAX, UINT64_MAX, UINT64_MAX) == 1u);
+    return 0;
+}
+
+/* The io_uring doorbell is deferred, and every path that can stop reaches the
+ * kernel before it does.
+ *
+ * Staging a submission-queue entry is a store to a page the kernel already
+ * maps, so it costs no system call; `io_uring_enter` is what tells the kernel
+ * the entry exists. Ringing it once per submission is 15,360 calls on the
+ * eight-wide benchmark and 2,048 when it is deferred (LOOP-PIPELINE.md §9.1).
+ * Deferring is only safe while the two facts below hold, and they are what
+ * this checks: a submission alone rings nothing, and the first thing that
+ * could wait — a join, or a blocking direct host call the completion path
+ * refused to carry — rings it first.
+ *
+ * The enter counter only exists where the ring is the target route, so the
+ * counted half of this test runs there and the functional half runs
+ * everywhere. */
+static int test_a_submitted_operation_is_kicked_before_it_waits(
+    const char *scratch_directory
+) {
+    char path[256];
+    unsigned char first[8];
+    unsigned char second[8];
+    wf_completion_token open_token;
+    wf_completion_token read_token;
+    wf_completion_token other_token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    int descriptor;
+    int writer;
+    uint64_t submissions_before;
+    uint64_t enters;
+    int ring_route;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-doorbell-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(write(writer, "doorbell", 8) == 8);
+    CHECK(close(writer) == 0);
+
+    submissions_before = wf__completion_linux_io_uring_submissions();
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+    wf__completion_file_open_join(
+        &open_token,
+        &value,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    descriptor = (int)value;
+    ring_route =
+        wf__completion_linux_io_uring_submissions() > submissions_before;
+
+    /* A submission alone rings nothing. */
+    enters = wf__completion_linux_io_uring_submission_enters();
+    memset(first, 0, sizeof(first));
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            first,
+            sizeof(first),
+            0,
+            &read_token
+        ) == 1
+    );
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+    }
+
+    /* A blocking direct host call rings it first. This one is refused
+     * immediately by the host, so what it proves is the ordering and not the
+     * waiting: the doorbell rang before the call, not after it. */
+    CHECK(wf__completion_file_close_direct(-1) < 0);
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+    }
+    wf__completion_file_join(&read_token, &value, &error_code);
+    CHECK(value == 8 && error_code == 0);
+    CHECK(memcmp(first, "doorbell", 8) == 0);
+
+    /* Two submissions, one doorbell: the first join carries both, and the
+     * second join needs no further call. This is the whole of what deferring
+     * buys, stated as a count. */
+    enters = wf__completion_linux_io_uring_submission_enters();
+    memset(first, 0, sizeof(first));
+    memset(second, 0, sizeof(second));
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            first,
+            4,
+            0,
+            &read_token
+        ) == 1
+    );
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            second,
+            4,
+            4,
+            &other_token
+        ) == 1
+    );
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+    }
+    wf__completion_file_join(&read_token, &value, &error_code);
+    CHECK(value == 4 && error_code == 0);
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+    }
+    wf__completion_file_join(&other_token, &value, &error_code);
+    CHECK(value == 4 && error_code == 0);
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+    }
+    CHECK(memcmp(first, "door", 4) == 0);
+    CHECK(memcmp(second, "bell", 4) == 0);
+
+    CHECK(wf__completion_file_close_submit(descriptor, &read_token) == 1);
+    wf__completion_file_join(&read_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* Fills this process's descriptor table exactly: opens `path` at the lowest
+ * free descriptor and lowers the soft limit to one past it, so no further open
+ * can succeed until that one descriptor is given back.  `*saved` carries the
+ * limit the caller must restore.  Returns the held descriptor. */
+static int wf_harness_hold_the_last_descriptor(
+    const char *path,
+    struct rlimit *saved
+) {
+    struct rlimit narrowed;
+    int probe;
+    int held;
+    if (getrlimit(RLIMIT_NOFILE, saved) != 0) {
+        return -1;
+    }
+    probe = open(path, O_RDONLY);
+    if (probe < 0) {
+        return -1;
+    }
+    if (close(probe) != 0) {
+        return -1;
+    }
+    narrowed = *saved;
+    narrowed.rlim_cur = (rlim_t)probe + 1;
+    if (narrowed.rlim_cur > saved->rlim_max) {
+        return -1;
+    }
+    if (setrlimit(RLIMIT_NOFILE, &narrowed) != 0) {
+        return -1;
+    }
+    held = open(path, O_RDONLY);
+    if (held != probe) {
+        if (held >= 0) {
+            (void)close(held);
+        }
+        (void)setrlimit(RLIMIT_NOFILE, saved);
+        return -1;
+    }
+    return held;
+}
+
+/* An open refused for want of a host descriptor retires the work this runtime
+ * still owns and re-attempts once before publishing an outcome.
+ *
+ * Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that keeps several
+ * iterations of a loop in flight holds several descriptors where source order
+ * holds one, so a host limit the sequential program never reaches could turn a
+ * correct program's `Ok` into an `Err(ResourceExhausted)` — and [SYS-10] is
+ * explicit that a `FilePermit` promises no native descriptor, while [PAR-1]'s
+ * exhaustion clause excuses only what an implementation spends on overlapping.
+ * The descriptors the program's own opens consume are not that.
+ *
+ * The shape here is the smallest one that has the property: a close of the one
+ * held descriptor is submitted, then an open which cannot succeed until that
+ * close runs.  With no helper the scheduler takes the newest request first, so
+ * the open really is attempted while the close is still owed, and only the
+ * retirement makes it succeed.  Both outcomes are published unchanged. */
+static int test_open_exhaustion_retires_owned_work_and_retries(
+    const char *scratch_directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[4];
+    wf_file_adapter adapter;
+    wf_file_work queue[4];
+    wf_completion_token close_token;
+    wf_completion_token open_token;
+    wf_file_request request;
+    wf_file_result result;
+    wf_completion_event events[2];
+    wf_completion_outcome outcome;
+    struct rlimit saved;
+    char path[256];
+    int writer;
+    int held;
+    int opened;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-exhaustion-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Everything that needs a descriptor of its own happens before the limit
+     * narrows. */
+    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 4, NULL, 0) == 0);
+    CHECK(wf_completion_claim(&runtime, &close_token) == WF_COMPLETION_CLAIMED);
+    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_CLOSE;
+    request.operation.close.descriptor = held;
+    CHECK(
+        wf_file_adapter_submit(&adapter, close_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = AT_FDCWD;
+    request.operation.open_at.path = path;
+    request.operation.open_at.flags = O_RDONLY;
+    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
+    CHECK(
+        wf_file_adapter_submit(&adapter, open_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+
+    /* One scheduler visit. It takes the open, is refused, retires the close it
+     * still owed, and re-attempts. */
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(
+        wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
+    );
+
+    CHECK(drain_exact(&runtime, 2, events) == 0);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            close_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_CLOSE);
+    CHECK(result.value == 0 && result.error_code == 0);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            open_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_OPEN_AT);
+    /* The whole point: the outcome the program sees is the one source order
+     * produces, not the exhaustion the schedule caused. */
+    CHECK(result.value >= 0 && result.error_code == 0);
+    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)result.value;
+
+    CHECK(close(opened) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* The same rule on the route generated code takes, whichever target carries
+ * it.
+ *
+ * Here nothing can give a descriptor back, so every open fails — and that is
+ * the outcome the program is entitled to see, because it is the one source
+ * order produces too.  What the count proves is that the runtime did not
+ * simply publish the first refusal: it retired what it owned and asked the
+ * host a second time.  Exactly one re-attempt, so an exhausted host cannot
+ * turn one `open_file` call into unbounded work. */
+static int test_bridge_open_exhaustion_is_retried_once(
+    const char *scratch_directory
+) {
+    struct rlimit saved;
+    char path[256];
+    wf_completion_token tokens[3];
+    wf_completion_token token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    uint64_t retries_before;
+    size_t index;
+    int writer;
+    int held;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-bridge-exhaustion-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit narrows:
+     * the ring, its wait set, and any helper the policy asks for are created
+     * on the first submission, not here. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    retries_before = wf__completion_open_exhaustion_retries();
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+
+    for (index = 0; index < 3; ++index) {
+        CHECK(
+            wf__completion_file_open_at_submit(
+                AT_FDCWD,
+                path,
+                O_RDONLY,
+                0u,
+                0u,
+                WF_FILE_EXPECT_REGULAR,
+                &tokens[index]
+            ) == 1
+        );
+    }
+    for (index = 0; index < 3; ++index) {
+        wf__completion_file_open_join(
+            &tokens[index],
+            &value,
+            &error_code,
+            &open_outcome
+        );
+        CHECK(value < 0);
+        CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+        CHECK(error_code == EMFILE || error_code == ENFILE);
+    }
+    CHECK(wf__completion_open_exhaustion_retries() > retries_before);
+
+    CHECK(close(held) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
 static int test_native_contract_inventory(void) {
     wf_completion_target_contract darwin = wf_completion_target_contract_for(
         WF_TARGET_DARWIN_FILE_FALLBACK
@@ -2704,6 +3170,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());
+    RUN_TEST(test_completion_window_answers_at_the_boundaries());
+    RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
+    RUN_TEST(test_open_exhaustion_retires_owned_work_and_retries(argv[1]));
+    RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_darwin_directory_progress_is_internal());
     RUN_TEST(benchmark_core_roundtrip(&roundtrip_ns));
