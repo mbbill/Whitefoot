@@ -111,10 +111,13 @@ the Stage A verification rather than by a test:
   the source order `close(held); open(path)` — which succeeds sequentially —
   lost the race to the very close it was making room for and published
   `Err(EMFILE)`, deterministically, at every helper setting;
-- the adapter counted and performed a re-attempt only when it found queued work
-  to drain. With four helpers each of three simultaneous opens lands on its own
-  helper and finds the queue empty, so all three published a refusal with the
-  descriptors still in this runtime's hands.
+- the adapter asked the host a second time only when it found queued work to
+  drain. With several helpers each simultaneous open lands on its own helper
+  and looks at an empty queue, so the descriptors a retirement would return —
+  held by operations running on the *other* helpers — were never waited for and
+  the refusal was published instead. Where one of those operations really is
+  the close that frees the descriptor, that loses an `Ok` the sequential
+  program produces.
 
 Both are now covered by tests that fail without the fix:
 `test_bridge_open_behind_a_submitted_close_succeeds` and
