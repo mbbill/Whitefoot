@@ -433,6 +433,13 @@ beside it. The other commit this branch never received, bc4f09a4, resizes the
 same latch control this batch resized from its own measurement of the same
 runner, and is superseded here rather than adopted.
 
+`main` has since merged batch 0090 and carries 25ac56ef itself. Because the
+text adopted here is that commit's byte for byte, the two sides of the eventual
+merge agree on this file: `git merge-tree main HEAD` reports conflicts only in
+`compiler/src/backend/tests/trap_latch.rs` and
+`compiler/tests/programs/support.rs`, where this branch and `main` repaired the
+same two things by different routes.
+
 ### What the x86-64 runner has under the entry stack
 
 25ac56ef read its account from this project's aarch64 Linux container, whose
@@ -468,17 +475,20 @@ stack block exists, so the kernel's top-down search offers it the gap directly
 underneath. When it takes that gap, `low - 16384` is inside a writable mapping
 three pages under the guard. When it does not — the faulted sample puts it
 3.8 MiB *above* the 1 GiB block's top, in a gap the placement left there — the
-memory under the guard is nothing and the row passes. Both rows past the stride
-were exposed, not only the one that failed: with the alternate stack at
-`[low - 0x11000, low - 0x1000)` the 64 KiB row's target is inside it too. The
-case fails on the four-page row first because the loop reaches it first.
+memory under the guard is nothing and the row passes. Two of the three rows
+past the stride were exposed, not only the one that failed: with the
+alternate stack at `[low - 0x11000, low - 0x1000)` the 64 KiB row's target is
+inside it too; only the 16 MiB row was out of its reach. The case fails on
+the four-page row first because the loop reaches it first.
 
 Nothing here says the floor misclassifies. Every generated definition carries
 the probe, so a descent's first touch below the stack is at most one page under
 it and lands on the guard; a mapping *below* the guard is not something a
 descent can step into. It is only the fixture's premise that the placement
-falsified. Batch 0090 already carries that placement forward as a floor
-observation in its own record, which this batch does not edit.
+falsified. What the placement does leave open — a runtime or libc frame larger
+than a page, running near the bottom of a stack, writing into the alternate
+stack without a fault — batch 0090's record on `main` already carries forward as
+a floor observation for a follow-up to weigh, and this batch does not edit it.
 
 ### The fix, and what it measures at
 
@@ -493,20 +503,51 @@ fixture opened. The pad is unmapped rather than left `PROT_NONE` because the
 rows assert the host's own signal, and Darwin reports a protected page as
 SIGBUS where an unmapped one is SIGSEGV.
 
-The same temporary diagnostic, 40 runs of every row of the case, on both hosts:
+The same temporary diagnostic, 40 runs of every row of the case, on both
+runners and on the maintainer's machine:
 
-| row | ubuntu-24.04, two runs | macos-14, 16 KiB pages |
-|---|---|---|
-| half a page below | 80/80 abort, `{"resource":"stack"}` | 40/40 |
-| one page below | 80/80 abort, `{"resource":"stack"}` | 40/40 |
-| four pages below | 80/80 SIGSEGV, no bytes | 40/40 |
-| 64 KiB below | 80/80 SIGSEGV, no bytes | 40/40 |
-| 16 MiB below | 80/80 SIGSEGV, no bytes | 40/40 |
+| row | ubuntu-24.04, two runs | macos-14 | this machine |
+|---|---|---|---|
+| half a page below | 80/80 abort, `{"resource":"stack"}` | 40/40 | 40/40 |
+| one page below | 80/80 abort, `{"resource":"stack"}` | 40/40 | 40/40 |
+| four pages below | 80/80 SIGSEGV, no bytes | 40/40 | 40/40 |
+| 64 KiB below | 80/80 SIGSEGV, no bytes | 40/40 | 40/40 |
+| 16 MiB below | 80/80 SIGSEGV, no bytes | 40/40 | 40/40 |
+
+Only x86-64 ever lost the pre-fix row. The same 200-run diagnostic on the
+`macos-14` runner is 200 of 200 faulted, with the alternate stack nowhere near
+the thread stack — `low=300004000`, `altstack=104e50000` — and 200 of 200 on
+the maintainer's machine, whose 16 KiB pages put the four-page row at 64 KiB.
+A fixture whose premise holds on three hosts out of four is still a fixture
+whose premise is not its own.
 
 Every assertion in the case is what it was: the in-band rows still require the
 floor's abort and its exact record, the rows past the stride still require
 SIGSEGV and an empty channel. The diagnostic was deleted with the same commit
 that carried its result into this record.
+
+### Five samples of the fixed row on the runner
+
+`sampling (ubuntu-24.04)` on d9925ae6, gate run
+[33148679525](https://github.com/mbbill/Whitefoot/actions/runs/33148679525) and
+four reruns of that one job:
+
+| attempt | job | case | suite |
+|---|---|---|---|
+| 1 | [98775375952](https://github.com/mbbill/Whitefoot/actions/runs/33148679525/job/98775375952) | ok | 65 passed, 0 failed |
+| 2 | [98775892709](https://github.com/mbbill/Whitefoot/actions/runs/33148679525/job/98775892709) | ok | 65 passed, 0 failed |
+| 3 | [98776379419](https://github.com/mbbill/Whitefoot/actions/runs/33148679525/job/98776379419) | ok | 65 passed, 0 failed |
+| 4 | [98776892701](https://github.com/mbbill/Whitefoot/actions/runs/33148679525/job/98776892701) | ok | 65 passed, 0 failed |
+| 5 | [98777357847](https://github.com/mbbill/Whitefoot/actions/runs/33148679525/job/98777357847) | ok | 65 passed, 0 failed |
+
+Five of five, against a pre-fix rate of about one loss in sixteen, and every
+other job of that run is green on both hosts except
+`conformance (ubuntu-24.04)`, which fails on the six documented
+directory-enumeration cases below. The fix costs no measurable time: the case
+never reaches the job's ten-largest-gaps report. The suite's 42 s in the last
+pre-fix run and 52 to 56 s across these five is
+`a_frame_larger_than_the_guard_region_is_still_reported` at 24.4 s and then
+31.1 to 34.1 s — the recursion's own time on the machine each attempt drew.
 
 ## Judgment calls
 
@@ -592,10 +633,19 @@ Under the four rules in `AGENTS.md`:
 
 - **Rule 2** — the exact revision to be merged needs owner approval, as every
   merge does.
-- **Rule 3** — the exact revision must pass `make check`. It does, on the
+- **Rule 3** — the exact revision must pass `make check`. It did, on the
   maintainer's machine, ending `== WHITEFOOT ALL TESTS GREEN ==`;
   `cargo clippy --all-targets --locked --offline -- -D warnings` and
-  `cargo fmt --all -- --check` are clean.
+  `cargo fmt --all -- --check` are clean. At the revision that carries the
+  offset-fault fix, every stage still passes on that machine — the compiler
+  gate ends `== WHITEFOOT COMPILER GATE GREEN ==` and the conformance adapter
+  reports `Pass=509 Skip=1` — except `approval-history-integrity`, which now
+  fails on the branch's currency rather than on its content: `main` gained an
+  approval paragraph while this batch was open, by merging batch 0090, and
+  this branch has not been brought forward, so its untouched
+  `governance/APPROVALS.md` is shorter than main's. Bringing the branch
+  forward is what closes that stage, and it is the same merge that reconciles
+  `trap_latch.rs` and `tests/programs/support.rs`.
 - **No specification change.** `spec/kernel-spec.md` is untouched and no
   archive moves.
 - **No conformance verdict change.** No case, manifest, adapter or runner under
