@@ -23,11 +23,11 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.38 bytes at `../spec/kernel-spec.md`,
-SHA-256 `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
-v0.38 adds [PAR-3], the staged loop permission, and supersedes v0.37 at
-`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.37.md`.
+The frontend targets the exact v0.39 bytes at `../spec/kernel-spec.md`,
+SHA-256 `4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`.
+v0.39 narrows [CLM-1]'s claim-authority control dependence and supersedes v0.38
+at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.38.md`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -114,7 +114,7 @@ Resource release uses the same ordinary state contract as an explicit call.
 A resource with a meaningful finish result uses a consuming finish operation;
 compiler-derived release performs only the weaker action its type declares.
 The old shared advancing directory source and shared mutable Output shapes are
-not v0.38 authority. Advancing sources and outputs use `own` or `&uniq`.
+not v0.39 authority. Advancing sources and outputs use `own` or `&uniq`.
 
 The macOS/Linux command bootstrap owns the process before entry: it establishes
 the QUAL-2 argument backing from the native vector, installs the selected
@@ -302,7 +302,7 @@ their v0.18-specified source rejections.
 The first lexical borrow family adds caller region parameters, local region
 blocks, shared and unique buffer holders, explicit `deref`, resolved
 field-prefix overlap, and ultimate-origin `reads`/`writes` effects. The
-superseded v0.36 spelled those effect subjects as lifetimes; active v0.38
+superseded v0.36 spelled those effect subjects as lifetimes; active v0.39
 preserves the borrow behavior while naming formal state paths instead. Borrowed
 buffer descriptors cross ordinary calls by value, but only the original owner
 is cleaned up. Distinct struct fields can therefore be uniquely passed to a
@@ -311,7 +311,7 @@ allocation. The backend remains conservative LLVM without unearned overflow
 flags or check elision.
 
 Effect rows are checked as exact source-level summaries for every admitted
-function. `pure` is the empty effect row, not a termination claim. v0.38 gives `reads`
+function. `pure` is the empty effect row, not a termination claim. v0.39 gives `reads`
 and `writes` one operand kind: a formal parameter or static field path naming
 logical state. Lifetimes remain in borrow and slice
 types only, where they state loan duration and outlives facts. A write requires

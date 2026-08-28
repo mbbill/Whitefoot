@@ -8,7 +8,7 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.38 guidance, including the unified-state
+This document carries active v0.39 guidance, including the unified-state
 completion-I/O forms activated by v0.37, the per-iteration scratch form
 [PAR-3] admits (P15), and the three forms the 2026-08-28 blind-writer trial
 found a writer lacking: the inline factory reserve inside P15, the hoisted
@@ -33,7 +33,7 @@ Pattern: deep functions are `pure` or `reads(state)`; they compute and RETURN
 write intents as plain values. Exactly one shallow function holds the single
 `&uniq` and applies the intents. Effect rows make the architecture checkable:
 grep the signatures and find one `writes(state)` in the system. The superseded v0.36 wrote those
-subjects as lifetimes; active v0.38 names the formal state directly.
+subjects as lifetimes; active v0.39 names the formal state directly.
 Current value: exact effect rows make scattered writes visible and reject a
 false architectural summary. Potential speed: the retired channel-2 experiment
 mapped read-only/pure code to memory attributes for hoisting, CSE, and call
@@ -257,7 +257,7 @@ one back, but the callable boundary cannot say which one it chose.
 `fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> selected: &uniq 'r Node` is rejected
 at its own `rtype` [FN-1]: two parameters share the result's region and kind,
 so no caller can root the returned claim, and a result no caller can bind is
-the declaration's error rather than the caller's. Pattern status: active v0.38
+the declaration's error rather than the caller's. Pattern status: active v0.39
 guidance, introduced before v0.36 and preserved since.
 
 Decide which fix applies by asking why there are two sources. If the sources
@@ -274,7 +274,7 @@ decision names.
 The worked shape for the data-dependent case is three parts. The callee
 `fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads(a, b)` reads both
 weights through its shared borrows and returns `Left()` or `Right()`. The
-superseded v0.36 spelled that effect `reads('r)`; under active v0.38 `'r`
+superseded v0.36 spelled that effect `reads('r)`; under active v0.39 `'r`
 remains only the shared loan lifetime. Both forms take shared borrows, so the returned owned decision has no
 borrow provenance. The caller binds
 `let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes

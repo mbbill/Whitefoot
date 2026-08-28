@@ -1,15 +1,14 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 55 (v0.38 adds [PAR-3], the staged loop permission, to the
-language authority, and names the release milestone of the name an open
-borrows in [SYS-2])
+Revision: 56 (v0.39 narrows [CLM-1]'s claim-authority control dependence to
+the definitions a boundary selector actually chooses)
 
-The active language authority is v0.38, SHA-256
-`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`, carried by
+The active language authority is v0.39, SHA-256
+`4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.37 at `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`,
-archived at [`spec/kernel-spec-v0.37.md`](../spec/kernel-spec-v0.37.md). The
+v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`,
+archived at [`spec/kernel-spec-v0.38.md`](../spec/kernel-spec-v0.38.md). The
 merge-time approval record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch

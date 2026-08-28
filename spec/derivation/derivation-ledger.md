@@ -2,10 +2,10 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.38 authority at SHA-256
-`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
-v0.38 supersedes v0.37 at
-`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`; the v0.38
+the active v0.39 authority at SHA-256
+`4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`.
+v0.39 supersedes v0.38 at
+`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`; the v0.39
 amendment at the end of this file binds its changed derivations, while released
 versioned files retain the superseded authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -18,7 +18,8 @@ exist; this form is minimality-selected and awaits its experiment),
 additions; v0.33 and v0.34 add no numbered rule and change no status; the
 v0.35 adds PAR-1 and PAR-2, v0.36 amends PAR-1 and PAR-2 only, v0.37 adds
 no numbered rule while amending effect, system, release, trap, and overlap
-derivations, and v0.38 adds PAR-3).
+derivations, v0.38 adds PAR-3, and v0.39 adds no numbered rule while narrowing
+CLM-1's claim-authority control dependence).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -1604,3 +1605,47 @@ first I/O error returns is refused outright by the exit condition, and closing
 that needs a closed-state proof extended to a call whose result is a fresh
 resource. Neither affects the derivation of the permission; both are recorded
 so no reader mistakes the stated rule for the implemented fragment.
+
+## v0.39 amendment — claim authority selects definitions, not positions (activated 2026-08-28)
+
+**No added rule. One narrowed clause in CLM-1's claim-authority state.** Claim
+authority answers one question: can a reviewer validate this claim by reading
+this function, or does its truth import an unstated property of something a
+callable boundary returned? v0.38 answered that question partly by position: a
+selector's witness joined every binder, delivered value, and storage write
+whose reaching definition was selected by its edge, and "post-join state" was
+named among them. The differential-fuzz campaign of
+`docs/done/0097-differential-fuzz.md` showed what that answer costs. All 63 of
+its rejections over 2004 generated programs were one shape: a `match` on a
+system-call result whose `Err` arm returned, followed by definitions built
+entirely from literals, whose claim was refused although nothing the system
+returned reaches the claim's truth.
+
+**What the narrowing derives from.** W3 forbids a writer-stated fact without
+machine proof or one executed reviewed boundary, and CLM-1's locality condition
+is what keeps that boundary reviewable: the reviewer must be able to establish
+the predicate from what the function itself contains. A value whose every
+operand is a literal, a named const, an ordinary parameter, or another such
+value is exactly that — the reviewer reads it and is done — and the edge that
+carried control to it changes none of its operands. So the position clause
+protected nothing the locality condition needs, while refusing claims the
+condition admits. What the reviewer genuinely cannot establish is a value the
+selector *chose*: a payload binder the arm introduced, a value `value_if` or
+`value_match` delivered, or a component whose reaching definition differs
+between the incoming edges of a reconvergence, loop head, or loop exit. Those
+remain non-local, and the amended rule states them as the complete list.
+
+**Why the join is the selection.** A merge of two different definition
+occurrences is where a boundary decision becomes a value: the writer cannot say
+which definition arrives without knowing the selector's outcome. A merge whose
+every incoming edge carries one definition of that component decides nothing
+about it, so it adds no authority. This is a stronger reading of CLM-1's own
+"whose reaching definition is selected by that edge" than the clause it
+replaces, not a weaker one: v0.38 read *reaching* as *reached*, and the
+amendment reads it as *chosen among*.
+
+**Status unchanged.** CLM-1 keeps its existence-only status and its historical
+derivation row; the component tree, the unconditional call-result seed, the
+witness identity and its tie-break, the protected families, and the constrained
+subjects are all untouched, as is PRV-1 provenance, which never included
+control dependence. No other rule's derivation moves.

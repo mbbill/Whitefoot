@@ -3,10 +3,10 @@
 Status: IMPLEMENTED, VALIDATED, AND ACTIVATED on
 `codex/io-first-principles`.
 
-Active language authority: v0.38,
-`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.37 is
-archived at `spec/kernel-spec-v0.37.md` and the merge-time record is in
+Active language authority: v0.39,
+`4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.38 is
+archived at `spec/kernel-spec-v0.38.md` and the merge-time record is in
 `governance/APPROVALS.md`. Activation is branch content: nothing merges to
 `main` until the owner approves the exact revision and canonical `make check`
 passes on that revision. The batch record is
