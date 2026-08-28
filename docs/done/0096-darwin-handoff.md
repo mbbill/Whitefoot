@@ -98,8 +98,11 @@ record equated them: 40 per cent is the path against one host call, 27.4 is
 the whole program against the whole program, which also does work no
 completion path touches.
 
-**With helpers the path costs about 5 us an operation, and almost all of it is
-system calls.** Submission rose from 84 ns to 1,280 and publication from 55 to
+**With three helpers the path costs about 5 us an operation, and almost all of
+it is system calls.** That figure is the `warm 4K h3` column's own stages —
+claim 70, submit 1,280, publish 1,467, drain 302, consume 101 and 1,779 of
+amortised park, 4,999 ns in all — beside a 1.9 us host call; the `cold 64K h8`
+column is a different sum and is read separately below. Submission rose from 84 ns to 1,280 and publication from 55 to
 1,467 — neither does more work than before; both are contending. Every
 publication took a process-wide wake lock, every submission took it again, and
 every consumption a third time, so a program crossed one global mutex three
@@ -574,11 +577,15 @@ default-route bridge probe added in this batch's follow-up.
 
 The stage-level attribution for the cold miss is in the table at the top of
 this record, in its `cold 64K h8` column and measured on the same runner
-label: at eight helpers the path charges about 5 us an operation against a
-168 us host call, of which 38.5 us is wake latency alone — the time between a
-submission enqueueing work and a helper being scheduled to run it. On a
-three-core runner, eight helpers is more threads than cores, and that latency
-is the host scheduler rather than the adapter. That column covers the cold
+label: at eight helpers the adapter's own stages sum to 14.3 us an operation —
+claim 98, submit 2,967, publish 4,334, drain 584, consume 176 and 6,158 of
+amortised park, 8.2 us of it before the park — against a 168 us host call.
+Beside that sum, and not inside it, is 38.5 us of wake latency: the time
+between a submission enqueueing work and a helper being scheduled to run it.
+(The 5 us quoted earlier is the same sum over the `warm 4K h3` column, 4,999
+ns; this row reads `cold 64K h8`.) On a three-core runner, eight helpers is
+more threads than cores, and that wake latency is the host scheduler rather
+than the adapter. That column covers the cold
 64 KiB row; there is no cold 4 KiB column, so the same account is inferred for
 that row and not measured. Nothing in this batch's change set addresses
 either.
@@ -828,11 +835,11 @@ by this batch.
   `N.pool8` against a bar of 1.10. What this batch does not have is an
   attribution of the gap on that draw: the stage table has a column for one of
   the two rows only, `cold 64K h8`, and it was taken on the earlier runtime.
-  There it says the path charges about 5 us an operation against a 168 us host
-  call, of which the wake latency alone — enqueue to a helper being scheduled
-  to run the work — is 38.5 us. On a three-core runner eight helpers is more
-  threads than cores, so that latency is the host scheduler rather than the
-  adapter. There is no cold 4 KiB column, so the same reading is inferred for
+  There the adapter's own stages sum to 14.3 us an operation — 8.2 us of it
+  before the amortised park — against a 168 us host call, with a wake latency
+  beside them, enqueue to a helper being scheduled to run the work, of
+  38.5 us. On a three-core runner eight helpers is more threads than cores, so
+  that latency is the host scheduler rather than the adapter. There is no cold 4 KiB column, so the same reading is inferred for
   that row rather than measured, and neither column is on the draw the grade
   now comes from; closing either would need its own instrumented run.
 - **Windows.** The IOCP adapter is untouched. `completion-windows` links and
