@@ -366,11 +366,7 @@ completion-core-read-stress: completion-core-read-test
 completion-tsan:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
-		-DWF_COMPLETION_POLL=wf_completion_test_poll \
-		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
-		-DWF_FILE_OPENAT=wf_completion_test_openat \
-		-DWF_COMPLETION_RETIREMENT_POINT=wf_completion_test_retirement_point \
+		$(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES) \
 		-fsanitize=thread \
 		$(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-tsan"
