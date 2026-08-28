@@ -343,8 +343,10 @@ builds the harness with the new `WF_COMPLETION_GETDENTS64` substitution, runs
 it with io_uring required, and runs `completion-sanitize` (address and
 undefined) and `completion-core-read-tsan` over the same units.
 
-Locally: one canonical `make check` on the macOS host, green; `cargo clippy
---all-targets --profile gate -- -D warnings` and `cargo fmt` clean.
+Locally: one canonical `make check` on the macOS host, exit 0, with the same
+three numbers — 1395 library cases, 54 program cases,
+`conformance adapter: Pass=509  Skip=1`. `cargo clippy --all-targets --profile
+gate -- -D warnings` and `cargo fmt` clean.
 
 ## Judgment calls
 
