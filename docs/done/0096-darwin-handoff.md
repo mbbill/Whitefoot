@@ -404,12 +404,15 @@ distance to `N.pool8` is. Against its own sequential build the same program is
 2.51 and 2.84 times faster cold, where in 0092 it was 1.73 and 1.58.
 
 The stage-level attribution for the cold miss is in the table at the top of
-this record, measured on the same runner label: at eight helpers the path
-charges about 5 us an operation against a 168 us host call, of which 38.5 us
-is wake latency alone — the time between a submission enqueueing work and a
-helper being scheduled to run it. On a three-core runner, eight helpers is
-more threads than cores, and that latency is the scheduler rather than the
-adapter. Nothing in this batch's change set addresses it.
+this record, in its `cold 64K h8` column and measured on the same runner
+label: at eight helpers the path charges about 5 us an operation against a
+168 us host call, of which 38.5 us is wake latency alone — the time between a
+submission enqueueing work and a helper being scheduled to run it. On a
+three-core runner, eight helpers is more threads than cores, and that latency
+is the host scheduler rather than the adapter. That column covers the cold
+64 KiB row; there is no cold 4 KiB column, so the same account is inferred for
+that row and not measured. Nothing in this batch's change set addresses
+either.
 
 
 ## Tests
@@ -511,13 +514,14 @@ by this batch.
   runtime would have needed another pair of `io-bench` runs to say anything the
   wall-clock tables do not already say, and the tables are what the bar is read
   from.
-- **The cold 4 KiB row.** It is the one row that misses its bar by more than a
-  little, and the stage table says why: at eight helpers on a three-core runner
-  the path charges about 5 us an operation against a 168 us host call, but the
-  wake latency alone is 38.5 us and the pool is bounded by the runner's ability
-  to schedule eight threads on three cores. This is a scheduling question on a
-  small machine, not a completion-model question, and nothing in this batch's
-  change set addresses it.
+- **The two cold rows.** Both miss, at 1.394 and 1.283 times `N.pool8`, and the
+  attribution table has a column for only one of them: `cold 64K h8`. There it
+  says the path charges about 5 us an operation against a 168 us host call, of
+  which the wake latency alone — enqueue to a helper being scheduled to run the
+  work — is 38.5 us. On a three-core runner eight helpers is more threads than
+  cores, so that latency is the host scheduler rather than the adapter. There is
+  no cold 4 KiB column, so the same reading is inferred for that row rather than
+  measured; closing either would need its own instrumented run.
 - **Windows.** The IOCP adapter is untouched. `completion-windows` links and
   passes as before; none of the Darwin helper-path work applies to it.
 - **A unit-level case for a declined positioned read's bytes.** The declining
