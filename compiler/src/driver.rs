@@ -887,6 +887,59 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         );
     }
 
+    /// A post-syntax rejection names the file it is talking about and quotes
+    /// the line, in both stages that reject source after parsing.
+    ///
+    /// The blind-writer trial's six rejections all printed `SourceId(0)` and a
+    /// byte offset, and the writer ran `head -c` on their own program to find
+    /// out what the offset meant. Semantics and resolution both already hold
+    /// the coordinate the rule selected; this is that coordinate resolved.
+    #[test]
+    fn a_post_syntax_rejection_names_its_file_and_quotes_its_line() {
+        let host = "/absolute/path/counts.wf";
+
+        // [OWN-1], reached in the semantic checker.
+        let affine = br#"struct Counts {
+  lines: u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let running = Counts(lines: 0_u64);
+  let totals = running;
+  return exit_status(code: 0_u8);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::from_host_path("input0.wf", host, affine)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a bare affine use is rejected");
+        assert_eq!(failure.rule_id(), Some("OWN-1"));
+        let detail = failure.detail();
+        assert!(detail.contains(&format!("{host}:7:16")), "{detail}");
+        assert!(detail.contains("let totals = running;"), "{detail}");
+        assert!(!detail.contains("input0.wf"), "{detail}");
+
+        // [TYPE-6], reached in the resolver.
+        let collision = br#"command fn main() -> status: own ExitStatus pure {
+  let permit = 1_u64;
+  region 'inner {
+    let permit = 2_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::from_host_path("input0.wf", host, collision)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a redeclared binder is rejected");
+        assert_eq!(failure.rule_id(), Some("TYPE-6"));
+        let detail = failure.detail();
+        assert!(detail.contains(&format!("{host}:4:9")), "{detail}");
+        assert!(detail.contains("let permit = 2_u64;"), "{detail}");
+    }
+
     /// A source read from a host path the closed logical spelling cannot hold
     /// is still named by that host path everywhere a reader looks.
     ///

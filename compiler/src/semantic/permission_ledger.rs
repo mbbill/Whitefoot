@@ -80,7 +80,10 @@ pub(crate) trait LedgerSource {
     /// Why a node path could not be resolved.
     type Error;
 
-    /// The logical source name and one-based line of one node.
+    /// The name a reader is shown for one node's source, and its one-based
+    /// line. That is the host path the driver read the bytes from, not the
+    /// bundle's own portable key, because every consumer of this pair prints
+    /// it for a person to open.
     fn location(&self, path: &NodePath) -> Result<(String, u64), Self::Error>;
 
     /// The exact canonical source spelling of one node.
@@ -139,26 +142,26 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             .filter_map(|judged| judged.head.as_ref())
             .collect();
         for pair in &permissions.pairs {
-            let (logical_path, line) = source.location(&pair.first.statement)?;
+            let (display_path, line) = source.location(&pair.first.statement)?;
             let verdict = match &pair.verdict {
                 PermissionVerdict::PermittedEligible => "permitted",
                 PermissionVerdict::Denied(_) => "denied",
             };
             let detail = detail(&pair.verdict, source)?;
             entries.push((
-                logical_path.clone(),
+                display_path.clone(),
                 line,
                 PAIR,
                 ONLY,
                 format!(
-                    "PAR {verdict:<10}  {logical_path}:{line}  pair({}, {})  {detail}",
+                    "PAR {verdict:<10}  {display_path}:{line}  pair({}, {})  {detail}",
                     pair.first.callee_name, pair.second.callee_name
                 ),
                 false,
             ));
         }
         for run in &permissions.runs {
-            let (logical_path, line) = source.location(&run.sites[0].statement)?;
+            let (display_path, line) = source.location(&run.sites[0].statement)?;
             let last = run.sites.last().expect("a chain has at least two members");
             let (_, last_line) = source.location(&last.statement)?;
             let members = run
@@ -168,19 +171,19 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 .collect::<Vec<_>>()
                 .join(", ");
             entries.push((
-                logical_path.clone(),
+                display_path.clone(),
                 line,
                 CHAIN,
                 ONLY,
                 format!(
-                    "PAR chain       {logical_path}:{line}  run({members})  {} members through line {last_line}",
+                    "PAR chain       {display_path}:{line}  run({members})  {} members through line {last_line}",
                     run.sites.len()
                 ),
                 false,
             ));
         }
         for judged in &permissions.loops {
-            let (logical_path, line) = source.location(&judged.statement)?;
+            let (display_path, line) = source.location(&judged.statement)?;
             let verdict = if judged.verdict.is_permitted() {
                 "permitted"
             } else {
@@ -188,11 +191,11 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             };
             let detail = loop_detail(judged, source)?;
             entries.push((
-                logical_path.clone(),
+                display_path.clone(),
                 line,
                 LOOP,
                 ONLY,
-                format!("PAR loop        {logical_path}:{line}  loop  {verdict:<10}  {detail}"),
+                format!("PAR loop        {display_path}:{line}  loop  {verdict:<10}  {detail}"),
                 !judged.verdict.is_permitted() && lost_pipeline.contains(&&judged.statement),
             ));
             if !judged.advises_split {
@@ -203,12 +206,12 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 .denied_condition()
                 .expect("only a refused loop carries split advice");
             entries.push((
-                logical_path.clone(),
+                display_path.clone(),
                 line,
                 HINT,
                 ONLY,
                 format!(
-                    "PAR hint        {logical_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
+                    "PAR hint        {display_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
                     judged.combines.join(", ")
                 ),
                 false,
@@ -219,7 +222,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             // loops that share a cut do not print two lines at one anchor; a
             // `loop_stmt` carries none and falls back to the cut.
             let anchor = judged.head.as_ref().unwrap_or(&judged.cut);
-            let (logical_path, line) = source.location(anchor)?;
+            let (display_path, line) = source.location(anchor)?;
             let verdict = if judged.verdict.is_permitted() {
                 "permitted"
             } else {
@@ -227,12 +230,12 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             };
             let detail = staged_detail(judged, source)?;
             entries.push((
-                logical_path.clone(),
+                display_path.clone(),
                 line,
                 STAGE,
                 ONLY,
                 format!(
-                    "PAR stage       {logical_path}:{line}  {:<4}  {verdict:<10}  {detail}",
+                    "PAR stage       {display_path}:{line}  {:<4}  {verdict:<10}  {detail}",
                     judged.form
                 ),
                 !judged.verdict.is_permitted(),
@@ -240,12 +243,12 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             for (ordinal, place) in judged.dispositions.iter().enumerate() {
                 let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
                 entries.push((
-                    logical_path.clone(),
+                    display_path.clone(),
                     line,
                     PLACE,
                     ordinal,
                     format!(
-                        "PAR place       {logical_path}:{line}  {:<12}  {}  {}",
+                        "PAR place       {display_path}:{line}  {:<12}  {}  {}",
                         place.disposition.spelling(),
                         source.spelling(&place.citation)?,
                         place.reason
