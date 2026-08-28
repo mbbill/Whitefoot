@@ -92,7 +92,7 @@ where
     'source: 'a,
 {
     match predicate {
-        TerminalPredicate::Fixed(fixed) => fixed.spelling(),
+        TerminalPredicate::Fixed(fixed) => fixed.spelling_bytes(),
         _ => token.span().bytes(),
     }
 }
@@ -206,6 +206,11 @@ struct MismatchGap {
     end: u64,
     left_terminal: Option<usize>,
     right_terminal: Option<usize>,
+    /// The exact trivia bytes FORM-2 requires here, and the bytes the source
+    /// carries instead. The auditor decided the first and read the second, so
+    /// the rejection carries both rather than a coordinate to bisect from.
+    expected: String,
+    found: String,
 }
 
 fn mismatch_issue(
@@ -215,20 +220,28 @@ fn mismatch_issue(
     work: &mut AuditWork,
 ) -> Result<CanonicalIssue, Stop> {
     let coordinate = source_coordinate(gap.source, gap.start, gap.end);
+    let expected = gap.expected;
+    let found = gap.found;
     let (Some(left), Some(right)) = (gap.left_terminal, gap.right_terminal) else {
         return Ok(CanonicalIssue {
             location: CanonicalLocation::SourceBytes(coordinate),
+            expected,
+            found,
         });
     };
     if terminal_top_item(topology, left)? != terminal_top_item(topology, right)? {
         return Ok(CanonicalIssue {
             location: CanonicalLocation::SourceBytes(coordinate),
+            expected,
+            found,
         });
     }
     let owner = lowest_common_ancestor(topology, left, right, work)?;
     let path = node_path(topology, owner, limits, work)?;
     Ok(CanonicalIssue {
         location: CanonicalLocation::SourceNode(path, coordinate),
+        expected,
+        found,
     })
 }
 
@@ -299,6 +312,8 @@ fn audit(
                         end: file.byte_len(),
                         left_terminal: None,
                         right_terminal: None,
+                        expected: "\n".to_owned(),
+                        found: String::from_utf8_lossy(source_bytes).into_owned(),
                     },
                     limits,
                     work,
@@ -323,6 +338,8 @@ fn audit(
                     end: first_start,
                     left_terminal: None,
                     right_terminal: Some(start),
+                    expected: String::new(),
+                    found: String::from_utf8_lossy(leading).into_owned(),
                 },
                 limits,
                 work,
@@ -410,7 +427,7 @@ fn audit(
             let actual_gap = source_bytes
                 .get(actual_start..actual_end)
                 .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
-            let (gap_agrees, expected_gap_len) = gap_matches(
+            let (gap_agrees, expected_gap_len, expected_gap) = gap_matches(
                 actual_gap,
                 style,
                 depth,
@@ -427,6 +444,8 @@ fn audit(
                         end: gap_end,
                         left_terminal: Some(ordinal),
                         right_terminal,
+                        expected: expected_gap.text(),
+                        found: String::from_utf8_lossy(actual_gap).into_owned(),
                     },
                     limits,
                     work,

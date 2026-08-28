@@ -44,7 +44,7 @@ fn every_fixed_predicate_is_retained_without_identifier_priority() {
         if index != 0 {
             source.push(b' ');
         }
-        source.extend_from_slice(terminal.spelling());
+        source.extend_from_slice(terminal.spelling_bytes());
     }
     let inputs = [SourceInput::new("fixed.wf", &source)];
     let Ok(bundle) = source_bundle(&inputs) else {

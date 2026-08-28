@@ -646,7 +646,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own6,
-        SemanticIssueKind::InvalidChildReborrow,
+        SemanticIssueKind::InvalidChildReborrow {
+            mechanical_fix: OWN6_HOLDER,
+        },
     );
 
     assert_rule(
@@ -667,7 +669,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own6,
-        SemanticIssueKind::InvalidChildReborrow,
+        SemanticIssueKind::InvalidChildReborrow {
+            mechanical_fix: OWN6_STATEMENT_SCOPE,
+        },
     );
 
     assert_rule(
@@ -1331,7 +1335,9 @@ fn extension_keeps_non_candidate_children_rejected() {
     assert_rule_extension(
         b"fn mix['p2, 'q2](p: &uniq 'p2 i32, q: &'q2 i32) -> result: &'q2 i32 pure {\n  return &'q2 deref(q);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let hx = &uniq 'a x;\n    region 'b {\n      let r = mix<'a, 'b>(p: &uniq 'a deref(hx), q: &'b y);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own6,
-        SemanticIssueKind::InvalidChildReborrow,
+        SemanticIssueKind::InvalidChildReborrow {
+            mechanical_fix: OWN6_ARGUMENT_POSITION,
+        },
     );
 }
 
@@ -1401,6 +1407,23 @@ fn extension_writes_through_result_holders_kill_source_facts() {
 // and does not wait for a caller, so OWN-6's binding-side ambiguity rejection
 // has no reachable source and no longer exists.
 // ---------------------------------------------------------------------------
+
+/// The three exact [OWN-6] restructurings, one per condition the rule carries.
+///
+/// Spelled out here rather than imported, like the [FN-1] fix above, so a
+/// change to the text a writer reads has to be made twice on purpose.
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, \
+     and a value that statement binds dies at the region's end; either move the borrow holder \
+     into a helper that takes it as `&uniq`, `move`s it there, and returns the derived state \
+     (P4 linear threading), or bind the reborrowed result with `replace`: \
+     `let stale = replace target = call(...);`";
+
+const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
+     value or unit, or in the one argument position a borrow-returning call takes its result \
+     from; pass the holder itself, or bind the result from that position";
+
+const OWN6_HOLDER: &str = "reborrow only a parameter or let-bound holder, take `&uniq` only from \
+     a `&uniq` holder, and introduce the child region inside the holder's own region";
 
 /// The exact [FN-1] restructuring the boundary judgment names.
 const AMBIGUOUS_PROVENANCE_FIX: &str = "give the source parameter its own region so exactly one parameter shares the result's \
