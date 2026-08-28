@@ -601,19 +601,30 @@ hours later, after ordinary builds had evicted the tree, put the same line at
 4378 ms: 134 us a read, fifteen times slower. Every ratio in that table was a
 ratio between cache hits.
 
-The bundle now refuses to print a table under a cache-state label it has not
-measured. Each cache state is created rather than inherited: `make
-read-uncache` regenerates the tree through a descriptor that does not populate
-the cache and flushes it, and `make read-warm` reads every block of every file
-back in through plain ones. The uncached tables run first, because they are
-the ones the design question turns on. `read_baseline probe-uncached` then
-times sixteen positioned reads in each of the eight files immediately before
-and immediately after every table, refusing the label unless all but ten per
-cent of them cost more than 40 us. The threshold sits in the gap between the
-two populations this host keeps far apart: 6 to 20 us from the unified buffer
-cache, about 134 us from the device. `probe-warm` is the same check inverted.
-`research/experiments/io-completion-bench/README.md` describes it, and the
-per-file medians are printed beside every table below.
+No table in this section now carries a cache-state label that was not
+measured. Each state is created rather than inherited: the tree is regenerated
+through a descriptor that does not populate the cache and flushed, so an
+uncached table starts from nothing resident, and a warm table is warmed by a
+full sequential pass over every block rather than by whatever the previous
+table left behind. The uncached tables run first, because they are the ones
+the design question turns on.
+
+`read_baseline probe-uncached` then measures the claim. It times sixteen
+positioned reads in each of the eight files immediately before and immediately
+after every table and reports what share of them cost more than 40 us — a
+threshold that sits in the gap between the two populations the maintainer's
+machine keeps far apart, 6 to 20 us from the unified buffer cache and about
+134 us from the device. `probe-warm` is the same check inverted.
+
+What follows from a verdict differs by caller, deliberately. `make bench-read`
+refuses to print a table the probe did not confirm, which is right on a machine
+whose two populations are known. `read-bench.sh`, which produced every runner
+table below, prints the verdict on the table's own label line instead, because
+a hosted runner's storage is not known in advance and a labelled table teaches
+more than an absent one. Three of the tables below were refused their label at
+one end, and each says so where it stands.
+`research/experiments/io-completion-bench/README.md` describes the machinery,
+and the per-file medians are printed beside every table.
 
 ### Method
 
@@ -683,8 +694,9 @@ underneath its own page cache there is a host cache it cannot address.
 
 The 4 KiB table is the cleanest measurement in this document. Its probe
 confirmed the uncached label immediately before *and* immediately after the
-table, its lines sit within three per cent of their own minimum and maximum
-across seven interleaved passes, and every read in it reached the device.
+table, no line's minimum or maximum is more than four per cent from its own
+median across seven interleaved passes, and every read in it reached the
+device.
 
 ```text
 == read-heavy 4 KiB, uncached (WF_IO_NOCACHE=1) ==
