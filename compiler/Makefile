@@ -148,10 +148,11 @@ test-corpus:
 # quietly drops cases is the worst kind of green. This proves it does not:
 # the two library halves partition the suite exactly — every case is in one of
 # them and none is in both — and the integration targets `test-corpus` names
-# are exactly the ones cargo discovers in `tests/`. Renaming a sampling module
-# without renaming it here leaves its cases in `test-unit`; deleting a module
-# name that no longer exists is caught by the same arithmetic. Listing costs a
-# `--no-run` build and no test time.
+# are exactly the ones cargo discovers in `tests/`. The arithmetic alone cannot
+# notice a sampling module that was renamed or deleted, because `--skip M` and
+# the filter `M` are exact complements whatever M names; so every name in
+# SAMPLING_MODULES must also match at least one case on its own. Listing costs
+# a `--no-run` build and no test time.
 test-partition:
 	@whole=$$($(CARGO) test --profile gate --lib --locked --offline -- --list \
 		| grep -c ': test$$'); \
@@ -167,6 +168,14 @@ test-partition:
 		echo "library split names no sampling case: SAMPLING_MODULES matches nothing" >&2; \
 		exit 1; \
 	fi; \
+	for module in $(SAMPLING_MODULES); do \
+		count=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $$module \
+			| grep -c ': test$$'); \
+		if [ "$$count" -eq 0 ]; then \
+			echo "library split names a sampling module with no case: $$module" >&2; \
+			exit 1; \
+		fi; \
+	done; \
 	echo "library split: $$whole cases = $$fast fast + $$sampled sampled"
 	@declared="$$(printf '%s\n' $(INTEGRATION_TARGETS) | sort | tr '\n' ' ')"; \
 	present="$$(ls tests/*.rs | sed -e 's|tests/||' -e 's|\.rs$$||' | sort | tr '\n' ' ')"; \

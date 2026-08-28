@@ -118,7 +118,10 @@ process can do without root declines the dump.
 `.github/workflows/gate.yml` therefore sets the pattern in one Linux-only step,
 where root is available, and `Makefile` and `compiler/Makefile` keep
 `ulimit -c 0` as the portable half — correct on every host whose pattern names
-a file, which is where a limit of zero is what declines the dump. No case
+a file, which is where a limit of zero is what declines the dump. Stated
+plainly: on a Linux host whose pattern is a pipe and where nothing can change
+it, the sampling job pays the dumps again and the five-minute budget does not
+hold; the budget as measured rests on that CI step. No case
 asserts anything about a core file; each asserts the signal, the exit status
 and the record channel, and none of those moves.
 
@@ -156,7 +159,12 @@ Every caller asserts `granted > 0`, which is existential again, so
 predicate is identical on every input sequence: the total is positive exactly
 when some run of the sample was granted a lane, and a runtime that grants
 nothing still makes all 32 (or all 4) runs and still returns zero. The bounds
-did not move.
+did not move. One observation is given up and should be named: the old free
+function asserted exit status 0 on every one of the N runs, and the early exit
+asserts it only on the runs it makes. No case's own property depends on the
+later runs (byte identity across worker counts is asserted separately at each
+call site), but a counted program that granted on run 1 and exited non-zero on
+run 7 would no longer be noticed here.
 
 ### `the_latch_is_what_keeps_the_record_single`: a bound sized for a bad draw
 
@@ -403,9 +411,13 @@ handler's.
   for a scheduler's benefit.
 - **The partition is checked, not asserted.** A list of module prefixes in a
   Makefile is exactly the kind of thing that goes stale silently: rename a
-  module and its cases quietly move into the fast half, or out of the gate
-  altogether if a filter stops matching. `test-partition` costs one `--list`
-  and turns that into a failure.
+  module and its cases quietly move into the fast half. The arithmetic
+  `whole = fast + sampled` cannot notice that on its own, because `--skip M`
+  and the filter `M` are exact complements whatever `M` names (an independent
+  verifier renamed a module and the sum still held); so `test-partition` also
+  requires every name in `SAMPLING_MODULES` to match at least one case on its
+  own, which fails on a renamed or deleted module. It costs a few `--list`
+  runs and no test time.
 - **Early exit only where the claim is existential.** Three of the trap-latch
   cases assert a property of *every* run — a racing pair writes exactly one
   record, the sequential schedule names one claim every run, one false claim
@@ -425,6 +437,14 @@ handler's.
   fails on a loaded machine and passes on an idle one.
 
 ## Not done
+
+- The two eight-lane grant controls in `compiler/src/backend/tests/loop_split.rs`
+  (`a_split_loop_carries_its_captures_and_a_second_combine` and
+  `every_admitted_combine_splits_and_publishes_the_unsplit_bytes`), which
+  batch 0090 put behind `a_steal_is_observable(8)`, run on no CI host: the
+  runners have three and four cores. They still run on the maintainer's
+  ten-core machine and print their host-limited line elsewhere, but the defect
+  they exist to catch is invisible to CI until a wider runner exists.
 
 - **The Linux gate is still red at `conformance-run`, on the documented
   target-qualification gap, and this batch does not touch it.** Six cases reach
