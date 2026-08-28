@@ -1239,10 +1239,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                       right[0_u64];  no footprint of the body writes it or any place \
                       overlapping it, and every loan on it is shared";
         assert_eq!(
-            places
-                .iter()
-                .filter(|line| line.as_str() == shared)
-                .count(),
+            places.iter().filter(|line| line.as_str() == shared).count(),
             2,
             "both buffers are read-only and both are printed: {ledger:?}"
         );
