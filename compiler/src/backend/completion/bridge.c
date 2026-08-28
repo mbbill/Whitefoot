@@ -62,9 +62,10 @@ static int wf_bridge_file_error;
  * a program calls them.  A program with two threads therefore has an ordinary
  * unsynchronized read of a flag another thread is writing, which is a data
  * race whatever the values happen to be.  Declaring them `_Atomic` makes the
- * plain reads and writes below sequentially consistent accesses -- a load-
- * acquire on the hosts this runs on -- which is the whole cost, and it is
- * paid on a path that is about to make a host call.
+ * plain reads and writes below sequentially consistent accesses, which on the
+ * hosts this runs on is at worst a load-acquire instruction and on x86-64 an
+ * ordinary load.  That is the whole cost, and it is paid on a path that is
+ * about to make a host call.
  *
  * Whether WF_IO_HELPERS named the pool, which pins the route as well as the
  * count: see wf_bridge_helper_policy. */
