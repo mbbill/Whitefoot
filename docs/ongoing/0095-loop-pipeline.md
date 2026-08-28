@@ -218,14 +218,18 @@ item 2), and the driver is Stage B.
   `a_carrying_region_with_no_exit_is_refused`,
   `a_drain_emitted_before_the_hand_out_it_retires_is_refused`.
 - The two exhaustion tests each fail without the fix they cover, which is what
-  makes them evidence rather than decoration.
-  `test_open_exhaustion_waits_for_another_engine` fails at zero, one and four
-  helpers with the adapter's old `drained == 0` give-up restored;
-  `test_bridge_open_behind_a_submitted_close_succeeds` fails at zero, one and
-  four helpers in the Linux container with the ring's old same-pass re-stage
-  restored. `a_drain_emitted_before_the_hand_out_it_retires_is_refused` emits a
-  module with the ordering check removed, and the loop's `break` exit in that
-  module carries a bare `ret` with no `wf__completion_file_join` while the
+  makes them evidence rather than decoration. Measured against the shipped
+  harness with only the fix reverted, 30 runs at each helper setting:
+  `test_open_exhaustion_waits_for_another_engine`, with the adapter's old
+  `drained == 0` give-up restored, fails 30/30 at zero, one and four helpers on
+  macOS; `test_bridge_open_behind_a_submitted_close_succeeds`, with the ring's
+  old same-pass re-stage restored, fails 30/30, 29/30 and 28/30 at zero, one
+  and four helpers in the Linux container. The ring case is not quite 30/30
+  because the kernel is free to run the close first, in which case the open is
+  never refused at all and the old code has nothing to get wrong.
+  `a_drain_emitted_before_the_hand_out_it_retires_is_refused` emits a module
+  with the ordering check removed, and the loop's `break` exit in that module
+  carries a bare `ret` with no `wf__completion_file_join` while the
   later-numbered typed exit has one.
 - Negative controls run by hand on Linux: restoring the immediate kick fails
   the doorbell test, and disabling the ring's retry fails the exhaustion test.
