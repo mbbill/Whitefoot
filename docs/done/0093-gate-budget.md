@@ -158,6 +158,36 @@ when some run of the sample was granted a lane, and a runtime that grants
 nothing still makes all 32 (or all 4) runs and still returns zero. The bounds
 did not move.
 
+### `the_latch_is_what_keeps_the_record_single`: a bound sized for a bad draw
+
+This one is a case the batch made flaky and then fixed, and it is worth
+stating plainly because the flake was a consequence of the split.
+
+The control defeats the latch and requires that at least one of its runs write
+*two* records — which needs two threads to reach the writer, which needs the
+pool to grant the handed-out call a lane and the losing thread to get a CPU
+before the winner's `abort` finishes. Both are scheduling events, so the
+detection rate is the host's. Eight runs were plenty while the case ran among
+1389 others on a loaded machine; with the sampling cases running as their own
+group there is less on the machine to slow the winner down, and the control
+caught nothing in eight runs in one of this batch's three gate runs on
+`macos-14`.
+
+The rate was measured rather than guessed: a temporary widening of the loop to
+200, with the count printed, reported **117 of 200** on the three-core runner —
+a rate of 0.585, at which eight runs would miss about once in a thousand. But
+eight runs *did* miss, on that same runner label, which is the finding: the
+rate is not a constant of the host, it is a constant of the machine that run
+drew and of what else was on it. A bound sized from 0.585 would be a bound
+sized from the case that never fails.
+
+`DEFEATED_LATCH_RUNS` is therefore 200, which misses only where the rate has
+fallen below about two percent — an order of magnitude under anything
+observed. It costs about two seconds of process spawns, measured as 18.9
+seconds for the macOS sampling half at eight runs against 20.3 at two hundred,
+and every one of the 200 is still checked, so the wider sample widens what the
+control verifies rather than diluting it.
+
 ### `CountedProgram`: one link, many runs
 
 `run_counting_grants` linked a module, ran it once and deleted the executable;

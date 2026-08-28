@@ -227,10 +227,3 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
-
-  # TEMPORARY, batch 0093. The detection rate of the defeated-latch control on
-  # the three-core `macos-14` runner, which is the host that failed it. The
-  # sampling job runs the case with the loop widened to 200 and no early exit
-  # and prints `defeated-latch detection: N of 200`; that number sizes the
-  # bound the case ships with. Delete this note and restore the sized loop once
-  # the number is in `docs/done/0093-gate-budget.md`.

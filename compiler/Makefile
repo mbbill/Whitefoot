@@ -134,7 +134,7 @@ test-unit:
 
 # The sampling half: the cases that link a program and run it many times.
 test-sampling:
-	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES) --nocapture
+	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES)
 
 # Everything outside the library: the integration targets, which compile and
 # link real programs, and the binaries' own unit tests. The binaries are here
