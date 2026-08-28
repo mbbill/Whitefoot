@@ -7,6 +7,17 @@ mod base64;
 mod buffers;
 mod checked_division;
 mod completion;
+/// The §9.1 cost census, every case of which compiles `wfgrep`.
+///
+/// Host-limited to a target with an approved [SYS-14] directory-enumeration
+/// row. `wfgrep` walks directories, and `backend/qualification.rs` states
+/// deliberately that Linux has no such row: `getdents64` writes no per-entry
+/// name length, and the portable record the emitted shim fills needs one, so
+/// qualification reports `MissingMapping(Operation(12))` rather than
+/// pretending the facility is there. A `wfgrep` module therefore does not
+/// exist on Linux to take a census of. The limit is the target table's, not
+/// this module's: the day a Linux enumeration row lands, this line goes.
+#[cfg(target_os = "macos")]
 mod cost_shape;
 mod counted_ranges;
 mod deterministic_target;
@@ -46,11 +57,11 @@ use crate::{
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
-    PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
-    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical, check_semantics,
-    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome,
+    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
+    TerminalOutcome, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical,
+    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
     module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
 };
@@ -466,6 +477,7 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     let completion_units = append_completion_runtime(&mut command, llvm, directory);
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(HOST_LINK_LIBRARIES)
         .arg("-o")
         .arg(&executable)
         .output()
@@ -560,6 +572,9 @@ fn host_optimized_module(llvm: &str) -> String {
 /// everything the finished program calls has to include it, or it is complete
 /// over every generated function except the one whose call it would not
 /// otherwise account for.
+/// Reached only from the `wfgrep` cost census, which is itself host-limited
+/// to a target with an approved directory-enumeration row.
+#[cfg(target_os = "macos")]
 pub(super) fn optimized_main_wrapper(module: &str) -> &str {
     let start = module
         .find("define i32 @main(")

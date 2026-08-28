@@ -51,6 +51,14 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 }
 "#;
 
+/// How many runs the migration observation below gets.
+///
+/// Raised from sixteen in batch 0090, when a Linux runner reached zero
+/// migrations over the whole sample and this machine reaches one within a run
+/// or two. The link is now outside the loop, so the wider sample costs runs
+/// rather than compilations.
+const MIGRATION_ATTEMPTS: usize = 96;
+
 #[test]
 fn may_suspend_tail_wrappers_release_the_writer_stack_and_resume_on_a_scheduler_lane() {
     let llvm = compile(STACKLESS_WRAPPER);
@@ -94,10 +102,15 @@ __attribute__((destructor)) static void report_writer_resume(void) {
         assert!(report.contains("writer-resumes=1"), "{report}");
         assert!(report.contains("migrations=0"), "{report}");
     }
+    // A migration is a race the observation has to win: the ready frame is
+    // claimed by a scheduler lane only if a lane reaches it before the writer
+    // resumes it itself. Nothing about the module or the fixture changes
+    // between attempts, so the link is paid once and the sample is as wide as
+    // the runs are cheap.
     let mut migrated = false;
-    for _ in 0..16 {
-        let directory = test_directory();
-        let executable = build_linked_executable(&llvm, Some(host), &directory);
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &directory);
+    for _ in 0..MIGRATION_ATTEMPTS {
         let output = Command::new(&executable)
             .env("WF_WORKERS", "2")
             .env("WF_IO_HELPERS", "1")
@@ -105,7 +118,6 @@ __attribute__((destructor)) static void report_writer_resume(void) {
             .stderr(Stdio::piped())
             .output()
             .expect("run stackless wrapper executable");
-        std::fs::remove_dir_all(&directory).expect("remove stackless test directory");
         assert!(
             output.status.success(),
             "stackless executable failed: {output:?}"
@@ -118,6 +130,7 @@ __attribute__((destructor)) static void report_writer_resume(void) {
             break;
         }
     }
+    std::fs::remove_dir_all(&directory).expect("remove stackless test directory");
     assert!(
         migrated,
         "an eligible scheduler worker never claimed the ready frame"

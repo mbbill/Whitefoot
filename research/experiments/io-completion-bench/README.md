@@ -118,7 +118,7 @@ table, is served from memory however loudly it asks for the device. Batch
 0092 published a table that way once; `docs/done/0092-read-workload.md`
 records it.
 
-Two things now stand between that mistake and the table.
+Three things now stand between that mistake and the table.
 
 `make read-uncache` regenerates the tree so nothing is resident: the generator
 writes each file through a descriptor that does not populate the cache,
@@ -128,6 +128,11 @@ over the same eight blocks of a freshly generated file cost 248, 230 and
 315 us on this host, with no drift towards the 7 us a resident page would
 cost — which is what lets the probe below observe residency without creating
 it.
+
+`make read-warm` is the other half: it reads every block of every file back in
+through plain descriptors, so a warm table has the state it claims. A full
+sequential pass rather than a rerun of the workload, because 32,768
+pseudo-random reads would leave about two per cent of the blocks untouched.
 
 `read_baseline probe-uncached` then checks the claim rather than trusting it.
 It times sixteen positioned reads in each of the eight files, through

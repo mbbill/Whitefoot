@@ -25,6 +25,22 @@ use crate::{
 /// level is provisional and may move once a measurement asks for it.
 pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = &["-O2"];
 
+/// The host libraries every link names, for the same one-definition reason.
+///
+/// A Whitefoot module reaches libm without asking for it: the backend lowers a
+/// rounding to `roundevenf` and a fused multiply-add to `fma`, and the host
+/// optimizer is free to turn ordinary float arithmetic into another of that
+/// library's entry points. Darwin serves those from the same library as
+/// `write` and needs nothing said; an ELF host keeps them in `libm` and the
+/// link fails with an undefined symbol. Naming the library on both hosts is
+/// one link path instead of a per-target one, and on Darwin it resolves to a
+/// stub that is already linked.
+///
+/// Found by running the program corpus on an x86-64 Linux runner in batch
+/// 0090: `grayscale_pixels` and `feedback_controller` compile there and did
+/// not link, in the shipped driver's own link path.
+pub const HOST_LINK_LIBRARIES: &[&str] = &["-lm"];
+
 /// Explicit implementation ceilings for one compiler invocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CompilerLimits {

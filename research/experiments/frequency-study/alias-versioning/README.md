@@ -21,6 +21,15 @@ validated, and two first-party memchecks; zero rejections; 26 conflict
 predicates; and 52 pointer comparisons. Any fingerprint drift exits 1;
 compiler or input failure exits 2.
 
+The fingerprint is recorded for one target, `aarch64-apple-darwin`. The two
+counts it fixes are LLVM's own runtime alias-check shape, and the vectorizer
+decides that shape per target: the same kernels on `x86_64-unknown-linux-gnu`
+produce a different count that is equally correct and that this fingerprint
+cannot judge. Rustc versions do not move it on the calibrated target — 1.96.0,
+1.97.1 and 1.98.0 all reproduce it exactly, measured in batch 0090 — so the
+checked case states the target as its precondition and is skipped elsewhere
+rather than being widened to accept whatever another target emits.
+
 An existing optimized IR file can be inspected without compiling the fixture:
 
 ```sh

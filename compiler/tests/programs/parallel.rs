@@ -23,10 +23,10 @@
 
 use super::support::{
     build_program, compile_program, compile_program_with_overlap, compile_programs,
-    compile_programs_with_overlap, corpus_program_files, program_permission_ledger,
-    run_counting_grants,
+    corpus_program_files, program_permission_ledger, run_counting_grants,
+    try_compile_programs_with_overlap,
 };
-use whitefoot::module_requires_parallel_runtime;
+use whitefoot::{CompilationFailureKind, module_requires_parallel_runtime};
 
 /// Both folds are handed out, in the same module, from the same source shape.
 ///
@@ -313,9 +313,22 @@ fn the_corpus_units_cover_every_program_file() {
 /// its search path is covered with real arguments in `wfgrep.rs`.
 #[test]
 fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
+    let mut beyond_this_target: Vec<String> = Vec::new();
     for unit in CORPUS_UNITS {
         let named = unit.join(" + ");
-        let llvm = compile_programs_with_overlap(unit);
+        let llvm = match try_compile_programs_with_overlap(unit) {
+            Ok(llvm) => llvm,
+            // A target with no approved [SYS-14] directory-enumeration row does
+            // not compile the programs that walk a directory, and says so
+            // itself. Reading that report keeps every other corpus program
+            // covered on such a host instead of taking the whole case away
+            // from it; every other kind of failure is still a failure here.
+            Err(failure) if failure.kind() == CompilationFailureKind::TargetQualification => {
+                beyond_this_target.push(named);
+                continue;
+            }
+            Err(failure) => panic!("{named} must compile under --par: {failure}"),
+        };
         // Linking is the assertion: `build_program` fails the case if the host
         // assembler rejects the module.
         let overlapped = build_program(&llvm);
@@ -346,6 +359,16 @@ fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
             );
         }
     }
+    // Naming them keeps the exemption from spreading: a target may be short a
+    // directory-enumeration row, and nothing else in this corpus may quietly
+    // stop being covered.
+    assert!(
+        beyond_this_target
+            .iter()
+            .all(|unit| unit.contains("dir_walk.wf") || unit.contains("wfgrep.wf")),
+        "only the directory-walking programs may be out of a target's reach: \
+         {beyond_this_target:?}"
+    );
 }
 
 /// The text of one emitted function definition, from its `define` line to its

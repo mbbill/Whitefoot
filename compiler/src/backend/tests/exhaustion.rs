@@ -459,7 +459,11 @@ const fn libc_sigabrt() -> i32 {
 ///
 /// The distance is the whole experiment, so it is read from the environment
 /// rather than compiled in: one binary, one link, one row per offset.
-const OFFSET_FAULT_BODY: &str = r#"#include <pthread.h>
+const OFFSET_FAULT_BODY: &str = r#"/* `pthread_getattr_np` is a GNU extension, so the Linux arm below needs the
+   feature-test macro the floor runtime already sets for the same call. This
+   arm had never been compiled until the gate ran on Linux. */
+#define _GNU_SOURCE
+#include <pthread.h>
 #include <stdlib.h>
 
 extern int wf__floor_run(int argc, char **argv);

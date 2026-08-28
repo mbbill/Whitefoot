@@ -8,10 +8,10 @@ use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, SourceInput,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile_with_overlap,
-    compile_with_permission_ledger, module_requires_completion_runtime,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
+    PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
+    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
 };
 
@@ -236,6 +236,7 @@ fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> 
         .arg("-")
         .arg("-Wno-override-module")
         .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(HOST_LINK_LIBRARIES)
         .arg("-o")
         .arg(output)
         .stdin(Stdio::piped())

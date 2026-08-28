@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -10,6 +11,37 @@ from io import StringIO
 from pathlib import Path
 
 import collect
+
+
+# The target the recorded fingerprint was taken on. The fingerprint counts
+# LLVM's own runtime alias-check shape -- 26 conflict predicates, 52 pointer
+# comparisons -- and that shape is a vectorizer decision made per target. It
+# is stable across rustc versions on the calibrated target: measured in batch
+# 0090 under rustc 1.96.0, 1.97.1 and 1.98.0, all three reproduce it exactly.
+# It is not the same number on another target: an x86-64 Linux runner produces
+# a different, equally correct count, which this fingerprint cannot judge and
+# must not be edited to accept.
+CALIBRATED_HOST = "aarch64-apple-darwin"
+
+
+def rustc_host() -> str | None:
+    """The target triple this host's rustc compiles for, or None if absent."""
+    rustc = shutil.which("rustc")
+    if rustc is None:
+        return None
+    completed = subprocess.run(
+        [rustc, "--version", "--verbose"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        if line.startswith("host: "):
+            return line[len("host: ") :].strip()
+    return None
 
 
 class AliasVersioningAnalyzerTests(unittest.TestCase):
@@ -314,6 +346,12 @@ same:
                     self.assertIn("error:", stderr.getvalue())
 
     @unittest.skipUnless(shutil.which("rustc"), "rustc is required for calibration")
+    @unittest.skipUnless(
+        rustc_host() == CALIBRATED_HOST,
+        f"the recorded fingerprint is the memcheck shape LLVM emits for "
+        f"{CALIBRATED_HOST}; another target vectorizes these kernels "
+        f"differently and this fingerprint cannot judge that count",
+    )
     def test_existing_scoped_alias_fixture_calibrates(self) -> None:
         report = collect.calibration_report()
         calibration = report["calibration"]

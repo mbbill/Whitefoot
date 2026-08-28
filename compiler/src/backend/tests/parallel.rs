@@ -449,10 +449,28 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// it.
 ///
 /// What is pinned is a bound and not a parity, because an overlapped
-/// activation is genuinely not free — it carries the hand-out's own frame. On
-/// this fixture the two clones cost 48 and 32 bytes a level, so the bound is
-/// two, which admits the real ratio with room and refuses the fourfold
-/// regression this case exists to catch.
+/// activation is genuinely not free: the claim's record, the recursion's own
+/// argument and the value the join reads back are live across the call to
+/// `wf__par_claim`, and whatever the register allocator cannot keep in
+/// registers across that call is spilled into the frame.
+///
+/// The bound is that overhead in bytes rather than a multiple of the
+/// sequential level, and it was rewritten that way on 2026-08-27 because the
+/// multiple did not survive its second host. The two architectures cost the
+/// same overlapped activation and differ in the sequential one they are
+/// measured against — 48 bytes an overlapped level on both, against 32 a
+/// sequential level on arm64 and 16 on x86-64 — so the same lowering reads as
+/// a ratio of 1.5 on one host and 3 on the other, and the bound of two it used
+/// to carry was a fact about the arm64 register allocator. The measured
+/// overhead is two machine words on arm64 and four on x86-64; the bound is
+/// six, which admits both with room and refuses an activation that has started
+/// carrying storage for the hand-out itself.
+///
+/// The mechanism — the record belongs to the lane, so a refused hand-out
+/// builds nothing — is held exactly, and with no tolerance to calibrate, by
+/// [`handing_a_call_out_adds_no_stack_slot`]. This case is the frame the
+/// optimizer actually emitted, which is the thing a structural count cannot
+/// see.
 ///
 /// It used to be a survival probe at depth 60 000 under `ulimit -s 8192`,
 /// re-aimed on 2026-08-23 for the reason its own doc gave: the entry runs on a
@@ -463,8 +481,8 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 #[test]
 fn the_shipped_default_keeps_a_deep_recursion() {
     /// How much more stack one overlapped level may cost than one sequential
-    /// level.
-    const WIDEST_ADMITTED_RATIO: u64 = 2;
+    /// level, in bytes.
+    const WIDEST_ADMITTED_OVERHEAD: u64 = 48;
 
     let source = DEEP_RECURSION.replace("DEPTH", "1000").into_bytes();
     let overlapped_module = emit_with_overlap(&source);
@@ -478,11 +496,12 @@ fn the_shipped_default_keeps_a_deep_recursion() {
     let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf_spine");
     let sequential = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_seq_spine");
     assert!(
-        overlapped <= sequential * WIDEST_ADMITTED_RATIO,
+        overlapped <= sequential + WIDEST_ADMITTED_OVERHEAD,
         "one overlapped level costs {overlapped} bytes against the sequential \
-         clone's {sequential} in the same binary, so the world a --par binary \
-         runs in unconfigured is taxing activations far beyond the hand-out's \
-         own frame"
+         clone's {sequential} in the same binary, which is more than \
+         {WIDEST_ADMITTED_OVERHEAD} bytes of hand-out state, so the world a \
+         --par binary runs in unconfigured is taxing activations far beyond \
+         what the claim keeps live"
     );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -913,15 +932,17 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         parallel.stdout, sequential.stdout,
         "granting lanes must not move one byte of the result"
     );
-    let observed_grants = if granted == 0 {
-        grants_over_runs(&module, &directory, Some("4"), 4)
-    } else {
-        granted
-    };
-    assert!(
-        observed_grants > 0,
-        "the runtime granted no lane, so nothing was overlapped"
-    );
+    if a_steal_is_observable(4) {
+        let observed_grants = if granted == 0 {
+            grants_over_runs(&module, &directory, Some("4"), 4)
+        } else {
+            granted
+        };
+        assert!(
+            observed_grants > 0,
+            "the runtime granted no lane, so nothing was overlapped"
+        );
+    }
 
     // And the explicit opt-out: one lane of execution is the calling thread
     // alone, so the pool never starts and every offer is refused.
@@ -1256,6 +1277,30 @@ pub(super) fn run_counting_grants(
 /// which would fail a per-run `granted > 0` for a reason that has nothing to do
 /// with the code under test. A total keeps exactly what those assertions are
 /// for: a runtime that grants nothing totals zero and still fails.
+/// Whether this host can tell "the runtime granted no lane" apart from "no
+/// worker was scheduled inside the window".
+///
+/// A steal is only observable if a worker reaches the offer before the
+/// offering thread has already finished the work itself, which needs a core
+/// that is not already carrying a lane. Measured in batch 0090 on GitHub's
+/// runners: the four-lane observations reach zero over their whole sample on
+/// the three-core macOS runner and are non-zero on every four-core host run,
+/// so a zero there is a fact about the host rather than about the lowering.
+/// Where the host has the cores, the observation is enforced exactly as it
+/// always was; where it does not, the case says so on standard error rather
+/// than reporting a lowering regression it cannot see.
+pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
+    let cores = std::thread::available_parallelism().map_or(0, std::num::NonZero::get);
+    if cores < lanes {
+        eprintln!(
+            "host-limited: {cores} schedulable cores cannot show a steal across {lanes} lanes, \
+             so the grant observation is not made on this host"
+        );
+        return false;
+    }
+    true
+}
+
 pub(super) fn grants_over_runs(
     module: &str,
     directory: &Path,

@@ -43,7 +43,7 @@ An independent re-run hours later, after ordinary builds had evicted the tree,
 put the same line at 4378 ms — 134 us a read, fifteen times slower. Every
 ratio in the first table was a ratio between cache hits.
 
-Two things now stand between that mistake and a table.
+Three things now stand between that mistake and a table.
 
 **The tree is generated uncached.** `make read-uncache` rewrites it through a
 descriptor that does not populate the cache, flushes each file, and on Linux
@@ -52,6 +52,12 @@ is measured, not assumed: three passes over the same eight blocks of a freshly
 generated file cost 248, 230 and 315 us, with no drift towards the 7 us a
 resident page costs. The same property is what lets the probe read the tree
 without warming it.
+
+**The warm tables are warmed on purpose.** `make read-warm` reads every block
+of every file back in through plain descriptors, rather than relying on
+whatever the previous table left behind. It is a full sequential pass and not
+a rerun of the workload, because 32,768 pseudo-random reads leave about two
+per cent of the blocks untouched.
 
 **The label is measured, not asserted.** `read_baseline probe-uncached` times
 sixteen positioned reads in each of the eight files, through descriptors that
