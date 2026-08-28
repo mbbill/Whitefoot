@@ -270,6 +270,17 @@ completion-default-route-test:
 		-o "$(COMPLETION_TMP)/bridge-default-probe"
 	unset WF_IO_HELPERS; \
 		"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"
+	@# The adapter branch of the probe's route assertion -- the demand-driven
+	@# policy declined a read, or grew a helper -- cannot fire on a Linux host
+	@# whose io_uring takes every positioned read, so on Linux the arm above
+	@# covers only the native ring and the negative control was carried by the
+	@# Darwin CI host alone. WF_IO_NO_NATIVE_RING puts this host on the route a
+	@# kernel without io_uring already takes, and the probe refuses to pass if
+	@# the ring answered anyway.
+	@if [ "$$(uname -s)" = Linux ]; then \
+		unset WF_IO_HELPERS; WF_IO_NO_NATIVE_RING=1 \
+			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
+	fi
 
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"

@@ -225,6 +225,31 @@ static void wf_bridge_shutdown(void) {
     wf_bridge_ready = 0;
 }
 
+#if defined(__linux__)
+/* WF_IO_NO_NATIVE_RING: run this Linux process on the POSIX adapter route.
+ *
+ * Runtime policy of the same class as WF_IO_NOCACHE and WF_IO_HELPERS, and
+ * test-only within that class: no Whitefoot source names it, no accepted
+ * program changes meaning under it, and no byte any operation produces
+ * differs with it set.  Absent -- and any value other than the exact text "1"
+ * -- is today's behaviour exactly.
+ *
+ * It exists because the route a Linux host takes is not a choice a test can
+ * otherwise make.  A kernel with io_uring available takes every positioned
+ * read into the ring, so the adapter branch of `bridge_default_probe`'s route
+ * assertion -- the demand-driven policy declined a read, or grew a helper --
+ * cannot fire there at all, and the negative control it provides was carried
+ * by the Darwin CI host alone.  Skipping the ring init reaches the same state
+ * a kernel without io_uring reaches, which is a path the runtime already has
+ * rather than one this setting adds.
+ *
+ * It is read once, here, before the only call that starts the ring. */
+static int wf_bridge_native_ring_refused(void) {
+    const char *text = getenv("WF_IO_NO_NATIVE_RING");
+    return text != NULL && text[0] == '1' && text[1] == 0;
+}
+#endif
+
 static void wf_bridge_initialize(void) {
     wf_bridge_error = wf_completion_runtime_init(
         &wf_bridge_runtime,
@@ -235,7 +260,8 @@ static void wf_bridge_initialize(void) {
         return;
     }
 #if defined(__linux__)
-    if (wf_linux_io_uring_init(
+    if (!wf_bridge_native_ring_refused()
+        && wf_linux_io_uring_init(
             &wf_bridge_linux_adapter,
             &wf_bridge_runtime,
             wf_bridge_linux_entries,
