@@ -1512,11 +1512,16 @@ sequential build warm at 4 KiB, and the fourth is the 8573C one this section
 reads. Every draw is on a different processor, so nothing here isolates the
 8573C; what it does say is that the 4 KiB reading of 1.055 is not a property
 of the runtime, because the same runtime plus this batch's follow-up reads
-0.989 on the next machine. **The no-regression bar is not refuted by the draw
-this section reads, and the bar table above keeps its `unresolved` grade
-because that table reads `266acf4f` and this is a different draw on different
-hardware.** What is owed has narrowed from "another Linux draw" to an
-explanation of the 8573C one.
+0.989 on the next machine. **Nothing across the four draws refutes the
+no-regression bar, and the bar table above keeps its `unresolved` grade all
+the same, because that table reads `266acf4f` and this is a different draw on
+different hardware.** What is owed has narrowed from "another Linux draw" to
+an explanation of the 8573C one.
+
+Every figure in the table above was recomputed from the four runs' own
+artifacts: 328.38/334.53 and 71.69/76.17 for 0092, 285.27/289.92 and
+78.78/83.28 for `96bb4778`, and the two tables printed in this section for the
+other two.
 
 ### Linux hardware, many files
 
