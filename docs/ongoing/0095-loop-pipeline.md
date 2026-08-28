@@ -165,11 +165,11 @@ what a block has always done.
 
 The one thing a straight-line walk gets wrong is that a carrying region has
 several exits — the loop's normal exit and every typed exit out of its body —
-and each of them must retire the operations that reach it. `pipeline_outstanding`
-records what the region handed out, together with the block that handed it out,
-and each exit is seeded with what the carrying blocks that actually reach it
-left in flight. Which blocks those are is read from the edges
-(`pipeline_feeder_blocks`), not from how far the walk has got, so a drain
+and each of them must retire the operations that reach it.
+`pipeline_outstanding` records what the region handed out, together with the
+block that handed it out, and each exit is seeded with what the carrying blocks
+that actually reach it left in flight. Which blocks those are is read from the
+edges (`pipeline_feeder_blocks`), not from how far the walk has got, so a drain
 retires the same window however the blocks around it are numbered.
 
 Two properties of the descriptor are refused outright as
@@ -265,12 +265,15 @@ by exempting the carrying block from the rule.
   deterministic tests above. Its own comment says so.
 
 - Repetition counts after both fixes, at every helper setting the suites use.
-  macOS (`completion-test` build): 200 runs each at zero, one and four helpers,
-  0 failures. macOS `completion-tsan`: 20 runs each at zero, one and four
-  helpers, 0 failures. Linux container (`wf-io-bench:linux`, aarch64, kernel
-  6.8, io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs each at
-  zero, one and four helpers, 0 failures; `completion-tsan` 20 runs each at
-  zero, one and four helpers, 0 failures; 50 runs with
+  macOS (`completion-test` build): 1,000 runs at zero helpers, 1,000 at one and
+  2,400 at four, 0 failures — where the old code would have failed about 156 of
+  the four-helper runs. macOS `completion-tsan`: 60 runs at zero helpers, 90 at
+  one and 120 at four, 0 failures; the one-helper count matters because that is
+  where the second defect, the test's own assertion, still showed at 1 in 20
+  after the adapter fix alone. Linux container (`wf-io-bench:linux`, aarch64,
+  kernel 6.8, io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs
+  each at zero, one and four helpers, 0 failures; `completion-tsan` 20 runs
+  each at zero, one and four helpers, 0 failures; 50 runs with
   `WF_REQUIRE_LINUX_IO_URING=1` at four helpers, 0 failures.
 - `make -C research/experiments/io-completion-bench verify` on macOS: every line
   of every workload — the hand-written native shape, the `--no-overlap`
@@ -278,6 +281,13 @@ by exempting the carrying block from the rule.
   `17098009301725298919 00000000000071024640`, `many_files_loop` among them.
   The runtime changes here are on the exhausted path; this is the check that
   they left the ordinary one publishing the same bytes.
+- Toolchain coverage. `gate-linux` builds the harness with the host `cc`, which
+  on `ubuntu-24.04` is GCC, while `io-hosts`'s `completion-linux` builds it with
+  clang. A first push of this repair compiled on macOS clang and on container
+  clang and still failed `gate-linux`, because GCC rejects a discarded `write`
+  under `-Werror` where clang does not. The harness is now also built and run
+  with `gcc` in the Linux container, which is the same diagnostic set the gate
+  applies.
 - IR identity: every `.wf` under `tests/programs`, `tests/codegen` and
   `tests/conformance/cases` compiled with `whitefootc --emit-llvm` at this
   revision and at `main`, under the default, `--par` and `--no-overlap` — 630
@@ -299,7 +309,12 @@ by exempting the carrying block from the rule.
       `completion-core-read-tsan` — green on macOS and in the Linux container,
       with the repetition counts above
 - [x] canonical `make check` — green
-- [x] `io-hosts` and `gate` — see the runs listed at the end of this record
+- [x] `io-hosts` and `gate` run on the pushed branch. `completion-linux` is
+      the one that matters most here: it runs the harness, the sanitizers and
+      `completion-tsan` on a real x86-64 Linux kernel with io_uring, so both
+      new exhaustion tests are exercised on the ring rather than only in the
+      aarch64 container. `gate-linux` stays red on the six [QUAL-1]
+      conformance cases below and on nothing else
 
 ## The one red job, and why it is not this branch's
 

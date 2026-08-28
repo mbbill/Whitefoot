@@ -3072,6 +3072,7 @@ static int test_bridge_open_exhaustion_is_retried_once(
 struct wf_open_release {
     int held;
     int pipe_writer;
+    ssize_t released;
 };
 
 static void *wf_open_release_main(void *context) {
@@ -3083,9 +3084,11 @@ static void *wf_open_release_main(void *context) {
     (void)pthread_mutex_unlock(&wf_open_gate_lock);
     /* The descriptor the refused open needs comes back here, and the parked
      * read is released so the adapter observes a retirement on its other
-     * engine. */
+     * engine.  The byte's fate is recorded rather than discarded: a write
+     * that did not land would leave that helper parked, and the test reads
+     * this back before it concludes anything about the schedule. */
     (void)close(release->held);
-    (void)write(release->pipe_writer, "x", 1);
+    release->released = write(release->pipe_writer, "x", 1);
     return NULL;
 }
 
@@ -3164,6 +3167,7 @@ static int test_open_exhaustion_waits_for_another_engine(
     (void)pthread_mutex_unlock(&wf_open_gate_lock);
     release.held = held;
     release.pipe_writer = pipe_pair[1];
+    release.released = -1;
     CHECK(pthread_create(&releaser, NULL, wf_open_release_main, &release) == 0);
 
     memset(&request, 0, sizeof(request));
@@ -3182,6 +3186,7 @@ static int test_open_exhaustion_waits_for_another_engine(
      * re-attempts once. */
     CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
     CHECK(pthread_join(releaser, NULL) == 0);
+    CHECK(release.released == 1);
     (void)pthread_mutex_lock(&wf_open_gate_lock);
     wf_open_gate_armed = 0;
     (void)pthread_mutex_unlock(&wf_open_gate_lock);
