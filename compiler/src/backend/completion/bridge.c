@@ -1269,14 +1269,14 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
 static wf_file_result wf_bridge_execute_direct(
     const wf_file_request *request
 ) {
-    uint64_t seen = wf_completion_retirements();
+    uint64_t seen = wf_completion_descriptor_returns();
     wf_file_result result;
     wf_completion_operation_accepted();
     result = wf_file_execute_timed(&wf_bridge_adapter, request);
     if (wf_bridge_open_lacked_a_descriptor(&result)) {
         result = wf_bridge_retire_and_retry_direct(request, result, seen);
     }
-    wf_completion_operation_retired();
+    wf_completion_operation_retired(wf_file_returned_a_descriptor(&result));
     /* A direct call publishes nothing, so nothing else tells a scheduler
      * parked on the completion endpoint that this runtime just gave a
      * descriptor back.  A held open waiting for exactly that is released by a

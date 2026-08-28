@@ -1146,11 +1146,11 @@ wf_completion_statistics wf_completion_statistics_snapshot(
 
 /* A named point between the two reads a give-up decision makes.
  *
- * The decision reads the generation, then the in-flight and waiter counts.  A
- * retirement whose generation increment and whose in-flight decrement both
- * land between those reads is the one schedule that can make a waiter publish
- * a refusal a descriptor had already answered, and the re-read below is what
- * closes it.  Naming the point is what lets a test stand exactly there
+ * The decision reads the descriptor-return count, then the in-flight and
+ * waiter counts.  A retirement whose return increment and whose in-flight
+ * decrement both land between those reads is the one schedule that can make a
+ * waiter publish a refusal a descriptor had already answered, and the re-read
+ * below is what closes it.  Naming the point is what lets a test stand exactly there
  * instead of racing for it, exactly as the adapter's `openat` is named; the
  * default expansion is nothing at all. */
 #if !defined(WF_COMPLETION_RETIREMENT_POINT)
@@ -1163,7 +1163,10 @@ extern void WF_COMPLETION_RETIREMENT_POINT(void);
 
 static pthread_mutex_t wf_retirement_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wf_retirement_signal = PTHREAD_COND_INITIALIZER;
-static _Atomic uint64_t wf_retirement_generation;
+/* Descriptors this runtime has put back in the host's table.  Separate from
+ * the in-flight count below because the two answer different questions: this
+ * one is what a re-attempt may be spent on, that one is what waiting is for. */
+static _Atomic uint64_t wf_retirement_returns;
 static _Atomic size_t wf_retirement_in_flight;
 static _Atomic size_t wf_retirement_waiter_count;
 static _Atomic size_t wf_retirement_deferred;
@@ -1174,9 +1177,9 @@ static _Atomic uint64_t wf_retirement_wait_starts;
 static _Atomic(wf_retirement_waiter *) wf_retirement_first;
 static wf_retirement_waiter *wf_retirement_last;
 
-uint64_t wf_completion_retirements(void) {
+uint64_t wf_completion_descriptor_returns(void) {
     return atomic_load_explicit(
-        &wf_retirement_generation,
+        &wf_retirement_returns,
         memory_order_seq_cst
     );
 }
@@ -1203,15 +1206,24 @@ void wf_completion_operation_accepted(void) {
     (void)pthread_mutex_unlock(&wf_retirement_lock);
 }
 
-void wf_completion_operation_retired(void) {
-    /* The generation moves first: a waiter reads it before the in-flight
+void wf_completion_operation_retired(int returned_a_descriptor) {
+    /* The return count moves first: a waiter reads it before the in-flight
      * count, so this order is what lets the re-read below see a retirement
-     * whose two halves straddle the reads. */
-    atomic_fetch_add_explicit(
-        &wf_retirement_generation,
-        1,
-        memory_order_seq_cst
-    );
+     * whose two halves straddle the reads.
+     *
+     * An operation that returned nothing moves only the in-flight count.  It
+     * still ends, so a waiter for which it was the last operation in flight
+     * anywhere else answers — with "publish", which is what the program's own
+     * sequential execution produces once nothing is left holding a descriptor.
+     * What it must not do is grant a re-attempt: there is nothing new for a
+     * second host attempt to find, and a refused open has only one. */
+    if (returned_a_descriptor != 0) {
+        atomic_fetch_add_explicit(
+            &wf_retirement_returns,
+            1,
+            memory_order_seq_cst
+        );
+    }
     atomic_fetch_sub_explicit(
         &wf_retirement_in_flight,
         1,
@@ -1220,8 +1232,10 @@ void wf_completion_operation_retired(void) {
     /* The announcement below and this load are sequentially consistent in
      * both directions, which is what makes the pair race-free: in the single
      * total order either the waiter's announcement precedes this load — so
-     * the wake is delivered — or this increment precedes the waiter's read of
-     * the generation, so the waiter sees the retirement and never sleeps. */
+     * the wake is delivered — or both updates above precede the waiter's own
+     * reads, so the waiter sees this retirement and never sleeps.  The wake is
+     * owed whether or not a descriptor came back, because an operation merely
+     * ending can be what leaves nothing in flight anywhere else. */
     if (atomic_load_explicit(
             &wf_retirement_waiter_count,
             memory_order_seq_cst
@@ -1390,7 +1404,7 @@ static enum wf_retirement_state wf_retirement_state_now(
         return WF_RETIREMENT_UNREACHABLE;
     }
     if (atomic_load_explicit(
-            &wf_retirement_generation,
+            &wf_retirement_returns,
             memory_order_seq_cst
         ) != waiter->seen) {
         return WF_RETIREMENT_HAPPENED;
@@ -1435,12 +1449,12 @@ static enum wf_retirement_state wf_retirement_state_now(
          * Its publication is a retirement, which is what releases this one. */
         return WF_RETIREMENT_AWAITED;
     }
-    /* Read the generation once more.  A retirement whose increment landed
-     * after the first read and whose in-flight decrement landed before the
-     * read above is invisible to both of them, and publishing a refusal it
+    /* Read the return count once more.  A returning retirement whose increment
+     * landed after the first read and whose in-flight decrement landed before
+     * the read above is invisible to both of them, and publishing a refusal it
      * had already answered would lose the program's `Ok`. */
     if (atomic_load_explicit(
-            &wf_retirement_generation,
+            &wf_retirement_returns,
             memory_order_seq_cst
         ) != waiter->seen) {
         return WF_RETIREMENT_HAPPENED;

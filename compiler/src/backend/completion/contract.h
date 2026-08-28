@@ -423,20 +423,34 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * target engine reports into it.
  *
  * The rule every refused open follows, whichever engine attempted it:
- *   1. read `wf_completion_retirements` before the host attempt;
- *   2. if the generation has moved when the refusal arrives, a descriptor came
+ *   1. read `wf_completion_descriptor_returns` before the host attempt;
+ *   2. if that count has moved when the refusal arrives, a descriptor came
  *      back while the host was refusing — re-attempt once;
  *   3. otherwise, while an operation is in flight anywhere else, wait for the
- *      next retirement and then re-attempt once;
+ *      next descriptor to come back and then re-attempt once;
  *   4. otherwise publish the refusal, which is the outcome source order
  *      produces too.
  * Exactly one re-attempt per refused open.  If the second attempt also fails,
  * that is the program's own outcome and it is published unchanged.
  *
+ * The rule turns on two different facts, and a ledger that counts them together
+ * gets the rule wrong.  An operation *ending* is what "in flight anywhere else"
+ * is about: while one runs it may still give a descriptor back, so the refusal
+ * is not the program's outcome yet, and when the last one ends it is.  A
+ * descriptor *coming back* is the only event that can make a second host
+ * attempt answer differently from the first, so it is the only thing that
+ * justifies spending the one re-attempt.  A read, a write, a status or a
+ * directory batch ends without returning anything: it leaves the in-flight
+ * count and grants no re-attempt.  A close, and an open whose descriptor this
+ * runtime obtained and then disposed of, do both.  One count for both facts
+ * spends a refused open's single re-attempt on a read that happened to finish,
+ * and then publishes the refusal while the close it was waiting for is still in
+ * flight — which is the `Ok` this whole ledger exists to keep.
+ *
  * Waiting is safe because it terminates: a waiter counts itself out of "in
  * flight anywhere else", so when every operation still in flight is a waiter
- * the earliest of them publishes its refusal, and that publication is itself a
- * retirement which releases the others.
+ * the earliest of them publishes its refusal, and leaving the waiter order
+ * hands that place, and the same answer, to the next one.
  *
  * This lives with the completion core because the core is the one unit every
  * target engine and the bridge link.  The bounded POSIX adapter and the Linux
@@ -444,10 +458,10 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  */
 typedef struct wf_retirement_waiter {
     struct wf_retirement_waiter *next;
-    /* The generation read before the host attempt this waiter is deciding.
-     * The question is not "is anything running now" — an operation that
-     * retired between the attempt and the wait has already given its
-     * descriptor back — but "has anything retired since the attempt". */
+    /* The descriptor-return count read before the host attempt this waiter is
+     * deciding.  The question is not "is anything running now" — a descriptor
+     * returned between the attempt and the wait is one this open never saw —
+     * but "has a descriptor come back since the attempt". */
     uint64_t seen;
     /* In-flight work this waiter's own thread is answerable for: the queue a
      * refused adapter open must run, or that its suspended caller must.
@@ -469,7 +483,7 @@ typedef struct wf_retirement_waiter {
 } wf_retirement_waiter;
 
 enum wf_retirement_state {
-    /* Something retired since the attempt: re-attempt once. */
+    /* A descriptor came back since the attempt: re-attempt once. */
     WF_RETIREMENT_HAPPENED = 0,
     /* An operation is in flight elsewhere: it can still give a descriptor
      * back, so this refusal is not the program's outcome yet. */
@@ -479,10 +493,11 @@ enum wf_retirement_state {
     WF_RETIREMENT_UNREACHABLE = 2
 };
 
-/* The generation.  It moves whenever any operation on any engine retires: a
- * close completing, a refused open being published, any completion that ends
- * an operation.  Read before a host attempt, compared after it. */
-uint64_t wf_completion_retirements(void);
+/* How many descriptors this runtime has put back in the host's table, over
+ * every engine.  Read before a host attempt, compared after it.  An operation
+ * that ends without returning one does not move this, however long it ran and
+ * whichever engine ran it. */
+uint64_t wf_completion_descriptor_returns(void);
 
 /* One operation an engine has accepted and will run.  Queued bounded-adapter
  * work counts from submission, because a queue with an engine behind it is
@@ -491,8 +506,20 @@ uint64_t wf_completion_retirements(void);
 void wf_completion_operation_accepted(void);
 
 /* One accepted operation has published its result and given back whatever the
- * host lent it.  Called after the terminal publication, never before. */
-void wf_completion_operation_retired(void);
+ * host lent it.  Called after the terminal publication, never before.
+ *
+ * `returned_a_descriptor` is the answer to the one question the rule above asks
+ * of an ending operation: is there a descriptor in the host's table now that
+ * this operation was holding?  A close that ran says yes, and so does an open
+ * whose descriptor this runtime obtained and then disposed of — the kind check
+ * refused it, so the close the runtime made for it is a descriptor coming back.
+ * An open that the host refused, an open whose descriptor the program now
+ * holds, and every transfer, status and directory batch say no: they end, which
+ * the in-flight count records, but they return nothing, which is what the one
+ * re-attempt may be spent on.  Every engine answers it from its own record of
+ * the operation, because it is a fact about the operation and not about the
+ * engine. */
+void wf_completion_operation_retired(int returned_a_descriptor);
 
 /* Opens this runtime held rather than published, over every route.  A test
  * standing at that moment reads this; nothing in the runtime decides on it. */

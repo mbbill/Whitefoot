@@ -223,7 +223,9 @@ void wf_completion_test_retirement_point(void) {
         wf_completion_operation_accepted();
         return;
     }
-    wf_completion_operation_retired();
+    /* The retirement a give-up decision is about: one that put a descriptor
+     * back, which is the only kind that grants the re-attempt. */
+    wf_completion_operation_retired(1);
 }
 
 int wf_completion_test_poll(
@@ -3951,9 +3953,9 @@ static int test_bridge_open_behind_a_submitted_close_succeeds(
 
 /* The rule's third answer, at the one moment it is about.
  *
- * A give-up decision reads the retirement generation, then how many
+ * A give-up decision reads the descriptor-return count, then how many
  * operations are in flight and how many of those are themselves waiting.  A
- * retirement whose generation increment lands after the first read and whose
+ * returning retirement whose increment lands after the first read and whose
  * in-flight decrement lands before the second is invisible to both: the
  * decision sees an unchanged generation and nothing left that could give a
  * descriptor back, and a rule that stopped there would publish an exhaustion
@@ -3970,7 +3972,7 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
      * one other that could still return a descriptor. */
     wf_completion_operation_accepted();
     wf_completion_operation_accepted();
-    seen = wf_completion_retirements();
+    seen = wf_completion_descriptor_returns();
     wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
 
     (void)pthread_mutex_lock(&wf_retirement_point_lock);
@@ -3989,7 +3991,54 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
     CHECK(state == WF_RETIREMENT_HAPPENED);
 
     wf_completion_retirement_wait_end(&waiter);
-    wf_completion_operation_retired();
+    /* This waiter's own refused open, publishing: it returns nothing. */
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* The two facts the ledger keeps apart, at the moment they differ.
+ *
+ * A refused open has exactly one re-attempt, and the only thing that can make
+ * a second host attempt answer differently from the first is a descriptor
+ * coming back.  An operation that merely ends -- a read on a helper thread, a
+ * write, a directory batch -- changes what is in flight and nothing else.  A
+ * ledger that counted it as a descriptor return would send the refused open to
+ * the host once more for nothing and then publish the refusal, while the close
+ * it was waiting for was still in flight: exactly the `Ok` this ledger exists
+ * to keep, since source order runs the read, then the close, then the open,
+ * and the open succeeds.
+ *
+ * The schedule is scripted rather than raced for, because it is the whole
+ * point and it is one schedule for both engines: on Linux the read is on the
+ * bounded adapter while the close and the open are on the kernel ring, and a
+ * host whose ring makes that close asynchronous -- an `overlayfs` file, whose
+ * `flush` sends `IORING_OP_CLOSE` to a worker -- produces this order by
+ * itself, 7 to 16 times in a thousand at every helper count. */
+static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+
+    /* Three operations in flight: the refused open this waiter is deciding, a
+     * read that will end returning nothing, and a close that will return a
+     * descriptor. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The read ends.  Something that can still give a descriptor back is in
+     * flight, so this open keeps waiting -- and has spent nothing. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The close ends, returning one.  Now, and only now, the re-attempt. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired(0);
     return 0;
 }
 
@@ -4020,7 +4069,7 @@ static int test_the_work_a_waiter_owes_is_read_where_it_decides(void) {
     wf_completion_operation_accepted();
     wf_completion_operation_accepted();
     atomic_store_explicit(&wf_harness_owed_work, 2, memory_order_seq_cst);
-    seen = wf_completion_retirements();
+    seen = wf_completion_descriptor_returns();
     wf_completion_retirement_wait_begin(
         &waiter,
         seen,
@@ -4051,10 +4100,11 @@ static int test_the_work_a_waiter_owes_is_read_where_it_decides(void) {
 
     wf_completion_retirement_wait_end(&waiter);
     atomic_store_explicit(&wf_harness_owed_work, 0, memory_order_seq_cst);
-    wf_completion_operation_retired();
-    wf_completion_operation_retired();
-    wf_completion_operation_retired();
-    wf_completion_operation_retired();
+    /* The refused open and the queue behind it: none of them returned one. */
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
     return 0;
 }
 
@@ -4795,6 +4845,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
     RUN_TEST(test_bridge_open_behind_a_submitted_close_succeeds(argv[1]));
     RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
+    RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
     RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
     RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
     RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));

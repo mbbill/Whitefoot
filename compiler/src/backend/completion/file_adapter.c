@@ -529,15 +529,24 @@ static int wf_file_adapter_initialized(const wf_file_adapter *adapter) {
  * adapter's own execution counts.  That is the whole of what makes the
  * exhaustion rule one rule: an open refused on the kernel ring can see a read
  * finishing on a helper thread here, and this open can see that ring's close.
+ *
+ * The report says both things the rule asks for: that this operation has ended,
+ * and whether its ending put a descriptor back.  A read finishing here ends
+ * without returning one, so it is not a reason for an open refused on the ring
+ * to spend its single re-attempt.
  */
-static void wf_file_finish_execution(wf_file_adapter *adapter, int helper) {
+static void wf_file_finish_execution(
+    wf_file_adapter *adapter,
+    int helper,
+    const wf_file_result *result
+) {
     atomic_fetch_add_explicit(
         helper != 0 ? &adapter->stat_helper_executions
                     : &adapter->stat_scheduler_executions,
         1,
         memory_order_relaxed
     );
-    wf_completion_operation_retired();
+    wf_completion_operation_retired(wf_file_returned_a_descriptor(result));
     /* A held open is released by whichever thread next asks the ledger, and
      * on a target with a kernel ring that thread is a scheduler parked on the
      * completion endpoint.  The publication above already woke it, but it may
@@ -717,10 +726,10 @@ static void wf_file_run_work(
     int may_run_owed_work
 ) {
     /* Read before the host attempt, because that is the moment the answer is
-     * about: an operation that retires while this one is inside `openat` has
-     * given its descriptor back, and a refusal decided by the state
-     * afterwards would miss it. */
-    uint64_t seen = wf_completion_retirements();
+     * about: a descriptor returned while this one is inside `openat` is one
+     * the attempt could not use, and a refusal decided by the state afterwards
+     * would miss it. */
+    uint64_t seen = wf_completion_descriptor_returns();
     wf_file_result result = wf_file_execute_timed(adapter, &work->request);
     wf_completion_publication publication;
     if (wf_file_open_lacked_a_descriptor(&result)) {
@@ -747,7 +756,7 @@ static void wf_file_run_work(
         work->token,
         &publication
     );
-    wf_file_finish_execution(adapter, helper);
+    wf_file_finish_execution(adapter, helper, &result);
     if (published != WF_COMPLETION_PUBLISHED) {
         /* A legitimate accepted work item owns the unique terminal route.  A
          * failure here records an adapter/core defect; it never invokes writer

@@ -280,6 +280,31 @@ typedef struct wf_file_result {
     unsigned char status[WF_FILE_STATUS_CAPACITY];
 } wf_file_result;
 
+/* Whether this finished operation put a descriptor back in the host's table,
+ * which is the one thing `wf_completion_operation_retired` asks of it.
+ *
+ * A close ran the host call that returns one.  An open whose descriptor this
+ * runtime obtained and then disposed of returns one too: the kind check refused
+ * the descriptor, and the close made for it is a descriptor coming back, which
+ * a refused open waiting on the ledger is entitled to see.  Every other ending
+ * returns nothing — an open the host refused never held one, an open the
+ * program now holds has not given it back, and a transfer, a status and a
+ * directory batch were only lent one.
+ *
+ * It reads the finished operation's own record, so the answer follows the
+ * operation rather than the route it took; the ring answers the same question
+ * from its entry. */
+static inline int wf_file_returned_a_descriptor(const wf_file_result *result) {
+    if (result == NULL) {
+        return 0;
+    }
+    if (result->kind == WF_FILE_CLOSE) {
+        return 1;
+    }
+    return result->kind == WF_FILE_OPEN_AT && result->value >= 0
+        && result->open_outcome != WF_FILE_OPEN_SUCCEEDED;
+}
+
 typedef struct wf_file_work {
     wf_completion_token token;
     wf_file_request request;

@@ -655,9 +655,9 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     entry->exhaustion_retried = 0;
     entry->retry_result = 0;
     /* Snapshot before the kernel can attempt this operation, so an operation
-     * that retires anywhere in this process while it is in flight is visible
-     * as a descriptor that came back after the attempt began. */
-    entry->retirements_seen = wf_completion_retirements();
+     * that returns a descriptor anywhere in this process while it is in flight
+     * is visible as one that came back after the attempt began. */
+    entry->retirements_seen = wf_completion_descriptor_returns();
     entry->opened_descriptor = -1;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     entry->open_error = 0;
@@ -858,6 +858,14 @@ static int wf_linux_publish_entry_locked(
     wf_linux_file_result result;
     wf_completion_publication publication;
     enum wf_completion_publish_result published;
+    /* Read while this entry is still this thread's: the store below hands it
+     * back to the free pool, after which a submitting thread may already be
+     * writing the next operation into it. */
+    int returned_a_descriptor =
+        entry->request.kind == WF_LINUX_FILE_CLOSE
+        || (entry->request.kind == WF_LINUX_FILE_OPEN_AT
+            && entry->opened_descriptor >= 0
+            && entry->open_outcome != WF_FILE_OPEN_SUCCEEDED);
 
     memset(&result, 0, sizeof(result));
     result.kind = entry->kind;
@@ -900,7 +908,14 @@ static int wf_linux_publish_entry_locked(
         1,
         memory_order_relaxed
     );
-    wf_completion_operation_retired();
+    /* The ledger is told this operation has ended, and whether its ending put a
+     * descriptor back in the host's table.  The ring answers that from the
+     * entry, exactly as the bounded adapter answers it from its result: a close
+     * ran the host call that returns one, and an open whose descriptor the kind
+     * check refused was disposed of by `wf_linux_decide_open`, which is a close
+     * this runtime made.  A transfer that ended returns nothing, and an open
+     * the kernel refused never held one. */
+    wf_completion_operation_retired(returned_a_descriptor);
     /* A held open — this ring's or the bounded adapter's — is released by
      * whichever thread next asks the ledger, and that thread may have asked
      * in the instant before the line above and parked on the wake the
