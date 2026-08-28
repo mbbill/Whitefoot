@@ -309,3 +309,15 @@ the passes alternate.
   overlaps it.
 - **The pipe workload was not re-run.** It discriminated nothing in batch
   0084 and nothing in this batch touches it.
+- **The threshold was not recalibrated per host.** `READ_THRESHOLD_US` is one
+  number, chosen from the two populations a physical machine keeps far apart.
+  The macOS runner has three, and the middle one straddles the line. A probe
+  that measured each host's populations first and placed its own threshold
+  between them would label a virtualized host correctly instead of reporting
+  a refusal for a reader to interpret. This batch reports the refusal.
+- **Why macOS needs a helper to overlap at all was not attacked.** The macOS
+  numbers say the bounded POSIX adapter buys overlap with system time, and
+  that a warm workload therefore pays for a pool it cannot use. Whether a
+  Darwin target should reach for a real completion path, or whether the pool
+  should shrink when the operations it runs stop waiting, is a design question
+  this batch only measured the cost of.
