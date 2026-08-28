@@ -237,8 +237,26 @@ item 2), and the driver is Stage B.
   `WF_IO_HELPERS=4` in the `completion-test` build and 15 of 20 under
   `completion-tsan` — a flake inside canonical `make check`, since
   `completion-test` is one of its prerequisites and runs the harness at four
-  helpers. The adapter fix above is what removes it, and the counts here are
-  measured after it.
+  helpers.
+
+  Two separate defects fed that one symptom, and it took both fixes to clear
+  it. The first is the adapter's give-up above. The second is the test itself:
+  it asserted that a re-attempt had happened, which is not a property of three
+  independent opens under the corrected rule, because a helper pool that
+  finishes each open before the next is submitted holds nothing at the moment
+  of each refusal and publishing the refusal unchanged is then correct. That
+  assertion is now the bound the rule does promise — at most one re-attempt per
+  refused open — and the property it was reaching for is carried by the two
+  deterministic tests above. Its own comment says so.
+
+- Repetition counts after both fixes, at every helper setting the suites use.
+  macOS (`completion-test` build): 200 runs each at zero, one and four helpers,
+  0 failures. macOS `completion-tsan`: 20 runs each at zero, one and four
+  helpers, 0 failures. Linux container (`wf-io-bench:linux`, aarch64, kernel
+  6.8, io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs each at
+  zero, one and four helpers, 0 failures; `completion-tsan` 20 runs each at
+  zero, one and four helpers, 0 failures; 50 runs with
+  `WF_REQUIRE_LINUX_IO_URING=1` at four helpers, 0 failures.
 - IR identity: every `.wf` under `tests/programs`, `tests/codegen` and
   `tests/conformance/cases` compiled with `whitefootc --emit-llvm` at this
   revision and at `main`, under the default, `--par` and `--no-overlap` — 630
@@ -246,17 +264,21 @@ item 2), and the driver is Stage B.
 
 ## Status
 
-- [x] item 1 — window query, weak fallback, harness boundaries
+- [x] item 1 — window query, weak fallback, harness boundaries. The claim about
+      what an answer of one means is now stated as a property of the runtime,
+      not as something Stage A demonstrates
 - [x] item 2 — deferred doorbell and its four flush points
-- [x] item 3 — retire-and-retry on both target routes
-- [x] item 4 — carrying and draining, with the IR-identity oracle
+- [x] item 3 — retire-and-retry on both target routes, gated on a published
+      completion rather than on a reap pass, with the deterministic test each
+      route was missing
+- [x] item 4 — carrying and draining, seeded from the blocks that reach each
+      drain, with the out-of-order descriptor refused and the IR-identity
+      oracle re-run: 630 sources, 3 passes, 0 differences
 - [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
-      `completion-core-read-tsan` — green on macOS and in the Linux container
+      `completion-core-read-tsan` — green on macOS and in the Linux container,
+      with the repetition counts above
 - [x] canonical `make check` — green
-- [x] `io-hosts` at `549a5a67` — every job green, including `completion-linux`,
-      which runs the four new harness tests and the new `completion-tsan` step
-      on a real x86-64 Linux kernel with io_uring, and `completion-windows`
-- [x] `gate` at `549a5a67` — `gate-macos` green
+- [x] `io-hosts` and `gate` — see the runs listed at the end of this record
 
 ## The one red job, and why it is not this branch's
 
