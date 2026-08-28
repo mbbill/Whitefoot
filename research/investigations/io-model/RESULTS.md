@@ -159,6 +159,15 @@ native completion path **at the concurrency the Whitefoot source can
 actually ask for**, and missed against every native shape that asks for
 more.
 
+That "roughly two times" did not survive being taken off this pair of hosts.
+Batch 0090 re-ran the Linux half on hardware instead of in a container and
+found C 3 per cent *slower* than S; batch 0092 re-ran the macOS half on a
+system without this machine's endpoint-security stack and found it 1.20 times
+slower. Both rows above were measured on hosts that charge far more for a file
+operation than an ordinary one does, and the ratio was reading that charge.
+What overlap is worth where the operations genuinely wait is in the batch-0092
+read-dominated section.
+
 ### Where the remaining distance is
 
 It is not the completion protocol. On Linux the four-wide Whitefoot program
