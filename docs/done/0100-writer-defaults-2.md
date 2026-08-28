@@ -488,7 +488,12 @@ The literal was restored and the test passes again.
 **Coverage was measured, not asserted.** Enumerating every string literal in
 `compiler/src` production code at the branch base and at the branch tip — test
 modules, `#[cfg(test)]` regions, and comment lines excluded — gives 98 added
-literals. Splitting each on its `{…}` placeholders and requiring every literal
+literals. That is more than the verifier's 70 because it counts every added
+literal rather than the sentence-shaped ones: the `Debug` field names of
+`SyntaxIssue`, the format templates the renderers compose (`&uniq {}`,
+`deref({base})`, `cvt<{}, {}>({})`), and the four sentences this round adds are
+all in it. A template is pinned by a probe whose rendered text contains the
+substituted result. Splitting each on its `{…}` placeholders and requiring every literal
 segment to appear in the pinning corpus leaves **seven**, and each of the seven
 is a defensive arm that no source program reaches. The claim is checkable one
 by one, and the module header states it:
@@ -513,7 +518,7 @@ One defect the corpus exposed while it was being written: `write_once<'w,
 ExitStatus>(…)` — a type argument in a region position — stopped at
 `whitefootc: Semantics/Compiler: InvalidResolution`, an internal failure on
 source the language rejects. `targ := type | REGIONID | const`, so the grammar
-already decides which alternative was written; `check_system_region_arguments`
+already decides which alternative was written; `system_call_region_arguments`
 now reads that before asking the resolver for a region use a `type` or `const`
 argument never records, and the same program is a source rejection:
 
