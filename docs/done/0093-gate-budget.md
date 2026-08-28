@@ -319,7 +319,7 @@ it a flake generator wearing a budget's clothes.
 |---|---|---|---|
 | `ubuntu-24.04` | 21 min 34 s | **2 min 23 s** | 10 min 3 s |
 | `macos-14` | 5 min 35 s | **1 min 47 s** | 7 min 26 s |
-| maintainer's machine, warm | 3 min 14 s | **2 min 24 s** | — |
+| maintainer's machine, warm | 3 min 14 s | **2 min 26 s** | — |
 
 The Linux "after" is the `corpus` job at 143 s; the macOS one is `corpus` at
 107 s. Every job on both hosts is inside the five-minute target and none comes
@@ -351,6 +351,13 @@ was red on those before this batch.
 | integration targets | 54 s | 56 s | 65 s | 66 s |
 | `conformance-run` | 49.5 s | 23.6 s | 48.9 s | 28.5 s |
 | `research-tests` | 12.9 s | 12 s | 12.0 s | 10 s |
+
+The local figure is a warm target on an otherwise idle machine, which is what
+the "before" figure it is compared against was. It is worth saying what that
+excludes, because this batch measured it by accident: a `make check` that
+shared the ten cores with a second full gate on the same machine took 4 min 51
+s on the same revision. The gate is CPU-bound now rather than
+waiting-for-a-handler bound, so its wall is the machine's to give.
 
 The local gate ends `== WHITEFOOT ALL TESTS GREEN ==` with its own table:
 
