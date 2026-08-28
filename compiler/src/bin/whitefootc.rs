@@ -35,12 +35,17 @@ fn run() -> Result<(), String> {
             std::fs::read(source)
                 .map_err(|error| format!("cannot read {}: {error}", source.display()))?,
         );
-        paths.push(logical_path(source, index));
+        paths.push((
+            logical_path(source, index),
+            source.to_string_lossy().into_owned(),
+        ));
     }
     let inputs: Vec<_> = paths
         .iter()
         .zip(&bytes)
-        .map(|(path, bytes)| SourceInput::new(path, bytes))
+        .map(|((logical, display), bytes)| {
+            SourceInput::from_host_path(logical, display, bytes)
+        })
         .collect();
     let overlap = if options.no_overlap {
         OverlapLowering::Off
@@ -263,6 +268,13 @@ fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> 
     }
 }
 
+/// The bundle's own name for one source.
+///
+/// This is program identity, not presentation: it orders the bundle and
+/// detects a duplicate, and its spelling is the closed portable one, so a host
+/// path that cannot be spelled there falls back to a positional name. Nothing
+/// a reader sees comes from here — the diagnostic and the permission ledger
+/// both name the display path, which is exactly the argument the caller typed.
 fn logical_path(path: &Path, index: usize) -> String {
     let candidate = path.to_string_lossy();
     if !path.is_absolute() && portable_logical_path(&candidate) {

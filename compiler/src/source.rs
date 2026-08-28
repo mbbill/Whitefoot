@@ -220,6 +220,7 @@ impl std::error::Error for LogicalPathError {}
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct SourceInput<'input> {
     logical_path: &'input str,
+    display_path: &'input str,
     bytes: &'input [u8],
 }
 
@@ -228,6 +229,7 @@ impl fmt::Debug for SourceInput<'_> {
         formatter
             .debug_struct("SourceInput")
             .field("logical_path", &self.logical_path)
+            .field("display_path", &self.display_path)
             .field("byte_len", &self.bytes.len())
             .finish()
     }
@@ -235,10 +237,38 @@ impl fmt::Debug for SourceInput<'_> {
 
 impl<'input> SourceInput<'input> {
     /// Creates a borrowed input view without allocating or normalizing it.
+    ///
+    /// The bundle name is also the name diagnostics and the permission ledger
+    /// print. A driver that read the source from a host path the closed
+    /// logical domain cannot spell uses [`SourceInput::from_host_path`]
+    /// instead, so the text a reader is shown stays the text they typed.
     #[must_use]
     pub const fn new(logical_path: &'input str, bytes: &'input [u8]) -> Self {
         Self {
             logical_path,
+            display_path: logical_path,
+            bytes,
+        }
+    }
+
+    /// Creates a borrowed input view whose diagnostics name `display_path`.
+    ///
+    /// Two names, because they answer two questions. `logical_path` is the
+    /// program's own name for this source: portable, bundle-local, and the key
+    /// that orders the bundle and detects a duplicate, so it is confined to the
+    /// closed [`LogicalPath`] spelling. `display_path` is where the host read
+    /// the bytes from, which is what a writer, a script, and an editor need in
+    /// order to open the file the compiler is talking about, and it is
+    /// unconstrained because a host path is.
+    #[must_use]
+    pub const fn from_host_path(
+        logical_path: &'input str,
+        display_path: &'input str,
+        bytes: &'input [u8],
+    ) -> Self {
+        Self {
+            logical_path,
+            display_path,
             bytes,
         }
     }
@@ -248,6 +278,7 @@ impl<'input> SourceInput<'input> {
 #[derive(Eq, PartialEq)]
 pub struct SourceFile {
     logical_path: LogicalPath,
+    display_path: String,
     bytes: Vec<u8>,
     byte_len: u64,
 }
@@ -257,6 +288,7 @@ impl fmt::Debug for SourceFile {
         formatter
             .debug_struct("SourceFile")
             .field("logical_path", &self.logical_path)
+            .field("display_path", &self.display_path)
             .field("byte_len", &self.byte_len)
             .finish()
     }
@@ -267,6 +299,13 @@ impl SourceFile {
     #[must_use]
     pub const fn logical_path(&self) -> &LogicalPath {
         &self.logical_path
+    }
+
+    /// Returns the name a reader is shown for this source: the host path the
+    /// driver read it from, or the logical path when the caller supplied none.
+    #[must_use]
+    pub fn display_path(&self) -> &str {
+        &self.display_path
     }
 
     /// Returns the exact unnormalized source bytes.
@@ -291,6 +330,8 @@ pub enum SourceLimit {
     Sources,
     /// Bytes in one logical path.
     LogicalPathBytes,
+    /// Bytes in one host display path.
+    DisplayPathBytes,
     /// Bytes in one source file.
     SourceBytes,
     /// Sum of bytes in every source file.
@@ -434,6 +475,18 @@ impl SourceBundle {
                     actual: path_len,
                 });
             }
+            // The display path is a host path, so its spelling is the host's;
+            // only its length is this bundle's business, and it is bounded by
+            // the same ceiling because it is stored the same way.
+            let display_len = u64::try_from(input.display_path.len())
+                .map_err(|_| SourceBundleError::ArithmeticOverflow)?;
+            if display_len > limits.max_logical_path_bytes {
+                return Err(SourceBundleError::LimitExceeded {
+                    limit: SourceLimit::DisplayPathBytes,
+                    maximum: limits.max_logical_path_bytes,
+                    actual: display_len,
+                });
+            }
             let source_len = u64::try_from(input.bytes.len())
                 .map_err(|_| SourceBundleError::ArithmeticOverflow)?;
             if source_len > limits.max_source_bytes {
@@ -501,6 +554,16 @@ impl SourceBundle {
                     }
                     error => SourceBundleError::LogicalPath(error),
                 })?;
+            let display_len = u64::try_from(input.display_path.len())
+                .map_err(|_| SourceBundleError::ArithmeticOverflow)?;
+            let mut display_path = String::new();
+            display_path.try_reserve_exact(input.display_path.len()).map_err(|_| {
+                SourceBundleError::StorageUnavailable {
+                    limit: SourceLimit::DisplayPathBytes,
+                    requested: display_len,
+                }
+            })?;
+            display_path.push_str(input.display_path);
             let source_len = u64::try_from(input.bytes.len())
                 .map_err(|_| SourceBundleError::ArithmeticOverflow)?;
             let mut bytes = Vec::new();
@@ -513,6 +576,7 @@ impl SourceBundle {
             bytes.extend_from_slice(input.bytes);
             files.push(SourceFile {
                 logical_path,
+                display_path,
                 bytes,
                 byte_len: source_len,
             });
