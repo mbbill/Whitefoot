@@ -100,20 +100,25 @@ core's own and the Linux target's external `epoll` wait — name that order
 explicitly at their increment and recheck, because the fast path is only
 correct while both do.
 
-### A drain that knows where to look, and one that knows when not to
+### A drain that knows when not to look, and one that is asked by name
 
-Three changes, none of which alters what a drain does:
+Two changes, neither of which alters what a sweep does when it runs:
 
 - it returns immediately when the durable ready-event count is zero, so a
-  scheduler that has nothing to harvest stops probing slots to find that out;
-- a publication names its own slot, and the next drain tries that slot first;
-  when it was the only event outstanding the sweep does not run at all;
+  scheduler that has nothing to harvest stops probing slots to find that out.
+  The count is durable — a publisher raises it before announcing the epoch —
+  so a scheduler that reads zero and parks is parking against the epoch it
+  snapshotted before the call;
 - a token owner can drain **its own** operation's event by name
   (`wf_completion_drain_token`), which is what the three join loops now do
-  before they look at anything else.
+  before they look at anything else. A joining thread knows which operation it
+  is waiting for; making it say so is cheaper than a sweep and is the shape
+  the join already had.
 
-The sweep is unchanged behind all three, so a stale hint costs one
-compare-exchange and a missed one costs nothing.
+A third was built and removed. A publication named its own slot so the next
+drain could try that slot before sweeping, which turned the common case — one
+event, taken by the next drain — into a single compare-exchange. It is under
+"What was tried and removed" below, with the bound it broke.
 
 ### One kilobyte less inside the queue lock
 
@@ -203,6 +208,34 @@ submission from 313 ns to 2,510 ns an operation through queue-lock contention.
 On a three-core runner that is worse still — eight spinners on three cores is
 not idle CPU, it is the CPU the reads need. Removed. The joining scheduler's
 spin stayed because there is exactly one of it.
+
+**A drain hint: the last publication naming its own slot.** The attribution
+table above says the pool-off path spent half its time looking for the
+completion — fifty-two slot probes an operation to find one event — so a
+publication stored its slot and the next drain tried it before sweeping.
+Built, and removed after the contract probes said what it cost.
+
+`wf_completion_drain` promises to drain at most `scan_budget` slots, and the
+hint was not a reordering inside that bound but an escape from it: the named
+slot is wherever the last publication happened, and the drain took it whether
+or not it lay in the window the budget describes. Two probes say what the
+bound is for. The writer-scheduler probe publishes on slot 16 of 17 and drains
+with a budget of 16, requiring zero — a bounded scan that stops short of a
+token must not make that token's dependent writer frame runnable — and the
+hint drained the slot and released the frame. The native adapter probe failed
+from the other side: with two events outstanding it drove them to terminal in
+turn, and a drain answering with the newest published rather than the one the
+sweep would have met left the named token unconsumed. Making the hint legal
+would mean hinting only into the window about to be scanned, which is the
+sweep it existed to skip.
+
+What settles it is that the cost it targeted had already been removed by this
+batch's own direct specialisation. Fifty-two probes an operation was the
+zero-helper warm read path, and that path no longer reaches the bridge at all:
+a positioned read with no helper, nothing queued and no measured wait is
+executed where it was stated. The sweeps that remain have the zero-ready-events
+early return in front of them. So the hint was an unmeasured saving on a path
+its own measurement had deleted, bought with a stated bound.
 
 **Making the queue lock shorter by moving the slot transitions out of it.**
 A submission holds the queue lock across two slot-lock round trips because the
