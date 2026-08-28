@@ -57,11 +57,11 @@ use crate::{
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
-    PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
-    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical, check_semantics,
-    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome,
+    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
+    TerminalOutcome, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical,
+    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
     module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
 };
@@ -477,6 +477,7 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     let completion_units = append_completion_runtime(&mut command, llvm, directory);
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(HOST_LINK_LIBRARIES)
         .arg("-o")
         .arg(&executable)
         .output()
