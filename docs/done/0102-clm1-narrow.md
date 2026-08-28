@@ -231,7 +231,49 @@ value even inside a boundary-selected arm.
 
 ## The fuzzer re-run
 
-CAMPAIGN-NUMBERS-PLACEHOLDER
+The 0097 corpus is not on this host, so the campaign was regenerated from the
+same seed. Two runs, one per compiler, sequentially on this four-core Linux
+host, each with the same command shape:
+
+```text
+wf-difffuzz campaign --whitefootc <compiler> --work <dir> \
+  --programs 200 --budget 3600 --jobs 4 --seed 1 --reps 2
+```
+
+200 accepted programs rather than 0097's 2000: at this host's rate a
+2000-program pair took over two hours of shared wall clock, and 200 is enough
+to reproduce the rejection rate and to leave a corpus to differentiate. The
+numbers:
+
+| | base `100b37cd` (v0.38) | this revision (v0.39) |
+| --- | --- | --- |
+| attempts | 208 | 203 |
+| accepted | 203 (97.6%) | 203 (100.0%) |
+| rejected | 5 (2.4% of attempts) | 0 |
+| rejections by rule | CLM-1 × 5 | none |
+| agreed / diverged / unstable | 203 / 0 / 0 | 203 / 0 / 0 |
+| executions captured | 7917 | 7917 |
+| wall clock | 5.1 minutes | 3.9 minutes |
+
+0097 measured 63 rejections in 2067 attempts, 3.0%, all `NonLocalClaim`; this
+host's base run measures 5 in 208, 2.4%, all [CLM-1]. The generator still writes
+the shape.
+
+The sharpest measurement is the direct one. Every one of the 203 programs the
+new compiler accepted was recompiled with the base compiler: **5 of 203 are
+refused, and all 5 cite `NonLocalClaim`.** No program moves the other way, and
+neither run's oracle found a divergence, an unstable reference, a timeout, a
+crash, or a lowering refusal.
+
+The pair `docs/done/0097-differential-fuzz.md` minimized is hand-written into
+the corpus as the two `accept-clm1-local-claim-after-boundary-*` cases; the base
+compiler refuses the leaving member with carrier `offset` and this revision
+admits it. That admitted member was then put through the same oracle by hand:
+built three ways — as it ships, with `--par`, and with `--no-overlap` — and run
+across `WF_WORKERS` ∈ {1, 2, 4} × `WF_IO_HELPERS` ∈ {0, 1, 2}, 27 executions in
+all. Every one publishes the same four stdout bytes, the same empty stderr, and
+exit status 0 as the `--no-overlap` reference. A claim the narrowing newly
+admits lowers to the ordinary executed check and moves no published byte.
 
 ## Judgment calls
 
