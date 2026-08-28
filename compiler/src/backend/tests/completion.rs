@@ -500,7 +500,10 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         .expect("direct write precedes the direct open")
         .0;
     assert!(!direct_write.contains("wf_bridge_submit_linux"));
-    assert!(direct_write.contains("wf_file_execute_direct"));
+    // A direct call executes the typed request through the bridge's own
+    // executor, which is what enters it in the process-wide retirement ledger
+    // for as long as it runs.
+    assert!(direct_write.contains("wf_bridge_execute_direct"));
     assert!(crate::COMPLETION_LINUX_IO_URING_HEADER.contains("#if defined(__linux__)"));
     assert!(
         crate::COMPLETION_LINUX_IO_URING_SOURCE
@@ -1965,6 +1968,75 @@ fn a_carrying_region_with_no_exit_is_refused() {
 /// Here they are handed out inside the loop body, and lowering numbers blocks
 /// in source order, so the block the loop leaves through on `break` — written
 /// first in the body — is numbered before the block that starts them.
+const READS_ON_TWO_BRANCHES: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
+  let outer_left = buffer_new(1_u64, 0_u8);
+  let outer_right = buffer_new(1_u64, 0_u8);
+  let inner_left = buffer_new(1_u64, 0_u8);
+  let inner_right = buffer_new(1_u64, 0_u8);
+  let total = 0_u64;
+  region 'file {
+    region 'a {
+      region 'b {
+        region 'c {
+          region 'd {
+            let outer_first = read_at<'file, 'a>(file: &'file file, destination: &uniq 'a outer_left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+            let outer_second = read_at<'file, 'b>(file: &'file file, destination: &uniq 'b outer_right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+            let split = ieq(rounds, 7_u64);
+            if split {
+              let inner_first = read_at<'file, 'c>(file: &'file file, destination: &uniq 'c inner_left, file_offset: 2_u64, start: 0_u64, end: 1_u64);
+              let inner_second = read_at<'file, 'd>(file: &'file file, destination: &uniq 'd inner_right, file_offset: 3_u64, start: 0_u64, end: 1_u64);
+              match move inner_first {
+                ReadBytes(next: produced) => {
+                  set total = total +wrap produced;
+                }
+                ReadEnd() => {
+                }
+                ReadFailed(error: problem) => {
+                }
+              }
+              match move inner_second {
+                ReadBytes(next: produced) => {
+                  set total = total +wrap produced;
+                }
+                ReadEnd() => {
+                }
+                ReadFailed(error: problem) => {
+                }
+              }
+            } else {
+              set total = total +wrap 1_u64;
+            }
+            match move outer_first {
+              ReadBytes(next: produced) => {
+                set total = total +wrap produced;
+              }
+              ReadEnd() => {
+              }
+              ReadFailed(error: problem) => {
+              }
+            }
+            match move outer_second {
+              ReadBytes(next: produced) => {
+                set total = total +wrap produced;
+              }
+              ReadEnd() => {
+              }
+              ReadFailed(error: problem) => {
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
 const READS_BELOW_A_LOOP_EXIT: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
   let left = buffer_new(1_u64, 0_u8);
   let right = buffer_new(1_u64, 0_u8);
@@ -2083,4 +2155,110 @@ fn a_drain_emitted_before_the_hand_out_it_retires_is_refused() {
             "a drain numbered before the hand-out it retires must be refused"
         );
     });
+}
+
+/// The blocks of one function that hand an operation to a target.
+fn blocks_that_hand_out(function: &crate::IrFunction) -> Vec<crate::IrBlockId> {
+    function
+        .blocks()
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| {
+            block.instructions().iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::IrInstruction::Define { result, .. }
+                        if function
+                            .completion_steps()
+                            .iter()
+                            .any(|step| step.call() == *result && step.submit())
+                )
+            })
+        })
+        .map(|(index, _)| crate::IrBlockId::from_index(index).expect("block ordinal"))
+        .collect()
+}
+
+/// The successors of one block, by index.
+fn block_targets(block: &crate::IrBlock) -> Vec<usize> {
+    match block.terminator() {
+        crate::IrTerminator::Jump { target, .. } => vec![target.index()],
+        crate::IrTerminator::Match { targets, .. } => targets
+            .iter()
+            .map(|target| target.block().index())
+            .collect(),
+        crate::IrTerminator::Return { .. } | crate::IrTerminator::Unreachable => Vec::new(),
+    }
+}
+
+/// A drain retires the operations the branches that reach it started, and no
+/// others.
+///
+/// The emission walk is a straight line through blocks in index order, and a
+/// carrying region with a branch is not one. When the walk reaches an exit it
+/// holds whatever the path it took handed out, which is both too little — an
+/// operation started on a branch it has not passed is missing — and too much:
+/// an operation started on a *sibling* branch, one that cannot reach this exit
+/// at all, is still in hand. Retiring that one here would emit a join for an
+/// operation no path through this block ever started, reading a token no
+/// target ever wrote.
+///
+/// Above, the entry starts one operation and the `if` arm starts another, and
+/// the `else` arm is the first exit the walk reaches. Only the entry reaches
+/// it, so it retires one operation. The walk arrives holding two.
+#[test]
+fn a_drain_retires_only_what_the_branches_that_reach_it_started() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    let mut first_drain = String::new();
+    let staged = with_mutated_completion_ir(READS_ON_TWO_BRANCHES, |program| {
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let carrying = blocks_that_hand_out(probe);
+        assert_eq!(
+            carrying.len(),
+            2,
+            "the probe must start one operation on each of two branches"
+        );
+        // The exits of that carrying region, and the first one the walk
+        // reaches. The `else` arm is a successor of the entry alone, and the
+        // arm that starts the second operation cannot reach it.
+        let mut drains: Vec<usize> = carrying
+            .iter()
+            .flat_map(|block| block_targets(&probe.blocks()[block.index()]))
+            .filter(|target| !carrying.iter().any(|block| block.index() == *target))
+            .collect();
+        drains.sort_unstable();
+        drains.dedup();
+        let first = *drains.first().expect("the region must have an exit");
+        assert!(
+            carrying
+                .iter()
+                .any(|block| block.index() < first && block.index() != 0),
+            "a branch that starts an operation must be walked before that exit, \
+             or nothing is out of place: carrying {carrying:?} exits {drains:?}"
+        );
+        first_drain = format!("bb{first}");
+        assert!(program.set_completion_pipeline_for_test(
+            "probe",
+            crate::IrCompletionPipeline::new(
+                crate::IrBlockId::from_index(0).expect("the entry block"),
+                carrying,
+                crate::IrCompletionWindow::new(0, 65_536, 32),
+            ),
+        ));
+        emit_llvm_for_target(program, target)
+            .expect("a staged probe must emit")
+            .into_string()
+    });
+    let staged = emitted_function(&staged, "probe");
+    let joins = ir_blocks_containing(staged, "@wf__completion_file_join(");
+    let at_the_first_drain = joins.iter().filter(|block| **block == first_drain).count();
+    assert_eq!(
+        at_the_first_drain, 1,
+        "the first exit retires the one operation the branch reaching it started, \
+         not the sibling branch's as well: joins {joins:?} at {first_drain}"
+    );
 }

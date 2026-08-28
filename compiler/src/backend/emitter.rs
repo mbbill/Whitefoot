@@ -965,15 +965,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             })
     }
 
-    /// Seeds a drain block with the operations the carrying region left in
+    /// Gives a drain block exactly the operations the carrying region left in
     /// flight on the paths that reach it.
     ///
-    /// The first drain reached in emission order already has them and is left
-    /// alone; every later one is walked into with an empty simulation and
-    /// needs them back, in the order they were handed out, so that each exit
-    /// retires its whole window in hand-out order. Which operations those are
-    /// is decided by the graph — the carrying blocks that reach this drain —
-    /// not by how much of the region the walk happens to have passed.
+    /// Which those are is decided by the graph — the carrying blocks that
+    /// reach this drain — and not by how much of the region the walk happens
+    /// to have passed. The walk arrives here with the straight-line
+    /// simulation, which on a branching region is both too little and too
+    /// much: an operation handed out on a branch the walk has not passed is
+    /// missing, and one handed out on a *sibling* branch that cannot reach
+    /// this drain is present. Adding the first without removing the second
+    /// would make this exit join an operation that was never started on any
+    /// path through it, which is a use of storage no target ever wrote.
+    ///
+    /// So both halves are done here, for every drain including the first one
+    /// the walk reaches. The order is the order they were handed out, so each
+    /// exit retires its whole window in that order.
     fn seed_pipeline_drain(&mut self, block: IrBlockId) {
         if !self.pipeline_drains.contains(&block) {
             return;
@@ -981,6 +988,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(feeders) = self.pipeline_feeders.get(&block).cloned() else {
             return;
         };
+        let elsewhere: HashSet<IrValueId> = self
+            .pipeline_outstanding
+            .iter()
+            .filter(|(carrying, _)| !feeders.contains(carrying))
+            .map(|(_, carried)| carried.result())
+            .collect();
+        self.handed_out.retain(|pending| match pending {
+            HandedOut::Completion(pending) => !elsewhere.contains(&pending.result()),
+            HandedOut::Compute(_) => true,
+        });
         for (carrying, pending) in self.pipeline_outstanding.clone() {
             if feeders.contains(&carrying)
                 && !self.completion_operation_is_outstanding(pending.result())
