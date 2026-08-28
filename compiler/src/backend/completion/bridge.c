@@ -713,8 +713,8 @@ int wf__completion_file_read_submit(
  * itself must drain — and running one where it was stated could stall the very
  * thread that would unblock it.  Those keep the queue.
  *
- * A read of nothing is declined either, in the sense that it is left alone: it
- * makes no host call at all, so there is nothing to run here and nothing to
+ * A read of nothing is not declined here, because there is nothing to decline:
+ * it makes no host call at all, so there is nothing to run and nothing to
  * overlap, and the bridge already answers it inline without reaching the
  * adapter.
  *

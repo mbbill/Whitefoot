@@ -256,3 +256,139 @@ machine, and before and after are separate runs on separate draws of the
 milliseconds across runs are not**. The two draws differed by about a third on
 every line, native baselines included.
 
+
+<!-- TABLES -->
+
+## Tests
+
+Every case below is an ordinary compiler or harness test. No conformance case,
+manifest, verdict, adapter, or collection wiring is added, changed, or removed
+by this batch.
+
+- **The growth rule is decided, not sampled.** The helper policy now turns on a
+  measurement, so a case that sleeps and hopes would test the machine. The
+  adapter reads its clock through a named seam of the same class as
+  `WF_COMPLETION_PREAD` and `WF_COMPLETION_POLL`; the harness build names it and
+  two cases script it. `test_pool_stays_empty_when_operations_do_not_wait`
+  scripts warm work and requires no helper to appear;
+  `test_pool_grows_when_operations_wait` scripts waiting work and requires
+  growth to the cap and no further.
+- **The process-wide budget case keeps only what it can assert.** How many
+  helpers a program *has* depends on whether this harness's own temporary-file
+  operations happened to wait, which is a property of the machine. The ceiling
+  is not, so the ceiling is what it asserts, and it says so in place.
+- **Both harness defines are named once in the Makefile.** The sanitizer build
+  had drifted to a different set and was therefore exercising a different
+  runtime from the one the plain build tested. That is a test-integrity fix,
+  not a convenience: two builds under one target name must run one runtime.
+- **The bridge cases assert a pinned route.** Under the demand-driven policy the
+  bridge declines a positioned read once it has measured this host's reads as
+  not waiting, so whether a case sees the submitted route would depend on what
+  the cases before it happened to execute. `main` writes `WF_IO_HELPERS` when
+  the invocation did not name one, which pins the route with the count, and
+  every bridge case then asserts a route that is fixed rather than sampled.
+- **What that pinning leaves out is covered where it can be decided.** The
+  declining policy itself is exercised by the two scripted-clock cases above;
+  end to end, by `independent_io_reaches_the_second_operation_before_the_first_unblocks`,
+  whose fourth arm removes `WF_IO_HELPERS` from the environment entirely; and by
+  `compiler/tests/programs`, which builds and runs whole compiled programs —
+  `wfgrep` and `raw_deflate` read real files — with nothing pinned, so a
+  declined positioned read that returned the wrong bytes would fail them.
+- **The contract's boundedness is pinned by two probes, and they earned their
+  keep this batch.** `writer_scheduler_probe.c` publishes on slot 16 of 17 and
+  drains with a budget of 16, requiring zero events and an unready frame;
+  `native_adapter_probe.c` drives two outstanding operations to terminal in
+  turn. Both are unchanged by this batch. Both caught the drain hint, which is
+  why it is in "What was tried and removed" rather than in "What shipped".
+
+## Judgment calls
+
+- **The drain hint was removed rather than made legal.** It could have been kept
+  by hinting only into the window the sweep was about to scan, which is the
+  sweep it existed to skip, or by widening `scan_budget`'s meaning, which is
+  editing the promise to fit the code. Neither is worth an optimisation whose
+  own motivation — fifty-two slot probes an operation on the pool-off warm read
+  path — was deleted earlier in this same batch by the direct specialisation.
+  The two probes that caught it are the reason the choice was easy: they state
+  what the bound is for.
+- **The harness helper went back to the sweep it was asserting.** When the hint
+  landed, `drain_and_consume_file` was changed to drain its token by name
+  because a sweep could no longer be relied on to answer with the right event.
+  With the hint gone the sweep is deterministic again, and draining by name
+  would have made its `event.token.slot == token.slot` assertion tautological.
+  Restoring `drain_exact` restores what that case covers.
+- **Only a positioned transfer is declined.** This is a liveness argument, not a
+  performance one. An offset is meaningful only on a seekable object and the
+  typed opens that produce one admit nothing but a regular file, so a positioned
+  read waits on storage and on nothing the program itself must do. A
+  non-positioned read or write may be waiting on a pipe the same program has to
+  drain, and running one where it was stated could stall the very thread that
+  would unblock it. That is exactly what
+  `independent_io_reaches_the_second_operation_before_the_first_unblocks` pins,
+  and it writes to a pipe.
+- **A written `WF_IO_HELPERS` declines nothing.** A written setting is an
+  instruction about how to run, so the runtime stops choosing. That is also what
+  makes a pinned line of a measurement a measurement of the completion path
+  rather than of the policy that may decline it — without it, `C.wide8.h0` and
+  `C.wide8.default` would not be measuring the same thing.
+- **The helper ceiling is the bridge's operation bound, not the core count.** A
+  helper inside a host call holds no CPU, so what bounds useful I/O concurrency
+  is how many operations a program can have outstanding. Sizing by cores capped
+  the three-core runner at three outstanding reads for a program that states
+  eight, which is a device left idle rather than a machine kept busy.
+- **The wake fast path is Dekker's exclusion, not a lock.** `notify_scheduler`
+  raised the epoch and then took the process-wide wake lock to look for a parked
+  scheduler; the lock ordered that against a scheduler's "announce sleep, then
+  read the epoch". Both pairs are sequentially consistent now, so both sides
+  cannot read the old value: either the publisher sees the sleeper and wakes it,
+  or the scheduler sees the new epoch and does not sleep. Both park paths — the
+  core's own and the Linux target's external `epoll` wait — name that order
+  explicitly at their increment and recheck, because the fast path is correct
+  only while both do.
+- **Stage attribution shipped as scaffolding and was removed with the record.**
+  The numbers above are the instrumentation's own clock readings, so they are a
+  decomposition of the path rather than a second measurement of the wall time,
+  and the record says so where they appear. The instrumentation is gone from the
+  tree; the run id is how it stays checkable.
+
+## Not done
+
+- **A stage decomposition of the shipped path.** The attribution table measures
+  the path as it was before this batch changed it. Re-instrumenting the shipped
+  runtime would have needed another pair of `io-bench` runs to say anything the
+  wall-clock tables do not already say, and the tables are what the bar is read
+  from.
+- **The cold 4 KiB row.** It is the one row that misses its bar by more than a
+  little, and the stage table says why: at eight helpers on a three-core runner
+  the path charges about 5 us an operation against a 168 us host call, but the
+  wake latency alone is 38.5 us and the pool is bounded by the runner's ability
+  to schedule eight threads on three cores. This is a scheduling question on a
+  small machine, not a completion-model question, and nothing in this batch's
+  change set addresses it.
+- **Windows.** The IOCP adapter is untouched. `completion-windows` links and
+  passes as before; none of the Darwin helper-path work applies to it.
+- **A unit-level case for a declined positioned read's bytes.** The declining
+  path is covered end to end by `compiler/tests/programs` rather than by a
+  harness case of its own, because the harness pins the route for every
+  invocation so that its other cases can assert one. A case that unpinned the
+  route inside the harness would be sampling the policy, which is the thing the
+  scripted-clock cases were written to stop doing.
+- **The many-files workload.** It is recorded and it is still slower under C
+  than under S. This batch narrowed it and did not close it; the reason is the
+  one batch 0092 reached, that a 17 us `openat` is not a wait worth a handoff.
+
+## Approval classes
+
+- **No specification bytes.** `spec/kernel-spec.md` is untouched;
+  `make spec-digest-sync` reports the live prose quoting the chain tail at
+  v0.38 (`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`).
+- **No conformance content.** No conformance case, manifest, verdict, adapter,
+  runner, or collection wiring is added, modified, deleted, or renamed. The six
+  red `sys14-*` and `accept-*` cases on Linux are the pre-existing
+  `directory_next` gap recorded by batch 0094, unchanged by this batch: the run
+  reports `Pass=503 Fail=6 Skip=1` with every failure
+  `TargetQualification(MissingMapping(Operation(12)))`.
+- **`make approval-history-integrity`** reports existing main records an exact
+  prefix.
+- Everything else here is compiler implementation, ordinary tests, workflow
+  wiring inherited from batch 0093, and this record.
