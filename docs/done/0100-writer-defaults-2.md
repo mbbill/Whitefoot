@@ -17,6 +17,12 @@ change the compiler, or emit a warning or diagnostic that teaches the fix; one
 of the two is mandatory, teaching is preferred over silent transformation, and
 a hidden trick is never allowed.
 
+A second round followed the branch's own verification. A third blind writer
+confirmed all eleven payloads in practice and met four more bad defaults; the
+gate verifier confirmed every criterion but one, and refuted on test-pinning.
+Items 13–18 are that round: the pinning corpus the refutation asked for, the
+four remaining defaults, and the stale quote in `docs/patterns.md`.
+
 Every item below is a diagnostic or a report. No acceptance changed: the
 corpus re-run of section 12 shows every program that compiled still compiles to
 byte-identical LLVM.
@@ -363,6 +369,14 @@ dedup became `fn collapse`, which three unit tests in `permission_ledger.rs`
 pin directly — the merge, the two-distinct-lines case, and the one-row-per-
 position rule the disposition table depends on.
 
+**This item is unit-pinned only.** The third blind writer, given the branch
+compiler and no knowledge of its contents, could construct no source program
+where two monomorphized instances of one loop differ in staged verdict, which
+is the condition the merge exists for. The three unit tests are therefore the
+whole of the evidence: they exercise `collapse` directly, not through a
+program. Whether the shape is reachable at all is open; if it is not, the merge
+is a correctness argument about a table rather than a fix a writer can observe.
+
 ## 12. The corpus re-run
 
 Every program of the 0098 corpus and of the 0099 verification, compiled by the
@@ -404,6 +418,227 @@ The two rejections in the corpus are the two the re-writer met. `a1.wf` is the
 GRAM-9 contract-block case of item 1 and now carries the `define` fix; `a2.wf`
 and `probe_d` are the OWN-6 case of item 2 and now carry the whole idiom.
 
+The repository's own corpus was compared the same way, once for each round,
+over every `.wf` under `tests/programs`, `tests/codegen`, and
+`tests/conformance/cases`, each compiled from inside its own worktree by
+identical relative path:
+
+```text
+files=630 exit-status-differences=0 ir-differences=0 stderr-differences=141
+```
+
+Standard error is again the only difference, and the rule each file cites is
+identical in all 141: comparing the set of `[RULE-N]` identifiers in each
+file's `stderr` before and after gives zero differences. Eight files print more
+lines than they did, and all eight are the permission notices of item 3.
+
+## 13. Every diagnostic sentence is pinned by a probe (G1)
+
+The gate verification of this branch counted the diagnostic string literals the
+batch adds to production code and found **54 of 70 asserted by no test**. A
+sentence no test compares is free to drift: reword it, and nothing fails. The
+sentences *are* the product of items 1–11, so that was the whole batch
+unprotected.
+
+`compiler/src/driver/pinned_sentences.rs` is the answer and the single home for
+it. It is one table-driven test over a corpus of minimal sources — 55 rows —
+where each row carries the source, the rule its rejection must cite, and the
+exact rendered fragments the diagnostic must contain:
+
+```rust
+Probe {
+    name: "effect-suffix-names-an-undeclared-field.wf",
+    source: br#"struct Pair { ... }
+
+fn touch(pair: own Pair) -> out: own u64 reads(pair.middle) {
+  return pair.left;
+}
+..."#,
+    rule: "EFF-1",
+    sentences: &[
+        r#"InvalidEffectRow { reason: "an effect-path suffix names a field the struct does not declare", mechanical_fix: "name a declared field of that struct, or the parameter itself" }"#,
+    ],
+},
+```
+
+Adding a sentence to the compiler means adding a row. The rows are deliberately
+redundant with the per-item tests of items 1–11: those pin one sentence beside
+the program that motivated it and explain why it says what it says; the table
+proves none is missing.
+
+**The pin was proved by mutation.** With
+`EFF1_UNKNOWN_FIELD_FIX` in `compiler/src/semantic/check/types.rs` shortened
+from `"…, or the parameter itself"` to `"…, or the parameter"`, and nothing
+else changed:
+
+```text
+test driver::pinned_sentences::every_diagnostic_sentence_is_pinned_by_a_probe ... FAILED
+
+effect-suffix-names-an-undeclared-field.wf: the rendered rejection no longer carries this sentence.
+wanted: InvalidEffectRow { reason: "an effect-path suffix names a field the struct does not
+        declare", mechanical_fix: "name a declared field of that struct, or the parameter itself" }
+got:    SemanticIssue { rule: Eff1, … kind: InvalidEffectRow { reason: "an effect-path suffix names
+        a field the struct does not declare", mechanical_fix: "name a declared field of that
+        struct, or the parameter" } } at effect-suffix-names-an-undeclared-field.wf:6:48 in line
+        "fn touch(pair: own Pair) -> out: own u64 reads(pair.middle) {"
+```
+
+The literal was restored and the test passes again.
+
+**Coverage was measured, not asserted.** Enumerating every string literal in
+`compiler/src` production code at the branch base and at the branch tip — test
+modules, `#[cfg(test)]` regions, and comment lines excluded — gives 98 added
+literals. Splitting each on its `{…}` placeholders and requiring every literal
+segment to appear in the pinning corpus leaves **seven**, and each of the seven
+is a defensive arm that no source program reaches. The claim is checkable one
+by one, and the module header states it:
+
+| unreached sentence | why no program reaches it |
+| --- | --- |
+| `'region#{}` | `region_spelling`'s fallback for a region whose declaration is unreachable; every region in a checked mode came from a resolved declaration |
+| `parameter #{ordinal}` | names a formal in `render_goal_datum`, and only *concrete* goals are rendered |
+| `no operand in position {index} for this row` | needs more operands than the selected row takes; [OP-1] rejects the arity first |
+| [EFF-1]'s non-parameter-root reason and its repair | needs an effect root that resolves to a value and is not a parameter; the resolver rejects every such root as an unresolved `EffectRoot` use first |
+| `slice_of`'s "a borrow of a runtime value binding or a named const" pair | needs a place base resolving to neither class; a `PlaceBase` use admits only those two |
+
+Three further sentences belong to the staged-permission report, which an
+*accepted* program prints through the notice channel rather than through a
+rejection. They stay pinned where that report is built:
+`semantic::tests::staged_permission` compares `StagedDenial::writer_form()`
+verbatim for the two condition-2 remedies, and `driver::tests` compares the
+one-position remedy — that assertion was rewritten onto one line so the pinned
+bytes are greppable.
+
+One defect the corpus exposed while it was being written: `write_once<'w,
+ExitStatus>(…)` — a type argument in a region position — stopped at
+`whitefootc: Semantics/Compiler: InvalidResolution`, an internal failure on
+source the language rejects. `targ := type | REGIONID | const`, so the grammar
+already decides which alternative was written; `check_system_region_arguments`
+now reads that before asking the resolver for a region use a `type` or `const`
+argument never records, and the same program is a source rejection:
+
+```text
+before  whitefootc: Semantics/Compiler: InvalidResolution
+after   whitefootc: Semantics/Source [SYS-2]: … kind: TypeMismatch { expected: "a region argument
+        in this position", found: "an argument that does not name a region" } at
+        /abs/path/probe.wf:4:31 in line "    let sent = write_once<'w, ExitStatus>(output: &uniq
+        'w out, source: &'w payload, start: 0_u64, end: 4_u64);"
+```
+
+## 14. FORM-3 names the lexical class its slot admits (B1)
+
+A `const` whose name is not lowercase printed the class name and nothing else:
+`expected: ["IDENT"]` never says what an IDENT *is*, and the third blind writer
+met it on the first line of their first program.
+
+```text
+before  [FORM-3]: SyntaxIssue { rule: Form3, coordinate: … ByteOffset(6) … ByteOffset(11) },
+        expected: ["IDENT"] } at /abs/path/sizes.wf:1:7 in line "const Limit: u64 = 8_u64;"
+
+after   … expected: ["IDENT"], mechanical_fix: "an IDENT slot admits only [FORM-3]'s IDENT
+        `[a-z][a-z0-9_]*`, so a `const`, `fn`, parameter, `let`, field, or binder name is
+        lowercase and is never a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, a
+        LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the IDENT shape" }
+```
+
+The selection is the grammar position, never the token's shape:
+`name_slot_owner` already knew the one `NamePredicate` the frontier's rows
+agree on, and it now returns that class along with the rule. Each of the four
+reachable classes has its own sentence, so a `struct shape`, a `fn f[r]`, and a
+`break spin;` each read the class *their* slot writes. OPNAME carries none: the
+grammar's single OPNAME atom is `callee`'s second row, whose frontier also
+carries `callee`'s IDENT row, so the two transparent names disagree and this
+selection is never reached with OPNAME. An unreachable sentence would have been
+one more unpinnable literal.
+
+## 15. GRAM-2 states the contract-block order (B2)
+
+A `define` written after a `requires` printed the sections still open and never
+the rule that closed the earlier one.
+
+```text
+before  [GRAM-2]: SyntaxIssue { rule: Gram2, coordinate: … , expected: ["}", "requires",
+        "ensures"] } at /abs/path/w2walk.wf:9:3 in line "  define room = len(deref(name));"
+
+after   … expected: ["}", "requires", "ensures"], mechanical_fix: "a `contract_block` is written
+        in one fixed order: all `define` definitions first, then all `requires` requirements, then
+        all `ensures` postconditions. A clause of an earlier section written after a later one is
+        not admitted, so move it above the first clause of the later section" }
+```
+
+This is the immediate sequel to item 1: item 1 sends a writer to `define`, and
+this is the rejection they meet next if they write it in the wrong place. The
+fix is attached by `production_fix(Production::ContractBlock)` at the four
+sites that publish a rejection owned by a production, so it is decided by the
+grammar position and by nothing about the line.
+
+## 16. TYPE-6 says which collision this is (B3)
+
+`DeclarationCollision` located both declarations and stopped there. The writer
+met it twice, and both times the surprise was the same and unstated: the outer
+`permit` had already been **moved**, so it was dead as a value — but a
+declaration's scope does not end where its value is consumed, and the inner
+declaration still collides with it.
+
+```text
+before  [TYPE-6]: … kind: DeclarationCollision { spelling: "permit", conflicts:
+        [DeclarationConflict { domain: LexicalIdentifier, class: Value, origin: Source(…) }] }
+        at /abs/path/sizes.wf:115:35 in line "  let permit = reserve_file<'g2>(factory: …);"
+
+after   … conflicts: [ … ], mechanical_fix: "a declaration's scope ends with the block that
+        declares it, and not where its value is consumed: a binding whose value was moved is dead
+        as a value while its declaration stays live, so an inner declaration of the same spelling
+        still collides with it. Rename the inner declaration, or close the block that declares the
+        outer one before this point" }
+```
+
+[TYPE-6] selects between four colliding situations and they admit different
+repairs, so each carries its own sentence rather than a generic one: a PRE-1
+prelude collision, an admitted system-declaration collision [SYS-1, SYS-3], a
+same-scope redeclaration, and this live shadow. All four are reachable and all
+four are rows in the item-13 table.
+
+## 17. SYS-8's residual names the caller's buffer (B4)
+
+[OP-4] renders its bounds residual in the caller's own terms — `pick <
+len(table)` — and [SYS-8] rendered its second conjunct against the system
+operation's *declared parameter*, so a program with two buffers in scope could
+not tell which one the bound was about.
+
+```text
+before  [SYS-8]: … kind: UndischargedSystemRangeObligation { residual: "wide <= len(buffer)", … }
+        at /abs/path/sys8.wf:6:16 in line "    let sent = write_once<'w, 'w>(output: &uniq 'w out,
+        source: &'w header, start: 0_u64, end: wide);"
+
+after   … residual: "wide <= len(header)" …
+```
+
+`judge_system_ranges` derives the buffer argument's place once and renders it
+with `render_place`, the same renderer [OP-4] uses; the operation's declared
+parameter name remains the fallback for an argument shape that carries no place
+at all. Two existing backend tests were updated to the caller's spelling —
+`"5_u64 <= len(bytes)"` and `"9_u64 <= len(bytes)"` — which is the same
+assertion about a better sentence.
+
+## 18. docs/patterns.md quotes the sentence the compiler prints (G2)
+
+P15's first measured block still quoted the **pre-batch** condition-3 remedy,
+four lines above the block item 5 added with the new one. Both are now the
+bytes the compiler emits, taken from a compile of
+`probes/walk_helper_files.wf`:
+
+```text
+before  … instead, give each iteration its own resource, or leave this loop
+        sequential: storage that carries one position cannot be held by two iterations at
+        once, at &uniq 'f files
+
+after   … instead, give each iteration its own resource; or, where the body only
+        publishes to that storage — an output stream is the pointed case — hoist the
+        per-iteration write out of the loop, folding a total in the body and writing it
+        once after the loop; or leave this loop sequential, because storage that carries
+        one position cannot be held by two iterations at once, at &uniq 'f files
+```
+
 ## Judgment calls
 
 - **The condition-2 remedy states the limit in both branches.** The judgment
@@ -421,8 +656,8 @@ and `probe_d` are the OWN-6 case of item 2 and now carry the whole idiom.
   `assert_rule(source, rule, kind)` asserted exactly two things: which rule
   rejected and which kind it cited. Those call sites now use `assert_rule_kind`,
   which asserts the same two things and nothing less. The payloads themselves
-  are pinned text-for-text by the nine new `driver::tests` of this batch, which
-  is where a wording change has to be made deliberately. Pinning all
+  are pinned text-for-text by `driver::pinned_sentences` (item 13), which is
+  where a wording change has to be made deliberately. Pinning all
   sixty-seven would be stronger evidence and is the obvious follow-up; it needs
   the actual payload of each fixture, which is a mechanical but large pass.
 - **`TypeMismatch` carries two fields and no third "note".** Sixty-nine sites
@@ -450,8 +685,36 @@ and `probe_d` are the OWN-6 case of item 2 and now carry the whole idiom.
   compares them with the `wf-ops` table. Copying them into the renderer would
   have created a second spelling table nothing checks; moving them makes the
   diagnostic's spellings the locked ones.
+- **The pinning corpus is exhaustive rather than incremental.**
+  `driver::pinned_sentences` carries a row for every sentence the batch adds,
+  including the twelve that items 1–11 already pin individually. The duplication
+  is the point: one place answers "is any sentence unpinned?", and the answer
+  does not depend on remembering which earlier test covered what. Each row is a
+  compile of a source of ten to twenty lines, and the whole table runs in 0.02 s.
+- **Seven unreachable sentences were kept and documented rather than deleted.**
+  Each is a defensive arm behind an earlier rejection. Deleting the text would
+  mean replacing it with something, and the honest replacements are worse: an
+  internal failure on source the language rejects, or a sentence that says less.
+  Naming them in the module header, with the reason each is unreachable, leaves
+  a claim the next verifier can check one by one instead of a silent hole.
+- **[FORM-3]'s repair is selected by the admitted class, not by the class that
+  was written.** Twenty ordered pairs of classes would need twenty sentences and
+  a `Copy` payload that holds one `&'static str`; four sentences, one per slot
+  the grammar admits, say what the slot takes and list what it does not. The
+  writer's next action is the same either way: rename to the admitted shape.
+- **[TYPE-6] carries four sentences rather than one.** The four situations the
+  rule selects between admit genuinely different repairs — rename, rename,
+  delete-or-rename, and rename-or-close-the-block — and a single sentence would
+  have to hedge across all four. The one that motivated the item is the live
+  shadow, and it is the one whose surprise needed stating.
+- **The `contract_block` order sentence is attached to the production, not to
+  the offending clause.** Every [GRAM-2] frontier inside a `contract_block`
+  carries it, including one that is not an out-of-order clause. It is true at
+  every one of them and it names what the position admits next, so the cost of
+  the wider attachment is a sentence a writer sometimes does not need, and the
+  benefit is that no out-of-order clause can be written that does not get it.
 
-## Two language questions for the owner
+## Four open points for the owner
 
 These are recorded, not decided.
 
@@ -473,6 +736,35 @@ These are recorded, not decided.
   Whether the language should instead admit a per-iteration publish to a stream
   whose order the runtime restores is D1, and this batch only makes the working
   rewrite discoverable.
+- **A successful build has no quiet form (B5).** The third blind writer's first
+  program compiled and ran correctly, and every rebuild printed nine
+  `whitefootc: note: PAR …` lines. `--par` and `--no-overlap` change the
+  lowering and not the report, so the count is 9 / 9 / 9 on `work/sizes.wf`
+  under all three. Item 3 is why the lines are there — a denied loop that says
+  nothing is a lost optimization a writer never learns about — and it is also
+  why they do not go away: the loop stays denied until the program is rewritten
+  or the judgment grows. What is missing is a way for a writer who has read the
+  report and decided to live with it to stop reading it again on every build. A
+  quiet switch is the obvious shape and it is not obviously the right one — a
+  flag that silences a correctness-adjacent report is a flag people set once and
+  forget — so this batch adds none and records the observation. Whether the
+  answer is a flag, a per-loop written acknowledgement in the source, or a
+  narrower default channel is the owner's call.
+- **No operation turns read bytes or an enumerated name into a path (B6).**
+  A "list of names" utility reads names out of a file and cannot open them: the
+  only `RelativePath` constructor is `relative_path(value: own HostString)`, the
+  only `HostString` source is `arg_get`, and `spec/kernel-spec.md` states the
+  exclusion outright — "This specification declares no operation turning an
+  enumerated name into a `HostString` or a `RelativePath`, because a name's
+  backing is not the command-lifetime argument snapshot [HOST-3] and a path
+  value is an inline lease over that snapshot [PATH-1]." So this is a stated
+  position, not an oversight, and the record here is what the position costs: a
+  utility that takes its work list from a file has no route from the bytes it
+  read to a file it can open, and the writer's workaround reached for
+  `buffer_vacant` and `replace` over a `DirectoryRead` held per path component.
+  The question for the owner is whether the lease model should gain a second
+  backing class — a path constructed from program-owned bytes, with its own
+  lifetime — or whether a work list is meant to arrive through `Args`.
 
 ## Gate results
 
@@ -491,9 +783,20 @@ conformance-run                  41 s
 == WHITEFOOT ALL TESTS GREEN ==
 ```
 
-The native conformance adapter reports `Pass=509 Skip=1`, unchanged. Compiler
-library tests: 1417 passing, up from 1401, with the fourteen new tests of this
-batch and the two extended staged-permission tests.
+The native conformance adapter reports `Pass=509 Skip=1`, unchanged.
+
+Compiler library tests: **1418 passing, up from 1405** at the branch base
+`44c7a513`. Both numbers are measured with `cargo test --profile gate --lib --
+--list` in a worktree at the revision, and the test-name sets differ by exactly
+fifteen entries: fourteen added, one removed. The removed one is a rename —
+`a_child_reborrow_rejection_states_the_scope_rule_and_both_routes` became
+`…_and_the_whole_idiom` when item 2 changed what it asserts — so thirteen tests
+are new: nine `driver::tests` payload tests, three `permission_ledger::tests`
+over `collapse`, and the one table-driven test of item 13. The two
+condition-2 remedy assertions of item 4 extended existing
+`staged_permission` tests and added no name. An earlier draft of this record
+said "1417 passing, up from 1401, with the fourteen new tests of this batch";
+both counts were wrong.
 
 CI on `7aa6819d`: `gate` green on `gate-macos (macos-14)` and `gate-linux
 (ubuntu-24.04)`, and `io-hosts` green on its completion hosts. The six
@@ -509,8 +812,9 @@ evidence change: no conformance case, manifest, adapter, runner, or collection
 pins any of the diagnostic text this batch changed — `git grep -l` over
 `tests/conformance/` for `TypeMismatch`, `EffectMismatch`,
 `InvalidEffectRow`, `InvalidBorrowLifetime`, `InvalidChildReborrow`,
-`instantiated_goal`, and `mechanical_fix` returns nothing. Rule 4 therefore
-records nothing for this merge.
+`instantiated_goal`, and `mechanical_fix` returns nothing, and `git diff
+44c7a513..HEAD -- spec/ tests/conformance/ governance/ compiler/tests/` is
+empty. Rule 4 therefore records nothing for this merge.
 
 `docs/done/0098-blind-writer.md` D2 keeps its `compiler-change` classification
 and stays open: nothing here makes the helper boundary cost less, and the
@@ -528,3 +832,9 @@ what each one costs.
   item 3, which is a rendered ledger line the checker already produces.
 - The [PAR-3] lowering that turns a granted verdict into overlapped execution is
   still not landed; P15 continues to say so.
+- No quiet switch was added for the permission notices (B5) and no path
+  construction was added for read bytes (B6). Both are recorded above as owner
+  decisions and neither was decided here.
+- Seven diagnostic sentences remain unreachable from source (item 13). Making
+  them reachable means changing where each rejection is selected, which is a
+  behaviour change this batch had no reason to make.
