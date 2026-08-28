@@ -547,7 +547,9 @@ emits: every I/O call reaches the host through an ordinary direct call and the
 completion runtime does not join the link. It exists so one source can be
 compiled two ways and the pair measured, which is what
 `research/experiments/io-completion-bench/` does. It is not a build a program
-ships in, and it may not be written together with `--par`.
+ships in, and it may not be written together with `--par`. It also prints no
+denied-I/O-loop note, because the flag has already said this build takes no
+overlap; `--par-ledger` still prints the whole permission report under it.
 
 There is deliberately no artifact protocol, replay layer, resource-profile
 product, or compatibility boundary in front of this path.
