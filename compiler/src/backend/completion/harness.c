@@ -2943,10 +2943,26 @@ static int test_open_exhaustion_retires_owned_work_and_retries(
  *
  * Here nothing can give a descriptor back, so every open fails — and that is
  * the outcome the program is entitled to see, because it is the one source
- * order produces too.  What the count proves is that the runtime did not
- * simply publish the first refusal: it retired what it owned and asked the
- * host a second time.  Exactly one re-attempt, so an exhausted host cannot
- * turn one `open_file` call into unbounded work. */
+ * order produces too.  What the count proves is the bound: an exhausted host
+ * cannot turn one `open_file` call into unbounded work, so three refused opens
+ * can produce at most three second attempts however the three are scheduled.
+ *
+ * This test asserted the opposite bound until the rule below was corrected —
+ * that the count had *moved*, that is, that at least one re-attempt was made.
+ * That is not a property of three independent opens.  A re-attempt is owed
+ * only where this runtime is still holding a descriptor it could give back,
+ * and whether it is depends on where the three land: a helper pool that
+ * finishes each open before the next is submitted holds nothing at the moment
+ * of each refusal, so publishing each refusal unchanged is the correct answer
+ * and no re-attempt is owed.  Asserting otherwise made this test fail 13 of
+ * 200 runs at `WF_IO_HELPERS=4` on macOS, inside canonical `make check`.
+ *
+ * The property it was reaching for — that a runtime still holding a descriptor
+ * asks the host again rather than publishing the refusal — is what
+ * `test_open_exhaustion_waits_for_another_engine` and
+ * `test_bridge_open_behind_a_submitted_close_succeeds` establish, each by
+ * arranging that schedule instead of hoping for it, and each failing without
+ * its fix. */
 static int test_bridge_open_exhaustion_is_retried_once(
     const char *scratch_directory
 ) {
@@ -3025,7 +3041,10 @@ static int test_bridge_open_exhaustion_is_retried_once(
         CHECK(open_outcome == WF_FILE_OPEN_FAILED);
         CHECK(error_code == EMFILE || error_code == ENFILE);
     }
-    CHECK(wf__completion_open_exhaustion_retries() > retries_before);
+    CHECK(
+        wf__completion_open_exhaustion_retries() - retries_before
+        <= (uint64_t)3
+    );
 
     CHECK(close(held) == 0);
     CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
