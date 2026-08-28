@@ -90,6 +90,60 @@ fn earlier_ref<'a>(
     }
 }
 
+/// Identity of one reaching definition of one value component.
+///
+/// A merge selects a component exactly when the definitions reaching it along
+/// the incoming edges are different definition occurrences; a component every
+/// edge reaches through one definition is unchanged by the merge, however the
+/// edge itself was chosen.  Each identity is derived from the address of the
+/// checked statement that produced it, so re-walking a loop body re-derives
+/// the same identity and the fixed point still converges.  The address is
+/// scratch: it is compared only with another identity of the same component
+/// and is never rendered, published, or ordered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DefinitionId {
+    site: usize,
+    kind: DefinitionKind,
+}
+
+/// Which definition one checked statement address denotes.  A statement may
+/// hold more than one definition occurrence, and a merge point may sit at the
+/// same address as the statement that owns it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DefinitionKind {
+    /// The value a function entry, an unwritten slot, or a freshly computed
+    /// operand carries before any definition site claims it.
+    Entry,
+    /// The binding or storage component this statement writes.
+    Written,
+    /// The previous value a `replace` binds beside its write.
+    Taken,
+    /// A matching binder the arm introduces.
+    Binder,
+    /// The reaching definition a control-flow merge itself creates.
+    Merge,
+    /// The union of two reaching definitions formed by a data operation
+    /// rather than by an edge choice.  Every producer stamps its own identity
+    /// over this one before the value enters a state.
+    Fused,
+}
+
+impl DefinitionId {
+    const ENTRY: Self = Self {
+        site: 0,
+        kind: DefinitionKind::Entry,
+    };
+
+    const FUSED: Self = Self {
+        site: 0,
+        kind: DefinitionKind::Fused,
+    };
+
+    fn at(site: usize, kind: DefinitionKind) -> Self {
+        Self { site, kind }
+    }
+}
+
 /// One lexical path-control frame.  `site` is the stable address of the
 /// checked statement during this analysis; it is never rendered or exposed.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,9 +153,11 @@ struct ControlFrame {
 }
 
 /// Boundary-dependent path conditions currently restricting execution.
-/// Lexical frames let an exhaustive join discharge exactly its own selector,
-/// retain nested controls even when they name the same boundary call, and
-/// reach a fixed point when a loop revisits the same selector.
+/// Lexical frames retain nested controls even when they name the same boundary
+/// call and reach a fixed point when a loop revisits the same selector.  A
+/// frame is never removed: every merge asks which frames its own edges
+/// acquired since the merge's entry state, so a frame the entry already
+/// carries selects nothing at that merge.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ControlAuthority {
     frames: Vec<ControlFrame>,
@@ -123,15 +179,24 @@ impl ControlAuthority {
         result
     }
 
-    fn remove(&mut self, site: usize) {
-        self.frames.retain(|frame| frame.site != site);
-    }
-
-    fn earliest(&self) -> Option<&BoundaryWitness> {
-        self.frames
-            .iter()
-            .map(|frame| &frame.witness)
-            .min_by(|left, right| left.source_cmp(right))
+    /// The earliest witness among the frames these edges acquired since
+    /// `self`.  This is the authority of the edge choice a merge whose entry
+    /// state carried `self` performs, and nothing else: a frame `self` already
+    /// carries chose the path into the merge's entry, not between its edges.
+    fn acquired<'a>(
+        &self,
+        edges: impl IntoIterator<Item = &'a Self>,
+    ) -> Option<BoundaryWitness> {
+        let mut selected = None;
+        for edge in edges {
+            for frame in &edge.frames {
+                if self.frames.iter().any(|held| held.site == frame.site) {
+                    continue;
+                }
+                selected = earlier_owned(selected, Some(frame.witness.clone()));
+            }
+        }
+        selected
     }
 
     fn join(&self, other: &Self) -> Self {
@@ -171,6 +236,10 @@ enum AuthorityStep {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AuthorityValue {
     ty: CheckedType,
+    /// Identity of the definition this component currently reaches.  Only a
+    /// merge reads it, and only to compare two reaching definitions of the
+    /// same component.
+    definition: DefinitionId,
     /// Authority of the value identity itself.  This is normally the same as
     /// `uniform`, but survives a strong write to one owned dereference so a
     /// returned box/arena holder cannot be laundered by replacing its content.
@@ -186,6 +255,7 @@ impl AuthorityValue {
     fn local(ty: CheckedType) -> Self {
         Self {
             ty,
+            definition: DefinitionId::ENTRY,
             identity: None,
             uniform: None,
             children: Vec::new(),
@@ -195,6 +265,7 @@ impl AuthorityValue {
     fn uniform(ty: CheckedType, witness: Option<BoundaryWitness>) -> Self {
         Self {
             ty,
+            definition: DefinitionId::ENTRY,
             identity: witness.clone(),
             uniform: witness,
             children: Vec::new(),
@@ -221,6 +292,22 @@ impl AuthorityValue {
             .fold(self.identity.as_ref(), |selected, (_, child)| {
                 earlier_ref(selected, child.aggregate_ref())
             })
+    }
+
+    /// Record that this whole value is the reaching definition `definition`
+    /// creates.  Every descendant carries the same identity, so a component a
+    /// later partial write does not touch still compares equal after either
+    /// side has been materialized.
+    fn stamp(&mut self, definition: DefinitionId) {
+        self.definition = definition;
+        for (_, child) in &mut self.children {
+            child.stamp(definition);
+        }
+    }
+
+    fn stamped(mut self, definition: DefinitionId) -> Self {
+        self.stamp(definition);
+        self
     }
 
     fn union_uniform(&mut self, witness: Option<&BoundaryWitness>) {
@@ -319,9 +406,15 @@ impl AuthorityValue {
             return Ok(());
         }
         let inherited = self.uniform.take();
+        let definition = self.definition;
         self.children = shape
             .into_iter()
-            .map(|(step, ty)| (step, Self::uniform(ty, inherited.clone())))
+            .map(|(step, ty)| {
+                (
+                    step,
+                    Self::uniform(ty, inherited.clone()).stamped(definition),
+                )
+            })
             .collect();
         Ok(())
     }
@@ -339,10 +432,10 @@ impl AuthorityValue {
 
     fn selected(&self, step: AuthorityStep, nominals: &[CheckedNominal]) -> LocalityResult<Self> {
         if self.children.is_empty() {
-            return Ok(Self::uniform(
-                self.child_type(step, nominals)?,
-                self.uniform.clone(),
-            ));
+            return Ok(
+                Self::uniform(self.child_type(step, nominals)?, self.uniform.clone())
+                    .stamped(self.definition),
+            );
         }
         self.children
             .iter()
@@ -413,24 +506,37 @@ impl AuthorityValue {
         child.replace_path(rest, replacement, nominals)
     }
 
+    /// A possible-overlap write joins rather than replaces.  The written
+    /// component becomes the definition `definition` names, because a reader
+    /// after this statement reaches this write and not the older one alone.
     fn union_path(
         &mut self,
         path: &[AuthorityStep],
         value: &Self,
+        definition: DefinitionId,
         nominals: &[CheckedNominal],
     ) -> LocalityResult<()> {
         let current = self.selected_path(path, nominals)?;
-        let joined = current.join(value, nominals)?;
+        let joined = current.join(value, nominals)?.stamped(definition);
         self.replace_path(path, joined, nominals)
     }
 
+    /// Union two authorities of one component as a data operation.  The result
+    /// is not a reaching definition of its own; every caller stamps the
+    /// identity of the definition that consumes it.
     fn join(&self, other: &Self, nominals: &[CheckedNominal]) -> LocalityResult<Self> {
         if self.ty != other.ty {
             return Err(SemanticCompilerFailure::InvalidResolution);
         }
+        let definition = if self.definition == other.definition {
+            self.definition
+        } else {
+            DefinitionId::FUSED
+        };
         if self.children.is_empty() && other.children.is_empty() {
             return Ok(Self {
                 ty: self.ty,
+                definition,
                 identity: earlier_owned(self.identity.clone(), other.identity.clone()),
                 uniform: earlier_owned(self.uniform.clone(), other.uniform.clone()),
                 children: Vec::new(),
@@ -452,6 +558,67 @@ impl AuthorityValue {
         }
         Ok(Self {
             ty: self.ty,
+            definition,
+            identity: earlier_owned(left.identity, right.identity),
+            uniform: None,
+            children,
+        })
+    }
+
+    /// Merge two reaching states of one component at a control-flow join.
+    ///
+    /// `selection` is the authority of the edge choice this merge performs and
+    /// `merge` names the reaching definition the merge itself creates.  The
+    /// selection joins exactly those components whose incoming definitions are
+    /// different definition occurrences: those are the components the edge
+    /// chooses.  A component both edges reach through one definition keeps that
+    /// definition and takes only the ordinary authority union, so a value the
+    /// selected edge never redefined stays `Local`.
+    fn merge(
+        &self,
+        other: &Self,
+        nominals: &[CheckedNominal],
+        selection: Option<&BoundaryWitness>,
+        merge: DefinitionId,
+    ) -> LocalityResult<Self> {
+        if self.ty != other.ty {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        if self.definition != other.definition {
+            let mut selected = self.join(other, nominals)?;
+            selected.union_uniform(selection);
+            return Ok(selected.stamped(merge));
+        }
+        let definition = self.definition;
+        if self.children.is_empty() && other.children.is_empty() {
+            return Ok(Self {
+                ty: self.ty,
+                definition,
+                identity: earlier_owned(self.identity.clone(), other.identity.clone()),
+                uniform: earlier_owned(self.uniform.clone(), other.uniform.clone()),
+                children: Vec::new(),
+            });
+        }
+        let mut left = self.clone();
+        let mut right = other.clone();
+        left.materialize(nominals)?;
+        right.materialize(nominals)?;
+        if left.children.len() != right.children.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        let mut children = Vec::with_capacity(left.children.len());
+        for ((left_step, left), (right_step, right)) in left.children.iter().zip(&right.children) {
+            if left_step != right_step {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            children.push((
+                *left_step,
+                left.merge(right, nominals, selection, merge)?,
+            ));
+        }
+        Ok(Self {
+            ty: self.ty,
+            definition,
             identity: earlier_owned(left.identity, right.identity),
             uniform: None,
             children,
@@ -484,16 +651,25 @@ impl AuthorityState {
             .ok_or(SemanticCompilerFailure::InvalidResolution)
     }
 
-    fn set_binding(&mut self, binding: BindingId, value: AuthorityValue) {
+    /// Install a whole-value definition.  The stamp is what later merges read:
+    /// a slot every incoming edge reaches through this one definition is not
+    /// selected by the edge choice.
+    fn set_binding(&mut self, binding: BindingId, value: AuthorityValue, definition: DefinitionId) {
         let index = binding.0 as usize;
         if self.bindings.len() <= index {
             self.bindings.resize(index + 1, None);
         }
-        self.bindings[index] = Some(value);
+        self.bindings[index] = Some(value.stamped(definition));
     }
 
-    fn join(&self, other: &Self, nominals: &[CheckedNominal]) -> LocalityResult<Self> {
-        let mut joined = Self {
+    fn merge(
+        &self,
+        other: &Self,
+        nominals: &[CheckedNominal],
+        selection: Option<&BoundaryWitness>,
+        merge: DefinitionId,
+    ) -> LocalityResult<Self> {
+        let mut merged = Self {
             bindings: Vec::with_capacity(self.bindings.len().max(other.bindings.len())),
             control: self.control.join(&other.control),
         };
@@ -502,13 +678,15 @@ impl AuthorityState {
                 self.bindings.get(index).and_then(Option::as_ref),
                 other.bindings.get(index).and_then(Option::as_ref),
             ) {
-                (Some(left), Some(right)) => Some(left.join(right, nominals)?),
+                (Some(left), Some(right)) => Some(left.merge(right, nominals, selection, merge)?),
+                // A slot only one edge carries is a binding declared inside
+                // that edge and out of scope at the merge.
                 (Some(value), None) | (None, Some(value)) => Some(value.clone()),
                 (None, None) => None,
             };
-            joined.bindings.push(value);
+            merged.bindings.push(value);
         }
-        Ok(joined)
+        Ok(merged)
     }
 }
 
@@ -538,12 +716,6 @@ struct FlowResult {
     normal: Option<AuthorityState>,
     breaks: HashMap<CheckedLoopId, Vec<AuthorityState>>,
     gives: Vec<GiveEdge>,
-    /// At least one path leaves the represented normal/break/give graph, for
-    /// example by returning from the function or by remaining in an ordinary
-    /// loop forever.  Counted-loop endpoint control can be discharged only
-    /// when every nonempty-body path is represented as a backedge or a break
-    /// to that counted loop.
-    unrepresented_exit: bool,
 }
 
 impl FlowResult {
@@ -559,7 +731,6 @@ impl FlowResult {
             self.breaks.entry(target).or_default().append(&mut states);
         }
         self.gives.append(&mut other.gives);
-        self.unrepresented_exit |= other.unrepresented_exit;
     }
 }
 
@@ -594,7 +765,11 @@ impl ClaimAuthorityAnalysis {
         };
         let mut entry = AuthorityState::default();
         for parameter in &function.parameters {
-            entry.set_binding(parameter.binding, AuthorityValue::local(parameter.ty));
+            entry.set_binding(
+                parameter.binding,
+                AuthorityValue::local(parameter.ty),
+                DefinitionId::ENTRY,
+            );
         }
         let _ = pass.walk_block(&function.body, entry)?;
         Ok(Self {
@@ -603,18 +778,14 @@ impl ClaimAuthorityAnalysis {
         })
     }
 
-    /// Returns the earliest boundary-result discriminant controlling this
-    /// claim occurrence, independently of explicit canonical supports.  The
-    /// checker queries it for every formed component, including literal and
-    /// named-constant components whose support set is empty.
-    pub(crate) fn control_witness(&self, claim: &NodePath) -> Option<&BoundaryWitness> {
-        self.snapshots.get(claim)?.control.earliest()
-    }
-
     /// Returns the earliest boundary result read by one canonical goal support
     /// at `claim`.  A dereference consults both the holder value and its resolved
     /// referent, so a borrow-mode call result cannot disappear merely because
     /// OWN-6 roots it at a local actual.
+    ///
+    /// A claim occurrence standing on a boundary-selected edge contributes
+    /// nothing by itself: the selector's witness reaches this query only
+    /// through a support whose reaching definition that selector chose.
     pub(crate) fn witness(
         &self,
         claim: &NodePath,
@@ -623,7 +794,7 @@ impl ClaimAuthorityAnalysis {
         length: bool,
     ) -> Option<&BoundaryWitness> {
         let state = self.snapshots.get(claim)?;
-        let mut selected = state.control.earliest();
+        let mut selected = None;
         let mut binding = root;
         let mut path = Vec::new();
 
@@ -709,9 +880,23 @@ struct AuthorityPass<'a> {
 }
 
 impl AuthorityPass<'_> {
+    /// A claim inside a loop is reached by more than one state.  Merging them
+    /// is not an ordinary edge choice with a dominator to measure against, so
+    /// the selection is every boundary control either state stands under: a
+    /// support whose reaching definition differs between two arrivals is
+    /// chosen by whatever brought this occurrence there.
     fn record_snapshot(&mut self, claim: &NodePath, state: &AuthorityState) -> LocalityResult<()> {
         match self.snapshots.get_mut(claim) {
-            Some(previous) => *previous = previous.join(state, self.nominals)?,
+            Some(previous) => {
+                let selection = ControlAuthority::default()
+                    .acquired([&previous.control, &state.control]);
+                *previous = previous.merge(
+                    state,
+                    self.nominals,
+                    selection.as_ref(),
+                    DefinitionId::at(std::ptr::from_ref(claim).addr(), DefinitionKind::Merge),
+                )?;
+            }
             None => {
                 self.snapshots.insert(claim.clone(), state.clone());
             }
@@ -742,12 +927,11 @@ impl AuthorityPass<'_> {
         mut state: AuthorityState,
     ) -> LocalityResult<FlowResult> {
         let control_site = std::ptr::from_ref(statement).addr();
-        let control = state.control.earliest().cloned();
+        let written = DefinitionId::at(control_site, DefinitionKind::Written);
         match statement {
             CheckedStatement::Let { binding, value, .. } => {
-                let mut value = self.expression(value, &state)?;
-                value.union_uniform(control.as_ref());
-                state.set_binding(*binding, value);
+                let value = self.expression(value, &state)?;
+                state.set_binding(*binding, value, written);
                 Ok(FlowResult::normal(state))
             }
             CheckedStatement::PropagateLet {
@@ -768,26 +952,19 @@ impl AuthorityPass<'_> {
                     value = AuthorityValue::uniform(*ok_type, value.aggregate());
                 }
                 let selector = self.match_selector_witness(&scrutinee)?;
+                // The bound payload is the delivered value the Ok edge selects.
                 value.union_uniform(selector.as_ref());
-                value.union_uniform(control.as_ref());
-                state.set_binding(*binding, value);
+                state.set_binding(*binding, value, written);
                 // Only the Ok edge reaches the following statement, so that
                 // continuation itself reveals the Result discriminant.
                 state.control = state.control.with_added(control_site, selector);
-                Ok(FlowResult {
-                    normal: Some(state),
-                    // The implicit Err edge returns from the function.  Keep
-                    // that unrepresented exit visible to enclosing counted
-                    // loops even when the Ok continuation itself is local.
-                    unrepresented_exit: true,
-                    ..FlowResult::default()
-                })
+                Ok(FlowResult::normal(state))
             }
             CheckedStatement::Set { target, value, .. } => {
                 let offset = self.target_selector_witness(target, &state)?;
                 let mut value = self.expression(value, &state)?;
-                value.union_uniform(earlier_ref(control.as_ref(), offset.as_ref()));
-                self.write_target(&mut state, target, value, offset.as_ref(), false)?;
+                value.union_uniform(offset.as_ref());
+                self.write_target(&mut state, target, value, offset.as_ref(), written)?;
                 Ok(FlowResult::normal(state))
             }
             CheckedStatement::Replace {
@@ -798,11 +975,15 @@ impl AuthorityPass<'_> {
             } => {
                 let offset = self.target_selector_witness(target, &state)?;
                 let mut previous = self.read_target(target, &state)?;
-                previous.union_uniform(earlier_ref(control.as_ref(), offset.as_ref()));
+                previous.union_uniform(offset.as_ref());
                 let mut replacement = self.expression(value, &state)?;
-                replacement.union_uniform(earlier_ref(control.as_ref(), offset.as_ref()));
-                self.write_target(&mut state, target, replacement, offset.as_ref(), false)?;
-                state.set_binding(*binding, previous);
+                replacement.union_uniform(offset.as_ref());
+                self.write_target(&mut state, target, replacement, offset.as_ref(), written)?;
+                state.set_binding(
+                    *binding,
+                    previous,
+                    DefinitionId::at(control_site, DefinitionKind::Taken),
+                );
                 Ok(FlowResult::normal(state))
             }
             CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
@@ -818,14 +999,13 @@ impl AuthorityPass<'_> {
             }
             CheckedStatement::Return { value, .. } => {
                 let _ = self.expression(value, &state)?;
-                Ok(FlowResult {
-                    unrepresented_exit: true,
-                    ..FlowResult::default()
-                })
+                Ok(FlowResult::default())
             }
             CheckedStatement::Give { value, .. } => {
-                let mut value = self.expression(value, &state)?;
-                value.union_uniform(control.as_ref());
+                // The delivery merge reads this edge's own control, so a give
+                // reached through a boundary selector carries that selector
+                // into the initializer without tainting the value here.
+                let value = self.expression(value, &state)?;
                 Ok(FlowResult {
                     gives: vec![GiveEdge { state, value }],
                     ..FlowResult::default()
@@ -855,7 +1035,9 @@ impl AuthorityPass<'_> {
                 state,
                 Some((*binding, *result_type)),
             ),
-            CheckedStatement::Loop { id, body, .. } => self.walk_loop(*id, body, state),
+            CheckedStatement::Loop { id, body, .. } => {
+                self.walk_loop(control_site, *id, body, state)
+            }
             CheckedStatement::CountedRange {
                 id,
                 binder,
@@ -880,11 +1062,10 @@ impl AuthorityPass<'_> {
         let selector = self.match_selector_witness(&scrutinee_value)?;
         let incoming_control = entry.control.clone();
         let branch_control = incoming_control.with_added(control_site, selector.clone());
+        let merge = DefinitionId::at(control_site, DefinitionKind::Merge);
         let mut exits = Vec::new();
         let mut abrupt = FlowResult::default();
         let mut deliveries = Vec::new();
-        let mut exhaustively_delivering_arms = 0usize;
-        let mut exhaustive_breaks: HashMap<CheckedLoopId, usize> = HashMap::new();
         for arm in arms {
             let mut arm_state = entry.clone();
             arm_state.control = branch_control.clone();
@@ -899,56 +1080,20 @@ impl AuthorityPass<'_> {
                 if value.ty != binder.ty {
                     value = AuthorityValue::uniform(binder.ty, value.aggregate());
                 }
-                value.union_uniform(branch_control.earliest());
-                arm_state.set_binding(binder.binding, value);
+                // The binder is the payload the arm's own tag selects.
+                value.union_uniform(selector.as_ref());
+                arm_state.set_binding(
+                    binder.binding,
+                    value,
+                    DefinitionId::at(control_site, DefinitionKind::Binder),
+                );
             }
             let mut arm_result = self.walk_block(&arm.body, arm_state)?;
-            if arm_result.normal.is_none()
-                && arm_result.gives.is_empty()
-                && !arm_result.unrepresented_exit
-                && arm_result.breaks.len() == 1
-                && let Some((target, states)) = arm_result.breaks.iter().next()
-                && !states.is_empty()
-            {
-                *exhaustive_breaks.entry(*target).or_default() += 1;
-            }
-            if arm_result.normal.is_none()
-                && !arm_result.gives.is_empty()
-                && arm_result.breaks.is_empty()
-                && !arm_result.unrepresented_exit
-            {
-                exhaustively_delivering_arms += 1;
-            }
             if let Some(exit) = arm_result.normal.take() {
                 exits.push(exit);
             }
             deliveries.append(&mut arm_result.gives);
             abrupt.append_abrupt(arm_result);
-        }
-
-        // When every exhaustive arm reaches the same loop only through break
-        // edges, that loop continuation is independent of this selector.
-        // FlowResult path completeness admits harmless prefixes and nested
-        // exhaustive matches while excluding returns, propagation, gives,
-        // fallthrough, divergence, and breaks to another loop.
-        for (target, count) in exhaustive_breaks {
-            if let (true, Some(states)) = (count == arms.len(), abrupt.breaks.get_mut(&target)) {
-                for state in states {
-                    state.control.remove(control_site);
-                }
-            }
-        }
-
-        // GIVE-1 may target a value initializer outside this immediate match.
-        // If every path in every arm delivers, reaching that outer receiver
-        // is independent of this selector.  Remove only the lexical control
-        // frame from the delivery states; each delivered value already carries
-        // the selector authority added by `Give`.
-        let exhaustive_delivery = exhaustively_delivering_arms == arms.len();
-        if exhaustive_delivery {
-            for edge in &mut deliveries {
-                edge.state.control.remove(control_site);
-            }
         }
 
         if let Some((binding, result_type)) = receiver {
@@ -959,6 +1104,16 @@ impl AuthorityPass<'_> {
                 abrupt.normal = None;
                 return Ok(abrupt);
             }
+            // A `value_if` or `value_match` delivers the value its selector
+            // chooses, so the selector joins the delivered value whatever the
+            // arms deliver.  A nested selector reaching a give edge is carried
+            // by that edge's own control.
+            let selection = incoming_control.acquired(
+                deliveries
+                    .iter()
+                    .map(|edge| &edge.state.control)
+                    .collect::<Vec<_>>(),
+            );
             let mut states = Vec::with_capacity(deliveries.len());
             let mut delivered: Option<AuthorityValue> = None;
             for edge in deliveries {
@@ -968,32 +1123,29 @@ impl AuthorityPass<'_> {
                     None => edge.value,
                 });
             }
-            let mut state = join_states(&states, self.nominals)?
+            let mut state = merge_states(&states, self.nominals, selection.as_ref(), merge)?
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let mut delivered = delivered.ok_or(SemanticCompilerFailure::InvalidResolution)?;
             if delivered.ty != result_type {
                 delivered = AuthorityValue::uniform(result_type, delivered.aggregate());
             }
             delivered.union_uniform(selector.as_ref());
-            state.set_binding(binding, delivered);
+            delivered.union_uniform(selection.as_ref());
+            state.set_binding(
+                binding,
+                delivered,
+                DefinitionId::at(control_site, DefinitionKind::Written),
+            );
             abrupt.normal = Some(state);
             abrupt.gives.clear();
             return Ok(abrupt);
         }
 
-        // An exhaustive ordinary match reconverges unconditionally.  If any
-        // arm terminates, the remaining continuation reveals the selector and
-        // retains `branch_control` from its arm state.
-        if exits.len() == arms.len()
-            && !abrupt.unrepresented_exit
-            && abrupt.breaks.is_empty()
-            && deliveries.is_empty()
-        {
-            for exit in &mut exits {
-                exit.control.remove(control_site);
-            }
-        }
-        abrupt.normal = join_states(&exits, self.nominals)?;
+        // The selector chooses among the arms' reaching definitions at this
+        // reconvergence.  A component every arm reaches through one definition
+        // is not chosen here, however the arm itself was selected.
+        let selection = incoming_control.acquired(exits.iter().map(|exit| &exit.control));
+        abrupt.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
         abrupt.gives = deliveries;
         Ok(abrupt)
     }
@@ -1027,15 +1179,22 @@ impl AuthorityPass<'_> {
 
     fn walk_loop(
         &mut self,
+        control_site: usize,
         id: CheckedLoopId,
         body: &[CheckedStatement],
         entry: AuthorityState,
     ) -> LocalityResult<FlowResult> {
+        let merge = DefinitionId::at(control_site, DefinitionKind::Merge);
         let mut head = entry.clone();
         let final_result = loop {
             let body_result = self.walk_block(body, head.clone())?;
             let next = match &body_result.normal {
-                Some(backedge) => entry.join(backedge, self.nominals)?,
+                Some(backedge) => {
+                    // Whatever selected the backedge selects the loop head
+                    // between the entry definition and the body's own.
+                    let selection = entry.control.acquired([&backedge.control]);
+                    entry.merge(backedge, self.nominals, selection.as_ref(), merge)?
+                }
                 None => head.clone(),
             };
             if next == head {
@@ -1044,13 +1203,9 @@ impl AuthorityPass<'_> {
             head = next;
         };
         let mut result = final_result;
-        // A surviving ordinary-loop backedge may iterate forever.  That path
-        // is not represented by the break states returned to the enclosing
-        // construct and therefore prevents an outer counted endpoint from
-        // being treated as an exhaustive selector.
-        result.unrepresented_exit |= result.normal.is_some();
         let exits = result.breaks.remove(&id).unwrap_or_default();
-        result.normal = join_states(&exits, self.nominals)?;
+        let selection = entry.control.acquired(exits.iter().map(|exit| &exit.control));
+        result.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
         Ok(result)
     }
 
@@ -1068,15 +1223,17 @@ impl AuthorityPass<'_> {
         let lower = self.expression(lower, &entry)?;
         let upper = self.expression(upper, &entry)?;
         let endpoint = earlier_owned(lower.aggregate(), upper.aggregate());
+        let entry_control = entry.control.clone();
         let loop_control = entry.control.with_added(control_site, endpoint.clone());
+        let merge = DefinitionId::at(control_site, DefinitionKind::Merge);
+        let binder_definition = DefinitionId::at(control_site, DefinitionKind::Binder);
         let mut initial = entry.clone();
         initial.control = loop_control.clone();
+        // The counted binder is the endpoint-selected value of this iteration.
         initial.set_binding(
             binder,
-            AuthorityValue::uniform(
-                CheckedType::Integer(IntegerType::U64),
-                loop_control.earliest().cloned(),
-            ),
+            AuthorityValue::uniform(CheckedType::Integer(IntegerType::U64), endpoint.clone()),
+            binder_definition,
         );
         let mut head = initial.clone();
         let final_result = loop {
@@ -1086,12 +1243,16 @@ impl AuthorityPass<'_> {
                     binder,
                     AuthorityValue::uniform(
                         CheckedType::Integer(IntegerType::U64),
-                        loop_control.earliest().cloned(),
+                        endpoint.clone(),
                     ),
+                    binder_definition,
                 );
             }
             let next = match &body_result.normal {
-                Some(backedge) => initial.join(backedge, self.nominals)?,
+                Some(backedge) => {
+                    let selection = entry_control.acquired([&initial.control, &backedge.control]);
+                    initial.merge(backedge, self.nominals, selection.as_ref(), merge)?
+                }
                 None => head.clone(),
             };
             if next == head {
@@ -1108,23 +1269,14 @@ impl AuthorityPass<'_> {
             exits.push(head);
         }
 
-        // The false-header edge exists even when the body never runs.  It is
-        // selected by the endpoint and therefore starts with the loop-control
-        // frame.  Discharge that frame only when every possible nonempty-body
-        // path returns to this loop head or breaks this loop.  A return,
-        // divergence, give, or break to an outer loop makes post-loop reachability
-        // endpoint-dependent and must keep the frame on every reaching edge.
-        let body_is_exhaustive =
-            !result.unrepresented_exit && result.gives.is_empty() && result.breaks.is_empty();
+        // The false-header edge exists even when the body never runs, and the
+        // endpoint chose it.  A component every exit reaches through one
+        // definition is nonetheless untouched by that choice.
         let mut false_header = entry;
         false_header.control = loop_control;
         exits.push(false_header);
-        if body_is_exhaustive {
-            for exit in &mut exits {
-                exit.control.remove(control_site);
-            }
-        }
-        result.normal = join_states(&exits, self.nominals)?;
+        let selection = entry_control.acquired(exits.iter().map(|exit| &exit.control));
+        result.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
         Ok(result)
     }
 
@@ -1613,7 +1765,7 @@ impl AuthorityPass<'_> {
         target: &CheckedSetTarget,
         value: AuthorityValue,
         selector: Option<&BoundaryWitness>,
-        _call_write: bool,
+        definition: DefinitionId,
     ) -> LocalityResult<()> {
         // This function is invoked only for explicit SET-1/SET-2 commits.  Calls
         // deliberately never invoke it: call-written `&uniq` storage is outside
@@ -1631,7 +1783,7 @@ impl AuthorityPass<'_> {
                     .get_mut(root.0 as usize)
                     .and_then(Option::as_mut)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                slot.replace_path(&path, value, self.nominals)
+                slot.replace_path(&path, value.stamped(definition), self.nominals)
             }
             CheckedSetTarget::ArrayIndex(target) => {
                 let (root, mut path) = self.storage_target(target.binding)?;
@@ -1644,7 +1796,7 @@ impl AuthorityPass<'_> {
                     .get_mut(root.0 as usize)
                     .and_then(Option::as_mut)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                slot.union_path(&path, &value, self.nominals)
+                slot.union_path(&path, &value, definition, self.nominals)
             }
             CheckedSetTarget::BufferIndex(target) => {
                 let (root, mut path) = self.storage_target(target.root.binding)?;
@@ -1657,7 +1809,7 @@ impl AuthorityPass<'_> {
                     .get_mut(root.0 as usize)
                     .and_then(Option::as_mut)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                slot.union_path(&path, &value, self.nominals)
+                slot.union_path(&path, &value, definition, self.nominals)
             }
         }
     }
@@ -1693,19 +1845,21 @@ impl AuthorityPass<'_> {
     }
 }
 
-fn join_states(
+fn merge_states(
     states: &[AuthorityState],
     nominals: &[CheckedNominal],
+    selection: Option<&BoundaryWitness>,
+    merge: DefinitionId,
 ) -> LocalityResult<Option<AuthorityState>> {
     let mut states = states.iter();
     let Some(first) = states.next() else {
         return Ok(None);
     };
-    let mut joined = first.clone();
+    let mut merged = first.clone();
     for state in states {
-        joined = joined.join(state, nominals)?;
+        merged = merged.merge(state, nominals, selection, merge)?;
     }
-    Ok(Some(joined))
+    Ok(Some(merged))
 }
 
 fn block_contains_claim(statements: &[CheckedStatement]) -> bool {
