@@ -503,8 +503,23 @@ and the timeout is only the cut-off for the case where it never arrives at all.
 Three seconds sat inside the scheduling delay a loaded host produces, so it
 converted a scheduling delay into a false report of a lost overlap; sixty is far
 outside any such delay and still bounded, so a genuine regression fails the run
-rather than hanging it. The reasoning is written at the constant
-(`MARKER_ARRIVAL_LIMIT`) so nobody tightens it back without reading it.
+rather than hanging it.
+
+**And its sibling, found by the gate run that verified the fix.** With the
+first bound raised, `make check` on this revision failed a different case at the
+same kind of bound:
+`backend::tests::completion::reused_output_progress_preserves_ac_around_an_independent_rejected_open`,
+at its five-second `recv_timeout`, on a host running three compiler gates at
+once. It is the same defect and it was diagnosed rather than assumed: the
+program that case runs compiles to a **byte-identical module** under this branch
+and under `c34a2d48`, so the machine code that failed is the machine code that
+passed, and the case completes in 0.45 to 0.65 seconds in isolation — three
+orders of magnitude inside its own bound. Its failing behaviour is also a
+never, not a late: C is either serialized behind an open that does not come
+back, in which case `AC` never appears, or it is not. Both waits now read one
+constant, `PROBE_OUTPUT_LIMIT`, whose doc comment carries this reasoning so
+nobody tightens either back without reading it. Two assertions untouched, two
+bounds a loaded host cannot trip.
 
 ### Bytes
 
@@ -571,7 +586,8 @@ fix 2's falsifiers reproduced at the lines this record cites, and the completion
 harness, sanitizer and Linux-container legs green. Neither found a defect in
 the code.
 
-Both left notes, and closing them is what the last commit on this branch does.
+Both left notes, and closing them is what the last two commits on this branch
+do — the second of them a case the first one's own verifying gate run exposed.
 Each is written into the section it belongs to rather than listed here, so the
 record reads as one document:
 
@@ -589,7 +605,8 @@ record reads as one document:
   today");
 - the pre-existing test whose three-second bound failed under gate load for
   three separate people keeps its assertion and gets a bound a loaded host
-  cannot trip ("The flake, and the timeout that caused it").
+  cannot trip — as does the sibling case whose five-second bound the verifying
+  gate run then tripped ("The flake, and the timeout that caused it").
 
 That commit changes no emitted byte: over the 22 corpus programs that compile
 standalone plus the two new probes, the `--par --par-ledger --emit-llvm` module
@@ -655,15 +672,16 @@ and the ledger are byte-identical to `c34a2d48`'s for every one.
   than `InvalidIr`, because the IR is not malformed — it asks for a shape this
   emitter has not been taught to reserve storage for, which is a capability
   limit and must not be reported as invalid source.
-- **The flaky test's bound was raised, not its assertion.** The alternative
-  considered was bounded re-observation, the way
+- **The flaky tests' bounds were raised, not their assertions.** The
+  alternative considered was bounded re-observation, the way
   `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`
   re-observes a steal. It is the right shape when the property is statistical.
-  This property is not: the marker either arrives while the bulk write is
-  blocked or it does not, and re-running would only average over the same
-  scheduling noise the longer bound removes outright. Raising the bound
-  weakens nothing, because the parent holds the pipe blocked for the whole
-  wait.
+  Neither of these is: the marker either arrives while the bulk write is
+  blocked or it does not, `AC` either appears or never does, and re-running
+  would only average over the same scheduling noise the longer bound removes
+  outright. Raising the bound weakens nothing, because in both cases the
+  failing behaviour produces the bytes never rather than late. Both waits read
+  one constant rather than two, because it is one decision.
 - **Parity is claimed from the assembly, not from the stopwatch.** The host was
   too loaded for a wall-clock table to resolve a fraction of a percent. Rather
   than run until a favourable pair appeared, the assembly identity is reported

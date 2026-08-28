@@ -702,26 +702,34 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     assert!(!bridge.contains("wf_completion_park_if_unchanged(\n                    &wf_bridge_runtime,\n                    epoch,\n                    1u"));
 }
 
-/// How long the marker may take to arrive before the probe is called stuck.
+/// How long a probe child's expected output may take to arrive before the case
+/// calls it stuck.
 ///
-/// What this test proves is an *order*, not a latency: the parent reads
-/// nothing from the child's stdout until the marker has arrived, so the child's
-/// one-megabyte write to that pipe is still blocked for the whole wait, and a
-/// marker byte at any point in it is proof that the second operation ran while
-/// the first was outstanding. The bound is therefore only a liveness cut-off
-/// for the case where the marker never comes at all, and nothing is weakened
-/// by making it generous.
+/// Both cases that wait on a child prove an *order*, not a latency, and in both
+/// the failing behaviour produces the bytes never rather than late:
 ///
-/// It used to be three seconds, which is inside the scheduling delay a loaded
-/// host produces: this test spawns a child and waits for one of its threads to
-/// be scheduled, and it failed on four separate gate runs across three people,
-/// every one of them on a host running more than one compiler gate at once,
-/// while passing every time it was run in isolation. Each of those reported a
-/// false regression in the overlap it guards. Sixty seconds is far outside any
-/// scheduling delay and still bounded, so a genuine regression — the marker
-/// write waiting behind the blocked bulk write — fails the run rather than
-/// hanging it.
-const MARKER_ARRIVAL_LIMIT: Duration = Duration::from_secs(60);
+/// - `independent_io_reaches_the_second_operation_before_the_first_unblocks`
+///   reads nothing from the child's stdout until the marker has arrived, so the
+///   child's one-megabyte write to that pipe is blocked for the whole wait and a
+///   marker byte at any point in it is proof that the second operation ran while
+///   the first was outstanding.
+/// - `reused_output_progress_preserves_ac_around_an_independent_rejected_open`
+///   fails when C is serialized behind an open that does not come back, and
+///   then `AC` never appears at all.
+///
+/// The bound is therefore a liveness cut-off in both, and making it generous
+/// weakens neither assertion.
+///
+/// It used to be three seconds and five, which are inside the scheduling delay
+/// a loaded host produces: each case spawns a child and waits for one of its
+/// threads to be scheduled, and between them they failed on five separate gate
+/// runs across three people, every one on a host running more than one compiler
+/// gate at once, while passing every time in isolation — the second of them in
+/// under a second, three orders of magnitude inside its own bound. Each such
+/// failure reported a regression that had not happened. Sixty seconds is far
+/// outside any scheduling delay and still bounded, so the regression each case
+/// exists to catch fails the run rather than hanging it.
+const PROBE_OUTPUT_LIMIT: Duration = Duration::from_secs(60);
 
 #[test]
 fn independent_io_reaches_the_second_operation_before_the_first_unblocks() {
@@ -755,7 +763,7 @@ fn independent_io_reaches_the_second_operation_before_the_first_unblocks() {
         });
 
         let (read, marker) = receive
-            .recv_timeout(MARKER_ARRIVAL_LIMIT)
+            .recv_timeout(PROBE_OUTPUT_LIMIT)
             .unwrap_or_else(|_| {
                 let _ = child.kill();
                 panic!(
@@ -846,7 +854,7 @@ fn reused_output_progress_preserves_ac_around_an_independent_rejected_open() {
         let _ = send.send((read, observed));
     });
     let (read, observed) = receive
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(PROBE_OUTPUT_LIMIT)
         .unwrap_or_else(|_| {
             let _ = child.kill();
             panic!("C(out) waited for the independent rejected B(open)")
