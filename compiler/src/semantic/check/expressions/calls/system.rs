@@ -193,11 +193,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if operation.regions.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::type_mismatch(format!("{} written region arguments", operation.regions.len()), "no type-argument list"));
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::type_mismatch(crate::semantic::written_count(operation.regions.len(), "region argument"), "no type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if arguments.len() != operation.regions.len() {
-            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::type_mismatch(format!("{} written region arguments", operation.regions.len()), format!("{} written arguments", arguments.len())));
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::type_mismatch(crate::semantic::written_count(operation.regions.len(), "region argument"), crate::semantic::written_count(arguments.len(), "argument")));
         }
         arguments
             .into_iter()

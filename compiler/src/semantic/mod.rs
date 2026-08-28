@@ -1162,6 +1162,19 @@ pub enum SemanticIssueKind {
     UndischargedContractLaw,
 }
 
+/// A written-argument count and the noun it agrees with, as `1 written type
+/// argument` or `2 written type arguments`.
+///
+/// A diagnostic a writer reads is prose, and "1 written region arguments" is
+/// the kind of sentence that makes a reader doubt the rest of it.
+pub(crate) fn written_count(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("{count} written {noun}")
+    } else {
+        format!("{count} written {noun}s")
+    }
+}
+
 impl SemanticIssueKind {
     /// One [TYPE-5] disagreement, in the spellings the source uses.
     ///

@@ -373,7 +373,7 @@ fn a_break_after_the_submission_denies() {
     let denial = denied(source, "main", 2);
     let StagedDenial::ExitInRemainder {
         edge,
-        statement,
+        ref statement,
         selected_by_submission,
     } = denial
     else {
@@ -390,6 +390,14 @@ fn a_break_after_the_submission_denies() {
     // statement's own edge, so the judgment does not claim the submission's
     // outcome selects it.
     assert!(!selected_by_submission);
+    // The remedy names the hoist and then says plainly where the hoist is not
+    // available. The verification writer of 2026-08-28 met the hoist advice on
+    // a read-to-EOF loop whose only break is selected by the read's own
+    // `ReadEnd` outcome, and no rewrite of that loop can take it.
+    assert_eq!(
+        denial.writer_form(),
+        "take every early return, break, or propagate in the prologue, before the body's first I/O submission. Where the exit is selected by the may-suspend call's own outcome — a read-to-EOF loop's `ReadEnd` break is — it cannot be taken before the submission and PAR-3 cannot stage that loop as written: the shapes staged today are a fixed-trip bounded loop and a per-file loop over names, and one file's chunk loop stays sequential"
+    );
 }
 
 /// A `give` delivering to an initializer written *outside* the loop leaves it,
@@ -1484,7 +1492,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let denial = denied(source, "scan_all", 2);
     let StagedDenial::ExitInRemainder {
         edge,
-        statement,
+        ref statement,
         selected_by_submission,
     } = denial
     else {
@@ -1499,6 +1507,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     // submission's own outcome: no rewrite takes it before the submission, and
     // the remedy has to say so rather than repeat the hoist advice.
     assert!(selected_by_submission);
+    assert_eq!(
+        denial.writer_form(),
+        "PAR-3 cannot stage this loop as written: the submission's own outcome selects this edge, so no rewrite takes it before the submission. The shapes staged today are a fixed-trip bounded loop and a per-file loop over names; one file's chunk loop stays sequential"
+    );
 }
 
 /// The granted half: a `propagate` written *before* the cut leaves from the

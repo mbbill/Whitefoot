@@ -523,7 +523,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if signature.region_parameters.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::type_mismatch(format!("{} written region arguments", signature.region_parameters.len()), "no type-argument list"));
+            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::type_mismatch(crate::semantic::written_count(signature.region_parameters.len(), "region argument"), "no type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let generic_count = signature.substitution.len();
@@ -531,7 +531,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .checked_add(signature.region_parameters.len())
             .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         if arguments.len() != expected {
-            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::type_mismatch(format!("{expected} written type and region arguments"), format!("{} written arguments", arguments.len())));
+            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::type_mismatch(crate::semantic::written_count(expected, "type and region argument"), crate::semantic::written_count(arguments.len(), "argument")));
         }
         arguments
             .into_iter()

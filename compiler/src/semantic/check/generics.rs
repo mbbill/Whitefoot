@@ -1921,13 +1921,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(GenericSubstitution::default());
         }
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch(format!("{} written type arguments", parameters.len()), "no type-argument list"));
+            return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch(crate::semantic::written_count(parameters.len(), "type argument"), "no type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if (allow_trailing_regions && arguments.len() < parameters.len())
             || (!allow_trailing_regions && arguments.len() != parameters.len())
         {
-            return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch(format!("{} written type arguments", parameters.len()), format!("{} written type arguments", arguments.len())));
+            return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch(crate::semantic::written_count(parameters.len(), "type argument"), crate::semantic::written_count(arguments.len(), "type argument")));
         }
         for argument in arguments.iter().take(parameters.len()) {
             self.reject_region_bearing_generic_argument(*argument, caller)?;

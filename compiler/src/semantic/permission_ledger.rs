@@ -124,7 +124,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     // order of the walk that found them, which the text alone would not
     // preserve.
     const ONLY: u32 = 0;
-    let mut entries = Vec::new();
+    let mut entries: Vec<Entry> = Vec::new();
     for permissions in &metadata.functions {
         // A loop whose body performs I/O is exactly a loop the staged judgment
         // reached, because the staged cut is that body's first may-suspend
@@ -148,7 +148,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 PermissionVerdict::Denied(_) => "denied",
             };
             let detail = detail(&pair.verdict, source)?;
-            entries.push((
+            entries.push(Entry::new(
                 display_path.clone(),
                 line,
                 PAIR,
@@ -170,7 +170,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 .map(|site| site.callee_name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            entries.push((
+            entries.push(Entry::new(
                 display_path.clone(),
                 line,
                 CHAIN,
@@ -190,7 +190,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 "denied"
             };
             let detail = loop_detail(judged, source)?;
-            entries.push((
+            entries.push(Entry::new(
                 display_path.clone(),
                 line,
                 LOOP,
@@ -205,7 +205,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 .verdict
                 .denied_condition()
                 .expect("only a refused loop carries split advice");
-            entries.push((
+            entries.push(Entry::new(
                 display_path.clone(),
                 line,
                 HINT,
@@ -229,7 +229,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 "denied"
             };
             let detail = staged_detail(judged, source)?;
-            entries.push((
+            entries.push(Entry::new(
                 display_path.clone(),
                 line,
                 STAGE,
@@ -242,7 +242,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             ));
             for (ordinal, place) in judged.dispositions.iter().enumerate() {
                 let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-                entries.push((
+                entries.push(Entry::new(
                     display_path.clone(),
                     line,
                     PLACE,
@@ -267,33 +267,74 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             }
         }
     }
+    collapse(&mut entries);
+    Ok(entries
+        .into_iter()
+        .map(|entry| LedgerLine {
+            text: entry.text,
+            notice: entry.notice,
+        })
+        .collect())
+}
+
+/// One rendered line before collapsing, with the keys that order it and the
+/// keys that identify it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Entry {
+    display_path: String,
+    line: u64,
+    kind: u8,
+    ordinal: u32,
+    text: String,
+    notice: bool,
+}
+
+impl Entry {
+    fn new(
+        display_path: String,
+        line: u64,
+        kind: u8,
+        ordinal: u32,
+        text: String,
+        notice: bool,
+    ) -> Self {
+        Self {
+            display_path,
+            line,
+            kind,
+            ordinal,
+            text,
+            notice,
+        }
+    }
+}
+
+/// Sorts the rendered lines into source order and collapses the duplicates one
+/// generic's several instances produce.
+///
+/// The rendered text carries the path, the line, and the kind, so ordinal and
+/// text are the whole reported identity. The notice flag is not part of it: one
+/// source loop of a generic monomorphized twice can render one `loop` line
+/// whose staged sibling was denied in one instance and granted in the other,
+/// and the two entries then differ only in the flag. Dropping either silently
+/// would make the default channel depend on table order, so the surviving line
+/// carries the flag when any instance raised it.
+fn collapse(entries: &mut Vec<Entry>) {
     entries.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then(left.1.cmp(&right.1))
-            .then(left.2.cmp(&right.2))
-            .then(left.3.cmp(&right.3))
-            .then(left.4.cmp(&right.4))
+        left.display_path
+            .cmp(&right.display_path)
+            .then(left.line.cmp(&right.line))
+            .then(left.kind.cmp(&right.kind))
+            .then(left.ordinal.cmp(&right.ordinal))
+            .then(left.text.cmp(&right.text))
     });
-    // The rendered text carries the path, the line, and the kind, so ordinal
-    // and text are the whole reported identity. The notice flag is not part of
-    // it: one source loop of a generic monomorphized twice can render one
-    // `loop` line whose staged sibling was denied in one instance and granted
-    // in the other, and the two entries then differ only in the flag. Dropping
-    // one of them silently would make the default channel depend on table
-    // order, so the surviving line carries the flag when any instance raised
-    // it.
-    entries.dedup_by(|left, right| {
-        let same = left.3 == right.3 && left.4 == right.4;
+    entries.dedup_by(|removed, retained| {
+        let same = removed.ordinal == retained.ordinal && removed.text == retained.text;
         if same {
-            right.5 |= left.5;
+            retained.notice |= removed.notice;
         }
         same
     });
-    Ok(entries
-        .into_iter()
-        .map(|(.., text, notice)| LedgerLine { text, notice })
-        .collect())
 }
 
 /// The part of the line that states the outcome.
@@ -571,5 +612,65 @@ fn statement_name(side: PairSide) -> String {
         PairSide::First => "s1".to_owned(),
         PairSide::Second => "s2".to_owned(),
         PairSide::Between(index) => format!("interposed statement {}", index + 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Entry, collapse};
+
+    /// One source line reported by two instances of one generic keeps the
+    /// notice either instance raised.
+    ///
+    /// The two entries differ in nothing a reader can see — same path, same
+    /// line, same kind, same text — so the ledger reports one site, which is
+    /// what the dedup is for. The notice flag is not part of that text, and a
+    /// `loop` line's flag depends on the *staged* verdict of the same
+    /// instance: a generic whose staged sibling is denied in one instance and
+    /// granted in another renders exactly this pair. Keeping whichever
+    /// happened to sort first would make the default channel depend on the
+    /// order of the permission table.
+    #[test]
+    fn a_collapsed_line_keeps_the_notice_either_instance_raised() {
+        for (first, second) in [(false, true), (true, false)] {
+            let mut entries = vec![
+                Entry::new("walk.wf".to_owned(), 5, 2, 0, "PAR loop  denied".to_owned(), first),
+                Entry::new("walk.wf".to_owned(), 5, 2, 0, "PAR loop  denied".to_owned(), second),
+            ];
+            collapse(&mut entries);
+            assert_eq!(entries.len(), 1, "{entries:?}");
+            assert!(entries[0].notice, "{entries:?}");
+        }
+    }
+
+    /// Two lines that differ in their text stay two lines, and a flagged one
+    /// does not lend its flag to a neighbour.
+    #[test]
+    fn collapsing_keeps_two_distinct_lines_and_their_own_flags() {
+        let mut entries = vec![
+            Entry::new("walk.wf".to_owned(), 5, 5, 1, "PAR place  read-only".to_owned(), false),
+            Entry::new("walk.wf".to_owned(), 5, 5, 0, "PAR place  denied".to_owned(), true),
+        ];
+        collapse(&mut entries);
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        // Source order: the ordinal carries the order of the walk that found
+        // the rows, so the denied row at ordinal 0 comes first.
+        assert!(entries[0].notice, "{entries:?}");
+        assert!(!entries[1].notice, "{entries:?}");
+    }
+
+    /// One rendered identity repeated at two different ordinals is two rows.
+    ///
+    /// A disposition table holds one row per place and two different places
+    /// can render identically, so the position is part of the key: collapsing
+    /// those would print fewer rows than the `stage` line above them counts.
+    #[test]
+    fn collapsing_keeps_one_row_per_position_of_a_disposition_table() {
+        let mut entries = vec![
+            Entry::new("walk.wf".to_owned(), 5, 5, 0, "PAR place  read-only  n".to_owned(), false),
+            Entry::new("walk.wf".to_owned(), 5, 5, 1, "PAR place  read-only  n".to_owned(), false),
+        ];
+        collapse(&mut entries);
+        assert_eq!(entries.len(), 2, "{entries:?}");
     }
 }

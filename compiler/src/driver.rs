@@ -2453,4 +2453,375 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Batch 0100: the payloads the verification re-writer of 2026-08-28 asked
+    // for, each pinned by the exact rendered text a writer reads. A change to
+    // any of these sentences is a change to what the compiler teaches, and has
+    // to be made here on purpose.
+    // -----------------------------------------------------------------------
+
+    /// The numbered rule and the rendered detail of one compilation that must
+    /// fail, in the shape `whitefootc` prints them.
+    fn rejection(name: &str, source: &[u8]) -> String {
+        let failure = compile(
+            &[SourceInput::new(name, source)],
+            CompilerLimits::default(),
+        )
+        .expect_err("this fixture exists to be rejected");
+        format!(
+            "[{}] {}",
+            failure.rule_id().unwrap_or("no rule"),
+            failure.detail()
+        )
+    }
+
+    /// [GRAM-9] names the binding form its grammar position admits.
+    ///
+    /// The rule's own repair is "bind the computed value with a preceding
+    /// `let`", and inside a `contract_block` that repair is wrong: the block
+    /// has no `let_stmt` and its binding form is `define IDENT = expr;`. The
+    /// position is read from the open production frames, never from the text.
+    #[test]
+    fn a_forbidden_atom_names_the_binding_form_its_grammar_position_admits() {
+        let body = rejection(
+            "body.wf",
+            br#"fn double(value: own u64) -> out: own u64 pure {
+  return value +wrap value;
+}
+
+fn helper(value: own u64) -> out: own u64 pure {
+  let a = double(value: double(value: value));
+  return a;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(body.contains("[GRAM-9]"), "{body}");
+        assert!(
+            body.contains(
+                r#"mechanical_fix: "a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`""#
+            ),
+            "{body}"
+        );
+
+        let contract = rejection(
+            "contract.wf",
+            br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+  requires ile(end, len(deref(data)));
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(contract.contains("[GRAM-9]"), "{contract}");
+        assert!(
+            contract.contains(
+                r#"mechanical_fix: "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`""#
+            ),
+            "{contract}"
+        );
+    }
+
+    /// The `define` route the contract-block repair names is accepted.
+    ///
+    /// A repair the compiler refuses is worse than no repair, so the two are
+    /// pinned together: the rejection above and the program below differ only
+    /// by taking it.
+    #[test]
+    fn the_contract_block_repair_gram9_names_is_accepted() {
+        compile(
+            &[SourceInput::new(
+                "repaired.wf",
+                br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
+  define room = len(deref(data));
+  requires ile(end, room);
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect("the repair GRAM-9 names must be accepted");
+    }
+
+    /// [EFF-1] states the condition the row failed and the row that repairs it.
+    ///
+    /// `writes(cwd), writes(out)` is two occurrences of one category, which the
+    /// rule forbids in one sentence the diagnostic did not carry.
+    #[test]
+    fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
+        let detail = rejection(
+            "row.wf",
+            br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(cwd, out), writes(cwd), writes(out) {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[EFF-1]"), "{detail}");
+        assert!(
+            detail.contains(
+                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps""#
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps""#
+            ),
+            "{detail}"
+        );
+    }
+
+    /// [EFF-2] publishes both rows and the exact difference between them.
+    ///
+    /// Four blind-writer rounds met a bare `EffectMismatch`: the writer was
+    /// told two rows differ and had to derive both sides by hand.
+    #[test]
+    fn an_effect_mismatch_publishes_both_rows_and_the_exact_difference() {
+        let detail = rejection(
+            "effects.wf",
+            br#"fn count['b](data: &'b buffer<u8>) -> lines: own u64 reads(data) {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[EFF-2]"), "{detail}");
+        assert!(detail.contains(r#"expected_row: "pure""#), "{detail}");
+        assert!(detail.contains(r#"found_row: "reads(data)""#), "{detail}");
+        assert!(detail.contains("missing: []"), "{detail}");
+        assert!(detail.contains(r#"extra: ["reads(data)"]"#), "{detail}");
+        assert!(
+            detail.contains(
+                r#"mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions""#
+            ),
+            "{detail}"
+        );
+    }
+
+    /// [TYPE-5] publishes the two sides it compared.
+    #[test]
+    fn a_type_mismatch_publishes_the_type_required_and_the_type_written() {
+        let detail = rejection(
+            "types.wf",
+            br#"command fn main() -> status: own ExitStatus pure {
+  let a = 1_u64;
+  let b = 2_u32;
+  let c = ile(a, b);
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[TYPE-5]"), "{detail}");
+        assert!(
+            detail.contains(r#"TypeMismatch { expected: "own u64", found: "own u32" }"#),
+            "{detail}"
+        );
+    }
+
+    /// A generic form written with no type arguments names both spellings that
+    /// carry them.
+    ///
+    /// A writer meeting this at `Ok(value: v)` sees a constructor name and no
+    /// type anywhere, so naming the type spelling alone would not locate the
+    /// repair.
+    #[test]
+    fn a_generic_form_without_type_arguments_names_both_spellings() {
+        let detail = rejection(
+            "result.wf",
+            br#"fn helper(value: own u8) -> out: own Result<u8, unit> pure {
+  return Ok(value: value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[TYPE-5]"), "{detail}");
+        assert!(
+            detail.contains(
+                r#"expected: "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`", found: "Result with no written type-argument list""#
+            ),
+            "{detail}"
+        );
+        // And the spelling it names is accepted.
+        compile(
+            &[SourceInput::new(
+                "result-repaired.wf",
+                br#"fn helper(value: own u8) -> out: own Result<u8, unit> pure {
+  return Ok<u8, unit>(value: value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect("the constructor spelling TYPE-5 names must be accepted");
+    }
+
+    /// [OWN-10] names the region, the binder, and where a region it admits has
+    /// to be introduced.
+    #[test]
+    fn a_borrow_lifetime_rejection_names_the_region_the_binder_and_the_repair() {
+        let detail = rejection(
+            "lifetime.wf",
+            br#"fn sum['r](data: &'r buffer<u8>) -> out: own u64 reads(data) {
+  return len(deref(data));
+}
+
+fn caller['r](anchor: &'r buffer<u8>) -> out: own u64 allocates(heap) {
+  let local = buffer_new(4_u64, 0_u8);
+  return sum<'r>(data: &'r local);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[OWN-10]"), "{detail}");
+        assert!(
+            detail.contains(
+                r#"InvalidBorrowLifetime { region: "'r", binder: "local", mechanical_fix: "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage." }"#
+            ),
+            "{detail}"
+        );
+    }
+
+    /// [FORM-2] quotes the line its offending bytes are in.
+    ///
+    /// The coordinate is the trivia gap between two terminals, and a gap that
+    /// carries a line break starts at the end of the line *before* the one the
+    /// writer must edit: the verification writer was shown the enclosing item's
+    /// header with a byte offset two lines further down.
+    #[test]
+    fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
+        let detail = rejection(
+            "indent.wf",
+            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        );
+        assert!(detail.contains("[FORM-2]"), "{detail}");
+        assert!(
+            detail.contains(r#"at indent.wf:3:1 in line "    let b = a +wrap 2_u64;""#),
+            "{detail}"
+        );
+
+        // A gap that stays inside one line is unchanged: the reader is sent to
+        // the first byte of the gap, which is where the wrong bytes begin.
+        let inline = rejection(
+            "spacing.wf",
+            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        );
+        assert!(
+            inline.contains(r#"at spacing.wf:3:12 in line "  let b = a  +wrap 2_u64;""#),
+            "{inline}"
+        );
+    }
+
+    /// One output stream written per iteration is offered the remedy that
+    /// works, and the program that takes it is granted.
+    ///
+    /// Replication is not advice a writer can take for stdout, and "leave this
+    /// loop sequential" was the only other half of the sentence. The remedy
+    /// that works is to take the write out of the loop: the two programs below
+    /// differ in that and in nothing else.
+    #[test]
+    fn a_one_position_resource_is_offered_the_hoist_that_works() {
+        const EMIT: &str = r#"fn emit['o](out: &uniq 'o Output, value: own u8) -> written: own u64 reads(out), writes(out), allocates(heap) {
+  let one = buffer_new(1_u64, value);
+  let sent = 0_u64;
+  region 'w {
+    match write_once<'w, 'w>(output: &uniq 'w deref(out), source: &'w one, start: 0_u64, end: 1_u64) {
+      Ok(value: n) => {
+        set sent = n;
+      }
+      Err(error: e) => {
+      }
+    }
+  }
+  return sent;
+}
+"#;
+        let per_iteration = format!(
+            "{EMIT}
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+  for @scan index in 0_u64..4_u64 {{
+    region 'p {{
+      let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
+    }}
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let notices = notices_of("stream.wf", per_iteration.as_bytes());
+        let staged = notices
+            .iter()
+            .find(|notice| notice.starts_with("PAR stage"))
+            .unwrap_or_else(|| panic!("the per-iteration write must deny the stage: {notices:?}"));
+        assert!(
+            staged.contains(
+                "instead, give each iteration its own resource; or, where the body only publishes \
+                 to that storage — an output stream is the pointed case — hoist the per-iteration \
+                 write out of the loop, folding a total in the body and writing it once after the \
+                 loop; or leave this loop sequential, because storage that carries one position \
+                 cannot be held by two iterations at once"
+            ),
+            "{staged}"
+        );
+
+        // The same program with the write hoisted out: the loop is granted and
+        // the default channel says nothing about it.
+        let hoisted = format!(
+            "{EMIT}
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {{
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {{
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {{
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {{
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {{
+          Ok(value: handle) => {{
+            set total = total +wrap 1_u64;
+          }}
+          Err(error: problem) => {{
+          }}
+        }}
+      }}
+    }}
+  }}
+  region 'p {{
+    let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert!(
+            notices_of("hoisted-stream.wf", hoisted.as_bytes()).is_empty(),
+            "the hoisted form is what the remedy names, so it must be granted"
+        );
+    }
+
 }

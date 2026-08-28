@@ -328,21 +328,6 @@ fn assert_rule_kind(source: &[u8], rule: SemanticRule, kind: fn(&SemanticIssueKi
     });
 }
 
-/// [`assert_rule_kind`] under the reborrow extension [OWN-6, OWN-14].
-fn assert_rule_kind_extension(
-    source: &[u8],
-    rule: SemanticRule,
-    kind: fn(&SemanticIssueKind) -> bool,
-) {
-    with_semantics_extension(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("expected {rule:?} with a matching kind, got {outcome:?}");
-        };
-        assert_eq!(issue.rule(), rule);
-        assert!(kind(issue.kind()), "unexpected kind {:?}", issue.kind());
-    });
-}
-
 /// [`assert_rule`] under the reborrow extension [OWN-6, OWN-14].
 fn assert_rule_extension(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     with_semantics_extension(source, |outcome| {
