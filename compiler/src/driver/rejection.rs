@@ -42,7 +42,28 @@ impl<Issue> Located<Issue> {
     /// empty rather than failing the compilation: this is presentation, and a
     /// stage that already has a verdict must still deliver it.
     pub(super) fn new(issue: Issue, bundle: &SourceBundle, coordinate: SyntaxCoordinate) -> Self {
-        let (at, source_line) = context(bundle, coordinate)
+        Self::at(issue, bundle, coordinate, Anchor::Start)
+    }
+
+    /// Wraps one rejection whose coordinate is a trivia gap between two
+    /// terminals rather than a written construct.
+    ///
+    /// A gap that carries a line break begins at the end of the line before
+    /// the one the writer must edit, so anchoring at its start quoted the
+    /// enclosing item's header while the offending bytes sat two lines down.
+    /// The line to quote is the one the gap ends in, and the column is where
+    /// the gap's own bytes begin on that line.
+    pub(super) fn in_gap(issue: Issue, bundle: &SourceBundle, coordinate: SyntaxCoordinate) -> Self {
+        Self::at(issue, bundle, coordinate, Anchor::LastLineOfGap)
+    }
+
+    fn at(
+        issue: Issue,
+        bundle: &SourceBundle,
+        coordinate: SyntaxCoordinate,
+        anchor: Anchor,
+    ) -> Self {
+        let (at, source_line) = context(bundle, coordinate, anchor)
             .unwrap_or_else(|| ("an unresolved coordinate".to_owned(), String::new()));
         Self {
             issue,
@@ -52,17 +73,41 @@ impl<Issue> Located<Issue> {
     }
 }
 
+/// Which byte of a coordinate the reader is sent to.
+#[derive(Clone, Copy)]
+enum Anchor {
+    /// The coordinate's first byte: a written construct starts where it starts.
+    Start,
+    /// The first byte of the gap that lies on the line the gap ends in.
+    LastLineOfGap,
+}
+
 /// The `path:line:column` of one coordinate and the whole source line holding
 /// it.
 ///
 /// The path is the display path, so a rejection names the file the caller
 /// named. Line and column are one-based, counted in bytes: the language's
 /// source is ASCII [FORM-3], so a byte column is a column.
-fn context(bundle: &SourceBundle, coordinate: SyntaxCoordinate) -> Option<(String, String)> {
+fn context(
+    bundle: &SourceBundle,
+    coordinate: SyntaxCoordinate,
+    anchor: Anchor,
+) -> Option<(String, String)> {
     let file = bundle.file(coordinate.source())?;
     let bytes = file.bytes();
     let start = usize::try_from(coordinate.start().value()).ok()?;
     let start = start.min(bytes.len());
+    let start = match anchor {
+        Anchor::Start => start,
+        Anchor::LastLineOfGap => {
+            let end = usize::try_from(coordinate.end().value()).ok()?.min(bytes.len());
+            let final_line = bytes[..end]
+                .iter()
+                .rposition(|byte| *byte == b'\n')
+                .map_or(0, |index| index.saturating_add(1));
+            start.max(final_line)
+        }
+    };
     let line_start = bytes[..start]
         .iter()
         .rposition(|byte| *byte == b'\n')

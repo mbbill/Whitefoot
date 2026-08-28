@@ -104,16 +104,14 @@ const OWN10_LOCAL_STORAGE: &str = "a borrow of local storage names a region intr
 /// at the closing brace — so `region 'r { let permit = reserve(...); match
 /// open(permit: move permit, ...) { ... } }`, which is the shape every
 /// recursive walker wants, is rejected and cannot be repaired by shortening
-/// the region. The blind-writer trial of 2026-08-28 recorded this as the one
-/// rule a senior systems programmer could not apply from the specification
-/// text; they recovered the helper form by reading an example program. Both
-/// admitted routes are named here, in the vocabulary `docs/patterns.md` P4
-/// uses for them.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, \
-     and a value that statement binds dies at the region's end; either move the borrow holder \
-     into a helper that takes it as `&uniq`, `move`s it there, and returns the derived state \
-     (P4 linear threading), or bind the reborrowed result with `replace`: \
-     `let stale = replace target = call(...);`";
+/// the region.
+///
+/// The 0099 text named two routes and neither reached a working walker: the
+/// `replace` route cannot commit where the call consumed the target's root,
+/// which is exactly what `move permit` does, and the helper route is only the
+/// first third of the working idiom. `tests/programs/dir_walk.wf` pairs the
+/// helper with two more parts, and all three are named here.
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
 
 /// OWN-6's receiver condition: which calls admit a reborrow argument at all.
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \

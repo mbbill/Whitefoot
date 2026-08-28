@@ -483,11 +483,14 @@ fn compile_reporting(
     let canonical = match audit_canonical(finalized, limits.canonical) {
         CanonicalOutcome::Complete(complete) => complete,
         CanonicalOutcome::SourceIssue(issue) => {
+            // FORM-2's coordinate is the trivia gap between two terminals, not
+            // a written construct, so the reader is anchored inside the gap
+            // rather than at its first byte.
             let coordinate = issue.location().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::CanonicalSource,
                 issue.rule().id(),
-                Located::new(issue, classified.source_bundle(), coordinate),
+                Located::in_gap(issue, classified.source_bundle(), coordinate),
             ));
         }
         CanonicalOutcome::ResourceFailure(failure) => {
