@@ -390,11 +390,12 @@ copy rather than a fact to rediscover:
   helper — `fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, …)` —
   costs the loop its pipeline, because the callee's own retained loan is what
   the staged judgment then sees. Two programs identical except for that
-  factoring:
+  factoring (‹loop› stands for the writer's own file and line; the verdict text
+  after it is byte-exact):
 
   ```text
-  inline  PAR stage  probes/inline.wf:17  for  permitted  staged at open_file<'f, 'f>(…); 5 places classified
-  helper  PAR stage  probes/helper.wf:26  for  denied     condition 3: a may-suspend call retains a borrow
+  inline  PAR stage  ‹loop›             for  permitted  staged at open_file<'f, 'f>(…); 5 places classified
+  helper  PAR stage  ‹loop›             for  denied     condition 3: a may-suspend call retains a borrow
                      past its own submission on storage the body writes and the iteration does not
                      introduce; instead, give each iteration its own resource; or, where the body only
                      publishes to that storage — an output stream is the pointed case — hoist the
@@ -408,14 +409,15 @@ copy rather than a fact to rediscover:
   permit = …; match open_… }`, because that region holds two statements. The
   two rules genuinely conflict there, and the resolution is that only one of
   the two forms is a program at all. Which form to write is decided by how the
-  loop holds its factory, and the three measured outcomes are:
+  loop holds its factory, and the three measured outcomes are (‹loop› again
+  stands for the writer's own file and line):
 
   ```text
-  owned factory, inline    PAR stage  probes/inline_owned.wf:3   for  permitted  staged at
+  owned factory, inline    PAR stage  ‹loop›                   for  permitted  staged at
                            open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name,
                            start: 0_u64, end: 4_u64); 4 places classified
   borrowed factory, inline [OWN-6] InvalidChildReborrow — the program does not compile
-  borrowed factory, helper PAR stage  probes/walk_helper.wf:14   for  denied     condition 3: a
+  borrowed factory, helper PAR stage  ‹loop›                   for  denied     condition 3: a
                            may-suspend call retains a borrow past its own submission on storage the
                            body writes and the iteration does not introduce; … at
                            &uniq 'open deref(factory)
