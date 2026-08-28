@@ -1150,8 +1150,8 @@ against `N.pool8`'s 1481.78, `N.uring32`'s 1441.72 and its own sequential
 build's 3469.10 — 2.37 times faster than the sequential build, 1.1 per cent
 faster than an eight-thread native pool, and 1.6 per cent behind a
 hand-written 32-deep io_uring pipeline. That is the fourth reading of that row
-and the second where the completion program is level with or ahead of the
-native pool.
+and the third of the four where the completion program is level with or
+ahead of the native pool.
 
 Its `bench-linux` job is the many-files draw folded into the paragraph above.
 
