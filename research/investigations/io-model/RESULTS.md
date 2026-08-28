@@ -1193,7 +1193,8 @@ warm  4 KiB  C/S           2.88x       1.028x    <= 1.00x     2.8% over
 cold 64 KiB  C/N.pool8     1.58x       1.394x    <= 1.10x     no
 cold  4 KiB  C/N.pool8     2.07x       1.283x    <= 1.10x     no
 many-files   C/S           1.20x       1.022x    <= 1.00x     2.2% over
-LINUX_ROW
+Linux warm 4 KiB C/S      0.94x       1.055x    no regress   see below
+Linux warm 64 KiB C/S     0.98x       1.026x    no regress   see below
 ```
 
 The two warm rows and the many-files row land within three per cent of a bar
@@ -1238,7 +1239,94 @@ operation count rather than the core count; and a positioned read is executed
 where it was stated when the adapter holds no helper, has nothing queued and
 has measured its operations as not waiting.
 
-LINUX_SECTION
+### Linux runner, read-heavy — a draw that does not reproduce
+
+`bench-linux-read` in the same run, on `ubuntu-24.04`: kernel
+`6.17.0-1022-azure`, 4 CPUs, INTEL(R) XEON(R) PLATINUM 8573C, 16 GB, tree on
+`nvme0n1p1` (ext4, non-rotational), `io_uring_disabled=0`, load 0.48 at start.
+Nine interleaved passes, medians in milliseconds, with the observed spread
+because this draw needs it.
+
+```text
+                    cold 64 KiB              cold 4 KiB
+line             median     min     max   median     min      max
+N.direct        6158.09 2781.77 7661.14 11356.66 6661.56 12219.16
+N.pool8         1348.85 1167.15 3037.12  1435.03 1288.90  1628.03
+N.uring32       1414.28 1116.78 1668.42  1268.13 1202.11  2446.87
+S.narrow        4258.41 2478.62 11054.60 8454.51 6171.66 15366.55
+S.wide8         4628.62 3645.02 8092.69  8973.99 5298.00 14097.85
+C.narrow.default 5579.62 2748.91 9898.19 11129.62 6956.06 12735.69
+C.wide8.default 3413.10 1706.37 4882.94  1514.79 1341.48  3200.83
+C.wide8.h0      2394.95 1436.40 4715.79  2655.82 1954.60  3487.78
+C.wide8.h8      3548.17 1349.15 4765.59  2460.87 1372.74  3495.35
+
+                    warm 64 KiB              warm 4 KiB
+line             median     min     max   median     min      max
+N.direct         243.84  241.55  253.97    20.95   18.89    22.05
+N.pool8           80.72   78.90   83.64     8.51    7.53     8.70
+S.narrow         234.92  227.47  244.60    47.90   45.71    51.88
+S.wide8          284.31  274.11  298.30    50.89   48.80    56.93
+C.narrow.default 234.20  228.59  242.84    50.36   48.90    56.60
+C.wide8.default  291.74  280.70  294.55    53.69   53.38    60.63
+C.wide8.h0       281.88  276.57  292.72    53.00   51.56    55.66
+C.wide8.h8       282.55  276.19  289.80    53.64   51.38    57.56
+```
+
+**The cold half of this draw cannot be read.** `N.direct` at 64 KiB spans 2781
+to 7661 ms around a median of 6158, and `S.narrow` spans 2478 to 11054 — a
+4.5-fold range inside one line, where the batch-0092 Linux tables held every
+line within four per cent of its own median. A ranking taken from lines that
+wide is a ranking of the runner. The interleaved schedule protects against
+monotonic drift, not against this.
+
+**The warm half is tight, and it does not reproduce the two earlier Linux
+readings.** Warm `C.wide8.default` over `S.wide8` is 1.026 at 64 KiB and 1.055
+at 4 KiB here, where batch 0092 measured 0.982 and 0.941 and the earlier run on
+this branch ([33153717709](https://github.com/mbbill/Whitefoot/actions/runs/33153717709),
+commit `96bb4778`) measured 0.984 and 0.946. On both earlier draws the
+completion build was slightly faster than its own sequential build; on this one
+it is slightly slower.
+
+Two facts bear on whether that is a regression in the runtime.
+
+Against it: the only difference in completion sources between `96bb4778` — the
+commit of the 0.946 reading — and `266acf4f`, measured here, is the removal of
+the `WF_IO_TRACE` stage instrumentation that `96bb4778` still carried. There is
+no drain, submit, publish or policy change between them; `git diff 96bb4778..266acf4f
+-- compiler/src/backend/completion/` is that removal. Removing instrumentation
+does not make a program slower.
+
+For it, or at least not against it: the movement is not confined to the lines
+that state width. `C.narrow.default` over `S.narrow` is 1.051 here against
+1.016 at `96bb4778` and 1.011 at 0092, and the narrow programs state no overlap
+width at all. Whatever moved moved for both, which is what a host difference
+looks like — this draw is a 4-core Xeon 8573C whose warm 4 KiB sequential line
+is 50.89 ms against the previous draw's 83.28 — but it is not proof of one.
+
+**So this section does not claim Linux is unregressed, and it does not claim it
+is regressed.** One draw on different hardware, whose cold half is unusable and
+whose warm half disagrees with two prior draws that agreed with each other, is
+not a reading of the bar. The correctness evidence is separate and is not in
+doubt: `io-hosts` `completion-linux` is green on this commit, including the
+required native io_uring adapter probe and the harness under the address,
+undefined and thread sanitizers. What is owed here is another Linux draw.
+
+### Linux hardware, many files
+
+`bench-linux` in the same run, for comparison with batch 0090's two draws of
+the same job:
+
+```text
+line                 0090 run 1   0090 run 2   this run (33155821397)
+S.wide8                  141.26       110.94                   122.49
+C.wide8.default          147.04       115.97                   129.55
+C/S                       1.041        1.045                    1.058
+```
+
+This one does reproduce: 1.058 against 1.041 and 1.045, on a job whose two
+0090 draws themselves differed by 21 per cent in absolute speed.
+
+
 
 ## Historical C-core results
 

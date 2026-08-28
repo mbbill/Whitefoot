@@ -63,10 +63,15 @@ and the counts that explain them, per operation:
                    warm 4K h0   warm 4K h3   cold 64K h8
 slot probes drained      51.86        32.57         35.69
 join turns                2.08         1.37          1.44
-helper sleeps             0.00         0.42          0.99
+helper sleeps             0.00         0.42          1.00
 helper wakes issued       0.00         1.00          1.00
-parks                     0.00         0.15          0.08
+parks                     0.00         0.15          0.17
 ```
+
+The last column's two right-hand figures were 0.99 and 0.08 in the first draft
+of this record and are corrected here against the artifact: the medians of the
+nine passes are 0.999 helper sleeps and 0.168 parks per operation. Nothing in
+the argument turned on either.
 
 Read it in two halves.
 
@@ -373,6 +378,9 @@ warm  4 KiB  C/S           2.88x       1.028x    <= 1.00x     2.8% over
 cold 64 KiB  C/N.pool8     1.58x       1.394x    <= 1.10x     no
 cold  4 KiB  C/N.pool8     2.07x       1.283x    <= 1.10x     no
 many-files   C/S           1.20x       1.022x    <= 1.00x     2.2% over
+Linux warm 64 C/S         0.98x       1.026x    no regress   unresolved
+Linux warm  4 C/S         0.94x       1.055x    no regress   unresolved
+Linux many   C/S          1.04x       1.058x    no regress   yes
 ```
 
 **The two warm rows and the many-files row land within three per cent of a bar
@@ -405,6 +413,30 @@ against 478.59), where in 0092 the default trailed its own pinned eight-helper
 line by 1.30 and 1.39 times. The policy is no longer the limit; the remaining
 distance to `N.pool8` is. Against its own sequential build the same program is
 2.51 and 2.84 times faster cold, where in 0092 it was 1.73 and 1.58.
+
+**The Linux row is unresolved, and this record does not resolve it.** The
+`bench-linux-read` job in the same run landed on a 4-core Xeon 8573C whose cold
+tables span 2.7 to 4.5 times inside a single line — `S.narrow` cold 64 KiB runs
+2478 to 11054 ms around a median of 4258 — so the cold half of it cannot be
+read at all. Its warm half is tight and disagrees with the two prior Linux
+draws, which agreed with each other: warm `C.wide8` over `S.wide8` is 1.026 and
+1.055 here against 0.982/0.941 in batch 0092 and 0.984/0.946 at `96bb4778`.
+
+The evidence does not settle which it is. Against a runtime regression: the
+only completion-source difference between `96bb4778`, which read 0.946, and
+`266acf4f`, read here, is the removal of the `WF_IO_TRACE` instrumentation, and
+removing instrumentation does not make a program slower. Not against it: the
+same movement appears on `C.narrow.default` over `S.narrow` — 1.051 here
+against 1.016 and 1.011 — and those programs state no overlap width, so
+whatever moved did not move only in the overlap path. The many-files Linux job
+in the same run does reproduce, at 1.058 against 0090's 1.041 and 1.045.
+
+So the honest reading is that one Linux draw on different hardware neither
+confirms nor refutes the no-regression bar, and another draw is owed. What is
+not in doubt is Linux correctness: `io-hosts` `completion-linux` is green on
+this commit, including the required native io_uring adapter probe and the
+harness under the address, undefined and thread sanitizers, and the same
+targets pass in a local Linux container.
 
 The stage-level attribution for the cold miss is in the table at the top of
 this record, in its `cold 64K h8` column and measured on the same runner
@@ -536,6 +568,11 @@ by this batch.
 - **The many-files workload.** It is recorded and it is still slower under C
   than under S. This batch narrowed it and did not close it; the reason is the
   one batch 0092 reached, that a 17 us `openat` is not a wait worth a handoff.
+- **A second Linux read-heavy draw.** The one this batch got is on hardware the
+  earlier draws were not on, its cold half is unusable, and its warm half
+  disagrees with both prior readings. The no-regression half of the bar is
+  therefore recorded as unresolved rather than met, and the next batch touching
+  this path owes a Linux draw before it reads any Linux ratio.
 
 ## Approval classes
 
