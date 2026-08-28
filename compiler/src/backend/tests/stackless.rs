@@ -53,11 +53,23 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 /// How many runs the migration observation below gets.
 ///
-/// Raised from sixteen in batch 0090, when a Linux runner reached zero
-/// migrations over the whole sample and this machine reaches one within a run
-/// or two. The link is now outside the loop, so the wider sample costs runs
-/// rather than compilations.
-const MIGRATION_ATTEMPTS: usize = 96;
+/// A migration is a rare race, not a property that shows up on demand: the
+/// ready frame is claimed by a scheduler lane only if a lane reaches it inside
+/// a window one call wide, before the writer thread resumes it itself. On a
+/// machine with cores to spare — this one, with ten — it happens within a run
+/// or two. On a shared runner it does not: measured across this batch's gate
+/// runs, the three-core macOS runner and the four-core Linux runner each
+/// reached one migration in some gate runs and none across a whole
+/// ninety-six-run sample in others, which puts the rate near one attempt in a
+/// hundred. Ninety-six attempts therefore missed it about half the time, and
+/// each miss was a red gate reporting a scheduler defect that was not there.
+///
+/// A thousand attempts miss a one-in-a-hundred event about once in a thousand
+/// gate runs. The loop stops at the first migration, so the cost is paid only
+/// where the event is rare: measured here at 16 milliseconds a run with the
+/// link outside the loop, so a host that never sees one spends about twenty
+/// seconds and a host that sees one immediately spends none of it.
+const MIGRATION_ATTEMPTS: usize = 1024;
 
 #[test]
 fn may_suspend_tail_wrappers_release_the_writer_stack_and_resume_on_a_scheduler_lane() {

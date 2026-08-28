@@ -612,11 +612,16 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
     }
     identical(&runs).expect("a captured, xor-folded split must not move one byte");
 
-    let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
-    assert!(
-        granted > 0,
-        "the comparison above overlapped nothing in {GRANT_RUNS} runs"
-    );
+    // Eight lanes need eight cores to show a steal, which is the same limit
+    // the repeat above already carries; on a smaller host the zero is the
+    // host's and this says so instead of reporting the lowering.
+    if super::parallel::a_steal_is_observable(8) {
+        let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
+        assert!(
+            granted > 0,
+            "the comparison above overlapped nothing in {GRANT_RUNS} runs"
+        );
+    }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -1090,12 +1095,14 @@ fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
     // whole table would still pass against seventeen sequential folds — the
     // control is direct, since narrowing [`COMBINE_SPAN`] to a hundred takes
     // this program's grant count to zero in every run.
-    let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
-    assert!(
-        granted > 0,
-        "no row's range was cut in {GRANT_RUNS} runs, so the comparisons above \
-         are between two sequential folds"
-    );
+    if super::parallel::a_steal_is_observable(8) {
+        let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
+        assert!(
+            granted > 0,
+            "no row's range was cut in {GRANT_RUNS} runs, so the comparisons above \
+             are between two sequential folds"
+        );
+    }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }

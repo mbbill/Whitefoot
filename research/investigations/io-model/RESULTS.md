@@ -427,12 +427,16 @@ local disk (`ext4`). Nine recorded runs after two warm-ups, medians with the
 observed spread, because a shared runner is noisy and the reading has to carry
 its own error bars.
 
-Two runs on two separately provisioned runners, printed side by side below.
-They differ in absolute speed by about 21 percent — the second landed on an
+Two runs on two separately provisioned runners — `io-hosts` runs 33114336424
+and 33115297530 on the batch-0090 branch — printed side by side below. They
+differ in absolute speed by about 21 percent — the second landed on an
 NVMe-backed disk, the first on a SATA one — and agree on every ordering and
-every ratio. A third runner, also NVMe-backed, reproduces the second within
-two percent on every line and is not tabulated: `N.direct` 94.68, `N.pool4`
-27.14, `N.uring32` 94.75, `S.wide` 112.19, `C.wide.default` 118.14.
+every ratio. A third runner, also NVMe-backed (run 33118248259), reproduces
+the second within three percent on every line — within two on 23 of the 26,
+the exceptions being `N.pool2` at +2.05 percent, `N.pool8` at +2.64 and
+`S.narrow` at +2.09 — and is not tabulated beyond its headline lines:
+`N.direct` 94.68, `N.pool4` 27.14, `N.uring32` 94.75, `S.wide` 112.19,
+`C.wide.default` 118.14.
 
 ```text
                        run 1: sda1                 run 2: nvme0n1p1

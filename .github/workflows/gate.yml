@@ -90,23 +90,6 @@ jobs:
       - name: make check
         run: make check
 
-      # Temporary diagnostic for batch 0090: `make check` stops at the first
-      # failing target and cargo stops at the first failing test binary, so one
-      # run would otherwise reveal one layer of Linux host limits at a time.
-      # Removed once the Linux picture is complete.
-      - name: Diagnose the remaining Linux stops
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "== every test target, no fail fast =="
-          (cd compiler && cargo test --profile gate --all-targets --locked --offline \
-            --no-fail-fast 2>&1 | grep -E -A 4 '^test result|^---- .* stdout ----$' \
-            | head -400) || true
-          echo "== research-tests =="
-          make research-tests 2>&1 | grep -E 'FAIL|ok$|Error' | tail -30 || true
-          echo "== conformance-run =="
-          make conformance-run 2>&1 | grep -E '^  Fail|adapter:' | head -30 || true
-
   gate-macos:
     name: gate-macos (macos-14)
     runs-on: macos-14

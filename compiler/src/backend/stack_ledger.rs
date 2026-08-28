@@ -67,15 +67,21 @@ impl World {
 }
 
 /// The ledger's lines for one compiled module, given the host compiler's
-/// stack-usage report, the assembly of the same compilation, and the number of
-/// bytes of stack the runtime gives every thread.
+/// stack-usage report, the assembly of the same compilation, the number of
+/// bytes of stack the runtime gives every thread, and the architecture the
+/// report describes.
 ///
 /// Both inputs come from one clang invocation on purpose. Reading frames from
 /// one compilation and the call graph from another would let an unrelated flag
 /// put a function in one and not the other, and the ledger would report a
 /// chain through a function whose bytes it took from somewhere else.
-pub fn stack_ledger(stack_usage: &str, assembly: &str, stack_bytes: u64) -> Vec<String> {
-    let frames = parse_frames(stack_usage);
+pub fn stack_ledger(
+    stack_usage: &str,
+    assembly: &str,
+    stack_bytes: u64,
+    architecture: Architecture,
+) -> Vec<String> {
+    let frames = parse_frames(stack_usage, architecture);
     let index: HashMap<&str, usize> = frames
         .iter()
         .enumerate()
@@ -136,39 +142,68 @@ pub fn stack_ledger(stack_usage: &str, assembly: &str, stack_bytes: u64) -> Vec<
     lines
 }
 
-/// What reaching one activation costs on this target beyond the frame
-/// `-fstack-usage` reports for it.
+/// The architecture a stack-usage report was produced for.
 ///
-/// `-fstack-usage` reports the bytes a function allocates for itself, and the
-/// two qualified architectures put the return address on opposite sides of
-/// that line. On x86-64 the caller's `call` pushes an eight-byte return
-/// address that the callee's own figure does not include. On arm64 the return
-/// address arrives in the link register and the callee spills it inside the
-/// frame it reports, so the reported figure is already the whole cost.
-///
-/// Measured on the tight spine the ledger's own case builds, compiled from one
-/// module for both targets. x86-64 reports 8 bytes for `wf_spine` and its
-/// whole prologue is `pushq %rax`; the return address the caller's `call`
-/// pushed sits above that and is not in the 8. arm64 reports 16 and its
-/// prologue is `stp x29, x30, [sp, #-16]!`, which stores the return address
-/// inside the 16. One activation costs sixteen bytes on both machines — only
-/// the reporting differs, and this is what puts the two reports on the same
-/// scale.
-///
-/// Found by running the gate on an x86-64 Linux host in batch 0090: the ledger
-/// promised 134,217,728 levels of that recursion on the one-gigabyte runtime
-/// stack, and the program died at 134,083,510 — the true ceiling is half the
-/// promise. Over-promising depth is the dangerous direction for this artifact,
-/// because a writer who believes it writes a recursion the machine cannot run,
-/// so the cost belongs in every frame rather than in a note beside the table.
-const CALL_RETURN_ADDRESS_BYTES: u64 = if cfg!(target_arch = "x86_64") { 8 } else { 0 };
+/// The ledger's arithmetic depends on it, so it is an argument rather than
+/// something read from the machine the compiler happens to be running on:
+/// then one report means one thing wherever it is read, and a case can state
+/// what either architecture costs without being run there.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Architecture {
+    /// The caller's `call` pushes the return address; the callee's own figure
+    /// starts below it.
+    X86_64,
+    /// The return address arrives in the link register and the callee spills
+    /// it inside the frame it reports.
+    Arm64,
+}
+
+impl Architecture {
+    /// The one this compiler emits for, which is the one it runs on:
+    /// `backend/target.rs` qualifies no cross-compilation host.
+    pub const HOST: Self = if cfg!(target_arch = "x86_64") {
+        Self::X86_64
+    } else {
+        Self::Arm64
+    };
+
+    /// What reaching one activation costs beyond the frame `-fstack-usage`
+    /// reports for it.
+    ///
+    /// `-fstack-usage` reports the bytes a function allocates for itself, and
+    /// the two qualified architectures put the return address on opposite
+    /// sides of that line.
+    ///
+    /// Measured on the tight spine the ledger's own case builds, emitted once
+    /// and compiled for both targets. x86-64 reports 8 bytes for `wf_spine`
+    /// and its whole prologue is `pushq %rax`; the return address the caller's
+    /// `call` pushed sits above that and is not in the 8. arm64 reports 16 and
+    /// its prologue is `stp x29, x30, [sp, #-16]!`, which stores the return
+    /// address inside the 16. One activation costs sixteen bytes on both
+    /// machines — only the reporting differs, and this is what puts the two
+    /// reports on the same scale.
+    ///
+    /// Found by running the gate on an x86-64 Linux host in batch 0090: the
+    /// ledger promised 134,217,728 levels of that recursion on the
+    /// one-gigabyte runtime stack, and the program died at 134,083,510 — the
+    /// true ceiling is half the promise. Over-promising depth is the dangerous
+    /// direction for this artifact, because a writer who believes it writes a
+    /// recursion the machine cannot run, so the cost belongs in every frame
+    /// rather than in a note beside the table.
+    const fn call_return_address_bytes(self) -> u64 {
+        match self {
+            Self::X86_64 => 8,
+            Self::Arm64 => 0,
+        }
+    }
+}
 
 /// `-fstack-usage`'s report: one line per surviving machine function, as
 /// `locator\tbytes\tqualifier`, where the locator ends in the function name.
 ///
-/// Each frame carries [`CALL_RETURN_ADDRESS_BYTES`], so a row is what one
-/// activation costs rather than what the function allocates.
-fn parse_frames(stack_usage: &str) -> Vec<Frame> {
+/// Each frame carries [`Architecture::call_return_address_bytes`], so a row is
+/// what one activation costs rather than what the function allocates.
+fn parse_frames(stack_usage: &str, architecture: Architecture) -> Vec<Frame> {
     let mut frames: Vec<Frame> = Vec::new();
     for line in stack_usage.lines() {
         let mut fields = line.split('\t');
@@ -183,7 +218,7 @@ fn parse_frames(stack_usage: &str) -> Vec<Frame> {
         };
         frames.push(Frame {
             name: name.to_owned(),
-            bytes: bytes.saturating_add(CALL_RETURN_ADDRESS_BYTES),
+            bytes: bytes.saturating_add(architecture.call_return_address_bytes()),
             qualifier: qualifier.trim().to_owned(),
             world: World::Both,
         });
@@ -451,7 +486,7 @@ fn chains(
 
 #[cfg(test)]
 mod tests {
-    use super::stack_ledger;
+    use super::{Architecture, stack_ledger};
 
     /// One `--par` compilation of a two-million-deep recursion, as the host
     /// compiler reported it: a self-recursive function in each of the two
@@ -489,8 +524,16 @@ _main:                                  ; @main
 \tb\t_wf__floor_run
 ";
 
+    /// The fixture is one arm64 compilation — Darwin labels, `bl` calls, a
+    /// `b.eq` — so it is read as one on every machine, and the numbers below
+    /// are that compilation's rather than the reader's.
     fn ledger() -> Vec<String> {
-        stack_ledger(SPINE_USAGE, SPINE_ASSEMBLY, 1_073_741_824)
+        stack_ledger(
+            SPINE_USAGE,
+            SPINE_ASSEMBLY,
+            1_073_741_824,
+            Architecture::Arm64,
+        )
     }
 
     fn line(lines: &[String], needle: &str) -> String {

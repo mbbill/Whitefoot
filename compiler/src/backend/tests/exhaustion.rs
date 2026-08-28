@@ -459,35 +459,96 @@ const fn libc_sigabrt() -> i32 {
 ///
 /// The distance is the whole experiment, so it is read from the environment
 /// rather than compiled in: one binary, one link, one row per offset.
+///
+/// The thread is the fixture's own, not the floor's entry thread, and its
+/// stack sits at the top of one reservation whose lower 16 MiB the thread
+/// unmaps before it writes. That is what makes every row's premise true by
+/// construction rather than by luck: a write below the stack is a pointer
+/// into nothing because the fixture made it so, not because nothing happened
+/// to be there. The entry thread cannot promise that. The floor maps its
+/// 64 KiB alternate signal stack after the entry stack, the kernel's top-down
+/// placement drops it into the first gap below the stack block, and
+/// `/proc/self/maps` shows it there: a `rw-p` mapping directly under the
+/// `---p` guard. On a host whose guard is one page, a write four pages below
+/// the stack lands in that mapping and completes, which is what the Linux
+/// gate did once in ten runs — exit 0, no signal, no record, and nothing for
+/// the floor to classify.
+///
+/// The pad is unmapped rather than left `PROT_NONE` because the rows assert
+/// the host's own signal for a pointer into nothing, and Darwin reports a
+/// protected page as `SIGBUS` where an unmapped one is `SIGSEGV` on both
+/// hosts. It is unmapped only after the thread has attached to the floor and
+/// read its bounds, because both of those map memory and the same top-down
+/// search would put either into a freshly freed hole under the stack. The
+/// thread attaches exactly as a pool lane does, so the band under test is the
+/// one every lane runs under.
 const OFFSET_FAULT_BODY: &str = r#"/* `pthread_getattr_np` is a GNU extension, so the Linux arm below needs the
-   feature-test macro the floor runtime already sets for the same call. This
-   arm had never been compiled until the gate ran on Linux. */
+   feature-test macro the floor runtime already sets for the same call. */
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 
 extern int wf__floor_run(int argc, char **argv);
+extern void wf__floor_attach_thread(void);
 
-int wf__main_body(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-    {
+/* Below the stack: the largest distance any row asks for, plus slack over the
+   stride the in-band rows use, so every address a row names is inside the
+   hole this reservation leaves. */
+#define PAD_BYTES ((size_t)16 * 1024 * 1024 + (size_t)64 * 1024)
+#define STACK_BYTES ((size_t)1024 * 1024)
+
+static char *reservation;
+
+static void *fault_below_own_stack(void *opaque) {
+    char *low = NULL;
+    unsigned long below;
+    (void)opaque;
+    /* Both of these map memory, so both happen while the pad is still held. */
+    wf__floor_attach_thread();
 #if defined(__APPLE__)
-        char *high = (char *)pthread_get_stackaddr_np(pthread_self());
-        char *low = high - pthread_get_stacksize_np(pthread_self());
+    low = (char *)pthread_get_stackaddr_np(pthread_self())
+          - pthread_get_stacksize_np(pthread_self());
 #else
+    {
         pthread_attr_t attributes;
         void *base = NULL;
         size_t size = 0;
-        char *low = NULL;
         pthread_getattr_np(pthread_self(), &attributes);
         pthread_attr_getstack(&attributes, &base, &size);
         low = (char *)base;
         pthread_attr_destroy(&attributes);
-#endif
-        unsigned long below = strtoul(getenv("WF_FAULT_BELOW"), NULL, 10);
-        *(volatile int *)(low - below) = 1;
     }
+#endif
+    below = strtoul(getenv("WF_FAULT_BELOW"), NULL, 10);
+    /* From here to the write, nothing in this process maps anything: the
+       entry thread is parked in pthread_join and this thread only faults. */
+    if (munmap(reservation, PAD_BYTES) != 0) {
+        return NULL;
+    }
+    *(volatile int *)(low - below) = 1;
+    return NULL;
+}
+
+int wf__main_body(int argc, char **argv) {
+    pthread_attr_t attributes;
+    pthread_t thread;
+    (void)argc;
+    (void)argv;
+    reservation = mmap(NULL, PAD_BYTES + STACK_BYTES, PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (reservation == MAP_FAILED) {
+        return 2;
+    }
+    if (mprotect(reservation + PAD_BYTES, STACK_BYTES, PROT_READ | PROT_WRITE) != 0) {
+        return 3;
+    }
+    if (pthread_attr_init(&attributes) != 0
+        || pthread_attr_setstack(&attributes, reservation + PAD_BYTES, STACK_BYTES) != 0
+        || pthread_create(&thread, &attributes, fault_below_own_stack, NULL) != 0) {
+        return 4;
+    }
+    pthread_join(thread, NULL);
     return 0;
 }
 
