@@ -169,5 +169,38 @@ item 2), and the driver is Stage B.
 - [x] item 4 — carrying and draining, with the IR-identity oracle
 - [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
       `completion-core-read-tsan` — green on macOS and in the Linux container
-- [ ] `make check`
-- [ ] CI green (gate + io-hosts)
+- [x] canonical `make check` — green
+- [x] `io-hosts` at `549a5a67` — every job green, including `completion-linux`,
+      which runs the four new harness tests and the new `completion-tsan` step
+      on a real x86-64 Linux kernel with io_uring, and `completion-windows`
+- [x] `gate` at `549a5a67` — `gate-macos` green
+
+## The one red job, and why it is not this branch's
+
+`gate-linux` fails on six conformance cases, all with the same reason:
+
+```text
+Fail sys14-list-outcome-exhaustive            want Run(0)
+Fail sys14-list-zero-range                    want Run(0)
+Fail sys14-directory-release                  want Run(0)
+Fail sys14-entry-kind-closed                  want Run(0)
+Fail accept-sysfile-two-permits-shared-directory   want Accept
+Fail accept-par3-staged-denied-opaque-cursor       want Accept
+  TargetQualification(MissingMapping(Operation(12)))
+conformance adapter: Pass=503  Fail=6  Skip=1
+```
+
+That is [QUAL-1]: Linux has no approved [SYS-14] directory-enumeration row, so
+every case that enumerates a directory reaches `Unsupported` rather than its
+declared verdict. It is not a source-language rejection and no verdict was
+touched here.
+
+The discriminating observation, rather than the plausible one: the concurrent
+`batch/0096-darwin-handoff`, which changes the Darwin helper path and nothing
+this branch touches, fails the same six cases with the same counts on the same
+base. And `batch/0094-linux-directory-row` — "io: qualify Linux directory
+enumeration and un-declare its host limits" — is green. This branch adds and
+modifies no conformance content and does not touch
+`compiler/src/backend/qualification.rs`; `git diff main` over that file is
+empty. The row is that other branch's work, and `gate-linux` goes green here
+when it lands.
