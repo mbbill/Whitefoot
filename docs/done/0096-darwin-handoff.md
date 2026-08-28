@@ -531,24 +531,40 @@ and 2.84 times faster on those tables, where in 0092 it was 1.73 and 1.58.
 tables span 1.26 to 4.98 times inside a single line, nineteen of the forty
 lines past 2.5 — `S.narrow` cold 64 KiB runs 2478 to 11054 ms around a median
 of 4258, and `N.direct` cold 64 KiB 2781 to 7661 around 6158 — so the cold
-half of it cannot be read at all. Its warm half is tight and disagrees with the two prior Linux
-draws, which agreed with each other: warm `C.wide8` over `S.wide8` is 1.026 and
-1.055 here against 0.982/0.941 in batch 0092 and 0.984/0.946 at `96bb4778`.
+half of it cannot be read at all. Its warm half is tight, and it is the
+largest `C.wide8`-over-`S.wide8` reading at both sizes among the seven
+`bench-linux-read` warm draws of the complete table in RESULTS: 1.026 at
+64 KiB against a 0.9840-to-1.0261 span there, and 1.055 at 4 KiB against a
+0.9271-to-1.0550 span. It is not the only reading above one — `72e98cba`
+reads 1.0402 warm at 4 KiB on an EPYC 9V45 — and batch 0092 read 0.982 and
+0.941 on a third processor model.
 
-The narrow lines are the control, and they do not exonerate the wide ones:
+The narrow lines are the control, and on this draw they do not exonerate the
+wide ones. Every Linux warm draw that exists, batch 0092's on top and then
+this branch's seven in branch order — the two cancelled runs stopped before
+their warm halves, and 0092's draw is on a different branch and outside that
+table's enumeration:
 
 ```text
-warm C/S                  0092   96bb4778     this   delta
-64 KiB  C.wide8/S.wide8  0.9816   0.9840   1.0261   +0.042
-64 KiB  C.narrow/S.narrow 1.0035  1.0023   0.9969   -0.005
- 4 KiB  C.wide8/S.wide8  0.9412   0.9460   1.0550   +0.109
- 4 KiB  C.narrow/S.narrow 1.0112  1.0157   1.0514   +0.036
+draw          run          commit    processor   disk  wide 64  wide 4  narrow 64  narrow 4
+0092          33130875022  6ac36126  Xeon 8370C  sda1   0.9816  0.9412     1.0035    1.0112
+merge base    33149563172  caa66bad  Xeon 8370C  sda1   0.9997  0.9271     0.9983    0.9940
+repair        33151353052  4a748d6e  EPYC 7763   sda1   1.0112  1.0004     0.9941    0.9974
+earlier       33153717709  96bb4778  EPYC 7763   sda1   0.9840  0.9460     1.0023    1.0157
+this section  33155821397  266acf4f  Xeon 8573C  nvme   1.0261  1.0550     0.9969    1.0514
+record        33158144391  72e98cba  EPYC 9V45   nvme   1.0078  1.0402     1.0092    1.0128
+follow-up     33165141309  a06c53f9  EPYC 9V74   nvme   1.0099  0.9887     0.9984    1.0149
+repair round  33172323795  261070c8  Xeon 8370C  sda1   1.0148  0.9998     0.9956    0.9990
 ```
 
 `C.narrow` and `S.narrow` are the same source with and without the completion
 lowering and state no overlap width, so a host difference should move them with
-the wide pair. At 64 KiB the narrow pair does not move at all while the wide
-pair moves 4.2 points, and at 4 KiB the wide pair moves three times as far. The
+the wide pair. Read the columns down: at 64 KiB the narrow control stays inside
+0.9941 to 1.0092 while the wide pair spans 0.9816 to 1.0261, and at 4 KiB the
+narrow control spans 0.9940 to 1.0514 while the wide pair spans 0.9271 to
+1.0550 — the wide range is about three times the narrow one at 64 KiB and
+twice it at 4 KiB. On the 8573C draw itself the wide pair moved 4.2 and 10.9
+points from `96bb4778`'s reading while the narrow pair moved 0.5 and 3.6. The
 movement is concentrated where the completion path does its work.
 
 What cuts the other way is that there is no change to point at. The only
@@ -556,19 +572,23 @@ completion-source difference between `96bb4778`, which read 0.946, and
 `266acf4f`, read here, is the removal of the `WF_IO_TRACE` instrumentation —
 `git diff 96bb4778..266acf4f -- compiler/src/backend/completion/` is that and
 nothing else — and removing instrumentation does not make a program slower. The
-host also differs, though not in core count: all three Linux draws report four
-CPUs. What differs is the processor and the disk — Xeon Platinum 8370C on
-`sda1` for 0092, EPYC 7763 on `sda1` for `96bb4778`, Xeon Platinum 8573C on
-`nvme0n1p1` here — and the wide lowering has more scheduling surface than the
-narrow one. The many-files Linux job in the same run keeps 0090's ordering but
-not its ratio: 1.058 against 0090's 1.041 and 1.045 is worse than both, which
-is why that row is `unresolved` above rather than met.
+host also differs, though not in core count: every Linux runner in the
+complete draw table reports four CPUs, and so did 0092's. What differs is the
+processor and the disk — Xeon Platinum 8370C on `sda1` for 0092, EPYC 7763 on
+`sda1` for `96bb4778`, Xeon Platinum 8573C on `nvme0n1p1` here — and the wide
+lowering has more scheduling surface than the narrow one. The many-files Linux
+job in the same run keeps 0090's ordering but not its ratio: 1.058 against
+0090's 1.041 and 1.045 is worse than both, which is why that row is
+`unresolved` above rather than met. That reading is not an excursion of this
+branch's either: the draw table's nine many-files rows run 1.0383 to 1.0697
+around a median of 1.0579, and this one is 1.0576.
 
 So the honest reading is that one Linux draw on different hardware neither
 confirms nor refutes the no-regression bar, and another draw is owed — and the
 narrow control makes it a draw worth resolving rather than dismissing. That
 draw arrived with the correctness follow-up and is read under "What the
-follow-up cost" below; it agrees with the two readings before this one. What is
+follow-up cost" below; at 1.0099 and 0.9887 it sits inside the warm ranges of
+the table above rather than with the 8573C at the top of them. What is
 not in doubt is Linux correctness: `io-hosts` `completion-linux` is green on
 this commit, including the required native io_uring adapter probe and the
 harness under the address and undefined sanitizers, and the same targets pass
@@ -788,9 +808,10 @@ by this batch.
 - **The follow-up's runtime changes are recorded here rather than under
   "What shipped".** They land after the measurement and none of them changes a
   route, a policy or a threshold, so putting them among the changes the tables
-  price would suggest the tables priced them. The fourth macOS draw taken at
-  `a06c53f9` is what prices them, and it is reported as its own reading rather
-  than folded into the before/after tables.
+  price would suggest the tables priced them. The macOS draw taken at
+  `a06c53f9`, the eighth of the nine in the draw table, is what prices them,
+  and it is reported as its own reading rather than folded into the
+  before/after tables.
 - **The drain hint was removed rather than made legal.** It could have been kept
   by hinting only into the window the sweep was about to scan, which is the
   sweep it existed to skip, or by widening `scan_budget`'s meaning, which is
@@ -869,11 +890,12 @@ by this batch.
   one batch 0092 reached, that a 17 us `openat` is not a wait worth a handoff.
 - **An explanation of the 8573C Linux draw.** The draw this record's tables
   come from is on hardware the earlier ones were not on, its cold half is
-  unusable, and its warm half disagrees with the two prior readings. A fourth
-  draw taken at `a06c53f9` — see "What the follow-up cost" — agrees with those
-  two rather than with it, so the no-regression bar is not refuted; but the
-  8573C reading is still unexplained, and the bar table keeps `unresolved`
-  rather than borrowing a grade from a different draw on different hardware.
+  unusable, and its warm half is the top of both warm ranges the draw table
+  records. The later draw at `a06c53f9` — see "What the follow-up cost" —
+  reads 1.0099 and 0.9887, inside those ranges rather than at their top, so
+  the no-regression bar is not refuted; but the 8573C reading is still
+  unexplained, and the bar table keeps `unresolved` rather than borrowing a
+  grade from a different draw on different hardware.
 - **A confirmed cold macOS table on a quiet runner.** The confirmed label
   arrived — run 33172323795 confirms it at both ends of both cold tables — but
   that runner's load average was 5.60 and `C.wide8.default` spans a factor of
