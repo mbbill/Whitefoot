@@ -530,7 +530,9 @@ is why that row is `unresolved` above rather than met.
 
 So the honest reading is that one Linux draw on different hardware neither
 confirms nor refutes the no-regression bar, and another draw is owed — and the
-narrow control makes it a draw worth resolving rather than dismissing. What is
+narrow control makes it a draw worth resolving rather than dismissing. That
+draw arrived with the correctness follow-up and is read under "What the
+follow-up cost" below; it agrees with the two readings before this one. What is
 not in doubt is Linux correctness: `io-hosts` `completion-linux` is green on
 this commit, including the required native io_uring adapter probe and the
 harness under the address and undefined sanitizers, and the same targets pass

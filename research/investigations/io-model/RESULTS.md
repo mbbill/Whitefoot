@@ -1458,8 +1458,8 @@ separate and is not in doubt: `io-hosts` `completion-linux` is green on this
 commit, including the required native io_uring adapter probe and the harness
 under the address and undefined sanitizers. Thread sanitizer is a separate
 step and runs the probes rather than the harness — the isolated core/read
-probe, and now the default-route bridge probe. What is owed here is another
-Linux draw.
+probe, and now the default-route bridge probe. The Linux draw this owed is
+below: "A fourth Linux draw, at `a06c53f9`".
 
 ### A fourth Linux draw, at `a06c53f9`
 
