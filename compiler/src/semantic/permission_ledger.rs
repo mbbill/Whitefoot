@@ -404,23 +404,19 @@ fn staged_denied_detail<Source: LedgerSource>(
         }
         StagedDenial::RetainedBorrow {
             argument,
-            overlapping,
+            written_at,
             ..
         } => (
             "a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce"
                 .to_owned(),
             Some(argument),
-            overlapping.as_ref(),
+            written_at.as_ref(),
         ),
-        StagedDenial::RemainderExclusiveLoan {
-            argument,
-            overlapping,
-            ..
-        } => (
+        StagedDenial::RemainderExclusiveLoan { argument, .. } => (
             "a call of the remainder holds an exclusive loan on storage the iteration does not introduce"
                 .to_owned(),
             Some(argument),
-            overlapping.as_ref(),
+            None,
         ),
         StagedDenial::NoDisposition {
             argument,
@@ -457,7 +453,8 @@ fn staged_denied_detail<Source: LedgerSource>(
     };
     // [OWN-7] makes a place and its prefix one storage, so a denial the overlap
     // decided names both halves: one statement alone never shows the reader why
-    // the loop refused.
+    // the loop refused, because the statement that refused it names a different
+    // path.
     let paired = match overlapping {
         Some(node) => format!(", which overlaps {}", source.spelling(node)?),
         None => String::new(),

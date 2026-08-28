@@ -102,6 +102,18 @@
 //! The rows themselves stay keyed by path, because the ledger's teaching value
 //! is that it names the place the writer wrote. Only the *flags* are unioned.
 //!
+//! Reading condition 3 over the class is one step coarser than the rule's own
+//! words, which ask whether a footprint of B writes *the borrowed place*: a
+//! class whose subject is a whole record carries a retained borrow of one field
+//! beside a write of another, which under [OWN-7] are disjoint, and this
+//! judgment refuses it. The verdict is still the rule's. Whenever that happens
+//! the subject is a place a footprint of B writes — the sibling write is a
+//! write of its bytes — and a place a loan retained past c touches, so
+//! condition 5's first alternative fails on the write, its second on the
+//! retained loan, and its third on enclosing storage: the loop is denied at
+//! that place whatever condition 3 says. What the class can move is the
+//! condition number the ledger prints, never the verdict.
+//!
 //! # Why exactly these
 //!
 //! The schedule the conditions admit is: P(0), P(1), … in index order, never
@@ -268,9 +280,11 @@ pub(crate) enum StagedDenial {
     /// the body writes.
     RetainedBorrow {
         argument: NodePath,
-        /// The other half of the [OWN-7] pair, when the write that denies is on
-        /// an overlapping place rather than on the borrowed one itself.
-        overlapping: Option<NodePath>,
+        /// The write that denies, when it is not on the borrowed place itself
+        /// but on a place [OWN-7] makes one storage with it. Naming the borrow
+        /// alone would leave the writer looking for a write of the field it
+        /// borrows, which is not the statement that refused the loop.
+        written_at: Option<NodePath>,
         /// Whether storage of that place's type could be replicated at all.
         /// A buffer of copy elements could, once the coverage proof exists; an
         /// opaque system nominal never can, and telling its writer to allocate
@@ -279,9 +293,11 @@ pub(crate) enum StagedDenial {
     },
     /// Condition 4: a call of the remainder holds an exclusive loan on
     /// enclosing storage.
+    /// The loan the argument names is the whole of this hazard, whatever place
+    /// of its [OWN-7] class the judgment reached it from, so this denial has no
+    /// second half to name.
     RemainderExclusiveLoan {
         argument: NodePath,
-        overlapping: Option<NodePath>,
         replicable_shape: bool,
     },
     /// Condition 5: a place rooted outside the loop that no disposition covers.
@@ -342,11 +358,7 @@ impl StagedDenial {
             // reads as advice — and the replication advice below would be a
             // claim about a field type this judgment does not resolve.
             Self::RetainedBorrow {
-                overlapping: Some(_),
-                ..
-            }
-            | Self::RemainderExclusiveLoan {
-                overlapping: Some(_),
+                written_at: Some(_),
                 ..
             } => {
                 "give the iteration its own copy of the storage the call borrows, or stop rewriting the record that storage is a field of: a write of a record writes every field path under it"
@@ -901,8 +913,14 @@ struct Class {
     /// holding one place that cannot is a class no per-iteration copy repairs,
     /// so the advice a denial gives must not be "allocate it in the body".
     replicable_shape: bool,
+    /// The overlapping place whose footprint supplied `written`, when the
+    /// subject's own touches never wrote. This is the statement a condition-3
+    /// denial has to name: the writer is looking for a write of the place the
+    /// call borrows, and there is none.
+    written_at: Option<NodePath>,
     /// The first overlapping place that widened this one's class: the other
-    /// half of the pair a denial names. Absent when the place's own touches
+    /// half of the pair a condition-5 denial names, whose hazard is the class
+    /// itself rather than any one flag. Absent when the place's own touches
     /// already carried every flag.
     overlapping: Option<NodePath>,
 }
@@ -1305,6 +1323,7 @@ impl<'check> StagedSurvey<'check, '_> {
             retained_borrow: subject.retained_borrow.clone(),
             remainder_exclusive_loan: subject.remainder_exclusive_loan.clone(),
             replicable_shape: subject.replicable_shape,
+            written_at: None,
             overlapping: None,
         };
         for (other, entry) in self.touched.iter().enumerate() {
@@ -1320,6 +1339,9 @@ impl<'check> StagedSurvey<'check, '_> {
                     && class.remainder_exclusive_loan.is_none());
             if widens {
                 class.overlapping.get_or_insert(entry.citation.clone());
+            }
+            if entry.written && !class.written {
+                class.written_at = Some(entry.citation.clone());
             }
             class.written |= entry.written;
             class.in_prologue |= entry.in_prologue;
@@ -1403,13 +1425,17 @@ impl<'check> StagedSurvey<'check, '_> {
                 statement: statement.clone(),
             });
         }
-        for class in classes {
+        for (entry, class) in self.touched.iter().zip(classes) {
             if class.written
                 && let Some(argument) = &class.retained_borrow
             {
+                // The write that denies is the subject's own unless an
+                // overlapping place supplied it, and it is worth naming only
+                // when it is not the borrow already cited.
+                let written_at = class.written_at.clone().unwrap_or(entry.citation.clone());
                 return Some(StagedDenial::RetainedBorrow {
                     argument: argument.clone(),
-                    overlapping: class.overlapping.clone(),
+                    written_at: (written_at != *argument).then_some(written_at),
                     replicable_shape: class.replicable_shape,
                 });
             }
@@ -1418,7 +1444,6 @@ impl<'check> StagedSurvey<'check, '_> {
             if let Some(argument) = &class.remainder_exclusive_loan {
                 return Some(StagedDenial::RemainderExclusiveLoan {
                     argument: argument.clone(),
-                    overlapping: class.overlapping.clone(),
                     replicable_shape: class.replicable_shape,
                 });
             }
@@ -1488,7 +1513,7 @@ fn disposition_reason(class: &Class, disposition: Disposition) -> &'static str {
         }
         Disposition::Denied => {
             if class.written && class.retained_borrow.is_some() {
-                if class.overlapping.is_some() {
+                if class.written_at.is_some() {
                     "a may-suspend call retains a borrow into it past its own submission and a footprint of the body writes storage that overlaps it"
                 } else if class.replicable_shape {
                     "the body writes it and a may-suspend call retains a borrow of it past its own submission"

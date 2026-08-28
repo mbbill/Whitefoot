@@ -270,7 +270,19 @@ a denial and never the other way round. A denial the class decided names both
 halves of the pair — `, which overlaps <the other statement>` — and carries its
 own writer form, because a writer looking at two statements that mention
 different paths has to be told they are one storage before any other advice
-reads as advice.
+reads as advice. The half a condition-3 denial names is the *write*, tracked as
+`Class::written_at` rather than as the first place that widened the class: with
+a borrow of one field and a write of a sibling field reached through a loan on
+the whole record, the first widener is the borrow itself, and printing it as its
+own counterpart tells the reader nothing.
+
+Reading condition 3 over the class is one step coarser than the rule's words,
+which ask whether a footprint writes *the borrowed place*. It costs no verdict,
+only the condition number: whenever the class fires condition 3 where the rule
+would not, the subject place is one a footprint writes and one a loan retained
+past c touches, so condition 5's first alternative fails on the write and its
+second on the retained loan, and the loop is denied at that place regardless.
+That argument is written into the module doc beside the code that relies on it.
 
 **Widening 2: a `propagate` whose right-hand side is the cut was counted as a
 prologue exit.** The cut statement was assigned `Segment::Prologue` by
@@ -318,10 +330,11 @@ an origin this judgment holds no place for. What was wrong is that both were
 offered one sentence listing admitted statement forms, which tells the writer of
 either one nothing. `StagedDenial::BodyForm` now carries the admitted form
 beside the refused one, so an expression statement is answered with *bind the
-call's result with `let`* and a body-bound borrow with *write the borrow as an
-argument of the call that uses it*; `Unresolved` is answered with *name the
-storage the call reaches directly rather than through a binding whose extent
-this judgment does not resolve*.
+call's result with `let`*, a discarded owned result with *bind the value with
+`let` and let the binding's own release carry it*, and a body-bound borrow with
+*write the borrow as an argument of the call that uses it*; `Unresolved` is
+answered with *name the storage the call reaches directly rather than through a
+binding whose extent this judgment does not resolve*.
 
 **A `break_stmt` denial now names which loop the break leaves.** A break carries
 no node path in the checked tree, so no place can be cited; the loop it names is
@@ -334,11 +347,12 @@ their own, beside the whole corpus.
 
 ## What was checked
 
-- **33 judgment tests** in `compiler/src/semantic/tests/staged_permission.rs`,
-  every condition in both directions, and every variant of condition 7 in both
-  directions. Each denial fixture violates exactly one numbered condition and
-  asserts *that* condition, so a denial arriving for the wrong reason fails the
-  test.
+- **35 judgment tests** in `compiler/src/semantic/tests/staged_permission.rs`,
+  every condition in both directions, every variant of condition 7 in both
+  directions, and each of the three statement forms `BodyForm` refuses with the
+  advice that form is answered with. Each denial fixture violates exactly one
+  numbered condition and asserts *that* condition, so a denial arriving for the
+  wrong reason fails the test.
 - **The adversarial corpus**, `compiler/src/semantic/tests/staged_permission_corpus.rs`:
   all 34 programs of the review of 2026-08-27, kept verbatim, each with the
   verdict it must carry. Programs the checker rejects for a reason that is not

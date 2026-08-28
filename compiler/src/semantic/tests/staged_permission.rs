@@ -951,6 +951,50 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     );
 }
 
+/// Condition 7's third refused form, which the two above do not reach: an
+/// expression statement whose discarded result is an own-mode affine value, so
+/// the checked tree carries the compiler-derived release beside it.
+///
+/// The release is a [STOR-3] edge with its own footprint, and this judgment
+/// classifies neither it nor the call's reach, so it refuses the form. The
+/// advice has to differ from the plain expression statement's: binding the
+/// value with `let` does not only give the call a footprint the judgment
+/// reads, it moves the release to the binding's own scope exit.
+#[test]
+fn a_discarded_owned_result_refuses_as_its_own_form() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    buffer_new(8_u64, 0_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 7);
+    let StagedDenial::BodyForm { form, .. } = denial else {
+        panic!("expected a form denial: {denial:?}");
+    };
+    assert_eq!(form, "a discarded expression statement");
+    assert!(
+        denial
+            .writer_form()
+            .contains("let the binding's own release"),
+        "the advice must name what binding the value moves: {}",
+        denial.writer_form()
+    );
+}
+
 // ----------------------------------------------------------------------
 // The loan column's closed holes, re-attacked
 // ----------------------------------------------------------------------
@@ -1262,12 +1306,79 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 "#;
     let denial = denied(source, "main", 3);
-    let StagedDenial::RetainedBorrow { overlapping, .. } = denial else {
+    let StagedDenial::RetainedBorrow { written_at, .. } = denial else {
         panic!("expected a condition 3 denial: {denial:?}");
     };
     assert!(
-        overlapping.is_some(),
-        "the borrowed field and the replaced record are the pair"
+        written_at.is_some(),
+        "the borrowed field and the write that denies are the pair, and the \
+         write is the replaced record rather than the field itself"
+    );
+}
+
+/// The pair a condition-3 denial names is the borrow and the *write*, not the
+/// borrow twice.
+///
+/// Here the retained borrow is on `held.name`, the write is on `held.seen`
+/// through a callee's row, and the loan the remainder takes is on the whole
+/// record. `held.name` and `held.seen` are disjoint under [OWN-7], so the
+/// class that carries both flags is the whole record's, and the write that
+/// supplies `written` is not the statement the borrow came from. Naming the
+/// first place that widened the class would print the borrow as its own
+/// counterpart and tell the reader nothing.
+///
+/// The loop denies whatever condition it is attributed to: the remainder holds
+/// an exclusive loan on enclosing storage, and the record is a place a
+/// footprint writes and a retained loan touches, so condition 5 has no
+/// disposition for it either.
+#[test]
+fn a_condition_three_denial_names_the_write_and_not_the_borrow_twice() {
+    let source = br#"struct Holder {
+  name: buffer<u8>;
+  seen: u64;
+}
+
+fn bump['b](holder: &uniq 'b Holder) -> result: own unit reads(holder.seen), writes(holder.seen) {
+  set deref(holder).seen = deref(holder).seen +wrap 1_u64;
+  return unit;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let seed = buffer_new(16_u64, 97_u8);
+  let held = Holder(name: move seed, seen: 0_u64);
+  for @scan index in 0_u64..4_u64 {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
+          Ok(value: handle) => {
+            region 'b {
+              let done = bump<'b>(holder: &uniq 'b held);
+            }
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 3);
+    let StagedDenial::RetainedBorrow {
+        argument,
+        written_at,
+        ..
+    } = denial
+    else {
+        panic!("expected a condition 3 denial: {denial:?}");
+    };
+    let written_at =
+        written_at.expect("the write that denies is on another path and must be named");
+    assert_ne!(
+        written_at, argument,
+        "naming the borrow as its own counterpart says nothing"
     );
 }
 
