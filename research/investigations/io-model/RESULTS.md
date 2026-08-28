@@ -886,11 +886,11 @@ C.wide8.h2                        2602               141
 C.wide8.h8                        1886               159
 ```
 
-It agrees with the runners on the shape of the result — C at eight wide 2.36
-times faster than S at eight wide when the reads reach the device, and level
-with S when they do not — and disagrees with them on the absolute cost of a
-read: 134 us here against 160 to 200 us on the Linux runner and 76 to 316 on
-the macOS one.
+It agrees with the runners on the shape of the result — C at eight wide is
+2.36 times faster than S at eight wide when the reads reach the device, and
+1.13 times slower than it when they do not — and disagrees with them on the
+absolute cost of a read: 134 us here against 160 to 200 us on the Linux runner
+and 76 to 316 on the macOS one.
 
 ### Against the standing bar
 
@@ -901,7 +901,7 @@ completion path or a fairly sized thread pool.
 ```text
 workload / host                cache      C vs S         C vs N best      C vs N at width 8   bar
 read 4 KiB / Linux runner      uncached   2.10x faster   1.00x of uring32 1.02x faster        met, both halves
-read 64 KiB / Linux runner     cold       1.43x faster   1.10x slower     1.04x faster        met on S, N by 0.5 pt
+read 64 KiB / Linux runner     cold       1.43x faster   1.10x slower     1.04x faster        met on S, missed N by 0.5
 read 4 KiB / Linux runner      warm       1.06x faster   6.48x slower     --                  met on S, missed N
 read 64 KiB / Linux runner     warm       1.02x faster   3.41x slower     --                  met on S, missed N
 read 4 KiB / macOS runner      cold       1.58x faster   2.07x slower     2.07x slower        met on S, missed N
