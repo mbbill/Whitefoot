@@ -9,11 +9,13 @@ COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 	-DWF_COMPLETION_POLL=wf_completion_test_poll
-# The harness names the WF_IO_NOCACHE application so it can count it. The
-# named function performs the same host call the shipped policy performs, so
-# only the counting is added, and only this build has it.
+# The harness names the WF_IO_NOCACHE application so it can count it, and the
+# adapter open so it can stand at the moment the host refuses one. The named
+# functions perform the same host calls the shipped code performs, so only the
+# observation is added, and only this build has it.
 COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) \
-	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply
+	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
+	-DWF_FILE_OPENAT=wf_completion_test_openat
 COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -132,6 +134,7 @@ completion-sanitize: completion-core-read-sanitize
 		-DWF_COMPLETION_POLL=wf_completion_test_poll \
 		-fsanitize=address,undefined \
 		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
+		-DWF_FILE_OPENAT=wf_completion_test_openat \
 		$(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
@@ -172,6 +175,7 @@ completion-tsan:
 		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 		-DWF_COMPLETION_POLL=wf_completion_test_poll \
 		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
+		-DWF_FILE_OPENAT=wf_completion_test_openat \
 		-fsanitize=thread \
 		$(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-tsan"

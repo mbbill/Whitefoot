@@ -30,6 +30,20 @@ extern int WF_COMPLETION_POLL(struct pollfd *, nfds_t, int);
 extern ssize_t WF_COMPLETION_PREAD(int, void *, size_t, off_t);
 #endif
 
+/* The one host call an adapter open makes, named so a build may observe it.
+ * The observing build is expected to perform the same host call; nothing else
+ * about the open changes, and the default build calls `openat` directly.
+ *
+ * Retire-and-retry is decided by what this call answers, and the interesting
+ * schedules are the ones where a second engine is mid-operation at exactly the
+ * moment it answers `EMFILE`.  Naming the call is what lets a test stand at
+ * that moment instead of guessing at it with a delay. */
+#if !defined(WF_FILE_OPENAT)
+#define WF_FILE_OPENAT openat
+#else
+extern int WF_FILE_OPENAT(int, const char *, int, ...);
+#endif
+
 #if defined(__APPLE__)
 /* libSystem exports the exact facility used by the qualified Darwin target;
  * it is intentionally not replaced with an opendir/readdir loop. */
@@ -155,7 +169,7 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
             return result;
         }
         if (request->operation.open_at.has_mode != 0) {
-            result.value = openat(
+            result.value = WF_FILE_OPENAT(
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags
@@ -165,7 +179,7 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 (mode_t)request->operation.open_at.mode
             );
         } else {
-            result.value = openat(
+            result.value = WF_FILE_OPENAT(
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags

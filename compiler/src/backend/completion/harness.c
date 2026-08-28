@@ -18,6 +18,7 @@
 #include <pthread.h>
 #include <poll.h>
 #include <sched.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -86,6 +87,48 @@ ssize_t wf_completion_test_getdirentries64(
     return 1;
 }
 #endif
+
+/* The adapter's own `openat`, observed.
+ *
+ * Retire and retry is decided by what that call answers, and the schedule
+ * worth testing is the one where another engine is mid-operation at the exact
+ * moment it answers `EMFILE`.  A test arms the gate, and the first refusal
+ * after that announces itself, so the thread that gives the descriptor back
+ * acts strictly after the refusal rather than racing it with a delay. */
+static pthread_mutex_t wf_open_gate_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wf_open_gate_signal = PTHREAD_COND_INITIALIZER;
+static unsigned wf_open_gate_armed;
+static unsigned wf_open_gate_refusals;
+
+int wf_completion_test_openat(
+    int directory,
+    const char *path,
+    int flags,
+    ...
+) {
+    int descriptor;
+    if ((flags & O_CREAT) != 0) {
+        va_list arguments;
+        mode_t mode;
+        va_start(arguments, flags);
+        mode = (mode_t)va_arg(arguments, int);
+        va_end(arguments);
+        descriptor = openat(directory, path, flags, mode);
+    } else {
+        descriptor = openat(directory, path, flags);
+    }
+    if (descriptor < 0 && (errno == EMFILE || errno == ENFILE)) {
+        int refusal = errno;
+        (void)pthread_mutex_lock(&wf_open_gate_lock);
+        if (wf_open_gate_armed != 0) {
+            wf_open_gate_refusals += 1;
+            (void)pthread_cond_broadcast(&wf_open_gate_signal);
+        }
+        (void)pthread_mutex_unlock(&wf_open_gate_lock);
+        errno = refusal;
+    }
+    return descriptor;
+}
 
 int wf_completion_test_poll(
     struct pollfd *descriptors,
@@ -2990,6 +3033,282 @@ static int test_bridge_open_exhaustion_is_retried_once(
     return 0;
 }
 
+/* What a refused open must retire is not always on this adapter's queue.
+ *
+ * With one engine it is, and draining the queue is the whole of the rule.
+ * With several the same schedule puts it elsewhere: three simultaneous opens
+ * are taken by three different helpers and every one of them looks at an empty
+ * queue.  An adapter that gives up there publishes an exhaustion the
+ * sequential program never produces, because the descriptors are still its
+ * own — held by operations it is running, which is not the same as gone.
+ *
+ * The shape below fixes that schedule rather than racing for it.  A read of an
+ * empty pipe parks the one helper, so exactly one operation is in flight and
+ * nothing at all is queued.  The scheduler then takes an open the host must
+ * refuse, and because the adapter's `openat` is named, the releasing thread
+ * stands exactly at the refusal: only then does it give the held descriptor
+ * back and let the parked read finish.  The open's second attempt is the first
+ * one that could succeed, and the outcome the program sees is the one source
+ * order produces. */
+struct wf_open_release {
+    int held;
+    int pipe_writer;
+};
+
+static void *wf_open_release_main(void *context) {
+    struct wf_open_release *release = context;
+    (void)pthread_mutex_lock(&wf_open_gate_lock);
+    while (wf_open_gate_refusals == 0) {
+        (void)pthread_cond_wait(&wf_open_gate_signal, &wf_open_gate_lock);
+    }
+    (void)pthread_mutex_unlock(&wf_open_gate_lock);
+    /* The descriptor the refused open needs comes back here, and the parked
+     * read is released so the adapter observes a retirement on its other
+     * engine. */
+    (void)close(release->held);
+    (void)write(release->pipe_writer, "x", 1);
+    return NULL;
+}
+
+static int test_open_exhaustion_waits_for_another_engine(
+    const char *scratch_directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[4];
+    wf_file_adapter adapter;
+    wf_file_work queue[4];
+    pthread_t helpers[1];
+    pthread_t releaser;
+    struct wf_open_release release;
+    wf_completion_token read_token;
+    wf_completion_token open_token;
+    wf_file_request request;
+    wf_file_result result;
+    wf_completion_event events[2];
+    wf_completion_outcome outcome;
+    struct rlimit saved;
+    char path[256];
+    unsigned char received = 0;
+    int pipe_pair[2];
+    int writer;
+    int held;
+    int opened;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-other-engine-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Everything that needs a descriptor of its own happens before the limit
+     * narrows: the runtime, the pipe that parks the helper, and the helper
+     * itself. */
+    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
+    CHECK(pipe(pipe_pair) == 0);
+    CHECK(fcntl(pipe_pair[0], F_SETFL, O_NONBLOCK) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 4, helpers, 1) == 0);
+    CHECK(wf_completion_claim(&runtime, &read_token) == WF_COMPLETION_CLAIMED);
+    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
+
+    /* One operation in flight on the helper, waiting for a byte that only the
+     * releasing thread writes. */
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_READ;
+    request.operation.read.descriptor = pipe_pair[0];
+    request.operation.read.buffer = &received;
+    request.operation.read.count = 1;
+    CHECK(
+        wf_file_adapter_submit(&adapter, read_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+    while (wf_file_adapter_queued(&adapter) != 0) {
+        sched_yield();
+    }
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    (void)pthread_mutex_lock(&wf_open_gate_lock);
+    wf_open_gate_armed = 1;
+    wf_open_gate_refusals = 0;
+    (void)pthread_mutex_unlock(&wf_open_gate_lock);
+    release.held = held;
+    release.pipe_writer = pipe_pair[1];
+    CHECK(pthread_create(&releaser, NULL, wf_open_release_main, &release) == 0);
+
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = AT_FDCWD;
+    request.operation.open_at.path = path;
+    request.operation.open_at.flags = O_RDONLY;
+    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
+    CHECK(
+        wf_file_adapter_submit(&adapter, open_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+
+    /* One scheduler visit.  It takes the open, is refused, finds nothing
+     * queued to retire, waits for the operation running on the helper, and
+     * re-attempts once. */
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(pthread_join(releaser, NULL) == 0);
+    (void)pthread_mutex_lock(&wf_open_gate_lock);
+    wf_open_gate_armed = 0;
+    (void)pthread_mutex_unlock(&wf_open_gate_lock);
+    CHECK(
+        wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
+    );
+
+    CHECK(drain_exact(&runtime, 2, events) == 0);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            read_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_READ);
+    CHECK(result.value == 1 && result.error_code == 0);
+    CHECK(received == 'x');
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            open_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_OPEN_AT);
+    /* The whole point: the outcome the program sees is the one source order
+     * produces, not the exhaustion the schedule caused. */
+    CHECK(result.value >= 0 && result.error_code == 0);
+    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)result.value;
+
+    CHECK(close(opened) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(pipe_pair[0]) == 0);
+    CHECK(close(pipe_pair[1]) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* A close this runtime already owns is a descriptor it has not yet given
+ * back, and an open submitted behind it must not be told the host is out.
+ *
+ * Source order is `close(held); open(path)` and it succeeds: the close returns
+ * the one free descriptor and the open takes it.  A pipeline holds both at
+ * once, so the open can reach the host while the close is still owed and the
+ * host answers `EMFILE` — an outcome the sequential program never produces.
+ *
+ * This is the same rule as the adapter test above, on the route generated code
+ * takes.  On a target with a kernel completion ring both operations sit in one
+ * ring, and the refusal arrives as a completion of its own: re-attempting the
+ * open inside the reap pass that saw the refusal races the close, because that
+ * pass sees only the completions the ring had already posted.  The re-attempt
+ * has to wait for the close's completion to be published, and this test fails
+ * for exactly as long as it does not. */
+static int test_bridge_open_behind_a_submitted_close_succeeds(
+    const char *scratch_directory
+) {
+    struct rlimit saved;
+    char path[256];
+    wf_completion_token close_token;
+    wf_completion_token open_token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    int writer;
+    int held;
+    int opened;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-bridge-close-first-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit narrows:
+     * the ring, its wait set, and any helper the policy asks for are created
+     * on the first submission, not here. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+    wf__completion_file_open_join(&open_token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &open_token) == 1);
+    wf__completion_file_join(&open_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    /* Source order, submitted in source order. */
+    CHECK(wf__completion_file_close_submit(held, &close_token) == 1);
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+
+    wf__completion_file_open_join(&open_token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)value;
+
+    wf__completion_file_join(&close_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    CHECK(wf__completion_file_close_submit(opened, &close_token) == 1);
+    wf__completion_file_join(&close_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
 static int test_native_contract_inventory(void) {
     wf_completion_target_contract darwin = wf_completion_target_contract_for(
         WF_TARGET_DARWIN_FILE_FALLBACK
@@ -3173,7 +3492,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
     RUN_TEST(test_open_exhaustion_retires_owned_work_and_retries(argv[1]));
+    RUN_TEST(test_open_exhaustion_waits_for_another_engine(argv[1]));
     RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
+    RUN_TEST(test_bridge_open_behind_a_submitted_close_succeeds(argv[1]));
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_darwin_directory_progress_is_internal());
     RUN_TEST(benchmark_core_roundtrip(&roundtrip_ns));
