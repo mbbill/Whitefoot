@@ -464,9 +464,13 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * With zero helpers, the calling thread performs the bounded typed work one
  * entry at a time until the accepted queue is empty.
  *
- * Precondition: no thread is inside `wf_file_adapter_submit` or
- * `wf_file_adapter_transfer_runs_on_caller`, and none will enter either, when
- * this is called.  That is not a caution, it is the design.
+ * Precondition: no thread is inside any entry point of this adapter, and none
+ * will enter one, when this is called.  That is not a caution, it is the
+ * design.  Every entry point above passes the record's `initialized` flag and
+ * then touches storage this call tears down -- the queue readers and the cap
+ * setter take `queue_lock` behind that flag exactly as submission does -- so
+ * the two named below are named because they are the two a delivered program
+ * reaches on its own, not because overlapping any of the others is safe.
  *
  * A submission announces its queue entry *after* releasing the queue lock, on
  * purpose -- signalling under the lock wakes a helper whose next act is to

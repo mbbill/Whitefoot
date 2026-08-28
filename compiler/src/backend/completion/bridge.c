@@ -308,27 +308,16 @@ static int wf_bridge_spin_for_completion(void) {
     uint64_t started = wf_bridge_monotonic_ns();
     uint64_t deadline;
     unsigned turn = 0;
-    /* The bound on this wait is a clock reading, so a clock this thread cannot
-     * read leaves no bound at all: every later sample answers zero and the
-     * deadline is never reached.  What an unbounded spin then costs is a
-     * property of the route the completion is coming from, and the two routes
-     * differ.
+    /* A failed clock is bounded below, not here.  The periodic sample treats
+     * `now == 0` exactly as it treats a passed deadline and returns 0, so a
+     * clock this thread cannot read still ends the spin after at most 64
+     * turns.  That term, not this early return, is what keeps an unreadable
+     * clock from spinning without a bound.
      *
-     * On the native ring it is the whole run.  A submitted read becomes a
-     * ready event only when `wf_bridge_progress` reaps the completion queue,
-     * and this spin never calls it, so the loop's other exit cannot fire on
-     * its own and the join never ends.  Measured with `clock_gettime` forced
-     * to fail: the Linux io_uring route makes no progress at all, while the
-     * guarded build finishes the same work in milliseconds.
-     *
-     * On the POSIX adapter the guard is defence rather than rescue.  A helper
-     * thread publishes the completion, so the ready-event count becomes
-     * nonzero without this thread doing anything and the loop leaves by its
-     * other exit.  Measured the same way on macOS: the unguarded build
-     * finishes, at the same wall time as the guarded one.
-     *
-     * A failed clock therefore ends the spin, which costs at worst a park this
-     * thread was about to make anyway. */
+     * This early return only skips those turns.  Their cost is 64 reads of a
+     * counter this thread would go on to read anyway, so the guard is a small
+     * saving on a rare path rather than the thing that terminates it; leaving
+     * the spin early costs at worst a park this thread was about to make. */
     if (started == 0) {
         return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
     }
