@@ -288,6 +288,9 @@ enum wf_file_submit_result {
 
 typedef struct wf_file_adapter_statistics {
     uint64_t submissions;
+    /* Opens refused for want of a host descriptor whose queued work this
+     * adapter completed before re-attempting them once. */
+    uint64_t exhaustion_retries;
     uint64_t capacity_waits;
     uint64_t helper_executions;
     uint64_t scheduler_executions;
@@ -312,6 +315,7 @@ typedef struct wf_file_adapter {
     unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
+    _Atomic uint64_t stat_exhaustion_retries;
     _Atomic uint64_t stat_capacity_waits;
     _Atomic uint64_t stat_helper_executions;
     _Atomic uint64_t stat_scheduler_executions;

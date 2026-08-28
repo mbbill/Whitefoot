@@ -8,6 +8,19 @@
 extern "C" {
 #endif
 
+/* How many iterations of one loop the runtime will carry in flight at once,
+ * asked once per loop entry and never per iteration.  `span` is the loop's
+ * statically known trip count, `slot_bytes` the private storage one in-flight
+ * iteration owns, and `ceiling` the compiler's own static cap; a zero in any
+ * of the three places no bound.  One is always a legal answer and reproduces
+ * the sequential program exactly, which is why a link without this unit gets a
+ * weak fallback returning one.  Nothing a writer can spell reaches this. */
+uint64_t wf__completion_window(
+    uint64_t span,
+    uint64_t slot_bytes,
+    uint64_t ceiling
+);
+
 int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,

@@ -380,13 +380,80 @@ static void wf_file_count_execution(wf_file_adapter *adapter, int helper) {
     );
 }
 
+/* True exactly for the results of an open the host refused because it had no
+ * descriptor to give: the process limit and the system limit.  Both are
+ * [SYS-7] `ResourceExhausted`, and both are recoverable by giving a
+ * descriptor back. */
+static int wf_file_open_lacked_a_descriptor(const wf_file_result *result) {
+    return result->kind == WF_FILE_OPEN_AT && result->value < 0
+        && (result->error_code == EMFILE || result->error_code == ENFILE);
+}
+
 static void wf_file_run_work(
     wf_file_adapter *adapter,
     const wf_file_work *work,
-    int helper
+    int helper,
+    int retire_and_retry
+);
+
+/* Completes the work this adapter already owns, then re-attempts one open the
+ * host refused for want of a descriptor.
+ *
+ * Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that keeps several
+ * iterations of a loop in flight holds several descriptors where source order
+ * holds one, so a host limit the sequential program never reaches can turn a
+ * correct program's `Ok` into an `Err(ResourceExhausted)`.  [SYS-10] is
+ * explicit that a `FilePermit` promises no native descriptor, and [PAR-1]'s
+ * exhaustion clause excuses only the resources an implementation spends on
+ * overlapping — never the descriptors the program's own opens consume.
+ *
+ * What this adapter can give back is what it still owns: every queued
+ * operation, the closes among them, each of which returns a descriptor when it
+ * runs.  Running them is work the sequential execution performs anyway, and it
+ * publishes their outcomes unchanged, so nothing here is observable except the
+ * open's second answer.  The drained items are run with no retry of their own,
+ * which bounds this to one level.
+ *
+ * Exactly one re-attempt.  If it also fails, that is the outcome source-order
+ * execution produces and the program is entitled to see it. */
+static wf_file_result wf_file_retire_and_retry(
+    wf_file_adapter *adapter,
+    const wf_file_work *work,
+    wf_file_result refused
+) {
+    size_t drained = 0;
+    atomic_fetch_add_explicit(
+        &adapter->stat_exhaustion_retries,
+        1,
+        memory_order_relaxed
+    );
+    for (;;) {
+        wf_file_work queued;
+        if (drained == adapter->queue_capacity
+            || !wf_file_take_work(adapter, &queued)) {
+            break;
+        }
+        wf_file_run_work(adapter, &queued, 0, 0);
+        drained += 1;
+    }
+    if (drained == 0) {
+        return refused;
+    }
+    return wf_file_execute_direct(&work->request);
+}
+
+static void wf_file_run_work(
+    wf_file_adapter *adapter,
+    const wf_file_work *work,
+    int helper,
+    int retire_and_retry
 ) {
     wf_file_result result = wf_file_execute_direct(&work->request);
-    wf_completion_publication publication = {
+    wf_completion_publication publication;
+    if (retire_and_retry != 0 && wf_file_open_lacked_a_descriptor(&result)) {
+        result = wf_file_retire_and_retry(adapter, work, result);
+    }
+    publication = (wf_completion_publication) {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
         .terminal_kind = result.error_code == 0
                 && result.open_outcome == WF_FILE_OPEN_SUCCEEDED
@@ -438,7 +505,7 @@ static void *wf_file_helper_main(void *context) {
         if (released_capacity != 0) {
             wf_completion_notify_capacity(adapter->runtime);
         }
-        wf_file_run_work(adapter, &work, 1);
+        wf_file_run_work(adapter, &work, 1, 1);
     }
 }
 
@@ -465,6 +532,7 @@ int wf_file_adapter_init(
     atomic_init(&adapter->helper_count, 0);
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
+    atomic_init(&adapter->stat_exhaustion_retries, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_helper_executions, 0);
     atomic_init(&adapter->stat_scheduler_executions, 0);
@@ -690,7 +758,7 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
         if (!wf_file_take_work(adapter, &work)) {
             break;
         }
-        wf_file_run_work(adapter, &work, 0);
+        wf_file_run_work(adapter, &work, 0, 1);
         executed += 1;
     }
     return executed;
@@ -760,6 +828,10 @@ wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(
     }
     statistics.submissions = atomic_load_explicit(
         &adapter->stat_submissions,
+        memory_order_relaxed
+    );
+    statistics.exhaustion_retries = atomic_load_explicit(
+        &adapter->stat_exhaustion_retries,
         memory_order_relaxed
     );
     statistics.capacity_waits = atomic_load_explicit(

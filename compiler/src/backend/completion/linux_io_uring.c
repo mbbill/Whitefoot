@@ -164,6 +164,8 @@ static int wf_linux_init_wait_set(wf_linux_io_uring_adapter *adapter) {
 
 static void wf_linux_init_statistics(wf_linux_io_uring_adapter *adapter) {
     atomic_init(&adapter->stat_submissions, 0);
+    atomic_init(&adapter->stat_submission_enters, 0);
+    atomic_init(&adapter->stat_exhaustion_retries, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_completions, 0);
     atomic_init(&adapter->stat_publication_failures, 0);
@@ -562,6 +564,11 @@ static int wf_linux_kick_locked(wf_linux_io_uring_adapter *adapter) {
     if (pending == 0) {
         return 0;
     }
+    atomic_fetch_add_explicit(
+        &adapter->stat_submission_enters,
+        1,
+        memory_order_relaxed
+    );
     do {
         result = wf_linux_enter(adapter->ring_descriptor, pending, 0, 0);
     } while (result == -EINTR);
@@ -598,8 +605,20 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     head = wf_linux_load_acquire(adapter->submission_head);
     tail = wf_linux_load_relaxed(adapter->submission_tail);
     if (tail - head >= *adapter->submission_count) {
-        (void)pthread_mutex_unlock(&adapter->submission_lock);
-        return wf_linux_wait_capacity(adapter, token);
+        /* A deferred doorbell fills the submission queue with entries the
+         * kernel has not been told about, so a full queue is first this
+         * thread's own backlog and only then real backpressure.  Ring the
+         * doorbell, which is what advances the head, and re-read it once
+         * before declaring a capacity wait. */
+        int error = wf_linux_kick_locked(adapter);
+        if (error != 0) {
+            wf_linux_record_progress_error(adapter, error);
+        }
+        head = wf_linux_load_acquire(adapter->submission_head);
+        if (tail - head >= *adapter->submission_count) {
+            (void)pthread_mutex_unlock(&adapter->submission_lock);
+            return wf_linux_wait_capacity(adapter, token);
+        }
     }
     entry = wf_linux_reserve_entry(adapter, &entry_index);
     if (entry == NULL) {
@@ -632,6 +651,7 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
         entry->request.buffer.path = entry->path_storage;
     }
     entry->waiting_readiness = 0;
+    entry->exhaustion_retried = 0;
     entry->opened_descriptor = -1;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     entry->open_error = 0;
@@ -673,15 +693,23 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
         memory_order_relaxed
     );
 
-    /* Once target_accepted succeeds, the adapter owns retrying a short or
-     * interrupted enter.  A kick error is diagnostic progress state, never a
-     * false inline rejection and never permission to reuse the bundle. */
-    {
-        int error = wf_linux_kick_locked(adapter);
-        if (error != 0) {
-            wf_linux_record_progress_error(adapter, error);
-        }
-    }
+    /* The doorbell is deferred.  Staging an SQE is a store to a shared page
+     * the kernel already maps, so a submission costs no syscall at all until
+     * some thread flushes; `io_uring_enter` is then one call for however many
+     * entries have accumulated.  Measured on the eight-wide many-file
+     * benchmark, deferring turned 15,360 enters into 2,048 and took 15.6 ms
+     * of system CPU off a program whose wall time fell by the same amount
+     * (LOOP-PIPELINE.md §9.1).
+     *
+     * What makes it safe is that every path which can wait flushes first:
+     * `wf_linux_io_uring_progress` kicks before it reaps or sleeps, and every
+     * join and park in the bridge reaches the kernel through it.  The bridge
+     * also flushes before a blocking direct host call, so a submitted open can
+     * never sit unkicked behind one.
+     *
+     * A full submission queue is the one case the submitting thread must
+     * resolve itself, and it does so above, before it declares a capacity
+     * wait. */
     (void)pthread_mutex_unlock(&adapter->submission_lock);
     return WF_LINUX_IO_URING_TARGET_OWNS;
 }
@@ -720,6 +748,14 @@ static int wf_linux_resubmit_entry(
     }
     (void)pthread_mutex_unlock(&adapter->submission_lock);
     return result;
+}
+
+/* True exactly for the completion results of an open the host refused
+ * because it had no descriptor to give: the process limit and the system
+ * limit.  Both are [SYS-7] `ResourceExhausted`, and both are recoverable by
+ * giving a descriptor back. */
+static int wf_linux_open_lacked_a_descriptor(int32_t completion_result) {
+    return completion_result == -EMFILE || completion_result == -ENFILE;
 }
 
 static int wf_linux_transfer_kind(enum wf_linux_file_operation_kind kind) {
@@ -786,7 +822,8 @@ static void wf_linux_decide_open(
 static int wf_linux_publish_completion(
     wf_linux_io_uring_adapter *adapter,
     const struct io_uring_cqe *completion,
-    int *terminal_published
+    int *terminal_published,
+    int *retry_staged
 ) {
     uint64_t encoded = completion->user_data;
     size_t entry_index;
@@ -823,6 +860,46 @@ static int wf_linux_publish_completion(
             return wf_linux_resubmit_entry(adapter, entry_index, entry, 1);
         }
     } else if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
+        if (wf_linux_open_lacked_a_descriptor(completion->res)
+            && entry->exhaustion_retried == 0
+            && atomic_load_explicit(&adapter->in_flight, memory_order_acquire)
+                > 1) {
+            /* Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that
+             * keeps several iterations in flight holds several descriptors
+             * where source order holds one, so a host limit the sequential
+             * program never reaches can turn an `Ok` into an
+             * `Err(ResourceExhausted)`.  [SYS-10] is explicit that a
+             * `FilePermit` promises no native descriptor, and [PAR-1]'s
+             * exhaustion clause excuses only the resources an implementation
+             * spends on overlapping — never the descriptors the program's own
+             * opens consume.  So this outcome is not published.
+             *
+             * The entry becomes retry-pending instead, which leaves it out of
+             * this reap pass: every other ready completion — the closes among
+             * them, whose descriptors the kernel has already returned by the
+             * time their completion exists — publishes first, and the next
+             * `wf_linux_kick` re-stages this open behind them.  The language
+             * sees one `open_file` call with one outcome however many host
+             * attempts formed it, exactly as it already does for a submission
+             * that waited for capacity.
+             *
+             * Exactly one re-attempt.  If the second attempt also fails, that
+             * is the outcome source-order execution produces and the program
+             * is entitled to see it. */
+            entry->exhaustion_retried = 1;
+            atomic_fetch_add_explicit(
+                &adapter->stat_exhaustion_retries,
+                1,
+                memory_order_relaxed
+            );
+            atomic_store_explicit(
+                &entry->state,
+                WF_LINUX_IO_URING_ENTRY_RETRY_PENDING,
+                memory_order_release
+            );
+            *retry_staged = 1;
+            return 0;
+        }
         wf_linux_decide_open(entry, completion->res);
     }
 
@@ -881,6 +958,7 @@ int wf_linux_io_uring_progress(
     size_t total = 0;
     size_t processed = 0;
     int first_error = 0;
+    int retry_staged = 0;
     unsigned head;
     unsigned tail;
 
@@ -936,7 +1014,8 @@ int wf_linux_io_uring_progress(
         int error = wf_linux_publish_completion(
             adapter,
             &completion,
-            &terminal_published
+            &terminal_published,
+            &retry_staged
         );
         head += 1u;
         wf_linux_store_release(adapter->completion_head, head);
@@ -948,6 +1027,18 @@ int wf_linux_io_uring_progress(
         tail = wf_linux_load_acquire(adapter->completion_tail);
     }
     (void)pthread_mutex_unlock(&adapter->completion_lock);
+
+    /* A retire-and-retry open was held out of the pass above so every other
+     * ready completion could publish first.  Ring the doorbell for it here,
+     * while this thread still owns the decision: the caller may park on the
+     * completion queue immediately after, and an unstaged re-attempt would
+     * have nothing to wake it. */
+    if (retry_staged != 0) {
+        int kick_error = wf_linux_kick(adapter);
+        if (first_error == 0 && kick_error != 0) {
+            first_error = kick_error;
+        }
+    }
 
     if (first_error != 0) {
         wf_linux_record_progress_error(adapter, first_error);
@@ -1178,6 +1269,30 @@ size_t wf_linux_io_uring_in_flight(
     return atomic_load_explicit(&adapter->in_flight, memory_order_acquire);
 }
 
+size_t wf_linux_io_uring_capacity(
+    const wf_linux_io_uring_adapter *adapter
+) {
+    size_t submission;
+    if (adapter == NULL || adapter->initialized == 0) {
+        return 0;
+    }
+    submission = (size_t)*adapter->submission_count;
+    return submission < adapter->entry_capacity ? submission
+                                                : adapter->entry_capacity;
+}
+
+int wf_linux_io_uring_flush(wf_linux_io_uring_adapter *adapter) {
+    int error;
+    if (adapter == NULL || adapter->initialized == 0) {
+        return EINVAL;
+    }
+    error = wf_linux_kick(adapter);
+    if (error != 0) {
+        wf_linux_record_progress_error(adapter, error);
+    }
+    return error;
+}
+
 int wf_linux_io_uring_destroy(wf_linux_io_uring_adapter *adapter) {
     int first_error = 0;
     if (adapter == NULL || adapter->initialized == 0) {
@@ -1224,6 +1339,14 @@ wf_linux_io_uring_statistics wf_linux_io_uring_statistics_snapshot(
     }
     statistics.submissions = atomic_load_explicit(
         &adapter->stat_submissions,
+        memory_order_relaxed
+    );
+    statistics.submission_enters = atomic_load_explicit(
+        &adapter->stat_submission_enters,
+        memory_order_relaxed
+    );
+    statistics.exhaustion_retries = atomic_load_explicit(
+        &adapter->stat_exhaustion_retries,
         memory_order_relaxed
     );
     statistics.capacity_waits = atomic_load_explicit(

@@ -43,6 +43,13 @@
 #define WF_BRIDGE_QUEUE_COUNT WF_BRIDGE_OPERATION_CAPACITY
 #define WF_BRIDGE_MAX_HELPERS 8u
 #define WF_BRIDGE_DRAIN_BUDGET 16u
+/* Private storage one loop may hold for its in-flight iterations, before the
+ * compiler's own ceiling and the loop's per-iteration size are applied.  It
+ * exists so a loop whose iteration owns a large buffer gets a small window
+ * instead of a large multiple of that buffer: at 64 KiB an iteration this
+ * budget affords 64 of them, and at 16 MiB it affords none, which the K >= 1
+ * floor turns into the sequential program. */
+#define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
 
 static wf_completion_runtime wf_bridge_runtime;
 static wf_completion_slot wf_bridge_slots[WF_BRIDGE_SLOT_COUNT];
@@ -66,6 +73,12 @@ static _Atomic uint64_t wf_bridge_demoted_opens;
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
 static unsigned wf_bridge_linux_ready;
+/* The one piece of bridge readiness a thread may observe without running the
+ * initializer itself.  `wf_bridge_flush_target` must not create a ring for a
+ * program that only ever makes direct calls, so it cannot go through
+ * `pthread_once`; this release/acquire pair is what orders the ring's
+ * construction before another thread's flush of it. */
+static _Atomic unsigned wf_bridge_doorbell_ready;
 #endif
 
 enum wf_bridge_route {
@@ -183,6 +196,11 @@ static void wf_bridge_shutdown(void) {
     }
 #if defined(__linux__)
     if (wf_bridge_linux_ready != 0) {
+        atomic_store_explicit(
+            &wf_bridge_doorbell_ready,
+            0,
+            memory_order_release
+        );
         (void)wf_linux_io_uring_destroy(&wf_bridge_linux_adapter);
         wf_bridge_linux_ready = 0;
     }
@@ -226,6 +244,13 @@ static void wf_bridge_initialize(void) {
     }
 #endif
     wf_bridge_ready = 1;
+#if defined(__linux__)
+    atomic_store_explicit(
+        &wf_bridge_doorbell_ready,
+        wf_bridge_linux_ready,
+        memory_order_release
+    );
+#endif
     if (atexit(wf_bridge_shutdown) != 0) {
         /* Registration failure changes cleanup at process exit, not the
          * completion contract of any admitted operation. */
@@ -599,6 +624,96 @@ static int wf_bridge_submit_linux_close(
 }
 #endif
 
+/* Rings the deferred io_uring doorbell before this thread does something the
+ * ring cannot see through.
+ *
+ * Staging an SQE costs no syscall, so a submission leaves work the kernel has
+ * not been told about.  That is exactly what makes deferring worth 15 % of the
+ * eight-wide benchmark's wall time, and exactly what makes an unguarded
+ * blocking call a hazard: an open the program has already submitted would sit
+ * in the submission queue, untouched, for as long as this thread waits in a
+ * direct `openat` that the completion path refused to carry.  Every entry
+ * point below that can block outside the ring flushes first.  On a target with
+ * no ring this is nothing. */
+static void wf_bridge_flush_target(void) {
+#if defined(__linux__)
+    if (atomic_load_explicit(&wf_bridge_doorbell_ready, memory_order_acquire)
+        != 0) {
+        (void)wf_linux_io_uring_flush(&wf_bridge_linux_adapter);
+    }
+#endif
+}
+
+/* How many iterations of one loop the runtime will carry in flight at once.
+ *
+ * Asked once per loop entry and never per iteration, exactly as
+ * `wf__par_split_budget` is (`par_runtime.c`).  The writer never sees this
+ * number, never spells it, and cannot influence it: there is no attribute, no
+ * environment variable, and no source form for a window.
+ *
+ * `span` is the loop's trip count where it is statically known and zero where
+ * it is not; `slot_bytes` is the private storage one in-flight iteration owns;
+ * `ceiling` is the compiler's own static cap from that storage's cost.  A zero
+ * in any of the three means "this one places no bound", so
+ * `wf__completion_window(0, 0, 0)` is the runtime's unconstrained answer.
+ *
+ * **One is always a legal answer**, and it reproduces the sequential program
+ * exactly, so this query can never make a correct program fail.  That is why
+ * the fallback a link without this unit gets returns one.
+ *
+ * The runtime's own bound is half its process-wide operation capacity.  The
+ * whole capacity is the wrong answer: a loop that owned every record would
+ * push every other operation in the program onto the capacity-wait path, and a
+ * full ring degrades to a blocking direct call rather than to a slower
+ * pipeline (LOOP-PIPELINE.md §3.9 item 6).  Half of 64 is 32, which is also
+ * where the hand-written ceiling program measured its optimum (§9.2).
+ *
+ * Where the ring is the target engine the ring's capacity bounds it as well;
+ * where a bounded helper pool is, the pool's width does. */
+uint64_t wf__completion_window(
+    uint64_t span,
+    uint64_t slot_bytes,
+    uint64_t ceiling
+) {
+    uint64_t window;
+    if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
+        || wf_bridge_ready == 0) {
+        /* With no completion runtime every operation is a blocking direct
+         * call, so depth buys nothing and one is the honest answer. */
+        return 1;
+    }
+    window = (uint64_t)WF_BRIDGE_OPERATION_CAPACITY / 2u;
+#if defined(__linux__)
+    if (wf_bridge_linux_ready != 0) {
+        uint64_t ring =
+            (uint64_t)wf_linux_io_uring_capacity(&wf_bridge_linux_adapter);
+        if (ring < window) {
+            window = ring;
+        }
+    } else if ((uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
+        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
+    }
+#else
+    if ((uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
+        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
+    }
+#endif
+    if (ceiling != 0 && ceiling < window) {
+        window = ceiling;
+    }
+    if (span != 0 && span < window) {
+        window = span;
+    }
+    if (slot_bytes != 0) {
+        uint64_t affordable =
+            (uint64_t)WF_BRIDGE_WINDOW_BYTE_BUDGET / slot_bytes;
+        if (affordable < window) {
+            window = affordable;
+        }
+    }
+    return window == 0 ? 1u : window;
+}
+
 int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
@@ -725,6 +840,10 @@ int wf__completion_file_open_at_submit(
             1,
             memory_order_relaxed
         );
+        /* The caller answers a refusal with a direct blocking open, so no
+         * already-submitted operation may be left waiting on a doorbell this
+         * thread is about to stop ringing. */
+        wf_bridge_flush_target();
         return 0;
     }
 #if defined(__linux__)
@@ -929,6 +1048,9 @@ int64_t wf__completion_file_pread_direct(
     int64_t file_offset
 ) {
     wf_file_request request;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
 #if defined(__linux__)
     if (file_offset >= 0) {
         wf_completion_token token;
@@ -970,6 +1092,9 @@ int64_t wf__completion_file_write_direct(
     uint64_t count
 ) {
     wf_file_request request;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_WRITE;
     request.operation.write.descriptor = descriptor;
@@ -1000,6 +1125,9 @@ int wf__completion_file_open_at_direct(
         errno = EINVAL;
         return -1;
     }
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_OPEN_AT;
     request.operation.open_at.directory = directory;
@@ -1022,6 +1150,9 @@ int wf__completion_file_status_direct(
 ) {
     wf_file_request request;
     wf_file_result result;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     if (status == NULL
         || (uint64_t)(size_t)status_capacity != status_capacity) {
         errno = EINVAL;
@@ -1043,6 +1174,9 @@ int wf__completion_file_status_direct(
 
 int wf__completion_file_close_direct(int descriptor) {
     wf_file_request request;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_CLOSE;
     request.operation.close.descriptor = descriptor;
