@@ -1018,6 +1018,46 @@ Linux hardware, now reached on macOS, and it retires the last table in this
 document that credited the overlap lowering with a win on the many-files
 workload.
 
+### Reproduced on a second pair of runners
+
+The same workflow ran again at commit `e2e4535d`, run
+[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257),
+on separately provisioned hosts: the Linux job landed on an AMD EPYC 7763
+rather than the Intel Xeon 8370C above, and the macOS job on another virtual
+M1. Different silicon, and every ordering holds.
+
+```text
+                                  run 1        run 2
+Linux 64 KiB cold   C vs S      1.43x faster  1.58x faster
+                    C vs pool8  1.04x faster  1.00x of it
+Linux  4 KiB unc.   C vs S      2.10x faster  2.61x faster
+                    C vs uring32 1.00x of it  1.01x slower
+Linux 64 KiB warm   C vs S      1.02x faster  1.04x faster
+Linux  4 KiB warm   C vs S      1.06x faster  1.08x faster
+macOS 64 KiB cold   C vs S      1.73x faster  1.65x faster
+macOS  4 KiB cold   C vs S      1.58x faster  1.81x faster
+macOS 64 KiB warm   C vs S      1.27x slower  1.24x slower
+macOS  4 KiB warm   C vs S      2.88x slower  2.73x slower
+many files / macOS  C vs S      1.20x slower  1.17x slower
+                    N.direct    17.2 us/file  17.9 us/file
+```
+
+Two things in the second run are worth more than the agreement.
+
+Its macOS uncached probes refused the label **before** the tables ran, not
+only after, and the script printed the refusal on the label line and went on:
+"treat the label as a claim about what was asked for, not about what was
+measured". That is the behaviour the runner jobs were built for, and it means
+the macOS cold rows above should be read as what the second run says they
+are — a device that was already partly answering from somewhere other than
+itself. The macOS ordering holds anyway, on both runs, at every window.
+
+And the Linux `N.uring32` warm line moved from 324.71 ms to 942.12 with 913 ms
+of system time. A 32-deep ring over a warm page cache is doing nothing but
+paying for submissions on that host, and the second runner charged three times
+as much for them. It is the one line in either table whose two readings do not
+agree, and it is a native baseline rather than a Whitefoot line.
+
 ### What WF_IO_NOCACHE does
 
 `WF_IO_NOCACHE=1` applies `fcntl(fd, F_NOCACHE, 1)` on Darwin, and one

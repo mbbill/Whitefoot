@@ -268,6 +268,17 @@ Batch 0090 reached this conclusion on Linux hardware; it now holds on macOS,
 and no table in the document still credits the overlap lowering with a win on
 the many-files workload.
 
+**Both readings were taken twice.** The workflow ran again at commit
+`e2e4535d`, run
+[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257),
+on separately provisioned hosts -- the Linux job on an AMD EPYC 7763 rather
+than an Intel Xeon 8370C. Every ordering above holds and every ratio lands
+within about half a step of its first reading; RESULTS.md tabulates the pair.
+The second run also refused the macOS uncached label *before* its tables ran
+rather than only after, printed that on the label line, and went on. That is
+the labelling behaviour these jobs were built for, and it is the reason to
+read the macOS cold rows as an ordering rather than as a device measurement.
+
 ## Judgment calls
 
 1. **`linux-read-bench.sh` became `read-bench.sh`, host-portable, rather than
