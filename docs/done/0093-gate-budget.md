@@ -317,33 +317,37 @@ it a flake generator wearing a budget's clothes.
 
 | | before, one `make check` | after, the slowest job | after, sum of jobs |
 |---|---|---|---|
-| `ubuntu-24.04` | 21 min 34 s | **2 min 20 s** | 10 min 19 s |
-| `macos-14` | 5 min 35 s | **1 min 43 s** | 8 min 1 s |
+| `ubuntu-24.04` | 21 min 34 s | **2 min 23 s** | 10 min 3 s |
+| `macos-14` | 5 min 35 s | **1 min 47 s** | 7 min 26 s |
 | maintainer's machine, warm | 3 min 14 s | **2 min 24 s** | — |
 
-The Linux "after" is the `unit` job at 140 s; the macOS one is `unit` at 103 s.
-Every job on both hosts is inside the five-minute target and none comes within
-two and a half minutes of the eight-minute ceiling. The sum column is what the
-one-job-per-host shape would still cost, and is what the split converts into a
-maximum.
+The Linux "after" is the `corpus` job at 143 s; the macOS one is `corpus` at
+107 s. Every job on both hosts is inside the five-minute target and none comes
+within two and a half minutes of the eight-minute ceiling. The sum column is
+what the one-job-per-host shape would still cost, and is what the split turns
+into a maximum.
 
-### Per job, gate run [33145583233](https://github.com/mbbill/Whitefoot/actions/runs/33145583233)
+### Per job, gate run [33145853135](https://github.com/mbbill/Whitefoot/actions/runs/33145853135)
 
 | job | Linux | macOS |
 |---|---|---|
-| `static` | 62 s | 79 s |
-| `unit` | 140 s | 103 s |
-| `sampling` | 138 s | 90 s |
-| `corpus` | 127 s | 101 s |
-| `conformance` | 91 s (red, the six documented cases) | 86 s |
-| `research` | 61 s | 22 s |
+| `static` | 64 s | 54 s |
+| `unit` | 117 s | 96 s |
+| `sampling` | 134 s | 94 s |
+| `corpus` | 143 s | 107 s |
+| `conformance` | 105 s (red, the six documented cases) | 72 s |
+| `research` | 40 s | 23 s |
+
+Every job is green on both hosts except `conformance (ubuntu-24.04)`, which is
+red on exactly the six target-qualification cases named under *Not done* and
+was red on those before this batch.
 
 ### Per stage, the same content
 
 | stage | Linux before | Linux after | macOS before | macOS after |
 |---|---|---|---|---|
-| library suite, fast half | (one suite, 1016 s) | 48.5 s | (one suite, 55 s) | 28.9 s |
-| library suite, sampling half | (in the same 1016 s) | **57 s** | (in the same 55 s) | 20.3 s |
+| library suite, fast half | (one suite, 1016 s) | 31.6 s | (one suite, 55 s) | 28.9 s |
+| library suite, sampling half | (in the same 1016 s) | **54.1 s** | (in the same 55 s) | 20.3 s |
 | integration targets | 54 s | 56 s | 65 s | 66 s |
 | `conformance-run` | 49.5 s | 23.6 s | 48.9 s | 28.5 s |
 | `research-tests` | 12.9 s | 12 s | 12.0 s | 10 s |
@@ -373,7 +377,7 @@ Linux, the five that owned the gate, before and after:
 | `trap_latch::a_single_false_claim_reports_the_same_bytes_at_every_worker_count` | 138 s | under 1 s |
 | `trap_latch::the_sequential_schedule_names_one_claim_every_run` | 42 s | under 1 s |
 | `trap_latch::the_latch_is_what_keeps_the_record_single` | 20 s | under 1 s |
-| `exhaustion::a_frame_larger_than_the_guard_region_is_still_reported` | over 60 s | 32.9 s |
+| `exhaustion::a_frame_larger_than_the_guard_region_is_still_reported` | over 60 s | 34.2 s |
 
 None of them appears in the sampling job's ten-largest-gaps report any more
 except the last, which is now the largest case in the suite and is the cost of
