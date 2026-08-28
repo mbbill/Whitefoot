@@ -27,7 +27,8 @@ make -C research/experiments/io-completion-bench bench-read   # macOS, read-heav
 make -C research/experiments/io-completion-bench linux-read   # Linux, read-heavy
 ```
 
-The runner tables come from `.github/workflows/io-hosts.yml`: `bench-linux`
+The runner tables come from `.github/workflows/io-bench.yml` (until batch 0093
+they lived in `io-hosts.yml`): `bench-linux`
 runs `linux-bench.sh` on Linux hardware with no container in the way, and
 `bench-linux-read` and `bench-macos-read` run `read-bench.sh` on both hosts.
 Every one of them uploads its table as a job artifact and prints it to the job
@@ -417,7 +418,7 @@ project's macOS machine: an aarch64 guest with two virtual CPUs, its tree on
 the container's own overlay filesystem. That is a Linux kernel, but it is not
 Linux hardware, and the section below shows the difference is not a rounding
 error. These numbers come from GitHub-hosted `ubuntu-24.04` runners through
-`.github/workflows/io-hosts.yml`, which builds the bundle natively — no
+`.github/workflows/io-bench.yml` (then `io-hosts.yml`), which builds the bundle natively — no
 container, no bind mount — and runs `linux-bench.sh` with the same protocol,
 the same `workload.h`, and the same published checksum.
 

@@ -110,8 +110,11 @@ Linux runner and a GitHub-hosted macOS runner: one job per stage rather than
 one job per host, so the wait is the slowest stage instead of the sum, and each
 job is capped at eight minutes.
 [`.github/workflows/io-hosts.yml`](.github/workflows/io-hosts.yml) carries the
-completion-I/O evidence that no machine here can produce: the Linux io_uring
-adapter and sanitizers on a real kernel, the program-level I/O benches on real
+completion-I/O correctness evidence that no machine here can produce on every
+push: the Linux io_uring adapter and sanitizers on a real kernel and the Windows
+IOCP probes executed natively;
+[`.github/workflows/io-bench.yml`](.github/workflows/io-bench.yml) carries the
+program-level I/O benches on real
 hardware -- including the read-dominated tables on both a Linux and a macOS
 runner, the latter being the only macOS host available to this project without
 an endpoint-security stack in its I/O path -- and the Windows IOCP probes

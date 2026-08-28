@@ -473,5 +473,10 @@ Under the four rules in `AGENTS.md`:
   reads that as conformance evidence under rule 4, the merge record is those
   two edits to that one recipe and nothing else. This record does not write an
   approval entry; `governance/APPROVALS.md` is the owner's at merge time.
-- **The CI files are `.github/workflows/gate.yml` only.**
-  `.github/workflows/io-hosts.yml` is untouched.
+- **The CI files are `.github/workflows/gate.yml`, `io-hosts.yml` and the new
+  `io-bench.yml`.** The three bench jobs moved out of `io-hosts.yml` into
+  `io-bench.yml`, which runs on `workflow_dispatch` and on pushes that touch
+  the completion runtime, the emitter, or the bench bundle; their steps are
+  byte-identical. `io-hosts.yml` keeps the two correctness jobs on every push,
+  under a minute each. A push therefore never waits on a fifteen-minute
+  measurement that sets no red or green.

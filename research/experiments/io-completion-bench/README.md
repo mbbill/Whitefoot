@@ -191,8 +191,10 @@ It does that by running `read-bench.sh`, which is one protocol for every host
 that can run it: the container, the project's Linux runner, and its macOS
 runner. Only paths and the host's own capabilities differ -- `ROOT`, `OUT`,
 `CLANG` and `CARGO_TARGET_DIR` name the paths, and `uname -s` decides whether
-the io_uring lines are in the plan. The `io-hosts` workflow's
-`bench-linux-read` and `bench-macos-read` jobs run exactly those bytes.
+the io_uring lines are in the plan. The `io-bench` workflow's
+`bench-linux-read` and `bench-macos-read` jobs run exactly those bytes; that
+workflow runs on demand and when the runtime or this bundle changes, because
+its tables judge nothing.
 
 The script differs from `bench-read` in one deliberate way. `bench-read`
 refuses to print a table whose cache-state label the probe did not confirm,
