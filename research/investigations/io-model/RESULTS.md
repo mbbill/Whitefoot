@@ -546,9 +546,20 @@ once, before any read; then the program performs 32,768 positioned reads of
 from the read's own position. Reproduce with:
 
 ```sh
-make -C research/experiments/io-completion-bench bench-read   # macOS
-make -C research/experiments/io-completion-bench linux-read   # Linux, io_uring
+make -C research/experiments/io-completion-bench bench-read   # macOS, local
+make -C research/experiments/io-completion-bench linux-read   # Linux container
 ```
+
+The recorded tables below come from GitHub-hosted runners, not from the
+maintainer's machine, and both runner jobs execute the same
+`research/experiments/io-completion-bench/read-bench.sh`. The reason is in the
+two sections above: the maintainer's macOS machine runs a corporate
+endpoint-security stack that charges 116 us for an `openat` and reads the
+benchmark tree behind the benchmark's back, and it is shared with whatever
+else the maintainer is doing. A hosted runner has neither problem, and a
+hosted macOS runner gives this project its first macOS numbers taken on an
+ordinary system. The local table is kept below all the same, labelled
+provisional, because it is the only table taken on hardware anyone here owns.
 
 ### The first version of this section was measured from the page cache
 
@@ -582,11 +593,23 @@ per-file medians are printed beside every table below.
 
 ### Method
 
-Two warm-ups, then medians of fifteen on macOS, every line checked to publish
-the same bytes before it may report a time, with the runner's observed minimum
-and maximum shown beside each median and the median child user and system CPU
-beside those. The host's one-minute load average is stated with each table;
-the machine is shared, and a table taken under load is not a table.
+Every line is checked to publish the same bytes before it may report a time.
+Timing is by whole pass, not by line: the runner runs the entire plan, then
+runs it again, reversing the plan's order on every other pass, for two
+unrecorded passes and then seven recorded ones, and reports each line's median
+across passes with the observed minimum and maximum beside it and the median
+child user and system CPU beside those.
+
+Passes rather than all of one line's runs and then all of the next's, because
+these hosts drift. A shared runner's disk, its neighbours, and a laptop's
+thermal state all change over the minutes a table takes, and a grouped
+schedule turns that drift into a difference between lines: the line that ran
+first is measured against a different machine from the line that ran last.
+Interleaving spreads the drift across every line, and reversing alternate
+passes cancels the residue of position within a pass, so a systematic
+first-in-pass or last-in-pass cost lands on every line equally. The local
+provisional table at the end of this section predates that change and was
+taken line by line; that is one of the reasons it is labelled provisional.
 
 The opens stay inside the timed region — the runner times whole processes —
 but there are exactly eight of them in every line, N, S and C alike, so at
