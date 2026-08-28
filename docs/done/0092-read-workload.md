@@ -188,3 +188,59 @@ about the same at either size, because it is a device round trip rather than a
 bandwidth question, so equal read counts keep the two tables comparable and
 keep the 4 KiB uncached table from running for an hour.
 
+
+## Where the tables were taken, and why not here
+
+The tables this batch records come from GitHub-hosted runners. The local
+machine produced the first ones and they are kept, labelled provisional, but
+they are not the evidence.
+
+Two reasons, and the first is the batch's own subject. This machine's
+endpoint-security stack charges 116 us for an `openat`, and it reads the
+benchmark tree while the benchmark is running: with no benchmark process alive
+at all, one of the eight files intermittently becomes half resident and is
+then reclaimed. That is a measurement of the host, and the whole point of the
+read-heavy workload was to stop measuring the host. Second, the machine is
+shared and loaded; the local uncached table was taken at a one-minute load
+average of 2.5 and its lines were run in groups rather than interleaved, so
+drift across the minutes the table took is inside the numbers.
+
+`research/experiments/io-completion-bench/read-bench.sh` is one protocol for
+every host that can run it -- the `linux-read` container, the Linux runner,
+the macOS runner -- with `ROOT`, `OUT` and `CLANG` naming the paths and
+`uname -s` deciding the io_uring lines. This follows batch 0090's decision to
+parameterize `linux-bench.sh` rather than copy it; a second script would have
+been a second protocol.
+
+It differs from `make bench-read` in one deliberate way. `bench-read` refuses
+to print a table whose cache-state label the probe did not confirm, which is
+right on a machine whose two populations -- 6 to 20 us from the cache, about
+134 us from the device -- are known and far apart. A hosted runner's storage
+is not known in advance and its device may be a host-cached network disk that
+answers faster than the threshold. There the honest outcome is a table
+labelled by what was measured, not the absence of a table, so the script
+always runs the probe, always prints its per-file medians, and prints the
+verdict on the table's own label line.
+
+## Not done
+
+- **Linux cannot hold a descriptor uncached.** `F_NOCACHE` is a mode of the
+  descriptor and holds for every read through it; `POSIX_FADV_DONTNEED` is an
+  action, and evicts only what is resident when the open runs. So on Linux
+  every line starts from a cold tree and then warms it as it reads, and the
+  probe that follows a Linux uncached table measures how far that went rather
+  than confirming a label. `O_DIRECT` would hold, but it constrains buffer
+  address, offset and length alignment, which would change the program's own
+  buffers and so change what is being measured. The Linux uncached tables are
+  therefore *cold-start* tables, and the record says so where they appear.
+- **The many-files workload was not re-measured on the local machine.** The
+  macOS runner's reading of it is new evidence about the open path; the local
+  reading it should be compared against is the one batches 0084 and 0086
+  already recorded.
+- **No slower device was measured.** Every ratio here is a statement about
+  storage that answers a 64 KiB read in roughly a hundred microseconds. On a
+  device an order of magnitude slower every ratio would move in C's favour,
+  because the wait C overlaps would be larger relative to the handoff that
+  overlaps it.
+- **The pipe workload was not re-run.** It discriminated nothing in batch
+  0084 and nothing in this batch touches it.
