@@ -97,7 +97,9 @@ version of change 4 while the emitted program stayed identical everywhere.
    `intern_for` no longer clones the node it interns. Absence is the index's
    only state and is read off the ledger — empty entries beside a non-empty
    arena means a replay is owed — rather than tracked by a flag each dropper
-   has to set correctly.
+   has to set correctly. That covers one dropper the flag did not, which is
+   the batch's one deliberate behaviour change; the review section below
+   states it.
    693 M → 55 M per inventory.
 2. **`DerivationLedger::settle()`** (`entailment/state.rs`), called by
    `flow::analyze_candidate` and `analyze_candidate_masked` — the two entry
@@ -269,15 +271,41 @@ ledger — empty entries beside a non-empty arena — so a clone, a `settle` and
 in production interns into a copied ledger today, so no compilation changed;
 the defect was a live hazard rather than a live fault.
 
+**The derived rule answers one question differently than the flag did.** The
+first version of this record described the change as making the clone and
+`settle` droppers agree, which understates it. `finish_with_event_roots` drops
+the index as well, and `79b29665` and `a8040b32` recorded it as *fresh* there:
+interning a node the pruned arena still held minted a second identity for it,
+because the flag said no replay was owed. Reading absence off the ledger
+replays that dropper too, so this branch returns the retained identity where
+both earlier revisions returned a new one. The branch's answer is the correct
+one — the pruned arena does still hold the node — and the path is unreachable
+today: a review that instrumented `rebuild_intern_index` reported **0 replays**
+over all 623 corpus sources and its own fifteen probe programs, which follows
+from the code — every analysis starts from `DerivationLedger::default()` and
+every `intern_for` call site runs inside `flow::run`, before `settle` and
+`finish`. Nothing in the corpus can therefore observe the difference, but it
+is real and belongs in this record.
+`interning_after_a_finish_keeps_the_retained_identity` holds the new answer and
+fails on `79b29665` as well as on `a8040b32`.
+
 **One rationale in this record was wrong.** It said `settle`'s `shrink_to_fit`
 is unobservable because capacity is not read anywhere. `DerivationLedger::
 measure` reads six vector capacities into `metrics.retained_bytes`, and `roots`
 is the one vector `finish_with_event_roots` rewrites in place instead of
-rebuilding, so shrinking `roots` did move that metric. It reaches no
-diagnostic today, so nothing observable changed, but the reason was false.
-`settle` no longer touches `roots` — a handful of entries per function beside
-millions of nodes — and the oracle below now measures the byte metric instead
-of asserting it cannot move.
+rebuilding, so shrinking `roots` did move that metric.
+
+Where that metric goes is worth being exact about, because "[DIAG-2] byte
+metric" reads like a published diagnostic and it is not. `retained_bytes` is
+written at exactly one place — `measure` — and read only by this crate's own
+tests: an `assert!(… > 0)` in `compiler/src/semantic/tests/entailment.rs` and
+the new guard below. No diagnostic, ledger line, CLI flag or emitted artifact
+carries it. So what `settle` could damage was a recorded number disagreeing
+with the same analysis unsettled, never a wrong compilation; the first
+version's reason was nonetheless false. `settle` no longer touches `roots` —
+a handful of entries per function beside millions of nodes — and
+`settling_a_ledger_does_not_move_the_finished_byte_metric` now asserts the
+mechanism, which is the one claim of this batch that had no guard.
 
 ## Result
 
@@ -362,17 +390,32 @@ That number is *not* comparable to the base compiler — narrowing the arena
 entry from 208 bytes to 64 is exactly what it measures — and it is the only
 field of the fingerprint that differs there.
 
+**What the fingerprint does not cover.** It hashes the derivation ledger —
+nodes, proof views, depths, postcondition-call ancestry, roots, flow events and
+all ten `DerivationMetrics` fields — plus each function's published-summary
+count and each component's publish decision. It does not hash the non-ledger
+fields of `FunctionEntailment`: obligation and call-goal dispositions, claim
+records, postcondition exit images. Those are covered only indirectly, by the
+emitted-output oracle above being byte-identical over the same sources and by
+the published-summary counts. A divergence confined to a non-ledger field that
+changed no emitted byte would therefore not have been caught by the derivation
+comparison. Two independent reviews reproduced this result with fingerprint
+probes they wrote themselves; one of them raised this caveat against its own
+evidence.
+
 `cargo test --profile gate --all-targets --locked --offline`: all library
 tests, 54 maintained programs, conformance — green. Canonical `make check`
 green end to end (`== WHITEFOOT ALL TESTS GREEN ==`).
 
 ## Regression guards
 
-Five new, each asserting a mechanism rather than a number, plus two existing
+Seven new, each asserting a mechanism rather than a number, plus two existing
 guards extended. The three that cover the two repairs were checked against the
 code they guard: reverting both repairs in a scratch copy of the tree turns
 exactly those three red — `DerivationId(1)` where `DerivationId(0)` is owed,
-twice, and a summary that survived the reclaim.
+twice, and a summary that survived the reclaim. The last two guards were
+checked the same way, against `git archive` exports of `a8040b32` and
+`79b29665` built at the gate profile with the guard text ported verbatim.
 
 - `interning_into_a_settled_ledger_keeps_the_original_identity`
   (`entailment/state.rs`) — interning a node already present into a *settled*
@@ -387,6 +430,22 @@ twice, and a summary that survived the reclaim.
 - `interning_into_a_cloned_ledger_keeps_the_original_identity` (batch 0083)
   now also interns into a clone *of a clone*, which is the same hole reached
   without `settle` — and the shape that was already broken at `79b29665`.
+- `interning_after_a_finish_keeps_the_retained_identity`
+  (`entailment/state.rs`) — the third dropper. `finish_with_event_roots`
+  clears the index after remapping every identity, and the derived absence rule
+  replays it there too, so interning a node the pruned arena still holds
+  returns that node's retained identity. This one does not guard a defect this
+  batch introduced: it fails on `79b29665` (`DerivationId(1)` where
+  `DerivationId(0)` is owed) as well as on `a8040b32`, and it holds the one
+  answer this branch deliberately gives differently than base.
+- `settling_a_ledger_does_not_move_the_finished_byte_metric`
+  (`entailment/state.rs`) — a settled ledger and an unsettled one finish to the
+  same `DerivationMetrics`, `retained_bytes` included, with an assertion that
+  the unsettled `roots` has spare capacity so the comparison is not vacuous.
+  This is the guard the `roots` decision lacked; it fails on `a8040b32`, where
+  `settle` shrank `roots` and the settled ledger finished at 126 bytes against
+  the unsettled 174. It cannot be run against `79b29665`, which has no
+  `settle`.
 - `a_published_summary_is_not_lent_to_the_next_rerun` (`semantic/check.rs`) —
   a value reclaimed from an inventory whose postcondition proofs the scheduler
   published comes back with no summary on any of them. This is the review's
@@ -410,6 +469,38 @@ twice, and a summary that survived the reclaim.
   matching key succeeds, because with lending a hit is observable as the value
   leaving the entry.
 
+### Why no program joins them
+
+The reviews' discriminating programs were tried as semantic tests and are not
+here, because they do not discriminate. `scc_publish.wf` and the three programs
+a second review built to the same shape — a `band` claim with two residual
+components, a claim owner with no postconditions ordered before a publishing
+SCC, and a component whose publication toggles across reruns — were run through
+`with_semantics` on `a8040b32` and on this revision, dumping every observable
+the semantic-test API reaches: each claim ledger entry whole (disposition,
+proof evidence, residual witnesses, uses) and, for each function, its claims,
+obligation outcomes, call-goal outcomes, postcondition proofs with their
+published summaries, and its arena's node, root and event counts with all ten
+metric fields. The two revisions agree on every one of those, on all four
+programs. The single field that differs is `retained_bytes`, and it differs
+because of the `roots` decision above rather than because of either repair —
+which is how that guard got written.
+
+That is not an accident of these four programs. Both defects live in the
+inventory of a [CLM-2] counterfactual rerun, which is dropped when the rerun
+ends. The one thing that survives it is `ClaimCounterfactualWitness`, whose
+stated contract is that no scratch-local fact, goal, event, or derivation
+identity is published. A program-level test can read the witness and cannot
+read the arena that produced it, so wiring these four in would have added four
+tests that are green on the defective revision — worse than none, because they
+would look like coverage. The unit guards above are the coverage.
+
+What follows from that is worth stating plainly: at the derivation level all
+623 corpus sources agree between `79b29665`, `a8040b32` and this revision, so
+the corpus could not have found either defect and cannot find a recurrence.
+The derivation fingerprint that did find them is a manual oracle rebuilt per
+investigation, not a gate. A future change to the lending or publishing path
+has no corpus-level alarm behind it.
 ## Judgment calls
 
 - Two of the charter's three leads were dropped on measurement rather than
@@ -438,11 +529,13 @@ twice, and a summary that survived the reclaim.
   ledger is one condition that cannot disagree with itself. The cost is a
   rebuild after `finish` if anything interns again, which is the case that used
   to mint a duplicate identity.
-- The review's program did not join `tests/programs`. It compiles identically
-  on both sides of the defect it exposes — that is the whole point of the
-  finding — so a corpus program cannot fail on it and would only cost a check.
-  What guards the finding is the mechanism test; the program is reproduced
-  above so the oracle can be rerun without the review's scratch tree.
+- The reviews' programs did not join `tests/programs` or the semantic tests.
+  They compile identically on both sides of the defect they expose — that is
+  the whole point of the finding — so no test driven by source can fail on
+  them; *Why no program joins them* above records what was measured before
+  deciding that. What guards the findings is the mechanism tests;
+  `scc_publish.wf` is reproduced above so the oracle can be rerun without the
+  reviews' scratch trees.
 - Temporary instrumentation — arena and index footprints per structure, the
   node-kind histogram, the post-`finish` node count, and the derivation
   fingerprint the oracle above compares — was removed before committing. The

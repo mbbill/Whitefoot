@@ -839,6 +839,16 @@ pub(crate) struct DerivationLedger {
 /// those droppers would have to be set correctly by each of them and would
 /// mint a second identity for an already-held node wherever one got it wrong.
 ///
+/// That third dropper is the one place where the derived rule deliberately
+/// answers differently from the flag it replaced. `79b29665` and `a8040b32`
+/// recorded the index as fresh after a finish, so interning a node the pruned
+/// arena still held minted a second identity for it; this ledger replays and
+/// returns the retained one. No compilation changes, because nothing reaches
+/// that path: every `intern_for` call site runs inside one `flow::run`, and
+/// every analysis starts from a default ledger, so no interning follows a
+/// `settle` or a `finish`.
+/// `interning_after_a_finish_keeps_the_retained_identity` holds the answer.
+///
 /// The entry keys the node's own hash rather than a copy of the node, and a
 /// hash already taken resolves by stepping to the next key. Every probe still
 /// compares the candidate against `nodes` and `node_views` before reporting a
@@ -1303,9 +1313,15 @@ impl DerivationLedger {
     /// `roots` is deliberately not released. It is the one vector that
     /// survives `finish_with_event_roots` in place — that pass rewrites each
     /// root's identity rather than rebuilding the vector — so its capacity
-    /// does reach `measure`, and shrinking it here would move the reported
-    /// byte metric of a settled function. It is also a handful of entries per
-    /// function beside millions of nodes, so releasing it would buy nothing.
+    /// does reach `measure`, and shrinking it here would move the
+    /// `metrics.retained_bytes` a settled function records. That field is
+    /// written only by `measure` and read only by this crate's own tests: no
+    /// diagnostic, ledger line or emitted artifact carries it, so the cost
+    /// would be an unpublished number that disagrees with the same analysis
+    /// unsettled, rather than a wrong compilation. Leaving `roots` alone keeps
+    /// `settle` invisible in the one place it could have shown, and costs
+    /// nothing — a handful of entries per function beside millions of nodes.
+    /// `settling_a_ledger_does_not_move_the_finished_byte_metric` guards it.
     pub(crate) fn settle(&mut self) {
         self.events.shrink_to_fit();
         self.nodes.shrink_to_fit();
@@ -4610,6 +4626,90 @@ mod tests {
         assert_eq!(copy.nodes.len(), nodes);
         assert_ne!(copy.intern_for(ProofView::Unasserted, node), original);
         assert_eq!(copy.nodes.len(), nodes + 1);
+    }
+
+    /// `finish_with_event_roots` drops the index too, after remapping every
+    /// identity, and the derived absence rule replays it for that dropper as
+    /// well. `79b29665` and `a8040b32` instead recorded the index as fresh
+    /// there, so interning a node the pruned arena still holds minted a second
+    /// identity for it; this ledger returns the retained one. That is the one
+    /// place where the derived rule deliberately answers differently than the
+    /// flag did, and nothing in the check reaches it today — every
+    /// `intern_for` call site runs inside one `flow::run`, before `settle`
+    /// and `finish` — so it guards a hazard rather than a live path.
+    #[test]
+    fn interning_after_a_finish_keeps_the_retained_identity() {
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S3, None);
+        let node = DerivationNode::SourceBound {
+            relation: Relation::Bound {
+                left: ZERO,
+                right: ZERO,
+                bound: 0,
+            },
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+            event,
+        };
+        let interned = ledger.intern_for(ProofView::Complete, node);
+        ledger.add_root(DerivationRootKind::BoundsObligation(0), interned);
+
+        let remap = ledger.finish();
+        let retained = remap[interned.0 as usize].expect("the rooted node survives the prune");
+        let nodes = ledger.nodes.len();
+        // `finish` renumbers both nodes and events, so the node to offer again
+        // is the one the pruned arena now holds, not the one interned above.
+        let kept = ledger.nodes[retained.0 as usize].clone();
+
+        assert_eq!(
+            ledger.intern_for(ProofView::Complete, kept.clone()),
+            retained
+        );
+        assert_eq!(ledger.nodes.len(), nodes);
+        assert_ne!(ledger.intern_for(ProofView::Unasserted, kept), retained);
+        assert_eq!(ledger.nodes.len(), nodes + 1);
+    }
+
+    /// `settle`'s whole claim is that it is invisible, and the [DIAG-2] byte
+    /// metric is the only number that could carry a trace of it:
+    /// `finish_with_event_roots` rebuilds every vector `settle` releases at
+    /// the retained length, except `roots`, whose capacity it carries through
+    /// because it rewrites each root in place. A `settle` that shrank `roots`
+    /// would leave a finished ledger reporting fewer bytes than the same
+    /// analysis that never settled, which is what this asserts it does not.
+    #[test]
+    fn settling_a_ledger_does_not_move_the_finished_byte_metric() {
+        fn rooted_ledger() -> DerivationLedger {
+            let mut ledger = DerivationLedger::default();
+            let event = ledger.event(FlowEventKind::S3, None);
+            let node = DerivationNode::SourceBound {
+                relation: Relation::Bound {
+                    left: ZERO,
+                    right: ZERO,
+                    bound: 0,
+                },
+                left: ZERO,
+                right: ZERO,
+                bound: 0,
+                event,
+            };
+            let interned = ledger.intern_for(ProofView::Complete, node);
+            ledger.add_root(DerivationRootKind::BoundsObligation(0), interned);
+            ledger
+        }
+
+        let mut settled = rooted_ledger();
+        settled.settle();
+        settled.finish();
+        let mut plain = rooted_ledger();
+        plain.finish();
+
+        assert!(
+            plain.roots.capacity() > plain.roots.len(),
+            "an unsettled `roots` with no spare capacity would make this vacuous"
+        );
+        assert_eq!(settled.metrics, plain.metrics);
     }
 
     /// The derivation arena is one flat array of a few million entries per
