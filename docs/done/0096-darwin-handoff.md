@@ -670,9 +670,25 @@ by this batch.
   busy machine a one-byte read really does cost more than the twenty
   microseconds the rule asks about, and the policy then correctly took its
   other branch. So the probe requires one branch or the other; requiring the
-  decline would be requiring an idle host. Forcing the decline off in
-  `bridge.c` still fails it, on every run, with
-  `the demand-driven policy took neither branch in 16000 positioned reads`.
+  decline would be requiring an idle host.
+
+  The negative control has to have the same shape, and an earlier round of
+  this record wrote one that did not. The assertion is a disjunction, so a
+  mutation that removes one disjunct leaves the other live and the probe can
+  still pass. What was measured, six runs of each of three builds of the same
+  probe on this machine under eight spinning threads at a one-minute load
+  average of 13.5 rising to 42.7: the shipped build passed all six, declining
+  15 835, 4 297, 0, 2 263, 15 811 and 647 of 16 000 positioned reads with 0,
+  2, 4, 4, 0 and 3 helpers — both branches appearing, and one run taking both.
+  Making `wf_bridge_positioned_read_runs_on_caller` return 0, which removes
+  the decline alone, failed five of its six runs with `the demand-driven
+  policy took neither branch in 16000 positioned reads` and passed the sixth
+  on `helpers=2`, the growth branch answering correctly for a mutation that
+  did not touch it. Adding an immediate `return` at the top of
+  `wf_file_grow_helpers_locked` removes the other branch as well, and that
+  build failed all six. So the control that fails every run is the two-branch
+  one; a one-branch mutation is expected to pass sometimes, and this record
+  does not claim otherwise.
 
   `completion-test` and `completion-sanitize` run it, and
   `completion-default-route-tsan` gives `io-hosts` a thread sanitizer over the
@@ -733,8 +749,10 @@ by this batch.
   wait and took the policy's *other* branch, which is the correct answer to
   what it measured. Requiring the decline would have been requiring the host
   to be idle. Requiring either branch keeps the assertion about the runtime,
-  and the negative control — the decline forced off in `bridge.c` — still
-  fails it on every run.
+  and the control that fails every run is the one that removes *both*
+  branches: forcing the decline off alone still passed one run of six under
+  load, and forcing it off together with helper growth failed six of six. The
+  measurement is under "What shipped" above.
 - **The helper-storage case is given more array than it declares.**
   `test_helper_growth_stops_at_the_helper_storage` hands
   `wf_file_adapter_init` an array of twenty and tells it there are two. That
