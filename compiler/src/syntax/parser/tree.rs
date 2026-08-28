@@ -42,4 +42,11 @@ pub(crate) struct Frame {
     pub(crate) child_count: u32,
     pub(crate) extent: Option<(SourceId, ByteOffset, ByteOffset)>,
     pub(crate) atom_only: bool,
+    /// Whether this frame or any frame enclosing it is a `contract_block`.
+    ///
+    /// The flag is carried rather than recomputed because the enclosing frames
+    /// are the only record of the grammar position once the parser has
+    /// descended into an `expr`, and one diagnostic repair — GRAM-9's — differs
+    /// between a body and a contract block.
+    pub(crate) in_contract: bool,
 }

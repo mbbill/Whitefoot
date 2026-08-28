@@ -38,7 +38,19 @@ pub(crate) struct DiagnosticSite<'tokens, 'source> {
 pub(crate) struct ProbeContext {
     pub(crate) production: Production,
     pub(crate) atom_only: bool,
+    /// Whether an open production frame is the `contract_block` of GRAM-2.
+    ///
+    /// The repair GRAM-9 admits is the same restructuring in both positions —
+    /// bind the inner call first and write the binder here — but the binding
+    /// statement is not: a body has `let_stmt` and a `contract_block` has only
+    /// `contract_define`. The grammar position decides which, so it is read
+    /// from the open frames and never from the text of the offending line.
+    pub(crate) in_contract: bool,
 }
+
+/// GRAM-9's repair in the two grammar positions that admit a binding.
+const GRAM9_BODY_FIX: &str = "a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`";
+const GRAM9_CONTRACT_FIX: &str = "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`";
 
 #[derive(Clone, Copy)]
 enum ProbeTask {
@@ -170,6 +182,7 @@ fn dotted_override(
                     window[2].token().id().end(),
                 ),
                 expected,
+                mechanical_fix: None,
             }));
         }
     }
@@ -181,6 +194,7 @@ fn forbidden_atom_override(
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     atom_only: bool,
+    in_contract: bool,
     expected: super::ExpectedTerminals,
 ) -> Option<SyntaxIssue> {
     if !atom_only {
@@ -202,6 +216,11 @@ fn forbidden_atom_override(
                 second.token().id().end(),
             ),
             expected,
+            mechanical_fix: Some(if in_contract {
+                GRAM9_CONTRACT_FIX
+            } else {
+                GRAM9_BODY_FIX
+            }),
         });
     }
     None
@@ -281,6 +300,7 @@ fn construct_override(
         rule: SyntaxRule::Form1,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
         expected,
+        mechanical_fix: None,
     })
 }
 
@@ -308,6 +328,7 @@ fn program_leftover(
         rule: SyntaxRule::Gram2,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
         expected: ExpectedBuilder::only_end().finish(),
+        mechanical_fix: None,
     })
 }
 
@@ -420,7 +441,7 @@ fn override_issue(
     decision: Decision,
     frontier: &Frontier,
     site: DiagnosticSite<'_, '_>,
-    atom_only: bool,
+    context: ProbeContext,
     work: &mut Work,
 ) -> Result<Option<SyntaxIssue>, DiagnosticResult> {
     let boundary = site
@@ -439,7 +460,8 @@ fn override_issue(
         site.source,
         site.tokens,
         site.cursor,
-        atom_only || frontier.atom_only,
+        context.atom_only || frontier.atom_only,
+        context.in_contract,
         frontier.expected,
     ) {
         return Ok(Some(issue));
@@ -457,6 +479,7 @@ fn override_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: frontier.expected,
+                mechanical_fix: None,
             }));
         }
         if let Some(rule) = name_slot_owner(
@@ -475,6 +498,7 @@ fn override_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: frontier.expected,
+                mechanical_fix: None,
             }));
         }
     }
@@ -555,7 +579,7 @@ fn descend_or_issue(
     tasks: &mut Vec<ProbeTask>,
 ) -> Result<Option<SyntaxIssue>, DiagnosticResult> {
     let value = frontier(decision, site.tokens, site.cursor, work)?;
-    if let Some(issue) = override_issue(decision, &value, site, context.atom_only, work)? {
+    if let Some(issue) = override_issue(decision, &value, site, context, work)? {
         return Ok(Some(issue));
     }
     if value.best_arm_internal {
@@ -575,6 +599,7 @@ fn descend_or_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: value.expected,
+                mechanical_fix: None,
             }));
         };
         tasks.clear();
@@ -593,6 +618,7 @@ fn descend_or_issue(
         )
         .map_err(DiagnosticResult::Compiler)?,
         expected: value.expected,
+        mechanical_fix: None,
     }))
 }
 
@@ -615,6 +641,7 @@ pub(crate) fn direct_mismatch(
         site.tokens,
         site.cursor,
         context.atom_only,
+        context.in_contract,
         expected,
     ) {
         return DiagnosticResult::Issue(issue);
@@ -629,6 +656,7 @@ pub(crate) fn direct_mismatch(
                     token.token().id().end(),
                 ),
                 expected,
+                mechanical_fix: None,
             });
         }
         let transparent = [
@@ -649,6 +677,7 @@ pub(crate) fn direct_mismatch(
                     token.token().id().end(),
                 ),
                 expected,
+                mechanical_fix: None,
             });
         }
     }
@@ -657,6 +686,7 @@ pub(crate) fn direct_mismatch(
             rule: SyntaxRule::from(context.production.owner()),
             coordinate,
             expected,
+            mechanical_fix: None,
         }),
         Err(failure) => DiagnosticResult::Compiler(failure),
     }
@@ -709,6 +739,8 @@ fn probe(
                         let nested = ProbeContext {
                             production,
                             atom_only: node.is_atom_only_reference(),
+                            in_contract: task_context.in_contract
+                                || production == Production::ContractBlock,
                         };
                         if let Err(failure) = push_probe(
                             &mut tasks,
@@ -891,7 +923,7 @@ pub(crate) fn diagnose_decision(
         Ok(value) => value,
         Err(result) => return result,
     };
-    match override_issue(decision, &value, site, context.atom_only, work) {
+    match override_issue(decision, &value, site, context, work) {
         Ok(Some(issue)) => return DiagnosticResult::Issue(issue),
         Ok(None) => {}
         Err(result) => return result,
@@ -925,5 +957,6 @@ pub(crate) fn diagnose_decision(
         rule: SyntaxRule::from(decision.production().owner()),
         coordinate,
         expected: value.expected,
+        mechanical_fix: None,
     })
 }

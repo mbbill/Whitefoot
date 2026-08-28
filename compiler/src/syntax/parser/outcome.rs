@@ -299,11 +299,32 @@ impl ExpectedBuilder {
 }
 
 /// The first exact grammar-derivation rejection in stage order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct SyntaxIssue {
     pub(crate) rule: SyntaxRule,
     pub(crate) coordinate: SyntaxCoordinate,
     pub(crate) expected: ExpectedTerminals,
+    pub(crate) mechanical_fix: Option<&'static str>,
+}
+
+/// The expectation list, plus the repair when the owning rule has one.
+///
+/// A rule that admits exactly one restructuring can name it; a rule whose
+/// repair is "write one of these terminals instead" already said everything it
+/// knows in `expected`. Printing `mechanical_fix: None` on the second kind
+/// would be noise, so the field appears only when it carries a sentence.
+impl fmt::Debug for SyntaxIssue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut record = formatter.debug_struct("SyntaxIssue");
+        record
+            .field("rule", &self.rule)
+            .field("coordinate", &self.coordinate)
+            .field("expected", &self.expected);
+        if let Some(fix) = self.mechanical_fix {
+            record.field("mechanical_fix", &fix);
+        }
+        record.finish()
+    }
 }
 
 impl SyntaxIssue {
@@ -323,6 +344,13 @@ impl SyntaxIssue {
     #[must_use]
     pub const fn expected(self) -> ExpectedTerminals {
         self.expected
+    }
+
+    /// Returns the one restructuring this rejection admits, when its rule has
+    /// exactly one.
+    #[must_use]
+    pub const fn mechanical_fix(self) -> Option<&'static str> {
+        self.mechanical_fix
     }
 }
 
