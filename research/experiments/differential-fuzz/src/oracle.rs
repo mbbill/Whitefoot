@@ -82,11 +82,7 @@ impl RunOutcome {
             ));
         }
         if self.status != other.status || self.timed_out != other.timed_out {
-            return Some((
-                "status",
-                render_status(self),
-                render_status(other),
-            ));
+            return Some(("status", render_status(self), render_status(other)));
         }
         None
     }
@@ -127,18 +123,54 @@ pub struct Setting {
 }
 
 pub const MATRIX: &[Setting] = &[
-    Setting { workers: "0", helpers: "0" },
-    Setting { workers: "0", helpers: "1" },
-    Setting { workers: "0", helpers: "4" },
-    Setting { workers: "1", helpers: "0" },
-    Setting { workers: "1", helpers: "1" },
-    Setting { workers: "1", helpers: "4" },
-    Setting { workers: "2", helpers: "0" },
-    Setting { workers: "2", helpers: "1" },
-    Setting { workers: "2", helpers: "4" },
-    Setting { workers: "4", helpers: "0" },
-    Setting { workers: "4", helpers: "1" },
-    Setting { workers: "4", helpers: "4" },
+    Setting {
+        workers: "0",
+        helpers: "0",
+    },
+    Setting {
+        workers: "0",
+        helpers: "1",
+    },
+    Setting {
+        workers: "0",
+        helpers: "4",
+    },
+    Setting {
+        workers: "1",
+        helpers: "0",
+    },
+    Setting {
+        workers: "1",
+        helpers: "1",
+    },
+    Setting {
+        workers: "1",
+        helpers: "4",
+    },
+    Setting {
+        workers: "2",
+        helpers: "0",
+    },
+    Setting {
+        workers: "2",
+        helpers: "1",
+    },
+    Setting {
+        workers: "2",
+        helpers: "4",
+    },
+    Setting {
+        workers: "4",
+        helpers: "0",
+    },
+    Setting {
+        workers: "4",
+        helpers: "1",
+    },
+    Setting {
+        workers: "4",
+        helpers: "4",
+    },
 ];
 
 pub struct Ledger {
@@ -393,9 +425,7 @@ impl Oracle {
         };
         let err = drain(child.stderr.take());
         let (status, timed_out) = self.wait(&mut child);
-        let stdout = receiver
-            .recv_timeout(self.timeout)
-            .unwrap_or_default();
+        let stdout = receiver.recv_timeout(self.timeout).unwrap_or_default();
         let _ = reader.join();
         let _ = fs::remove_file(&path);
         RunOutcome {
@@ -469,12 +499,30 @@ fn cited_rule(message: &str) -> String {
 /// build is the only one `WF_WORKERS` reaches, so it gets the worker axis at
 /// both ends of the helper axis.
 const PARALLEL_MATRIX: &[Setting] = &[
-    Setting { workers: "0", helpers: "0" },
-    Setting { workers: "1", helpers: "4" },
-    Setting { workers: "2", helpers: "0" },
-    Setting { workers: "2", helpers: "4" },
-    Setting { workers: "4", helpers: "0" },
-    Setting { workers: "4", helpers: "4" },
+    Setting {
+        workers: "0",
+        helpers: "0",
+    },
+    Setting {
+        workers: "1",
+        helpers: "4",
+    },
+    Setting {
+        workers: "2",
+        helpers: "0",
+    },
+    Setting {
+        workers: "2",
+        helpers: "4",
+    },
+    Setting {
+        workers: "4",
+        helpers: "0",
+    },
+    Setting {
+        workers: "4",
+        helpers: "4",
+    },
 ];
 
 impl Oracle {
@@ -516,7 +564,10 @@ impl Oracle {
             };
         }
 
-        let quiet = Setting { workers: "0", helpers: "0" };
+        let quiet = Setting {
+            workers: "0",
+            helpers: "0",
+        };
         let reference = self.execute(&sequential, quiet);
         runs += 1;
         if reference.timed_out {
@@ -528,7 +579,13 @@ impl Oracle {
             };
         }
         // A program that does not agree with itself cannot judge anything.
-        for setting in [quiet, Setting { workers: "4", helpers: "4" }] {
+        for setting in [
+            quiet,
+            Setting {
+                workers: "4",
+                helpers: "4",
+            },
+        ] {
             let again = self.execute(&sequential, setting);
             runs += 1;
             if let Some((field, first, second)) = reference.agrees(&again) {
@@ -585,9 +642,18 @@ impl Oracle {
         // buffer really waits here; the rest still exercise a slow consumer.
         if bulk {
             for setting in [
-                Setting { workers: "0", helpers: "0" },
-                Setting { workers: "0", helpers: "4" },
-                Setting { workers: "4", helpers: "4" },
+                Setting {
+                    workers: "0",
+                    helpers: "0",
+                },
+                Setting {
+                    workers: "0",
+                    helpers: "4",
+                },
+                Setting {
+                    workers: "4",
+                    helpers: "4",
+                },
             ] {
                 let observed = self.execute_on_fifo(&completion, setting, tag);
                 fifo_runs += 1;
@@ -645,7 +711,13 @@ impl Oracle {
         tag: &str,
     ) -> Verdict {
         for _ in 0..3 {
-            let again = self.execute(sequential, Setting { workers: "0", helpers: "0" });
+            let again = self.execute(
+                sequential,
+                Setting {
+                    workers: "0",
+                    helpers: "0",
+                },
+            );
             runs += 1;
             if let Some((field, first, second)) = reference.agrees(&again) {
                 return Verdict {

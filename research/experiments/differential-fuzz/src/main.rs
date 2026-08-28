@@ -35,7 +35,9 @@ fn main() -> ExitCode {
 }
 
 fn run(arguments: &[String]) -> Result<(), String> {
-    let command = arguments.first().ok_or_else(|| "no subcommand".to_owned())?;
+    let command = arguments
+        .first()
+        .ok_or_else(|| "no subcommand".to_owned())?;
     let options = Options::parse(&arguments[1..])?;
     match command.as_str() {
         "generate" => {

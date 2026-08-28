@@ -36,6 +36,7 @@ pub enum Shape {
     Arithmetic,
     Branch,
     CountedLoop,
+    AccumulatorLoop,
     UnboundedLoop,
     NestedLoop,
     StdoutWrite,
@@ -63,6 +64,7 @@ impl Shape {
             Shape::Arithmetic => "arithmetic",
             Shape::Branch => "branch",
             Shape::CountedLoop => "counted-loop",
+            Shape::AccumulatorLoop => "accumulator-loop",
             Shape::UnboundedLoop => "unbounded-loop",
             Shape::NestedLoop => "nested-loop",
             Shape::StdoutWrite => "stdout-write",
@@ -373,8 +375,7 @@ impl Gen {
         let code = self.name("code");
         let exact = self.name("code_exact");
         let failed = self.name("code_failed");
-        self.body
-            .line(&format!("let {wide} = total % 251_u64;"));
+        self.body.line(&format!("let {wide} = total % 251_u64;"));
         self.body
             .line(&format!("let {narrow} = cvt<u64, u8>({wide});"));
         self.body.open(&format!("let {code} = match {narrow} {{"));
@@ -465,7 +466,8 @@ impl Gen {
         let mut options: Vec<(Shape, u64)> = vec![
             (Shape::Arithmetic, 9),
             (Shape::Branch, 9),
-            (Shape::CountedLoop, 11),
+            (Shape::CountedLoop, 9),
+            (Shape::AccumulatorLoop, 9),
             (Shape::UnboundedLoop, 7),
             (Shape::StdoutWrite, 9),
             (Shape::BulkWrite, 3),
@@ -481,10 +483,10 @@ impl Gen {
             options.push((Shape::SharedSourcePair, 6));
         }
         if self.have_files {
-            options.push((Shape::FileLoopIterationOwn, 13));
-            options.push((Shape::FileLoopHoistedScratch, 7));
-            options.push((Shape::FileLoopBreakAfterSubmission, 5));
-            options.push((Shape::FileLoopSharedScratch, 5));
+            options.push((Shape::FileLoopIterationOwn, 20));
+            options.push((Shape::FileLoopHoistedScratch, 6));
+            options.push((Shape::FileLoopBreakAfterSubmission, 4));
+            options.push((Shape::FileLoopSharedScratch, 4));
             options.push((Shape::ReadThenWriteBuffer, 6));
             options.push((Shape::DirectoryScan, 5));
         }
@@ -506,6 +508,7 @@ impl Gen {
             Shape::Arithmetic => self.arithmetic_block(),
             Shape::Branch => self.branch_block(),
             Shape::CountedLoop => self.counted_loop_block(),
+            Shape::AccumulatorLoop => self.accumulator_loop_block(),
             Shape::UnboundedLoop => self.unbounded_loop_block(),
             Shape::StdoutWrite => self.write_block(false),
             Shape::StderrWrite => self.write_block(true),
@@ -546,8 +549,9 @@ impl Gen {
         let name = self.name("store");
         self.allocates = true;
         self.spend();
-        self.body
-            .line(&format!("let {name} = buffer_new({length}_u64, {fill}_u8);"));
+        self.body.line(&format!(
+            "let {name} = buffer_new({length}_u64, {fill}_u8);"
+        ));
         self.buffers.push(Buffer {
             name: name.clone(),
             length,
@@ -570,8 +574,7 @@ impl Gen {
                 let byte = self.name("slot_byte");
                 let exact = self.name("slot_exact");
                 let failed = self.name("slot_failed");
-                self.body
-                    .line(&format!("let {modulus} = {index} % 8_u64;"));
+                self.body.line(&format!("let {modulus} = {index} % 8_u64;"));
                 self.body
                     .line(&format!("let {narrow} = cvt<u64, u8>({modulus});"));
                 self.body.open(&format!("let {byte} = match {narrow} {{"));
@@ -654,8 +657,7 @@ impl Gen {
         self.scalars.push(name.clone());
         if self.rng.chance(70) {
             self.spend();
-            self.body
-                .line(&format!("set total = total +wrap {name};"));
+            self.body.line(&format!("set total = total +wrap {name};"));
         }
     }
 
@@ -784,6 +786,50 @@ impl Gen {
                 self.fold_buffer(&store, length);
             }
         }
+    }
+
+    /// The one loop shape [PAR-2] can permit: exactly one place rooted outside
+    /// the loop, written by exactly one `set` under one fixed associative,
+    /// commutative operation with an identity, and no other occurrence of that
+    /// binding anywhere in the body. Every other statement reads only the
+    /// binder and literals, so nothing else leaves the iteration.
+    fn accumulator_loop_block(&mut self) {
+        let bound = *self.rng.pick(&[8_u64, 16, 32, 64]);
+        let label = self.label();
+        let binder = self.name("counted");
+        let infix = self.rng.chance(50);
+        let operation = if infix {
+            *self.rng.pick(&["+wrap", "*wrap"])
+        } else {
+            *self.rng.pick(&["iand", "ior", "ixor", "imin", "imax"])
+        };
+        self.spend();
+        self.body
+            .open(&format!("for {label} {binder} in 0_u64..{bound}_u64 {{"));
+        let mut carrier = binder.clone();
+        let steps = self.rng.between(1, 3);
+        for _ in 0..steps {
+            let name = self.name("term");
+            let literal = self.rng.between(1, 97);
+            let form = match self.rng.below(5) {
+                0 => format!("let {name} = {carrier} +wrap {literal}_u64;"),
+                1 => format!("let {name} = {carrier} *wrap {literal}_u64;"),
+                2 => format!("let {name} = {carrier} % {literal}_u64;"),
+                3 => format!("let {name} = ixor({carrier}, {literal}_u64);"),
+                _ => format!("let {name} = imax({carrier}, {literal}_u64);"),
+            };
+            self.spend();
+            self.body.line(&form);
+            carrier = name;
+        }
+        if infix {
+            self.body
+                .line(&format!("set total = total {operation} {carrier};"));
+        } else {
+            self.body
+                .line(&format!("set total = {operation}(total, {carrier});"));
+        }
+        self.body.close();
     }
 
     fn nested_counted_loop(&mut self) {
@@ -968,8 +1014,7 @@ impl Gen {
             .line(&format!("let {first} = mix(a: {a}, b: {b});"));
         self.body
             .line(&format!("let {second} = mix(a: {c}, b: {d});"));
-        self.body
-            .line(&format!("set total = total +wrap {first};"));
+        self.body.line(&format!("set total = total +wrap {first};"));
         self.body
             .line(&format!("set total = total +wrap {second};"));
         self.scalars.push(first);
@@ -1145,8 +1190,7 @@ impl Gen {
         let produced = self.name("produced");
         self.body
             .open(&format!("ReadBytes(next: {produced}) => {{"));
-        self.body
-            .line(&format!("set {got} = {produced};"));
+        self.body.line(&format!("set {got} = {produced};"));
         self.body.close();
         self.body.open("ReadEnd() => {");
         self.body.close();
@@ -1247,8 +1291,7 @@ impl Gen {
         self.body.close();
         self.body.close();
         self.body.close();
-        self.body
-            .line(&format!("let {live} = ieq({ended}, 0_u8);"));
+        self.body.line(&format!("let {live} = ieq({ended}, 0_u8);"));
         self.body.open(&format!("if {live} {{"));
         self.body.indent -= 1;
         self.body.line("} else {");
@@ -1289,10 +1332,8 @@ impl Gen {
             length - 1
         ));
         let byte = self.byte_literal();
-        self.body
-            .line(&format!("set {store}[{index}] = {byte};"));
-        self.body
-            .line(&format!("set total = total +wrap {index};"));
+        self.body.line(&format!("set {store}[{index}] = {byte};"));
+        self.body.line(&format!("set total = total +wrap {index};"));
         self.scalars.push(index);
     }
 
@@ -1361,8 +1402,7 @@ impl Gen {
         self.body.line(&format!(
             "let {count} = args_count<{region}>(args: &{region} args);"
         ));
-        self.body
-            .line(&format!("set total = total +wrap {count};"));
+        self.body.line(&format!("set total = total +wrap {count};"));
         if self.rng.chance(60) {
             let value = self.name("argument");
             let failed = self.name("argument_missing");

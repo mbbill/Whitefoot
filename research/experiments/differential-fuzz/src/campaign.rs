@@ -155,16 +155,12 @@ pub fn run(paths: &Paths, options: &Options) -> Result<(), String> {
         let programs = programs.clone();
         let findings = findings.clone();
         let target = options.programs;
-        workers.push(thread::spawn(move || {
-            loop {
-                if Instant::now() >= deadline || accepted.load(Ordering::Relaxed) >= target {
-                    return;
-                }
-                let seed = next.fetch_add(1, Ordering::Relaxed);
-                judge_one(
-                    &oracle, &tally, &accepted, &programs, &findings, seed,
-                );
+        workers.push(thread::spawn(move || loop {
+            if Instant::now() >= deadline || accepted.load(Ordering::Relaxed) >= target {
+                return;
             }
+            let seed = next.fetch_add(1, Ordering::Relaxed);
+            judge_one(&oracle, &tally, &accepted, &programs, &findings, seed);
         }));
     }
     for worker in workers {
@@ -228,7 +224,6 @@ fn judge_one(
             record.findings.push(note.clone());
             drop(record);
             save_finding(findings, seed, &program.source, &note, None);
-            return;
         }
         Judgment::Unstable(_) => record.unstable += 1,
         Judgment::ReferenceTimeout => record.reference_timeouts += 1,
@@ -252,19 +247,18 @@ fn judge_one(
                 "  minimized seed {seed}: {} lines removed in {} trials",
                 reduced.removed, reduced.trials
             );
-            save_finding(findings, seed, &program.source, &note, Some(&reduced.source));
-            return;
+            save_finding(
+                findings,
+                seed,
+                &program.source,
+                &note,
+                Some(&reduced.source),
+            );
         }
     }
 }
 
-fn save_finding(
-    findings: &Path,
-    seed: u64,
-    original: &str,
-    note: &str,
-    minimized: Option<&str>,
-) {
+fn save_finding(findings: &Path, seed: u64, original: &str, note: &str, minimized: Option<&str>) {
     let directory = findings.join(format!("finding-{seed}"));
     if fs::create_dir_all(&directory).is_err() {
         return;
@@ -309,7 +303,10 @@ pub fn run_probes(paths: &Paths, options: &Options) -> Result<(), String> {
             }
             Judgment::Agreed => "no longer reproduces".to_owned(),
             Judgment::Rejected(rejection) => {
-                format!("no longer compiles [{}]: {}", rejection.rule, rejection.message)
+                format!(
+                    "no longer compiles [{}]: {}",
+                    rejection.rule, rejection.message
+                )
             }
             Judgment::LoweringRefusal(lowering, rejection) => format!(
                 "the {} lowering refuses it [{}]: {}",
@@ -322,10 +319,7 @@ pub fn run_probes(paths: &Paths, options: &Options) -> Result<(), String> {
         };
         println!("{}: {outcome}", path.display());
     }
-    println!(
-        "{reproducing} of {} probes still reproduce",
-        entries.len()
-    );
+    println!("{reproducing} of {} probes still reproduce", entries.len());
     Ok(())
 }
 
