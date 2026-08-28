@@ -649,6 +649,25 @@ by this batch.
   `native_adapter_probe.c` drives two outstanding operations to terminal in
   turn. Both are unchanged by this batch. Both caught the drain hint, which is
   why it is in "What was tried and removed" rather than in "What shipped".
+- **Where each of these actually runs, including what canonical `make check`
+  does not.** The gate's compiler stage list is `format lint test-partition
+  test-unit test-sampling test-corpus docs spec completion-test`, so what
+  `make check` runs of the C runtime is `completion-test` alone: the harness
+  at `WF_IO_HELPERS` 0, 1 and 4, one `WF_IO_NOCACHE` arm, the core/read probe,
+  and the default-route probe. Everything else is CI's.
+  `completion-sanitize` — the harness and both probes under the address and
+  undefined sanitizers — and the two thread-sanitizer arms,
+  `completion-core-read-tsan` and `completion-default-route-tsan`, are wired
+  into the `io-hosts` workflow's Linux job and into no gate stage.
+  `make check` therefore runs **no sanitizer of any kind**, and the
+  data-race evidence in this record is CI's rather than the local gate's.
+
+  That is left as it is. The gate has a five-minute budget on every host, and
+  sanitized builds of these sources would spend a large part of it re-proving
+  on a laptop what a per-push job already proves on a real Linux kernel;
+  adding them buys latency, not coverage. What it costs is that a race or an
+  overrun introduced between pushes is caught by CI rather than before the
+  push, which is the trade this record is stating rather than hiding.
 
 ## Judgment calls
 
@@ -789,6 +808,22 @@ refuted the prose. Both sets of findings are answered in this batch, and the
 runtime changes are listed here rather than in "What shipped" because they
 land after the measurement and none of them is a performance change.
 
+The repair those findings produced was then re-read by two more verifiers, at
+`6948c94e`, and the same split came back: the runtime was confirmed with
+problems, and the prose was refuted again on new figures. That second round is
+what the rest of this section answers. Its two substantive findings about the
+tests are the ones worth stating plainly, because both are the same defect in
+different places — a check that passes without deciding anything.
+`test_helper_growth_stops_at_the_helper_storage` could not fail: its driver
+completed each read before submitting the next, so the queue never held more
+than one entry, the pool never passed one helper, and deleting the clamp it
+exists to guard left the whole harness green. `bridge_default_probe.c`
+counted its route split and asserted nothing about it. Both are fixed above,
+and both fixes were checked by breaking the thing they guard and watching them
+fail. The figures the second round refuted are corrected in place, in this
+record and in `RESULTS.md`, and the claims about coverage that could not be
+supported are withdrawn rather than softened.
+
 - **The named drain refuses a token whose slot was reused.**
   `wf_completion_drain_token` was the only token-named entry that did not
   compare the token's generation with the slot's, so a retired token could
@@ -808,18 +843,38 @@ land after the measurement and none of them is a performance change.
   probe (`Write of size 4 ... wf_file_adapter_init` against
   `Previous read of size 4 ... wf_file_execute_timed`). The field is atomic
   now, published by one release store at the end of init and read with an
-  acquire load, and init assigns its fields instead of `memset`ting over the
-  flag — clearing it first, because the `memset` used to be what stopped a
-  record left half built by a failed `pthread_mutex_init` from reading as
-  ready. The bridge's readiness flags are the same class, read by
-  `wf__completion_file_pread_submit` before it reaches any once, and are
-  atomic for the same reason.
+  acquire load; the flag is cleared first so that a record left half built by a
+  failed `pthread_mutex_init` never reads as ready. That release/acquire pair
+  is the whole of what excludes the race, and the record used to credit the
+  field-by-field assignment as well — which was wrong. `atomic_init` is a
+  plain write by definition, and clang at -O2 on aarch64 merges these into
+  wide stores anyway: one 16-byte store over `mean_execute_ns` and
+  `execute_ticks`, two more over the four statistics counters. A `memset`
+  there would be no worse in kind. A reader can see any of those writes only
+  if a record it already holds is initialized again underneath it, which no
+  caller does — the bridge initializes once under a `pthread_once` — and a
+  probe that violates that precondition on purpose draws the corresponding
+  ThreadSanitizer report. The comment at `wf_file_adapter_init` now says this
+  rather than the old claim. The bridge's readiness flags are the same class,
+  read by `wf__completion_file_pread_submit` before it reaches any once, and
+  are atomic for the same reason.
 - **The helper cap is bounded by the helper storage.** The growth rule writes
   `helpers[held]`, so a cap above the array's length was a `pthread_create`
-  past its end. The storage length is carried and the cap clamped to it.
-- **A failed clock ends the join spin.** `wf_bridge_monotonic_ns` answers zero
-  when `clock_gettime` fails, and the spin's only bound was a clock reading,
-  so the deadline was never reached and the join spun instead of parking.
+  past its end. The storage length is carried and the cap clamped to it. The
+  case that guards it now reaches the bound: see "The helper storage bounds
+  the helper cap" under "Tests".
+- **A failed clock ends the join spin, and it matters on one route.**
+  `wf_bridge_monotonic_ns` answers zero when `clock_gettime` fails, and the
+  spin's only bound was a clock reading, so the deadline was never reached.
+  What that costs is not the same on both routes, and the comment used to
+  claim it was. On the native ring the join never ends: a submitted read
+  becomes a ready event only when `wf_bridge_progress` reaps the completion
+  queue, and this spin never calls it, so the loop's other exit cannot fire —
+  forcing `clock_gettime` to fail stops the Linux io_uring route dead while
+  the guarded build finishes in milliseconds. On the POSIX adapter a helper
+  publishes the completion, the other exit fires on its own, and the unguarded
+  build finishes at the same wall time as the guarded one on macOS. The guard
+  ships either way; the comment now says which route it rescues.
 - **The shipped default route is tested, for the half of it a bridge run can
   decide.** `harness.c`'s `main` pins `WF_IO_HELPERS` for any run that named
   none, and `completion-test` names 0, 1 and 4, so the declined positioned
