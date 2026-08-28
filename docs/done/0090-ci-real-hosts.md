@@ -236,7 +236,7 @@ host can reach the case, the assertion is exactly what it was.
 | `directory_source_open_uses_the_typed_completion_route` | `backend/tests/completion.rs` | the same row, and the same `#[cfg]` its two enumeration siblings already carried |
 | the four- and eight-lane steal observations | `a_steal_is_observable` in `backend/tests/parallel.rs`, used by `parallel.rs` and by three sites in `loop_split.rs` | a steal is observable only if a worker reaches the offer before the offering thread finishes the work itself, which needs a core that is not already carrying a lane. Measured: zero over the whole sample on the three-core `macos-14` runner, non-zero on every four-core host. A zero there is a fact about the host. Two eight-lane sites in `loop_split.rs` were left without the guard their sibling in the same file carries, and the macOS runner failed one of them; they carry it now. |
 | the alias-versioning calibration | `research/experiments/frequency-study/alias-versioning/` | the recorded fingerprint counts LLVM's own runtime alias-check shape — 26 conflict predicates, 52 pointer comparisons — and the vectorizer decides that shape per target. Discriminated rather than assumed: rustc 1.96.0, 1.97.1 and 1.98.0 all reproduce it exactly on `aarch64-apple-darwin`, so the precondition recorded is the target, not the version. |
-| the directory-walking program cases | `mod wfgrep;` and five of the eight cases in `mod traversal;`, in `tests/programs.rs` and `tests/programs/traversal.rs`, with the three support helpers only they call | the same missing enumeration row: `dir_walk.wf` and `wfgrep.wf` do not compile on Linux, so seventeen cases were reporting the target table's gap as a test failure. The three traversal cases that reject inline source at a numbered rule keep running on both hosts, because every stage reaches a source rule before target qualification. The corpus-wide `--par` case keeps every other program covered on Linux instead of standing down: it reads the compiler's own `TargetQualification` report, records which units it could not compile, and asserts that they are only the two that walk a directory. |
+| the directory-walking program cases | `mod wfgrep;` in `tests/programs.rs`, five of the eight cases in `tests/programs/traversal.rs`, and the three support helpers only they call | the same missing enumeration row: `dir_walk.wf` and `wfgrep.wf` do not compile on Linux, so seventeen cases — the twelve in `wfgrep` and the five in `traversal` that build `dir_walk.wf` — were reporting the target table's gap as a test failure. The three traversal cases that reject inline source at a numbered rule, `an_enumeration_handle_is_not_usable_after_it_is_moved`, `program_bytes_still_cannot_become_a_path_value` and `an_enumeration_match_that_omits_an_outcome_is_rejected`, run on both hosts, because every stage reaches a source rule before target qualification. `b58d724d` shipped this with a second `#[cfg]` on `mod traversal;` itself, which hid all eight: the Linux gate of `196525e7` ran 34 program cases against macOS's 54, twenty apart, and this record said seventeen. An independent reading of the run logs caught it; the module-level attribute is gone, the five per-case attributes stay, and the run under Results shows the Linux count with the three restored. The corpus-wide `--par` case keeps every other program covered on Linux instead of standing down: it reads the compiler's own `TargetQualification` report, records which units it could not compile, and asserts that they are only the two that walk a directory. |
 | the effect-attrs IR-validity probe | `test_multiline_probe_is_valid_llvm` in `research/experiments/frequency-study/effect-attrs/tests/` | every fixture there is written in the `memory(...)` attribute dialect, which is the attribute the experiment classifies and which LLVM 16 introduced. The `macos-14` runner's Apple clang 15 rejects them at the parser with "expected top-level entity", which says nothing about whether they are well formed. The probe asks the host compiler with a one-line `memory(none)` module and states the limit when the answer is no, so what it skips on is what the toolchain understands rather than a version string. |
 
 ### The gap that stays open
@@ -278,7 +278,7 @@ commit in this batch that changes code:
 | [gate 33133768976](https://github.com/mbbill/Whitefoot/actions/runs/33133768976) | `gate-linux` | ubuntu-24.04, x86-64, 4 CPUs, clang 18.1.3, stable 1.98.0 | red, and red only where this record says it is: `== WHITEFOOT COMPILER GATE GREEN ==`, 1320 library cases, 34 program cases and every research suite pass, and `conformance-run` then reports `Pass=497  Fail=5  Skip=1` on the five named cases |
 | | `gate-macos` | macos-14, arm64, 3 CPUs, Apple clang 15.0.0, stable 1.96.0 | green |
 | [io-hosts 33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `completion-linux` | ubuntu-24.04 | green |
-| | `bench-linux` | ubuntu-24.04 | green, and it reproduces the finding below: N.direct 119.31, S.wide 141.91, C.wide.default 147.85 milliseconds |
+| | `bench-linux` | ubuntu-24.04, AMD EPYC 7763, `/dev/sda1` ext4 | green: N.direct 101.57, S.wide 123.15, C.wide.default 130.73 milliseconds, so C.wide 6 percent slower than S.wide. An earlier revision of this row put 119.31, 141.91 and 147.85 here; those are the numbers of [io-hosts 33131919667](https://github.com/mbbill/Whitefoot/actions/runs/33131919667) on `e7720a0a`, an EPYC 9V74 runner, and the table under *The Linux-hardware bench* now names every run beside its own numbers |
 | | `completion-windows` | windows-2025 | green |
 
 `make check` on the maintainer's machine — macOS on arm64, ten cores, Apple
@@ -337,7 +337,35 @@ S.wide              142.15    112.07    112.19
 C.wide.default      149.47    115.92    118.14
 ```
 
-Three findings, all reproduced on all three runners.
+`bench-linux` runs on every push, and each run draws its own runner, so the
+branch has eleven readings on three CPU models. Every one of them, beside the
+commit it ran on, the host and disk the job itself reported, and the three
+lines the finding turns on, medians in milliseconds:
+
+| run | commit | host, disk | N.direct | S.wide | C.wide.default | C.wide against S.wide |
+|---|---|---|---|---|---|---|
+| [33114336424](https://github.com/mbbill/Whitefoot/actions/runs/33114336424), run 1 above | `7a1c73a5` | EPYC 9V74, `sda1` | 119.69 | 142.15 | 149.47 | +5.1% |
+| [33115297530](https://github.com/mbbill/Whitefoot/actions/runs/33115297530), run 2 above | `804ed782` | EPYC 9V74, `nvme0n1p1` | 94.24 | 112.07 | 115.92 | +3.4% |
+| [33118248259](https://github.com/mbbill/Whitefoot/actions/runs/33118248259), run 3 above | `2c342009` | EPYC 9V74, `nvme0n1p1` | 94.68 | 112.19 | 118.14 | +5.3% |
+| [33121457101](https://github.com/mbbill/Whitefoot/actions/runs/33121457101) | `79aa36ea` | EPYC 9V74, `sda1` | 119.24 | 142.00 | 147.66 | +4.0% |
+| [33127604146](https://github.com/mbbill/Whitefoot/actions/runs/33127604146) | `9adf0067` | EPYC 7763, `sda1` | 103.37 | 122.49 | 128.22 | +4.7% |
+| [33128887536](https://github.com/mbbill/Whitefoot/actions/runs/33128887536) | `7c644216` | EPYC 7763, `sda1` | 103.51 | 124.76 | 128.72 | +3.2% |
+| [33131534867](https://github.com/mbbill/Whitefoot/actions/runs/33131534867) | `75ce03d4` | EPYC 9V74, `sda1` | 118.84 | 141.49 | 147.14 | +4.0% |
+| [33131919667](https://github.com/mbbill/Whitefoot/actions/runs/33131919667) | `e7720a0a` | EPYC 9V74, `sda1` | 119.31 | 141.91 | 147.85 | +4.2% |
+| [33133174447](https://github.com/mbbill/Whitefoot/actions/runs/33133174447) | `6fc4c71b` | EPYC 9V74, `sda1` | 119.41 | 141.73 | 147.00 | +3.7% |
+| [33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `196525e7` | EPYC 7763, `sda1` | 101.57 | 123.15 | 130.73 | +6.2% |
+| [33135242838](https://github.com/mbbill/Whitefoot/actions/runs/33135242838) | `db7d997b` | Xeon Platinum 8573C, `nvme0n1p1` | 77.25 | 95.32 | 101.49 | +6.5% |
+
+The completion build loses to the sequential build on all eleven, by 3 to 7
+percent, on three CPU models and both disk kinds. The io_uring reading is not
+as portable, and the tabulated runners are the ones on which it holds: on the
+EPYC 9V74 the ring equals the loop at every depth; on the Xeon it is within 8
+percent of it (N.uring32 83.18 against N.direct 77.25); on all three EPYC 7763
+runs the ring at depth 4 and above sits at 125 to 128 ms against a 102 to 104
+ms loop, a quarter slower, while depth 2 is nearly equal (105 to 107). Why
+that CPU pays for a deeper ring is not settled here.
+
+Three findings, all reproduced on the three tabulated runners.
 
 **The hand-written io_uring baseline equals the blocking loop at every depth
 from 2 to 32.** The whole 68 MiB tree is in the page cache, so a `pread` never
