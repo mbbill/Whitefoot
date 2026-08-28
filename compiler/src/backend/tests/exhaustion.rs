@@ -1726,6 +1726,7 @@ fn a_buffer_block_outlives_the_elements_the_traversal_takes_from_it() {
 /// target address falls in `/proc/self/maps`.
 const PRE_FIX_OFFSET_FAULT_BODY: &str = r#"#define _GNU_SOURCE
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -1753,7 +1754,16 @@ int wf__main_body(int argc, char **argv) {
 #endif
     below = strtoul(getenv("WF_FAULT_BELOW"), NULL, 10);
     target = (unsigned long)(size_t)(low - below);
-    fprintf(stderr, "low=%lx target=%lx\n", (unsigned long)(size_t)low, target);
+    {
+        stack_t current;
+        current.ss_sp = NULL;
+        current.ss_size = 0;
+        sigaltstack(NULL, &current);
+        fprintf(stderr, "low=%lx target=%lx altstack=%lx+%lx\n",
+                (unsigned long)(size_t)low, target,
+                (unsigned long)(size_t)current.ss_sp,
+                (unsigned long)current.ss_size);
+    }
 #if !defined(__APPLE__)
     {
         FILE *maps = fopen("/proc/self/maps", "r");
@@ -1764,11 +1774,8 @@ int wf__main_body(int argc, char **argv) {
             if (sscanf(line, "%lx-%lx", &start, &end) != 2) {
                 continue;
             }
-            if (end + (1UL << 21) < target || start > target + (1UL << 21)) {
-                continue;
-            }
             fprintf(stderr, "%s %s",
-                    (target >= start && target < end) ? "HIT " : "near", line);
+                    (target >= start && target < end) ? "HIT " : "map ", line);
         }
         if (maps != NULL) {
             fclose(maps);
