@@ -603,11 +603,13 @@ int wf_file_adapter_init(
         || (helper_capacity != 0 && helper_storage == NULL)) {
         return EINVAL;
     }
-    /* Field by field rather than one `memset`, because `initialized` is the
-     * one field a direct execution may be reading right now: a bulk write
-     * over it would be exactly the unsynchronized write the atomic exists to
-     * exclude.  It is left alone here — it is already clear, and the release
-     * store below is what sets it. */
+    /* Cleared before anything else is written, so that a record left half
+     * built by a failure below is never mistaken for a usable one, and set
+     * again only when every field is in place.  This is also why the fields
+     * are assigned one by one rather than with a `memset`: a bulk write over
+     * `initialized` would be exactly the unsynchronized write the atomic
+     * exists to exclude, since a direct execution may be reading it now. */
+    atomic_store_explicit(&adapter->initialized, 0, memory_order_release);
     adapter->runtime = runtime;
     adapter->queue = queue_storage;
     adapter->queue_capacity = queue_capacity;
