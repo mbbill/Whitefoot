@@ -770,8 +770,9 @@ These are recorded, not decided.
 
 Local canonical `make check` on macOS, green in both rounds. The first round
 ran at `7aa6819d`, 160 s wall; the second ran at `a4087723`, 203 s wall, which
-is every item of this record including the pinning corpus. The only commit
-after it changes this file alone.
+is every item of this record including the pinning corpus. The commits after it
+change this file and two doc comments, and CI runs the same entry point on the
+branch tip.
 
 ```text
 repository-invariants             0 s
