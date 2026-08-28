@@ -201,6 +201,14 @@ submits again while its earlier operation is outstanding is refused rather than
 handed the first operation's storage. That is the driver's work (§3.4, §3.6
 item 2), and the driver is Stage B.
 
+Neither does it carry the wait a K-slot ring needs. The rule above says a
+carrying block never joins, which is right for the back edge and not enough for
+the body: reusing slot *i* means waiting for exactly the one older operation
+that holds it, and nothing else. Stage B has to add a selective
+single-operation join for that — a primitive the rule admits, since it retires
+one named operation rather than everything outstanding — and must not reach it
+by exempting the carrying block from the rule.
+
 ## Evidence
 
 - Harness (`compiler/src/backend/completion/harness.c`), run by
