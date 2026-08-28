@@ -1247,6 +1247,15 @@ static size_t wf_retirement_owed(const wf_retirement_waiter *waiter) {
     return waiter->owed(waiter->owed_context);
 }
 
+/* True when this waiter's answer is work rather than waiting: its own thread
+ * is the engine for a queue that is not empty. */
+static int wf_retirement_must_run_its_own_work(
+    const wf_retirement_waiter *waiter
+) {
+    return waiter != NULL && waiter->runs_owed != 0
+        && wf_retirement_owed(waiter) != 0;
+}
+
 /* `at_the_point` is set only where the caller holds no lock, so a test
  * standing at the schedule point may retire an operation from there. */
 static enum wf_retirement_state wf_retirement_state_now(
@@ -1331,8 +1340,7 @@ void wf_completion_retirement_sleep(const wf_retirement_waiter *waiter) {
      * so an item that arrives while this thread is deciding either is seen or
      * arrives with a wake this thread is already positioned to receive. */
     if (wf_retirement_state_now(waiter, 0) == WF_RETIREMENT_AWAITED
-        && !(waiter != NULL && waiter->runs_owed != 0
-             && wf_retirement_owed(waiter) != 0)) {
+        && !wf_retirement_must_run_its_own_work(waiter)) {
         (void)pthread_cond_wait(&wf_retirement_signal, &wf_retirement_lock);
     }
     (void)pthread_mutex_unlock(&wf_retirement_lock);
