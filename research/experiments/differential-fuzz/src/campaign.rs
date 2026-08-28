@@ -278,8 +278,16 @@ pub fn run_probes(paths: &Paths, options: &Options) -> Result<(), String> {
         .ok_or_else(|| "--directory is required".to_owned())?;
     let mut oracle = prepare(paths)?;
     oracle.reps = options.reps;
-    let mut entries: Vec<_> = fs::read_dir(&directory)
-        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
+    // No probes recorded is the ordinary state of a campaign that has found
+    // nothing yet, not an error.
+    let listing = match fs::read_dir(&directory) {
+        Ok(listing) => listing,
+        Err(_) => {
+            println!("no probes recorded in {}", directory.display());
+            return Ok(());
+        }
+    };
+    let mut entries: Vec<_> = listing
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| path.extension().map(|ext| ext == "wf").unwrap_or(false))
@@ -289,24 +297,20 @@ pub fn run_probes(paths: &Paths, options: &Options) -> Result<(), String> {
         println!("no probes recorded in {}", directory.display());
         return Ok(());
     }
-    let mut reproducing = 0;
     for path in &entries {
         let tag = path
             .file_stem()
             .map(|stem| stem.to_string_lossy().to_string())
             .unwrap_or_else(|| "probe".to_owned());
         let verdict = oracle.assess(path, &tag, true);
+        // A probe's expected outcome is written down in probes/README.md rather
+        // than encoded here, because a probe may record a rejection as readily
+        // as a divergence. This prints what happens now; the reader compares.
         let outcome = match verdict.judgment {
-            Judgment::Diverged(divergence) => {
-                reproducing += 1;
-                format!("still reproduces: {}", divergence.describe())
-            }
-            Judgment::Agreed => "no longer reproduces".to_owned(),
+            Judgment::Diverged(divergence) => format!("diverges: {}", divergence.describe()),
+            Judgment::Agreed => "compiles and agrees on every run".to_owned(),
             Judgment::Rejected(rejection) => {
-                format!(
-                    "no longer compiles [{}]: {}",
-                    rejection.rule, rejection.message
-                )
+                format!("rejected [{}]: {}", rejection.rule, rejection.message)
             }
             Judgment::LoweringRefusal(lowering, rejection) => format!(
                 "the {} lowering refuses it [{}]: {}",
@@ -319,7 +323,11 @@ pub fn run_probes(paths: &Paths, options: &Options) -> Result<(), String> {
         };
         println!("{}: {outcome}", path.display());
     }
-    println!("{reproducing} of {} probes still reproduce", entries.len());
+    println!(
+        "{} probes run; compare each outcome against {}/README.md",
+        entries.len(),
+        directory.display()
+    );
     Ok(())
 }
 

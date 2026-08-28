@@ -55,11 +55,17 @@ executes thousands of programs, and it reports rather than gates.
 
 ## probes/
 
-Every minimized program a campaign found, kept as source with the exact
-divergence it produced recorded in `probes/README.md`. `make probes` re-runs
-them. A probe that stops reproducing has had its defect fixed; it is then either
+The directory appears with the first finding a campaign keeps: one minimized
+`.wf` per finding, and a `probes/README.md` naming, for each, the seed, the
+classification, the defect, and the outcome the probe produces today. `make
+probes` prints the current outcome of each probe and the reader compares it
+against that index -- the expected outcome is written down rather than encoded,
+because a probe may record a rejection as readily as a divergence.
+
+A probe whose outcome changes has had its defect fixed; it is then either
 promoted into `compiler/src/backend/tests/` as an ordinary compiler test or
-deleted in the same change. Probes are maintained, not archived.
+deleted in the same change. Probes are maintained, not archived. `make probes`
+with no directory recorded says so and exits clean.
 
 ## Removal condition
 
