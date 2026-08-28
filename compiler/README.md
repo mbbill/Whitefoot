@@ -24,7 +24,7 @@ ordered source bundle
 ```
 
 The frontend targets the exact v0.38 bytes at `../spec/kernel-spec.md`,
-SHA-256 `3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`.
+SHA-256 `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
 v0.38 adds [PAR-3], the staged loop permission, and supersedes v0.37 at
 `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`, whose
 outgoing bytes are archived at `../spec/kernel-spec-v0.37.md`.

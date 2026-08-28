@@ -1559,7 +1559,7 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   2's approval and rule 4's approval of the content recorded here; this
   record creates no separate approval step.
 - SPECIFICATION: activate Whitefoot v0.38 at exact SHA-256
-  `3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`.
+  `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
   It supersedes active v0.37 at SHA-256
   `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`;
   those outgoing bytes are preserved byte-for-byte as
@@ -1585,13 +1585,30 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   remainder; it distinguishes the host resources a system operation of the loop
   creates from the execution resources an implementation spends on overlapping;
   and it carries [PAR-1]'s erroneous-execution clauses, including that no
-  correct path reads a trap latch. [PAR-1] and [PAR-2] each gain one
-  cross-reference sentence and no condition. No writer-visible depth, window,
-  queue, batch operation, task, future, callback, cancellation handle, or
-  scheduling marker is added, and no ownership, effect, release, or trap rule
-  changes. No accepted program becomes rejected: the permitted-overlap set only
-  widens, so no conformance verdict moves. The selection ground is the staged
-  loop-pipeline design derived against the completion model and the
+  correct path reads a trap latch. Its replication clause states which bytes a
+  footprint *may* write and which count as written: a contract that fixes only
+  which bytes of a buffer may have changed establishes no written byte, so the
+  coverage condition can be met only from a contract that states the change
+  exactly. [SYS-8] states the may-have-changed form for the range-bearing
+  operations and the exact form for the copy pair, and this sentence is what
+  keeps the coverage condition from reading the first as the second. [PAR-1]
+  and [PAR-2] each gain one cross-reference sentence and no condition. [SYS-2]
+  is amended in one sentence to name the release milestone of the name an open
+  borrows — `open_read`'s `path`, `open_file`'s and `open_directory`'s `name` —
+  which is published before target transfer because forming the request copies
+  the admitted code-unit range into compiler-owned storage; every other
+  applicable fact is still published by the exactly-once terminal transition.
+  That is one entry in the milestone structure [SYS-2] already carries, and it
+  is the fact both shipped adapters already publish at submission. No other
+  ownership, effect, release, or trap rule changes, and no writer-visible
+  depth, window, queue, batch operation, task, future, callback, cancellation
+  handle, or scheduling marker is added. The [PAR-3] judgment shipped in this
+  same revision does not consume that earlier milestone: it reads every
+  retained borrow as retained to `terminal`, which is strictly conservative
+  against the amended contract and is the only direction a permission judgment
+  may err in. No accepted program becomes rejected: the permitted-overlap set
+  only widens, so no conformance verdict moves. The selection ground is the
+  staged loop-pipeline design derived against the completion model and the
   io-completion benchmark's own measurements.
 - CONFORMANCE BOUNDARY: relative to the v0.37 activation boundary at `main`
   tip `79b2966562e1da8de541feedfd5855d0ef4a3c30`, `tests/conformance` content
@@ -1613,4 +1630,4 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   refuses nothing can carry; each case's `rules` list names [PAR-3] beside the
   rules its source genuinely exercises. No pre-existing `expect` verdict
   changes. Coverage moves from 137/137 to 138/138 rules.
-ACTIVE-SPEC: v0.38 3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619
+ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619

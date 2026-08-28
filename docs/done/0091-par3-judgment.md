@@ -438,7 +438,7 @@ put rule text in front of the implementation that makes it true.
 
 v0.37 is archived byte-exact as `spec/kernel-spec-v0.37.md`; the chain, the
 generated identity, the qualification review note, and every digest anchor name
-v0.38 at `3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`.
+v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
 
 ## Approval classes for the merge
 

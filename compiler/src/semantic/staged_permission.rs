@@ -63,9 +63,13 @@
 //!    footprint of B writes — where "writes" is the [OWN-7] relation, so a
 //!    footprint that writes `w` writes every field path under `w` and a borrow
 //!    into `w.f` is a borrow into `w`. Every retained borrow is read as
-//!    retained to its `terminal` milestone, which is what [SYS-2] publishes
-//!    today; a borrow released at submission is a milestone this judgment does
-//!    not yet have and reading one early would be the unsound direction.
+//!    retained to its `terminal` milestone. [SYS-2] now releases one borrow
+//!    earlier than that — the name an open borrows, released before target
+//!    transfer — and this judgment does not consume that milestone: reading a
+//!    borrow as retained longer than the contract requires can only refuse a
+//!    loop the rule would grant, and reading one as released early would be
+//!    the unsound direction. Consuming it is a later change, with its own
+//!    test, not a comment here.
 //! 4. **Exclusive loans in E are safe.** Every exclusive loan a call of E holds
 //!    is on a place rooted in a binding B itself introduces or on a place this
 //!    judgment replicates. Two remainders coexist, so an exclusive loan on

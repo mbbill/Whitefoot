@@ -122,8 +122,15 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // an implementation spends on overlapping, and that the remainder's accesses to
 // storage rooted outside the body are taken in iteration order — constrain a
 // schedule an implementation may take, not a facility this qualification
-// approves, and nothing in this version emits that schedule. Every v0.37
-// mapping therefore stands unchanged.
+// approves, and nothing in this version emits that schedule. The same version
+// amends [SYS-2] in one sentence to name the release milestone of the name an
+// open borrows, which is published before target transfer. That is a milestone
+// of the operation record rather than a facility: it adds no operation, no
+// resource type, no release action, no outcome constructor, and no entry form,
+// it changes no signature, borrow mode, or effect row this table maps, and it
+// is the fact both shipped adapters already publish at submission — the POSIX
+// file adapter after `wf_file_work_bind_path`, the io_uring adapter after
+// target acceptance. Every v0.37 mapping therefore stands unchanged.
 const REVIEWED_FOR: &str = "v0.38";
 
 /// The number of [SYS-2] opaque resource types, including the

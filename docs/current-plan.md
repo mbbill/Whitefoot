@@ -4,7 +4,7 @@ Status: IMPLEMENTED, VALIDATED, AND ACTIVATED on
 `codex/io-first-principles`.
 
 Active language authority: v0.38,
-`3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`.
+`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
 `spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.37 is
 archived at `spec/kernel-spec-v0.37.md` and the merge-time record is in
 `governance/APPROVALS.md`. Activation is branch content: nothing merges to
