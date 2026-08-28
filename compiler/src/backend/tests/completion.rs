@@ -1233,7 +1233,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     // so it creates at most one helper per submission and needs no second
     // lock, and every kind of queued work reaches the pool the same way.
     let enqueue = adapter
-        .split_once("static void wf_file_enqueue_locked(")
+        .split_once("static int wf_file_enqueue_locked(")
         .expect("one place appends an accepted queue entry")
         .1
         .split_once("\n}\n")
@@ -1243,19 +1243,34 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         enqueue.contains("wf_file_grow_helpers_locked(adapter)"),
         "the enqueue is where growth happens: {enqueue}"
     );
-    // One queued request wakes one helper, never every helper, and only a
-    // helper that is actually asleep.
+    // One queued request wakes one helper, never every helper, only a helper
+    // that is actually asleep, and never from inside the queue lock: a signal
+    // issued under that lock wakes a helper whose next act is to block on it.
     assert!(
-        enqueue.contains("pthread_cond_signal(&adapter->queue_available)"),
-        "a submission announces to exactly one helper"
+        enqueue.contains("wake = adapter->blocked_helpers != 0;"),
+        "the enqueue decides the wake under the lock: {enqueue}"
     );
     assert!(
-        !enqueue.contains("pthread_cond_broadcast(&adapter->queue_available)"),
+        !enqueue.contains("pthread_cond_signal"),
+        "the enqueue must not issue the wake while it holds the lock: {enqueue}"
+    );
+    let submit = adapter
+        .split_once("enum wf_file_submit_result wf_file_adapter_submit(")
+        .expect("one submission entry point")
+        .1
+        .split_once("\n}\n")
+        .expect("the submission ends with the function")
+        .0;
+    let unlock = submit
+        .find("(void)pthread_mutex_unlock(&adapter->queue_lock);\n    if (wake != 0) {")
+        .expect("the wake follows the unlock");
+    let signal = submit
+        .find("pthread_cond_signal(&adapter->queue_available)")
+        .expect("a submission announces to exactly one helper");
+    assert!(unlock < signal, "the wake is issued outside the queue lock");
+    assert!(
+        !submit.contains("pthread_cond_broadcast(&adapter->queue_available)"),
         "a submission must not wake every helper"
-    );
-    assert!(
-        enqueue.contains("if (adapter->blocked_helpers != 0) {"),
-        "a submission must not wake a helper that is already awake: {enqueue}"
     );
     // The bridge owns no second helper pool layered over this one.
     assert!(

@@ -2299,20 +2299,28 @@ static int test_process_wide_target_helper_budget(void) {
     return 0;
 }
 
-/* Submits `count` positioned reads of one open descriptor and advances them on
- * this thread, which is what a program with no helper does. */
-static int drive_reads_on_this_thread(
+/* Submits `count` positioned reads of one open descriptor, one at a time, and
+ * waits for each to complete.
+ *
+ * The wait is on the completion event rather than on the queue emptying: a
+ * helper takes a request out of the queue before it executes it, so an empty
+ * queue is not an answer, and waiting for one is a race this thread loses
+ * whenever the pool has grown.  This thread also offers to execute, so the
+ * case runs the same either way. */
+static int drive_reads_to_completion(
     wf_completion_runtime *runtime,
     wf_file_adapter *adapter,
     int descriptor,
     unsigned count
 ) {
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
     unsigned index;
     for (index = 0; index < count; ++index) {
         wf_completion_token token;
         wf_file_request request;
         wf_file_result result;
         unsigned char byte = 0;
+        unsigned attempts;
         CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
         memset(&request, 0, sizeof(request));
         request.kind = WF_FILE_PREAD;
@@ -2324,9 +2332,15 @@ static int drive_reads_on_this_thread(
             wf_file_adapter_submit(adapter, token, &request)
             == WF_FILE_TARGET_OWNS
         );
-        while (wf_file_adapter_queued(adapter) != 0) {
-            (void)wf_file_adapter_progress(adapter, 1);
+        for (attempts = 0; attempts < 5000; ++attempts) {
+            if (wf_completion_ready_event_count(runtime) != 0) {
+                break;
+            }
+            if (wf_file_adapter_progress(adapter, 1) == 0) {
+                (void)nanosleep(&delay, NULL);
+            }
         }
+        CHECK(wf_completion_ready_event_count(runtime) != 0);
         CHECK(drain_and_consume_file(runtime, token, &result) == 0);
         CHECK(result.error_code == 0);
     }
@@ -2374,7 +2388,7 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     /* One microsecond a call: real work, and an order of magnitude under the
      * wait that would make a second thread worth its handoff. */
     wf_script_clock(1000u);
-    CHECK(drive_reads_on_this_thread(&runtime, &adapter, descriptor, 32) == 0);
+    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 32) == 0);
     wf_script_clock(0);
     CHECK(wf_file_adapter_helper_count(&adapter) == 0);
 
@@ -2417,7 +2431,7 @@ static int test_pool_grows_when_operations_wait(const char *directory) {
 
     /* A millisecond a call is a wait by any reading of the threshold. */
     wf_script_clock(1000000u);
-    CHECK(drive_reads_on_this_thread(&runtime, &adapter, descriptor, 32) == 0);
+    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 32) == 0);
     wf_script_clock(0);
     held = wf_file_adapter_helper_count(&adapter);
     CHECK(held >= 1);

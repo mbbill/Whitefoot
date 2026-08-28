@@ -711,14 +711,20 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
     );
 }
 
-/* Appends one accepted queue entry, announces it to one helper, and grows the
- * pool when the queue has outrun it.  The caller holds the queue lock and has
- * already made the entry's ownership transition. */
-static void wf_file_enqueue_locked(
+/* Appends one accepted queue entry and grows the pool when the queue has
+ * outrun it.  The caller holds the queue lock and has already made the entry's
+ * ownership transition.
+ *
+ * Returns whether a sleeping helper has to be woken for it.  The wake itself
+ * is the caller's, after the lock: a signal issued while holding the queue
+ * lock wakes a helper whose very next act is to block on that same lock, so
+ * the submission pays a system call to start a thread it then stalls. */
+static int wf_file_enqueue_locked(
     wf_file_adapter *adapter,
     wf_completion_token token,
     const wf_file_request *request
 ) {
+    int wake;
     wf_file_work *entry = &adapter->queue[adapter->queue_tail];
     entry->token = token;
     entry->request = *request;
@@ -762,17 +768,13 @@ static void wf_file_enqueue_locked(
     /* One newly queued request needs exactly one helper woken, and only a
      * helper that is actually asleep needs a host wake at all.  Announcing to
      * every helper would cost a wake per helper per submission — a thundering
-     * herd rather than progress — and announcing to a helper still spinning
-     * for work costs a system call to wake a thread that is awake.  This lock
-     * is the one the sleeper counts itself under, so the count read here is
-     * exact rather than a guess. */
-    if (adapter->blocked_helpers != 0) {
-        if (wf_completion_trace_enabled()) {
-            wf_completion_trace_count(&wf__completion_trace.helper_signals, 1);
-        }
-        (void)pthread_cond_signal(&adapter->queue_available);
-    }
+     * herd rather than progress.  This lock is the one a sleeper counts itself
+     * under, so the answer read here is exact rather than a guess; a helper
+     * that wakes on its own between here and the caller's signal only makes
+     * that signal a spurious one, which its predicate loop already tolerates. */
+    wake = adapter->blocked_helpers != 0;
     wf_file_grow_helpers_locked(adapter);
+    return wake;
 }
 
 enum wf_file_submit_result wf_file_adapter_submit(
@@ -782,6 +784,7 @@ enum wf_file_submit_result wf_file_adapter_submit(
 ) {
     enum wf_completion_transition_result transition;
     uint64_t traced = 0;
+    int wake;
 
     if (adapter == NULL || adapter->initialized == 0
         || !wf_file_request_valid(request)) {
@@ -830,8 +833,14 @@ enum wf_file_submit_result wf_file_adapter_submit(
             : WF_FILE_SUBMIT_INVALID;
     }
 
-    wf_file_enqueue_locked(adapter, token, request);
+    wake = wf_file_enqueue_locked(adapter, token, request);
     (void)pthread_mutex_unlock(&adapter->queue_lock);
+    if (wake != 0) {
+        if (wf_completion_trace_enabled()) {
+            wf_completion_trace_count(&wf__completion_trace.helper_signals, 1);
+        }
+        (void)pthread_cond_signal(&adapter->queue_available);
+    }
     if (traced != 0) {
         wf_completion_trace_add(
             &wf__completion_trace.submit_ns,
