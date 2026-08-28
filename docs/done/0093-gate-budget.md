@@ -68,10 +68,59 @@ close to exact because nothing else was still running:
 | `exhaustion::a_frame_larger_than_the_guard_region_is_still_reported` | > 60 s | 19.5 s | two links, then two runs that recurse until the stack is gone |
 
 Every one of them spawns a program that **dies**. Nothing else in the suite
-differs between the two hosts by more than the ratio of their cores. Per spawn
-the difference is 18 milliseconds on macOS against about 5 seconds on Linux —
-two and a half orders of magnitude, on a host that is not two and a half orders
-of magnitude slower at anything else.
+differs between the two hosts by more than the ratio of their cores. Taking the
+racing-claim case, whose forty runs are forty aborts and nothing else: 0.5
+seconds on the macOS runner against 403.7 on the Linux one, which is 12
+milliseconds a run against 10 seconds — nearly three orders of magnitude, on a
+host that is not three orders of magnitude slower at anything else.
+
+## The cause: a piped `kernel.core_pattern`
+
+The correlation above says the cost follows dying programs. It does not say
+what the death costs, and the obvious first guess was wrong, which is why this
+was measured rather than assumed.
+
+The guess was the core-file limit. It is already zero on the runner —
+`ulimit -c` reports `0` in every step — so on the face of it no core is
+written at all. It is written anyway. When `kernel.core_pattern` begins with a
+pipe, the kernel *ignores* `RLIMIT_CORE`, because the limit bounds the size of
+a file and a pipe writes no file; `ubuntu-24.04` ships the pattern
+
+```text
+|/usr/lib/systemd/systemd-coredump %P %u %g %s %t 9223372036854775808 %h %d
+```
+
+so every aborting test program is handed to `systemd-coredump`, which reads the
+dying process, compresses a core, stores it and journals it — with the dying
+task waiting for it.
+
+Four arms, one case
+(`trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record`, which
+runs an aborting program forty times), one tree, one `ubuntu-24.04` runner,
+gate run [33143948885](https://github.com/mbbill/Whitefoot/actions/runs/33143948885).
+The last column is `coredumpctl list | wc -l` after the arm, and the host began
+with `No coredumps found.`:
+
+| arm | disposition | case wall | dumps recorded |
+|---|---|---|---|
+| 1 | the host as it comes (soft limit already 0, hard limit `unlimited`) | 403.7 s | 41 lines — one header, **40 dumps** |
+| 2 | `ulimit -c 0` set explicitly | 397.7 s | 81 — **40 more** |
+| 3 | `ulimit -c 1`, the value `fs/coredump.c` reads as "skip this dump" | 401.7 s | 121 — **40 more** |
+| 4 | `sysctl -w kernel.core_pattern=core`, soft limit 0 | **0.45 s** | 121 — **none** |
+
+Forty dumps per run of the case, one per aborting program, under every value of
+`RLIMIT_CORE`; none, and nine hundred times faster, once the pattern names a
+file. The limit is a no-op here and the pattern is the whole of it. Arm 3 is
+recorded because it was this batch's second guess and it is false: the kernel's
+own skip-the-pipe value did not skip anything on this kernel, so nothing a
+process can do without root declines the dump.
+
+`.github/workflows/gate.yml` therefore sets the pattern in one Linux-only step,
+where root is available, and `Makefile` and `compiler/Makefile` keep
+`ulimit -c 0` as the portable half — correct on every host whose pattern names
+a file, which is where a limit of zero is what declines the dump. No case
+asserts anything about a core file; each asserts the signal, the exit status
+and the record channel, and none of those moves.
 
 ## What each restructured case still proves
 

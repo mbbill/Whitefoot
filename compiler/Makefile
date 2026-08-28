@@ -19,14 +19,16 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 # runner beside it, and the whole difference sat in the five cases that spawn
 # dying programs.
 #
-# This limit is the portable half of declining that, and it is not the whole of
-# it. A Linux `kernel.core_pattern` that begins with a pipe — which
-# `ubuntu-24.04` has, naming `systemd-coredump` — makes the kernel ignore
-# RLIMIT_CORE entirely, because the limit is about the size of a file and a
-# pipe writes none. A host in that state has to change the pattern, which needs
-# root; `.github/workflows/gate.yml` does exactly that in one step and says so
-# there. What this line covers is every host whose pattern names a file, where
-# a limit of zero declines the dump the ordinary way.
+# This limit is the portable half of declining that, and it is deliberately not
+# the whole of it. A Linux `kernel.core_pattern` that begins with a pipe —
+# which `ubuntu-24.04` has, naming `systemd-coredump` — makes the kernel ignore
+# RLIMIT_CORE entirely, because the limit bounds the size of a file and a pipe
+# writes none. Measured: forty aborting runs left forty stored core dumps at a
+# soft limit of 0 and forty more at a soft limit of 1, and none once the
+# pattern named a file. A host in that state has to change the pattern, which
+# needs root; `.github/workflows/gate.yml` does exactly that in one step and
+# says so there. What this line covers is every host whose pattern names a
+# file, where a limit of zero declines the dump the ordinary way.
 #
 # Nothing a case asserts depends on a core file existing: the signal that kills
 # the process, its exit status and its record channel are all unchanged.

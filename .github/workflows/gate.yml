@@ -144,19 +144,21 @@ jobs:
       # pattern pipes every crash to `systemd-coredump`, which reads the dying
       # process, compresses a core and journals it, and the crashing task waits
       # for it. Measured in batch 0093 on this runner: one case that runs an
-      # aborting program forty times took 398 seconds with the pattern as the
-      # image ships it, against 0.5 seconds for the same case on the macOS
-      # runner, whose kernel writes no core. That single line was nine tenths
-      # of the Linux gate.
+      # aborting program forty times took 403.7 seconds with the pattern as the
+      # image ships it and 0.45 with the pattern set here, and `coredumpctl`
+      # counted exactly forty stored dumps for the first and none for the
+      # second. That single line was nine tenths of the Linux gate.
       #
-      # RLIMIT_CORE cannot decline a piped dump — the kernel ignores it for
-      # pipes, because the limit bounds a file and a pipe writes none, and the
-      # one value it does honour, 1, is above this runner's hard limit of zero.
-      # So the disposition is set here, where root is available: an ordinary
-      # file pattern, which the soft limit of zero the runner already has, and
-      # which `Makefile` sets anyway, then declines in the ordinary way. No
-      # case asserts anything about a core file; what each asserts is the
-      # signal, the exit status and the record channel, none of which moves.
+      # RLIMIT_CORE cannot decline a piped dump: the kernel ignores it for
+      # pipes, because the limit bounds a file and a pipe writes none. Measured
+      # on the same runner, a soft limit of 0 and the value 1 that
+      # `fs/coredump.c` documents as skip-this-dump both left all forty dumps
+      # in place. So the disposition is set here, where root is available: an
+      # ordinary file pattern, which the soft limit of zero the runner already
+      # has — and which `Makefile` sets anyway — then declines in the ordinary
+      # way. No case asserts anything about a core file; what each asserts is
+      # the signal, the exit status and the record channel, none of which
+      # moves.
       - name: Decline core dumps
         if: runner.os == 'Linux'
         run: |
