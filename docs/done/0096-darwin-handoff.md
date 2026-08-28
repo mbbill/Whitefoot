@@ -455,10 +455,11 @@ run          commit    cold 4 label         cold 4 C/N.pool8    note
 33158144391  72e98cba  refused/refused      960.86/587.85=1.635 C max 26351.72
 ```
 
-A fourth draw exists, run 33165141309 at the tip; it refuses both cold labels
-at both ends as well, so it settles nothing here either, and it is reported
-under "What the follow-up cost" below because its subject is the follow-up
-rather than this measurement.
+A fourth draw exists, run 33165141309 at `a06c53f9` — the commit that carries
+the follow-up's last runtime change, every commit after it being this record.
+It refuses both cold labels at both ends as well, so it settles nothing here
+either, and it is reported under "What the follow-up cost" below because its
+subject is the follow-up rather than this measurement.
 
 The third of these, run
 [33158144391](https://github.com/mbbill/Whitefoot/actions/runs/33158144391) at
@@ -789,8 +790,9 @@ policy and no threshold changes.
 Then the measurement, because an argument about cost is not one. Pushing the
 follow-up ran `io-bench` on it: run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) at
-commit `a06c53f9`, same `macos-14` label, same script, and a fourth separate
-draw. Against the tables above, which are `266acf4f`'s:
+commit `a06c53f9` — the last commit of this branch that changes the runtime,
+every commit after it being this record — same `macos-14` label, same script,
+and a fourth separate draw. Against the tables above, which are `266acf4f`'s:
 
 ```text
 row                       266acf4f   a06c53f9   delta
@@ -808,7 +810,7 @@ the follow-up made anything faster — these are different draws, and the cold
 tables of this one are labelled no better than the others — but a change that
 cost the path anything measurable would not reproduce the warm rows to three
 decimal places. The tables above stay at `266acf4f` because that is where they
-were measured; this is the tip's own reading beside them.
+were measured; this is the shipped runtime's own reading beside them.
 
 Its cache labels are the branch's fourth in a row that cannot carry a cold
 bar: `probe before the table: refused; probe after it: refused` on both cold

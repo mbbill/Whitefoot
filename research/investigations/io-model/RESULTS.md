@@ -1309,8 +1309,8 @@ tables here are read at commit `266acf4f`, and the tip adds a generation check
 on the named drain, an atomically published adapter readiness flag, a helper
 cap bounded by its storage, a clock guard on the join spin, and a gate arm
 that runs the bridge on the shipped default helper policy. None of those
-changes a route, a policy or a threshold, and a fourth macOS draw taken at the
-tip (run
+changes a route, a policy or a threshold, and a fourth macOS draw taken at
+`a06c53f9`, the branch's last runtime commit (run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309),
 commit `a06c53f9`) reproduces the two warm rows of the bar to three decimal
 places — 1.0085 against 1.006 at 64 KiB, 1.0309 against 1.028 at 4 KiB — with
