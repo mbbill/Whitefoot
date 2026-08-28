@@ -634,8 +634,22 @@ mod tests {
     fn a_collapsed_line_keeps_the_notice_either_instance_raised() {
         for (first, second) in [(false, true), (true, false)] {
             let mut entries = vec![
-                Entry::new("walk.wf".to_owned(), 5, 2, 0, "PAR loop  denied".to_owned(), first),
-                Entry::new("walk.wf".to_owned(), 5, 2, 0, "PAR loop  denied".to_owned(), second),
+                Entry::new(
+                    "walk.wf".to_owned(),
+                    5,
+                    2,
+                    0,
+                    "PAR loop  denied".to_owned(),
+                    first,
+                ),
+                Entry::new(
+                    "walk.wf".to_owned(),
+                    5,
+                    2,
+                    0,
+                    "PAR loop  denied".to_owned(),
+                    second,
+                ),
             ];
             collapse(&mut entries);
             assert_eq!(entries.len(), 1, "{entries:?}");
@@ -648,8 +662,22 @@ mod tests {
     #[test]
     fn collapsing_keeps_two_distinct_lines_and_their_own_flags() {
         let mut entries = vec![
-            Entry::new("walk.wf".to_owned(), 5, 5, 1, "PAR place  read-only".to_owned(), false),
-            Entry::new("walk.wf".to_owned(), 5, 5, 0, "PAR place  denied".to_owned(), true),
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                1,
+                "PAR place  read-only".to_owned(),
+                false,
+            ),
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                0,
+                "PAR place  denied".to_owned(),
+                true,
+            ),
         ];
         collapse(&mut entries);
         assert_eq!(entries.len(), 2, "{entries:?}");
@@ -667,8 +695,22 @@ mod tests {
     #[test]
     fn collapsing_keeps_one_row_per_position_of_a_disposition_table() {
         let mut entries = vec![
-            Entry::new("walk.wf".to_owned(), 5, 5, 0, "PAR place  read-only  n".to_owned(), false),
-            Entry::new("walk.wf".to_owned(), 5, 5, 1, "PAR place  read-only  n".to_owned(), false),
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                0,
+                "PAR place  read-only  n".to_owned(),
+                false,
+            ),
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                1,
+                "PAR place  read-only  n".to_owned(),
+                false,
+            ),
         ];
         collapse(&mut entries);
         assert_eq!(entries.len(), 2, "{entries:?}");

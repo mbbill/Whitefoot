@@ -558,7 +558,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(local.declaration)?, mechanical_fix: OWN10_LOCAL_STORAGE.to_owned() },
+                SemanticIssueKind::InvalidBorrowLifetime {
+                    region: self.declaration_spelling(region)?,
+                    binder: self.declaration_spelling(local.declaration)?,
+                    mechanical_fix: OWN10_LOCAL_STORAGE.to_owned(),
+                },
             );
         }
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
@@ -756,7 +760,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(local.declaration)?, mechanical_fix: OWN10_LOCAL_STORAGE.to_owned() },
+                SemanticIssueKind::InvalidBorrowLifetime {
+                    region: self.declaration_spelling(region)?,
+                    binder: self.declaration_spelling(local.declaration)?,
+                    mechanical_fix: OWN10_LOCAL_STORAGE.to_owned(),
+                },
             );
         }
         // The written suffix chain still selects a real field of the content
@@ -810,7 +818,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(owner)?, mechanical_fix: OWN10_LOCAL_STORAGE.to_owned() },
+                SemanticIssueKind::InvalidBorrowLifetime {
+                    region: self.declaration_spelling(region)?,
+                    binder: self.declaration_spelling(owner)?,
+                    mechanical_fix: OWN10_LOCAL_STORAGE.to_owned(),
+                },
             );
         }
         Ok(())
@@ -1221,23 +1233,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let Some(mut borrow) = value.borrow.clone() else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(self.checked_mode_name(destination)?, self.checked_value_name(value.mode, value.expression.ty())?));
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    self.checked_mode_name(destination)?,
+                    self.checked_value_name(value.mode, value.expression.ty())?,
+                ),
+            );
         };
         let destination_region = match (destination, borrow.kind) {
             (CheckedMode::Shared(region), BorrowKind::Shared)
             | (CheckedMode::Unique(region), BorrowKind::Unique) => region,
             _ => {
-                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(
-                    self.checked_mode_name(destination)?,
-                    format!(
-                        "{} {}",
-                        match borrow.kind {
-                            BorrowKind::Shared => "&",
-                            BorrowKind::Unique => "&uniq",
-                        },
-                        self.declaration_spelling(borrow.region)?
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    node,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_mode_name(destination)?,
+                        format!(
+                            "{} {}",
+                            match borrow.kind {
+                                BorrowKind::Shared => "&",
+                                BorrowKind::Unique => "&uniq",
+                            },
+                            self.declaration_spelling(borrow.region)?
+                        ),
                     ),
-                ));
+                );
             }
         };
         if !self.region_outlives(borrow.region, destination_region)? {

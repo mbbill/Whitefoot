@@ -89,11 +89,9 @@ fn a_borrowed_resource_parameter_contributes_no_release_row() {
     assert_complete(BORROWED_ACCEPT);
     // A shared loan cannot authorize a state transition. The signature is
     // rejected at EFF-1 before release attribution is considered.
-    assert_rule_kind(
-        BORROWED_REJECT,
-        SemanticRule::Eff1,
-        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
-    );
+    assert_rule_kind(BORROWED_REJECT, SemanticRule::Eff1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidEffectRow { .. })
+    });
 }
 
 #[test]
@@ -274,11 +272,9 @@ fn a_user_result_cannot_wash_an_output_formal_origin() {
     let accepted = pass_output_program("reads(out), writes(out), allocates(heap)");
     assert_complete(&accepted);
     let washed = pass_output_program("allocates(heap)");
-    assert_rule_kind(
-        &washed,
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
+    assert_rule_kind(&washed, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
     with_semantics(&accepted, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the pass-through program must check: {outcome:?}");
@@ -363,11 +359,9 @@ fn a_control_flow_result_projects_to_every_possible_formal() {
         choose_output_program("reads(out, err), writes(out, err), allocates(heap)", false);
     assert_complete(&accepted);
     let narrowed = choose_output_program("reads(out), writes(out), allocates(heap)", false);
-    assert_rule_kind(
-        &narrowed,
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
+    assert_rule_kind(&narrowed, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
     with_semantics(&accepted, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the finite-origin choice must check: {outcome:?}");

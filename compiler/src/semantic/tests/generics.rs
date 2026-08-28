@@ -78,7 +78,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Fn3, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
+    assert_rule_kind(source, SemanticRule::Fn3, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
 }
 
 #[test]
@@ -91,7 +93,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Form5, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
+    assert_rule_kind(source, SemanticRule::Form5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
 }
 
 #[test]
@@ -139,7 +143,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Fn3, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
+    assert_rule_kind(source, SemanticRule::Fn3, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
 }
 
 /// The negative control for the three [FN-6] rejections below: a cycle whose

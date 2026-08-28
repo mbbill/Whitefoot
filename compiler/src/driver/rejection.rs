@@ -53,7 +53,11 @@ impl<Issue> Located<Issue> {
     /// enclosing item's header while the offending bytes sat two lines down.
     /// The line to quote is the one the gap ends in, and the column is where
     /// the gap's own bytes begin on that line.
-    pub(super) fn in_gap(issue: Issue, bundle: &SourceBundle, coordinate: SyntaxCoordinate) -> Self {
+    pub(super) fn in_gap(
+        issue: Issue,
+        bundle: &SourceBundle,
+        coordinate: SyntaxCoordinate,
+    ) -> Self {
         Self::at(issue, bundle, coordinate, Anchor::LastLineOfGap)
     }
 
@@ -100,7 +104,9 @@ fn context(
     let start = match anchor {
         Anchor::Start => start,
         Anchor::LastLineOfGap => {
-            let end = usize::try_from(coordinate.end().value()).ok()?.min(bytes.len());
+            let end = usize::try_from(coordinate.end().value())
+                .ok()?
+                .min(bytes.len());
             let final_line = bytes[..end]
                 .iter()
                 .rposition(|byte| *byte == b'\n')

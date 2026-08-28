@@ -49,7 +49,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let argument = self.check_atom(function, atom, bindings, loop_depth)?;
         if argument.expression.ty() != source.ty() || argument.mode != CheckedMode::Own {
-            return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(source.ty())?), self.checked_value_name(argument.mode, argument.expression.ty())?));
+            return self.issue_node(
+                SemanticRule::Type5,
+                atom,
+                SemanticIssueKind::type_mismatch(
+                    format!("own {}", self.checked_type_name(source.ty())?),
+                    self.checked_value_name(argument.mode, argument.expression.ty())?,
+                ),
+            );
         }
         Ok(TypedExpression::owned(
             CheckedExpression::NumericConversion {

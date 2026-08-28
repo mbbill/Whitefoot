@@ -1,7 +1,10 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedExpression, CheckedMode, CheckedSetTarget, CheckedStatement};
-use super::{assert_rule, assert_rule_extension, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_extension};
+use super::{
+    assert_rule, assert_rule_extension, assert_rule_kind, assert_unsupported, with_semantics,
+    with_semantics_extension,
+};
 
 pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
   left: buffer<u64>;
@@ -306,11 +309,9 @@ command fn main() -> status: own ExitStatus pure {
         .expect("fixture contains the forwarding declaration");
     let replacement = b"fn forward['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.right)";
     wrong.splice(at..at + declaration.len(), replacement.iter().copied());
-    assert_rule_kind(
-        &wrong,
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
+    assert_rule_kind(&wrong, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
 }
 
 #[test]
@@ -799,11 +800,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
         .expect("fixture declares the publish row");
     let mut narrowed = source.to_vec();
     narrowed.splice(at..at + declared.len(), b"reads(source)".iter().copied());
-    assert_rule_kind(
-        &narrowed,
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
+    assert_rule_kind(&narrowed, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
 }
 
 /// General borrow-mode parameters and `let` borrows: scalar and enum content

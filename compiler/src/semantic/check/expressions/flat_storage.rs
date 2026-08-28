@@ -205,7 +205,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(element_type)?), self.checked_value_name(value.mode, value.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    format!("own {}", self.checked_type_name(element_type)?),
+                    self.checked_value_name(value.mode, value.expression.ty())?,
+                ),
             );
         }
         Ok(TypedExpression::owned(
@@ -236,7 +239,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::type_mismatch("own u64", self.checked_value_name(length.mode, length.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    "own u64",
+                    self.checked_value_name(length.mode, length.expression.ty())?,
+                ),
             );
         }
         // [OP-9] `buffer_new(n, v)` is the one deleted-class row whose
@@ -247,7 +253,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[1],
-                SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(value.expression.ty())?), self.checked_value_name(value.mode, value.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    format!("own {}", self.checked_type_name(value.expression.ty())?),
+                    self.checked_value_name(value.mode, value.expression.ty())?,
+                ),
             );
         }
         let element_type = value.expression.ty();
@@ -316,7 +325,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::type_mismatch("own u64", self.checked_value_name(length.mode, length.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    "own u64",
+                    self.checked_value_name(length.mode, length.expression.ty())?,
+                ),
             );
         }
         Ok(TypedExpression::owned(
@@ -360,7 +372,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::type_mismatch("own u64", self.checked_value_name(length.mode, length.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    "own u64",
+                    self.checked_value_name(length.mode, length.expression.ty())?,
+                ),
             );
         }
         let layout_ceiling = self.layout_ceiling(ty, node)?;
@@ -596,7 +611,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let suffix = suffixes[subscript];
         if subscript + 1 != suffixes.len() {
-            return self.issue_node(SemanticRule::Type5, place, SemanticIssueKind::type_mismatch("a subscript as the last suffix of the place", "a subscript followed by another suffix"));
+            return self.issue_node(
+                SemanticRule::Type5,
+                place,
+                SemanticIssueKind::type_mismatch(
+                    "a subscript as the last suffix of the place",
+                    "a subscript followed by another suffix",
+                ),
+            );
         }
         let indexed = self.check_indexed_place(place, bindings, &suffixes[..subscript], suffix)?;
         // [TYPE-2] affine elements leave and enter their slots only through
@@ -676,7 +698,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 offset_node,
-                SemanticIssueKind::type_mismatch("own u64", self.checked_value_name(offset.mode, offset.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    "own u64",
+                    self.checked_value_name(offset.mode, offset.expression.ty())?,
+                ),
             );
         }
         // A subscript is not an [EFF-2] trap source: an accepted subscript
@@ -781,7 +806,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let suffix = suffixes[subscript];
         if subscript + 1 != suffixes.len() {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("a subscript as the last suffix of the place", "a subscript followed by another suffix"));
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a subscript as the last suffix of the place",
+                    "a subscript followed by another suffix",
+                ),
+            );
         }
         let indexed = self.check_indexed_place(node, bindings, &suffixes[..subscript], suffix)?;
         match &indexed {
@@ -830,7 +862,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 offset_node,
-                SemanticIssueKind::type_mismatch("own u64", self.checked_value_name(offset.mode, offset.expression.ty())?),
+                SemanticIssueKind::type_mismatch(
+                    "own u64",
+                    self.checked_value_name(offset.mode, offset.expression.ty())?,
+                ),
             );
         }
         // As in the read path, retain only the psuffix identity for [ENT-6];
@@ -907,13 +942,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         if self.has_fixed(node, FixedTerminal::Move)? {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("a place, which a subscript indexes", "a written `move`, which consumes rather than indexes"));
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a place, which a subscript indexes",
+                    "a written `move`, which consumes rather than indexes",
+                ),
+            );
         }
         let place = self
             .tree
             .first_child_with(node, Production::Place)?
             .ok_or_else(|| {
-                self.issue_value(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("a place, which a subscript indexes", "an atom that is not a place"))
+                self.issue_value(
+                    SemanticRule::Type5,
+                    node,
+                    SemanticIssueKind::type_mismatch(
+                        "a place, which a subscript indexes",
+                        "an atom that is not a place",
+                    ),
+                )
             })?;
         let suffixes = self.tree.children_with(place, Production::Psuffix)?;
         self.check_indexed_place(place, bindings, &suffixes, place)
@@ -1088,7 +1137,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 )
             }
-            _ => self.issue_node(SemanticRule::Type5, anchor, SemanticIssueKind::type_mismatch("an array, buffer, or slice place", self.checked_type_name(ty)?)),
+            _ => self.issue_node(
+                SemanticRule::Type5,
+                anchor,
+                SemanticIssueKind::type_mismatch(
+                    "an array, buffer, or slice place",
+                    self.checked_type_name(ty)?,
+                ),
+            ),
         }
     }
 }

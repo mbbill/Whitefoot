@@ -219,7 +219,9 @@ fn a_value_if_holds_its_deliveries_to_one_exact_type() {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Give1, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
+    assert_rule_kind(source, SemanticRule::Give1, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
 }
 
 /// [GIVE-1] owns the undelivering `value_if`, not GRAM-6: a `value_if`'s

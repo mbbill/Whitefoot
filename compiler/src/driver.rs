@@ -2464,11 +2464,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
     /// The numbered rule and the rendered detail of one compilation that must
     /// fail, in the shape `whitefootc` prints them.
     fn rejection(name: &str, source: &[u8]) -> String {
-        let failure = compile(
-            &[SourceInput::new(name, source)],
-            CompilerLimits::default(),
-        )
-        .expect_err("this fixture exists to be rejected");
+        let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
+            .expect_err("this fixture exists to be rejected");
         format!(
             "[{}] {}",
             failure.rule_id().unwrap_or("no rule"),
@@ -2823,5 +2820,4 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
             "the hoisted form is what the remedy names, so it must be granted"
         );
     }
-
 }

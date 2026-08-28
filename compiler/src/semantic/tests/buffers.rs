@@ -5,7 +5,9 @@ use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
-use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark};
+use super::{
+    assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark,
+};
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
