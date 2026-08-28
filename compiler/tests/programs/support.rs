@@ -9,12 +9,16 @@ use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS, Inventory, OverlapLowering,
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, SourceInput,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, compile_with_inventory,
-    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    CompilationFailure, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
+    PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
+    compile, compile_with_overlap, compile_with_permission_ledger,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
 };
+// Read by the superseded-inventory rejection, which carries the host limit of
+// the directory-walking case that calls it.
+#[cfg(target_os = "macos")]
+use whitefoot::{Inventory, compile_with_inventory};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
@@ -93,6 +97,7 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     });
     let compilation = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(HOST_LINK_LIBRARIES)
         .arg("-o")
         .arg(executable)
         .output()
@@ -131,6 +136,28 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
+/// [`compile_programs_with_overlap`] where a target that cannot compile the
+/// unit is an answer rather than a panic.
+///
+/// The one caller is the case that walks the whole corpus. A target with no
+/// approved [SYS-14] directory-enumeration row does not compile the programs
+/// that walk a directory, and that is the compiler's own report about the
+/// target rather than something a test may paper over — so the case reads the
+/// report, names the units it covers, and still fails on every other kind of
+/// failure.
+pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, CompilationFailure> {
+    let sources = names
+        .iter()
+        .map(|name| read_program(name))
+        .collect::<Vec<_>>();
+    let inputs = names
+        .iter()
+        .zip(&sources)
+        .map(|(name, source)| SourceInput::new(name, source))
+        .collect::<Vec<_>>();
+    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
+}
+
 /// Compiles one corpus program with the [PAR-1 candidate] overlap lowering
 /// switched on, which is what `whitefootc --par` compiles.
 ///
@@ -149,17 +176,7 @@ pub fn compile_program_with_overlap(name: &str) -> String {
 /// needs the same multi-source entry [`compile_programs`] gives the default
 /// lowering.
 pub fn compile_programs_with_overlap(names: &[&str]) -> String {
-    let sources = names
-        .iter()
-        .map(|name| read_program(name))
-        .collect::<Vec<_>>();
-    let inputs = names
-        .iter()
-        .zip(&sources)
-        .map(|(name, source)| SourceInput::new(name, source))
-        .collect::<Vec<_>>();
-    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
-        .expect("program corpus source must compile")
+    try_compile_programs_with_overlap(names).expect("program corpus source must compile")
 }
 
 /// Every `.wf` file the program corpus holds, in one stable order.
@@ -207,6 +224,10 @@ pub fn program_permission_ledger(name: &str) -> Vec<String> {
 /// Compiles one corpus program against a named superseded [SYS-2] inventory
 /// and returns its rejection. Current program execution always uses the
 /// complete active inventory.
+///
+/// Its one caller walks a directory, so it carries that caller's host limit;
+/// `tests/programs.rs` states the limit once.
+#[cfg(target_os = "macos")]
 pub fn compile_program_rejection_with(name: &str, inventory: Inventory) -> String {
     let source = read_program(name);
     let inputs = [SourceInput::new(name, &source)];
@@ -350,6 +371,7 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     }
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(HOST_LINK_LIBRARIES)
         .arg("-o")
         .arg(&executable)
         .output()
@@ -503,7 +525,15 @@ impl FixtureDirectory {
         std::fs::write(&path, bytes).expect("write fixture file");
         path
     }
+}
 
+/// The tree shapes only a directory-walking case builds.
+///
+/// They carry their callers' host limit, which `tests/programs.rs` states
+/// once: a target with no approved [SYS-14] enumeration row compiles no
+/// program that walks a directory, so nothing here has a caller on it.
+#[cfg(target_os = "macos")]
+impl FixtureDirectory {
     /// Creates one nested fixture directory and returns its path.
     ///
     /// A traversal case needs a real directory tree under the invocation
