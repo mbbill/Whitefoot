@@ -342,8 +342,31 @@ enum wf_completion_transition_result wf_completion_set_adapter_tag(
     return WF_COMPLETION_TRANSITIONED;
 }
 
+/* Announces one epoch change, and takes the wake lock only when there is a
+ * sleeper to wake.
+ *
+ * The lock is what used to order "raise the epoch, then look for a sleeper"
+ * against a scheduler's "announce sleep, then look at the epoch".  Taking it
+ * on every publication made a global mutex out of a path a program crosses
+ * three times per file operation — once at submission, once at publication,
+ * once at consumption — and on a host where a contended mutex is a system
+ * call that was the largest single cost of the Darwin helper path.
+ *
+ * The two stores and the two loads are sequentially consistent instead, which
+ * is the same exclusion Dekker's algorithm gets without a lock: this thread
+ * raises the epoch and then reads the sleeper count; a parking scheduler
+ * raises the sleeper count and then reads the epoch.  Both cannot read the
+ * old value, so either this call sees a sleeper and takes the lock and wakes
+ * it, or the scheduler sees the new epoch and does not sleep at all.  Both
+ * sides must stay sequentially consistent for that to hold, which is why the
+ * two park paths — this core's and the Linux target's external wait — name
+ * the order explicitly at their own increment and recheck. */
 static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
-    atomic_fetch_add_explicit(&runtime->wake_epoch, 1, memory_order_release);
+    atomic_fetch_add_explicit(&runtime->wake_epoch, 1, memory_order_seq_cst);
+    if (atomic_load_explicit(&runtime->parked_schedulers, memory_order_seq_cst)
+        == 0) {
+        return;
+    }
     (void)pthread_mutex_lock(&runtime->wake_lock);
     {
         unsigned parked = atomic_load_explicit(
@@ -559,6 +582,15 @@ size_t wf_completion_drain(
         || event_capacity == 0 || scan_budget == 0) {
         return 0;
     }
+    /* Nothing published means nothing to find, and finding nothing used to
+     * cost a compare-exchange on every slot in the scanned window.  The count
+     * is durable: a publisher raises it before announcing the epoch, so a
+     * scheduler that reads zero here and then parks is parking against the
+     * epoch it snapshotted before this call. */
+    if (atomic_load_explicit(&runtime->ready_events, memory_order_acquire)
+        == 0) {
+        return 0;
+    }
     cursor = atomic_fetch_add_explicit(
         &runtime->drain_cursor,
         scan_budget,
@@ -627,6 +659,92 @@ size_t wf_completion_drain(
         wf_completion_notify_scheduler(runtime);
     }
     return produced;
+}
+
+size_t wf_completion_drain_token(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    wf_completion_event *event
+) {
+    wf_completion_slot *slot;
+    void *dependent_frame = NULL;
+    int wake_consumer = 0;
+    unsigned pending = 1;
+
+    if (event == NULL || !wf_completion_token_slot(runtime, token, &slot)) {
+        return 0;
+    }
+    /* The cheap negative first: a join loop asks on every turn, and a slot
+     * with no pending event is the answer nearly every time.  A relaxed load
+     * is enough to decide there is nothing to take, because the taking itself
+     * is decided again below. */
+    if (atomic_load_explicit(&slot->event_pending, memory_order_relaxed) == 0) {
+        return 0;
+    }
+    /* Generation and the take are decided together, under the publication
+     * lock.  Naming a slot is not naming an operation: the slot outlives the
+     * operation that used it, so a token whose operation has already ended
+     * names whatever operation reused its slot.  `wf_completion_claim` and
+     * `wf_completion_publish` are the only other writers of both the
+     * generation and the pending flag, and both hold this lock, so checking
+     * the generation here excludes taking a live operation's event with a
+     * token that no longer stands for it.  Every other token-named entry
+     * makes the same check; this one is the sweep's transition, so it kept
+     * the sweep's generation-agnostic shape by mistake. */
+    (void)pthread_mutex_lock(&slot->publication_lock);
+    if (atomic_load_explicit(&slot->generation, memory_order_relaxed)
+        != token.generation) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return 0;
+    }
+    if (!atomic_compare_exchange_strong_explicit(
+            &slot->event_pending,
+            &pending,
+            0,
+            memory_order_acquire,
+            memory_order_relaxed
+        )) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return 0;
+    }
+
+    event->token.slot = token.slot;
+    event->token.generation = atomic_load_explicit(
+        &slot->generation,
+        memory_order_relaxed
+    );
+    event->milestones = atomic_load_explicit(
+        &slot->milestones,
+        memory_order_acquire
+    );
+    event->terminal_kind = slot->terminal_kind;
+    if (slot->dependent_frame != NULL
+        && (event->milestones & slot->dependent_requirement)
+            == slot->dependent_requirement) {
+        dependent_frame = slot->dependent_frame;
+        slot->dependent_frame = NULL;
+        slot->dependent_requirement = 0;
+    }
+    atomic_store_explicit(&slot->event_drained, 1, memory_order_release);
+    if (slot->consume_waiting != 0) {
+        slot->consume_waiting = 0;
+        wake_consumer = 1;
+    }
+    (void)pthread_mutex_unlock(&slot->publication_lock);
+
+    atomic_fetch_sub_explicit(&runtime->ready_events, 1, memory_order_acq_rel);
+    atomic_fetch_add_explicit(
+        &runtime->stat_drained_events,
+        1,
+        memory_order_relaxed
+    );
+    if (dependent_frame != NULL) {
+        wf__writer_scheduler_ready(dependent_frame);
+    }
+    if (wake_consumer != 0) {
+        wf_completion_notify_scheduler(runtime);
+    }
+    return 1;
 }
 
 size_t wf_completion_ready_event_count(const wf_completion_runtime *runtime) {
@@ -888,13 +1006,16 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
     atomic_fetch_add_explicit(
         &runtime->parked_schedulers,
         1,
-        memory_order_relaxed
+        memory_order_seq_cst
     );
     atomic_fetch_add_explicit(&runtime->stat_parks, 1, memory_order_relaxed);
 
-    /* This second observation closes empty-check -> sleep against a publisher
-     * which incremented the epoch just before taking wake_lock. */
-    if (atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire)
+    /* This second observation closes announce-sleep -> sleep against a
+     * publisher which raised the epoch and then looked for a sleeper.  It is
+     * sequentially consistent, and so is the increment above it, because that
+     * pair against the publisher's own pair is the whole of what keeps a wake
+     * from being lost now that the publisher no longer takes this lock. */
+    if (atomic_load_explicit(&runtime->wake_epoch, memory_order_seq_cst)
         != observed_epoch) {
         atomic_fetch_sub_explicit(
             &runtime->parked_schedulers,

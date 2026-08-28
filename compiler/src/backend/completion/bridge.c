@@ -1,9 +1,9 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
-/* The online-CPU query the helper policy reads is a BSD extension that the
- * POSIX macro above hides on Darwin, so the Darwin namespace is asked for as
- * well. glibc declares it unconditionally. */
+/* F_NOCACHE, the Darwin half of the WF_IO_NOCACHE target policy applied by the
+ * inline helper in file_adapter.h, is a BSD extension the POSIX macro above
+ * hides, so the Darwin namespace is asked for as well. */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE 1
 #endif
@@ -53,8 +53,25 @@ static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
 static pthread_once_t wf_bridge_file_once = PTHREAD_ONCE_INIT;
 static int wf_bridge_error;
 static int wf_bridge_file_error;
-static unsigned wf_bridge_ready;
-static unsigned wf_bridge_file_ready;
+/* The readiness flags below are atomic, and that is not decoration.
+ *
+ * Each is written by one of the once-initializers and read by entry points
+ * that run no once at all: `wf__completion_file_pread_submit` asks whether the
+ * pool is pinned and whether the adapter exists *before* it reaches
+ * `wf_bridge_submit_file`, and the statistics entries read them from wherever
+ * a program calls them.  A program with two threads therefore has an ordinary
+ * unsynchronized read of a flag another thread is writing, which is a data
+ * race whatever the values happen to be.  Declaring them `_Atomic` makes the
+ * plain reads and writes below sequentially consistent accesses, which on the
+ * hosts this runs on is at worst a load-acquire instruction and on x86-64 an
+ * ordinary load.  That is the whole cost, and it is paid on a path that is
+ * about to make a host call.
+ *
+ * Whether WF_IO_HELPERS named the pool, which pins the route as well as the
+ * count: see wf_bridge_helper_policy. */
+static _Atomic int wf_bridge_helpers_pinned;
+static _Atomic unsigned wf_bridge_ready;
+static _Atomic unsigned wf_bridge_file_ready;
 /* Opens the completion path refused because no operation record can hold the
  * name, each of which its caller then performs as a direct blocking open.
  * `open_read` resolves a caller path buffer of any admitted length [PATH-1],
@@ -65,7 +82,7 @@ static _Atomic uint64_t wf_bridge_demoted_opens;
 #if defined(__linux__)
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
-static unsigned wf_bridge_linux_ready;
+static _Atomic unsigned wf_bridge_linux_ready;
 #endif
 
 enum wf_bridge_route {
@@ -98,7 +115,6 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
     const char *text = getenv("WF_IO_HELPERS");
     char *end = NULL;
     unsigned long parsed;
-    long online;
     if (text != NULL && *text != 0) {
         errno = 0;
         parsed = strtoul(text, &end, 10);
@@ -108,6 +124,12 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
             }
             *initial = (size_t)parsed;
             *cap = (size_t)parsed;
+            /* A written setting is an instruction about how to run, so the
+             * runtime stops choosing: it pins the pool exactly and keeps every
+             * admitted operation on the completion path.  That is what makes a
+             * pinned line of a measurement a measurement of the completion
+             * path rather than of the policy that may decline it. */
+            wf_bridge_helpers_pinned = 1;
             return;
         }
     }
@@ -128,13 +150,24 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
         return;
     }
 #endif
-    online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online < 1) {
-        online = 1;
-    }
-    *cap = (size_t)online < WF_BRIDGE_MAX_HELPERS ? (size_t)online
-                                                  : WF_BRIDGE_MAX_HELPERS;
-    *initial = 1u;
+    /* No helper until the adapter has measured an operation that waits.
+     *
+     * A helper exists to overlap a wait.  Starting with one and growing on
+     * queue depth alone gave every program a thread handoff whether or not it
+     * had anything to overlap, and on a warm page cache — where a read is a
+     * memory copy — that handoff was the whole cost of the completion path.
+     * With none, a waiting scheduler is the queue's own engine and the path
+     * costs a queue crossing; the adapter's growth rule adds the first helper
+     * as soon as the operations it has executed show a real wait.
+     *
+     * The ceiling is the bridge's own, not the machine's core count.  A helper
+     * inside a host call holds no CPU, so what bounds useful I/O concurrency
+     * here is how many operations a program can have outstanding, and that is
+     * the operation capacity.  Sizing the pool by cores capped a three-core
+     * host at three outstanding reads for a program that stated eight, which
+     * is a device left idle rather than a machine kept busy. */
+    *cap = WF_BRIDGE_MAX_HELPERS;
+    *initial = 0u;
 }
 
 static int wf_bridge_target_progress_one(void) {
@@ -160,6 +193,7 @@ static void wf_bridge_initialize_file(void) {
         wf_bridge_queue,
         WF_BRIDGE_QUEUE_COUNT,
         wf_bridge_helpers,
+        WF_BRIDGE_MAX_HELPERS,
         requested
     );
     if (wf_bridge_file_error == 0
@@ -239,6 +273,88 @@ static size_t wf_bridge_drain(void) {
         events,
         WF_BRIDGE_DRAIN_BUDGET,
         WF_BRIDGE_DRAIN_BUDGET
+    );
+}
+
+/* How long a joining scheduler looks for a completion before announcing sleep.
+ *
+ * Announcing sleep and being woken is two system calls on Darwin, paid by the
+ * waiter and by whichever thread publishes.  A helper pool only exists when
+ * the adapter measured operations that wait, and those waits end while this
+ * thread has nothing else to do, so a bounded look before sleeping trades a
+ * little idle CPU for both of those calls.  It is a bound on wasted CPU: a
+ * wait longer than this window still ends in a sleep, and one shorter than it
+ * never becomes a pair of system calls. */
+#define WF_BRIDGE_JOIN_SPIN_NS 10000u
+
+/* Zero means the clock could not be read.  A monotonic clock that answers
+ * exactly zero is the same answer as a broken one for every use here, and both
+ * have to end a bounded wait rather than extend it. */
+static uint64_t wf_bridge_monotonic_ns(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+}
+
+/* Waits a bounded time for any completion event to appear.  Returns 1 when one
+ * did, so the caller re-runs its ordinary harvest instead of parking.
+ *
+ * It reads only the durable ready-event count, which a publisher raises before
+ * it announces the epoch.  Taking a lock here would put this thread in the way
+ * of the very publication it is waiting for. */
+static int wf_bridge_spin_for_completion(void) {
+    uint64_t started = wf_bridge_monotonic_ns();
+    uint64_t deadline;
+    unsigned turn = 0;
+    /* The bound on this wait is a clock reading, so a clock this thread cannot
+     * read leaves no bound at all: every later sample answers zero and the
+     * deadline is never reached.  What an unbounded spin then costs is a
+     * property of the route the completion is coming from, and the two routes
+     * differ.
+     *
+     * On the native ring it is the whole run.  A submitted read becomes a
+     * ready event only when `wf_bridge_progress` reaps the completion queue,
+     * and this spin never calls it, so the loop's other exit cannot fire on
+     * its own and the join never ends.  Measured with `clock_gettime` forced
+     * to fail: the Linux io_uring route makes no progress at all, while the
+     * guarded build finishes the same work in milliseconds.
+     *
+     * On the POSIX adapter the guard is defence rather than rescue.  A helper
+     * thread publishes the completion, so the ready-event count becomes
+     * nonzero without this thread doing anything and the loop leaves by its
+     * other exit.  Measured the same way on macOS: the unguarded build
+     * finishes, at the same wall time as the guarded one.
+     *
+     * A failed clock therefore ends the spin, which costs at worst a park this
+     * thread was about to make anyway. */
+    if (started == 0) {
+        return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
+    }
+    deadline = started + WF_BRIDGE_JOIN_SPIN_NS;
+    for (;;) {
+        if (wf_completion_ready_event_count(&wf_bridge_runtime) != 0) {
+            return 1;
+        }
+        turn += 1;
+        if ((turn & 0x3fu) == 0) {
+            uint64_t now = wf_bridge_monotonic_ns();
+            if (now == 0 || now >= deadline) {
+                return 0;
+            }
+        }
+    }
+}
+
+/* Harvests the completion event of the operation this thread is waiting on,
+ * without sweeping the slots every other operation lives in. */
+static void wf_bridge_drain_token(const void *token_storage) {
+    wf_completion_event event;
+    (void)wf_completion_drain_token(
+        &wf_bridge_runtime,
+        *(const wf_completion_token *)token_storage,
+        &event
     );
 }
 
@@ -624,6 +740,43 @@ int wf__completion_file_read_submit(
     );
 }
 
+/* Whether a positioned read is better made where it was stated than submitted.
+ *
+ * The completion path exists so that a program is not stalled by a wait it
+ * could have overlapped.  When the bounded adapter holds no helper, has
+ * nothing queued, and has measured its own operations as not waiting, there is
+ * no wait to overlap and no other thread to overlap it on: the submitted
+ * operation would be executed by this very thread, at its join, after a queue
+ * crossing, a claim, four slot transitions and a drain.  Declining the
+ * submission leaves the caller its ordinary direct call, which is the same
+ * host call without any of that.  The refusal is a throughput event of the
+ * same class as a full queue, and takes the same already-emitted route.
+ *
+ * Only a *positioned* transfer is declined, and that is the whole liveness
+ * argument.  An offset is meaningful only on a seekable object, and the typed
+ * opens that produce one admit nothing but a regular file, so a positioned
+ * read waits on storage.  A non-positioned read or write may be waiting on
+ * something another part of the same program has to do — a pipe the program
+ * itself must drain — and running one where it was stated could stall the very
+ * thread that would unblock it.  Those keep the queue.
+ *
+ * A read of nothing is not declined here, because there is nothing to decline:
+ * it makes no host call at all, so there is nothing to run and nothing to
+ * overlap, and the bridge already answers it inline without reaching the
+ * adapter.
+ *
+ * A written WF_IO_HELPERS declines nothing: it pins the route with the count.
+ *
+ * The measurement keeps running while this is true, because every direct
+ * execution is timed by the same adapter, so a program whose reads start
+ * waiting is submitting again within a few operations. */
+static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {
+    return count != 0
+        && wf_bridge_helpers_pinned == 0
+        && wf_bridge_file_ready != 0
+        && wf_file_adapter_transfer_runs_on_caller(&wf_bridge_adapter);
+}
+
 int wf__completion_file_pread_submit(
     int descriptor,
     void *buffer,
@@ -651,6 +804,9 @@ int wf__completion_file_pread_submit(
         }
     }
 #endif
+    if (wf_bridge_positioned_read_runs_on_caller(count)) {
+        return 0;
+    }
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_PREAD;
     request.operation.pread.descriptor = descriptor;
@@ -961,7 +1117,7 @@ int64_t wf__completion_file_pread_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 }
 
 int64_t wf__completion_file_write_direct(
@@ -979,7 +1135,7 @@ int64_t wf__completion_file_write_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 }
 
 int wf__completion_file_open_at_direct(
@@ -1009,7 +1165,7 @@ int wf__completion_file_open_at_direct(
     request.operation.open_at.has_mode = has_mode;
     request.operation.open_at.expected_kind =
         (enum wf_file_expected_kind)expected_kind;
-    result = wf_file_execute_direct(&request);
+    result = wf_file_execute_timed(&wf_bridge_adapter, &request);
     *error_code = result.error_code;
     *open_outcome = (unsigned)result.open_outcome;
     return (int)wf_bridge_return_direct(result);
@@ -1030,7 +1186,7 @@ int wf__completion_file_status_direct(
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_STATUS;
     request.operation.status.descriptor = descriptor;
-    result = wf_file_execute_direct(&request);
+    result = wf_file_execute_timed(&wf_bridge_adapter, &request);
     if (result.value == 0) {
         if ((uint64_t)result.status_size > status_capacity) {
             errno = EOVERFLOW;
@@ -1046,7 +1202,7 @@ int wf__completion_file_close_direct(int descriptor) {
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_CLOSE;
     request.operation.close.descriptor = descriptor;
-    return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return (int)wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 }
 
 
@@ -1069,7 +1225,7 @@ int64_t wf__completion_directory_next_direct(
     request.operation.directory_next.buffer = buffer;
     request.operation.directory_next.count = (size_t)count;
     request.operation.directory_next.position = position;
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 #else
     (void)descriptor;
     (void)buffer;
@@ -1233,6 +1389,7 @@ void wf__completion_file_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        wf_bridge_drain_token(token_storage);
         if (wf__completion_file_take(token_storage, value, error_code)) {
             return;
         }
@@ -1241,7 +1398,8 @@ void wf__completion_file_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()) {
+                && !wf_bridge_target_work_needs_this_thread()
+                && !wf_bridge_spin_for_completion()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1267,6 +1425,7 @@ void wf__completion_file_open_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        wf_bridge_drain_token(token_storage);
         if (wf_bridge_take_open(
                 token_storage,
                 value,
@@ -1280,7 +1439,8 @@ void wf__completion_file_open_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()) {
+                && !wf_bridge_target_work_needs_this_thread()
+                && !wf_bridge_spin_for_completion()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1308,6 +1468,7 @@ void wf__completion_file_status_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        wf_bridge_drain_token(token_storage);
         if (wf__completion_file_take_status(
                 token_storage,
                 value,
@@ -1323,7 +1484,8 @@ void wf__completion_file_status_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()) {
+                && !wf_bridge_target_work_needs_this_thread()
+                && !wf_bridge_spin_for_completion()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,

@@ -330,8 +330,32 @@ typedef struct wf_file_adapter {
     size_t helper_cap;
     pthread_mutex_t queue_lock;
     pthread_cond_t queue_available;
+    /* Helpers currently inside pthread_cond_wait, maintained under queue_lock
+     * by the waiter itself.  An enqueue holds that same lock, so it knows
+     * exactly whether a signal has anyone to reach: a helper still spinning
+     * for work needs no host wake, and issuing one for it was a system call
+     * per operation that woke a thread which was already awake. */
+    size_t blocked_helpers;
+    /* What one host call on this adapter has recently cost, in nanoseconds, as
+     * a smoothed average over sampled executions.  It is policy input only —
+     * no operation's outcome depends on it — and it answers the one question
+     * the helper policy has to answer: whether this program's operations wait
+     * long enough for handing one to another thread to be worth the handoff. */
+    _Atomic uint64_t mean_execute_ns;
+    _Atomic uint64_t execute_ticks;
     unsigned stopping;
-    unsigned initialized;
+    /* How many helpers `helper_storage` can hold.  The growth rule writes
+     * `helpers[held]`, so this, and not the policy's wish, is what bounds the
+     * ceiling `wf_file_adapter_set_helper_cap` may install. */
+    size_t helper_capacity;
+    /* Whether every field above has been published.  It is atomic because the
+     * direct execution route reads it on a thread that has run no
+     * initialization of its own: `wf_file_execute_timed` is reached straight
+     * from a generated direct call, with no once-control between it and this
+     * adapter, while another thread may be inside `wf_file_adapter_init`.  A
+     * release store here, paired with the acquire loads, is what makes the
+     * rest of the record safe to read for a thread that finds it set. */
+    _Atomic unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
     _Atomic uint64_t stat_capacity_waits;
@@ -342,19 +366,70 @@ typedef struct wf_file_adapter {
 
 /* The caller owns queue_storage and helper_storage until shutdown completes.
  * helper_count is policy, not a fixed architecture constant; zero selects
- * scheduler-driven single-thread progress. */
+ * scheduler-driven single-thread progress.
+ *
+ * helper_capacity is how many helpers `helper_storage` holds, which is a fact
+ * about the caller's storage rather than a policy: the pool may later be told
+ * to grow, and the only thing that can say how far is the array it grows
+ * into.  It is refused below helper_count. */
 int wf_file_adapter_init(
     wf_file_adapter *adapter,
     wf_completion_runtime *runtime,
     wf_file_work *queue_storage,
     size_t queue_capacity,
     pthread_t *helper_storage,
+    size_t helper_capacity,
     size_t helper_count
 );
 
 enum wf_file_submit_result wf_file_adapter_submit(
     wf_file_adapter *adapter,
     wf_completion_token token,
+    const wf_file_request *request
+);
+
+/* What this adapter has measured about how long its own host calls take.
+ *
+ * Both policies this answers are conditional on a *measurement*, never on the
+ * absence of one: an adapter that has executed nothing knows nothing, and a
+ * program's first operations therefore take the completion path unchanged and
+ * are measured there. */
+enum wf_file_wait_verdict {
+    /* Nothing executed yet. */
+    WF_FILE_WAIT_UNMEASURED = 0,
+    /* The host answers without waiting: overlapping buys nothing. */
+    WF_FILE_WAIT_SHORT = 1,
+    /* The host makes these operations wait: overlapping is worth its handoff. */
+    WF_FILE_WAIT_LONG = 2
+};
+
+enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
+    const wf_file_adapter *adapter
+);
+
+/* Whether a transfer submitted now would simply be executed by the submitting
+ * thread, so that submitting it can only add a queue crossing to a host call
+ * the caller is about to make anyway.
+ *
+ * True when this adapter has no helper, nothing queued, and has measured its
+ * own operations as not waiting.  It is the adapter's half of the answer; the
+ * caller decides whether the operation is one whose wait no part of the same
+ * program has to satisfy.
+ *
+ * Cost, stated because this is asked on a hot path: the `nothing queued` term
+ * takes the queue lock, so every positioned read that reaches this question
+ * pays one uncontended lock and unlock.  The question is asked once per
+ * positioned read on a program the bridge has not pinned, and only after the
+ * two cheaper terms have both held; what it saves when it answers yes is a
+ * queue crossing, a slot claim, four slot transitions and a drain. */
+int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter);
+
+/* Executes one typed request and records what the host call cost, from a
+ * sample of executions, into the average the policy above reads.  Every route
+ * that makes a host call for this adapter goes through here, so the average is
+ * of the program's operations and not of one route's. */
+wf_file_result wf_file_execute_timed(
+    wf_file_adapter *adapter,
     const wf_file_request *request
 );
 
@@ -371,9 +446,14 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
 
 /* Raises the ceiling the helper pool may grow to when a program exposes more
- * independent queued work than there are helpers to take it. `helper_storage`
- * given to init must hold `cap` helpers. A cap at or below the initial count
- * disables growth, which is what a pinned helper policy asks for. */
+ * independent queued work than there are helpers to take it. A cap at or below
+ * the initial count disables growth, which is what a pinned helper policy asks
+ * for.
+ *
+ * A cap above the `helper_capacity` given to init is clamped to it rather than
+ * refused: the caller is stating a policy, and the storage it handed over is
+ * the fact that bounds it.  The clamp is the difference between a pool that
+ * stops growing and a `pthread_create` past the end of the caller's array. */
 int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap);
 
 /* Read without the queue lock. Zero means the calling scheduler is itself the
@@ -382,7 +462,31 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
 
 /* Stops admission and drains accepted queue entries before joining helpers.
  * With zero helpers, the calling thread performs the bounded typed work one
- * entry at a time until the accepted queue is empty. */
+ * entry at a time until the accepted queue is empty.
+ *
+ * Precondition: no thread is inside `wf_file_adapter_submit` or
+ * `wf_file_adapter_transfer_runs_on_caller`, and none will enter either, when
+ * this is called.  That is not a caution, it is the design.
+ *
+ * A submission announces its queue entry *after* releasing the queue lock, on
+ * purpose -- signalling under the lock wakes a helper whose next act is to
+ * block on the same lock, which is a system call spent to start a thread and
+ * immediately stall it -- so between that release and that signal the
+ * submitter holds no lock, and a shutdown running in the window destroys the
+ * condition variable the submitter is about to signal.  The decline check is
+ * named beside it because it is the other entry a delivered program reaches
+ * without holding anything: it asks `wf_file_adapter_queued`, which takes the
+ * queue lock, so a shutdown running in its window destroys the mutex it is
+ * about to take.  Shutdown clears the record's `initialized` flag before
+ * destroying either object, which is what bounds both windows to a caller
+ * that had already passed the flag.
+ *
+ * Closing them completely would mean either signalling under the lock, which
+ * is the cost this shape exists to remove, or a second lock on the submission
+ * path to serialize against a shutdown that happens once per process.
+ * Neither is worth it for an overlap no caller has: the bridge's only
+ * shutdown is its `atexit` handler, and a program still submitting operations
+ * while the process exits has no defined completion for them anyway. */
 int wf_file_adapter_shutdown(wf_file_adapter *adapter);
 
 wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(

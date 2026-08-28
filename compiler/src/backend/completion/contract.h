@@ -310,6 +310,34 @@ size_t wf_completion_drain(
     size_t scan_budget
 );
 
+/* Drains the completion event of one named operation, and only that one.
+ *
+ * `wf_completion_drain` sweeps slots because a scheduler harvesting on behalf
+ * of everybody cannot know where the next event is.  A token owner does know:
+ * it is waiting on exactly one operation and can name its slot.  Sweeping on
+ * its behalf makes the cost of consuming one completion proportional to the
+ * whole slot array rather than to the one event, which on a program that
+ * joins its own operations is the largest cost in the path.
+ *
+ * The transition is the same one the sweep makes — the pending event is taken
+ * once, the drained fact is published under the slot's publication lock, and
+ * a frame whose requirement this event satisfies is made runnable — so an
+ * event drained here is indistinguishable from one the sweep drained.
+ *
+ * Naming a slot, however, is not naming an operation, and this entry is
+ * token-named: like every other token-named entry it refuses a token whose
+ * generation no longer matches the slot's, so an operation that has already
+ * ended cannot take the event of the operation that reused its slot.  The
+ * sweep needs no such check because it names no operation at all.
+ *
+ * Returns 1 when this call took the event, 0 when there was none of this
+ * operation's to take. */
+size_t wf_completion_drain_token(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    wf_completion_event *event
+);
+
 size_t wf_completion_ready_event_count(const wf_completion_runtime *runtime);
 
 /* Observes milestone facts without consuming the result. */

@@ -342,6 +342,74 @@ static int test_generation_and_duplicate_terminal(void) {
     return 0;
 }
 
+/* A slot outlives the operation that used it, and only the generation says
+ * which operation a token still stands for.  The named drain is the one
+ * token-named entry that *takes* an event rather than reading one, so a
+ * missing generation check there is not a stale read but a live operation's
+ * completion consumed by an owner with no claim on it — and the live owner
+ * then waits for an event that no longer exists. */
+static int test_named_drain_refuses_a_recycled_slot(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slot;
+    wf_completion_token retired_token;
+    wf_completion_token live_token;
+    wf_completion_event event;
+    wf_completion_outcome outcome;
+    wf_completion_publication publication;
+    int retired = 5;
+    int live = 9;
+    int taken = 0;
+
+    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
+
+    /* One operation runs to completion, which frees the single slot. */
+    CHECK(wf_completion_claim(&runtime, &retired_token) == WF_COMPLETION_CLAIMED);
+    CHECK(accept_operation(&runtime, retired_token) == 0);
+    publication = integer_publication(&retired);
+    CHECK(
+        wf_completion_publish_terminal(&runtime, retired_token, &publication)
+        == WF_COMPLETION_PUBLISHED
+    );
+    CHECK(wf_completion_drain_token(&runtime, retired_token, &event) == 1);
+    CHECK(event.token.slot == retired_token.slot);
+    CHECK(event.token.generation == retired_token.generation);
+    CHECK(consume_integer(&runtime, retired_token, retired) == 0);
+
+    /* An unrelated operation reuses that slot and publishes its own result. */
+    CHECK(wf_completion_claim(&runtime, &live_token) == WF_COMPLETION_CLAIMED);
+    CHECK(live_token.slot == retired_token.slot);
+    CHECK(live_token.generation == retired_token.generation + 1);
+    CHECK(accept_operation(&runtime, live_token) == 0);
+    publication = integer_publication(&live);
+    CHECK(
+        wf_completion_publish_terminal(&runtime, live_token, &publication)
+        == WF_COMPLETION_PUBLISHED
+    );
+
+    /* The retired token names the slot but no longer names an operation, so
+     * it takes nothing and the event stays where it belongs. */
+    CHECK(wf_completion_drain_token(&runtime, retired_token, &event) == 0);
+    CHECK(wf_completion_ready_event_count(&runtime) == 1);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            retired_token,
+            &taken,
+            sizeof(taken),
+            &outcome
+        ) == WF_COMPLETION_CONSUME_STALE
+    );
+
+    /* The live owner still finds its own event, exactly once. */
+    CHECK(wf_completion_drain_token(&runtime, live_token, &event) == 1);
+    CHECK(event.token.generation == live_token.generation);
+    CHECK(wf_completion_drain_token(&runtime, live_token, &event) == 0);
+    CHECK(consume_integer(&runtime, live_token, live) == 0);
+    CHECK(wf_completion_ready_event_count(&runtime) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
 #define TERMINAL_RACERS 12
 
 typedef struct terminal_race_context {
@@ -915,7 +983,7 @@ static int test_single_thread_file_progress_and_backpressure(
 
     CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0
     );
     CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
     memset(&request, 0, sizeof(request));
@@ -1070,7 +1138,14 @@ static int test_bridge_independent_positioned_reads(
 
     /* Both stable tokens are submitted before either result is joined.  The
      * two requests name one descriptor but independent file offsets; pread
-     * leaves the shared cursor out of their semantics. */
+     * leaves the shared cursor out of their semantics.
+     *
+     * This asserts the *submitted* route, so it depends on the bridge being
+     * willing to take it.  Under a written WF_IO_HELPERS it always is.  Under
+     * the demand-driven policy the bridge declines a positioned read once it
+     * has measured this host's reads as not waiting, so a case like this one
+     * belongs before any bridge operation has been executed — where it is —
+     * and a reordering that moves it after one must pin the route instead. */
     CHECK(
         wf__completion_file_pread_submit(
             descriptor,
@@ -1305,7 +1380,7 @@ static int test_submitted_open_owns_its_path_bytes(
     /* The bounded POSIX adapter, driven by this thread alone so the host call
      * demonstrably runs after the rewrite. */
     CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
     CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
     memcpy(requested, first, strlen(first) + 1u);
     memset(&request, 0, sizeof(request));
@@ -2034,14 +2109,68 @@ static int test_open_results_reach_every_independent_owner(
  *
  * A written WF_IO_HELPERS pins the count exactly, which is what every test
  * that names a helper configuration depends on. An unset one asks for
- * demand-driven growth: it starts at one and may reach the machine's own CPU
- * count, never past it and never past the process ceiling.
+ * demand-driven growth, bounded by the process ceiling.
  *
- * The unset arm previously asserted exactly one helper. That was the fixed
- * default before growth existed, and it kept passing after growth shipped
- * only because the growth rule compared queue depth against helper count and
- * so almost never fired. Asserting the range is what the policy actually
- * promises; asserting one would now pin the defect instead of the contract. */
+ * The unset arm has now been weakened twice, and both times because the
+ * policy it pinned changed under it. It first asserted exactly one helper,
+ * which was the fixed default before growth existed. It then asserted at
+ * least one and no more than the machine's CPU count, which was the growth
+ * rule of batch 0086.
+ *
+ * Batch 0096 measured that rule and replaced both of its ends: the count
+ * starts at none, because a program whose operations do not wait wants none,
+ * and the ceiling is the bridge's operation bound rather than the core count,
+ * because a helper inside a host call holds no CPU. What is left that this
+ * process-wide case can honestly assert is the ceiling — how many helpers a
+ * program *has* here depends on whether this harness's own temporary-file
+ * operations happened to wait, which is a property of the machine. Its unset
+ * arm no longer runs at all, because `main` pins the route for every
+ * invocation that did not name one; the ceiling it asserts is the one thing
+ * that holds either way.
+ *
+ * The rest of the promise did not go untested: it moved to
+ * `test_pool_stays_empty_when_operations_do_not_wait` and
+ * `test_pool_grows_when_operations_wait`, which script the clock the policy
+ * measures with and so decide the question rather than sampling it. */
+/* The scripted clock the helper policy measures host calls with.
+ *
+ * Unscripted it is the host's own monotonic clock, so every other case in this
+ * file measures what the shipped build measures.  A case that is about what
+ * the growth rule *decides* scripts it instead, and then the decision is a
+ * property of the rule rather than of how loaded the machine running the test
+ * happened to be. */
+static _Atomic uint64_t wf_scripted_clock_step_ns;
+static _Atomic uint64_t wf_scripted_clock_now_ns;
+
+uint64_t wf_completion_test_monotonic_ns(void) {
+    uint64_t step = atomic_load_explicit(
+        &wf_scripted_clock_step_ns,
+        memory_order_relaxed
+    );
+    if (step == 0) {
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            return 0;
+        }
+        return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+    }
+    /* Every reading advances by the scripted step, so the pair of readings
+     * around one host call measures exactly that step. */
+    return atomic_fetch_add_explicit(
+        &wf_scripted_clock_now_ns,
+        step,
+        memory_order_relaxed
+    ) + step;
+}
+
+static void wf_script_clock(uint64_t step_ns) {
+    atomic_store_explicit(
+        &wf_scripted_clock_step_ns,
+        step_ns,
+        memory_order_relaxed
+    );
+}
+
 /* Counts every application of the WF_IO_NOCACHE target policy and then makes
  * the same host call the shipped build makes.  The harness build names this
  * function as WF_FILE_UNCACHED_APPLY, so the policy under test is the one in
@@ -2258,7 +2387,6 @@ static int test_process_wide_target_helper_budget(void) {
     const char *text = getenv("WF_IO_HELPERS");
     uint64_t held = wf__completion_target_helper_count();
     unsigned long ceiling = 8;
-    long online;
     if (text != NULL && *text != '\0') {
         char *end = NULL;
         unsigned long pinned;
@@ -2272,20 +2400,404 @@ static int test_process_wide_target_helper_budget(void) {
             return 0;
         }
     }
-    online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online < 1) {
-        online = 1;
-    }
-    if ((unsigned long)online < ceiling) {
-        ceiling = (unsigned long)online;
-    }
-    /* Where a native ring carries the operations, the same unset policy asks
-     * for no helpers at all and a waiting scheduler is the engine, so only
-     * the ceiling applies there. */
-    if (wf__completion_linux_io_uring_submissions() == 0) {
-        CHECK(held >= 1);
-    }
     CHECK(held <= ceiling);
+    return 0;
+}
+
+/* Submits `count` positioned reads of one open descriptor, one at a time, and
+ * waits for each to complete.
+ *
+ * The wait is on the completion event rather than on the queue emptying: a
+ * helper takes a request out of the queue before it executes it, so an empty
+ * queue is not an answer, and waiting for one is a race this thread loses
+ * whenever the pool has grown.  This thread also offers to execute, so the
+ * case runs the same either way. */
+static int drive_reads_to_completion(
+    wf_completion_runtime *runtime,
+    wf_file_adapter *adapter,
+    int descriptor,
+    unsigned count
+) {
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+    unsigned index;
+    for (index = 0; index < count; ++index) {
+        wf_completion_token token;
+        wf_file_request request;
+        wf_file_result result;
+        unsigned char byte = 0;
+        unsigned attempts;
+        CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
+        memset(&request, 0, sizeof(request));
+        request.kind = WF_FILE_PREAD;
+        request.operation.pread.descriptor = descriptor;
+        request.operation.pread.buffer = &byte;
+        request.operation.pread.count = 1;
+        request.operation.pread.offset = 0;
+        CHECK(
+            wf_file_adapter_submit(adapter, token, &request)
+            == WF_FILE_TARGET_OWNS
+        );
+        for (attempts = 0; attempts < 5000; ++attempts) {
+            if (wf_completion_ready_event_count(runtime) != 0) {
+                break;
+            }
+            if (wf_file_adapter_progress(adapter, 1) == 0) {
+                (void)nanosleep(&delay, NULL);
+            }
+        }
+        CHECK(wf_completion_ready_event_count(runtime) != 0);
+        CHECK(drain_and_consume_file(runtime, token, &result) == 0);
+        CHECK(result.error_code == 0);
+    }
+    return 0;
+}
+
+/* A program whose operations do not wait gets no helper, however much width it
+ * states.
+ *
+ * This is the half of the growth rule batch 0096 added, and it is the half
+ * that decides what the warm path costs: queue depth says a program stated
+ * independent work, not that the work waits on anything, and a helper handed
+ * an operation the host has already answered adds a queue crossing and two
+ * thread wakes to nothing.  The clock is scripted so the case is about the
+ * rule rather than about this machine's page cache. */
+static int test_pool_stays_empty_when_operations_do_not_wait(
+    const char *directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[8];
+    wf_file_adapter adapter;
+    wf_file_work queue[8];
+    pthread_t helpers[4];
+    char path[512];
+    int descriptor;
+
+    CHECK(directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-pool-no-wait-%ld",
+            directory,
+            (long)getpid()
+        ) > 0
+    );
+    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, "wf", 2) == 2);
+
+    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 4, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
+
+    /* Nothing measured yet is not evidence of anything, and neither policy
+     * fires on it: the first operations take the completion path unchanged. */
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 0);
+
+    /* One microsecond a call: real work, and an order of magnitude under the
+     * wait that would make a second thread worth its handoff. */
+    wf_script_clock(1000u);
+    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 32) == 0);
+    wf_script_clock(0);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_SHORT);
+    /* With no helper, nothing queued and no wait measured, a transfer
+     * submitted now would be executed by the submitting thread itself. */
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 1);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptor) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* How many requests the two growth cases queue behind a pool that cannot
+ * empty it.
+ *
+ * Growth adds at most one helper per submission and only while the queue is
+ * deeper than the pool, so a pool of `n` needs a submission numbered past
+ * `2n` to reach `n + 1` in the worst interleaving, where every helper takes
+ * one entry the instant it is created.  Twenty carries a pool of eight, which
+ * is the largest ceiling either case below asks for. */
+#define WF_POOL_GROWTH_DEPTH 20u
+
+/* Drives the helper pool against a queue it cannot empty and answers how
+ * large the pool became.
+ *
+ * `drive_reads_to_completion` waits for each request before submitting the
+ * next, so its queue never holds more than one entry.  Growth is gated on
+ * `queue_count > held`, which that shape satisfies only while the pool is
+ * empty: the first helper it creates is also its last, however high the cap
+ * is.  A case that asserts an upper bound above one therefore asserts nothing
+ * under that driver -- the bound is not approached, let alone reached, and
+ * deleting the code that enforces it changes no verdict.
+ *
+ * These requests are reads of an empty pipe instead, so a helper that takes
+ * one blocks in the host call and never returns for another.  At most one
+ * entry per helper ever leaves the queue, so after `i` submissions the queue
+ * holds at least `i - held` entries and every submission past twice the
+ * current pool size finds `queue_count > held` and adds a helper.  Growth
+ * then stops only where the cap stops it, which is the question both cases
+ * below ask.
+ *
+ * The first read is served by a byte written before it, because growth also
+ * requires a measured wait and an adapter that has executed nothing has
+ * measured none.  Its execution is the sampled one -- the interval starts at
+ * the first -- and the caller performs it, because the pool is still empty.
+ * The pipe is fed the rest of its bytes only after the pool count has been
+ * read, so that count is the pool's final one. */
+static int grow_pool_against_a_blocked_queue(
+    wf_completion_runtime *runtime,
+    wf_file_adapter *adapter,
+    int read_descriptor,
+    int write_descriptor,
+    size_t *held
+) {
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+    wf_completion_token tokens[WF_POOL_GROWTH_DEPTH];
+    unsigned char bytes[WF_POOL_GROWTH_DEPTH];
+    char feed[WF_POOL_GROWTH_DEPTH];
+    wf_completion_token primer_token;
+    wf_file_request request;
+    wf_file_result result;
+    wf_completion_event event;
+    wf_completion_outcome outcome;
+    unsigned char primer_byte = 0;
+    unsigned index;
+
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_READ;
+    request.operation.read.descriptor = read_descriptor;
+    request.operation.read.buffer = &primer_byte;
+    request.operation.read.count = 1;
+
+    CHECK(write(write_descriptor, "w", 1) == 1);
+    CHECK(wf_completion_claim(runtime, &primer_token) == WF_COMPLETION_CLAIMED);
+    /* Nothing is measured yet, so this submission cannot grow the pool
+     * whatever its cap says, and the caller is the queue's only engine. */
+    CHECK(
+        wf_file_adapter_submit(adapter, primer_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+    CHECK(wf_file_adapter_helper_count(adapter) == 0);
+    CHECK(wf_file_adapter_progress(adapter, 1) == 1);
+    CHECK(drain_and_consume_file(runtime, primer_token, &result) == 0);
+    CHECK(result.error_code == 0);
+    CHECK(result.value == 1);
+    CHECK(primer_byte == 'w');
+    /* One scripted millisecond a call is a wait by any reading of the
+     * threshold, so the growth rule's measured half now holds. */
+    CHECK(wf_file_adapter_wait_verdict(adapter) == WF_FILE_WAIT_LONG);
+
+    /* The deep queue.  Nothing feeds the pipe from here, so every helper the
+     * pool gains blocks on its first read and the queue only deepens. */
+    for (index = 0; index < WF_POOL_GROWTH_DEPTH; ++index) {
+        bytes[index] = 0;
+        feed[index] = 'q';
+        CHECK(
+            wf_completion_claim(runtime, &tokens[index])
+            == WF_COMPLETION_CLAIMED
+        );
+        request.operation.read.buffer = &bytes[index];
+        CHECK(
+            wf_file_adapter_submit(adapter, tokens[index], &request)
+            == WF_FILE_TARGET_OWNS
+        );
+    }
+    /* Admission has stopped and growth happens only on admission, so this is
+     * the size the policy settled on. */
+    *held = wf_file_adapter_helper_count(adapter);
+
+    /* One byte for each submitted read: from here no read of this pipe can
+     * block, so the pool -- whatever size it reached -- drains the queue, and
+     * the caller helps in case the pool is empty. */
+    CHECK(
+        write(write_descriptor, feed, sizeof(feed))
+        == (ssize_t)sizeof(feed)
+    );
+    for (index = 0; index < WF_POOL_GROWTH_DEPTH; ++index) {
+        unsigned attempts;
+        int drained = 0;
+        for (attempts = 0; attempts < 100000u && drained == 0; ++attempts) {
+            if (wf_completion_drain_token(runtime, tokens[index], &event)
+                != 0) {
+                drained = 1;
+                break;
+            }
+            if (wf_file_adapter_progress(adapter, 1) == 0) {
+                (void)nanosleep(&delay, NULL);
+            }
+        }
+        CHECK(drained == 1);
+        CHECK(event.token.slot == tokens[index].slot);
+        CHECK(event.token.generation == tokens[index].generation);
+        CHECK(
+            wf_completion_consume(
+                runtime,
+                tokens[index],
+                &result,
+                sizeof(result),
+                &outcome
+            ) == WF_COMPLETION_CONSUMED
+        );
+        CHECK(result.error_code == 0);
+        CHECK(result.value == 1);
+        CHECK(bytes[index] == 'q');
+    }
+    return 0;
+}
+
+/* A program whose operations do wait gets helpers, up to the cap and no
+ * further.
+ *
+ * Both ends of that promise need a queue the pool cannot empty.  With one
+ * request in flight at a time the pool stops itself at one helper, so a cap of
+ * four is neither reached nor tested; against the blocked queue the pool
+ * climbs until the cap is the only thing left stopping it, and the count it
+ * settles on is the cap exactly. */
+static int test_pool_grows_when_operations_wait(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
+    wf_file_adapter adapter;
+    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
+    pthread_t helpers[4];
+    int descriptors[2];
+    size_t held = 0;
+
+    CHECK(pipe(descriptors) == 0);
+    CHECK(
+        wf_completion_runtime_init(
+            &runtime,
+            slots,
+            WF_POOL_GROWTH_DEPTH + 1u
+        ) == 0
+    );
+    CHECK(
+        wf_file_adapter_init(
+            &adapter,
+            &runtime,
+            queue,
+            WF_POOL_GROWTH_DEPTH + 1u,
+            helpers,
+            4,
+            0
+        ) == 0
+    );
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
+
+    /* Nothing measured yet is not evidence of anything, and neither policy
+     * fires on it. */
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+
+    wf_script_clock(1000000u);
+    CHECK(
+        grow_pool_against_a_blocked_queue(
+            &runtime,
+            &adapter,
+            descriptors[0],
+            descriptors[1],
+            &held
+        ) == 0
+    );
+    wf_script_clock(0);
+    CHECK(held == 4);
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_LONG);
+    /* A transfer submitted now would be overlapped by a helper, so the
+     * submitting thread must not take it itself. */
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 0);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptors[0]) == 0);
+    CHECK(close(descriptors[1]) == 0);
+    return 0;
+}
+
+/* The ceiling a policy asks for is a wish; the storage the caller handed to
+ * `wf_file_adapter_init` is the fact.  The growth rule writes `helpers[held]`,
+ * so a cap above that storage is a `pthread_create` past its end -- which is
+ * why `wf_file_adapter_set_helper_cap` clamps the cap to the storage rather
+ * than trusting it.  A cap of eight against storage of two leaves the clamp as
+ * the only thing keeping the pool inside the caller's array.
+ *
+ * The array below is deliberately longer than the two entries init is told
+ * about.  The bound under test is the declared capacity, and the slack decides
+ * only whether a violation of it is *reported* -- a pool larger than the
+ * storage it was given -- or executed as a write past the end of this frame,
+ * which ends the run before any check is reached.  With the clamp in place
+ * nothing beyond `helpers[1]` is ever written, so the slack is unreachable in
+ * a passing run. */
+static int test_helper_growth_stops_at_the_helper_storage(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
+    wf_file_adapter adapter;
+    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
+    pthread_t helpers[WF_POOL_GROWTH_DEPTH];
+    int descriptors[2];
+    size_t held = 0;
+
+    CHECK(pipe(descriptors) == 0);
+    CHECK(
+        wf_completion_runtime_init(
+            &runtime,
+            slots,
+            WF_POOL_GROWTH_DEPTH + 1u
+        ) == 0
+    );
+    CHECK(
+        wf_file_adapter_init(
+            &adapter,
+            &runtime,
+            queue,
+            WF_POOL_GROWTH_DEPTH + 1u,
+            helpers,
+            2,
+            0
+        ) == 0
+    );
+    /* Accepted, and silently reduced to the two helpers init was given. */
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 8) == 0);
+
+    wf_script_clock(1000000u);
+    CHECK(
+        grow_pool_against_a_blocked_queue(
+            &runtime,
+            &adapter,
+            descriptors[0],
+            descriptors[1],
+            &held
+        ) == 0
+    );
+    wf_script_clock(0);
+    /* Two, not the eight that were asked for: the queue stayed deeper than
+     * the pool for every one of the twenty submissions, so the cap is the
+     * only thing that stopped it, and the cap is the storage. */
+    CHECK(held == 2);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptors[0]) == 0);
+    CHECK(close(descriptors[1]) == 0);
+    return 0;
+}
+
+/* An initial count the storage cannot hold is refused outright: unlike the
+ * cap, it is not a ceiling to grow towards but threads to start right now. */
+static int test_helper_count_above_its_storage_is_refused(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[2];
+    wf_file_adapter adapter;
+    wf_file_work queue[2];
+    pthread_t helpers[1];
+
+    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
+    CHECK(
+        wf_file_adapter_init(&adapter, &runtime, queue, 2, helpers, 1, 2)
+        == EINVAL
+    );
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
 
@@ -2309,7 +2821,7 @@ static int test_helper_completion_wakes_scheduler(void) {
     CHECK(pipe(pipe_descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 2, &helper, 1) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 2, &helper, 1, 1) == 0
     );
     CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
     memset(&request, 0, sizeof(request));
@@ -2385,7 +2897,7 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     CHECK(flags >= 0);
     CHECK(fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) == 0);
     CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
     CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_READ;
@@ -2466,7 +2978,7 @@ static int test_capacity_release_wakes_before_blocking_work(void) {
 
     CHECK(pipe(pipe_descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
     CHECK(wf_completion_claim(&runtime, &read_token) == WF_COMPLETION_CLAIMED);
     memset(&read_request, 0, sizeof(read_request));
     read_request.kind = WF_FILE_READ;
@@ -2726,8 +3238,26 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
         return 2;
     }
+    /* The bridge cases below assert which route an operation took, and under
+     * the demand-driven policy that is the runtime's choice: it declines a
+     * positioned read once it has measured this host's reads as not waiting,
+     * so whether a case sees the submitted route would depend on what the
+     * cases before it happened to execute. A written WF_IO_HELPERS pins the
+     * route with the count, so an invocation that did not name one gets one
+     * here and every case asserts a route that is fixed.
+     *
+     * What that leaves untested here is the policy itself, and it is tested
+     * where it can be decided rather than sampled:
+     * `test_pool_stays_empty_when_operations_do_not_wait` and
+     * `test_pool_grows_when_operations_wait` script the clock the policy
+     * measures with, and `compiler/tests/programs` runs whole compiled
+     * programs under the unset policy. */
+    if (getenv("WF_IO_HELPERS") == NULL) {
+        (void)setenv("WF_IO_HELPERS", "1", 0);
+    }
     RUN_TEST(test_capacity_and_product_state());
     RUN_TEST(test_generation_and_duplicate_terminal());
+    RUN_TEST(test_named_drain_refuses_a_recycled_slot());
     RUN_TEST(test_exactly_one_terminal_under_race());
     RUN_TEST(test_concurrent_single_claims_are_unique());
     RUN_TEST(test_unified_wake_epoch());
@@ -2747,6 +3277,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
     RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
+    RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
+    RUN_TEST(test_pool_grows_when_operations_wait());
+    RUN_TEST(test_helper_growth_stops_at_the_helper_storage());
+    RUN_TEST(test_helper_count_above_its_storage_is_refused());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());

@@ -92,8 +92,16 @@ jobs:
       - name: Address and undefined sanitizers
         run: make -C compiler completion-sanitize CC=/usr/bin/clang
 
+      # Two thread-sanitizer runs, because they cover disjoint code. The
+      # core/read probe links neither the bridge nor the writer scheduler by
+      # construction, so the helper pool, the queue wake and the join spin --
+      # every thread the delivered runtime actually starts -- are outside it.
+      # The default-route probe runs those, on the helper policy a delivered
+      # program gets.
       - name: Thread sanitizer
-        run: make -C compiler completion-core-read-tsan CC=/usr/bin/clang
+        run: |
+          make -C compiler completion-core-read-tsan CC=/usr/bin/clang
+          make -C compiler completion-default-route-tsan CC=/usr/bin/clang
 
   completion-windows:
     name: completion-windows (windows-latest)
