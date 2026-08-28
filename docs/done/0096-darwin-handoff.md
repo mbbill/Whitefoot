@@ -736,7 +736,9 @@ land after the measurement and none of them is a performance change.
   `Previous read of size 4 ... wf_file_execute_timed`). The field is atomic
   now, published by one release store at the end of init and read with an
   acquire load, and init assigns its fields instead of `memset`ting over the
-  flag. The bridge's readiness flags are the same class, read by
+  flag — clearing it first, because the `memset` used to be what stopped a
+  record left half built by a failed `pthread_mutex_init` from reading as
+  ready. The bridge's readiness flags are the same class, read by
   `wf__completion_file_pread_submit` before it reaches any once, and are
   atomic for the same reason.
 - **The helper cap is bounded by the helper storage.** The growth rule writes
@@ -755,6 +757,18 @@ land after the measurement and none of them is a performance change.
   `completion-test` and `completion-sanitize`, and it gives `io-hosts` a
   thread-sanitizer run over the bridge, which the isolated core/read probe by
   construction cannot provide.
+
+- **Two things were written down rather than changed.** A submission signals
+  the queue's condition variable *after* releasing the queue lock, so a
+  shutdown concurrent with a submission destroys the variable the submitter is
+  about to signal; closing that window costs either the wake-inside-the-lock
+  this batch removed or a second lock on the submission path, and no caller
+  has the overlap — the bridge's only shutdown is its `atexit` handler. The
+  precondition is now stated at `wf_file_adapter_shutdown`. And the decline
+  check takes the queue lock for its "nothing queued" term, so every
+  positioned read that reaches the question pays an uncontended lock and
+  unlock; that is now stated at
+  `wf_file_adapter_transfer_runs_on_caller` beside what it saves.
 
 **These were not re-measured on a runner, and the tables above are read at
 `266acf4f`.** What they cost per operation is a handful of loads that became
