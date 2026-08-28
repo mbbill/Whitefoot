@@ -88,6 +88,34 @@ const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child
      return it as the complete return expression from a parameter or let-bound holder, \
      or return the holder itself";
 
+/// OWN-6's statement-scoped-region condition, in the terms a writer has.
+///
+/// The rule reads "a locally-introduced region whose block does not extend
+/// beyond the enclosing statement". A writer meets that as two facts at once:
+/// the region holds one statement, and anything that statement binds is gone
+/// at the closing brace — so `region 'r { let permit = reserve(...); match
+/// open(permit: move permit, ...) { ... } }`, which is the shape every
+/// recursive walker wants, is rejected and cannot be repaired by shortening
+/// the region. The blind-writer trial of 2026-08-28 recorded this as the one
+/// rule a senior systems programmer could not apply from the specification
+/// text; they recovered the helper form by reading an example program. Both
+/// admitted routes are named here, in the vocabulary `docs/patterns.md` P4
+/// uses for them.
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, \
+     and a value that statement binds dies at the region's end; either move the borrow holder \
+     into a helper that takes it as `&uniq`, `move`s it there, and returns the derived state \
+     (P4 linear threading), or bind the reborrowed result with `replace`: \
+     `let stale = replace target = call(...);`";
+
+/// OWN-6's receiver condition: which calls admit a reborrow argument at all.
+const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
+     value or unit, or in the one argument position a borrow-returning call takes its result \
+     from; pass the holder itself, or bind the result from that position";
+
+/// OWN-6's holder condition: which holder a child may be taken from.
+const OWN6_HOLDER: &str = "reborrow only a parameter or let-bound holder, take `&uniq` only from \
+     a `&uniq` holder, and introduce the child region inside the holder's own region";
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ResolvedPlace {
     pub(super) root: DeclarationId,
@@ -820,7 +848,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Own6,
                     node,
-                    SemanticIssueKind::InvalidChildReborrow,
+                    SemanticIssueKind::InvalidChildReborrow {
+                        mechanical_fix: OWN6_ARGUMENT_POSITION,
+                    },
                 );
             }
             ReborrowPosition::CallArgument { .. } | ReborrowPosition::ReturnExpression => {}
@@ -853,7 +883,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Own6,
                         node,
-                        SemanticIssueKind::InvalidChildReborrow,
+                        SemanticIssueKind::InvalidChildReborrow {
+                            mechanical_fix: OWN6_STATEMENT_SCOPE,
+                        },
                     );
                 }
             }
@@ -876,7 +908,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Own6,
                         node,
-                        SemanticIssueKind::InvalidChildReborrow,
+                        SemanticIssueKind::InvalidChildReborrow {
+                            mechanical_fix: OWN6_HOLDER,
+                        },
                     );
                 }
             }

@@ -638,6 +638,62 @@ mod tests {
         assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
     }
 
+    /// The one rule the blind writer could not apply from the specification
+    /// text now says what it means and names both admitted routes.
+    ///
+    /// This is the writer's own shape: reserve a permit from a borrowed
+    /// factory and open through it, which is what every recursive directory
+    /// walker wants and what a one-statement region cannot hold. They received
+    /// `kind: InvalidChildReborrow` with no message and recovered the helper
+    /// form by reading an example program.
+    #[test]
+    fn a_child_reborrow_rejection_states_the_scope_rule_and_both_routes() {
+        let source = br#"fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
+  region 'source {
+    let permit = reserve_file<'source>(factory: &uniq 'source deref(factory));
+    match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
+      Ok(value: handle) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return 0_u8;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(16_u64, 0_u8);
+  let code = 0_u8;
+  region 'call {
+    set code = walk<'call, 'call>(factory: &uniq 'call files, root: &'call cwd, name: &'call name);
+  }
+  return exit_status(code: code);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::new("walk.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a two-statement region cannot carry a child reborrow");
+        assert_eq!(failure.rule_id(), Some("OWN-6"));
+        let detail = failure.detail();
+        // What the rule means, in the two facts a writer meets at once.
+        assert!(
+            detail.contains(
+                "a child reborrow's region admits exactly one statement, and a value that \
+                 statement binds dies at the region's end"
+            ),
+            "{detail}"
+        );
+        // Both admitted routes, in the vocabulary `docs/patterns.md` uses.
+        assert!(detail.contains("move the borrow holder into a helper"), "{detail}");
+        assert!(detail.contains("P4 linear threading"), "{detail}");
+        assert!(
+            detail.contains("bind the reborrowed result with `replace`"),
+            "{detail}"
+        );
+    }
+
     /// A source read from a host path the closed logical spelling cannot hold
     /// is still named by that host path everywhere a reader looks.
     ///

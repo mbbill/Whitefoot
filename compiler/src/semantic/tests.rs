@@ -1066,6 +1066,80 @@ fn set_rejections_keep_their_exact_rule_owners() {
     );
 }
 
+/// [STOR-1] offers the restructuring its own right-hand side admits.
+///
+/// `replace` binds the previous owner out of the target's root, so it is the
+/// answer only while that root is still alive at the commit. When the value
+/// being committed consumed the root to compute itself, `replace` produces
+/// `[OWN-1] UseAfterMove` instead of an accepted program: a mechanical fix the
+/// next rule rejects is worse than no fix, because it spends an attempt. The
+/// third case here is the offered form, checked, so the pair cannot drift
+/// apart.
+#[test]
+fn an_affine_set_offers_the_restructuring_its_right_hand_side_admits() {
+    assert_rule(
+        b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Stor1,
+        SemanticIssueKind::AffineSetTarget {
+            target_type: "Cell".to_owned(),
+            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+        },
+    );
+    assert_rule(
+        br#"struct Counts {
+  lines: u64;
+  bytes: u64;
+}
+
+fn walk(running: own Counts) -> result: own Counts pure {
+  return move running;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let totals = Counts(lines: 0_u64, bytes: 0_u64);
+  set totals = walk(running: move totals);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Stor1,
+        SemanticIssueKind::AffineSetTarget {
+            target_type: "Counts".to_owned(),
+            mechanical_fix: "the right-hand side consumes the target root, so replace cannot \
+                             commit into it: bind the result under a new let, and combine it \
+                             with the old value field by field",
+        },
+    );
+    with_semantics(
+        br#"struct Counts {
+  lines: u64;
+  bytes: u64;
+}
+
+fn walk(running: own Counts) -> result: own Counts pure {
+  return move running;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let totals = Counts(lines: 0_u64, bytes: 0_u64);
+  let sub = walk(running: move totals);
+  let lines = sub.lines;
+  let bytes = sub.bytes;
+  let total = lines +wrap bytes;
+  let empty = ieq(total, 0_u64);
+  if empty {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("the offered restructuring must check: {outcome:?}");
+            };
+        },
+    );
+}
+
 #[test]
 fn set_revalidates_the_target_after_rhs_ownership_changes() {
     let source = br#"struct Cell {

@@ -23,7 +23,7 @@ use super::super::borrows::{
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
-use super::PlaceUseOptions;
+use super::{MutationForm, PlaceUseOptions};
 
 #[derive(Clone)]
 pub(super) struct CheckedArrayPlace {
@@ -777,7 +777,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         subscript: usize,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        for_replace: bool,
+        form: MutationForm,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let suffix = suffixes[subscript];
         if subscript + 1 != suffixes.len() {
@@ -847,7 +847,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
-        self.check_mutation_target_class(node, element_type, for_replace)?;
+        self.check_mutation_target_class(node, element_type, form)?;
         let mut effects = offset.effects;
         let (declaration, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -878,7 +878,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedIndexedPlace::Buffer(buffer) => {
                 for path in self.effect_paths_for_place(&buffer.resolved, bindings)? {
                     effects.add_write(path.clone());
-                    if for_replace {
+                    if form.is_replace() {
                         // [SET-2, EFF-2]: one read and one write of the
                         // target's ultimate storage origin.
                         effects.add_read(path);

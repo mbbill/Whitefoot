@@ -797,7 +797,10 @@ pub enum SemanticIssueKind {
     /// A read, write, move, or new borrow conflicts with a live loan.
     BorrowConflict,
     /// A written child reborrow does not satisfy OWN-6's closed form.
-    InvalidChildReborrow,
+    InvalidChildReborrow {
+        /// Exact restructuring required by OWN-6 at this site.
+        mechanical_fix: &'static str,
+    },
     /// A written reborrow form occurred outside OWN-14's admitted positions,
     /// or a return-position reborrow failed OWN-14's admission.
     InvalidReborrowPosition {
