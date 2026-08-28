@@ -34,11 +34,15 @@
  * with it set: an inherited value would silently turn it back into the arm the
  * harness already covers.
  *
- * What it asserts is what a writer can observe and nothing else: every read
- * delivers the byte that is at its offset, with the count and error the
- * operation promises, whichever route the bridge chose for it -- and the run
- * finishes, which is the liveness half, since a declined submission and a
+ * What it asserts of each read is what a writer can observe and nothing else:
+ * every read delivers the byte that is at its offset, with the count and error
+ * the operation promises, whichever route the bridge chose for it -- and the
+ * run finishes, which is the liveness half, since a declined submission and a
  * grown pool are both decisions about who executes the work.
+ *
+ * It then asserts that the routes it exists to watch were taken at all, which
+ * is the difference between covering a decision and counting it: see the
+ * route check at the end of `main`.
  */
 
 #define LANES 4
@@ -194,6 +198,10 @@ int main(int argc, char **argv) {
     unsigned seconds = WATCHDOG_SECONDS;
     size_t index;
     int failed = 0;
+    uint64_t ring_submissions;
+    uint64_t adapter_submissions;
+    unsigned submitted;
+    unsigned declined;
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
@@ -247,19 +255,89 @@ int main(int argc, char **argv) {
     }
     (void)close(descriptor);
     (void)unlink(path);
+
+    /* Which route this host's bridge actually took, and whether the counters
+     * agree that both of this probe's reasons for existing were exercised.
+     *
+     * Counting is not covering.  Without these the probe reports its route
+     * split and asserts nothing about it, so a bridge that stopped declining
+     * altogether -- or one whose native ring silently stopped accepting --
+     * would still print a PASS line, and only a reader comparing two runs by
+     * eye would notice.
+     *
+     * The route is read from the counters rather than from the host name,
+     * because a Linux kernel with io_uring disabled runs the POSIX adapter
+     * and must be held to the POSIX adapter's promise.  Ring submissions
+     * above zero is the native ring; anything else is the adapter, on either
+     * host.
+     *
+     * Both routes owe a submitted positioned read: the first read of the run
+     * is measured by nothing, so the decline's WAIT_SHORT precondition cannot
+     * hold for it, and the ring accepts unconditionally.  Only the adapter
+     * route owes a declined one -- on the ring a positioned read never
+     * reaches the decline at all, which is why `declined` is expected to be
+     * zero there and is not asserted.
+     *
+     * `helpers` is reported and not asserted, and that is a statement about
+     * the evidence rather than an omission: the pool has grown in no run of
+     * this probe on either host, because the queue never outruns it -- four
+     * lanes each hold one read at a time.  What the demand-driven pool does
+     * when the queue does outrun it is decided by
+     * `test_pool_grows_when_operations_wait` and
+     * `test_helper_growth_stops_at_the_helper_storage`, which script the
+     * clock and block the queue, and measured by the bench runners' cold
+     * tables.  This probe covers the decline half and the liveness of both. */
+    ring_submissions = wf__completion_linux_io_uring_submissions();
+    adapter_submissions = wf__completion_file_fallback_submissions();
+    submitted = atomic_load_explicit(&submitted_route, memory_order_relaxed);
+    declined = atomic_load_explicit(&declined_route, memory_order_relaxed);
+    if (submitted == 0) {
+        fprintf(
+            stderr,
+            "bridge default probe: no positioned read was submitted; the "
+            "bridge declined every one of them\n"
+        );
+        failed = 1;
+    }
+    if (ring_submissions == 0 && declined == 0) {
+        fprintf(
+            stderr,
+            "bridge default probe: the POSIX adapter route declined no "
+            "positioned read; the decline policy this probe exists for did "
+            "not fire\n"
+        );
+        failed = 1;
+    }
+
     if (failed != 0) {
-        fprintf(stderr, "bridge default probe: FAIL\n");
+        fprintf(
+            stderr,
+            "bridge default probe: FAIL submitted=%u declined=%u "
+            "non-positioned=%u helpers=%llu submissions=%llu "
+            "ring=%llu adapter=%llu\n",
+            submitted,
+            declined,
+            atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
+            (unsigned long long)wf__completion_target_helper_count(),
+            (unsigned long long)wf__completion_file_submissions(),
+            (unsigned long long)ring_submissions,
+            (unsigned long long)adapter_submissions
+        );
         return 1;
     }
     fprintf(
         stderr,
         "bridge default probe: PASS submitted=%u declined=%u "
-        "non-positioned=%u helpers=%llu submissions=%llu\n",
-        atomic_load_explicit(&submitted_route, memory_order_relaxed),
-        atomic_load_explicit(&declined_route, memory_order_relaxed),
+        "non-positioned=%u helpers=%llu submissions=%llu "
+        "ring=%llu adapter=%llu route=%s\n",
+        submitted,
+        declined,
         atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
         (unsigned long long)wf__completion_target_helper_count(),
-        (unsigned long long)wf__completion_file_submissions()
+        (unsigned long long)wf__completion_file_submissions(),
+        (unsigned long long)ring_submissions,
+        (unsigned long long)adapter_submissions,
+        ring_submissions != 0 ? "native-ring" : "posix-adapter"
     );
     return 0;
 }
