@@ -717,7 +717,7 @@ struct FunctionEmitter<'program, 'state> {
     /// Ordinarily this is empty at every terminator, because a block joins
     /// everything it handed out before it ends. A function carrying a staged
     /// loop pipeline is the exception: a block the pipeline names leaves its
-    /// operations here, and the first block that is not named drains them.
+    /// operations here, and every block it does not name drains them.
     handed_out: Vec<HandedOut>,
     /// The staged loop pipeline of the function being emitted, or `None`.
     ///

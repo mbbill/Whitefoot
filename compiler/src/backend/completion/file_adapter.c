@@ -419,26 +419,29 @@ static void wf_file_run_work(
 static wf_file_result wf_file_retire_and_retry(
     wf_file_adapter *adapter,
     const wf_file_work *work,
-    wf_file_result refused
+    wf_file_result refused,
+    int helper
 ) {
     size_t drained = 0;
-    atomic_fetch_add_explicit(
-        &adapter->stat_exhaustion_retries,
-        1,
-        memory_order_relaxed
-    );
     for (;;) {
         wf_file_work queued;
         if (drained == adapter->queue_capacity
             || !wf_file_take_work(adapter, &queued)) {
             break;
         }
-        wf_file_run_work(adapter, &queued, 0, 0);
+        wf_file_run_work(adapter, &queued, helper, 0);
         drained += 1;
     }
     if (drained == 0) {
+        /* Nothing this adapter owned could give a descriptor back, so the
+         * refusal already is the outcome source order produces. */
         return refused;
     }
+    atomic_fetch_add_explicit(
+        &adapter->stat_exhaustion_retries,
+        1,
+        memory_order_relaxed
+    );
     return wf_file_execute_direct(&work->request);
 }
 
@@ -451,7 +454,7 @@ static void wf_file_run_work(
     wf_file_result result = wf_file_execute_direct(&work->request);
     wf_completion_publication publication;
     if (retire_and_retry != 0 && wf_file_open_lacked_a_descriptor(&result)) {
-        result = wf_file_retire_and_retry(adapter, work, result);
+        result = wf_file_retire_and_retry(adapter, work, result, helper);
     }
     publication = (wf_completion_publication) {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
