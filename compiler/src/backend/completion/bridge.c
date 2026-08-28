@@ -1067,12 +1067,12 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
 ) {
     wf_retirement_waiter waiter;
     enum wf_retirement_state state;
-    wf_completion_retirement_wait_begin(&waiter, seen);
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
     for (;;) {
         uint64_t epoch = wf_bridge_ready == 0
             ? 0
             : wf_completion_wake_epoch(&wf_bridge_runtime);
-        state = wf_completion_retirement_state(&waiter, 0);
+        state = wf_completion_retirement_state(&waiter);
         if (state != WF_RETIREMENT_AWAITED) {
             break;
         }
@@ -1080,7 +1080,7 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
             /* No runtime to drive: whatever is in flight belongs to an
              * adapter this bridge did not build, and the ledger's own wake is
              * the only one there is. */
-            wf_completion_retirement_sleep(&waiter, 0);
+            wf_completion_retirement_sleep(&waiter);
         } else {
             /* This open cannot retire while its own thread is inside the
              * engines, so nothing may wait for it to. */

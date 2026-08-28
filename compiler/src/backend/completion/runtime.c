@@ -1158,12 +1158,18 @@ uint64_t wf_completion_retirement_waits(void) {
 
 void wf_completion_retirement_wait_begin(
     wf_retirement_waiter *waiter,
-    uint64_t seen
+    uint64_t seen,
+    size_t (*owed)(void *context),
+    void *owed_context,
+    int runs_owed
 ) {
     if (waiter == NULL) {
         return;
     }
     waiter->seen = seen;
+    waiter->owed = owed;
+    waiter->owed_context = owed_context;
+    waiter->runs_owed = runs_owed;
     waiter->next = NULL;
     (void)pthread_mutex_lock(&wf_retirement_lock);
     if (wf_retirement_last == NULL) {
@@ -1230,15 +1236,26 @@ void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter) {
     (void)pthread_mutex_unlock(&wf_retirement_lock);
 }
 
+/* The work this waiter's own thread is answerable for, read here rather than
+ * taken from the caller so that every decision — including the one made inside
+ * the sleep below, under the lock every wake takes — is made on the queue as
+ * it is at that instant. */
+static size_t wf_retirement_owed(const wf_retirement_waiter *waiter) {
+    if (waiter == NULL || waiter->owed == NULL) {
+        return 0;
+    }
+    return waiter->owed(waiter->owed_context);
+}
+
 /* `at_the_point` is set only where the caller holds no lock, so a test
  * standing at the schedule point may retire an operation from there. */
 static enum wf_retirement_state wf_retirement_state_now(
     const wf_retirement_waiter *waiter,
-    size_t mine,
     int at_the_point
 ) {
     size_t in_flight;
     size_t idle;
+    size_t owed;
     if (waiter == NULL) {
         return WF_RETIREMENT_UNREACHABLE;
     }
@@ -1250,6 +1267,14 @@ static enum wf_retirement_state wf_retirement_state_now(
     }
     if (at_the_point != 0) {
         WF_COMPLETION_RETIREMENT_POINT();
+    }
+    owed = wf_retirement_owed(waiter);
+    if (waiter->runs_owed != 0 && owed != 0) {
+        /* This thread is that queue's engine, and running it is work source
+         * order performs anyway — one item of it may be the close that ends
+         * this exhaustion.  So the answer is neither "publish" nor "sleep":
+         * go and run it, then ask again. */
+        return WF_RETIREMENT_AWAITED;
     }
     in_flight = atomic_load_explicit(
         &wf_retirement_in_flight,
@@ -1268,7 +1293,9 @@ static enum wf_retirement_state wf_retirement_state_now(
         &wf_retirement_deferred,
         memory_order_seq_cst
     );
-    idle += mine;
+    if (waiter->runs_owed == 0) {
+        idle += owed;
+    }
     if (in_flight > idle) {
         return WF_RETIREMENT_AWAITED;
     }
@@ -1292,18 +1319,20 @@ static enum wf_retirement_state wf_retirement_state_now(
 }
 
 enum wf_retirement_state wf_completion_retirement_state(
-    const wf_retirement_waiter *waiter,
-    size_t mine
+    const wf_retirement_waiter *waiter
 ) {
-    return wf_retirement_state_now(waiter, mine, 1);
+    return wf_retirement_state_now(waiter, 1);
 }
 
-void wf_completion_retirement_sleep(
-    const wf_retirement_waiter *waiter,
-    size_t mine
-) {
+void wf_completion_retirement_sleep(const wf_retirement_waiter *waiter) {
     (void)pthread_mutex_lock(&wf_retirement_lock);
-    if (wf_retirement_state_now(waiter, mine, 0) == WF_RETIREMENT_AWAITED) {
+    /* A waiter that owes work it can run itself never sleeps: the work is the
+     * answer, and the queue is read here, inside the lock a wake has to take,
+     * so an item that arrives while this thread is deciding either is seen or
+     * arrives with a wake this thread is already positioned to receive. */
+    if (wf_retirement_state_now(waiter, 0) == WF_RETIREMENT_AWAITED
+        && !(waiter != NULL && waiter->runs_owed != 0
+             && wf_retirement_owed(waiter) != 0)) {
         (void)pthread_cond_wait(&wf_retirement_signal, &wf_retirement_lock);
     }
     (void)pthread_mutex_unlock(&wf_retirement_lock);

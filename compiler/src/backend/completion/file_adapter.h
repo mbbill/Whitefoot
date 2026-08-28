@@ -305,7 +305,12 @@ typedef struct wf_file_adapter {
     size_t queue_capacity;
     size_t queue_head;
     size_t queue_tail;
-    size_t queue_count;
+    /* Mutated only under queue_lock, and atomic so the retirement ledger can
+     * read it while holding its own lock instead of this one: a refused open
+     * deciding whether to sleep must read the queue at the moment it decides,
+     * and reaching for queue_lock there would invert the order every
+     * submission takes. */
+    _Atomic size_t queue_count;
     pthread_t *helpers;
     /* Grown under queue_lock by a submitting thread and read without it by a
      * scheduler deciding whether it is itself this queue's engine. */

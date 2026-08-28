@@ -442,6 +442,13 @@ static void wf_file_run_work(
     int may_run_owed_work
 );
 
+/* The queue as the retirement ledger asks for it, while the ledger holds its
+ * own lock.  It takes no lock, which is the whole requirement the ledger puts
+ * on this callback. */
+static size_t wf_file_adapter_owed_work(void *context) {
+    return wf_file_adapter_queued((const wf_file_adapter *)context);
+}
+
 /* Gives back what this runtime is still holding, then re-attempts one open the
  * host refused for want of a descriptor.
  *
@@ -466,6 +473,11 @@ static void wf_file_run_work(
  * suspended inside it still holds that duty — which is why it passes the queue
  * as its own.
  *
+ * Either way the queue is the waiter's `owed`, and the ledger reads it at the
+ * moment it decides rather than being handed a reading taken before it: a
+ * thread that will run that queue must not sleep while an item is in it, and a
+ * thread whose caller is suspended inside it must not wait for one.
+ *
  * Exactly one re-attempt, counted exactly where it is made.  If it also fails,
  * that is the outcome source-order execution produces and the program is
  * entitled to see it. */
@@ -481,7 +493,6 @@ static wf_file_result wf_file_retire_and_retry(
     enum wf_retirement_state state;
     int registered = 0;
     for (;;) {
-        size_t mine = 0;
         if (may_run_owed_work != 0) {
             wf_file_work owed;
             /* Run the queue before every decision and after every wake, not
@@ -500,22 +511,22 @@ static wf_file_result wf_file_retire_and_retry(
                 wf_file_run_work(adapter, &owed, helper, 0);
             }
             wf_completion_retirement_defer_end();
-        } else {
-            /* Owed work itself: the caller suspended inside this call is the
-             * thread that would run the rest of the queue, so none of it can
-             * retire while this one waits.  Read afresh each time round,
-             * because the queue this thread is answering for grows. */
-            mine = wf_file_adapter_queued(adapter);
         }
         if (registered == 0) {
-            wf_completion_retirement_wait_begin(&waiter, seen);
+            wf_completion_retirement_wait_begin(
+                &waiter,
+                seen,
+                wf_file_adapter_owed_work,
+                adapter,
+                may_run_owed_work
+            );
             registered = 1;
         }
-        state = wf_completion_retirement_state(&waiter, mine);
+        state = wf_completion_retirement_state(&waiter);
         if (state != WF_RETIREMENT_AWAITED) {
             break;
         }
-        wf_completion_retirement_sleep(&waiter, mine);
+        wf_completion_retirement_sleep(&waiter);
     }
     wf_completion_retirement_wait_end(&waiter);
     if (state != WF_RETIREMENT_HAPPENED) {
@@ -872,15 +883,10 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
 }
 
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter) {
-    size_t queued;
-    wf_file_adapter *mutable_adapter = (wf_file_adapter *)adapter;
     if (adapter == NULL || adapter->initialized == 0) {
         return 0;
     }
-    (void)pthread_mutex_lock(&mutable_adapter->queue_lock);
-    queued = mutable_adapter->queue_count;
-    (void)pthread_mutex_unlock(&mutable_adapter->queue_lock);
-    return queued;
+    return atomic_load_explicit(&adapter->queue_count, memory_order_seq_cst);
 }
 
 int wf_file_adapter_shutdown(wf_file_adapter *adapter) {

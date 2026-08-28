@@ -951,8 +951,7 @@ static void wf_linux_resolve_retry_held_locked(
                 continue;
             }
             state = wf_completion_retirement_state(
-                &entry->retirement_waiter,
-                0
+                &entry->retirement_waiter
             );
             if (state == WF_RETIREMENT_AWAITED) {
                 continue;
@@ -1070,7 +1069,10 @@ static int wf_linux_publish_completion(
             entry->retry_result = completion->res;
             wf_completion_retirement_wait_begin(
                 &entry->retirement_waiter,
-                entry->retirements_seen
+                entry->retirements_seen,
+                NULL,
+                NULL,
+                0
             );
             atomic_fetch_add_explicit(
                 &adapter->retry_held,

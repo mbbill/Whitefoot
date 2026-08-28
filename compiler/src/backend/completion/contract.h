@@ -421,6 +421,23 @@ typedef struct wf_retirement_waiter {
      * retired between the attempt and the wait has already given its
      * descriptor back — but "has anything retired since the attempt". */
     uint64_t seen;
+    /* In-flight work this waiter's own thread is answerable for: the queue a
+     * refused adapter open must run, or that its suspended caller must.
+     *
+     * The ledger asks for it at the moment it decides, and never accepts it
+     * as a reading taken earlier.  A decision is made under the retirement
+     * lock, which is the lock every wake takes, so a number read before that
+     * lock was held can already be out of date when it is used — and a waiter
+     * that sleeps on such a number sleeps on work that has already arrived,
+     * whose wake it has already missed.  The callback is therefore required
+     * to take no lock of its own. */
+    size_t (*owed)(void *context);
+    void *owed_context;
+    /* Whether this waiter's own thread is the engine for that work.  It is
+     * the same queue seen from two sides: a thread that will run it must go
+     * and run it rather than sleep, and one whose caller is suspended inside
+     * that work cannot run any of it, so nothing may wait for it either. */
+    int runs_owed;
 } wf_retirement_waiter;
 
 enum wf_retirement_state {
@@ -468,7 +485,10 @@ size_t wf_completion_retirement_waiters(void);
  * ring), because the give-up decision is about all of them together. */
 void wf_completion_retirement_wait_begin(
     wf_retirement_waiter *waiter,
-    uint64_t seen
+    uint64_t seen,
+    size_t (*owed)(void *context),
+    void *owed_context,
+    int runs_owed
 );
 void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
 
@@ -483,25 +503,23 @@ void wf_completion_retirement_defer_end(void);
 
 /* Where this waiter stands, without blocking.
  *
- * `mine` is how many in-flight operations cannot retire while this waiter
- * waits, because this waiter's own thread is the engine that would run them.
- * That is the local half of what "in flight *elsewhere*" means, and it is the
- * caller's fact rather than the ledger's: a held ring entry blocks no thread
- * and passes zero, an adapter open that will run its own queue passes zero,
- * and one running as owed work passes the queue its suspended caller still
- * owes.  The global half — every operation deferred above — the ledger
- * subtracts itself. */
+ * "In flight *elsewhere*" is what the answer turns on, and its local half is
+ * the waiter's own `owed` above: a held ring entry blocks no thread and owes
+ * nothing, an adapter open that runs its own queue owes that queue and must
+ * run it before it decides, and one running as owed work owes the queue its
+ * suspended caller cannot reach.  The global half — every operation deferred
+ * above — the ledger subtracts itself. */
 enum wf_retirement_state wf_completion_retirement_state(
-    const wf_retirement_waiter *waiter,
-    size_t mine
+    const wf_retirement_waiter *waiter
 );
 
 /* Sleeps until the ledger changes, rechecking the state under the same lock
- * the retirement wake takes so no wake is lost.  Callers loop on
+ * the retirement wake takes so no wake is lost.  Every input to that recheck
+ * is read inside that lock, `owed` included, which is what makes the wake
+ * unmissable rather than merely unlikely to be missed.  Callers loop on
  * `wf_completion_retirement_state`; this never spins. */
 void wf_completion_retirement_sleep(
-    const wf_retirement_waiter *waiter,
-    size_t mine
+    const wf_retirement_waiter *waiter
 );
 
 _Static_assert(sizeof(wf_completion_token) == 16u, "completion token ABI");

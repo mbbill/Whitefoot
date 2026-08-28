@@ -159,18 +159,44 @@ static pthread_mutex_t wf_retirement_point_lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned wf_retirement_point_armed;
 static unsigned wf_retirement_point_fired;
 
+/* What a test standing at the point does there: retire one operation, or
+ * queue one more behind the waiter's own thread. */
+#define WF_HARNESS_POINT_RETIRES 0u
+#define WF_HARNESS_POINT_QUEUES_OWED 1u
+static unsigned wf_retirement_point_mode;
+static _Atomic size_t wf_harness_owed_work;
+
+/* The queue a scripted waiter is answerable for.  The ledger asks for it where
+ * it decides, so a test can make it grow exactly there. */
+static size_t wf_harness_owed(void *context) {
+    (void)context;
+    return atomic_load_explicit(&wf_harness_owed_work, memory_order_seq_cst);
+}
+
 void wf_completion_test_retirement_point(void) {
     unsigned fire = 0;
+    unsigned mode = WF_HARNESS_POINT_RETIRES;
     (void)pthread_mutex_lock(&wf_retirement_point_lock);
     if (wf_retirement_point_armed != 0) {
         wf_retirement_point_armed = 0;
         wf_retirement_point_fired = 1;
+        mode = wf_retirement_point_mode;
         fire = 1;
     }
     (void)pthread_mutex_unlock(&wf_retirement_point_lock);
-    if (fire != 0) {
-        wf_completion_operation_retired();
+    if (fire == 0) {
+        return;
     }
+    if (mode == WF_HARNESS_POINT_QUEUES_OWED) {
+        atomic_fetch_add_explicit(
+            &wf_harness_owed_work,
+            1,
+            memory_order_seq_cst
+        );
+        wf_completion_operation_accepted();
+        return;
+    }
+    wf_completion_operation_retired();
 }
 
 int wf_completion_test_poll(
@@ -3406,14 +3432,15 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
     wf_completion_operation_accepted();
     wf_completion_operation_accepted();
     seen = wf_completion_retirements();
-    wf_completion_retirement_wait_begin(&waiter, seen);
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
 
     (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_mode = WF_HARNESS_POINT_RETIRES;
     wf_retirement_point_armed = 1;
     wf_retirement_point_fired = 0;
     (void)pthread_mutex_unlock(&wf_retirement_point_lock);
 
-    state = wf_completion_retirement_state(&waiter, 0);
+    state = wf_completion_retirement_state(&waiter);
 
     (void)pthread_mutex_lock(&wf_retirement_point_lock);
     wf_retirement_point_armed = 0;
@@ -3423,6 +3450,71 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
     CHECK(state == WF_RETIREMENT_HAPPENED);
 
     wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired();
+    return 0;
+}
+
+/* The work a waiter owes is read where the decision is made, never handed to
+ * the ledger as a reading taken before it.
+ *
+ * A refused open on the bounded adapter is answerable for that adapter's
+ * queue: the items behind a suspended caller cannot retire while it waits, and
+ * the items in front of a thread that will run them are the answer rather than
+ * a reason to sleep.  Either way the number is live — a submission lands while
+ * the decision is being made — and the decision is made under the lock every
+ * wake takes.  A ledger handed the count from before that lock sleeps on a
+ * queue that has already grown, and the wake for that growth has already
+ * passed: the process stops with a helper asleep and work in the queue, which
+ * is what a 200-run TSan sweep at one helper caught once.
+ *
+ * The schedule point stands between the ledger's two reads, so this test can
+ * put the submission exactly there instead of racing for it. */
+static int test_the_work_a_waiter_owes_is_read_where_it_decides(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+    enum wf_retirement_state state;
+
+    /* Three operations in flight: the refused open this waiter is deciding and
+     * two queued behind the caller it suspended, which only that caller can
+     * run. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    atomic_store_explicit(&wf_harness_owed_work, 2, memory_order_seq_cst);
+    seen = wf_completion_retirements();
+    wf_completion_retirement_wait_begin(
+        &waiter,
+        seen,
+        wf_harness_owed,
+        NULL,
+        0
+    );
+
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_mode = WF_HARNESS_POINT_QUEUES_OWED;
+    wf_retirement_point_armed = 1;
+    wf_retirement_point_fired = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+
+    state = wf_completion_retirement_state(&waiter);
+
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_armed = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+
+    CHECK(wf_retirement_point_fired == 1);
+    /* Four in flight now, and all four are this waiter or work stuck behind
+     * it: nothing anywhere else can give a descriptor back, so the refusal is
+     * the program's outcome.  Read from before the point, the same ledger says
+     * three of four, concludes something else is running, and waits for a
+     * retirement that nothing will produce. */
+    CHECK(state == WF_RETIREMENT_UNREACHABLE);
+
+    wf_completion_retirement_wait_end(&waiter);
+    atomic_store_explicit(&wf_harness_owed_work, 0, memory_order_seq_cst);
+    wf_completion_operation_retired();
+    wf_completion_operation_retired();
+    wf_completion_operation_retired();
     wf_completion_operation_retired();
     return 0;
 }
@@ -4123,6 +4215,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
     RUN_TEST(test_bridge_open_behind_a_submitted_close_succeeds(argv[1]));
     RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
+    RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
     RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
     RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
     RUN_TEST(test_bridge_every_record_holding_a_refused_open_publishes(argv[1]));
