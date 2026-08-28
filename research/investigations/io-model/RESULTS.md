@@ -1212,8 +1212,10 @@ runs it reproduced against; this section had it the other way round and is
 corrected here.
 
 What that costs is stated with the bar below rather than hidden here: it does
-not touch the warm or many-files halves, and it means the cold rows are not a
-reading of a cold bar.
+not touch the warm or many-files halves, and it means this draw's cold rows
+are not a reading of a cold bar. The cold grades are taken from a later draw
+that is one — run 33172323795, which confirms the label at both ends of both
+cold tables — and it grades them `no`.
 
 ### macOS runner, many files
 

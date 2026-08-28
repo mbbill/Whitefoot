@@ -394,9 +394,12 @@ artifact prints, beside each, `the label above is NOT confirmed: the probe
 refused it before the table ran`. That is the reverse of 0092's direction,
 where both cold tables were confirmed before and refused after. So each cold
 line here is a mixture of resident and non-resident reads rather than a cold
-one, which is why the two cold rows of the bar below are graded `not read`
-rather than missed, and why the RESULTS section tabulates all three macOS
-draws' cache labels side by side instead of reading a cold ratio from one.
+one, which is why the two cold rows of the bar below are not read from *this*
+draw. They are graded from a later one — run 33172323795, at this record's own
+repair commit, the first on this branch whose probe confirms the uncached
+label at both ends of both cold tables — and the section below tabulates all
+five macOS draws' cache labels side by side instead of reading a cold ratio
+from whichever one is at hand.
 
 ### Against the bar
 
