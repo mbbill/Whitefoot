@@ -171,6 +171,11 @@ Reject, the selections the amended sentence retains:
 No pre-existing verdict changes. Every verdict this batch states is stated by
 the amended sentence quoted above, and no verdict moved for any other reason.
 
+`docs/patterns.md` P14 gains one paragraph: standing after a call is not the
+same as reading one, so a function that takes a typed exit on an I/O failure may
+still claim a theorem about its own later arithmetic, while storage one arm
+wrote and loop-carried state a boundary-selected loop updated stay non-local.
+
 ## Tests
 
 `compiler/src/semantic/tests/claim_locality.rs`. Ten tests asserted the
@@ -217,8 +222,68 @@ CAMPAIGN-NUMBERS-PLACEHOLDER
 
 ## Judgment calls
 
-JUDGMENT-CALLS-PLACEHOLDER
+- **The worked example is prose, not a fenced block.** The specification has
+  exactly one fenced worked example, §19 [EX-1], and it is about canonical
+  bytes; every judgment rule states its examples in a `Thus` or `So` sentence.
+  Adding a fenced program to a judgment rule would have introduced a convention
+  the document does not have, so the fuzzer's pair is stated in the paragraph's
+  last sentence instead.
+- **Definition identity comes from checked-statement addresses, not a counter.**
+  A fresh counter per definition would make the loop fixed point compare unequal
+  on every iteration and never converge. An address is stable across the
+  repeated walks of one body, is compared only with another identity of the same
+  component of the same binding, and is never rendered, published, or ordered,
+  so no scratch identity escapes into a diagnostic or an emitted byte.
+- **Frame removal is deleted rather than kept.** With the selection measured
+  against the merge's own entry control, a frame the entry already carries is
+  excluded on its own, so the three exhaustiveness discharges — reconvergence,
+  breaks to one loop, exhaustive delivery — could no longer change any answer,
+  and `unrepresented_exit` existed only to drive them. Keeping dead bookkeeping
+  beside a live rule is the larger risk, so it went in the same change.
+- **Three sites keep an unconditional selector.** The matching binder, the
+  `value_if`/`value_match` delivered value, and the counted binder are
+  selections in every case and the rule says so, so each unions its own
+  selector directly rather than waiting for a merge. Each was narrowed from the
+  whole live control to that construct's own selector, which is the part the
+  amendment moves.
+- **One repealed-clause test became a [CLM-2] test, not an acceptance test.**
+  `control_authority_rejects_a_component_without_binding_supports` claims
+  `ieq(four, 4_u64)`, which the checker decides on its own. With locality
+  granted the occurrence reaches [CLM-2] and is refused as redundant. Asserting
+  acceptance would have been false and deleting the test would have lost the
+  evidence that a control-only [CLM-1] rejection no longer exists.
+- **Both members of the fuzzer's pair are conformance cases**, although only one
+  member's verdict moves. The pair is the evidence; one member alone does not
+  state that the `return` line no longer separates the two verdicts.
+- **The conformance boundary is recorded against `main` tip `10b76c66`**, not
+  the integration tip, following the v0.38 record's precedent: rule 4 measures
+  the merge into `main`.
+- **`docs/done/0097-differential-fuzz.md` gains a dated follow-up rather than an
+  edit.** Everything it says about the v0.38 rule is an accurate account of the
+  rule it was written against; a reader who stops at its "This is not a compiler
+  defect" section would otherwise believe the pair is still rejected.
+- **The campaigns were re-run from scratch** after a contradictory sentence was
+  found in the amended paragraph and the compiler was rebuilt. The numbers
+  reported above come from the final binary only; the discarded run's numbers
+  are not reported.
 
 ## Not done
 
-NOT-DONE-PLACEHOLDER
+- **Call-written `&uniq` storage stays outside claim locality.** [CLM-1] still
+  says a call's possible write through a `&uniq` actual does not by itself
+  change claim authority, and that extending locality to call-written storage is
+  an amendment-level accepted-set change. This batch does not touch it.
+- **No probe was recorded** under `research/experiments/differential-fuzz/probes/`.
+  That directory holds oracle divergences the campaign keeps; this was a
+  rejection tally, and its evidence is the two conformance cases carrying the
+  pair.
+- **No measurement of analysis time on a large function.** Frames are now never
+  removed, so a function with many boundary constructs carries a longer frame
+  vector, and `acquired` is linear in it. The library suite and the conformance
+  adapter did not move measurably and no benchmark changed, but no dedicated
+  measurement was taken.
+- **The three unreadable-path tests fail on this host** — the
+  `programs::traversal` unreadable-subdirectory test and the two
+  `programs::wfgrep` unreadable tests — because this session runs as uid 0 and
+  an unreadable path is readable to it. They fail identically at the base
+  revision and are untouched.

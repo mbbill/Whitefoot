@@ -312,6 +312,17 @@ directly; otherwise use a typed outcome or ordinary control. An `ensures` does
 not make the returned value claim-local, so a caller cannot restate or
 strengthen it with another claim.
 
+Standing after a call is not the same as reading one. Active v0.39 narrowed
+[CLM-1]: a boundary result reaches a claim through a value the selector chose —
+a matching binder, a `value_if` or `value_match` delivery, or a component whose
+reaching definition differs between the incoming edges of a reconvergence, loop
+head, or loop exit — and not through position alone. So a function that takes a
+typed exit on an I/O failure may still claim a theorem about its own later
+arithmetic, and a claim inside the selected arm over a parameter and literals is
+local. Storage one arm wrote and the other did not, and loop-carried state a
+boundary-selected loop updated, stay non-local: there the selector chose which
+definition arrives.
+
 Do not use a claim for a condition that can legitimately be false, an output
 comparison, an impossible-arm sentinel, a test oracle, a deliberate abort, or
 a fact the checker already knows. Use `if`, `match`, a typed outcome, return or
