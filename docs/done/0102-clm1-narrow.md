@@ -245,6 +245,16 @@ value even inside a boundary-selected arm.
   apart from the same banner token.
 - **Native conformance adapter.** `Pass=516 Skip=1` over the 517 declared
   cases, the skip being the one declared pending case.
+- **Canonical `make check`.** Green through `repository-invariants`,
+  `approval-history-integrity`, `spec-append-only`, `spec-archive-integrity`,
+  `spec-digest-sync`, and `conformance`; the `compiler` stage is green apart
+  from three tests that fail on this session's host for an environmental
+  reason and fail identically at the base revision —
+  `programs::traversal::an_unreadable_subdirectory_is_recorded_without_descending_into_it`
+  and the two `programs::wfgrep` unreadable tests, which need a path the
+  process cannot read and this session runs as uid 0. Because that stage
+  stops the run, `conformance-run` and `research-tests` were invoked directly
+  and both pass. CI runs the same check as an ordinary user.
 
 ## The fuzzer re-run
 
