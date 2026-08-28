@@ -30,9 +30,18 @@ ring's capacity bounds it too; where a bounded helper pool is,
 `WF_BRIDGE_MAX_HELPERS` does. A 4 MiB byte budget divided by `slot_bytes` is
 the last bound, so the design's 16 MiB privatized buffer gets one.
 
-**One is always a legal answer** and reproduces the sequential program exactly,
-so the query can never make a correct program fail. That is why the weak
-fallback a link without the completion unit gets returns one.
+**One is always a legal answer**: the runtime may carry one iteration in flight
+and that is the schedule the sequential program already runs, so no answer this
+query gives can make a correct program fail. That is why the weak fallback a
+link without the completion unit gets returns one.
+
+Stage A does not demonstrate it, and the record earlier said it did. The value
+the emitter binds has no consumer yet: what carries and what drains is decided
+entirely by the pipeline's block set, so answering one restricts nothing and
+reproduces nothing. It is harmless here only because one call site still owns
+one operation record, which keeps at most one operation of a site in flight
+whatever the answer. The claim becomes checkable when Stage B's driver consumes
+the answer, and checking it there is Stage B's evidence to produce.
 
 The fallback is `COMPLETION_WINDOW_FALLBACK` in
 `compiler/src/backend/emitter/completion.rs`, emitted only where a module
@@ -59,7 +68,8 @@ deferring safe:
 - `wf_bridge_flush_target` kicks before every blocking direct host call and
   before the demoted-open path hands its caller back to one, so a submitted
   open can never sit unkicked behind a blocking `openat` (§3.9 item 3);
-- the retire-and-retry path below kicks its re-attempt itself.
+- the retire-and-retry path below rings the doorbell for the re-attempt it
+  stages, while the thread that decided to stage it still owns the decision.
 
 `wf_linux_io_uring_statistics.submission_enters` counts them, and the distance
 between it and `submissions` is the whole of what deferring buys.
@@ -74,20 +84,54 @@ native descriptor, and [PAR-1]'s exhaustion clause excuses only what an
 implementation spends on overlapping — never the descriptors the program's own
 opens consume.
 
-So an open the host refuses for want of a descriptor is not published. Both
-target routes retire the work the runtime still owns and re-attempt once:
+So an open the host refuses for want of a descriptor is not published while
+this runtime is still holding a descriptor it could give back. Both target
+routes retire what they own and re-attempt once, and on both the re-attempt is
+gated on a *fact* rather than on a moment — some other operation this runtime
+owns has actually finished:
 
-- the ring holds the entry out of the reap pass as retry-pending, so every
-  other ready completion — the closes among them, whose descriptors the kernel
-  has already returned by the time their completion exists — publishes first,
-  and the next kick re-stages the open behind them;
-- the bounded POSIX adapter runs its queued work, which is work the sequential
-  execution performs anyway, and then re-attempts.
+- the ring holds the entry, and the refusal with it, in a state no doorbell can
+  stage. The gate is that the adapter's count of published completions has moved
+  since the refusal, because only a published completion means the kernel has
+  taken its descriptor back. When that happens the entry is re-staged and the
+  one re-attempt is counted. When nothing else is in flight at all, the refusal
+  is the outcome and it is published unchanged;
+- the bounded POSIX adapter first runs its queued work, which is work the
+  sequential execution performs anyway. When nothing is queued — the ordinary
+  case with several helpers, where the descriptors that would make room are
+  held by operations already running on other threads — it waits for one of
+  those to publish and then re-attempts. When no engine is left that could
+  produce a retirement, the refusal is the outcome.
+
+Two earlier shapes of this were wrong in the same way, and both were caught by
+the Stage A verification rather than by a test:
+
+- the ring re-staged the refused open at the end of the *same* reap pass. That
+  pass sees only the completions the ring had posted when it read the tail, so
+  the source order `close(held); open(path)` — which succeeds sequentially —
+  lost the race to the very close it was making room for and published
+  `Err(EMFILE)`, deterministically, at every helper setting;
+- the adapter counted and performed a re-attempt only when it found queued work
+  to drain. With four helpers each of three simultaneous opens lands on its own
+  helper and finds the queue empty, so all three published a refusal with the
+  descriptors still in this runtime's hands.
+
+Both are now covered by tests that fail without the fix:
+`test_bridge_open_behind_a_submitted_close_succeeds` and
+`test_open_exhaustion_waits_for_another_engine`.
+
+Several opens refused together are answered the same way on both routes, and
+they have to be, or they would wait for each other: the last one to arrive
+finds no engine left that can retire anything, publishes its refusal, and that
+publication is the retirement the others were waiting on. Each of them then
+gets its one re-attempt.
 
 Exactly one re-attempt, so an exhausted host cannot turn one `open_file` call
 into unbounded work; if the second attempt also fails, that is the outcome
-source-order execution produces and the program sees it. Cost is paid only on
-the exhausted path, so nothing on the correct path changes and T3 holds.
+source-order execution produces and the program sees it. A retry is counted
+exactly when a second host attempt is made, so a published refusal never reads
+as one. Cost is paid only on the exhausted path, so nothing on the correct path
+changes and T3 holds.
 
 **What the runtime cannot do, and Stage B must.** §2.10 says the adapter
 "completes every older slot in index order (which runs their compiler-derived
@@ -118,10 +162,30 @@ what a block has always done.
 
 The one thing a straight-line walk gets wrong is that a carrying region has
 several exits — the loop's normal exit and every typed exit out of its body —
-and each of them must retire the same operations. `pipeline_outstanding`
-records what the region handed out and seeds each exit from it, so no path
-leaves an accepted operation owned by nobody. A carrying set no exit leaves is
-refused outright as `BackendFailure::UnretiredCompletionOperation`.
+and each of them must retire the operations that reach it. `pipeline_outstanding`
+records what the region handed out, together with the block that handed it out,
+and each exit is seeded with what the carrying blocks that actually reach it
+left in flight. Which blocks those are is read from the edges
+(`pipeline_feeder_blocks`), not from how far the walk has got, so a drain
+retires the same window however the blocks around it are numbered.
+
+Two properties of the descriptor are refused outright as
+`BackendFailure::UnretiredCompletionOperation`, both before a line of the
+function is emitted:
+
+- a carrying set no exit leaves, which has a path on which an accepted
+  operation is never joined at all;
+- a carrying block that starts an operation and is numbered at or after one of
+  its own drains. Blocks are emitted in index order, so that drain is walked
+  into before the hand-out it must retire exists and would emit a bare
+  terminator with the operation still owned by a target — silently, because a
+  function carrying a pipeline is exempt from the straight-line check at the
+  end of emission, exactly because a carrying block may legitimately be the
+  last block emitted. A latch numbered after a typed exit it reaches is fine
+  and stays admitted: a block that starts no operation leaves that exit nothing
+  to be missing. Stage B has to produce a descriptor whose hand-outs precede
+  the exits that retire them, or teach the emitter to write its blocks in an
+  order that does; the refusal is what keeps the difference from being silent.
 
 `emit_stackless_root` does not consult any of this, and does not need to:
 `StacklessPlan::build` admits only a single-block function ending in a return,
@@ -142,20 +206,39 @@ item 2), and the driver is Stage B.
   `test_completion_window_answers_at_the_boundaries`,
   `test_a_submitted_operation_is_kicked_before_it_waits`,
   `test_open_exhaustion_retires_owned_work_and_retries`,
-  `test_bridge_open_exhaustion_is_retried_once`.
+  `test_open_exhaustion_waits_for_another_engine`,
+  `test_bridge_open_exhaustion_is_retried_once`,
+  `test_bridge_open_behind_a_submitted_close_succeeds`.
 - Backend (`compiler/src/backend/tests/completion.rs`):
   `a_staged_loop_carries_completion_across_its_back_edge`,
   `the_window_fallback_is_emitted_only_where_a_module_asks_for_one`,
-  `a_carrying_region_with_no_exit_is_refused`.
-- Negative controls run by hand on Linux, both of which failed the harness as
-  they must: restoring the immediate kick fails the doorbell test, and
-  disabling the ring's retry fails the exhaustion test.
+  `a_carrying_region_with_no_exit_is_refused`,
+  `a_drain_emitted_before_the_hand_out_it_retires_is_refused`.
+- The two exhaustion tests each fail without the fix they cover, which is what
+  makes them evidence rather than decoration.
+  `test_open_exhaustion_waits_for_another_engine` fails at zero, one and four
+  helpers with the adapter's old `drained == 0` give-up restored;
+  `test_bridge_open_behind_a_submitted_close_succeeds` fails at zero, one and
+  four helpers in the Linux container with the ring's old same-pass re-stage
+  restored. `a_drain_emitted_before_the_hand_out_it_retires_is_refused` emits a
+  module with the ordering check removed, and the loop's `break` exit in that
+  module carries a bare `ret` with no `wf__completion_file_join` while the
+  later-numbered typed exit has one.
+- Negative controls run by hand on Linux: restoring the immediate kick fails
+  the doorbell test, and disabling the ring's retry fails the exhaustion test.
 - `make -C compiler completion-tsan`, new here and wired into the io-hosts
   Linux job. `completion-core-read-tsan` links neither the bridge nor the ring
   by design, so the deferred doorbell's staging, the retire-and-retry hand-back
-  and the readiness flag the flush reads had nothing checking them. The whole
-  harness runs clean under the thread sanitizer at zero, one and four helpers
-  on macOS and, with `WF_REQUIRE_LINUX_IO_URING=1`, in the Linux container.
+  and the readiness flag the flush reads had nothing checking them.
+- What the sanitizers actually say, replacing an earlier claim in this record
+  that the harness ran clean under the thread sanitizer on macOS at every
+  helper setting. At `14c89cf3` it did not:
+  `test_bridge_open_exhaustion_is_retried_once` failed 13 of 200 runs (6.5%) at
+  `WF_IO_HELPERS=4` in the `completion-test` build and 15 of 20 under
+  `completion-tsan` — a flake inside canonical `make check`, since
+  `completion-test` is one of its prerequisites and runs the harness at four
+  helpers. The adapter fix above is what removes it, and the counts here are
+  measured after it.
 - IR identity: every `.wf` under `tests/programs`, `tests/codegen` and
   `tests/conformance/cases` compiled with `whitefootc --emit-llvm` at this
   revision and at `main`, under the default, `--par` and `--no-overlap` — 630
