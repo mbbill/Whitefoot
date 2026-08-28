@@ -53,47 +53,23 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 /// How many runs the migration observation below gets.
 ///
-/// Raised from sixteen in batch 0090, when a Linux runner reached zero
-/// migrations over the whole sample and this machine reaches one within a run
-/// or two. The link is now outside the loop, so the wider sample costs runs
-/// rather than compilations.
-const MIGRATION_ATTEMPTS: usize = 96;
-
-/// How many schedulable cores the migration observation needs.
+/// A migration is a rare race, not a property that shows up on demand: the
+/// ready frame is claimed by a scheduler lane only if a lane reaches it inside
+/// a window one call wide, before the writer thread resumes it itself. On a
+/// machine with cores to spare — this one, with ten — it happens within a run
+/// or two. On a shared runner it does not: measured across this batch's gate
+/// runs, the three-core macOS runner and the four-core Linux runner each
+/// reached one migration in some gate runs and none across a whole
+/// ninety-six-run sample in others, which puts the rate near one attempt in a
+/// hundred. Ninety-six attempts therefore missed it about half the time, and
+/// each miss was a red gate reporting a scheduler defect that was not there.
 ///
-/// The fixture has four runnable threads at the moment of the race — the entry
-/// thread, the writer helper, and two scheduler workers — and a migration
-/// happens only if a worker reaches the ready frame on a core of its own
-/// before the writer thread resumes it itself. That window is one function
-/// call wide.
-///
-/// Measured in batch 0090 on GitHub's runners: the three-core `macos-14`
-/// runner reached one migration in two gate runs and zero across the whole
-/// ninety-six-run sample in a third, while the four-core Linux runner reached
-/// one in every `make check` of the same commits. This machine, with ten,
-/// reaches one within a run or two.
-const MIGRATION_CORES: usize = 4;
-
-/// Whether this host can tell "no worker claimed the frame" apart from "no
-/// worker was scheduled inside the window".
-///
-/// The same shape as the pool's [`super::parallel::a_steal_is_observable`] and
-/// for the same reason: below [`MIGRATION_CORES`] a zero is a fact about the
-/// host, and reporting it as a scheduler defect would be reporting something
-/// the host cannot show. Where the cores are there, the observation is
-/// enforced exactly as it was.
-fn a_migration_is_observable() -> bool {
-    let cores = std::thread::available_parallelism().map_or(0, std::num::NonZero::get);
-    if cores < MIGRATION_CORES {
-        eprintln!(
-            "host-limited: {cores} schedulable cores cannot show a scheduler lane claiming a \
-             ready frame before the writer resumes it, so the migration observation is not \
-             made on this host"
-        );
-        return false;
-    }
-    true
-}
+/// A thousand attempts miss a one-in-a-hundred event about once in a thousand
+/// gate runs. The loop stops at the first migration, so the cost is paid only
+/// where the event is rare: measured here at 16 milliseconds a run with the
+/// link outside the loop, so a host that never sees one spends about twenty
+/// seconds and a host that sees one immediately spends none of it.
+const MIGRATION_ATTEMPTS: usize = 1024;
 
 #[test]
 fn may_suspend_tail_wrappers_release_the_writer_stack_and_resume_on_a_scheduler_lane() {
@@ -142,11 +118,7 @@ __attribute__((destructor)) static void report_writer_resume(void) {
     // claimed by a scheduler lane only if a lane reaches it before the writer
     // resumes it itself. Nothing about the module or the fixture changes
     // between attempts, so the link is paid once and the sample is as wide as
-    // the runs are cheap — and on a host with too few cores to run the race at
-    // all, it is not run.
-    if !a_migration_is_observable() {
-        return;
-    }
+    // the runs are cheap.
     let mut migrated = false;
     let directory = test_directory();
     let executable = build_linked_executable(&llvm, Some(host), &directory);
