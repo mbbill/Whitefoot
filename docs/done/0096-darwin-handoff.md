@@ -561,6 +561,7 @@ either.
 Every case below is an ordinary compiler or harness test. No conformance case,
 manifest, verdict, adapter, or collection wiring is added, changed, or removed
 by this batch.
+
 - **The growth rule is decided, not sampled, and the cases reach the bounds
   they name.** The helper policy now turns on a measurement, so a case that
   sleeps and hopes would test the machine. The adapter reads its clock through

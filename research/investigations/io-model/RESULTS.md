@@ -1165,6 +1165,13 @@ C.wide8.h4         1048.26  962.59 211.97 98.50  746.67  658.61 219.11  71.25
 C.wide8.h8          940.47  793.93 205.61 118.48 585.05  478.59 224.20 83.33
 ```
 
+Two cells of the `before` column are not findable in the 0092 section this
+column names: its macOS warm tables list no `C.wide8.h4` row at all. The
+211.97 and 98.50 here are read from that run's own artifact — run
+[33130875022](https://github.com/mbbill/Whitefoot/actions/runs/33130875022),
+`bench-macos-read`, which does print the row — rather than from the prose
+above, and they are the only two cells of this table for which that is true.
+
 **Cache labels on the after run: each cold table's probe refused the uncached
 label before the table ran and confirmed it after.** Both warm tables were
 confirmed warm at both ends (0.0 per cent of sampled reads at or above 40 us;
