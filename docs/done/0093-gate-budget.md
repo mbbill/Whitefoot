@@ -255,6 +255,59 @@ No test asserts a wall time, and none acquired one here. A wall-clock assertion
 inside a test fails on a loaded machine and passes on an idle one, which makes
 it a flake generator wearing a budget's clothes.
 
+## Results
+
+### The gate, before and after, per host
+
+| | before, one `make check` | after, the slowest job | before, sum of jobs |
+|---|---|---|---|
+| `ubuntu-24.04` | 21 min 34 s | **2 min 25 s** | 10 min 2 s |
+| `macos-14` | 5 min 35 s | **2 min 22 s** | 8 min 7 s |
+| maintainer's machine, warm | 3 min 14 s | **2 min 23 s** | — |
+
+The Linux "after" is the `sampling` job at 145 s; the macOS one is `unit` at
+142 s. Every job on both hosts is inside the five-minute target and no job
+comes within three minutes of the eight-minute ceiling.
+
+### Per job, gate run [33145044923](https://github.com/mbbill/Whitefoot/actions/runs/33145044923)
+
+| job | Linux | macOS |
+|---|---|---|
+| `static` | 67 s | 84 s |
+| `unit` | 123 s | 142 s |
+| `sampling` | 145 s | 86 s |
+| `corpus` | 120 s | 98 s |
+| `conformance` | 88 s (red, the six documented cases) | 86 s |
+| `research` | 59 s | 22 s |
+
+### Per stage, the same content
+
+| stage | Linux before | Linux after | macOS before | macOS after |
+|---|---|---|---|---|
+| library suite, fast half | (one suite, 1016 s) | 48.5 s | (one suite, 55 s) | 28.9 s |
+| library suite, sampling half | (in the same 1016 s) | **54.9 s** | (in the same 55 s) | 18.9 s |
+| integration targets | 54 s | 43 s | 65 s | 66 s |
+| `conformance-run` | 49.5 s | 23.6 s | 48.9 s | 28.5 s |
+| `research-tests` | 12.9 s | 12 s | 12.0 s | 10 s |
+
+### The cases that were the problem
+
+Linux, the five that owned the gate, before and after:
+
+| case | before | after |
+|---|---|---|
+| `parallel::the_repeat_reports_a_lowering_whose_joins_were_removed` | 352 s | under 1 s |
+| `trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record` | 210 s | under 1 s |
+| `trap_latch::a_single_false_claim_reports_the_same_bytes_at_every_worker_count` | 138 s | under 1 s |
+| `trap_latch::the_sequential_schedule_names_one_claim_every_run` | 42 s | under 1 s |
+| `trap_latch::the_latch_is_what_keeps_the_record_single` | 20 s | under 1 s |
+| `exhaustion::a_frame_larger_than_the_guard_region_is_still_reported` | over 60 s | 32.9 s |
+
+None of them appears in the sampling job's ten-largest-gaps report any more
+except the last, which is now the largest case in the suite and is the cost of
+recursing until a stack is gone twice — the recursion's own time, not a
+handler's.
+
 ## Judgment calls
 
 - **The five sampling modules are named by measurement, not by subject.**
