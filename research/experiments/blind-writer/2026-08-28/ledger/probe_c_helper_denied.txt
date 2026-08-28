@@ -1,0 +1,8 @@
+PAR loop        probes/probe_c_helper_denied.wf:26  loop  denied      condition 2: an iteration holds an exclusive loan on storage the iteration does not introduce, at &uniq 'f files
+PAR stage       probes/probe_c_helper_denied.wf:26  for   denied      condition 3: a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce; instead, give each iteration its own resource, or leave this loop sequential: storage that carries one position cannot be held by two iterations at once, at &uniq 'f files
+PAR place       probes/probe_c_helper_denied.wf:26  denied        &uniq 'f files  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       probes/probe_c_helper_denied.wf:26  read-only     &'f cwd  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       probes/probe_c_helper_denied.wf:26  serialized-E  set digest = digest +wrap widened;  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR place       probes/probe_c_helper_denied.wf:26  replicated    let name = buffer_new(16_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR place       probes/probe_c_helper_denied.wf:26  replicated    let data = buffer_new(65536_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR loop        probes/probe_c_helper_denied.wf:47  loop  permitted   eligible; one accumulator under +wrap

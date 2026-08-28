@@ -1,0 +1,14 @@
+PAR loop        programs/p4_copy_count.wf:38  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p4_copy_count.wf:99  loop  denied      condition 2: a return leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission, at return Err<unit, IoError>(error: move problem);
+PAR place       programs/p4_copy_count.wf:99  denied        let pending = ilt(sent, length);  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p4_copy_count.wf:99  read-only     let pending = ilt(sent, length);  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p4_copy_count.wf:99  denied        &uniq 'attempt deref(output)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p4_copy_count.wf:99  read-only     source  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR stage       programs/p4_copy_count.wf:128  loop  denied      condition 2: a break naming this loop leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission
+PAR place       programs/p4_copy_count.wf:128  denied        let capacity = len(deref(chunk));  the body writes it and a may-suspend call retains a borrow of it past its own submission
+PAR place       programs/p4_copy_count.wf:128  denied        set status = 6_u8;  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p4_copy_count.wf:128  read-only     handle  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p4_copy_count.wf:128  denied        offset  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p4_copy_count.wf:128  serialized-E  set lines = lines +wrap 1_u64;  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR place       programs/p4_copy_count.wf:128  denied        &uniq 'flush deref(output)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR loop        programs/p4_copy_count.wf:149  loop  permitted   eligible; one accumulator under +wrap

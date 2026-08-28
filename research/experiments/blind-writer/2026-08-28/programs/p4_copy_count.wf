@@ -1,0 +1,258 @@
+const label_lines: array<u8, 7> =[108_u8, 105_u8, 110_u8, 101_u8, 115_u8, 32_u8, 61_u8];
+
+const line_break: array<u8, 1> =[10_u8];
+
+struct Tally {
+  lines: u64;
+  status: u8;
+}
+
+fn digit_byte(value: own u64) -> result: own u8 pure {
+  doc "Renders one decimal digit value as its ASCII byte.";
+  let shifted = value +wrap 48_u64;
+  match cvt<u64, u8>(shifted) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: problem) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) -> result: own u64 reads(destination), writes(destination) {
+  doc "Stores one byte when the destination holds that position and reports the next position.";
+  let capacity = len(deref(destination));
+  let fits = ilt(at, capacity);
+  if fits {
+    set deref(destination)[at] = value;
+    return at +wrap 1_u64;
+  }
+  return at;
+}
+
+fn put_text['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, text: own slice<'s, u8>) -> result: own u64 reads(destination, text), writes(destination) {
+  doc "Copies every byte of one read-only text view into the destination.";
+  let cursor = at;
+  let count = len(text);
+  for @copy step in 0_u64..count {
+    let byte = text[step];
+    region 'one {
+      set cursor = put_byte<'one>(destination: &uniq 'one deref(destination), at: cursor, value: byte);
+    }
+  }
+  return cursor;
+}
+
+fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination), allocates(heap) {
+  doc "Renders one unsigned value in decimal into the destination.";
+  let scratch = buffer_new(20_u64, 0_u8);
+  let count = 0_u64;
+  let rest = value;
+  loop @split {
+    let digit = rest % 10_u64;
+    let byte = digit_byte(value: digit);
+    let capacity = len(scratch);
+    let room = ilt(count, capacity);
+    if room {
+      set scratch[count] = byte;
+      set count = count +wrap 1_u64;
+    }
+    set rest = rest / 10_u64;
+    let done = ieq(rest, 0_u64);
+    if done {
+      break @split;
+    }
+  }
+  let cursor = at;
+  loop @unwind {
+    let empty = ieq(count, 0_u64);
+    if empty {
+      break @unwind;
+    }
+    set count = count -wrap 1_u64;
+    let capacity = len(scratch);
+    let inside = ilt(count, capacity);
+    if inside {
+      let byte = scratch[count];
+      region 'one {
+        set cursor = put_byte<'one>(destination: &uniq 'one deref(destination), at: cursor, value: byte);
+      }
+    }
+  }
+  return cursor;
+}
+
+fn emit_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define capacity = len(deref(source));
+  requires ile(length, capacity);
+} {
+  doc "Writes one prefix of the source buffer, reattempting until the host accepts every byte.";
+  let sent = 0_u64;
+  loop @publish {
+    let pending = ilt(sent, length);
+    if pending {
+    } else {
+      break @publish;
+    }
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+fn pump['f, 'o, 'c](handle: &'f ReadFile, output: &uniq 'o Output, chunk: &uniq 'c buffer<u8>) -> result: own Tally reads(handle, output, chunk), writes(output, chunk) {
+  doc "Copies the whole file to the output in fixed chunks and counts its line terminators.";
+  let lines = 0_u64;
+  let status = 0_u8;
+  let offset = 0_u64;
+  loop @pump {
+    let capacity = len(deref(chunk));
+    let usable = ile(65536_u64, capacity);
+    if usable {
+    } else {
+      set status = 6_u8;
+      break @pump;
+    }
+    let received = 0_u64;
+    let ended = 0_u8;
+    region 'read {
+      match read_at<'f, 'read>(file: handle, destination: &uniq 'read deref(chunk), file_offset: offset, start: 0_u64, end: 65536_u64) {
+        ReadBytes(next: produced) => {
+          set received = produced;
+        }
+        ReadEnd() => {
+          set ended = 1_u8;
+        }
+        ReadFailed(error: problem) => {
+          set ended = 1_u8;
+          set status = 7_u8;
+        }
+      }
+    }
+    let running = ieq(ended, 0_u8);
+    if running {
+    } else {
+      break @pump;
+    }
+    let room = len(deref(chunk));
+    let fits = ile(received, room);
+    if fits {
+      for @scan at in 0_u64..received {
+        let byte = deref(chunk)[at];
+        let terminator = ieq(byte, 10_u8);
+        if terminator {
+          set lines = lines +wrap 1_u64;
+        }
+      }
+      region 'flush {
+        match emit_all<'flush, 'flush>(output: &uniq 'flush deref(output), source: &'flush deref(chunk), length: received) {
+          Ok(value: sent) => {
+          }
+          Err(error: problem) => {
+            set status = 8_u8;
+          }
+        }
+      }
+    } else {
+      set status = 6_u8;
+    }
+    let healthy = ieq(status, 0_u8);
+    if healthy {
+    } else {
+      break @pump;
+    }
+    set offset = offset +wrap received;
+  }
+  return Tally(lines: lines, status: status);
+}
+
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+  doc "Copies one named file to standard output, counts its line terminators, and reports the count on standard error.";
+  let chunk = buffer_new(65536_u64, 0_u8);
+  let report = buffer_new(64_u64, 0_u8);
+  let lines = 0_u64;
+  let status = 0_u8;
+  let supplied = 0_u64;
+  region 'count_args {
+    set supplied = args_count<'count_args>(args: &'count_args args);
+  }
+  let named = ige(supplied, 2_u64);
+  if named {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  region 'name {
+    match arg_get<'name>(args: &'name args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region 'permit {
+              let permit = reserve_file<'permit>(factory: &uniq 'permit files);
+              region 'open {
+                match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
+                  Ok(value: handle) => {
+                    region 'copy {
+                      let counted = pump<'copy, 'copy, 'copy>(handle: &'copy handle, output: &uniq 'copy out, chunk: &uniq 'copy chunk);
+                      set lines = counted.lines;
+                      set status = counted.status;
+                    }
+                  }
+                  Err(error: problem) => {
+                    set status = 3_u8;
+                  }
+                }
+              }
+            }
+          }
+          Err(error: problem) => {
+            set status = 4_u8;
+          }
+        }
+      }
+      Err(error: problem) => {
+        set status = 5_u8;
+      }
+    }
+  }
+  let end = 0_u64;
+  region 'label_view {
+    let view = slice_of(&'label_view label_lines);
+    region 'label_put {
+      set end = put_text<'label_put, 'label_view>(destination: &uniq 'label_put report, at: end, text: move view);
+    }
+  }
+  region 'number {
+    set end = put_decimal<'number>(destination: &uniq 'number report, at: end, value: lines);
+  }
+  region 'break_view {
+    let view = slice_of(&'break_view line_break);
+    region 'break_put {
+      set end = put_text<'break_put, 'break_view>(destination: &uniq 'break_put report, at: end, text: move view);
+    }
+  }
+  let room = len(report);
+  let fits = ile(end, room);
+  if fits {
+    region 'log {
+      match emit_all<'log, 'log>(output: &uniq 'log err, source: &'log report, length: end) {
+        Ok(value: sent) => {
+        }
+        Err(error: problem) => {
+          set status = 9_u8;
+        }
+      }
+    }
+  } else {
+    set status = 9_u8;
+  }
+  return exit_status(code: status);
+}

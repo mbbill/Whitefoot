@@ -1,0 +1,1 @@
+whitefootc: Semantics/Source [OWN-6]: SemanticIssue { rule: Own6, location: SourceNode(NodePath { components: [0, 0, 5, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(306), end: ByteOffset(334) }), kind: InvalidChildReborrow }

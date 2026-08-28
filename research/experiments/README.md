@@ -31,6 +31,17 @@ high-level sequencing; plans do not grant or withhold branch permission.
 
 ## Completed current-compiler bounded research
 
+- `blind-writer/` — the standing corpus of what unguided writers write, one
+  dated directory per trial. The 2026-08-28 trial handed a senior systems
+  programmer with no prior Whitefoot exposure the spec, `docs/patterns.md`, the
+  gate binary and `tests/programs/`, and asked for five ordinary I/O utilities.
+  All five compile and are correct against their Unix references with zero
+  `claim` statements; all five, and every worked I/O example in the repository,
+  compile to code byte-identical to `--no-overlap`, against a hand-widened
+  comparator 1.78x faster on this host and 2.17x/2.90x faster on the committed
+  quiet-host medians. Fourteen defects with dispositions in
+  [`docs/done/0098-blind-writer.md`](../../docs/done/0098-blind-writer.md). It
+  is removed when the language stops changing.
 - `io-completion-bench/` — the program-level answer to whether the unified-state
   completion I/O model reaches native performance on whole programs, which
   until 2026-08-27 had only C-level component evidence. Three lines per

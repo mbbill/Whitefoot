@@ -1,0 +1,36 @@
+PAR loop        programs/p2_tree_grep.wf:28  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR loop        programs/p2_tree_grep.wf:40  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p2_tree_grep.wf:62  loop  denied      condition 2: a return leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission, at return Err<unit, IoError>(error: move problem);
+PAR place       programs/p2_tree_grep.wf:62  denied        let pending = ilt(sent, length);  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p2_tree_grep.wf:62  read-only     let pending = ilt(sent, length);  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:62  denied        &uniq 'attempt deref(output)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p2_tree_grep.wf:62  read-only     source  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR loop        programs/p2_tree_grep.wf:115  loop  denied      condition 4: a return leaves the loop
+PAR loop        programs/p2_tree_grep.wf:117  loop  denied      condition 1: the loop writes storage outliving the iteration that no exactly associative operation reduces, at set matched = 0_u8;
+PAR denied      programs/p2_tree_grep.wf:118  pair(byte_at, byte_at)  condition 1: the operands of s2 read what interposed statement 1 defines
+PAR loop        programs/p2_tree_grep.wf:139  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p2_tree_grep.wf:174  loop  denied      condition 2: a break naming this loop leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission
+PAR place       programs/p2_tree_grep.wf:174  denied        let capacity = len(deref(chunk));  the body writes it and a may-suspend call retains a borrow of it past its own submission
+PAR place       programs/p2_tree_grep.wf:174  denied        set found = 2_u8;  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p2_tree_grep.wf:174  denied        let start_at = carry;  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p2_tree_grep.wf:174  read-only     handle  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:174  denied        offset  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p2_tree_grep.wf:174  read-only     pattern  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:174  read-only     pattern_length  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR denied      programs/p2_tree_grep.wf:225  pair(byte_at, byte_at)  condition 1: the operands of s2 read what interposed statement 1 defines
+PAR stage       programs/p2_tree_grep.wf:288  loop  denied      condition 7: the body contains a statement that forms a borrow of storage the iteration does not introduce; instead, write the borrow as an argument of the call that uses it, where its loan is stated, or borrow only storage the iteration introduces
+PAR place       programs/p2_tree_grep.wf:288  denied        let room = len(entries);  the body writes it and a may-suspend call retains a borrow of it past its own submission
+PAR place       programs/p2_tree_grep.wf:288  denied        &uniq 'batch list  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p2_tree_grep.wf:288  read-only     prefix  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:288  read-only     prefix_length  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:288  denied        &uniq 'descend deref(factory)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p2_tree_grep.wf:288  read-only     dir  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:288  denied        &uniq 'recurse deref(output)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p2_tree_grep.wf:288  denied        &uniq 'recurse deref(chunk)  the body writes it and a may-suspend call retains a borrow of it past its own submission
+PAR place       programs/p2_tree_grep.wf:288  read-only     pattern  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:288  read-only     pattern_length  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:288  read-only     deeper  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p2_tree_grep.wf:288  serialized-E  set hits = hits +wrap sub;  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR place       programs/p2_tree_grep.wf:288  replicated    let child = buffer_new(4400_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR loop        programs/p2_tree_grep.wf:307  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p2_tree_grep.wf:307  for   denied      condition 1: a statement of the body neither executes before the submission on every path nor is reached only through it; instead, write the body so its first I/O submission is reached on every path through it and everything else is reached only through it, at set cursor = cursor +wrap record_size;
