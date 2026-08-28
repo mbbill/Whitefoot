@@ -246,9 +246,11 @@ completion path with the pool pinned off — and therefore never declined,
 because a written `WF_IO_HELPERS` pins the route as well as the count. Warm at
 4 KiB it costs 40.57 ms against `S.wide8`'s 32.65, which is the 24 per cent
 the machinery charges an operation with nothing to overlap. With the policy
-free to decline, the same program costs 33.57. It removes 17 of those 24
-points, and the cold tables show it does not remove the overlap: the same
-binary is 2.84 times faster than `S.wide8` on the cold 4 KiB table.
+free to decline, the same program costs 33.57. In milliseconds over the
+sequential build that is 7.92 before and 0.92 after: the policy removes 88 per
+cent of what the machinery was charging. And the cold tables show it does not
+remove the overlap along with the cost — the same binary is 2.84 times faster
+than `S.wide8` on the cold 4 KiB table.
 
 ## What was tried and removed
 
@@ -306,8 +308,9 @@ Full tables and host details are in
 GitHub-hosted runner through the `io-bench` workflow, never from a maintainer
 machine, and before and after are separate runs on separate draws of the
 `macos-14` label — so **ratios within a run are the evidence and absolute
-milliseconds across runs are not**. The two draws differed by about a third on
-every line, native baselines included.
+milliseconds across runs are not**. On this pair the warm and many-files
+tables happen to be closely matched draw to draw and the cold tables are not,
+which the section below states line by line rather than assuming either way.
 
 
 ### The macOS runner, before and after
@@ -376,9 +379,10 @@ reading — C is 0.6, 2.8 and 2.2 per cent slower than S rather than not slower
 costs a program with nothing to overlap. The line that says where it went is
 `C.wide8.h0`: the same program on the completion path with the pool pinned off
 and therefore never declined costs 40.57 ms warm at 4 KiB against S's 32.65,
-which is the 24 per cent the machinery charges. The declining policy removes
-17 of those points and the 2.8 that remain are the operations it did not
-decline — the opens and the closes, which keep the queue.
+which is the 24 per cent the machinery charges. In milliseconds over `S.wide8`
+that is 7.92; with the policy free to decline it is 0.92, so 88 per cent of the
+charge is gone and what remains is the operations the policy does not decline —
+the opens and the closes, which keep the queue.
 
 **Neither cold row is met, and the cold 64 KiB row is where the two draws
 disagree.** In the earlier run on this branch

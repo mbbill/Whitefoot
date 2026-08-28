@@ -1202,8 +1202,9 @@ they missed by 27, 188 and 20 per cent, and none is met on a strict reading.
 path with the pool pinned off — and therefore never declined, because a
 written `WF_IO_HELPERS` pins the route as well as the count — costs 40.57 ms
 warm at 4 KiB against S's 32.65. That 24 per cent is what the machinery
-charges an operation with nothing to overlap. The declining policy removes 17
-of those points; the 2.8 that remain are the operations it does not decline,
+charges an operation with nothing to overlap. In milliseconds over `S.wide8`
+that is 7.92; with the policy free to decline it is 0.92, so 88 per cent of the
+charge is gone and what remains is the operations the policy does not decline,
 which are the opens and closes.
 
 Neither cold row is met. An earlier run on the same branch
