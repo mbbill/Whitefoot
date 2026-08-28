@@ -1045,6 +1045,7 @@ static pthread_cond_t wf_retirement_signal = PTHREAD_COND_INITIALIZER;
 static _Atomic uint64_t wf_retirement_generation;
 static _Atomic size_t wf_retirement_in_flight;
 static _Atomic size_t wf_retirement_waiter_count;
+static _Atomic size_t wf_retirement_deferred;
 static _Atomic uint64_t wf_retirement_wait_starts;
 /* The waiter order.  Mutated only under the lock; read without it by the
  * give-up decision, which needs to know whether this waiter is the earliest
@@ -1099,6 +1100,36 @@ void wf_completion_operation_retired(void) {
     (void)pthread_mutex_lock(&wf_retirement_lock);
     (void)pthread_cond_broadcast(&wf_retirement_signal);
     (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
+
+void wf_completion_retirement_defer_begin(void) {
+    atomic_fetch_add_explicit(
+        &wf_retirement_deferred,
+        1,
+        memory_order_seq_cst
+    );
+    /* One fewer operation that can retire, so a waiter may have just become
+     * the one that must publish. */
+    if (atomic_load_explicit(
+            &wf_retirement_waiter_count,
+            memory_order_seq_cst
+        ) == 0) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    (void)pthread_cond_broadcast(&wf_retirement_signal);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
+
+void wf_completion_retirement_defer_end(void) {
+    /* No wake is owed: one more operation that can retire can only turn an
+     * answer back into "keep waiting", which is what a sleeping waiter is
+     * already doing. */
+    atomic_fetch_sub_explicit(
+        &wf_retirement_deferred,
+        1,
+        memory_order_seq_cst
+    );
 }
 
 uint64_t wf_completion_retirement_waits(void) {
@@ -1190,7 +1221,7 @@ static enum wf_retirement_state wf_retirement_state_now(
     int at_the_point
 ) {
     size_t in_flight;
-    size_t waiters;
+    size_t idle;
     if (waiter == NULL) {
         return WF_RETIREMENT_UNREACHABLE;
     }
@@ -1207,11 +1238,21 @@ static enum wf_retirement_state wf_retirement_state_now(
         &wf_retirement_in_flight,
         memory_order_seq_cst
     );
-    waiters = atomic_load_explicit(
+    /* Operations that cannot retire on their own: the waiters, the deferred,
+     * and the ones this waiter's own thread would have to run.  Anything left
+     * over is an operation running somewhere that can still give a descriptor
+     * back, which is what makes waiting for it source order rather than a
+     * guess. */
+    idle = atomic_load_explicit(
         &wf_retirement_waiter_count,
         memory_order_seq_cst
     );
-    if (in_flight > waiters + mine) {
+    idle += atomic_load_explicit(
+        &wf_retirement_deferred,
+        memory_order_seq_cst
+    );
+    idle += mine;
+    if (in_flight > idle) {
         return WF_RETIREMENT_AWAITED;
     }
     if (atomic_load_explicit(&wf_retirement_first, memory_order_seq_cst)

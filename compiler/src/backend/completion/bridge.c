@@ -69,6 +69,12 @@ static unsigned wf_bridge_file_ready;
  * is otherwise invisible: neither the completion counter nor the fallback
  * adapter's counter moves for an operation that was never submitted. */
 static _Atomic uint64_t wf_bridge_demoted_opens;
+/* Opens a blocking direct call made, which the host refused for want of a
+ * descriptor and which asked it again after this runtime gave one back.  The
+ * two target engines count their own; together the three are what
+ * `wf__completion_open_exhaustion_retries` reports, because the rule they
+ * follow is one rule. */
+static _Atomic uint64_t wf_bridge_direct_exhaustion_retries;
 #if defined(__linux__)
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
@@ -1034,6 +1040,90 @@ int wf__completion_file_write_submit_writer(
     );
 }
 
+/* True exactly for the result of an open the host refused because it had no
+ * descriptor to give: the process limit and the system limit. */
+static int wf_bridge_open_lacked_a_descriptor(const wf_file_result *result) {
+    return result->kind == WF_FILE_OPEN_AT && result->value < 0
+        && (result->error_code == EMFILE || result->error_code == ENFILE);
+}
+
+/* Waits for this runtime to give a descriptor back, then re-attempts one open
+ * a blocking direct call had refused.
+ *
+ * The rule stated in contract.h, on the third route an open can take.  What is
+ * different here is only how the waiting is done: this thread cannot sleep on
+ * the ledger, because on a target with a kernel completion ring it may be the
+ * only thread that can reap the very completion it is waiting for.  So it
+ * waits by driving the engines and parking on the runtime's own endpoint,
+ * which every publication already wakes.  The epoch is read before the state,
+ * so a retirement that lands between the two makes the park return at once
+ * instead of sleeping through it.
+ *
+ * Exactly one re-attempt, as on either target engine. */
+static wf_file_result wf_bridge_retire_and_retry_direct(
+    const wf_file_request *request,
+    wf_file_result refused,
+    uint64_t seen
+) {
+    wf_retirement_waiter waiter;
+    enum wf_retirement_state state;
+    wf_completion_retirement_wait_begin(&waiter, seen);
+    for (;;) {
+        uint64_t epoch = wf_bridge_ready == 0
+            ? 0
+            : wf_completion_wake_epoch(&wf_bridge_runtime);
+        state = wf_completion_retirement_state(&waiter, 0);
+        if (state != WF_RETIREMENT_AWAITED) {
+            break;
+        }
+        if (wf_bridge_ready == 0) {
+            /* No runtime to drive: whatever is in flight belongs to an
+             * adapter this bridge did not build, and the ledger's own wake is
+             * the only one there is. */
+            wf_completion_retirement_sleep(&waiter, 0);
+        } else {
+            /* This open cannot retire while its own thread is inside the
+             * engines, so nothing may wait for it to. */
+            wf_completion_retirement_defer_begin();
+            if (!wf_bridge_progress()) {
+                wf_bridge_park(epoch);
+            }
+            wf_completion_retirement_defer_end();
+        }
+    }
+    wf_completion_retirement_wait_end(&waiter);
+    if (state != WF_RETIREMENT_HAPPENED) {
+        return refused;
+    }
+    atomic_fetch_add_explicit(
+        &wf_bridge_direct_exhaustion_retries,
+        1,
+        memory_order_relaxed
+    );
+    return wf_file_execute_direct(request);
+}
+
+/* One blocking direct host call, entered in the process-wide ledger.
+ *
+ * A direct call is an operation like any other while it runs: it can be
+ * holding the descriptor a refused open elsewhere is waiting for, and when it
+ * ends it may be giving one back.  Leaving it out of the ledger would make
+ * both facts invisible and let another engine publish an exhaustion that this
+ * call was about to answer. */
+static wf_file_result wf_bridge_execute_direct(
+    const wf_file_request *request
+) {
+    uint64_t seen = wf_completion_retirements();
+    wf_file_result result;
+    wf_completion_operation_accepted();
+    result = wf_file_execute_direct(request);
+    if (wf_bridge_open_lacked_a_descriptor(&result)) {
+        result = wf_bridge_retire_and_retry_direct(request, result, seen);
+    }
+    wf_completion_operation_retired();
+    return result;
+}
+
 static int64_t wf_bridge_return_direct(wf_file_result result) {
     if (result.value < 0) {
         errno = result.error_code;
@@ -1083,7 +1173,7 @@ int64_t wf__completion_file_pread_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 }
 
 int64_t wf__completion_file_write_direct(
@@ -1104,7 +1194,7 @@ int64_t wf__completion_file_write_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 }
 
 int wf__completion_file_open_at_direct(
@@ -1137,7 +1227,7 @@ int wf__completion_file_open_at_direct(
     request.operation.open_at.has_mode = has_mode;
     request.operation.open_at.expected_kind =
         (enum wf_file_expected_kind)expected_kind;
-    result = wf_file_execute_direct(&request);
+    result = wf_bridge_execute_direct(&request);
     *error_code = result.error_code;
     *open_outcome = (unsigned)result.open_outcome;
     return (int)wf_bridge_return_direct(result);
@@ -1161,7 +1251,7 @@ int wf__completion_file_status_direct(
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_STATUS;
     request.operation.status.descriptor = descriptor;
-    result = wf_file_execute_direct(&request);
+    result = wf_bridge_execute_direct(&request);
     if (result.value == 0) {
         if ((uint64_t)result.status_size > status_capacity) {
             errno = EOVERFLOW;
@@ -1180,7 +1270,7 @@ int wf__completion_file_close_direct(int descriptor) {
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_CLOSE;
     request.operation.close.descriptor = descriptor;
-    return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return (int)wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 }
 
 
@@ -1203,7 +1293,7 @@ int64_t wf__completion_directory_next_direct(
     request.operation.getdirentries64.buffer = buffer;
     request.operation.getdirentries64.count = (size_t)count;
     request.operation.getdirentries64.position = position;
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 #else
     (void)descriptor;
     (void)buffer;
@@ -1526,10 +1616,14 @@ uint64_t wf__completion_linux_io_uring_submission_enters(void) {
     return 0;
 }
 
-/* Opens the host refused for want of a descriptor that this runtime retired
- * work for and re-attempted once, over both target routes. */
+/* Opens the host refused for want of a descriptor that this runtime gave one
+ * back for and re-attempted once, over every route an open can take. */
 uint64_t wf__completion_open_exhaustion_retries(void) {
-    uint64_t retries = wf_bridge_file_ready == 0
+    uint64_t retries = atomic_load_explicit(
+        &wf_bridge_direct_exhaustion_retries,
+        memory_order_relaxed
+    );
+    retries += wf_bridge_file_ready == 0
         ? 0
         : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter)
             .exhaustion_retries;
@@ -1541,6 +1635,14 @@ uint64_t wf__completion_open_exhaustion_retries(void) {
     }
 #endif
     return retries;
+}
+
+/* Opens this runtime held rather than published, over every route, because
+ * something in flight could still give the descriptor they needed back.  A
+ * test that has to stand at exactly that moment reads this; nothing in the
+ * runtime decides anything on it. */
+uint64_t wf__completion_open_exhaustion_waits(void) {
+    return wf_completion_retirement_waits();
 }
 
 uint64_t wf__completion_file_demoted_opens(void) {

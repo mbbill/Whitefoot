@@ -92,14 +92,16 @@ typedef struct wf_linux_io_uring_entry {
      * descriptor and re-attempted.  It bounds the re-attempt at one, so the
      * second outcome is the one the program sees. */
     unsigned exhaustion_retried;
-    /* The refusal a held open is carrying, and the number of terminal
-     * publications this adapter had made when the operation was submitted —
-     * before the kernel could run its `openat`, which is the moment the
-     * question is about.  The re-attempt is staged once that number has moved,
-     * because a completion published since then is a descriptor given back;
-     * the refusal itself is published from `retry_result` if none ever can. */
+    /* The refusal a held open is carrying, the process-wide retirement
+     * generation read when the operation was submitted — before the kernel
+     * could run its `openat`, which is the moment the question is about — and
+     * this entry's place in the ledger's waiter order while it is held.  The
+     * re-attempt is staged once the ledger says a descriptor came back; the
+     * refusal itself is published from `retry_result` when the ledger says
+     * none ever can. */
     int32_t retry_result;
-    uint64_t retry_publications;
+    uint64_t retirements_seen;
+    wf_retirement_waiter retirement_waiter;
     /* An open's answer, decided when its completion is reaped. The descriptor
      * is named even where the kind check refused and disposed of it, which is
      * what the direct path reports too. */
@@ -136,9 +138,12 @@ typedef struct wf_linux_io_uring_adapter {
     size_t entry_capacity;
     _Atomic size_t entry_cursor;
     _Atomic size_t in_flight;
-    /* How many of `in_flight` are opens held for retire-and-retry.  When the
-     * two are equal no operation is left that could return a descriptor, so
-     * holding any longer would wait for a completion that cannot arrive. */
+    /* How many of `in_flight` are opens this ring is holding for
+     * retire-and-retry.  It says only whether there is anything to settle;
+     * whether a held open may be re-attempted, must keep waiting, or must
+     * publish its refusal is the process-wide ledger's answer, because the
+     * descriptor it needs may be held by an operation on another engine
+     * entirely. */
     _Atomic size_t retry_held;
 
     int ring_descriptor;

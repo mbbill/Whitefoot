@@ -359,28 +359,37 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
     }
 }
 
-static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
+/* Takes one queued request off this adapter's queue.
+ *
+ * `from_head` chooses which end.  A scheduler visit takes the newest request,
+ * so a blocked earlier host facility cannot hide every later free operation
+ * behind it, and helper threads take the oldest, so several target contexts
+ * spread across both ends of the bounded queue.  Work this adapter still owes,
+ * run on the way to re-attempting a refused open, is taken from the head
+ * whichever thread does it: that is the order the program wrote, and it is the
+ * order that reproduces the sequential outcome. */
+static int wf_file_take_work(
+    wf_file_adapter *adapter,
+    wf_file_work *work,
+    int from_head
+) {
     int present = 0;
     int released_capacity = 0;
     (void)pthread_mutex_lock(&adapter->queue_lock);
     if (adapter->queue_count != 0) {
         released_capacity = adapter->queue_count == adapter->queue_capacity;
-        /* The scheduler is the only progress source when helper_count is
-         * zero. Take the newest independent request so a blocked earlier host
-         * facility cannot hide every later free operation behind it. Helper
-         * threads take the oldest request below, so multiple target contexts
-         * naturally spread across both ends of the bounded queue. */
-        adapter->queue_tail = adapter->queue_tail == 0
-            ? adapter->queue_capacity - 1
-            : adapter->queue_tail - 1;
-        *work = adapter->queue[adapter->queue_tail];
+        if (from_head != 0) {
+            *work = adapter->queue[adapter->queue_head];
+            adapter->queue_head =
+                (adapter->queue_head + 1) % adapter->queue_capacity;
+        } else {
+            adapter->queue_tail = adapter->queue_tail == 0
+                ? adapter->queue_capacity - 1
+                : adapter->queue_tail - 1;
+            *work = adapter->queue[adapter->queue_tail];
+        }
         wf_file_work_bind_path(work);
         adapter->queue_count -= 1;
-        atomic_fetch_add_explicit(
-            &adapter->executing,
-            1,
-            memory_order_relaxed
-        );
         present = 1;
     }
     (void)pthread_mutex_unlock(&adapter->queue_lock);
@@ -393,128 +402,20 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
 /* Records that one operation this adapter owned has published its result and
  * given back whatever the host lent it.
  *
- * The two execution counters together are this adapter's retirement
- * generation: neither ever decreases, so a reader that sees the same pair
- * twice has seen no retirement between the two reads.  A thread inside
- * retire-and-retry needs that fact and a wake, and the wake costs the queue
- * lock, so the lock is taken only when a waiter has announced itself.
- *
- * The announcement below and this load are sequentially consistent in both
- * directions, which is what makes the pair race-free: in the single total
- * order either the waiter's announcement precedes this load — so the wake is
- * delivered — or this thread's counter increment precedes the waiter's read
- * of the counters, so the waiter sees the retirement and never sleeps. */
+ * A refused open asks the process-wide ledger, not this adapter, whether a
+ * descriptor came back, so every publication reports there as well as into
+ * this adapter's own execution counts.  That is the whole of what makes the
+ * exhaustion rule one rule: an open refused on the kernel ring can see a read
+ * finishing on a helper thread here, and this open can see that ring's close.
+ */
 static void wf_file_finish_execution(wf_file_adapter *adapter, int helper) {
     atomic_fetch_add_explicit(
         helper != 0 ? &adapter->stat_helper_executions
                     : &adapter->stat_scheduler_executions,
         1,
-        memory_order_seq_cst
+        memory_order_relaxed
     );
-    atomic_fetch_sub_explicit(&adapter->executing, 1, memory_order_seq_cst);
-    if (atomic_load_explicit(&adapter->retire_waiters, memory_order_seq_cst)
-        == 0) {
-        return;
-    }
-    (void)pthread_mutex_lock(&adapter->queue_lock);
-    (void)pthread_cond_broadcast(&adapter->queue_available);
-    (void)pthread_mutex_unlock(&adapter->queue_lock);
-}
-
-/* This adapter's retirement generation: the pair of execution counters, which
- * only ever grow.  A reader that sees the same pair twice has seen no
- * operation of this adapter publish between the two reads. */
-typedef struct wf_file_retirements {
-    uint64_t helper;
-    uint64_t scheduler;
-} wf_file_retirements;
-
-static wf_file_retirements wf_file_retirements_now(
-    const wf_file_adapter *adapter
-) {
-    wf_file_retirements now;
-    now.helper = atomic_load_explicit(
-        &adapter->stat_helper_executions,
-        memory_order_seq_cst
-    );
-    now.scheduler = atomic_load_explicit(
-        &adapter->stat_scheduler_executions,
-        memory_order_seq_cst
-    );
-    return now;
-}
-
-static int wf_file_retired_since(
-    const wf_file_adapter *adapter,
-    wf_file_retirements seen
-) {
-    wf_file_retirements now = wf_file_retirements_now(adapter);
-    return now.helper != seen.helper || now.scheduler != seen.scheduler;
-}
-
-/* Waits until one operation running on another engine of this adapter has
- * published, and reports whether one did.
- *
- * This is the other half of retire-and-retry.  Draining the queue gives back
- * the descriptors of work nobody has started; with several helpers the
- * descriptors that would make room are held by operations already running on
- * other threads, and there is nothing queued at all.  Publishing the refusal
- * there would be a hole in the rule, not an application of it: a sequential
- * execution reaches this open only after every operation now in flight has
- * finished, so waiting for one of them is source order, not a heuristic.
- *
- * `seen` is read *before* the host attempt, and that is the whole of what
- * makes the answer sound.  The question is not "is anything still running
- * now" — an operation that retired between the refusal and this call has
- * already given its descriptor back, and asking about the present would miss
- * it and publish an exhaustion that no longer exists.  The question is
- * "has anything retired since the attempt", which the generation answers
- * whenever it was answered.
- *
- * The wait ends without a retirement exactly when no engine is left that
- * could produce one — when every operation still executing is itself a thread
- * standing here.  That is what keeps several simultaneously refused opens
- * from waiting on each other: the last of them to arrive finds the difference
- * zero, publishes its refusal, and its publication is the retirement the
- * others were waiting for. */
-static int wf_file_await_a_retirement(
-    wf_file_adapter *adapter,
-    wf_file_retirements seen
-) {
-    int retired = 0;
-    (void)pthread_mutex_lock(&adapter->queue_lock);
-    atomic_fetch_add_explicit(
-        &adapter->retire_waiters,
-        1,
-        memory_order_seq_cst
-    );
-    for (;;) {
-        if (wf_file_retired_since(adapter, seen)) {
-            retired = 1;
-            break;
-        }
-        if (adapter->stopping != 0) {
-            break;
-        }
-        if (atomic_load_explicit(&adapter->executing, memory_order_seq_cst)
-            <= atomic_load_explicit(
-                   &adapter->retire_waiters,
-                   memory_order_seq_cst
-               )) {
-            break;
-        }
-        (void)pthread_cond_wait(
-            &adapter->queue_available,
-            &adapter->queue_lock
-        );
-    }
-    atomic_fetch_sub_explicit(
-        &adapter->retire_waiters,
-        1,
-        memory_order_seq_cst
-    );
-    (void)pthread_mutex_unlock(&adapter->queue_lock);
-    return retired;
+    wf_completion_operation_retired();
 }
 
 /* True exactly for the results of an open the host refused because it had no
@@ -530,55 +431,78 @@ static void wf_file_run_work(
     wf_file_adapter *adapter,
     const wf_file_work *work,
     int helper,
-    int retire_and_retry
+    int may_run_owed_work
 );
 
-/* Completes the work this adapter already owns, then re-attempts one open the
+/* Gives back what this runtime is still holding, then re-attempts one open the
  * host refused for want of a descriptor.
  *
- * Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that keeps several
- * iterations of a loop in flight holds several descriptors where source order
- * holds one, so a host limit the sequential program never reaches can turn a
- * correct program's `Ok` into an `Err(ResourceExhausted)`.  [SYS-10] is
- * explicit that a `FilePermit` promises no native descriptor, and [PAR-1]'s
- * exhaustion clause excuses only the resources an implementation spends on
- * overlapping — never the descriptors the program's own opens consume.
+ * This is one half of the rule stated in contract.h, on the route a bounded
+ * helper pool carries.  What this thread can give back has two parts and they
+ * are the same fact seen twice.  The first is work this adapter has accepted
+ * and nobody has started: running it is work the sequential execution performs
+ * anyway, it publishes each outcome unchanged, and a close among them returns
+ * a descriptor.  The second is every operation in flight anywhere else — on
+ * another helper, on the kernel ring, inside a blocking direct call — which
+ * this thread cannot run but can wait for.  An adapter that only drained its
+ * own queue would publish a refusal while its own descriptors were still in
+ * hand, which is exactly what a four-helper configuration does to three
+ * simultaneous opens: each is taken by a different thread and each looks at an
+ * empty queue.
  *
- * What this adapter can give back is what it still owns.  First, every queued
- * operation, the closes among them, each of which returns a descriptor when it
- * runs.  Running them is work the sequential execution performs anyway, and it
- * publishes their outcomes unchanged, so nothing here is observable except the
- * open's second answer.  The drained items are run with no retry of their own,
- * which bounds this to one level.  Second — and this is the whole of what a
- * multi-helper configuration owns — the operations already running on the
- * other engines: with four helpers, three simultaneous opens are taken by
- * three different threads and the queue each of them looks at is empty, so an
- * adapter that could only drain a queue would publish a refusal while its own
- * descriptors were still in hand.
+ * The waiter is registered before any owed work runs, so a second open refused
+ * while this thread is running that work counts this one out of "in flight
+ * elsewhere" instead of waiting for it.  Owed work runs with
+ * `may_run_owed_work` cleared: it may wait for a retirement like any other
+ * refused open, but it may not run the queue in its turn, because the caller
+ * suspended inside it still holds that duty — which is why it passes the queue
+ * as its own.
  *
- * Exactly one re-attempt, and it is counted exactly when it is made.  If it
- * also fails, that is the outcome source-order execution produces and the
- * program is entitled to see it. */
+ * Exactly one re-attempt, counted exactly where it is made.  If it also fails,
+ * that is the outcome source-order execution produces and the program is
+ * entitled to see it. */
 static wf_file_result wf_file_retire_and_retry(
     wf_file_adapter *adapter,
     const wf_file_work *work,
     wf_file_result refused,
     int helper,
-    wf_file_retirements before
+    uint64_t seen,
+    int may_run_owed_work
 ) {
-    size_t drained = 0;
+    wf_retirement_waiter waiter;
+    enum wf_retirement_state state;
+    size_t mine = 0;
+    if (may_run_owed_work != 0) {
+        wf_file_work owed;
+        size_t owed_run = 0;
+        /* This open cannot retire while its own thread runs the queue, and
+         * the ledger is told so: an open refused on another thread must not
+         * wait for an operation whose thread is waiting for it. */
+        wf_completion_retirement_defer_begin();
+        while (owed_run < adapter->queue_capacity
+               && wf_file_take_work(adapter, &owed, 1)) {
+            wf_file_run_work(adapter, &owed, helper, 0);
+            owed_run += 1;
+        }
+        wf_completion_retirement_defer_end();
+    } else {
+        /* Owed work itself: the caller suspended inside this call is the
+         * thread that would run the rest of the queue, so none of it can
+         * retire while this one waits. */
+        mine = wf_file_adapter_queued(adapter);
+    }
+    wf_completion_retirement_wait_begin(&waiter, seen);
     for (;;) {
-        wf_file_work queued;
-        if (drained == adapter->queue_capacity
-            || !wf_file_take_work(adapter, &queued)) {
+        state = wf_completion_retirement_state(&waiter, mine);
+        if (state != WF_RETIREMENT_AWAITED) {
             break;
         }
-        wf_file_run_work(adapter, &queued, helper, 0);
-        drained += 1;
+        wf_completion_retirement_sleep(&waiter, mine);
     }
-    if (drained == 0 && !wf_file_await_a_retirement(adapter, before)) {
-        /* Nothing this adapter owned could give a descriptor back, so the
-         * refusal already is the outcome source order produces. */
+    wf_completion_retirement_wait_end(&waiter);
+    if (state != WF_RETIREMENT_HAPPENED) {
+        /* Nothing anywhere could give a descriptor back, so the refusal
+         * already is the outcome source order produces. */
         return refused;
     }
     atomic_fetch_add_explicit(
@@ -593,17 +517,24 @@ static void wf_file_run_work(
     wf_file_adapter *adapter,
     const wf_file_work *work,
     int helper,
-    int retire_and_retry
+    int may_run_owed_work
 ) {
     /* Read before the host attempt, because that is the moment the answer is
      * about: an operation that retires while this one is inside `openat` has
      * given its descriptor back, and a refusal decided by the state
      * afterwards would miss it. */
-    wf_file_retirements before = wf_file_retirements_now(adapter);
+    uint64_t seen = wf_completion_retirements();
     wf_file_result result = wf_file_execute_direct(&work->request);
     wf_completion_publication publication;
-    if (retire_and_retry != 0 && wf_file_open_lacked_a_descriptor(&result)) {
-        result = wf_file_retire_and_retry(adapter, work, result, helper, before);
+    if (wf_file_open_lacked_a_descriptor(&result)) {
+        result = wf_file_retire_and_retry(
+            adapter,
+            work,
+            result,
+            helper,
+            seen,
+            may_run_owed_work
+        );
     }
     publication = (wf_completion_publication) {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
@@ -653,15 +584,6 @@ static void *wf_file_helper_main(void *context) {
         wf_file_work_bind_path(&work);
         adapter->queue_head = (adapter->queue_head + 1) % adapter->queue_capacity;
         adapter->queue_count -= 1;
-        /* This helper now owns one operation, exactly as a scheduler taking
-         * work through `wf_file_take_work` does.  The count is what an open
-         * refused for want of a descriptor asks about before it waits, so
-         * every route out of the queue must maintain it. */
-        atomic_fetch_add_explicit(
-            &adapter->executing,
-            1,
-            memory_order_relaxed
-        );
         (void)pthread_mutex_unlock(&adapter->queue_lock);
         if (released_capacity != 0) {
             wf_completion_notify_capacity(adapter->runtime);
@@ -691,8 +613,6 @@ int wf_file_adapter_init(
     adapter->queue_capacity = queue_capacity;
     adapter->helpers = helper_storage;
     atomic_init(&adapter->helper_count, 0);
-    atomic_init(&adapter->executing, 0);
-    atomic_init(&adapter->retire_waiters, 0);
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_exhaustion_retries, 0);
@@ -839,6 +759,12 @@ static void wf_file_enqueue_locked(
     }
     adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
     adapter->queue_count += 1;
+    /* Accepted from here: a queue with an engine behind it is an operation
+     * that will retire, and a refused open anywhere in this process is
+     * entitled to wait for it.  It is reported before the entry becomes
+     * visible to a helper, so its retirement can never precede its
+     * acceptance. */
+    wf_completion_operation_accepted();
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
         1,
@@ -918,7 +844,7 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
     }
     while (executed < budget) {
         wf_file_work work;
-        if (!wf_file_take_work(adapter, &work)) {
+        if (!wf_file_take_work(adapter, &work, 0)) {
             break;
         }
         wf_file_run_work(adapter, &work, 0, 1);

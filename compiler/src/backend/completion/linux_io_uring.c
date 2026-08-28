@@ -654,13 +654,10 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     entry->waiting_readiness = 0;
     entry->exhaustion_retried = 0;
     entry->retry_result = 0;
-    /* Snapshot before the kernel can attempt this operation, so a completion
-     * published while it is in flight is visible as a descriptor that came
-     * back after the attempt began. */
-    entry->retry_publications = atomic_load_explicit(
-        &adapter->stat_completions,
-        memory_order_acquire
-    );
+    /* Snapshot before the kernel can attempt this operation, so an operation
+     * that retires anywhere in this process while it is in flight is visible
+     * as a descriptor that came back after the attempt began. */
+    entry->retirements_seen = wf_completion_retirements();
     entry->opened_descriptor = -1;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     entry->open_error = 0;
@@ -695,6 +692,9 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
         }
     }
     atomic_fetch_add_explicit(&adapter->in_flight, 1, memory_order_relaxed);
+    /* Accepted from here in the process-wide ledger too: a refused open on
+     * any engine may wait for this operation to give its descriptor back. */
+    wf_completion_operation_accepted();
     wf_linux_stage_entry_locked(adapter, entry_index, entry);
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
@@ -744,16 +744,31 @@ static int wf_linux_resubmit_entry(
     (void)pthread_mutex_lock(&adapter->submission_lock);
     head = wf_linux_load_acquire(adapter->submission_head);
     tail = wf_linux_load_relaxed(adapter->submission_tail);
+    result = 0;
     if (tail - head >= *adapter->submission_count) {
+        /* A deferred doorbell fills the submission queue with entries the
+         * kernel has not been told about, so a full queue is first this
+         * thread's own backlog.  Ring it, which is what advances the head,
+         * before deciding this entry cannot be staged. */
+        result = wf_linux_kick_locked(adapter);
+        head = wf_linux_load_acquire(adapter->submission_head);
+    }
+    if (tail - head < *adapter->submission_count) {
+        int kicked;
+        wf_linux_stage_entry_locked(adapter, entry_index, entry);
+        /* The doorbell rings here and not at some later pass.  A re-attempt
+         * left staged behind a completion-only sleep would wait for a CQE the
+         * kernel has not been asked to produce. */
+        kicked = wf_linux_kick_locked(adapter);
+        if (result == 0) {
+            result = kicked;
+        }
+    } else {
         atomic_store_explicit(
             &entry->state,
             WF_LINUX_IO_URING_ENTRY_RETRY_PENDING,
             memory_order_release
         );
-        result = 0;
-    } else {
-        wf_linux_stage_entry_locked(adapter, entry_index, entry);
-        result = wf_linux_kick_locked(adapter);
     }
     (void)pthread_mutex_unlock(&adapter->submission_lock);
     return result;
@@ -885,134 +900,97 @@ static int wf_linux_publish_entry_locked(
         1,
         memory_order_relaxed
     );
+    /* Reported after the terminal publication: an open refused on any engine
+     * is entitled to see this descriptor come back, and the ledger is where
+     * it looks. */
+    wf_completion_operation_retired();
     return published == WF_COMPLETION_PUBLISHED ? 0 : EPROTO;
 }
 
-/* Stages the re-attempt of every held open whose gate has opened: some other
- * operation has published its completion since the refusal, so a descriptor
- * this runtime was holding is back with the host.
+/* Settles every open this ring is holding for retire-and-retry.
  *
- * This is where the one re-attempt is counted, because this is where it is
- * made.  A refusal that is published without ever being re-attempted is not a
- * retry and must not read as one. */
-static size_t wf_linux_release_gated_retries_locked(
-    wf_linux_io_uring_adapter *adapter,
-    int *first_error
-) {
-    uint64_t completions = atomic_load_explicit(
-        &adapter->stat_completions,
-        memory_order_acquire
-    );
-    size_t released = 0;
-    size_t index;
-    for (index = 0; index < adapter->entry_capacity; ++index) {
-        wf_linux_io_uring_entry *entry = &adapter->entries[index];
-        int error;
-        if (atomic_load_explicit(&entry->state, memory_order_acquire)
-            != WF_LINUX_IO_URING_ENTRY_RETRY_HELD) {
-            continue;
-        }
-        if (entry->retry_publications == completions) {
-            continue;
-        }
-        atomic_fetch_sub_explicit(
-            &adapter->retry_held,
-            1,
-            memory_order_relaxed
-        );
-        atomic_fetch_add_explicit(
-            &adapter->stat_exhaustion_retries,
-            1,
-            memory_order_relaxed
-        );
-        error = wf_linux_resubmit_entry(adapter, index, entry, 0);
-        if (*first_error == 0 && error != 0) {
-            *first_error = error;
-        }
-        released += 1;
-    }
-    return released;
-}
-
-/* Publishes the refusal of one held open when no operation is left that could
- * return a descriptor.
- *
- * Exactly one, and the lowest-numbered entry, even where several opens are
- * held together.  That publication is itself the progress the remaining held
- * opens are waiting on, so each of them gets its one re-attempt afterwards
- * rather than being answered by a decision it never observed.  With a single
- * held open this is the whole rule the design states: if the refused open is
- * the only operation left in flight, its refusal is the outcome. */
-static size_t wf_linux_publish_one_retry_refusal_locked(
-    wf_linux_io_uring_adapter *adapter,
-    int *first_error
-) {
-    size_t index;
-    if (atomic_load_explicit(&adapter->retry_held, memory_order_acquire)
-        != atomic_load_explicit(&adapter->in_flight, memory_order_acquire)) {
-        return 0;
-    }
-    for (index = 0; index < adapter->entry_capacity; ++index) {
-        wf_linux_io_uring_entry *entry = &adapter->entries[index];
-        int error;
-        if (atomic_load_explicit(&entry->state, memory_order_acquire)
-            != WF_LINUX_IO_URING_ENTRY_RETRY_HELD) {
-            continue;
-        }
-        atomic_fetch_sub_explicit(
-            &adapter->retry_held,
-            1,
-            memory_order_relaxed
-        );
-        wf_linux_decide_open(entry, entry->retry_result);
-        error = wf_linux_publish_entry_locked(
-            adapter,
-            entry,
-            entry->retry_result
-        );
-        if (*first_error == 0 && error != 0) {
-            *first_error = error;
-        }
-        return 1;
-    }
-    return 0;
-}
-
-/* Settles every open held for retire-and-retry.
+ * A held open asks the process-wide ledger where it stands, exactly as a
+ * refused open on the bounded adapter does and with the same three answers.
+ * `mine` is zero here because a held entry blocks no thread: nothing in this
+ * process is waiting on this thread to run something before it can retire.
  *
  * Called with the completion lock held, both before this thread may wait for
  * a completion and after it has reaped one, so a held open is never carried
- * across a sleep that nothing could end.  Returns the number of terminal
- * publications made here, which the caller reports as progress.
+ * across a sleep that nothing could end.  `published` counts the refusals
+ * answered here, which the caller reports as progress, and `restaged` the
+ * re-attempts sent to the kernel, which the caller must not sleep behind.
  *
  * The pass count is bounded by the entry capacity: each entry is released at
  * most once — `exhaustion_retried` allows one re-attempt — and each pass that
  * changes nothing else publishes one refusal, which frees an entry. */
-static size_t wf_linux_resolve_retry_held_locked(
+static void wf_linux_resolve_retry_held_locked(
     wf_linux_io_uring_adapter *adapter,
-    int *first_error
+    int *first_error,
+    size_t *published,
+    size_t *restaged
 ) {
-    size_t published = 0;
     size_t pass;
     for (pass = 0; pass <= adapter->entry_capacity; ++pass) {
-        size_t refused;
+        size_t settled = 0;
+        size_t index;
         if (atomic_load_explicit(&adapter->retry_held, memory_order_acquire)
             == 0) {
-            break;
+            return;
         }
-        if (wf_linux_release_gated_retries_locked(adapter, first_error) != 0) {
-            continue;
+        for (index = 0; index < adapter->entry_capacity; ++index) {
+            wf_linux_io_uring_entry *entry = &adapter->entries[index];
+            enum wf_retirement_state state;
+            int error;
+            if (atomic_load_explicit(&entry->state, memory_order_acquire)
+                != WF_LINUX_IO_URING_ENTRY_RETRY_HELD) {
+                continue;
+            }
+            state = wf_completion_retirement_state(
+                &entry->retirement_waiter,
+                0
+            );
+            if (state == WF_RETIREMENT_AWAITED) {
+                continue;
+            }
+            wf_completion_retirement_wait_end(&entry->retirement_waiter);
+            atomic_fetch_sub_explicit(
+                &adapter->retry_held,
+                1,
+                memory_order_relaxed
+            );
+            settled += 1;
+            if (state == WF_RETIREMENT_HAPPENED) {
+                /* A descriptor came back while the kernel was refusing this
+                 * open.  This is where the one re-attempt is counted, because
+                 * this is where it is made. */
+                atomic_fetch_add_explicit(
+                    &adapter->stat_exhaustion_retries,
+                    1,
+                    memory_order_relaxed
+                );
+                error = wf_linux_resubmit_entry(adapter, index, entry, 0);
+                *restaged += 1;
+            } else {
+                /* Nothing anywhere could give a descriptor back, and this is
+                 * the earliest open waiting for one.  Its refusal is the
+                 * outcome, and publishing it is itself a retirement, which is
+                 * what releases whatever is waiting behind it. */
+                wf_linux_decide_open(entry, entry->retry_result);
+                error = wf_linux_publish_entry_locked(
+                    adapter,
+                    entry,
+                    entry->retry_result
+                );
+                *published += 1;
+            }
+            if (*first_error == 0 && error != 0) {
+                *first_error = error;
+            }
         }
-        refused = wf_linux_publish_one_retry_refusal_locked(
-            adapter,
-            first_error
-        );
-        published += refused;
-        if (refused == 0) {
-            break;
+        if (settled == 0) {
+            return;
         }
     }
-    return published;
 }
 
 static int wf_linux_publish_completion(
@@ -1053,47 +1031,28 @@ static int wf_linux_publish_completion(
         }
     } else if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
         if (wf_linux_open_lacked_a_descriptor(completion->res)
-            && entry->exhaustion_retried == 0
-            && (entry->retry_publications
-                    != atomic_load_explicit(
-                           &adapter->stat_completions,
-                           memory_order_acquire
-                       )
-                || atomic_load_explicit(
-                       &adapter->in_flight,
-                       memory_order_acquire
-                   ) > 1)) {
-            /* Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that
-             * keeps several iterations in flight holds several descriptors
-             * where source order holds one, so a host limit the sequential
-             * program never reaches can turn an `Ok` into an
+            && entry->exhaustion_retried == 0) {
+            /* Retire and retry, the rule stated in contract.h, on the
+             * route a kernel completion ring carries.  A schedule that keeps
+             * several iterations in flight holds several descriptors where
+             * source order holds one, so a host limit the sequential program
+             * never reaches can turn an `Ok` into an
              * `Err(ResourceExhausted)`.  [SYS-10] is explicit that a
              * `FilePermit` promises no native descriptor, and [PAR-1]'s
              * exhaustion clause excuses only the resources an implementation
              * spends on overlapping — never the descriptors the program's own
-             * opens consume.  So this outcome is not published.
+             * opens consume.  So this outcome is not published here.
              *
-             * The entry is held instead, and the refusal it is carrying goes
-             * with it.  What it is held for is a fact, not a moment: some
-             * other operation this adapter owns must publish its completion
-             * for the re-attempt to be worth making, because only a published
-             * completion means the kernel has actually taken its descriptor
-             * back.
-             *
-             * Both halves of the test above are that one question asked at the
-             * right instant.  The snapshot was taken when this operation was
-             * submitted, so a publication since then is a descriptor that came
-             * back while the kernel was refusing this open, and the re-attempt
-             * is owed immediately — deciding from the ring's state at reap
-             * time instead would miss it, because a close reaped earlier in
-             * the same pass has already left `in_flight` at one.  Where
-             * nothing has been published yet, another operation still in
-             * flight is one that can publish, and the entry waits for it.
-             * Re-staging inside this reap pass would not do either: the pass
-             * sees only the completions that existed when it read the ring's
-             * tail, so a close submitted before this open, whose completion
-             * has not been posted yet, would lose the race to the very open it
-             * was going to make room for.
+             * The entry is held instead, with the refusal it is carrying, and
+             * the process-wide ledger decides what becomes of it.  Deciding it
+             * here would be deciding it from this ring's own state, and the
+             * descriptor this open needs may be held by a read running on a
+             * helper thread or by a blocking direct call, neither of which
+             * this ring can see.  Re-staging inside this reap pass would not
+             * do either: the pass sees only the completions that existed when
+             * it read the ring's tail, so a close submitted before this open,
+             * whose completion has not been posted yet, would lose the race to
+             * the very open it was going to make room for.
              *
              * The language sees one `open_file` call with one outcome however
              * many host attempts formed it, exactly as it already does for a
@@ -1104,6 +1063,10 @@ static int wf_linux_publish_completion(
              * is entitled to see it. */
             entry->exhaustion_retried = 1;
             entry->retry_result = completion->res;
+            wf_completion_retirement_wait_begin(
+                &entry->retirement_waiter,
+                entry->retirements_seen
+            );
             atomic_fetch_add_explicit(
                 &adapter->retry_held,
                 1,
@@ -1131,6 +1094,7 @@ int wf_linux_io_uring_progress(
 ) {
     size_t total = 0;
     size_t processed = 0;
+    size_t restaged = 0;
     int first_error = 0;
     unsigned head;
     unsigned tail;
@@ -1157,13 +1121,20 @@ int wf_linux_io_uring_progress(
      * opened is re-attempted now, so its SQE reaches the kernel before the
      * wait below; one that nothing can release is answered now, so no thread
      * waits for a completion that cannot arrive. */
-    total += wf_linux_resolve_retry_held_locked(adapter, &first_error);
+    wf_linux_resolve_retry_held_locked(
+        adapter,
+        &first_error,
+        &total,
+        &restaged
+    );
     head = wf_linux_load_relaxed(adapter->completion_head);
     tail = wf_linux_load_acquire(adapter->completion_tail);
     /* Never enter a completion-only sleep while staged SQEs failed to reach
-     * the kernel; the scheduler must observe and resolve that progress error
-     * rather than waiting for a CQE which cannot yet exist. */
-    if (head == tail && wait != 0 && first_error == 0 && total == 0) {
+     * the kernel, or while a re-attempt this pass staged has not been
+     * answered; the scheduler must observe and resolve those rather than
+     * waiting for a CQE which cannot yet exist. */
+    if (head == tail && wait != 0 && first_error == 0 && total == 0
+        && restaged == 0) {
         int entered;
         do {
             entered = wf_linux_enter(
@@ -1207,7 +1178,12 @@ int wf_linux_io_uring_progress(
      * was waiting for, so settle them again before releasing the lock: the
      * re-attempt is staged and its doorbell rung here, while this thread
      * still owns the decision and before the caller can park. */
-    total += wf_linux_resolve_retry_held_locked(adapter, &first_error);
+    wf_linux_resolve_retry_held_locked(
+        adapter,
+        &first_error,
+        &total,
+        &restaged
+    );
     (void)pthread_mutex_unlock(&adapter->completion_lock);
 
     if (first_error != 0) {

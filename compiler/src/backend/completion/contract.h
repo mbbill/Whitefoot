@@ -463,13 +463,25 @@ void wf_completion_retirement_wait_begin(
 );
 void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
 
+/* An operation whose retirement is blocked because the thread that owns it is
+ * running another operation first — a refused open running the work its own
+ * adapter still owes, or a direct call driving the engines while it waits.  It
+ * cannot give its descriptor back until that finishes, so nothing may wait for
+ * it to: a waiter that counted it would wait for a thread that is waiting for
+ * the waiter.  Told to the ledger for exactly as long as that holds. */
+void wf_completion_retirement_defer_begin(void);
+void wf_completion_retirement_defer_end(void);
+
 /* Where this waiter stands, without blocking.
  *
  * `mine` is how many in-flight operations cannot retire while this waiter
  * waits, because this waiter's own thread is the engine that would run them.
- * That is what "in flight *elsewhere*" means, and it is the caller's fact, not
- * the ledger's: a held ring entry blocks no thread and passes zero, a drained
- * adapter sibling passes the queue its suspended caller still owes. */
+ * That is the local half of what "in flight *elsewhere*" means, and it is the
+ * caller's fact rather than the ledger's: a held ring entry blocks no thread
+ * and passes zero, an adapter open that will run its own queue passes zero,
+ * and one running as owed work passes the queue its suspended caller still
+ * owes.  The global half — every operation deferred above — the ledger
+ * subtracts itself. */
 enum wf_retirement_state wf_completion_retirement_state(
     const wf_retirement_waiter *waiter,
     size_t mine
