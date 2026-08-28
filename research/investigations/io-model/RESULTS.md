@@ -1368,8 +1368,8 @@ Four limits, stated here so a later reader does not have to rediscover them.
 `bench-linux-read` in the same run, on `ubuntu-24.04`: kernel
 `6.17.0-1022-azure`, 4 CPUs, INTEL(R) XEON(R) PLATINUM 8573C, 16 GB, tree on
 `nvme0n1p1` (ext4, non-rotational), `io_uring_disabled=0`, load 0.48 at start.
-Nine interleaved passes, medians in milliseconds, with the observed spread
-because this draw needs it.
+Seven recorded interleaved passes after two warm-ups, medians in
+milliseconds, with the observed spread because this draw needs it.
 
 ```text
                     cold 64 KiB              cold 4 KiB
