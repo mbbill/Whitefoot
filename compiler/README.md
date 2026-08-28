@@ -114,7 +114,7 @@ Resource release uses the same ordinary state contract as an explicit call.
 A resource with a meaningful finish result uses a consuming finish operation;
 compiler-derived release performs only the weaker action its type declares.
 The old shared advancing directory source and shared mutable Output shapes are
-not v0.37 authority. Advancing sources and outputs use `own` or `&uniq`.
+not v0.38 authority. Advancing sources and outputs use `own` or `&uniq`.
 
 The macOS/Linux command bootstrap owns the process before entry: it establishes
 the QUAL-2 argument backing from the native vector, installs the selected
@@ -302,7 +302,7 @@ their v0.18-specified source rejections.
 The first lexical borrow family adds caller region parameters, local region
 blocks, shared and unique buffer holders, explicit `deref`, resolved
 field-prefix overlap, and ultimate-origin `reads`/`writes` effects. The
-superseded v0.36 spelled those effect subjects as lifetimes; active v0.37
+superseded v0.36 spelled those effect subjects as lifetimes; active v0.38
 preserves the borrow behavior while naming formal state paths instead. Borrowed
 buffer descriptors cross ordinary calls by value, but only the original owner
 is cleaned up. Distinct struct fields can therefore be uniquely passed to a
@@ -311,7 +311,7 @@ allocation. The backend remains conservative LLVM without unearned overflow
 flags or check elision.
 
 Effect rows are checked as exact source-level summaries for every admitted
-function. `pure` is the empty effect row, not a termination claim. v0.37 gives `reads`
+function. `pure` is the empty effect row, not a termination claim. v0.38 gives `reads`
 and `writes` one operand kind: a formal parameter or static field path naming
 logical state. Lifetimes remain in borrow and slice
 types only, where they state loan duration and outlives facts. A write requires

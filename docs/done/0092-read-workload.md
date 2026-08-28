@@ -325,7 +325,11 @@ read the macOS cold rows as an ordering rather than as a device measurement.
    These are host-timing and host-layout observations, and `gate-macos` fails
    the same way on this branch. Nothing in this batch touches them. Canonical
    `make check` passes on the maintainer's machine, which is the merge
-   requirement.
+   requirement. These stops are earlier than the one batch 0090's record
+   describes: its red `conformance-run` on the target-qualification gap — six
+   cases now, listed in `docs/done/0091-par3-judgment.md` — is what `gate-linux`
+   reaches once these rows are fixed, not a competing account of the same
+   failure.
 
 ## Approval classes
 

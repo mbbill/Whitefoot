@@ -7,7 +7,8 @@ it as rule text, the seven maintained conformance shapes, the
 
 ## What this batch is, and what it deliberately is not
 
-The design this implements (`LOOP-PIPELINE-DESIGN.md`, 2026-08-27) is five
+The design this implements
+(`research/investigations/io-model/LOOP-PIPELINE.md`, 2026-08-27) is five
 merges. This is merge one: **the judgment only**. No lowering changes, no
 runtime changes, no measurement. `many_files_loop.wf` compiles to exactly the
 sequential module it compiled to before, and every published byte in the
@@ -276,6 +277,20 @@ a borrow of one field and a write of a sibling field reached through a loan on
 the whole record, the first widener is the borrow itself, and printing it as its
 own counterpart tells the reader nothing.
 
+*Correction, 2026-08-28.* As landed here, the denial fell back to the row's own
+first citation whenever no overlapping place supplied the write, and a row keeps
+the first node that *cites* its place — which a read supplies as readily as a
+write. `accept-par3-staged-denied-read-before-write.wf` is cited by the fold
+that reads the destination before the transfer fills it, so its stage line
+printed that read as the write, gave the record/field advice for a place that is
+no field of a record, and asserted an [OWN-7] overlap between one place and
+itself. Rows now track the first node that writes them; the denial names the
+overlapping write when the class supplied one and the row's own write otherwise,
+under a phrase that says which it is, and the pair advice is given only with
+both halves named. Two ledger tests in `driver.rs` hold the exact lines for a
+body whose destination is read first and for one whose destination is written by
+a statement of its own.
+
 Reading condition 3 over the class is one step coarser than the rule's words,
 which ask whether a footprint writes *the borrowed place*. It costs no verdict,
 only the condition number: whenever the class fires condition 3 where the rule
@@ -431,10 +446,30 @@ same content.
 [PAR-3] carries §4.1's text adapted to a standalone rule, plus the exhaustion
 sentence distinguishing execution resources from descriptors the program's own
 opens consume, plus [PAR-1]'s erroneous-execution clauses with T3's no-latch
-sentence. The [SYS-8] observed/defined sentences and the [SYS-2] `begin_submit`
-milestone are deliberately **not** in this version: they belong with batch
-0089's milestone and with the privatization batch, and adding them here would
-put rule text in front of the implementation that makes it true.
+sentence. The [SYS-8] observed/defined sentences are deliberately **not** in
+this version: they belong with the privatization batch, and adding them here
+would put rule text in front of the implementation that makes it true.
+
+*Correction, 2026-08-28.* This paragraph also excluded the [SYS-2] milestone,
+on the same reasoning — and that reasoning was inverted for it. Batch 0089's
+adapters, which this integration branch already carries, publish
+`loan-released(path)` for an open at submission, so the implementation was in
+front of the rule text rather than behind it, and [SYS-2] said every applicable
+fact is published at `terminal`. v0.38 as reactivated on this branch names that
+milestone: the loan on the name an open borrows is released before target
+transfer, because forming the request copies the admitted range into
+compiler-owned storage. The judgment does **not** consume the new milestone. It
+still reads every retained borrow as retained to `terminal`, which is strictly
+conservative against the amended contract — reading a borrow as held longer than
+the contract requires can only refuse a loop the rule would grant. Consuming it
+is a later change with its own test.
+
+The replication clause gained one sentence in the same reactivation:
+a footprint's *may write* set and its *written* set are not the same, and only
+a contract that fixes the change exactly establishes a written byte. [SYS-8]
+states the may-have-changed form for the range-bearing operations, so citing it
+for the coverage condition's "was written" premise was a citation the cited rule
+does not support.
 
 v0.37 is archived byte-exact as `spec/kernel-spec-v0.37.md`; the chain, the
 generated identity, the qualification review note, and every digest anchor name
@@ -455,15 +490,55 @@ v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
   `governance/APPROVALS.md`.
 - **No new root entries.**
 
+## The Linux target-qualification gap is now six cases, not five
+
+One of the seven cases added here,
+`accept-par3-staged-denied-opaque-cursor.wf`, enumerates a directory: the
+enclosing storage its denial is about is an enumeration cursor, and no other
+shape carries one. Linux has no approved [SYS-14] enumeration row, so on both
+Linux targets it stops at `TargetQualification(MissingMapping(Operation(12)))`
+— reproduced against all four target rows — and `conformance-run` fails it
+there exactly as it fails the five batch 0090 named. The case and its `accept`
+verdict are correct and do not change: a case that passes on Darwin and not on
+Linux is a fact about the compiler's Linux target, not a property of a
+compiler-independent corpus, and giving the corpus a per-target axis to hide it
+would be a change to conformance evidence made to turn a job green.
+
+So the declared list is:
+
+```text
+sys14-list-outcome-exhaustive
+sys14-list-zero-range
+sys14-directory-release
+sys14-entry-kind-closed
+accept-sysfile-two-permits-shared-directory
+accept-par3-staged-denied-opaque-cursor
+```
+
+`docs/done/0090-ci-real-hosts.md` names the first five and says "five named
+cases"; it was right when it was written and this batch is what makes it six.
+That record is not edited here — it is another branch's file at this moment —
+so this record carries the sixth. One directory-enumeration row for Linux
+closes all six at once.
+
+That is the `conformance-run` picture. It is not what `gate-linux` reports
+today: as `docs/done/0092-read-workload.md` records from run 33128887524, the
+job stops earlier, at two `backend::stack_ledger::tests` rows and
+`backend::tests::parallel::the_runtime_replaces_the_modules_weak_refusal`, and
+never reaches `conformance-run` at all. The two statements do not disagree —
+they name different steps of the same red job — and the six cases are what
+remains once the earlier stops are fixed.
+
 ## Named dependencies (breaking one breaks this silently)
 
 - **[SYS-2]'s `terminal` milestone.** Condition 3 reads every retained borrow of
-  a `may-suspend` call as retained to `terminal`, which is what the contract
-  publishes today. Publishing `loan-released(name)` at `begin_submit` — batch
-  0089's work — widens what condition 3 admits, and it is sound only after the
-  two latent bugs the design names are fixed: the adapter retains the caller's
-  path pointer, and `%component` is one static buffer per call site. Do not
-  amend the condition before both land.
+  a `may-suspend` call as retained to `terminal`. Since the 2026-08-28
+  reactivation the contract publishes one of them earlier — the loan on the name
+  an open borrows, released before target transfer, which is batch 0089's
+  landed work — and this judgment deliberately does not read it. The gap is in
+  the conservative direction and costs only permission, never soundness.
+  Consuming that milestone widens what condition 3 admits, so it needs its own
+  test and its own record; do not narrow the reading it replaces without one.
 - **[EFF-2] row exactness in both directions**, which is what makes a loan with
   no declared use unobservable at value level and therefore makes the loan
   column's answer complete.
@@ -471,8 +546,18 @@ v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`.
   past its own return, the serialized disposition on `files` would be wrong and
   the target program would have to replicate a quota it cannot replicate.
 - **`buffer_new` fills only copy elements.** Condition 6 reads
-  `CheckedFlatElement` directly; `buffer_vacant`'s interned `Option<T>` element
-  fails closed because this judgment does not resolve a nominal's [OWN-1] class.
+  `CheckedFlatElement` directly. *Correction, 2026-08-28:* the claim that
+  `buffer_vacant`'s interned `Option<T>` element "fails closed because this
+  judgment does not resolve a nominal's [OWN-1] class" was wrong twice over. The
+  class resolves — a nominal element copies only when it is tag-only [OWN-1],
+  and the prelude's `Option<T>` carries a field in `Some` at every T [PRE-1] —
+  and the answer, affine, was then escalated into a denial of the whole staged
+  permission, which [PAR-3] does not authorize: it conditions permission on the
+  disposition of the places the body reaches, and names the storage an
+  implementation reuses across iterations for a construction among the facts it
+  states no condition in terms of. An affine construction now costs its own
+  reuse freedom and nothing else; only a class this judgment cannot resolve at
+  all still denies.
 - **The judgment reads no entailment fact.** The moment a later batch's
   byte-range analysis lands, it must live outside `analyze_permission` and
   outside this module, because `permission.rs` and `loop_permission.rs` both

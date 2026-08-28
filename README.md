@@ -43,7 +43,7 @@ merge-time record for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.
 
-v0.37 uses ordinary opaque values, `own`, `move`, `&`, and
+v0.38 uses ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,
