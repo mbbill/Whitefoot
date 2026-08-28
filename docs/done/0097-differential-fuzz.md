@@ -209,9 +209,11 @@ its diagnostic cites. That tally is the generator's own bias made visible: a
 rule that dominates it names a shape the generator writes wrong, or a language
 rule that is broader than a writer would guess.
 
-One rule dominates it, and it is the second kind. Every `[CLM-1]` rejection is a
-`NonLocalClaim`, and reducing one lands on this pair, whose two members differ
-by a single line and receive opposite verdicts:
+One rule accounts for all 63 of this campaign's rejections, and it is the second
+kind. Recompiling the first 400 programs of the corpus by hand reproduced 19
+rejections, and all 19 carry the same diagnostic kind, `NonLocalClaim`. Reducing
+one lands on this pair, whose two members differ by a single line and receive
+opposite verdicts:
 
 ```whitefoot
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
@@ -274,6 +276,87 @@ change and this batch has none.
 The generator keeps writing the shape. The rejection costs a few percent of the
 compile budget and buys a standing measurement of exactly this boundary.
 
+## The campaign
+
+One run, `make campaign PROGRAMS=2000 BUDGET=6600 JOBS=5 SEED=1 REPS=2`, at
+`nice 19` on a shared macOS host whose load average moved between 13 and 68
+while it ran, which is why 40 minutes of wall clock bought 2004 programs rather
+than the 12 minutes the unloaded smoke rate predicted.
+
+```text
+== differential-fuzz campaign ==
+first seed 1, 5 jobs, 2 repetitions, 40.1 minutes
+attempts 2067, accepted 2004 (97.0%), rejected 63
+agreed 2004, diverged 0, unstable 0, reference timeouts 0, lowering refusals 0
+executions 78156 captured, 573 through a delayed fifo reader
+
+rejections by cited rule
+  CLM-1                63  3.0% of attempts
+
+permission ledger over accepted programs
+  PAR-1 pairs        1255 permitted,    932 denied
+  PAR-2 loops         678 permitted,   2336 denied
+  PAR-3 stages        857 permitted,    799 denied
+  programs holding at least one permitted PAR-3 stage: 647 (32.3% of accepted)
+  programs holding at least one permitted PAR-1 pair:  920 (45.9% of accepted)
+```
+
+Read that as coverage rather than as a green light:
+
+- **2004 accepted programs, 78 156 executions, 573 of them through a delayed
+  FIFO reader.** Every one of the 2004 was compiled three ways, established as
+  its own stable oracle, and then run across the whole worker × helper matrix
+  twice per cell.
+- **Every permission was exercised on both sides.** 1255 permitted [PAR-1] pairs
+  against 932 denied ones; 678 permitted [PAR-2] loops against 2336 denied;
+  857 permitted [PAR-3] stages against 799 denied. Nearly a third of the
+  accepted programs carry a *granted* staged loop and nearly half carry a
+  granted pair, so this is not a corpus that only ever asked the judgment to say
+  no.
+- **`unstable 0` and `reference timeouts 0`.** Not one of the 2004 programs
+  failed to agree with itself across two sequential runs at opposite ends of the
+  environment matrix. The stability guard cost nothing here and remains armed.
+- **`lowering refusals 0`.** No overlapping lowering refused source the
+  sequential lowering accepted; acceptance is not a property of the lowering, and
+  nothing in this corpus says otherwise.
+- **`diverged 0`.** No program published different bytes or a different exit
+  status under any overlap setting.
+
+The shape distribution over accepted programs, which is what "diverged 0" is
+worth:
+
+```text
+  accumulator-loop                      594  29.6%    give-match             399  19.9%
+  arithmetic                            624  31.1%    independent-pair       383  19.1%
+  branch                                593  29.6%    nested-loop            148   7.4%
+  bulk-write                            191   9.5%    pure-call-pair         496  24.8%
+  claim                                 401  20.0%    read-then-write-buffer 217  10.8%
+  counted-loop                          594  29.6%    same-output-pair       551  27.5%
+  directory-scan                        172   8.6%    shared-source-pair     198   9.9%
+  file-loop-break-after-submission      149   7.4%    slice-view             458  22.9%
+  file-loop-hoisted-scratch             243  12.1%    stderr-write           258  12.9%
+  file-loop-iteration-own               647  32.3%    stdout-write           581  29.0%
+  file-loop-shared-scratch              167   8.3%    typed-exit             192   9.6%
+  argument-read                          89   4.4%    unbounded-loop         455  22.7%
+```
+
+**No defect in the compiler was found.** That is a real result and a bounded
+one. It says the overlap path is sound over 2004 programs of these shapes on
+this host — not that it is sound. The corpus has no threads it did not create,
+no `io_uring`, no `arg_get` of argument zero, no arena, no generic
+instantiation, and no program larger than a few hundred statements. What the
+campaign *did* find, it found in the harness and in the language, and both are
+recorded above.
+
+The two findings this batch produced are therefore classified as follows.
+
+| finding | class | disposition |
+| --- | --- | --- |
+| argument zero reaching a program's digest | harness | fixed in this batch; the class is closed by two changes |
+| a claim refused after a system-outcome early exit | neither — spec-conformant | recorded for the owner; no probe, because there is nothing to reproduce that the compiler gets wrong |
+
+`probes/` is therefore not created. There is nothing to put in it.
+
 ## Where it lives, and when it goes
 
 `research/experiments/differential-fuzz/` — the existing home for measurement
@@ -298,3 +381,63 @@ Removal condition, stated in the README so it survives this document: the
 directory goes when the campaign stops paying — when a full run over current
 shapes finds nothing across two consecutive language or runtime changes to the
 overlap path, and `probes/` is empty.
+
+## Judgment calls
+
+**"Grammar-driven" means the fence plus an environment, not free derivation.**
+A uniformly random derivation over [GRAM-4] and [GRAM-5] is well-formed text
+that the borrow, effect, and domain judgments reject essentially always. Such a
+fuzzer measures the parser. The generator therefore derives from the same fence
+but under a typing and ownership environment, and its bias is made visible
+rather than hidden: every rejection is counted by the rule its diagnostic cites,
+and that tally is in the report.
+
+**The reference is the program's own sequential build, not a model.** Writing an
+interpreter would give a second implementation to disagree with, and a second
+implementation is a second thing to be wrong. The three permissions state
+source-order equality themselves, so `--no-overlap` is the reference the rules
+name.
+
+**A program that is not stable is discarded, not reported.** Directory batch
+boundaries and short reads are the host's. Requiring the sequential build to
+agree with itself before the program is used as an oracle is what keeps those
+out of the findings, and the count of discarded programs is reported so the
+guard cannot silently swallow everything.
+
+**One disagreement is not a finding.** The reference and the differing
+configuration are each re-run three times. A difference that stops reproducing
+is still reported, tagged `intermittent`, because an intermittent divergence is
+still a divergence — but it is labelled so nobody reads it as deterministic.
+
+**The `--par` lowering is in the matrix even though it is not what ships.**
+`WF_WORKERS` is read only by `par_runtime.c`, so without `--par` the worker axis
+of the matrix is inert. Including it costs a third compilation per program and
+is the only way that axis means anything.
+
+**`probes/` is created by the first finding, not in advance.** An empty
+directory with a README explaining what it would contain if anything were in it
+is rot. The `probes` target exists, degrades cleanly when nothing is recorded,
+and the README says when the directory appears.
+
+**The CLM-1 rejection is recorded, not repaired.** It is spec-conformant
+behaviour with a real writer consequence. Changing it is a specification
+question and this batch changes no specification.
+
+## What this batch did not do
+
+- **No compiler change of any kind.** Not a line. The only repository code added
+  is the experiment, and nothing in `compiler/` reaches it.
+- **No specification and no conformance change.** Approval classes: neither.
+- **No new root entry.** The experiment lives in the existing
+  `research/experiments/` home.
+- **`make check` is untouched.** The campaign is not reachable from it and must
+  not become reachable: it compiles and executes thousands of programs, and it
+  reports rather than gates.
+- **No cross-platform run.** Everything here is one macOS host. The completion
+  adapter's Linux `io_uring` path is a different implementation of the same
+  contract and this campaign has said nothing about it; the `linux` shape of
+  this campaign is the obvious next step and needs a Linux host, not more code.
+- **No `--par` actualization coverage beyond what the judgment grants today.**
+  The generator writes the shapes the rules can permit; how much the backend
+  actually overlaps is the backend's choice, and the ledger reports the
+  judgment, not the actualization.
