@@ -1555,15 +1555,16 @@ on the named drain, an atomically published adapter readiness flag, a helper
 cap bounded by its storage, a clock guard on the join spin, an adapter that
 stops reading as usable before its own lock is destroyed, and a gate arm that
 runs the bridge on the shipped default helper policy. None of those changes a
-route, a policy or a threshold, and a fourth macOS draw taken at
-`a06c53f9`, the last commit that changed the runtime before this record's own
-repairs (run
-[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309),
-commit `a06c53f9`) reproduces the two warm rows of the bar to three decimal
-places — 1.0085 against 1.006 at 64 KiB, 1.0309 against 1.028 at 4 KiB — with
-many-files at 1.0144 and the two cold rows at 1.302 and 1.229. Its cold labels
-are refused at both ends like the others, so it does not settle the cold bar
-either; the handoff records it line by line. In short: the process-wide
+route, a policy or a threshold, and the macOS draw taken at `a06c53f9` — the
+last commit that changed the runtime before this record's own repairs, and the
+eighth of the nine draws in the table above (run
+[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309)) —
+reproduces the two warm rows of the bar to three decimal places: 1.0085
+against 1.006 at 64 KiB, 1.0309 against 1.028 at 4 KiB, with many-files at
+1.0144 and the two cold rows at 1.302 and 1.229. Its cold labels are refused
+at both ends of both tables — the draw table above says which of the nine
+confirm and which refuse — so it does not settle the cold bar either; the
+handoff records it line by line. In short: the process-wide
 wake lock is taken only when there is a sleeper; a drain returns immediately
 when the durable ready-event count is zero and a token owner may drain its own
 event by name; a queue entry no longer copies a kilobyte of path storage for a
@@ -1694,8 +1695,8 @@ instrumentation that `96bb4778` still carried; `git diff 96bb4778..266acf4f --
 compiler/src/backend/completion/` is that removal and nothing else. No drain,
 submit, publish or policy code differs between the two commits, and removing
 instrumentation does not make a program slower. The host also differs, though
-not in the way first written here: all three Linux draws report 4 CPUs, so
-core count is not what separates them. The processor and the disk are — Xeon
+not in the way first written here: every Linux runner in the draw table above
+reports 4 CPUs, and so did 0092's, so core count is not what separates them. The processor and the disk are — Xeon
 Platinum 8370C on `sda1` for 0092, EPYC 7763 on `sda1` for `96bb4778`, Xeon
 Platinum 8573C on `nvme0n1p1` here —
 and the 8573C's warm 4 KiB sequential line is 50.89 ms against the previous
@@ -1705,7 +1706,7 @@ move the wide pair further without any code being at fault.
 
 **So this section does not claim Linux is unregressed, and it does not claim it
 is regressed.** One draw on different hardware, whose cold half is unusable and
-whose warm half disagrees with two prior draws that agreed with each other, is
+whose warm half is the top of both warm ranges the draw table above records, is
 not a reading of the bar — but the narrow control makes it a draw worth
 resolving rather than one worth dismissing. The correctness evidence is
 separate and is not in doubt: `io-hosts` `completion-linux` is green on this
@@ -1713,15 +1714,15 @@ commit, including the required native io_uring adapter probe and the harness
 under the address and undefined sanitizers. Thread sanitizer is a separate
 step and runs the probes rather than the harness — the isolated core/read
 probe, and now the default-route bridge probe. The Linux draw this owed is
-below: "A fourth Linux draw, at `a06c53f9`".
+below: "The Linux draw at `a06c53f9`".
 
-### A fourth Linux draw, at `a06c53f9`
+### The Linux draw at `a06c53f9`
 
 Pushing the correctness follow-up ran `io-bench` again, and its
 `bench-linux-read` job is the draw this section says is owed: run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) on
 an AMD EPYC 9V74, 4 CPUs, tree on `nvme0n1p1`, load 0.50 at start. Two things
-make it worth more than a fourth number.
+make it worth reading on its own rather than as one more row of the table.
 
 **Its uncached 4 KiB table is confirmed at both ends** — `probe before the
 table: confirmed; probe after it: confirmed` — so it is a reading of a cold
