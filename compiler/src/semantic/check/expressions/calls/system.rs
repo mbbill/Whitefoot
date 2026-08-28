@@ -223,6 +223,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         arguments
             .into_iter()
             .map(|argument| {
+                // `targ := type | REGIONID | const`, so a region argument is
+                // the one alternative carrying neither child production. The
+                // grammar decides that here, before any name is looked up: a
+                // `type` or `const` written in a region position records no
+                // region use at all, and asking the resolver for one turned a
+                // source rejection into an internal failure.
+                if self
+                    .tree
+                    .first_child_with(argument, Production::Type)?
+                    .is_some()
+                    || self
+                        .tree
+                        .first_child_with(argument, Production::Const)?
+                        .is_some()
+                {
+                    return self.issue_node(
+                        SemanticRule::Sys2,
+                        argument,
+                        SemanticIssueKind::type_mismatch(
+                            "a region argument in this position",
+                            "an argument that does not name a region",
+                        ),
+                    );
+                }
                 let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
                 match usage.target() {
                     ResolvedTarget::Source {

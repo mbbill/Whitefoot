@@ -63,7 +63,6 @@ const FORM3_IDENT_FIX: &str = "an IDENT slot admits only [FORM-3]'s IDENT `[a-z]
 const FORM3_TYPEID_FIX: &str = "a TYPEID slot admits only [FORM-3]'s TYPEID `[A-Z][A-Za-z0-9]*`, so a struct, enum, contract, variant, or constructor name is capitalized and is never an IDENT `[a-z][a-z0-9_]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the TYPEID shape";
 const FORM3_REGIONID_FIX: &str = "a REGIONID slot admits only [FORM-3]'s REGIONID `'[a-z][a-z0-9_]*`, the one region spelling, so write the leading apostrophe; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a LABEL `@[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here";
 const FORM3_LABEL_FIX: &str = "a LABEL slot admits only [FORM-3]'s LABEL `@[a-z][a-z0-9_]*`, so write the leading `@`; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here";
-const FORM3_OPNAME_FIX: &str = "an OPNAME slot admits only [FORM-3]'s OPNAME `[a-z][a-z0-9_]*.(wrap|defined|checked|sat|strict)`, so write the mode suffix; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, and a LABEL `@[a-z][a-z0-9_]*` are other lexical classes and none is admitted here";
 
 /// [GRAM-2] fixes the order of a `contract_block`: every `contract_define`,
 /// then every `requires_clause`, then every `ensures_clause`. A clause written
@@ -83,13 +82,18 @@ const fn production_fix(production: Production) -> Option<&'static str> {
 
 /// The repair a name slot admits, selected by the lexical class the slot's
 /// grammar position writes.
-const fn name_class_fix(expected: NamePredicate) -> &'static str {
+///
+/// OPNAME is the one class no slot admits alone: the grammar's single OPNAME
+/// atom is `callee`'s second row, whose frontier also carries `callee`'s IDENT
+/// row, so the two transparent names disagree and this selection is never
+/// reached with OPNAME. It carries no sentence rather than an unreachable one.
+const fn name_class_fix(expected: NamePredicate) -> Option<&'static str> {
     match expected {
-        NamePredicate::Identifier => FORM3_IDENT_FIX,
-        NamePredicate::TypeIdentifier => FORM3_TYPEID_FIX,
-        NamePredicate::RegionIdentifier => FORM3_REGIONID_FIX,
-        NamePredicate::Label => FORM3_LABEL_FIX,
-        NamePredicate::OperationName => FORM3_OPNAME_FIX,
+        NamePredicate::Identifier => Some(FORM3_IDENT_FIX),
+        NamePredicate::TypeIdentifier => Some(FORM3_TYPEID_FIX),
+        NamePredicate::RegionIdentifier => Some(FORM3_REGIONID_FIX),
+        NamePredicate::Label => Some(FORM3_LABEL_FIX),
+        NamePredicate::OperationName => None,
     }
 }
 
@@ -541,7 +545,7 @@ fn override_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: frontier.expected,
-                mechanical_fix: Some(name_class_fix(admitted)),
+                mechanical_fix: name_class_fix(admitted),
             }));
         }
     }
@@ -720,7 +724,7 @@ pub(crate) fn direct_mismatch(
                     token.token().id().end(),
                 ),
                 expected,
-                mechanical_fix: Some(name_class_fix(admitted)),
+                mechanical_fix: name_class_fix(admitted),
             });
         }
     }

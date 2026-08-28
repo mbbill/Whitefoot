@@ -8,6 +8,10 @@ use core::fmt;
 
 mod rejection;
 
+/// The probe corpus that pins every diagnostic sentence by its rendered text.
+#[cfg(test)]
+mod pinned_sentences;
+
 use rejection::Located;
 
 use crate::{
@@ -2778,11 +2782,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             .unwrap_or_else(|| panic!("the per-iteration write must deny the stage: {notices:?}"));
         assert!(
             staged.contains(
-                "instead, give each iteration its own resource; or, where the body only publishes \
-                 to that storage — an output stream is the pointed case — hoist the per-iteration \
-                 write out of the loop, folding a total in the body and writing it once after the \
-                 loop; or leave this loop sequential, because storage that carries one position \
-                 cannot be held by two iterations at once"
+                // Written on one line: a sentence a test pins has to be
+                // greppable as the bytes a writer reads.
+                "instead, give each iteration its own resource; or, where the body only publishes to that storage — an output stream is the pointed case — hoist the per-iteration write out of the loop, folding a total in the body and writing it once after the loop; or leave this loop sequential, because storage that carries one position cannot be held by two iterations at once"
             ),
             "{staged}"
         );
