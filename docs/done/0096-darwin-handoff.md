@@ -1127,15 +1127,17 @@ three halves answer questions the earlier draws could not.
 Its `bench-macos-read` job is the draw this record kept saying was owed: the
 uncached label is confirmed *before and after* both cold tables, which is
 true of no other run on this branch. "Against the bar" above takes the two
-cold grades from it. Its other rows, for completeness — warm `C/S` 0.989 at 64 KiB and 1.028 at
-4 KiB, narrow control 0.968 and 1.013, many-files 146.59/144.37 = 1.015 —
+cold grades from it. Its other rows, for completeness — warm `C/S` 0.989 at
+64 KiB and 1.028 at 4 KiB, narrow control 0.968 and 1.013, many-files
+146.59/144.37 = 1.015 —
 agree with the tables this record reports to within the noise those tables
 carry, on a runner whose load average was 5.60 at the start.
 
 Its `bench-linux-read` job lands on a Xeon 8370C with the tree on `sda1`, and
 its uncached 4 KiB table is confirmed at both ends as well, as all eight of
-this branch's are. On it `C.wide8.default` reads 1465.26 ms against `N.pool8`'s 1481.78, `N.uring32`'s 1441.72 and its own sequential
-build's 3469.10 — 2.37 times faster than the sequential build, 1.1 per cent
+this branch's are. On it `C.wide8.default` reads 1465.26 ms against
+`N.pool8`'s 1481.78, `N.uring32`'s 1441.72 and its own sequential build's
+3469.10 — 2.37 times faster than the sequential build, 1.1 per cent
 faster than an eight-thread native pool, and 1.6 per cent behind a
 hand-written 32-deep io_uring pipeline. That is the eighth reading of that
 row, and on seven of the eight — every draw but `266acf4f` — the completion
