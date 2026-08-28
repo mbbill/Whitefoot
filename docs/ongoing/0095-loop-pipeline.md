@@ -357,10 +357,12 @@ by exempting the carrying block from the rule.
   of six — so the live read is the fix and the other two are the rule it needs
   to stay one.
   `test_bridge_open_waits_for_the_other_engine`, with the retirement no longer
-  announcing itself on the scheduler's endpoint, stops in the Linux container
-  at one helper; that is the control for the missed wake, and it is a rate
-  rather than a certainty because the window is the few instructions between a
-  publication and the retirement it belongs to.
+  announcing itself on the scheduler's endpoint, stops six times in four
+  hundred runs at one helper in the Linux container, where the shipped runtime
+  stops none in four hundred. That control is a rate rather than a certainty
+  because the window is the few instructions between a publication and the
+  retirement it belongs to, which is also why the defect it stands for took
+  four hundred runs to find rather than twenty.
   `test_open_exhaustion_waits_for_another_engine`, with the adapter's old
   `drained == 0` give-up restored, fails 30 of 30 runs at zero, one and four
   helpers on macOS.
