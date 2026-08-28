@@ -345,6 +345,75 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
     }
 }
 
+/* The measured host-call time above which handing an operation to another
+ * thread is worth the handoff.
+ *
+ * Below it the operation does not wait: the host answers from memory, and a
+ * helper can only add a queue crossing and two thread wakes to work that was
+ * already done by the time the wake arrived.  This is the number that decides
+ * whether the pool grows at all, and it is a measurement of the program's own
+ * operations rather than an assumption about the host.
+ *
+ * Twenty microseconds is about ten times what one handoff costs on the host
+ * this was measured on — a wake on the submitting thread, a wake-up on the
+ * helper, and a queue crossing.  Sizing it at the handoff itself would admit
+ * every operation whose overlap merely breaks even, and a pool that breaks
+ * even still costs the CPU it spends.  Every population this project has
+ * measured falls clearly on one side: a warm 4 KiB read is about 1 us, a warm
+ * 64 KiB read 5 to 7, and a read that reaches the device 130 or more. */
+#define WF_FILE_OVERLAP_WAIT_NS 20000u
+
+/* How often an execution is timed for the average above: one in this many.
+ * The clock is read twice per sampled execution and not at all otherwise. */
+#define WF_FILE_EXECUTE_SAMPLE_INTERVAL 16u
+
+static uint64_t wf_file_monotonic_ns(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+}
+
+/* Records one host call's duration into the smoothed average, from one in
+ * every WF_FILE_EXECUTE_SAMPLE_INTERVAL executions.  Two threads that sample
+ * at once may lose one another's contribution; the average is a policy hint
+ * and no operation's outcome depends on it. */
+static void wf_file_note_execution(wf_file_adapter *adapter, uint64_t started) {
+    uint64_t mean;
+    uint64_t sample = wf_file_monotonic_ns();
+    sample = sample > started ? sample - started : 0u;
+    mean = atomic_load_explicit(&adapter->mean_execute_ns, memory_order_relaxed);
+    mean = mean == 0 ? sample : mean - mean / 4u + sample / 4u;
+    atomic_store_explicit(&adapter->mean_execute_ns, mean, memory_order_relaxed);
+}
+
+static int wf_file_execution_should_be_timed(wf_file_adapter *adapter) {
+    uint64_t tick = atomic_fetch_add_explicit(
+        &adapter->execute_ticks,
+        1,
+        memory_order_relaxed
+    );
+    return tick % WF_FILE_EXECUTE_SAMPLE_INTERVAL == 0;
+}
+
+/* Moves one queue entry into the executing thread's own storage.
+ *
+ * The record is copied rather than executed in place because the queue slot
+ * becomes free the moment the lock is released.  Only an open needs its path
+ * bytes, and only an open pays for them: copying the whole record moved a
+ * kilobyte of path storage for every read and write as well, inside the one
+ * lock every submission and every execution has to take. */
+static void wf_file_copy_out(wf_file_work *work, const wf_file_work *entry) {
+    work->token = entry->token;
+    work->request = entry->request;
+    if (entry->request.kind == WF_FILE_OPEN_AT) {
+        (void)wf_file_stage_path(work->path_storage, entry->path_storage);
+        wf_file_work_bind_path(work);
+    }
+    work->queued_ns = entry->queued_ns;
+}
+
 static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
     int present = 0;
     int released_capacity = 0;
@@ -359,8 +428,7 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
         adapter->queue_tail = adapter->queue_tail == 0
             ? adapter->queue_capacity - 1
             : adapter->queue_tail - 1;
-        *work = adapter->queue[adapter->queue_tail];
-        wf_file_work_bind_path(work);
+        wf_file_copy_out(work, &adapter->queue[adapter->queue_tail]);
         adapter->queue_count -= 1;
         present = 1;
     }
@@ -402,7 +470,14 @@ static void wf_file_run_work(
             );
         }
     }
-    result = wf_file_execute_direct(&work->request);
+    {
+        int timed = wf_file_execution_should_be_timed(adapter);
+        uint64_t started = timed ? wf_file_monotonic_ns() : 0u;
+        result = wf_file_execute_direct(&work->request);
+        if (timed) {
+            wf_file_note_execution(adapter, started);
+        }
+    }
     if (traced != 0) {
         wf_completion_trace_add(
             &wf__completion_trace.execute_ns,
@@ -450,18 +525,19 @@ static void *wf_file_helper_main(void *context) {
                     1
                 );
             }
+            adapter->blocked_helpers += 1;
             (void)pthread_cond_wait(
                 &adapter->queue_available,
                 &adapter->queue_lock
             );
+            adapter->blocked_helpers -= 1;
         }
         if (adapter->queue_count == 0 && adapter->stopping != 0) {
             (void)pthread_mutex_unlock(&adapter->queue_lock);
             return NULL;
         }
         released_capacity = adapter->queue_count == adapter->queue_capacity;
-        work = adapter->queue[adapter->queue_head];
-        wf_file_work_bind_path(&work);
+        wf_file_copy_out(&work, &adapter->queue[adapter->queue_head]);
         adapter->queue_head = (adapter->queue_head + 1) % adapter->queue_capacity;
         adapter->queue_count -= 1;
         (void)pthread_mutex_unlock(&adapter->queue_lock);
@@ -493,6 +569,9 @@ int wf_file_adapter_init(
     adapter->queue_capacity = queue_capacity;
     adapter->helpers = helper_storage;
     atomic_init(&adapter->helper_count, 0);
+    atomic_init(&adapter->mean_execute_ns, 0);
+    atomic_init(&adapter->execute_ticks, 0);
+    adapter->blocked_helpers = 0;
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
@@ -560,27 +639,45 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter) {
 }
 
 /* Adds one helper when the queue holds more accepted requests than there are
- * helpers to take them, which is the only evidence this adapter has that a
- * program exposed real width.
+ * helpers to take them **and** this program's operations wait long enough for
+ * another thread to be worth its handoff.
+ *
+ * Queue depth alone is not enough, and measuring it was what made this pool
+ * cost more than it saved.  Depth says a program stated width; it does not say
+ * the width is over anything.  A program reading a warm page cache states the
+ * same eight independent reads as one reading a device and exposes the same
+ * queue, but each of its reads is a memory copy that is finished before a
+ * woken helper is scheduled — so every helper the depth rule added there
+ * bought a wake and a queue crossing and overlapped nothing.  The measured
+ * host-call time is the missing half of the condition, and it is a
+ * measurement of the program's own operations rather than a guess about the
+ * host.
  *
  * A rule that instead grew whenever a submission found no helper *waiting*
  * was tried and measured worse: a helper that has been signalled but not yet
  * scheduled still counts as waiting, so a run of consecutive submissions sees
  * one available helper every time and the pool never grows at all. On the
  * quiet macOS host that left the four-wide program at 919 ms against 625 ms
- * for this rule. Queue depth is a lagging signal, but it is a true one.
+ * for the depth rule.  Queue depth is a lagging signal, but it is a true one.
  *
- * It runs on the submitting thread with the queue lock already held, so at
- * most one helper appears per submission and the count never passes the
- * policy's cap. A pinned helper policy sets the cap equal to the initial
- * count, making this a no-op. */
+ * Growth starts from no helpers at all, because a program whose operations do
+ * not wait wants none: with an empty pool the waiting scheduler is the queue's
+ * engine and the completion path costs a queue crossing and nothing else.  It
+ * runs on the submitting thread with the queue lock already held, so at most
+ * one helper appears per submission and the count never passes the policy's
+ * cap. A pinned helper policy sets the cap equal to the initial count, making
+ * this a no-op. */
 static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
     size_t held = atomic_load_explicit(
         &adapter->helper_count,
         memory_order_relaxed
     );
-    if (held == 0 || held >= adapter->helper_cap
+    if (held >= adapter->helper_cap
         || adapter->queue_count <= held) {
+        return;
+    }
+    if (atomic_load_explicit(&adapter->mean_execute_ns, memory_order_relaxed)
+        < WF_FILE_OVERLAP_WAIT_NS) {
         return;
     }
     if (pthread_create(
@@ -646,12 +743,14 @@ static void wf_file_enqueue_locked(
         1,
         memory_order_relaxed
     );
-    /* One newly queued request needs exactly one helper woken. Announcing it
-     * to every helper would cost a wake per helper per submission, which on a
-     * program that submits a run of independent operations is a thundering
-     * herd rather than progress. */
-    if (atomic_load_explicit(&adapter->helper_count, memory_order_relaxed)
-        != 0) {
+    /* One newly queued request needs exactly one helper woken, and only a
+     * helper that is actually asleep needs a host wake at all.  Announcing to
+     * every helper would cost a wake per helper per submission — a thundering
+     * herd rather than progress — and announcing to a helper still spinning
+     * for work costs a system call to wake a thread that is awake.  This lock
+     * is the one the sleeper counts itself under, so the count read here is
+     * exact rather than a guess. */
+    if (adapter->blocked_helpers != 0) {
         if (wf_completion_trace_enabled()) {
             wf_completion_trace_count(&wf__completion_trace.helper_signals, 1);
         }

@@ -1147,22 +1147,36 @@ fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
     );
 }
 
-/// The helper count is target policy, and an unset `WF_IO_HELPERS` must not
-/// pin it at the one value that measured worst.
+/// The helper count is target policy, and an unset `WF_IO_HELPERS` must ask
+/// for helpers on evidence rather than on principle.
 ///
 /// A written setting still pins the count exactly, which is what every test
-/// that names `0`, `1`, or `4` depends on. Unset asks for the measured
-/// policy: start at one, grow only on evidence that the program exposed width
-/// the pool cannot absorb, and never pass the machine's own bound. A host with
-/// a native completion path starts at none, because there the ring already
-/// carries every transfer and a helper can only add a handoff to the
-/// operations it does not carry.
+/// that names `0`, `1`, or `4` depends on. Unset asks for the measured policy,
+/// and batch 0096 changed what that policy is on both of its ends.
 ///
-/// The evidence of width is the queue depth at the moment a request is
-/// enqueued. A rule that instead grew whenever a submission found no helper
-/// *waiting* was tried and measured worse on the same programs: a helper that
-/// has been signalled but not yet scheduled still counts as waiting, so a run
-/// of consecutive submissions sees an available helper every time and the pool
+/// It starts at **none**. Starting at one gave every program a thread handoff
+/// whether or not it had a wait to overlap, and on a warm page cache that
+/// handoff was the whole cost of the completion path: on the `macos-14`
+/// runner the eight-wide 4 KiB read program cost 41.78 ms with the pool off
+/// against 89.19 ms at one helper and 96.10 ms at the old default, with the
+/// sequential build at 32.80 ms. With no helper the waiting scheduler is the
+/// queue's own engine and the path costs a queue crossing.
+///
+/// Its ceiling is the bridge's operation bound rather than the machine's core
+/// count. A helper inside a host call holds no CPU, so what limits useful I/O
+/// concurrency is how many operations a program can have outstanding. Sizing
+/// the pool by cores capped the same three-core runner at three outstanding
+/// reads for a program that states eight: cold, that program cost 938.79 ms at
+/// the core-sized default against 585.58 ms at eight helpers and 433.57 ms for
+/// a native pool of eight.
+///
+/// Growth needs two facts, not one. Queue depth at the moment of an enqueue
+/// says the program stated width; it does not say the width is over anything.
+/// The adapter's measured host-call time is the other half, and only both
+/// together add a helper. A rule that instead grew whenever a submission found
+/// no helper *waiting* was tried and measured worse: a helper that has been
+/// signalled but not yet scheduled still counts as waiting, so a run of
+/// consecutive submissions sees an available helper every time and the pool
 /// never grows at all. On the quiet macOS host that left the four-wide program
 /// at 919 ms against 625 ms for the depth rule. Queue depth is a lagging
 /// signal, but it is a true one.
@@ -1180,9 +1194,20 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     // A written value pins both ends, so growth cannot move it.
     assert!(policy.contains("*initial = (size_t)parsed;"));
     assert!(policy.contains("*cap = (size_t)parsed;"));
-    // Unset scales the ceiling to the machine rather than to a constant.
-    assert!(policy.contains("sysconf(_SC_NPROCESSORS_ONLN)"));
-    assert!(policy.contains("WF_BRIDGE_MAX_HELPERS"));
+    // Unset starts with no helper and lets the operation bound, not the core
+    // count, be the ceiling.
+    assert!(
+        policy.contains("*initial = 0u;"),
+        "an unset setting must start with no helper: {policy}"
+    );
+    assert!(
+        policy.contains("*cap = WF_BRIDGE_MAX_HELPERS;"),
+        "the ceiling is the bridge's operation bound: {policy}"
+    );
+    assert!(
+        !policy.contains("(size_t)online < WF_BRIDGE_MAX_HELPERS"),
+        "the core count must not cap outstanding I/O: {policy}"
+    );
 
     let growth = adapter
         .split_once("static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {")
@@ -1199,6 +1224,11 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         growth.contains("adapter->queue_count <= held"),
         "growth must require a queue that has outrun the pool: {growth}"
     );
+    assert!(
+        growth.contains("mean_execute_ns")
+            && growth.contains("WF_FILE_OVERLAP_WAIT_NS"),
+        "growth must also require a measured wait to overlap: {growth}"
+    );
     // Growth runs inside the one enqueue that already holds the queue lock,
     // so it creates at most one helper per submission and needs no second
     // lock, and every kind of queued work reaches the pool the same way.
@@ -1213,7 +1243,8 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         enqueue.contains("wf_file_grow_helpers_locked(adapter)"),
         "the enqueue is where growth happens: {enqueue}"
     );
-    // One queued request wakes one helper, never every helper.
+    // One queued request wakes one helper, never every helper, and only a
+    // helper that is actually asleep.
     assert!(
         enqueue.contains("pthread_cond_signal(&adapter->queue_available)"),
         "a submission announces to exactly one helper"
@@ -1221,6 +1252,10 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     assert!(
         !enqueue.contains("pthread_cond_broadcast(&adapter->queue_available)"),
         "a submission must not wake every helper"
+    );
+    assert!(
+        enqueue.contains("if (adapter->blocked_helpers != 0) {"),
+        "a submission must not wake a helper that is already awake: {enqueue}"
     );
     // The bridge owns no second helper pool layered over this one.
     assert!(

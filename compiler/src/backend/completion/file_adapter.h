@@ -311,6 +311,19 @@ typedef struct wf_file_adapter {
     size_t helper_cap;
     pthread_mutex_t queue_lock;
     pthread_cond_t queue_available;
+    /* Helpers currently inside pthread_cond_wait, maintained under queue_lock
+     * by the waiter itself.  An enqueue holds that same lock, so it knows
+     * exactly whether a signal has anyone to reach: a helper still spinning
+     * for work needs no host wake, and issuing one for it was a system call
+     * per operation that woke a thread which was already awake. */
+    size_t blocked_helpers;
+    /* What one host call on this adapter has recently cost, in nanoseconds, as
+     * a smoothed average over sampled executions.  It is policy input only —
+     * no operation's outcome depends on it — and it answers the one question
+     * the helper policy has to answer: whether this program's operations wait
+     * long enough for handing one to another thread to be worth the handoff. */
+    _Atomic uint64_t mean_execute_ns;
+    _Atomic uint64_t execute_ticks;
     unsigned stopping;
     unsigned initialized;
 

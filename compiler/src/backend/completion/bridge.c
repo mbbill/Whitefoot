@@ -1,9 +1,9 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
-/* The online-CPU query the helper policy reads is a BSD extension that the
- * POSIX macro above hides on Darwin, so the Darwin namespace is asked for as
- * well. glibc declares it unconditionally. */
+/* F_NOCACHE, the Darwin half of the WF_IO_NOCACHE target policy applied by the
+ * inline helper in file_adapter.h, is a BSD extension the POSIX macro above
+ * hides, so the Darwin namespace is asked for as well. */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE 1
 #endif
@@ -98,7 +98,6 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
     const char *text = getenv("WF_IO_HELPERS");
     char *end = NULL;
     unsigned long parsed;
-    long online;
     if (text != NULL && *text != 0) {
         errno = 0;
         parsed = strtoul(text, &end, 10);
@@ -128,13 +127,24 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
         return;
     }
 #endif
-    online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online < 1) {
-        online = 1;
-    }
-    *cap = (size_t)online < WF_BRIDGE_MAX_HELPERS ? (size_t)online
-                                                  : WF_BRIDGE_MAX_HELPERS;
-    *initial = 1u;
+    /* No helper until the adapter has measured an operation that waits.
+     *
+     * A helper exists to overlap a wait.  Starting with one and growing on
+     * queue depth alone gave every program a thread handoff whether or not it
+     * had anything to overlap, and on a warm page cache — where a read is a
+     * memory copy — that handoff was the whole cost of the completion path.
+     * With none, a waiting scheduler is the queue's own engine and the path
+     * costs a queue crossing; the adapter's growth rule adds the first helper
+     * as soon as the operations it has executed show a real wait.
+     *
+     * The ceiling is the bridge's own, not the machine's core count.  A helper
+     * inside a host call holds no CPU, so what bounds useful I/O concurrency
+     * here is how many operations a program can have outstanding, and that is
+     * the operation capacity.  Sizing the pool by cores capped a three-core
+     * host at three outstanding reads for a program that stated eight, which
+     * is a device left idle rather than a machine kept busy. */
+    *cap = WF_BRIDGE_MAX_HELPERS;
+    *initial = 0u;
 }
 
 static int wf_bridge_target_progress_one(void) {
@@ -316,6 +326,56 @@ static size_t wf_bridge_drain(void) {
         events,
         WF_BRIDGE_DRAIN_BUDGET,
         WF_BRIDGE_DRAIN_BUDGET
+    );
+}
+
+/* How long a joining scheduler looks for a completion before announcing sleep.
+ *
+ * Announcing sleep and being woken is two system calls on Darwin, paid by the
+ * waiter and by whichever thread publishes.  A helper pool only exists when
+ * the adapter measured operations that wait, and those waits end while this
+ * thread has nothing else to do, so a bounded look before sleeping trades a
+ * little idle CPU for both of those calls.  It is a bound on wasted CPU: a
+ * wait longer than this window still ends in a sleep, and one shorter than it
+ * never becomes a pair of system calls. */
+#define WF_BRIDGE_JOIN_SPIN_NS 10000u
+
+static uint64_t wf_bridge_monotonic_ns(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+}
+
+/* Waits a bounded time for any completion event to appear.  Returns 1 when one
+ * did, so the caller re-runs its ordinary harvest instead of parking.
+ *
+ * It reads only the durable ready-event count, which a publisher raises before
+ * it announces the epoch.  Taking a lock here would put this thread in the way
+ * of the very publication it is waiting for. */
+static int wf_bridge_spin_for_completion(void) {
+    uint64_t deadline = wf_bridge_monotonic_ns() + WF_BRIDGE_JOIN_SPIN_NS;
+    unsigned turn = 0;
+    for (;;) {
+        if (wf_completion_ready_event_count(&wf_bridge_runtime) != 0) {
+            return 1;
+        }
+        turn += 1;
+        if ((turn & 0x3fu) == 0 && wf_bridge_monotonic_ns() >= deadline) {
+            return 0;
+        }
+    }
+}
+
+/* Harvests the completion event of the operation this thread is waiting on,
+ * without sweeping the slots every other operation lives in. */
+static void wf_bridge_drain_token(const void *token_storage) {
+    wf_completion_event event;
+    (void)wf_completion_drain_token(
+        &wf_bridge_runtime,
+        *(const wf_completion_token *)token_storage,
+        &event
     );
 }
 
@@ -1316,6 +1376,7 @@ void wf__completion_file_join(
                 1
             );
         }
+        wf_bridge_drain_token(token_storage);
         if (wf__completion_file_take(token_storage, value, error_code)) {
             return;
         }
@@ -1324,7 +1385,8 @@ void wf__completion_file_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()) {
+                && !wf_bridge_target_work_needs_this_thread()
+                && !wf_bridge_spin_for_completion()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1356,6 +1418,7 @@ void wf__completion_file_open_join(
                 1
             );
         }
+        wf_bridge_drain_token(token_storage);
         if (wf_bridge_take_open(
                 token_storage,
                 value,
@@ -1369,7 +1432,8 @@ void wf__completion_file_open_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()) {
+                && !wf_bridge_target_work_needs_this_thread()
+                && !wf_bridge_spin_for_completion()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1403,6 +1467,7 @@ void wf__completion_file_status_join(
                 1
             );
         }
+        wf_bridge_drain_token(token_storage);
         if (wf__completion_file_take_status(
                 token_storage,
                 value,
@@ -1418,7 +1483,8 @@ void wf__completion_file_status_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && !wf_bridge_target_work_needs_this_thread()) {
+                && !wf_bridge_target_work_needs_this_thread()
+                && !wf_bridge_spin_for_completion()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
