@@ -1287,10 +1287,18 @@ fn the_repeat_comparison_reports_an_injected_difference() {
 /// different bytes or dies.
 ///
 /// Detection is per-run and not certain — a granted lane sometimes finishes
-/// before the read anyway — so the control runs the injected build twelve
+/// before the read anyway — so the control runs the injected build up to twelve
 /// times and requires that at least one run disagree with the reference. The
 /// measured per-run detection rate is about four in five, which puts a false
 /// green here below one in a hundred million.
+///
+/// The requirement is existential, so the loop stops at the first disagreement
+/// and the twelve are the bound the *undetected* direction pays: a lowering
+/// whose missing joins this comparison cannot see makes all twelve runs and
+/// fails, exactly as before. What that bound removes is eleven runs of a
+/// program that is expected to die — measured in batch 0093 at 30 seconds a
+/// run on the four-core Linux runner, where a run that dies under a core-dump
+/// handler is three orders of magnitude dearer than the same run here.
 #[test]
 fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
@@ -1321,6 +1329,7 @@ fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
             .expect("run the join-less program");
         if output.status.code() != Some(0) || output.stdout != reference.stdout {
             disagreements += 1;
+            break;
         }
     }
     assert!(
@@ -1429,8 +1438,8 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
     true
 }
 
-/// How many runs an existential grant observation samples before it reports
-/// that the runtime granted nothing.
+/// The upper bound on the runs an existential grant observation makes before
+/// it reports that the runtime granted nothing.
 ///
 /// A steal is a scheduling event, so one run samples the host's schedule
 /// rather than the lowering: the offering thread can finish the work itself
@@ -1441,8 +1450,23 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
 /// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
 /// cost one link and a fraction of a second, and a runtime that grants nothing
 /// still totals zero over all of them.
+///
+/// [`grants_over_runs`] stops at the first granted lane, so this is what the
+/// *negative* direction pays and not what a healthy host pays: the claim these
+/// runs support is existential — some run was granted a lane — and one grant
+/// settles it. A runtime that grants nothing still makes every one of the
+/// thirty-two runs and still totals zero.
 pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 
+/// What the runtime granted over at most `runs` runs of one linked module,
+/// stopping at the first run that was granted a lane.
+///
+/// Every caller asserts `> 0`, which is an existential claim: the first grant
+/// is the whole observation, and the runs after it re-observe something already
+/// seen. Stopping there changes neither direction of the result — a total is
+/// positive exactly when some run of the sample was granted a lane, and a
+/// runtime that grants nothing still pays for all `runs` and still returns
+/// zero.
 pub(super) fn grants_over_runs(
     module: &str,
     directory: &Path,
@@ -1460,6 +1484,9 @@ pub(super) fn grants_over_runs(
             String::from_utf8_lossy(&output.stderr)
         );
         total += granted;
+        if total > 0 {
+            break;
+        }
     }
     std::fs::remove_file(&executable).expect("remove a counted-run artifact");
     total
