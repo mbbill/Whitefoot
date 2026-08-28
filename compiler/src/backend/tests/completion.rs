@@ -1639,3 +1639,320 @@ fn a_second_operation_of_one_completion_site_is_refused() {
         );
     });
 }
+
+/// Two positioned reads, a loop between the submission and the use, and one
+/// early typed exit out of that loop.
+///
+/// Lowering submits the first read and runs the second inline, which is what
+/// it already does for two independent transfers. What the loop adds is a back
+/// edge between the submission and the join, and what the early return adds is
+/// a second way out of the loop that has to retire the same operation. Those
+/// are the two edges a staged schedule has to get right, and neither exists in
+/// a body with no loop in it.
+const READS_ACROSS_A_LOOP: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
+  let left = buffer_new(1_u64, 0_u8);
+  let right = buffer_new(1_u64, 0_u8);
+  let total = 0_u64;
+  region 'file {
+    region 'left {
+      region 'right {
+        let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+        let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+        let cursor = 0_u64;
+        loop @spin {
+          let done = ieq(cursor, rounds);
+          if done {
+            break @spin;
+          }
+          let bail = ieq(cursor, 7_u64);
+          if bail {
+            return 1_u64;
+          }
+          set total = total +wrap cursor;
+          set cursor = cursor +wrap 1_u64;
+        }
+        match move first {
+          ReadBytes(next: produced) => {
+            set total = total +wrap produced;
+          }
+          ReadEnd() => {
+          }
+          ReadFailed(error: problem) => {
+          }
+        }
+        match move second {
+          ReadBytes(next: produced) => {
+            set total = total +wrap produced;
+          }
+          ReadEnd() => {
+          }
+          ReadFailed(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// Which IR block of an emitted function each occurrence of `needle` lands in.
+///
+/// The emitter opens further labels inside one IR block — a completion
+/// submission alone opens four — so the answer is the last *block* label seen
+/// and not the last label seen.
+fn ir_blocks_containing(function: &str, needle: &str) -> Vec<String> {
+    let is_block_label = |label: &str| {
+        label == "entry"
+            || label.strip_prefix("bb").is_some_and(|ordinal| {
+                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+            })
+    };
+    let mut current = String::new();
+    let mut found = Vec::new();
+    for line in function.lines() {
+        match line.strip_suffix(':') {
+            Some(label) if is_block_label(label) => current = label.to_owned(),
+            _ => {
+                if line.contains(needle) {
+                    found.push(current.clone());
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The blocks of one function from which the loop's back edge is still ahead:
+/// the loop's own blocks and everything that reaches them.
+///
+/// This is the carrying set the staged judgment will supply, computed here by
+/// backward reachability from the block that closes the loop. Only the
+/// descriptor is a stand-in; everything the emitter does with it is the
+/// shipped path.
+fn blocks_that_reach_the_back_edge(function: &crate::IrFunction) -> Vec<crate::IrBlockId> {
+    let successors = |block: &crate::IrBlock| -> Vec<crate::IrBlockId> {
+        match block.terminator() {
+            crate::IrTerminator::Jump { target, .. } => vec![*target],
+            crate::IrTerminator::Match { targets, .. } => {
+                targets.iter().map(|target| target.block()).collect()
+            }
+            crate::IrTerminator::Return { .. } | crate::IrTerminator::Unreachable => Vec::new(),
+        }
+    };
+    let closes_the_loop = function
+        .blocks()
+        .iter()
+        .enumerate()
+        .position(|(index, block)| {
+            successors(block)
+                .iter()
+                .any(|target| target.index() < index)
+        })
+        .expect("the probe's loop must close");
+    let mut reaches = vec![false; function.blocks().len()];
+    reaches[closes_the_loop] = true;
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (index, block) in function.blocks().iter().enumerate() {
+            if reaches[index] {
+                continue;
+            }
+            if successors(block)
+                .iter()
+                .any(|target| reaches[target.index()])
+            {
+                reaches[index] = true;
+                changed = true;
+            }
+        }
+    }
+    reaches
+        .iter()
+        .enumerate()
+        .filter(|(_, reached)| **reached)
+        .map(|(index, _)| crate::IrBlockId::from_index(index).expect("block ordinal"))
+        .collect()
+}
+
+/// A staged loop leaves its target operations outstanding across the back
+/// edge, and every way out of the loop retires them.
+///
+/// Two facts make one schedule. The back edge no longer joins, which is what
+/// gives a loop the right to keep work in flight across its own iterations —
+/// today's unconditional join at every terminator is the whole of the round
+/// barrier the design measures. And every block the pipeline does not name
+/// still joins everything outstanding, which is the drain: the loop's normal
+/// exit and the typed exit out of its body each retire the window, and neither
+/// leaves an accepted operation owned by nobody.
+///
+/// The descriptor is the loop judgment's product and the judgment does not
+/// exist yet, so the test supplies the block set. Everything the emitter does
+/// with it — where a join lands, where it does not, and how many there are —
+/// is the shipped path.
+#[test]
+fn a_staged_loop_carries_completion_across_its_back_edge() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    let sequential = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the probe must emit")
+            .into_string()
+    });
+    let sequential = emitted_function(&sequential, "probe");
+    let carried = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let carrying = blocks_that_reach_the_back_edge(probe);
+        assert!(
+            carrying.len() > 1,
+            "the probe's loop must span more than one block, or the back edge proves nothing"
+        );
+        assert!(
+            program.set_completion_pipeline_for_test(
+                "probe",
+                crate::IrCompletionPipeline::new(
+                    crate::IrBlockId::from_index(0).expect("the entry block"),
+                    carrying,
+                    crate::IrCompletionWindow::new(0, 65_536, 32),
+                ),
+            ),
+            "the probe function must take a pipeline"
+        );
+        emit_llvm_for_target(program, target)
+            .expect("a staged probe must emit")
+            .into_string()
+    });
+    let carried = emitted_function(&carried, "probe");
+
+    // Without the pipeline the schedule joins where it submitted: one join, in
+    // the block the two reads are in.
+    let sequential_joins = ir_blocks_containing(sequential, "@wf__completion_file_join(");
+    assert_eq!(
+        sequential_joins,
+        vec!["entry".to_owned()],
+        "an unstaged schedule joins in the block that submitted it"
+    );
+
+    // With it, the submitting block ends with the operation still in flight
+    // and each exit from the loop retires it.
+    let carried_joins = ir_blocks_containing(carried, "@wf__completion_file_join(");
+    assert!(
+        !carried_joins.contains(&"entry".to_owned()),
+        "a carrying block must not join: found joins in {carried_joins:?}"
+    );
+    assert_eq!(
+        carried_joins.len(),
+        2,
+        "the loop's normal exit and its typed exit are two drains, not one: {carried_joins:?}"
+    );
+    assert!(
+        carried_joins[0] != carried_joins[1],
+        "the two drains must be two different blocks: {carried_joins:?}"
+    );
+
+    // The window is asked once, at the loop's entry block, and the weak
+    // answer a link without the completion unit gets is one — the sequential
+    // program.
+    assert_eq!(
+        ir_blocks_containing(carried, "@wf__completion_window(").len(),
+        1,
+        "the window is asked once per loop entry, never per iteration"
+    );
+    assert!(
+        carried.contains("call i64 @wf__completion_window(i64 0, i64 65536, i64 32)"),
+        "the query must carry the compiler's own three bounds"
+    );
+    assert!(
+        !sequential.contains("@wf__completion_window("),
+        "a module that stages no loop must name no window symbol"
+    );
+}
+
+/// The weak window answer is emitted only where a module asks for one, and it
+/// is one.
+#[test]
+fn the_window_fallback_is_emitted_only_where_a_module_asks_for_one() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    let sequential = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the probe must emit")
+            .into_string()
+    });
+    assert!(
+        sequential.contains("define weak i32 @wf__completion_file_read_submit"),
+        "the probe must already carry the completion fallbacks"
+    );
+    assert!(
+        !sequential.contains("define weak i64 @wf__completion_window"),
+        "a module that asks for no window must define none"
+    );
+    let staged = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let carrying = blocks_that_reach_the_back_edge(probe);
+        assert!(program.set_completion_pipeline_for_test(
+            "probe",
+            crate::IrCompletionPipeline::new(
+                crate::IrBlockId::from_index(0).expect("the entry block"),
+                carrying,
+                crate::IrCompletionWindow::new(8_192, 65_536, 0),
+            ),
+        ));
+        emit_llvm_for_target(program, target)
+            .expect("a staged probe must emit")
+            .into_string()
+    });
+    assert!(
+        staged.contains(
+            "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) \
+             #0 {\nentry:\n  ret i64 1\n}"
+        ),
+        "a link without the completion unit must answer one, which is the sequential program"
+    );
+}
+
+/// A carrying region no exit leaves is refused.
+///
+/// Naming every block leaves no drain: on every path an accepted operation
+/// would go unjoined and the target would write its result into storage the
+/// frame no longer exists to hold. It is a defect of whatever produced the
+/// descriptor, and it is refused before a line of the function is emitted
+/// rather than diagnosed by the absence of a join.
+#[test]
+fn a_carrying_region_with_no_exit_is_refused() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let every_block = (0..probe.blocks().len())
+            .map(|index| crate::IrBlockId::from_index(index).expect("block ordinal"))
+            .collect();
+        assert!(program.set_completion_pipeline_for_test(
+            "probe",
+            crate::IrCompletionPipeline::new(
+                crate::IrBlockId::from_index(0).expect("the entry block"),
+                every_block,
+                crate::IrCompletionWindow::new(0, 0, 0),
+            ),
+        ));
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::UnretiredCompletionOperation),
+            "a region with no drain must be refused, not emitted with a missing join"
+        );
+    });
+}

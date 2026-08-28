@@ -86,6 +86,13 @@ pub(crate) struct CompletionHandedOut {
     mapping: CompletionMapping,
 }
 
+impl CompletionHandedOut {
+    /// The call site this operation belongs to.
+    pub(super) const fn result(&self) -> IrValueId {
+        self.result
+    }
+}
+
 #[derive(Clone, Debug)]
 enum CompletionMapping {
     Open {
@@ -140,6 +147,11 @@ impl FunctionEmitter<'_, '_> {
                 return Err(BackendFailure::InvalidIr);
             };
             self.emit_completion_join(pending)?;
+            // A wait set retires an operation inside the carrying region, so
+            // the region's exits must stop expecting it. A drain reaches this
+            // with the record already taken, and the retain is nothing there.
+            self.pipeline_outstanding
+                .retain(|carried| carried.result() != *dependency);
         }
         Ok(())
     }
@@ -148,6 +160,16 @@ impl FunctionEmitter<'_, '_> {
     /// schedule or a control-flow block. Compute-lane hand-outs remain owned
     /// by their existing overlap join.
     pub(super) fn emit_all_completion_joins(&mut self) -> Result<(), BackendFailure> {
+        // The drain retires the window on *this* path. What the carrying
+        // region handed out stays recorded, because the region's other exits
+        // must retire the same operations on theirs.
+        let carried = std::mem::take(&mut self.pipeline_outstanding);
+        let joined = self.emit_outstanding_completion_joins();
+        self.pipeline_outstanding = carried;
+        joined
+    }
+
+    fn emit_outstanding_completion_joins(&mut self) -> Result<(), BackendFailure> {
         let dependencies = self
             .handed_out
             .iter()
@@ -164,7 +186,7 @@ impl FunctionEmitter<'_, '_> {
     /// `handed_out` holds exactly the hand-outs emitted and not yet joined, so
     /// this reads, at emission, the question the storage reservation depends
     /// on: does a live operation already own this site's storage?
-    fn completion_operation_is_outstanding(&self, site: IrValueId) -> bool {
+    pub(super) fn completion_operation_is_outstanding(&self, site: IrValueId) -> bool {
         self.handed_out.iter().any(
             |pending| matches!(pending, HandedOut::Completion(pending) if pending.result == site),
         )
