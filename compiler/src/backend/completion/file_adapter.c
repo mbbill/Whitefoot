@@ -655,19 +655,22 @@ static size_t wf_file_adapter_owed_work(void *context) {
  * thread that will run that queue must not sleep while an item is in it, and a
  * thread whose caller is suspended inside it must not wait for one.
  *
- * Exactly one re-attempt, counted exactly where it is made.  If it also fails,
- * that is the outcome source-order execution produces and the program is
- * entitled to see it. */
+ * Exactly one re-attempt, counted exactly where it is made, and made at the
+ * moment the answer can no longer improve: a descriptor has come back, or
+ * nothing is left in this runtime that could bring one.  The second reason is
+ * an attempt too, because a descriptor can come back from outside this runtime
+ * -- a thread of the program's own closing one while this runtime carries the
+ * read that thread is answering -- and no ledger can see that.  If the attempt
+ * also fails, that is the outcome source-order execution produces and the
+ * program is entitled to see it. */
 static wf_file_result wf_file_retire_and_retry(
     wf_file_adapter *adapter,
     const wf_file_work *work,
-    wf_file_result refused,
     int helper,
     uint64_t seen,
     int may_run_owed_work
 ) {
     wf_retirement_waiter waiter;
-    enum wf_retirement_state state;
     int registered = 0;
     for (;;) {
         if (may_run_owed_work != 0) {
@@ -699,18 +702,16 @@ static wf_file_result wf_file_retire_and_retry(
             );
             registered = 1;
         }
-        state = wf_completion_retirement_state(&waiter);
-        if (state != WF_RETIREMENT_AWAITED) {
+        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
             break;
         }
         wf_completion_retirement_sleep(&waiter);
     }
     wf_completion_retirement_wait_end(&waiter);
-    if (state != WF_RETIREMENT_HAPPENED) {
-        /* Nothing anywhere could give a descriptor back, so the refusal
-         * already is the outcome source order produces. */
-        return refused;
-    }
+    /* Either a descriptor came back, or nothing is left in this runtime that
+     * could bring one and this is the last moment a second attempt could see
+     * more than the first — including a descriptor a thread of the program's
+     * own gave back while this one waited.  One attempt, here, either way. */
     atomic_fetch_add_explicit(
         &adapter->stat_exhaustion_retries,
         1,
@@ -736,7 +737,6 @@ static void wf_file_run_work(
         result = wf_file_retire_and_retry(
             adapter,
             work,
-            result,
             helper,
             seen,
             may_run_owed_work

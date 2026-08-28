@@ -426,12 +426,20 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  *   1. read `wf_completion_descriptor_returns` before the host attempt;
  *   2. if that count has moved when the refusal arrives, a descriptor came
  *      back while the host was refusing — re-attempt once;
- *   3. otherwise, while an operation is in flight anywhere else, wait for the
- *      next descriptor to come back and then re-attempt once;
- *   4. otherwise publish the refusal, which is the outcome source order
- *      produces too.
- * Exactly one re-attempt per refused open.  If the second attempt also fails,
- * that is the program's own outcome and it is published unchanged.
+ *   3. otherwise, while an operation is in flight anywhere else, wait: it may
+ *      still give a descriptor back, so this refusal is not the answer yet;
+ *   4. otherwise nothing is left that could give one back, so this is the last
+ *      moment at which a second attempt could see anything the first did not —
+ *      re-attempt once here too, and publish what it says.
+ * Exactly one re-attempt per refused open, and it is made at the moment the
+ * answer can no longer improve.  If it also fails, that is the outcome source
+ * order produces and it is published unchanged.
+ *
+ * Step 4 attempts rather than publishes because the descriptor may come back
+ * from outside this runtime: a thread of the program's own that closes a
+ * descriptor while a read this runtime is carrying is what the program is
+ * waiting on.  Nothing in the ledger can see that close, so the only honest
+ * moment to look again is the moment the ledger runs out of reasons to wait.
  *
  * The rule turns on two different facts, and a ledger that counts them together
  * gets the rule wrong.  An operation *ending* is what "in flight anywhere else"
@@ -482,14 +490,17 @@ typedef struct wf_retirement_waiter {
     int runs_owed;
 } wf_retirement_waiter;
 
+/* Where a refused open stands.  `AWAITED` is the only answer that means "keep
+ * waiting"; the other two both end the wait with the one re-attempt, and name
+ * which fact ended it. */
 enum wf_retirement_state {
-    /* A descriptor came back since the attempt: re-attempt once. */
+    /* A descriptor came back since the attempt: attempt again, it may take it. */
     WF_RETIREMENT_HAPPENED = 0,
     /* An operation is in flight elsewhere: it can still give a descriptor
      * back, so this refusal is not the program's outcome yet. */
     WF_RETIREMENT_AWAITED = 1,
-    /* Nothing is left that could retire, and this is the earliest waiter:
-     * publish the refusal. */
+    /* Nothing is left that could give one back, and this is the earliest
+     * waiter: no later attempt can see more than one made here. */
     WF_RETIREMENT_UNREACHABLE = 2
 };
 

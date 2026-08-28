@@ -936,17 +936,16 @@ static int wf_linux_publish_entry_locked(
  *
  * Called with the completion lock held, both before this thread may wait for
  * a completion and after it has reaped one, so a held open is never carried
- * across a sleep that nothing could end.  `published` counts the refusals
- * answered here, which the caller reports as progress, and `restaged` the
- * re-attempts sent to the kernel, which the caller must not sleep behind.
+ * across a sleep that nothing could end.  `restaged` counts the re-attempts
+ * sent to the kernel, which the caller must not sleep behind.
  *
- * The pass count is bounded by the entry capacity: each entry is released at
- * most once — `exhaustion_retried` allows one re-attempt — and each pass that
- * changes nothing else publishes one refusal, which frees an entry. */
+ * The pass count is bounded by the entry capacity: an entry leaves
+ * `RETRY_HELD` at most once, because `exhaustion_retried` allows one
+ * re-attempt and the refusal that re-attempt may bring is published where it
+ * is reaped.  A pass that settles nothing returns. */
 static void wf_linux_resolve_retry_held_locked(
     wf_linux_io_uring_adapter *adapter,
     int *first_error,
-    size_t *published,
     size_t *restaged
 ) {
     size_t pass;
@@ -978,30 +977,21 @@ static void wf_linux_resolve_retry_held_locked(
                 memory_order_relaxed
             );
             settled += 1;
-            if (state == WF_RETIREMENT_HAPPENED) {
-                /* A descriptor came back while the kernel was refusing this
-                 * open.  This is where the one re-attempt is counted, because
-                 * this is where it is made. */
-                atomic_fetch_add_explicit(
-                    &adapter->stat_exhaustion_retries,
-                    1,
-                    memory_order_relaxed
-                );
-                error = wf_linux_resubmit_entry(adapter, index, entry, 0);
-                *restaged += 1;
-            } else {
-                /* Nothing anywhere could give a descriptor back, and this is
-                 * the earliest open waiting for one.  Its refusal is the
-                 * outcome, and publishing it is itself a retirement, which is
-                 * what releases whatever is waiting behind it. */
-                wf_linux_decide_open(entry, entry->retry_result);
-                error = wf_linux_publish_entry_locked(
-                    adapter,
-                    entry,
-                    entry->retry_result
-                );
-                *published += 1;
-            }
+            /* Either a descriptor came back while the kernel was refusing this
+             * open, or nothing is left in this runtime that could bring one and
+             * this is the earliest open waiting — the last moment at which an
+             * attempt could see anything the first did not, a descriptor a
+             * thread of the program's own gave back included.  One re-attempt
+             * either way, counted here because this is where it is made; the
+             * refusal it may bring is published where it is reaped, with
+             * `exhaustion_retried` set so it is never held again. */
+            atomic_fetch_add_explicit(
+                &adapter->stat_exhaustion_retries,
+                1,
+                memory_order_relaxed
+            );
+            error = wf_linux_resubmit_entry(adapter, index, entry, 0);
+            *restaged += 1;
             if (*first_error == 0 && error != 0) {
                 *first_error = error;
             }
@@ -1143,12 +1133,7 @@ int wf_linux_io_uring_progress(
      * opened is re-attempted now, so its SQE reaches the kernel before the
      * wait below; one that nothing can release is answered now, so no thread
      * waits for a completion that cannot arrive. */
-    wf_linux_resolve_retry_held_locked(
-        adapter,
-        &first_error,
-        &total,
-        &restaged
-    );
+    wf_linux_resolve_retry_held_locked(adapter, &first_error, &restaged);
     head = wf_linux_load_relaxed(adapter->completion_head);
     tail = wf_linux_load_acquire(adapter->completion_tail);
     /* Never enter a completion-only sleep while staged SQEs failed to reach
@@ -1200,12 +1185,7 @@ int wf_linux_io_uring_progress(
      * was waiting for, so settle them again before releasing the lock: the
      * re-attempt is staged and its doorbell rung here, while this thread
      * still owns the decision and before the caller can park. */
-    wf_linux_resolve_retry_held_locked(
-        adapter,
-        &first_error,
-        &total,
-        &restaged
-    );
+    wf_linux_resolve_retry_held_locked(adapter, &first_error, &restaged);
     (void)pthread_mutex_unlock(&adapter->completion_lock);
 
     if (first_error != 0) {

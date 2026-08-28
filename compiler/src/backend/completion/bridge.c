@@ -1215,21 +1215,20 @@ static int wf_bridge_open_lacked_a_descriptor(const wf_file_result *result) {
  * so a retirement that lands between the two makes the park return at once
  * instead of sleeping through it.
  *
- * Exactly one re-attempt, as on either target engine. */
+ * Exactly one re-attempt, as on either target engine, and made at the same
+ * moment: a descriptor has come back, or nothing is left in this runtime that
+ * could bring one and a later look could see no more than this one. */
 static wf_file_result wf_bridge_retire_and_retry_direct(
     const wf_file_request *request,
-    wf_file_result refused,
     uint64_t seen
 ) {
     wf_retirement_waiter waiter;
-    enum wf_retirement_state state;
     wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
     for (;;) {
         uint64_t epoch = wf_bridge_ready == 0
             ? 0
             : wf_completion_wake_epoch(&wf_bridge_runtime);
-        state = wf_completion_retirement_state(&waiter);
-        if (state != WF_RETIREMENT_AWAITED) {
+        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
             break;
         }
         if (wf_bridge_ready == 0) {
@@ -1248,9 +1247,6 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
         }
     }
     wf_completion_retirement_wait_end(&waiter);
-    if (state != WF_RETIREMENT_HAPPENED) {
-        return refused;
-    }
     atomic_fetch_add_explicit(
         &wf_bridge_direct_exhaustion_retries,
         1,
@@ -1274,7 +1270,7 @@ static wf_file_result wf_bridge_execute_direct(
     wf_completion_operation_accepted();
     result = wf_file_execute_timed(&wf_bridge_adapter, request);
     if (wf_bridge_open_lacked_a_descriptor(&result)) {
-        result = wf_bridge_retire_and_retry_direct(request, result, seen);
+        result = wf_bridge_retire_and_retry_direct(request, seen);
     }
     wf_completion_operation_retired(wf_file_returned_a_descriptor(&result));
     /* A direct call publishes nothing, so nothing else tells a scheduler
