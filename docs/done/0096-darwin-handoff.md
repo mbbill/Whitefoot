@@ -616,12 +616,27 @@ by this batch.
   against a fixture whose byte at offset `o` is `o % 251`, so that every read
   must deliver its own byte whichever route the bridge chose. It exists
   because pinning the route for the harness — which the bullet above explains
-  and which is right for the harness — left the declined positioned read
-  covered by no bridge test at all. It reads the route it took from the
-  runtime's own submission counters and asserts it: a submitted positioned
-  read on either route, and a declined one on the POSIX-adapter route. It does
-  not cover growth — `helpers=0` in every run of it on either host — and "What
-  the follow-up cost" says so where it reports the probe.
+  and which is right for the harness — left the demand-driven policy covered
+  by no bridge test at all. It reads the route it took from the runtime's own
+  submission counters and asserts it: a submitted positioned read on either
+  route, and on the POSIX-adapter route one of the policy's two branches —
+  a declined read, or a started helper.
+
+  Requiring specifically a decline was tried and is wrong, and the run that
+  showed it is worth recording. Both branches turn on the same measurement:
+  a read is left to its caller when the adapter measured no wait and holds no
+  helper, and a helper is started when it measured one. Which branch a run
+  gets is a property of how fast this host's reads are, not of the runtime.
+  The same sanitized binary on the same machine declined 15 814 of 16 000
+  reads with `helpers=0` when the host was quiet, and declined none while
+  growing three helpers when it was loaded — because under a sanitizer on a
+  busy machine a one-byte read really does cost more than the twenty
+  microseconds the rule asks about, and the policy then correctly took its
+  other branch. So the probe requires one branch or the other; requiring the
+  decline would be requiring an idle host. Forcing the decline off in
+  `bridge.c` still fails it, on every run, with
+  `the demand-driven policy took neither branch in 16000 positioned reads`.
+
   `completion-test` and `completion-sanitize` run it, and
   `completion-default-route-tsan` gives `io-hosts` a thread sanitizer over the
   bridge.
@@ -875,28 +890,30 @@ supported are withdrawn rather than softened.
   publishes the completion, the other exit fires on its own, and the unguarded
   build finishes at the same wall time as the guarded one on macOS. The guard
   ships either way; the comment now says which route it rescues.
-- **The shipped default route is tested, for the half of it a bridge run can
-  decide.** `harness.c`'s `main` pins `WF_IO_HELPERS` for any run that named
-  none, and `completion-test` names 0, 1 and 4, so the declined positioned
-  read and the demand-driven pool were reachable from no bridge test in the
-  tree. `bridge_default_probe.c` is that arm: sixteen thousand positioned
+- **The shipped default route is tested, and the probe now asserts the
+  decision rather than counting it.** `harness.c`'s `main` pins
+  `WF_IO_HELPERS` for any run that named none, and `completion-test` names 0,
+  1 and 4, so the demand-driven policy was reachable from no bridge test in
+  the tree. `bridge_default_probe.c` is that arm: sixteen thousand positioned
   reads across four lanes with `WF_IO_HELPERS` unset, each of which must
-  deliver the byte at its offset whichever route the bridge chose, and it now
-  asserts the split it counts rather than only printing it — the route is read
-  from the runtime's own submission counters, both routes owe a submitted
-  positioned read, and the POSIX-adapter route owes a declined one.
+  deliver the byte at its offset whichever route the bridge chose. It reads
+  the route it took from the runtime's own submission counters — the native
+  ring's and the POSIX adapter's — and requires a submitted positioned read on
+  either route, and on the adapter route one of the policy's two branches: a
+  declined read or a started helper. "Tests" above says why the decline alone
+  cannot be required, and quotes the two runs of one binary that show it.
 
-  What it does *not* cover is growth. Every run of it made on either host
-  reports `helpers=0`: four lanes each hold one read at a time, so the queue
-  never outruns the pool and the growth rule's queue-depth term is never true.
-  The evidence for growth is elsewhere — the two scripted-clock harness cases,
-  which drive a queue the pool cannot empty, and the runners' cold tables,
-  where `C.wide8.default` lands on its own pinned eight-helper line. The two
-  hosts also split the decline between them: on macOS the probe declines
-  almost every read (about 15 800 of 16 000) and submits the rest; on Linux
-  with io_uring the ring takes every positioned read and it declines none, so
-  the decline half is covered on the POSIX-adapter host only, which is what
-  the probe's own assertion says.
+  What the probe reaches on each host is uneven, and worth stating rather than
+  averaging. On Linux with io_uring the ring takes every positioned read, so
+  the adapter branch is never reached at all and only liveness and the byte
+  check are covered there. On macOS a quiet host declines about 15 800 of the
+  16 000 and grows no helper; a loaded one grows helpers and declines none.
+  Growth to a *bound* is not what this probe decides in any case — four lanes
+  each hold one read at a time, so the queue rarely outruns the pool. That is
+  decided by `test_pool_grows_when_operations_wait` and
+  `test_helper_growth_stops_at_the_helper_storage`, which drive a queue the
+  pool cannot empty, and priced by the runners' cold tables, where
+  `C.wide8.default` lands on its own pinned eight-helper line.
 
   It is wired to `completion-test` and `completion-sanitize`, and it gives
   `io-hosts` a thread-sanitizer run over the bridge, which the isolated

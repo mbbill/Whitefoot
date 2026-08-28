@@ -202,6 +202,7 @@ int main(int argc, char **argv) {
     uint64_t adapter_submissions;
     unsigned submitted;
     unsigned declined;
+    uint64_t helpers;
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
@@ -257,13 +258,13 @@ int main(int argc, char **argv) {
     (void)unlink(path);
 
     /* Which route this host's bridge actually took, and whether the counters
-     * agree that both of this probe's reasons for existing were exercised.
+     * agree that the decision this probe exists for was taken at all.
      *
      * Counting is not covering.  Without these the probe reports its route
-     * split and asserts nothing about it, so a bridge that stopped declining
-     * altogether -- or one whose native ring silently stopped accepting --
-     * would still print a PASS line, and only a reader comparing two runs by
-     * eye would notice.
+     * split and asserts nothing about it, so a bridge that stopped choosing --
+     * one whose demand-driven policy did nothing, or whose native ring
+     * silently stopped accepting -- would still print a PASS line, and only a
+     * reader comparing two runs by eye would notice.
      *
      * The route is read from the counters rather than from the host name,
      * because a Linux kernel with io_uring disabled runs the POSIX adapter
@@ -273,24 +274,27 @@ int main(int argc, char **argv) {
      *
      * Both routes owe a submitted positioned read: the first read of the run
      * is measured by nothing, so the decline's WAIT_SHORT precondition cannot
-     * hold for it, and the ring accepts unconditionally.  Only the adapter
-     * route owes a declined one -- on the ring a positioned read never
-     * reaches the decline at all, which is why `declined` is expected to be
-     * zero there and is not asserted.
+     * hold for it, and the ring accepts unconditionally.
      *
-     * `helpers` is reported and not asserted, and that is a statement about
-     * the evidence rather than an omission: the pool has grown in no run of
-     * this probe on either host, because the queue never outruns it -- four
-     * lanes each hold one read at a time.  What the demand-driven pool does
-     * when the queue does outrun it is decided by
-     * `test_pool_grows_when_operations_wait` and
-     * `test_helper_growth_stops_at_the_helper_storage`, which script the
-     * clock and block the queue, and measured by the bench runners' cold
-     * tables.  This probe covers the decline half and the liveness of both. */
+     * What the adapter route owes is one of the demand-driven policy's two
+     * branches, not specifically a decline.  Both branches are decided by the
+     * same measurement: a positioned read is run by its caller when the
+     * adapter measured no wait and holds no helper, and a helper is started
+     * when it measured a wait.  Which one this run gets is a property of how
+     * fast this host's reads actually are, and that is not fixed -- the same
+     * binary on the same machine declines about 15 700 of 16 000 reads when
+     * the host is quiet and declines none while growing three helpers when it
+     * is loaded, because under a sanitizer on a busy machine a one-byte read
+     * really does cost more than the twenty microseconds the rule is asking
+     * about.  Requiring a decline would therefore be requiring the host to be
+     * idle, which is not a property of the runtime.  Requiring *either* is a
+     * real requirement: if neither happened, the policy took no branch in
+     * sixteen thousand reads and this run covered none of it. */
     ring_submissions = wf__completion_linux_io_uring_submissions();
     adapter_submissions = wf__completion_file_fallback_submissions();
     submitted = atomic_load_explicit(&submitted_route, memory_order_relaxed);
     declined = atomic_load_explicit(&declined_route, memory_order_relaxed);
+    helpers = wf__completion_target_helper_count();
     if (submitted == 0) {
         fprintf(
             stderr,
@@ -299,12 +303,13 @@ int main(int argc, char **argv) {
         );
         failed = 1;
     }
-    if (ring_submissions == 0 && declined == 0) {
+    if (ring_submissions == 0 && declined == 0 && helpers == 0) {
         fprintf(
             stderr,
-            "bridge default probe: the POSIX adapter route declined no "
-            "positioned read; the decline policy this probe exists for did "
-            "not fire\n"
+            "bridge default probe: on the POSIX adapter route the "
+            "demand-driven policy took neither branch in %u positioned reads: "
+            "none was declined and no helper was started\n",
+            submitted
         );
         failed = 1;
     }
@@ -318,7 +323,7 @@ int main(int argc, char **argv) {
             submitted,
             declined,
             atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
-            (unsigned long long)wf__completion_target_helper_count(),
+            (unsigned long long)helpers,
             (unsigned long long)wf__completion_file_submissions(),
             (unsigned long long)ring_submissions,
             (unsigned long long)adapter_submissions
@@ -333,7 +338,7 @@ int main(int argc, char **argv) {
         submitted,
         declined,
         atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
-        (unsigned long long)wf__completion_target_helper_count(),
+        (unsigned long long)helpers,
         (unsigned long long)wf__completion_file_submissions(),
         (unsigned long long)ring_submissions,
         (unsigned long long)adapter_submissions,
