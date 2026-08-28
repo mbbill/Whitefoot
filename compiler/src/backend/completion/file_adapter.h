@@ -288,8 +288,10 @@ enum wf_file_submit_result {
 
 typedef struct wf_file_adapter_statistics {
     uint64_t submissions;
-    /* Opens refused for want of a host descriptor whose queued work this
-     * adapter completed before re-attempting them once. */
+    /* Opens refused for want of a host descriptor that this adapter asked the
+     * host about a second time, after retiring work it owned or after waiting
+     * for an operation running elsewhere to publish.  A refusal published
+     * without a second attempt is not counted here. */
     uint64_t exhaustion_retries;
     uint64_t capacity_waits;
     uint64_t helper_executions;
@@ -310,7 +312,20 @@ typedef struct wf_file_adapter {
     _Atomic size_t helper_count;
     size_t helper_cap;
     pthread_mutex_t queue_lock;
+    /* Woken both when work arrives and when an operation retires: a thread
+     * inside retire-and-retry waits for exactly the second, and a helper
+     * waiting for the first re-checks its own predicate anyway.  One wait
+     * endpoint serves both and keeps the retirement wake free of a second
+     * synchronization object. */
     pthread_cond_t queue_available;
+    /* Operations taken off this queue and not yet published, and how many of
+     * the threads running them are themselves waiting inside
+     * retire-and-retry.  Their difference is how many engines can still
+     * retire something, which is what makes waiting for one safe: when it
+     * reaches zero, every waiter gives up rather than waiting for each
+     * other. */
+    _Atomic size_t executing;
+    _Atomic size_t retire_waiters;
     unsigned stopping;
     unsigned initialized;
 

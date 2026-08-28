@@ -362,6 +362,11 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
         *work = adapter->queue[adapter->queue_tail];
         wf_file_work_bind_path(work);
         adapter->queue_count -= 1;
+        atomic_fetch_add_explicit(
+            &adapter->executing,
+            1,
+            memory_order_relaxed
+        );
         present = 1;
     }
     (void)pthread_mutex_unlock(&adapter->queue_lock);
@@ -371,13 +376,106 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
     return present;
 }
 
-static void wf_file_count_execution(wf_file_adapter *adapter, int helper) {
+/* Records that one operation this adapter owned has published its result and
+ * given back whatever the host lent it.
+ *
+ * The two execution counters together are this adapter's retirement
+ * generation: neither ever decreases, so a reader that sees the same pair
+ * twice has seen no retirement between the two reads.  A thread inside
+ * retire-and-retry needs that fact and a wake, and the wake costs the queue
+ * lock, so the lock is taken only when a waiter has announced itself.
+ *
+ * The announcement below and this load are sequentially consistent in both
+ * directions, which is what makes the pair race-free: in the single total
+ * order either the waiter's announcement precedes this load — so the wake is
+ * delivered — or this thread's counter increment precedes the waiter's read
+ * of the counters, so the waiter sees the retirement and never sleeps. */
+static void wf_file_finish_execution(wf_file_adapter *adapter, int helper) {
     atomic_fetch_add_explicit(
         helper != 0 ? &adapter->stat_helper_executions
                     : &adapter->stat_scheduler_executions,
         1,
-        memory_order_relaxed
+        memory_order_seq_cst
     );
+    atomic_fetch_sub_explicit(&adapter->executing, 1, memory_order_seq_cst);
+    if (atomic_load_explicit(&adapter->retire_waiters, memory_order_seq_cst)
+        == 0) {
+        return;
+    }
+    (void)pthread_mutex_lock(&adapter->queue_lock);
+    (void)pthread_cond_broadcast(&adapter->queue_available);
+    (void)pthread_mutex_unlock(&adapter->queue_lock);
+}
+
+/* Waits until one operation running on another engine of this adapter has
+ * published, and reports whether one did.
+ *
+ * This is the other half of retire-and-retry.  Draining the queue gives back
+ * the descriptors of work nobody has started; with several helpers the
+ * descriptors that would make room are held by operations already running on
+ * other threads, and there is nothing queued at all.  Publishing the refusal
+ * there would be a hole in the rule, not an application of it: a sequential
+ * execution reaches this open only after every operation now in flight has
+ * finished, so waiting for one of them is source order, not a heuristic.
+ *
+ * The wait ends without a retirement exactly when no engine is left that
+ * could produce one — when every operation still executing is itself a thread
+ * standing here.  That is what keeps several simultaneously refused opens
+ * from waiting on each other: the last of them to arrive finds the difference
+ * zero, publishes its refusal, and its publication is the retirement the
+ * others were waiting for. */
+static int wf_file_await_a_retirement(wf_file_adapter *adapter) {
+    uint64_t helper_seen;
+    uint64_t scheduler_seen;
+    int retired = 0;
+    (void)pthread_mutex_lock(&adapter->queue_lock);
+    atomic_fetch_add_explicit(
+        &adapter->retire_waiters,
+        1,
+        memory_order_seq_cst
+    );
+    helper_seen = atomic_load_explicit(
+        &adapter->stat_helper_executions,
+        memory_order_seq_cst
+    );
+    scheduler_seen = atomic_load_explicit(
+        &adapter->stat_scheduler_executions,
+        memory_order_seq_cst
+    );
+    for (;;) {
+        if (atomic_load_explicit(
+                &adapter->stat_helper_executions,
+                memory_order_seq_cst
+            ) != helper_seen
+            || atomic_load_explicit(
+                   &adapter->stat_scheduler_executions,
+                   memory_order_seq_cst
+               ) != scheduler_seen) {
+            retired = 1;
+            break;
+        }
+        if (adapter->stopping != 0) {
+            break;
+        }
+        if (atomic_load_explicit(&adapter->executing, memory_order_seq_cst)
+            <= atomic_load_explicit(
+                   &adapter->retire_waiters,
+                   memory_order_seq_cst
+               )) {
+            break;
+        }
+        (void)pthread_cond_wait(
+            &adapter->queue_available,
+            &adapter->queue_lock
+        );
+    }
+    atomic_fetch_sub_explicit(
+        &adapter->retire_waiters,
+        1,
+        memory_order_seq_cst
+    );
+    (void)pthread_mutex_unlock(&adapter->queue_lock);
+    return retired;
 }
 
 /* True exactly for the results of an open the host refused because it had no
@@ -407,15 +505,21 @@ static void wf_file_run_work(
  * exhaustion clause excuses only the resources an implementation spends on
  * overlapping — never the descriptors the program's own opens consume.
  *
- * What this adapter can give back is what it still owns: every queued
+ * What this adapter can give back is what it still owns.  First, every queued
  * operation, the closes among them, each of which returns a descriptor when it
  * runs.  Running them is work the sequential execution performs anyway, and it
  * publishes their outcomes unchanged, so nothing here is observable except the
  * open's second answer.  The drained items are run with no retry of their own,
- * which bounds this to one level.
+ * which bounds this to one level.  Second — and this is the whole of what a
+ * multi-helper configuration owns — the operations already running on the
+ * other engines: with four helpers, three simultaneous opens are taken by
+ * three different threads and the queue each of them looks at is empty, so an
+ * adapter that could only drain a queue would publish a refusal while its own
+ * descriptors were still in hand.
  *
- * Exactly one re-attempt.  If it also fails, that is the outcome source-order
- * execution produces and the program is entitled to see it. */
+ * Exactly one re-attempt, and it is counted exactly when it is made.  If it
+ * also fails, that is the outcome source-order execution produces and the
+ * program is entitled to see it. */
 static wf_file_result wf_file_retire_and_retry(
     wf_file_adapter *adapter,
     const wf_file_work *work,
@@ -432,7 +536,7 @@ static wf_file_result wf_file_retire_and_retry(
         wf_file_run_work(adapter, &queued, helper, 0);
         drained += 1;
     }
-    if (drained == 0) {
+    if (drained == 0 && !wf_file_await_a_retirement(adapter)) {
         /* Nothing this adapter owned could give a descriptor back, so the
          * refusal already is the outcome source order produces. */
         return refused;
@@ -470,7 +574,7 @@ static void wf_file_run_work(
         work->token,
         &publication
     );
-    wf_file_count_execution(adapter, helper);
+    wf_file_finish_execution(adapter, helper);
     if (published != WF_COMPLETION_PUBLISHED) {
         /* A legitimate accepted work item owns the unique terminal route.  A
          * failure here records an adapter/core defect; it never invokes writer
@@ -504,6 +608,15 @@ static void *wf_file_helper_main(void *context) {
         wf_file_work_bind_path(&work);
         adapter->queue_head = (adapter->queue_head + 1) % adapter->queue_capacity;
         adapter->queue_count -= 1;
+        /* This helper now owns one operation, exactly as a scheduler taking
+         * work through `wf_file_take_work` does.  The count is what an open
+         * refused for want of a descriptor asks about before it waits, so
+         * every route out of the queue must maintain it. */
+        atomic_fetch_add_explicit(
+            &adapter->executing,
+            1,
+            memory_order_relaxed
+        );
         (void)pthread_mutex_unlock(&adapter->queue_lock);
         if (released_capacity != 0) {
             wf_completion_notify_capacity(adapter->runtime);
@@ -533,6 +646,8 @@ int wf_file_adapter_init(
     adapter->queue_capacity = queue_capacity;
     adapter->helpers = helper_storage;
     atomic_init(&adapter->helper_count, 0);
+    atomic_init(&adapter->executing, 0);
+    atomic_init(&adapter->retire_waiters, 0);
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_exhaustion_retries, 0);
