@@ -940,6 +940,31 @@ command fn main() -> status: own ExitStatus pure {
         assert!(detail.contains("let permit = 2_u64;"), "{detail}");
     }
 
+    /// A lexical rejection names the host path too.
+    ///
+    /// It is the one stage that already printed a path of its own, from the
+    /// span rather than from a wrapper, and the path it printed was the
+    /// bundle's positional key — so the first rejection a writer can possibly
+    /// receive was also the one that cited a file that does not exist.
+    #[test]
+    fn a_lexical_rejection_names_the_host_path() {
+        let host = "/absolute/path/pound.wf";
+        let source = "command fn main() -> status: own ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
+        let failure = compile(
+            &[SourceInput::from_host_path(
+                "input0.wf",
+                host,
+                source.as_bytes(),
+            )],
+            CompilerLimits::default(),
+        )
+        .expect_err("a non-source byte is rejected");
+        assert_eq!(failure.rule_id(), Some("FORM-1"));
+        let detail = failure.detail();
+        assert!(detail.contains(host), "{detail}");
+        assert!(!detail.contains("input0.wf"), "{detail}");
+    }
+
     /// A source read from a host path the closed logical spelling cannot hold
     /// is still named by that host path everywhere a reader looks.
     ///

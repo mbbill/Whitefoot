@@ -61,12 +61,15 @@ pub struct SourceSpan<'bundle> {
     file: &'bundle SourceFile,
 }
 
+/// A span is printed by the name a reader is shown for its source, because a
+/// lexical rejection carries it straight to the writer and the bundle key can
+/// be a positional name for a host path the closed spelling cannot hold.
 impl fmt::Debug for SourceSpan<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("SourceSpan")
             .field("source", &self.source)
-            .field("logical_path", &self.file.logical_path())
+            .field("path", &self.file.display_path())
             .field("start", &self.start)
             .field("end", &self.end)
             .finish()

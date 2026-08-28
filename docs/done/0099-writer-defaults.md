@@ -48,20 +48,38 @@ before  PAR stage       input0.wf:26  for  denied  condition 3: …
 after   PAR stage       /abs/path/probe_c_helper_denied.wf:26  for  denied  condition 3: …
 ```
 
+One diagnostic already printed a path of its own rather than taking one from a
+wrapper: a lexical rejection prints its `SourceSpan`, and that span printed the
+bundle key. So the very first rejection a writer can receive was also one that
+cited a file that does not exist. `SourceSpan`'s `Debug` now prints the display
+path under the field name `path`.
+
+```text
+before  whitefootc: Lexing/Source [FORM-1]: SourceIssue { span: SourceSpan { source: SourceId(0),
+        logical_path: LogicalPath("input0.wf"), start: ByteOffset(61), end: ByteOffset(63) },
+        kind: UnexpectedByte }
+after   … span: SourceSpan { source: SourceId(0), path: "/abs/path/pound.wf",
+        start: ByteOffset(61), end: ByteOffset(63) } …
+```
+
 Tests: `a_source_is_shown_by_the_path_the_caller_wrote` in
 `compiler/src/bin/whitefootc.rs` pins the two answers apart, and
 `a_ledger_names_the_host_path_the_source_was_read_from` in
 `compiler/src/driver.rs` compiles a staged fixture by a host path the logical
 domain cannot spell and asserts every ledger line names it and none names the
-bundle key.
+bundle key. `a_lexical_rejection_names_the_host_path`, beside it, pins the
+lexing stage.
 
 ## 2. Four diagnostic payloads
 
-Every source rejection is also now wrapped with the file, line, column, and the
-whole offending source line, in both stages that reject after parsing. That is
-`compiler/src/driver/rejection.rs`, and it is presentation only: the detail
-text is still the stage value's `Debug`, which this batch deliberately did not
-redesign.
+A source rejection from parsing, the canonical audit, resolution, or semantics
+is also now wrapped with the file, line, column, and the whole offending source
+line. That is `compiler/src/driver/rejection.rs`, and it is presentation only:
+the detail text is still the stage value's `Debug`, which this batch
+deliberately did not redesign. Lexing and terminal classification are not
+wrapped, because their issues carry a `SourceSpan` that already prints its own
+file and offsets rather than a `SyntaxCoordinate`; what they needed was item
+1's name, not this wrapper.
 
 ### GRAM-9 prints the expected spellings and quotes the line
 
