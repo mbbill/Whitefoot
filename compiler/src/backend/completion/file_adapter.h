@@ -36,17 +36,22 @@ extern "C" {
  * host is still resolving the name.  Every target adapter therefore copies
  * the bytes into its own record at submission and resolves that copy.
  *
- * The bound is every admitted name.  A generated open resolves exactly one
- * relative component, and the widest qualified component limit is Darwin's
- * 1023 bytes, which this holds together with its terminator; the Linux family
- * admits 255.  The runtime's own harness resolves absolute scratch paths
- * instead, and 1024 is Darwin's whole `PATH_MAX`.  Storage is bounded and
- * static because a submission may not allocate.
+ * The bound is not every admitted name.  `open_file` and `open_directory`
+ * resolve exactly one relative component, which the emitter clamps to the
+ * target's own component limit — Darwin's 1023 bytes, the widest qualified
+ * one, which this holds together with its terminator; the Linux family admits
+ * 255.  `open_read` resolves the caller's whole path buffer, and [PATH-1]
+ * admits a relative path of any length, so a name longer than this bound is
+ * one a program can write.  The runtime's own harness resolves absolute
+ * scratch paths as well, and 1024 is Darwin's whole `PATH_MAX`.  Storage is
+ * bounded and static because a submission may not allocate.
  *
  * A name that does not fit is refused before an operation is claimed, and the
  * caller opens it directly instead — that path resolves the caller's buffer
- * inside its own call and needs no copy.  It is a throughput fallback of the
- * same class as a full queue, never a changed outcome. */
+ * inside its own call and needs no copy.  The outcome is the same open; what
+ * the program loses is the completion path for it, so the demotion is a
+ * throughput event of the same class as a full queue and is counted as one:
+ * `wf__completion_file_demoted_opens` reports how many opens took it. */
 #define WF_FILE_PATH_CAPACITY 1024u
 
 /* Copies one path into an operation record's own storage.  Returns zero for a

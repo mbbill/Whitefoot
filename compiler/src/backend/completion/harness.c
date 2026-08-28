@@ -1411,6 +1411,139 @@ static int test_submitted_open_owns_its_path_bytes(
     return 0;
 }
 
+#define WF_HARNESS_LONG_COMPONENTS 5u
+#define WF_HARNESS_LONG_COMPONENT_BYTES 240u
+#define WF_HARNESS_LONG_PATH_BYTES                                            \
+    (WF_HARNESS_LONG_COMPONENTS * (WF_HARNESS_LONG_COMPONENT_BYTES + 1u) + 16u)
+
+/* A name no operation record can hold takes the direct path, with the host's
+ * own outcome and a counted demotion.
+ *
+ * `open_read` resolves the caller's whole path buffer and [PATH-1] admits a
+ * relative path of any length, so a name longer than WF_FILE_PATH_CAPACITY is
+ * one an ordinary program can write; only `open_file` and `open_directory`
+ * are clamped to a single component.  The submission refuses such a name
+ * before anything is claimed and the caller's direct open carries it, so the
+ * outcome is exactly the host's own — the file opens where the host resolves
+ * a name that long, and the same errno comes back where it does not.  What
+ * the program loses is only the completion path, and that is a throughput
+ * fact the runtime has to report: neither submission counter moves for an
+ * operation that was never submitted, so without the demotion counter this
+ * looks exactly like a program that never opened anything.
+ *
+ * Linux resolves the whole 1200-byte name (`PATH_MAX` is 4096) and the marker
+ * file is really opened through the direct path.  Darwin's `PATH_MAX` is this
+ * record's own bound, so the name it cannot hold is one its host refuses too;
+ * the demotion still has to be counted and the direct path still has to
+ * deliver the host's answer unchanged.  Both legs run wherever they apply. */
+static int test_a_name_no_record_can_hold_opens_directly(
+    const char *scratch_directory
+) {
+    char relative[WF_HARNESS_LONG_PATH_BYTES];
+    wf_completion_token token;
+    size_t length = 0;
+    size_t built = 0;
+    size_t level;
+    uint64_t demoted_before;
+    uint64_t submissions_before;
+    int root;
+    int descriptor;
+    int host_error = 0;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    char marker = 0;
+
+    CHECK(scratch_directory != NULL);
+    root = open(scratch_directory, O_RDONLY | O_DIRECTORY);
+    CHECK(root >= 0);
+    /* One component is at most NAME_MAX on every host this runs on, so the
+     * length that exceeds the record comes from nesting rather than from one
+     * outsized name.  A host that refuses the depth stops the tree there and
+     * `built` records how much of it exists. */
+    for (level = 0; level < WF_HARNESS_LONG_COMPONENTS; ++level) {
+        if (level != 0) {
+            relative[length] = '/';
+            length += 1u;
+        }
+        memset(relative + length, 'd', WF_HARNESS_LONG_COMPONENT_BYTES);
+        length += WF_HARNESS_LONG_COMPONENT_BYTES;
+        relative[length] = 0;
+        if (mkdirat(root, relative, 0700) == 0 || errno == EEXIST) {
+            built = length;
+            continue;
+        }
+        CHECK(errno == ENAMETOOLONG);
+    }
+    memcpy(relative + length, "/marker", sizeof("/marker"));
+    length += sizeof("/marker") - 1u;
+    CHECK(length > (size_t)WF_FILE_PATH_CAPACITY);
+    descriptor = openat(root, relative, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    if (descriptor < 0) {
+        host_error = errno;
+        CHECK(host_error == ENAMETOOLONG);
+    } else {
+        CHECK(write(descriptor, "L", 1) == 1);
+        CHECK(close(descriptor) == 0);
+    }
+
+    demoted_before = wf__completion_file_demoted_opens();
+    submissions_before = wf__completion_file_submissions();
+    CHECK(
+        wf__completion_file_open_at_submit(
+            root,
+            relative,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 0
+    );
+    CHECK(wf__completion_file_demoted_opens() == demoted_before + 1u);
+    CHECK(wf__completion_file_submissions() == submissions_before);
+
+    descriptor = wf__completion_file_open_at_direct(
+        root,
+        relative,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
+    );
+    if (host_error == 0) {
+        CHECK(
+            descriptor >= 0 && error_code == 0
+            && open_outcome == WF_FILE_OPEN_SUCCEEDED
+        );
+        CHECK(read(descriptor, &marker, 1) == 1);
+        CHECK(marker == 'L');
+        CHECK(close(descriptor) == 0);
+        CHECK(unlinkat(root, relative, 0) == 0);
+    } else {
+        CHECK(
+            descriptor < 0 && error_code == host_error
+            && open_outcome == WF_FILE_OPEN_FAILED
+        );
+    }
+
+    /* Remove exactly the directories that were created, deepest first. */
+    length = built;
+    while (length != 0) {
+        relative[length] = 0;
+        CHECK(unlinkat(root, relative, AT_REMOVEDIR) == 0);
+        while (length != 0 && relative[length - 1u] != '/') {
+            length -= 1u;
+        }
+        if (length != 0) {
+            length -= 1u;
+        }
+    }
+    CHECK(close(root) == 0);
+    return 0;
+}
+
 static int test_bridge_capacity_falls_back_per_operation(void) {
     wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
     wf_completion_token refused;
@@ -2560,6 +2693,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
     RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
     RUN_TEST(test_submitted_open_owns_its_path_bytes(argv[1]));
+    RUN_TEST(test_a_name_no_record_can_hold_opens_directly(argv[1]));
     RUN_TEST(test_bridge_capacity_falls_back_per_operation());
     RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
     RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));

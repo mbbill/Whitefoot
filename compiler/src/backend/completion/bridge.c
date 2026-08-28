@@ -31,6 +31,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +55,13 @@ static int wf_bridge_error;
 static int wf_bridge_file_error;
 static unsigned wf_bridge_ready;
 static unsigned wf_bridge_file_ready;
+/* Opens the completion path refused because no operation record can hold the
+ * name, each of which its caller then performs as a direct blocking open.
+ * `open_read` resolves a caller path buffer of any admitted length [PATH-1],
+ * so a program reaches this without writing anything wrong, and the demotion
+ * is otherwise invisible: neither the completion counter nor the fallback
+ * adapter's counter moves for an operation that was never submitted. */
+static _Atomic uint64_t wf_bridge_demoted_opens;
 #if defined(__linux__)
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
@@ -699,13 +707,24 @@ int wf__completion_file_open_at_submit(
     void *token_storage
 ) {
     wf_file_request request;
+    if (token_storage == NULL || has_mode > 1u
+        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
+        return 0;
+    }
     /* A submitted open outlives this call, so its name must fit the operation
      * record that will own the bytes.  A longer name is refused here, before
      * anything is claimed, and the caller's direct open carries it instead —
      * that path resolves the caller's buffer inside its own call and needs no
-     * copy at all. */
-    if (token_storage == NULL || !wf_file_path_fits(path) || has_mode > 1u
-        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
+     * copy at all.  It is counted apart from the shape refusals above because
+     * it is the one an admitted program reaches: the outcome is unchanged and
+     * only the completion path is lost, which is a throughput fact a reader
+     * measuring this runtime needs to see. */
+    if (!wf_file_path_fits(path)) {
+        atomic_fetch_add_explicit(
+            &wf_bridge_demoted_opens,
+            1,
+            memory_order_relaxed
+        );
         return 0;
     }
 #if defined(__linux__)
@@ -1358,6 +1377,10 @@ uint64_t wf__completion_file_fallback_submissions(void) {
     return wf_bridge_file_ready == 0
         ? 0
         : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter).submissions;
+}
+
+uint64_t wf__completion_file_demoted_opens(void) {
+    return atomic_load_explicit(&wf_bridge_demoted_opens, memory_order_relaxed);
 }
 
 uint64_t wf__completion_file_helper_executions(void) {

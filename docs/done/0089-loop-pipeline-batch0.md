@@ -222,7 +222,18 @@ A name that does not fit is refused **before** an operation is claimed —
 `wf_linux_request_valid` — so the caller falls back to its direct open, which
 resolves its own buffer inside its own call and needs no copy. That is a
 throughput fallback of the same class as a full queue, never a changed
-outcome, and no generated open can reach it.
+outcome.
+
+*Correction, 2026-08-28.* The clause that closed this paragraph — "and no
+generated open can reach it" — was wrong, and the review of this integration
+branch caught it. It holds for `open_file` and `open_directory`, whose one
+relative component the emitter clamps to the target's component limit; it does
+not hold for `open_read`, which passes the caller's whole path buffer and which
+[PATH-1] admits at any length. A name longer than `WF_FILE_PATH_CAPACITY` is
+reachable from an ordinary program, and it is now counted rather than silent:
+`wf__completion_file_demoted_opens` reports the opens that took the direct path
+because no record could hold their name, and the harness asserts both that
+count and that the direct path delivers the host's own outcome unchanged.
 
 Two backends stage a path, and they are all of them.
 

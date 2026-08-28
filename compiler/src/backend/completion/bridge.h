@@ -160,6 +160,10 @@ void wf__writer_run_root(void *frame);
 
 uint64_t wf__completion_file_submissions(void);
 uint64_t wf__completion_file_fallback_submissions(void);
+/* Opens no operation record could hold the name of, which their callers
+ * performed as direct blocking opens instead.  The outcome of each is the
+ * open it asked for; what it lost is the completion path. */
+uint64_t wf__completion_file_demoted_opens(void);
 uint64_t wf__completion_file_helper_executions(void);
 uint64_t wf__completion_target_helper_count(void);
 uint64_t wf__completion_target_helper_executions(void);
