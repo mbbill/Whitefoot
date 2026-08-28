@@ -614,6 +614,30 @@ mod tests {
         );
     }
 
+    /// A canonical-form rejection prints the bytes it wanted and the bytes it
+    /// found.
+    ///
+    /// FORM-2 is machine-decided, so the auditor knows both at the point it
+    /// stops. It used to print neither, and one double space in an effect row
+    /// cost a writer a compile round spent bisecting a byte offset.
+    #[test]
+    fn a_canonical_rejection_prints_the_expected_bytes_beside_the_found_bytes() {
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
+        let failure = compile(
+            &[SourceInput::from_host_path(
+                "input0.wf",
+                "/absolute/path/report.wf",
+                source,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect_err("a double space is not canonical form");
+        assert_eq!(failure.rule_id(), Some("FORM-2"));
+        let detail = failure.detail();
+        assert!(detail.contains(r#"expected: " ", found: "  ""#), "{detail}");
+        assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
+    }
+
     /// A source read from a host path the closed logical spelling cannot hold
     /// is still named by that host path everywhere a reader looks.
     ///

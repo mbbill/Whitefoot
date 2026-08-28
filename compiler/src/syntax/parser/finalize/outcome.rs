@@ -233,9 +233,18 @@ impl CanonicalLocation {
 }
 
 /// The first exact FORM-2 source-forest mismatch in stage order.
+///
+/// Canonical form is machine-decided, so the auditor knows the exact bytes it
+/// wanted at the point it rejects. Carrying them, beside the bytes it found,
+/// is what turns this rejection from a byte offset a writer has to bisect into
+/// a difference they can read.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalIssue {
     pub(crate) location: CanonicalLocation,
+    /// The exact trivia bytes FORM-2 requires between the two terminals.
+    pub(crate) expected: String,
+    /// The exact trivia bytes the source carries there instead.
+    pub(crate) found: String,
 }
 
 impl CanonicalIssue {
