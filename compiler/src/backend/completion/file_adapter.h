@@ -468,9 +468,10 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * will enter one, when this is called.  That is not a caution, it is the
  * design.  The entry points that take `queue_lock` behind the record's
  * `initialized` flag -- submission, the queue readers, the cap setter, the
- * decline check -- touch storage this call tears down, so the two named
- * below are named because they are the two the writer's own operation path
- * reaches, not because overlapping any of the others is safe.
+ * decline check -- touch storage this call tears down.  The two described
+ * below are the two whose windows are worth spelling out -- a signal issued
+ * after the lock is released, and a lock taken after the flag was passed --
+ * not the only two a program can be inside.
  *
  * A submission announces its queue entry *after* releasing the queue lock, on
  * purpose -- signalling under the lock wakes a helper whose next act is to
