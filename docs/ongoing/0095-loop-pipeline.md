@@ -197,7 +197,23 @@ for the same class of defect.
   stand at a refusal, and that named call took a global lock on *every*
   refusal, which serialized the very schedule the rule is about. The
   observation no longer perturbs it — the armed flag is read without the lock —
-  and with that changed the suite reproduces the deadlock too.
+  and with that changed the suite reproduces the deadlock too;
+- and it stopped a second time, for the other half of the same reason. A held
+  ring entry is released by whatever thread next asks the ledger, and on a
+  target with a ring that thread is a scheduler parked on the completion
+  endpoint. What wakes it is a publication. A retirement is recorded just
+  after the publication it belongs to, so the woken thread could ask in the
+  instant before the answer landed, find nothing, and park on a wake that was
+  never coming a second time — twice in four hundred runs at one helper in the
+  Linux container, as a hang rather than a wrong answer.
+
+  Recording the retirement *before* the publication removes that, and is
+  wrong: `test_open_exhaustion_waits_for_another_engine` then fails four times
+  in four hundred, because a program is entitled to find an operation's result
+  published once the retirement that released its own open has happened. The
+  order stands, and the retirement announces itself on the scheduler's own
+  endpoint instead — only where the ledger says something is waiting for one,
+  so the ordinary path pays one atomic load and no wake at all.
 
 Each of the three routes is covered by a test that fails without the fix, and
 so are the third exit and the deadlock:
