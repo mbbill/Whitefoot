@@ -404,23 +404,69 @@ copy rather than a fact to rediscover:
   When the factory is itself a borrow — which it is in any recursive walker —
   [OWN-6] pushes the other way and admits no inline `region 'source { let
   permit = …; match open_… }`, because that region holds two statements. The
-  two rules genuinely conflict there and no writer discipline satisfies both;
-  the recorded finding is `docs/done/0098-blind-writer.md` D2. In a loop whose
-  factory is an owned entry parameter, which is every top-level I/O loop, write
-  it inline.
+  two rules genuinely conflict there, and the resolution is that only one of
+  the two forms is a program at all. Which form to write is decided by how the
+  loop holds its factory, and the three measured outcomes are:
+
+  ```text
+  owned factory, inline    PAR stage  probes/inline_owned.wf:3   for  permitted  staged at
+                           open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name,
+                           start: 0_u64, end: 4_u64); 4 places classified
+  borrowed factory, inline [OWN-6] InvalidChildReborrow — the program does not compile
+  borrowed factory, helper PAR stage  probes/walk_helper.wf:14   for  denied     condition 3: a
+                           may-suspend call retains a borrow past its own submission on storage the
+                           body writes and the iteration does not introduce; … at
+                           &uniq 'open deref(factory)
+  ```
+
+  So: **in a loop whose factory is an owned entry parameter — every top-level
+  I/O loop — write the reserve and the open inline, and the staged permission
+  is granted.** **In a recursive walker, whose factory is a `&uniq` borrow,
+  write the helper factoring, and the pipeline is the price.** There is no
+  third form: the inline shape does not compile there, so the choice is between
+  a denied loop and no program. The helper is the whole of the idiom only when
+  its two companions come with it — the region's single statement is the
+  `match` on the helper's call, and every statement that uses the opened value
+  lives inside that `match` arm, because the opened value dies with the region.
+  `tests/programs/dir_walk.wf` is that form written out, and [OWN-6]'s own
+  rejection now states all three parts. The recorded finding is
+  `docs/done/0098-blind-writer.md` D2 and its resolution is
+  `docs/done/0100-writer-defaults-2.md`.
 
 Read the verdict rather than guessing it. An ordinary `whitefootc` compile
-already prints the denied verdict of every I/O loop to stderr, prefixed
-`whitefootc: note:`; the compilation succeeded and the note is not a rejection.
-A granted loop says nothing. `whitefootc --par-ledger` is the full report: one
-`PAR stage` line per loop that performs I/O, and one `PAR place` line for every
-place the judgment classified, with its disposition and the reason. A denial
-names the offending place, the numbered condition, and the admitted form.
+prints a denied staged verdict to stderr, prefixed `whitefootc: note:`, with
+every denied row of that loop's disposition table under it; the compilation
+succeeded and the note is not a rejection. A loop whose staged verdict is
+granted says nothing at all — including when its counted [PAR-2] verdict is
+denied, which is the ordinary case for the form above: the counted rule refuses
+the short factory loan the staged rule exists to admit, and that denial is
+deliberately withheld from the default channel rather than telling a writer
+their granted loop was denied. It is in the full report.
+
+`whitefootc --par-ledger` is that full report: one `PAR stage` line per loop
+that performs I/O, and one `PAR place` line for every place the judgment
+classified, with its disposition and the reason, plus the `PAR pair`, `PAR
+chain`, and `PAR loop` lines of the other judgments. A denial names the
+offending place, the numbered condition, and the admitted form. Every notice is
+one of those lines, byte for byte.
+
+One remedy the report can print is not one a writer can take, and it says so:
+where a loop's exit is selected by the may-suspend call's own outcome — the
+`ReadEnd` break of a read-to-EOF loop over one file — the condition-2 line
+states that [PAR-3] cannot stage that loop as written. The shapes staged today
+are a fixed-trip bounded loop and a per-file loop over names; one file's chunk
+loop stays sequential.
 
 No worked example in `tests/programs/` currently holds this permission.
 `dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` all compile to the module a
-compiler with no overlap lowering at all emits, so a writer copying one of them
-is copying the denied shape. Copy the form above instead, and read the note.
+compiler with no overlap lowering at all emits. Two different facts are mixed
+together in that sentence, and the resolution above separates them: their
+*walker* loops carry the helper factoring because nothing else compiles, and
+their denial is the price of the only admitted form; their *chunk* loops over
+one file are denied by condition 2 because a read-to-EOF break cannot be
+hoisted, which no rewrite fixes either. What a writer must not copy from them
+is the hoisted scratch buffer — the form above is the one to copy for a
+top-level per-file loop, and it is the one this pattern is about.
 
 Current value: the judgment is landed and reported; the lowering that turns a
 granted verdict into overlapped execution is not, so today this form costs a
