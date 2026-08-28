@@ -367,12 +367,28 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
  * The clock is read twice per sampled execution and not at all otherwise. */
 #define WF_FILE_EXECUTE_SAMPLE_INTERVAL 16u
 
-static uint64_t wf_file_monotonic_ns(void) {
+/* The clock the helper policy measures host calls with.
+ *
+ * It is a named seam of the same class as WF_COMPLETION_PREAD and
+ * WF_COMPLETION_POLL: a build may answer it with a scripted clock so that the
+ * growth rule can be tested for what it decides rather than for how fast the
+ * machine running the test happened to be.  The shipped build reads the host
+ * monotonic clock and nothing else. */
+#if !defined(WF_FILE_MONOTONIC_NS)
+static uint64_t wf_file_monotonic_ns_host(void) {
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
         return 0;
     }
     return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+}
+#define WF_FILE_MONOTONIC_NS wf_file_monotonic_ns_host
+#else
+extern uint64_t WF_FILE_MONOTONIC_NS(void);
+#endif
+
+static uint64_t wf_file_monotonic_ns(void) {
+    return WF_FILE_MONOTONIC_NS();
 }
 
 /* Records one host call's duration into the smoothed average, from one in

@@ -2007,14 +2007,65 @@ static int test_open_results_reach_every_independent_owner(
  *
  * A written WF_IO_HELPERS pins the count exactly, which is what every test
  * that names a helper configuration depends on. An unset one asks for
- * demand-driven growth: it starts at one and may reach the machine's own CPU
- * count, never past it and never past the process ceiling.
+ * demand-driven growth, bounded by the process ceiling.
  *
- * The unset arm previously asserted exactly one helper. That was the fixed
- * default before growth existed, and it kept passing after growth shipped
- * only because the growth rule compared queue depth against helper count and
- * so almost never fired. Asserting the range is what the policy actually
- * promises; asserting one would now pin the defect instead of the contract. */
+ * The unset arm has now been weakened twice, and both times because the
+ * policy it pinned changed under it. It first asserted exactly one helper,
+ * which was the fixed default before growth existed. It then asserted at
+ * least one and no more than the machine's CPU count, which was the growth
+ * rule of batch 0086.
+ *
+ * Batch 0096 measured that rule and replaced both of its ends: the count
+ * starts at none, because a program whose operations do not wait wants none,
+ * and the ceiling is the bridge's operation bound rather than the core count,
+ * because a helper inside a host call holds no CPU. What is left that this
+ * process-wide case can honestly assert is the ceiling — how many helpers a
+ * program *has* here depends on whether this harness's own temporary-file
+ * operations happened to wait, which is a property of the machine.
+ *
+ * The rest of the promise did not go untested: it moved to
+ * `test_pool_stays_empty_when_operations_do_not_wait` and
+ * `test_pool_grows_when_operations_wait`, which script the clock the policy
+ * measures with and so decide the question rather than sampling it. */
+/* The scripted clock the helper policy measures host calls with.
+ *
+ * Unscripted it is the host's own monotonic clock, so every other case in this
+ * file measures what the shipped build measures.  A case that is about what
+ * the growth rule *decides* scripts it instead, and then the decision is a
+ * property of the rule rather than of how loaded the machine running the test
+ * happened to be. */
+static _Atomic uint64_t wf_scripted_clock_step_ns;
+static _Atomic uint64_t wf_scripted_clock_now_ns;
+
+uint64_t wf_completion_test_monotonic_ns(void) {
+    uint64_t step = atomic_load_explicit(
+        &wf_scripted_clock_step_ns,
+        memory_order_relaxed
+    );
+    if (step == 0) {
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            return 0;
+        }
+        return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+    }
+    /* Every reading advances by the scripted step, so the pair of readings
+     * around one host call measures exactly that step. */
+    return atomic_fetch_add_explicit(
+        &wf_scripted_clock_now_ns,
+        step,
+        memory_order_relaxed
+    ) + step;
+}
+
+static void wf_script_clock(uint64_t step_ns) {
+    atomic_store_explicit(
+        &wf_scripted_clock_step_ns,
+        step_ns,
+        memory_order_relaxed
+    );
+}
+
 /* Counts every application of the WF_IO_NOCACHE target policy and then makes
  * the same host call the shipped build makes.  The harness build names this
  * function as WF_FILE_UNCACHED_APPLY, so the policy under test is the one in
@@ -2231,7 +2282,6 @@ static int test_process_wide_target_helper_budget(void) {
     const char *text = getenv("WF_IO_HELPERS");
     uint64_t held = wf__completion_target_helper_count();
     unsigned long ceiling = 8;
-    long online;
     if (text != NULL && *text != '\0') {
         char *end = NULL;
         unsigned long pinned;
@@ -2245,20 +2295,138 @@ static int test_process_wide_target_helper_budget(void) {
             return 0;
         }
     }
-    online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online < 1) {
-        online = 1;
-    }
-    if ((unsigned long)online < ceiling) {
-        ceiling = (unsigned long)online;
-    }
-    /* Where a native ring carries the operations, the same unset policy asks
-     * for no helpers at all and a waiting scheduler is the engine, so only
-     * the ceiling applies there. */
-    if (wf__completion_linux_io_uring_submissions() == 0) {
-        CHECK(held >= 1);
-    }
     CHECK(held <= ceiling);
+    return 0;
+}
+
+/* Submits `count` positioned reads of one open descriptor and advances them on
+ * this thread, which is what a program with no helper does. */
+static int drive_reads_on_this_thread(
+    wf_completion_runtime *runtime,
+    wf_file_adapter *adapter,
+    int descriptor,
+    unsigned count
+) {
+    unsigned index;
+    for (index = 0; index < count; ++index) {
+        wf_completion_token token;
+        wf_file_request request;
+        wf_file_result result;
+        unsigned char byte = 0;
+        CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
+        memset(&request, 0, sizeof(request));
+        request.kind = WF_FILE_PREAD;
+        request.operation.pread.descriptor = descriptor;
+        request.operation.pread.buffer = &byte;
+        request.operation.pread.count = 1;
+        request.operation.pread.offset = 0;
+        CHECK(
+            wf_file_adapter_submit(adapter, token, &request)
+            == WF_FILE_TARGET_OWNS
+        );
+        while (wf_file_adapter_queued(adapter) != 0) {
+            (void)wf_file_adapter_progress(adapter, 1);
+        }
+        CHECK(drain_and_consume_file(runtime, token, &result) == 0);
+        CHECK(result.error_code == 0);
+    }
+    return 0;
+}
+
+/* A program whose operations do not wait gets no helper, however much width it
+ * states.
+ *
+ * This is the half of the growth rule batch 0096 added, and it is the half
+ * that decides what the warm path costs: queue depth says a program stated
+ * independent work, not that the work waits on anything, and a helper handed
+ * an operation the host has already answered adds a queue crossing and two
+ * thread wakes to nothing.  The clock is scripted so the case is about the
+ * rule rather than about this machine's page cache. */
+static int test_pool_stays_empty_when_operations_do_not_wait(
+    const char *directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[8];
+    wf_file_adapter adapter;
+    wf_file_work queue[8];
+    pthread_t helpers[4];
+    char path[512];
+    int descriptor;
+
+    CHECK(directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-pool-no-wait-%ld",
+            directory,
+            (long)getpid()
+        ) > 0
+    );
+    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, "wf", 2) == 2);
+
+    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
+
+    /* One microsecond a call: real work, and an order of magnitude under the
+     * wait that would make a second thread worth its handoff. */
+    wf_script_clock(1000u);
+    CHECK(drive_reads_on_this_thread(&runtime, &adapter, descriptor, 32) == 0);
+    wf_script_clock(0);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptor) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* A program whose operations do wait gets helpers, up to the cap and no
+ * further, and gets them without the queue having to be deeper than the cap. */
+static int test_pool_grows_when_operations_wait(const char *directory) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[8];
+    wf_file_adapter adapter;
+    wf_file_work queue[8];
+    pthread_t helpers[4];
+    char path[512];
+    int descriptor;
+    size_t held;
+
+    CHECK(directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-pool-waits-%ld",
+            directory,
+            (long)getpid()
+        ) > 0
+    );
+    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, "wf", 2) == 2);
+
+    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 0) == 0);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
+
+    /* A millisecond a call is a wait by any reading of the threshold. */
+    wf_script_clock(1000000u);
+    CHECK(drive_reads_on_this_thread(&runtime, &adapter, descriptor, 32) == 0);
+    wf_script_clock(0);
+    held = wf_file_adapter_helper_count(&adapter);
+    CHECK(held >= 1);
+    CHECK(held <= 4);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptor) == 0);
+    CHECK(unlink(path) == 0);
     return 0;
 }
 
@@ -2701,6 +2869,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
     RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
+    RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
+    RUN_TEST(test_pool_grows_when_operations_wait(argv[1]));
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());

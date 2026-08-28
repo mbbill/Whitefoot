@@ -61,14 +61,28 @@ COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpu
 
 COMPLETION_DIR := src/backend/completion
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
-COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+COMPLETION_DEFINES := \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 	-DWF_COMPLETION_POLL=wf_completion_test_poll
+COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+	$(COMPLETION_DEFINES)
 # The harness names the WF_IO_NOCACHE application so it can count it. The
 # named function performs the same host call the shipped policy performs, so
 # only the counting is added, and only this build has it.
-COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) \
-	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply
+#
+# It also names the clock the helper policy measures host calls with, so that
+# what the growth rule decides can be tested by scripting the measurement
+# instead of by sleeping and hoping the machine agreed. Absent a script the
+# named clock answers with the host's own monotonic clock, exactly as the
+# shipped build does.
+#
+# Both defines are named once, here, and used by every build that links the
+# harness: a sanitizer build that named a different set would run a different
+# runtime from the one the ordinary build runs.
+COMPLETION_HARNESS_DEFINES := \
+	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
+	-DWF_FILE_MONOTONIC_NS=wf_completion_test_monotonic_ns
+COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
 COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -258,10 +272,8 @@ completion-core-read-test: completion-core-read-source-boundary
 completion-sanitize: completion-core-read-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
-		-DWF_COMPLETION_POLL=wf_completion_test_poll \
+		$(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES) \
 		-fsanitize=address,undefined \
-		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
 		$(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
