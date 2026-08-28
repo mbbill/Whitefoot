@@ -1152,6 +1152,102 @@ impl IrCompletionStep {
     }
 }
 
+/// The arguments one loop's window query is asked with.
+///
+/// `wf__completion_window` answers from the runtime's own capacity and from
+/// these three, each of which is a bound and none of which is a request. Zero
+/// means "this one places no bound": a loop whose trip count is not statically
+/// known passes zero for `span`, a loop with no privatized storage passes zero
+/// for `slot_bytes`, and a loop the compiler puts no static cap on passes zero
+/// for `ceiling`. The writer never spells any of them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrCompletionWindow {
+    span: u64,
+    slot_bytes: u64,
+    ceiling: u64,
+}
+
+impl IrCompletionWindow {
+    /// Built by the loop judgment, which does not exist yet, and by the tests
+    /// that exercise everything downstream of it.
+    #[cfg(test)]
+    pub(crate) const fn new(span: u64, slot_bytes: u64, ceiling: u64) -> Self {
+        Self {
+            span,
+            slot_bytes,
+            ceiling,
+        }
+    }
+
+    pub(crate) const fn span(&self) -> u64 {
+        self.span
+    }
+
+    pub(crate) const fn slot_bytes(&self) -> u64 {
+        self.slot_bytes
+    }
+
+    pub(crate) const fn ceiling(&self) -> u64 {
+        self.ceiling
+    }
+}
+
+/// One function's staged loop pipeline, or nothing where the loop judgment
+/// grants no such schedule.
+///
+/// Exactly two things about emission change when a function carries this, and
+/// they are the two the design's §3.4 names. The window is asked once at the
+/// loop's entry block, never per iteration, exactly as `wf__par_split_budget`
+/// is asked. And a block named by `carrying` may end with the loop's target
+/// operations still outstanding, which is what makes a back edge legal with
+/// work in flight; every block not named there drains everything outstanding
+/// before its terminator, in hand-out order, which is what makes the loop's
+/// normal exit and every typed exit from the prologue retire the whole window.
+///
+/// What this does *not* yet carry is the per-slot storage index. One call site
+/// still owns one operation record, so a site inside a carrying region that
+/// submits again while its earlier operation is outstanding is refused by
+/// [`crate::backend::BackendFailure::SecondOutstandingCompletionOperation`]
+/// rather than handed the first operation's storage. Lifting that is the
+/// driver's work, and the driver is what fills this in.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrCompletionPipeline {
+    entry: IrBlockId,
+    carrying: Vec<IrBlockId>,
+    window: IrCompletionWindow,
+}
+
+impl IrCompletionPipeline {
+    /// Built by the loop judgment, which does not exist yet, and by the tests
+    /// that exercise everything downstream of it.
+    #[cfg(test)]
+    pub(crate) fn new(
+        entry: IrBlockId,
+        carrying: Vec<IrBlockId>,
+        window: IrCompletionWindow,
+    ) -> Self {
+        Self {
+            entry,
+            carrying,
+            window,
+        }
+    }
+
+    /// The block the window is asked in, once per loop entry.
+    pub(crate) const fn entry(&self) -> IrBlockId {
+        self.entry
+    }
+
+    /// Whether this block's terminator may leave operations outstanding.
+    pub(crate) fn carries(&self, block: IrBlockId) -> bool {
+        self.carrying.contains(&block)
+    }
+
+    pub(crate) const fn window(&self) -> IrCompletionWindow {
+        self.window
+    }
+}
+
 /// How large a lane frame a handed-out call is granted, in bytes.
 ///
 /// This restates `WF_PAR_FRAME_BYTES` in `backend/par_runtime.c`, because the
@@ -1187,6 +1283,7 @@ pub struct IrFunction {
     blocks: Vec<IrBlock>,
     overlaps: Vec<IrOverlap>,
     completion_steps: Vec<IrCompletionStep>,
+    completion_pipeline: Option<IrCompletionPipeline>,
     synthesis: Option<IrSynthesis>,
     target_action: crate::TargetAction,
 }
@@ -1227,6 +1324,12 @@ impl IrFunction {
     /// Direct calls whose ordinary dependencies admit completion submission.
     pub(crate) fn completion_steps(&self) -> &[IrCompletionStep] {
         &self.completion_steps
+    }
+
+    /// The staged loop pipeline this function's loop judgment granted, or
+    /// `None` where none was.
+    pub(crate) const fn completion_pipeline(&self) -> Option<&IrCompletionPipeline> {
+        self.completion_pipeline.as_ref()
     }
 
     pub(crate) fn contains_buffer(&self) -> bool {
@@ -1293,6 +1396,33 @@ impl IrProgram<'_, '_, '_> {
 
     pub const fn main_ordinal(&self) -> u32 {
         self.main
+    }
+
+    /// Installs one function's staged loop pipeline.
+    ///
+    /// The pipeline is the loop judgment's product, and the judgment does not
+    /// exist yet: `lower_checked` writes `None` into every function. Until it
+    /// does, this is how the backend's carrying and draining behaviour is
+    /// exercised — the caller supplies the block set the judgment will supply,
+    /// and everything downstream of that decision is the shipped path.
+    ///
+    /// It installs a descriptor and nothing else. It cannot admit a program,
+    /// change a verdict, or reach a claim.
+    #[cfg(test)]
+    pub(crate) fn set_completion_pipeline_for_test(
+        &mut self,
+        function_name: &str,
+        pipeline: IrCompletionPipeline,
+    ) -> bool {
+        let Some(function) = self
+            .functions
+            .iter_mut()
+            .find(|function| function.name == function_name)
+        else {
+            return false;
+        };
+        function.completion_pipeline = Some(pipeline);
+        true
     }
 
     /// Test-only fault injection for runtime-claim evidence.

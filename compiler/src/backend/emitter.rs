@@ -75,6 +75,16 @@ pub enum BackendFailure {
     /// a target-layout stop this is an emitter capability limit and not a
     /// source-language rejection; it cites no language rule [DIAG-1].
     SecondOutstandingCompletionOperation,
+    /// A function ended with a target operation still outstanding. A staged
+    /// loop pipeline may leave operations in flight across the blocks it
+    /// names, but every path out of its loop reaches a block it does not name,
+    /// and that block retires them. A pipeline that named a block on every
+    /// exit path would leave an accepted operation owned by nobody — the
+    /// target would still write its result into storage the frame no longer
+    /// exists to hold. Like the refusal above this is an emitter capability
+    /// limit rather than a source-language rejection; it cites no language
+    /// rule [DIAG-1].
+    UnretiredCompletionOperation,
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -391,6 +401,12 @@ fn emit_llvm_for(
     if completion_used {
         text.push('\n');
         text.push_str(completion::COMPLETION_RUNTIME_FALLBACK);
+        // Emitted only where a module actually asks for a window, exactly as
+        // the split budget's fallback is, so a module that stages no loop
+        // names no such symbol at all.
+        if functions.contains("@wf__completion_window(") {
+            text.push_str(completion::COMPLETION_WINDOW_FALLBACK);
+        }
     }
     if stackless.is_some() {
         text.push('\n');
@@ -696,8 +712,19 @@ struct FunctionEmitter<'program, 'state> {
     /// step reaches.  Their wait sets contain only ordinary prior result/loan
     /// dependencies retained by lowering.
     completion_steps: HashMap<IrValueId, crate::IrCompletionStep>,
-    /// Hand-outs emitted in the current block and not yet joined.
+    /// Hand-outs emitted and not yet joined.
+    ///
+    /// Ordinarily this is empty at every terminator, because a block joins
+    /// everything it handed out before it ends. A function carrying a staged
+    /// loop pipeline is the exception: a block the pipeline names leaves its
+    /// operations here, and the first block that is not named drains them.
     handed_out: Vec<HandedOut>,
+    /// The staged loop pipeline of the function being emitted, or `None`.
+    ///
+    /// `None` is every function today: `lower_checked` grants no pipeline yet.
+    /// It is what keeps the emitted module byte-identical to one built before
+    /// this machinery existed.
+    pipeline: Option<&'program crate::IrCompletionPipeline>,
     /// Whether any function in this module emitted a typed completion handoff.
     completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
@@ -799,6 +826,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             overlap_join_sites,
             completion_steps,
             handed_out: Vec::new(),
+            pipeline: function.completion_pipeline(),
             completion_used,
             sequential_clones,
         }
@@ -806,6 +834,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn is_overlap_join_site(&self, value: IrValueId) -> bool {
         self.overlap_join_sites.contains(&value)
+    }
+
+    /// Whether this block may end with the pipeline's operations still
+    /// outstanding.
+    ///
+    /// One rule decides both halves of the staged schedule: a block the
+    /// pipeline names never joins, and every other block joins everything
+    /// outstanding before it ends. The first gives the loop's back edge the
+    /// right to carry work across it. The second is the drain — at the loop's
+    /// normal exit and at every typed exit out of the prologue alike — and it
+    /// needs no separate machinery, because retiring every outstanding
+    /// operation in hand-out order is exactly what a block has always done.
+    fn block_carries_completion(&self, block: IrBlockId) -> bool {
+        self.pipeline
+            .is_some_and(|pipeline| pipeline.carries(block))
     }
 
     /// The symbol one call names.
@@ -856,10 +899,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 prelude_anchor = Some(self.output.len());
             }
             self.emit_block_parameters(block_id, block)?;
+            self.emit_completion_window(block_id)?;
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
             self.emit_terminator(block_id, block.terminator())?;
+        }
+        // Every operation this function handed to a target was joined by some
+        // block. A pipeline that named a block on every path out of its loop
+        // would leave one owned by nobody, which is a lowering defect and not
+        // a slower schedule.
+        if self
+            .handed_out
+            .iter()
+            .any(|pending| matches!(pending, HandedOut::Completion(_)))
+        {
+            return Err(BackendFailure::UnretiredCompletionOperation);
         }
         self.output.push_str("}\n\n");
         if !self.entry_prelude.is_empty() {
@@ -976,7 +1031,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } else {
                 self.emit_definition(*result, *ty, operation)?;
             }
-            if step.finish() {
+            // A carrying block never joins: the schedule's last member ends
+            // it with the operations still owned by the target, and the first
+            // block the pipeline does not name retires them.
+            if step.finish() && !self.block_carries_completion(block) {
                 self.emit_all_completion_joins()?;
             }
             return Ok(());
@@ -1231,12 +1289,44 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
     }
 
+    /// Asks the runtime for this loop's window, once at its entry block.
+    ///
+    /// The precedent is `wf__par_split_budget`, asked once per loop entry and
+    /// never per iteration. The three arguments are bounds the compiler
+    /// already knows — the trip count where it is known, the private storage
+    /// one in-flight iteration owns, and the compiler's own static cap from
+    /// that storage's cost — and the runtime answers from its own capacity.
+    /// One is always a legal answer and reproduces the sequential program, so
+    /// this query can never make a correct program fail.
+    ///
+    /// There is no environment variable, attribute, or source spelling for the
+    /// answer. The writer never sees it.
+    fn emit_completion_window(&mut self, block: IrBlockId) -> Result<(), BackendFailure> {
+        let Some(pipeline) = self.pipeline.filter(|pipeline| pipeline.entry() == block) else {
+            return Ok(());
+        };
+        let window = pipeline.window();
+        let name = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{name} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})",
+            window.span(),
+            window.slot_bytes(),
+            window.ceiling()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        *self.completion_used = true;
+        Ok(())
+    }
+
     fn emit_terminator(
         &mut self,
         block: IrBlockId,
         terminator: &IrTerminator,
     ) -> Result<(), BackendFailure> {
-        self.emit_all_completion_joins()?;
+        if !self.block_carries_completion(block) {
+            self.emit_all_completion_joins()?;
+        }
         match terminator {
             IrTerminator::Unreachable => {
                 writeln!(self.output, "  unreachable").map_err(|_| BackendFailure::TextEmission)

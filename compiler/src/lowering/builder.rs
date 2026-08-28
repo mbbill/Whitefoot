@@ -528,6 +528,7 @@ impl<'program> IrBuilder<'program> {
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
             overlaps,
+            completion_pipeline: None,
             completion_steps,
             synthesis,
             target_action,
