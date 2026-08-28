@@ -1106,6 +1106,133 @@ What it does *not* do is make a table uncached on its own. It cannot evict,
 so the tree has to arrive non-resident and be checked; that is what the
 regeneration and the probes above are for.
 
+## Darwin helper-path cost, batch 0096 (2026-08-28)
+
+Batch 0092 left one result standing on macOS: where operations wait the
+completion model works, and where they do not it costs. This section is the
+re-measurement after batch 0096 rebuilt the Darwin helper path's
+per-operation cost. It is the same workload, the same script and the same
+runner label as the batch-0092 macOS section above, which is the **before**
+for every number here.
+
+- **before**: batch-0092 macOS-runner section above.
+- **after**: run
+  [33155821397](https://github.com/mbbill/Whitefoot/actions/runs/33155821397),
+  commit `266acf4f`, branch `batch/0096-darwin-handoff`.
+- **hosts**: `bench-macos-read` on `macos-14` — Darwin 23.6.0, macOS 14.8.7,
+  Apple M1 (Virtual), 3 CPUs, 7516192768 B, load 5.29 at start;
+  `bench-linux-read` on `ubuntu-24.04`.
+- **passes**: nine interleaved passes per table, order reversed every other
+  pass, medians reported. Every table's cache label is probed immediately
+  before and after it and the verdict is printed beside it.
+
+The two draws are separate draws of the `macos-14` label, so **ratios within a
+run are the evidence and absolute milliseconds across runs are not.** They
+happen to be well matched on the warm and many-files halves — `N.direct` warm
+4 KiB 33.10 before against 33.04 after, `N.pool8` many-files 57.95 against
+58.10 — and not matched on the cold halves, where this draw is faster on every
+line including the native baselines.
+
+### macOS runner, read-heavy
+
+```text
+                          before (0092)              after (33155821397)
+line                cold64  cold4  warm64 warm4  cold64  cold4 warm64  warm4
+N.direct           2345.41 1971.16 169.00 33.10 1472.85 1372.47 176.24 33.04
+N.pool2            1120.59 1100.27  97.04 20.18  928.74  883.28 101.63 20.11
+N.pool4             853.27  808.40  73.05 15.36  627.14  572.90  81.75 15.21
+N.pool8             772.34  532.07  71.08 15.18  424.58  381.86  80.13 15.03
+S.narrow           2045.43 1663.83 152.57 31.20 1488.30 1370.55 159.86 31.30
+S.wide8            2108.61 1736.79 166.31 32.88 1487.24 1392.83 172.94 32.65
+C.narrow.default   1952.50 1889.77 153.01 31.34 1516.75 1382.75 160.51 31.64
+C.wide8.default    1220.68 1100.57 211.58 94.72  591.82  489.75 173.97 33.57
+C.wide8.h0         1681.74 1611.22 175.21 41.84 1452.09 1432.86 180.33 40.57
+C.wide8.h2         1252.02 1160.21 241.57 98.04 1054.36  971.97 246.49 75.37
+C.wide8.h4         1048.26  962.59      -     - 746.67  658.61 219.11  71.25
+C.wide8.h8          940.47  793.93 205.61 118.48 585.05  478.59 224.20 83.33
+```
+
+Cache labels on the after run: every cold table's probe confirmed uncached
+before and after it (3.1, 2.3, 2.3 per cent of sampled reads at or below
+40 us, within the stated 10 per cent bound; per-file medians 45.0 to 51.0 us),
+and every warm table's probe confirmed warm (0.0 per cent at or above 40 us,
+per-file medians 4.0 to 6.0 us). The after run's cold tables are therefore
+uncached rather than cold-start, which the 0092 macOS tables were not.
+
+### macOS runner, many files
+
+```text
+line                 before (0092)   after (33155821397)
+N.direct                    141.06                141.84
+N.pool8                      57.95                 58.10
+S.narrow                    143.75                144.48
+S.wide8                     144.28                145.01
+C.narrow.default            144.31                144.83
+C.wide.default              216.89                147.27
+C.wide8.default             173.16                148.23
+C.wide8.h0                  149.36                149.42
+C.wide8.h4                  174.27                173.62
+```
+
+### Against the standing bar
+
+The bar: warm `C.wide8` not slower than `S.wide8`; cold `C.wide8` within ten
+per cent of `N.pool8`; many-files `C` not slower than `S`; Linux must not
+regress.
+
+```text
+row                        before      after     bar          met
+warm 64 KiB  C/S           1.27x       1.006x    <= 1.00x     0.6% over
+warm  4 KiB  C/S           2.88x       1.028x    <= 1.00x     2.8% over
+cold 64 KiB  C/N.pool8     1.58x       1.394x    <= 1.10x     no
+cold  4 KiB  C/N.pool8     2.07x       1.283x    <= 1.10x     no
+many-files   C/S           1.20x       1.022x    <= 1.00x     2.2% over
+LINUX_ROW
+```
+
+The two warm rows and the many-files row land within three per cent of a bar
+they missed by 27, 188 and 20 per cent, and none is met on a strict reading.
+`C.wide8.h0` says where the residue is: the same program on the completion
+path with the pool pinned off — and therefore never declined, because a
+written `WF_IO_HELPERS` pins the route as well as the count — costs 40.57 ms
+warm at 4 KiB against S's 32.65. That 24 per cent is what the machinery
+charges an operation with nothing to overlap. The declining policy removes 17
+of those points; the 2.8 that remain are the operations it does not decline,
+which are the opens and closes.
+
+Neither cold row is met. An earlier run on the same branch
+([33153717709](https://github.com/mbbill/Whitefoot/actions/runs/33153717709),
+commit `96bb4778`) read the cold 64 KiB row at 817.47 against 808.79 — within
+one per cent, which would have passed. That run is not the one to read it
+from: its `N.pool8` cold 64 KiB line has a median of 808.79 against a minimum
+of 445.55, an 1.8-fold spread inside one line, where the run recorded here
+spans 417.49 to 453.58 on the same line. The bar is read from the tighter
+draw.
+
+What the cold rows do show is the demand-driven helper policy working:
+`C.wide8.default` is within two per cent of its own pinned eight-helper line
+on both cold tables (591.82 against 585.05, 489.75 against 478.59), where in
+0092 the default trailed `C.wide8.h8` by 1.30 and 1.39 times. Against its own
+sequential build the completion program is 2.51 and 2.84 times faster cold,
+where in 0092 it was 1.73 and 1.58.
+
+### What changed in the runtime
+
+Batch 0096's changes are recorded in `docs/done/0096-darwin-handoff.md` with
+the stage-level attribution that motivated each. In short: the process-wide
+wake lock is taken only when there is a sleeper; a drain returns immediately
+when the durable ready-event count is zero and a token owner may drain its own
+event by name; a queue entry no longer copies a kilobyte of path storage for a
+read or a write; the helper wake is issued outside the queue lock and only to
+a helper the lock says is asleep; a joining scheduler reads the ready count
+for a bounded window before announcing sleep; the helper pool starts empty and
+grows on a measured wait rather than on queue depth, bounded by the bridge's
+operation count rather than the core count; and a positioned read is executed
+where it was stated when the adapter holds no helper, has nothing queued and
+has measured its operations as not waiting.
+
+LINUX_SECTION
+
 ## Historical C-core results
 
 Everything below measures the completion core and its adapters directly,

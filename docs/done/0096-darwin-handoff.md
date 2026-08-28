@@ -32,7 +32,10 @@ they are a decomposition rather than a second measurement of the wall time.
 
 Medians of nine passes, run
 [33150416900](https://github.com/mbbill/Whitefoot/actions/runs/33150416900),
-per operation, nanoseconds:
+per operation, nanoseconds. That run is marked failed because its
+`bench-linux-read` job was cancelled; `bench-macos-read`, which is where these
+numbers come from, completed in 13m50s. The stage lines were re-derived from
+its uploaded artifact for this record rather than copied from the job summary:
 
 ```text
 stage              warm 4K     warm 4K     cold 64K     what it is
@@ -40,13 +43,19 @@ stage              warm 4K     warm 4K     cold 64K     what it is
 claim                   43           70           98    take a free slot
 submit                  84        1,280        2,967    queue lock, two slot
                                                         transitions, notify
-wake latency             —       10,791       38,533    enqueue to helper
+wake latency             —*      10,791       38,533    enqueue to helper
 execute              1,079        1,869      168,117    the host call
 publish                 55        1,467        4,334    result, event, notify
 drain                  222          302          584    find the event
 consume                 53          101          176    result out, slot free
 park (amortised)         0        1,779        6,158    announce sleep, wake
 ```
+
+\* The trace does record a figure here — 6,491 ns — but with no helper there is
+no helper to wake: `helper_exec=0, scheduler_exec=28,679` says every operation
+ran on the joining scheduler, so what that stage times is queue residency
+between submit and join, not a cross-thread wake. It is left out rather than
+put in a column whose other two entries mean something else.
 
 and the counts that explain them, per operation:
 
@@ -257,7 +266,103 @@ milliseconds across runs are not**. The two draws differed by about a third on
 every line, native baselines included.
 
 
-<!-- TABLES -->
+### The macOS runner, before and after
+
+**Before** is the batch-0092 macOS-runner section of
+`research/investigations/io-model/RESULTS.md`. **After** is run
+[33155821397](https://github.com/mbbill/Whitefoot/actions/runs/33155821397),
+job `bench-macos-read`, at commit `266acf4f` — the final runtime of this
+branch, with the drain hint already removed. Both are `macos-14`, Apple M1
+(Virtual), three CPUs, 7 GiB; medians of nine interleaved passes, milliseconds.
+
+```text
+                          before (0092)              after (33155821397)
+line                cold64  cold4  warm64 warm4  cold64  cold4 warm64  warm4
+N.direct           2345.41 1971.16 169.00 33.10 1472.85 1372.47 176.24 33.04
+N.pool8             772.34  532.07  71.08 15.18  424.58  381.86  80.13 15.03
+S.narrow           2045.43 1663.83 152.57 31.20 1488.30 1370.55 159.86 31.30
+S.wide8            2108.61 1736.79 166.31 32.88 1487.24 1392.83 172.94 32.65
+C.narrow.default   1952.50 1889.77 153.01 31.34 1516.75 1382.75 160.51 31.64
+C.wide8.default    1220.68 1100.57 211.58 94.72  591.82  489.75 173.97 33.57
+C.wide8.h0         1681.74 1611.22 175.21 41.84 1452.09 1432.86 180.33 40.57
+C.wide8.h8          940.47  793.93 205.61 118.48 585.05  478.59 224.20 83.33
+```
+
+The many-files workload, same two runs, same units:
+
+```text
+line                 before (0092)   after (33155821397)
+N.direct                    141.06                141.84
+N.pool8                      57.95                 58.10
+S.wide8                     144.28                145.01
+C.narrow.default            144.31                144.83
+C.wide8.default             173.16                148.23
+C.wide8.h0                  149.36                149.42
+```
+
+The two draws are close on the lines whose code did not change — `N.direct`
+warm 4 KiB is 33.10 against 33.04, `S.wide8` warm 4 KiB 32.88 against 32.65,
+`N.pool8` many-files 57.95 against 58.10 — so the read-heavy warm and
+many-files halves of this comparison are unusually well matched for two
+separate draws of a hosted label. The cold halves are not: this draw's whole
+cold table is faster than 0092's on every line, native baselines included
+(`N.pool8` cold 4 KiB 381.86 against 532.07), which is the hypervisor-level
+caching the 0092 section documents. **Ratios within a run are the evidence
+there, and absolute milliseconds across runs are not.**
+
+### Against the bar
+
+The bar is the owner's: on the macOS runner's read-heavy tables, warm
+`C.wide8` not slower than `S.wide8`; cold `C.wide8` within ten per cent of
+`N.pool8`; many-files `C` not slower than `S`; and Linux must not regress.
+
+```text
+row                        before      after     bar          met
+warm 64 KiB  C/S           1.27x       1.006x    <= 1.00x     0.6% over
+warm  4 KiB  C/S           2.88x       1.028x    <= 1.00x     2.8% over
+cold 64 KiB  C/N.pool8     1.58x       1.394x    <= 1.10x     no
+cold  4 KiB  C/N.pool8     2.07x       1.283x    <= 1.10x     no
+many-files   C/S           1.20x       1.022x    <= 1.00x     2.2% over
+```
+
+**The two warm rows and the many-files row land within three per cent of a bar
+they missed by 27, 188 and 20 per cent.** None of the three is met on a strict
+reading — C is 0.6, 2.8 and 2.2 per cent slower than S rather than not slower
+— and that residue is the honest answer to what the completion path still
+costs a program with nothing to overlap. The line that says where it went is
+`C.wide8.h0`: the same program on the completion path with the pool pinned off
+and therefore never declined costs 40.57 ms warm at 4 KiB against S's 32.65,
+which is the 24 per cent the machinery charges. The declining policy removes
+17 of those points and the 2.8 that remain are the operations it did not
+decline — the opens and the closes, which keep the queue.
+
+**Neither cold row is met, and the cold 64 KiB row is where the two draws
+disagree.** In the earlier run on this branch
+([33153717709](https://github.com/mbbill/Whitefoot/actions/runs/33153717709),
+commit `96bb4778`) the same row read 817.47 against 808.79, which is within
+one per cent and would have passed. That run is not the one to read it from:
+its `N.pool8` cold 64 KiB line has a median of 808.79 against a minimum of
+445.55, an 1.8-fold spread inside a single line, while this run's spread on
+the same line is 417.49 to 453.58 — under nine per cent. The bar is read from
+the tighter draw, which fails it, rather than from the draw that happens to
+pass because the baseline it is measured against was noisy.
+
+What the cold rows do say is that the demand-driven policy now finds the
+helpers the work needs: `C.wide8.default` and `C.wide8.h8` are within two per
+cent of each other on both cold tables (591.82 against 585.05, and 489.75
+against 478.59), where in 0092 the default trailed its own pinned eight-helper
+line by 1.30 and 1.39 times. The policy is no longer the limit; the remaining
+distance to `N.pool8` is. Against its own sequential build the same program is
+2.51 and 2.84 times faster cold, where in 0092 it was 1.73 and 1.58.
+
+The stage-level attribution for the cold miss is in the table at the top of
+this record, measured on the same runner label: at eight helpers the path
+charges about 5 us an operation against a 168 us host call, of which 38.5 us
+is wake latency alone — the time between a submission enqueueing work and a
+helper being scheduled to run it. On a three-core runner, eight helpers is
+more threads than cores, and that latency is the scheduler rather than the
+adapter. Nothing in this batch's change set addresses it.
+
 
 ## Tests
 
