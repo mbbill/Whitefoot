@@ -215,9 +215,13 @@ probe_d_reborrow_two_statements  rejected by both, [OWN-6]
 probe_e_hoisted_length           identical
 ```
 
-Standard error is where they differ: zero bytes before, and now the denied
-verdicts of the I/O loops in `p1`, `p2`, `p3`, `p4`, `p5`, `probe_b`, and
-`probe_e`, with `probe_a` still silent.
+Standard error is where they differ: zero bytes for every one of them before,
+and now the denied verdicts of the I/O loops in `p1`, `p2`, `p3`, `p4`, `p5`,
+`probe_b`, `probe_c_helper_denied`, and `probe_e`. The three that stay silent
+are exactly the three whose staged verdict is permitted:
+`probe_a_staged_permitted`, `probe_b1_write_after_loop`, and
+`probe_c_inline_same_regions` — including `probe_a`, whose counted `[PAR-2]`
+verdict is denied and stays in the full report.
 
 All six distinct rejections of the trial were reproduced and now carry a file,
 a line, and the offending source line: `FN-7` and `TYPE-6` keep the payloads
