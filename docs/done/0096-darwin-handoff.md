@@ -455,6 +455,11 @@ run          commit    cold 4 label         cold 4 C/N.pool8    note
 33158144391  72e98cba  refused/refused      960.86/587.85=1.635 C max 26351.72
 ```
 
+A fourth draw exists, run 33165141309 at the tip; it refuses both cold labels
+at both ends as well, so it settles nothing here either, and it is reported
+under "What the follow-up cost" below because its subject is the follow-up
+rather than this measurement.
+
 The third of these, run
 [33158144391](https://github.com/mbbill/Whitefoot/actions/runs/33158144391) at
 commit `72e98cba`, is a doc-only commit on the same runtime, taken after the
@@ -772,14 +777,51 @@ land after the measurement and none of them is a performance change.
   unlock; that is now stated at
   `wf_file_adapter_transfer_runs_on_caller` beside what it saves.
 
-**These were not re-measured on a runner, and the tables above are read at
-`266acf4f`.** What they cost per operation is a handful of loads that became
-acquire loads where they were plain ones — one on the direct route, a few more
-on the submit route's policy question — against one *fewer* atomic
-read-modify-write on the named drain's common answer, which the join loop asks
-on every turn. No route, no policy and no threshold changes. That is an
-argument rather than a measurement, and it is why the section names the commit
-it measured instead of claiming the tip.
+### What the follow-up cost
+
+The argument first, because it is what the changes were chosen against: per
+operation they add a handful of loads that became acquire loads where they
+were plain ones — one on the direct route, a few more on the submit route's
+policy question — against one *fewer* atomic read-modify-write on the named
+drain's common answer, which the join loop asks on every turn. No route, no
+policy and no threshold changes.
+
+Then the measurement, because an argument about cost is not one. Pushing the
+follow-up ran `io-bench` on it: run
+[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) at
+commit `a06c53f9`, same `macos-14` label, same script, and a fourth separate
+draw. Against the tables above, which are `266acf4f`'s:
+
+```text
+row                       266acf4f   a06c53f9   delta
+warm 64 KiB  C/S            1.006      1.0085   +0.002
+warm  4 KiB  C/S            1.028      1.0309   +0.003
+many-files   C/S            1.022      1.0144   -0.008
+cold 64 KiB  C/N.pool8      1.394      1.302    -0.092
+cold  4 KiB  C/N.pool8      1.283      1.229    -0.054
+```
+
+Two separate draws of a hosted label agree to three thousandths on both warm
+rows, which is inside the noise either of them carries, and the cold rows and
+the many-files row move in the program's favour. Nothing here is a claim that
+the follow-up made anything faster — these are different draws, and the cold
+tables of this one are labelled no better than the others — but a change that
+cost the path anything measurable would not reproduce the warm rows to three
+decimal places. The tables above stay at `266acf4f` because that is where they
+were measured; this is the tip's own reading beside them.
+
+Its cache labels are the branch's fourth in a row that cannot carry a cold
+bar: `probe before the table: refused; probe after it: refused` on both cold
+tables. Its spreads, however, are the tightest of the four — `N.pool8` cold
+64 KiB runs 427.78 to 447.04 around 434.33, and cold 4 KiB 379.22 to 413.11
+around 399.02 — so what it is short of is the label and not the tightness.
+
+Linux in the same run reproduces its own unresolved reading rather than
+settling it: the many-files job on an EPYC 7763 reads `C/S` 128.73/120.94 =
+1.064, against 1.058 on the 8573C draw and 1.041 and 1.045 in batch 0090. Four
+draws now put C between four and six per cent slower than S on that job, on
+three different processors, which is batch 0090's own finding and not a new
+one.
 
 ## Approval classes
 

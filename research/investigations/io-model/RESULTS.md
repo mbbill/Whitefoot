@@ -1309,7 +1309,14 @@ tables here are read at commit `266acf4f`, and the tip adds a generation check
 on the named drain, an atomically published adapter readiness flag, a helper
 cap bounded by its storage, a clock guard on the join spin, and a gate arm
 that runs the bridge on the shipped default helper policy. None of those
-changes a route, a policy or a threshold. In short: the process-wide
+changes a route, a policy or a threshold, and a fourth macOS draw taken at the
+tip (run
+[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309),
+commit `a06c53f9`) reproduces the two warm rows of the bar to three decimal
+places — 1.0085 against 1.006 at 64 KiB, 1.0309 against 1.028 at 4 KiB — with
+many-files at 1.0144 and the two cold rows at 1.302 and 1.229. Its cold labels
+are refused at both ends like the others, so it does not settle the cold bar
+either; the handoff records it line by line. In short: the process-wide
 wake lock is taken only when there is a sleeper; a drain returns immediately
 when the durable ready-event count is zero and a token owner may drain its own
 event by name; a queue entry no longer copies a kilobyte of path storage for a
