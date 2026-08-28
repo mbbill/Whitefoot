@@ -609,7 +609,7 @@ by this batch.
   `whitefootc --emit-llvm` no corpus program emits that call at all —
   `wfgrep` and `raw_deflate_boundary` read their files through
   `wf__completion_file_pread_direct`, which is the route a decline falls back
-  to and not the decision. "What is not evidence" below carries the count.
+  to and not the decision. "Not done" below carries the count.
 - **The shipped default route has its own translation unit.**
   `bridge_default_probe.c` runs the bridge with `WF_IO_HELPERS` unset and
   refuses to run with it set, four lanes and sixteen thousand positioned reads
@@ -686,6 +686,28 @@ by this batch.
 
 ## Judgment calls
 
+- **The default-route probe requires a branch of the policy, not the decline.**
+  The obvious assertion — on a host running the POSIX adapter, some positioned
+  read must have been declined — was written first and then failed on this
+  machine under the address sanitizer while other work was running: sixteen
+  thousand reads, none declined, three helpers started. That is not a defect.
+  A sanitized one-byte read on a loaded machine really does cost more than the
+  twenty microseconds the growth rule asks about, so the adapter measured a
+  wait and took the policy's *other* branch, which is the correct answer to
+  what it measured. Requiring the decline would have been requiring the host
+  to be idle. Requiring either branch keeps the assertion about the runtime,
+  and the negative control — the decline forced off in `bridge.c` — still
+  fails it on every run.
+- **The helper-storage case is given more array than it declares.**
+  `test_helper_growth_stops_at_the_helper_storage` hands
+  `wf_file_adapter_init` an array of twenty and tells it there are two. That
+  looks like a weakened test and is the opposite: the bound under test is the
+  capacity the adapter was told about, and with the true array at two a
+  missing clamp does not fail the case, it runs `pthread_create` past the end
+  of the frame and takes the process with it — which is what the first attempt
+  did, hanging under the address sanitizer instead of reporting. The slack
+  turns an undefined execution into a `check failed: held == 2` at a measured
+  eight. Nothing beyond `helpers[1]` is written in a passing run.
 - **The two cold rows are graded `not read`, not `missed`.** They were graded
   `no` while the draw they are read from had its uncached label refused before
   both cold tables. A grade of `no` on a table that is not cold claims more
