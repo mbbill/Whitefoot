@@ -3,8 +3,8 @@
 Branch: `batch/0096-darwin-handoff`, from `main` at `b2e2e267` with
 `batch/0093-gate-budget` merged at `d9925ae6` for its on-demand `io-bench`
 workflow. Deliverables: the runtime change in `compiler/`, the tests that pin
-it, the macOS section of `research/investigations/io-model/RESULTS.md`, this
-record.
+it, the batch-0096 section of `research/investigations/io-model/RESULTS.md`,
+this record.
 
 ## Charter
 
