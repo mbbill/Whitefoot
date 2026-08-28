@@ -830,9 +830,9 @@ by this batch.
   wall-clock tables do not already say, and the tables are what the bar is read
   from.
 - **The two cold rows are read and missed, and why is not measured.** On the
-  one macOS table whose uncached label its probe confirms at both ends — run
-  33172323795 at the repair commit — they stand at 1.477 and 1.557 times
-  `N.pool8` against a bar of 1.10. What this batch does not have is an
+  one macOS draw whose uncached label its probe confirms at both ends of both
+  cold tables — run 33172323795 at the repair commit — they stand at 1.477 and
+  1.557 times `N.pool8` against a bar of 1.10. What this batch does not have is an
   attribution of the gap on that draw: the stage table has a column for one of
   the two rows only, `cold 64K h8`, and it was taken on the earlier runtime.
   There the adapter's own stages sum to 14.3 us an operation — 8.2 us of it
@@ -942,8 +942,9 @@ supported are withdrawn rather than softened.
   field-by-field assignment as well — which was wrong. `atomic_init` is a
   plain write by definition, and clang at -O2 on aarch64 merges these into
   wide stores anyway: one 16-byte store over `mean_execute_ns` and
-  `execute_ticks`, two more over the four statistics counters. A `memset`
-  there would be no worse in kind. A reader can see any of those writes only
+  `execute_ticks`, two more over four of the five statistics counters, and an
+  8-byte store for the fifth, `stat_publication_failures`. A `memset` there
+  would be no worse in kind. A reader can see any of those writes only
   if a record it already holds is initialized again underneath it, which no
   caller does — the bridge initializes once under a `pthread_once` — and a
   probe that violates that precondition on purpose draws the corresponding
@@ -1032,16 +1033,17 @@ Then the measurement, because an argument about cost is not one. Pushing the
 follow-up ran `io-bench` on it: run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) at
 commit `a06c53f9` — the last commit of this branch that changed the runtime
-when this section was written — same `macos-14` label, same script, and a
-fourth separate draw. Against the tables above, which are `266acf4f`'s:
+when this section was written — same `macos-14` label, same script, and the
+eighth of this branch's nine `io-bench` runs. Against the tables above, which
+are `266acf4f`'s:
 
 ```text
-row                       266acf4f   a06c53f9   delta
-warm 64 KiB  C/S            1.006      1.0085   +0.002
-warm  4 KiB  C/S            1.028      1.0309   +0.003
-many-files   C/S            1.022      1.0144   -0.008
-cold 64 KiB  C/N.pool8      1.394      1.302    -0.092
-cold  4 KiB  C/N.pool8      1.283      1.229    -0.054
+row                       266acf4f   a06c53f9    delta
+warm 64 KiB  C/S            1.0060     1.0085  +0.0025
+warm  4 KiB  C/S            1.0282     1.0309  +0.0027
+many-files   C/S            1.0222     1.0144  -0.0078
+cold 64 KiB  C/N.pool8      1.3939     1.3016  -0.0923
+cold  4 KiB  C/N.pool8      1.2825     1.2294  -0.0531
 ```
 
 Two separate draws of a hosted label agree to three thousandths on both warm
