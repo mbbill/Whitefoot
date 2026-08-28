@@ -1,8 +1,9 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 54 (v0.38 adds [PAR-3], the staged loop permission, to the
-language authority)
+Revision: 55 (v0.38 adds [PAR-3], the staged loop permission, to the
+language authority, and names the release milestone of the name an open
+borrows in [SYS-2])
 
 The active language authority is v0.38, SHA-256
 `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`, carried by
@@ -12,8 +13,7 @@ archived at [`spec/kernel-spec-v0.37.md`](../spec/kernel-spec-v0.37.md). The
 merge-time approval record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch
-record is [batch 0082](done/0082-unified-state-completion-io.md). The
-execution plan is
+record is [batch 0091](done/0091-par3-judgment.md). The execution plan is
 [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).

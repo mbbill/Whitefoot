@@ -15,10 +15,12 @@ passes on that revision. The batch record is
 v0.38 rides on `batch/0091-par3-judgment` and adds one rule, [PAR-3], the
 staged loop permission: it cuts the body of any `for_stmt` or `loop_stmt` at
 its first `may-suspend` submission and admits executing the remainder of one
-iteration against the prologue of a later one. That batch lands the judgment
-and its ledger only — no lowering and no runtime change — so it grants a
-verdict a later batch actualizes and moves no published byte today. Its record
-is `docs/done/0091-par3-judgment.md`.
+iteration against the prologue of a later one. It also amends [SYS-2] in one
+sentence, to name the release milestone of the name an open borrows: batch
+0089's adapters publish that loan release at submission, and the contract now
+says so. That batch lands the judgment and its ledger only — no lowering and no
+runtime change — so it grants a verdict a later batch actualizes and moves no
+published byte today. Its record is `docs/done/0091-par3-judgment.md`.
 
 ## Objective
 
