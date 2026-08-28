@@ -1306,13 +1306,23 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 "#;
     let denial = denied(source, "main", 3);
-    let StagedDenial::RetainedBorrow { written_at, .. } = denial else {
+    let StagedDenial::RetainedBorrow {
+        written_at,
+        overlapping,
+        ..
+    } = denial
+    else {
         panic!("expected a condition 3 denial: {denial:?}");
     };
     assert!(
         written_at.is_some(),
         "the borrowed field and the write that denies are the pair, and the \
          write is the replaced record rather than the field itself"
+    );
+    assert!(
+        overlapping,
+        "the write is on the record and the borrow on its field, which is the \
+         [OWN-7] pair this denial reports as one storage"
     );
 }
 
@@ -1369,6 +1379,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let StagedDenial::RetainedBorrow {
         argument,
         written_at,
+        overlapping,
         ..
     } = denial
     else {
@@ -1379,6 +1390,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     assert_ne!(
         written_at, argument,
         "naming the borrow as its own counterpart says nothing"
+    );
+    assert!(
+        overlapping,
+        "the write is on a different path of the same [OWN-7] class, which is \
+         what makes the two halves one storage"
     );
 }
 

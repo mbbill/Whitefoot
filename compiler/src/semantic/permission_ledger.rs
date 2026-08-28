@@ -395,7 +395,13 @@ fn staged_denied_detail<Source: LedgerSource>(
     // The edge already names which loop a `break_stmt` leaves, which is the
     // only identity a break has in the checked tree.
     let exit = |edge: &str| format!("{edge} leaves the loop from the remainder");
-    let (reason, node, overlapping) = match denial {
+    // The second node a denial names, with the phrase that says how it stands
+    // to the first. Two denials name a second node for two different reasons
+    // and one phrase cannot carry both: an [OWN-7] pair is an overlap claim,
+    // and a write of the borrowed place itself is not.
+    const OVERLAPS: &str = "which overlaps";
+    const WRITES: &str = "and the body writes it at";
+    let (reason, node, paired) = match denial {
         StagedDenial::NoCut { reason, statement } => {
             ((*reason).to_owned(), statement.as_ref(), None)
         }
@@ -405,12 +411,15 @@ fn staged_denied_detail<Source: LedgerSource>(
         StagedDenial::RetainedBorrow {
             argument,
             written_at,
+            overlapping,
             ..
         } => (
             "a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce"
                 .to_owned(),
             Some(argument),
-            written_at.as_ref(),
+            written_at
+                .as_ref()
+                .map(|node| (if *overlapping { OVERLAPS } else { WRITES }, node)),
         ),
         StagedDenial::RemainderExclusiveLoan { argument, .. } => (
             "a call of the remainder holds an exclusive loan on storage the iteration does not introduce"
@@ -425,7 +434,7 @@ fn staged_denied_detail<Source: LedgerSource>(
             "the body reaches storage rooted outside the loop that no disposition of this rule covers"
                 .to_owned(),
             Some(argument),
-            overlapping.as_ref(),
+            overlapping.as_ref().map(|node| (OVERLAPS, node)),
         ),
         StagedDenial::NotReplicable { statement } => (
             "per-iteration storage whose element type is not a resolved copy type".to_owned(),
@@ -454,9 +463,11 @@ fn staged_denied_detail<Source: LedgerSource>(
     // [OWN-7] makes a place and its prefix one storage, so a denial the overlap
     // decided names both halves: one statement alone never shows the reader why
     // the loop refused, because the statement that refused it names a different
-    // path.
-    let paired = match overlapping {
-        Some(node) => format!(", which overlaps {}", source.spelling(node)?),
+    // path. A denial whose write is on the borrowed place itself names that
+    // write under its own phrase instead, so no line ever reports one place as
+    // overlapping itself.
+    let paired = match paired {
+        Some((phrase, node)) => format!(", {phrase} {}", source.spelling(node)?),
         None => String::new(),
     };
     Ok(format!(

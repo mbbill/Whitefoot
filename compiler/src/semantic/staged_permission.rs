@@ -280,11 +280,19 @@ pub(crate) enum StagedDenial {
     /// the body writes.
     RetainedBorrow {
         argument: NodePath,
-        /// The write that denies, when it is not on the borrowed place itself
-        /// but on a place [OWN-7] makes one storage with it. Naming the borrow
-        /// alone would leave the writer looking for a write of the field it
-        /// borrows, which is not the statement that refused the loop.
+        /// The write that denies, when it is a node this denial does not
+        /// already name. Naming the borrow alone would leave the writer
+        /// looking for a write of the place it borrows, which may be neither
+        /// the statement that refused the loop nor a write of that path at
+        /// all.
         written_at: Option<NodePath>,
+        /// Whether that write is on a *different* place of the borrow's
+        /// [OWN-7] class rather than on the borrowed place itself. Only the
+        /// overlapping case is the record/field pair whose repair is to stop
+        /// rewriting the record; a write of the borrowed place itself is the
+        /// plain hazard, and reporting it as an overlap would assert a
+        /// relation between one place and itself.
+        overlapping: bool,
         /// Whether storage of that place's type could be replicated at all.
         /// A buffer of copy elements could, once the coverage proof exists; an
         /// opaque system nominal never can, and telling its writer to allocate
@@ -358,8 +366,7 @@ impl StagedDenial {
             // reads as advice — and the replication advice below would be a
             // claim about a field type this judgment does not resolve.
             Self::RetainedBorrow {
-                written_at: Some(_),
-                ..
+                overlapping: true, ..
             } => {
                 "give the iteration its own copy of the storage the call borrows, or stop rewriting the record that storage is a field of: a write of a record writes every field path under it"
             }
@@ -875,9 +882,15 @@ fn post_dominators(flow: &Flow<'_>) -> Vec<NodeSet> {
 /// One place the body touches, with everything the disposition test reads.
 struct Touched {
     place: ResolvedPlace,
-    /// The first node that cites it, in source order of the walk.
+    /// The first node that cites it, in source order of the walk. A read cites
+    /// a place just as a write does, so this is not the write of it.
     citation: NodePath,
     written: bool,
+    /// The first node whose footprint *writes* it. A condition-3 denial names
+    /// this when no overlapping place supplied the write, because the citation
+    /// above may be a read and a denial that pointed the writer at a read
+    /// would send them looking for a write that is not there.
+    written_at: Option<NodePath>,
     /// The segments any footprint element or loan on it belongs to.
     in_prologue: bool,
     in_remainder: bool,
@@ -1195,6 +1208,9 @@ impl<'check> StagedSurvey<'check, '_> {
                     Access::Place { place, argument } => {
                         if let Some(entry) = self.touch(place, argument, segment) {
                             entry.written |= written;
+                            if written {
+                                entry.written_at.get_or_insert(argument.clone());
+                            }
                         }
                     }
                     // Two iterations allocating into one enclosing region both
@@ -1231,6 +1247,7 @@ impl<'check> StagedSurvey<'check, '_> {
                     place: place.clone(),
                     citation: citation.clone(),
                     written: false,
+                    written_at: None,
                     in_prologue: false,
                     in_remainder: false,
                     retained_borrow: None,
@@ -1429,13 +1446,23 @@ impl<'check> StagedSurvey<'check, '_> {
             if class.written
                 && let Some(argument) = &class.retained_borrow
             {
-                // The write that denies is the subject's own unless an
-                // overlapping place supplied it, and it is worth naming only
-                // when it is not the borrow already cited.
-                let written_at = class.written_at.clone().unwrap_or(entry.citation.clone());
+                // The write that denies is an overlapping place's when the
+                // class supplied it and this row's own write otherwise; the
+                // row's first citation is not it, because a place is cited by
+                // a read as readily as by a write. Either is worth naming only
+                // when it is not the borrow this denial already names.
+                let (written_at, overlapping) = match &class.written_at {
+                    Some(node) => (Some(node.clone()), true),
+                    None => (entry.written_at.clone(), false),
+                };
+                let written_at = written_at.filter(|node| node != argument);
                 return Some(StagedDenial::RetainedBorrow {
                     argument: argument.clone(),
-                    written_at: (written_at != *argument).then_some(written_at),
+                    // An overlap the denial cannot name is one the writer
+                    // cannot act on, so the pair advice is given only with
+                    // both of its halves.
+                    overlapping: overlapping && written_at.is_some(),
+                    written_at,
                     replicable_shape: class.replicable_shape,
                 });
             }

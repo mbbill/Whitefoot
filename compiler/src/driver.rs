@@ -1241,6 +1241,88 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         );
     }
 
+    /// The write a condition-3 denial names is a write, and a place is never
+    /// reported as overlapping itself.
+    ///
+    /// A row keeps the first node that *cites* its place, and a read cites one
+    /// as readily as a write does. The denied place of
+    /// `accept-par3-staged-denied-read-before-write.wf` is cited by the fold
+    /// that reads the destination before the transfer fills it, so a denial
+    /// that fell back to the row's citation printed the read as the write, told
+    /// the writer to stop rewriting a record that is not there, and asserted an
+    /// [OWN-7] overlap between one place and itself. Both bodies below are the
+    /// same hazard as the hoisted destination above — one buffer the body
+    /// writes and a `may-suspend` call retains a borrow of — so both carry that
+    /// denial's own advice, and the one whose write is a node of its own names
+    /// that node under a phrase that is not an overlap claim.
+    #[test]
+    fn a_retained_borrow_denial_names_a_write_and_never_an_overlap_with_itself() {
+        let read_first = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(16_u64, 97_u8);
+  let data = buffer_new(64_u64, 0_u8);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let byte = data[0_u64];
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            region 'h {
+              region 'd {
+                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                  ReadBytes(next: produced) => {
+                    set total = total +wrap produced;
+                  }
+                  ReadEnd() => {
+                  }
+                  ReadFailed(error: problem) => {
+                  }
+                }
+              }
+            }
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let ledger = ledger_of("read_first.wf", read_first);
+        assert_eq!(
+            ledger[1],
+            "PAR stage       read_first.wf:5  for   denied      condition 3: a may-suspend call \
+             retains a borrow past its own submission on storage the body writes and the \
+             iteration does not introduce; instead, allocate the scratch storage inside the \
+             loop body, so each iteration owns the buffer it reads and writes, at \
+             &uniq 'd data"
+        );
+        assert_eq!(
+            ledger[2],
+            "PAR place       read_first.wf:5  denied        let byte = data[0_u64];  the body \
+             writes it and a may-suspend call retains a borrow of it past its own submission"
+        );
+
+        // The same body with a write of the destination in front of the
+        // transfer instead of a read. The write is now a node of its own, and
+        // the denial names it as the write it is.
+        let write_first = String::from_utf8(read_first.to_vec())
+            .expect("the fixture is text")
+            .replace("let byte = data[0_u64];", "set data[0_u64] = 7_u8;");
+        let ledger = ledger_of("write_first.wf", write_first.as_bytes());
+        assert_eq!(
+            ledger[1],
+            "PAR stage       write_first.wf:5  for   denied      condition 3: a may-suspend call \
+             retains a borrow past its own submission on storage the body writes and the \
+             iteration does not introduce; instead, allocate the scratch storage inside the \
+             loop body, so each iteration owns the buffer it reads and writes, at \
+             &uniq 'd data, and the body writes it at set data[0_u64] = 7_u8;"
+        );
+    }
+
     /// Two nested loops whose only submission is the inner one's print at
     /// their own heads, not both at the shared cut.
     ///
