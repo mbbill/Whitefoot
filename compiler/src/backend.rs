@@ -16,4 +16,4 @@ pub use emitter::{
     PARALLEL_RUNTIME_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, emit_llvm,
     module_requires_completion_runtime, module_requires_parallel_runtime,
 };
-pub use stack_ledger::stack_ledger;
+pub use stack_ledger::{Architecture, stack_ledger};
