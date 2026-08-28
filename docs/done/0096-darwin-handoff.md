@@ -687,11 +687,13 @@ by this batch.
 - **The many-files workload.** It is recorded and it is still slower under C
   than under S. This batch narrowed it and did not close it; the reason is the
   one batch 0092 reached, that a 17 us `openat` is not a wait worth a handoff.
-- **A second Linux read-heavy draw.** The one this batch got is on hardware the
-  earlier draws were not on, its cold half is unusable, and its warm half
-  disagrees with both prior readings. The no-regression half of the bar is
-  therefore recorded as unresolved rather than met, and the next batch touching
-  this path owes a Linux draw before it reads any Linux ratio.
+- **An explanation of the 8573C Linux draw.** The draw this record's tables
+  come from is on hardware the earlier ones were not on, its cold half is
+  unusable, and its warm half disagrees with the two prior readings. A fourth
+  draw taken at `a06c53f9` — see "What the follow-up cost" — agrees with those
+  two rather than with it, so the no-regression bar is not refuted; but the
+  8573C reading is still unexplained, and the bar table keeps `unresolved`
+  rather than borrowing a grade from a different draw on different hardware.
 - **A macOS draw whose cold labels hold at both ends.** All three draws on this
   branch fail that test in one direction or another, tabulated above, so the
   two cold rows of the bar are graded `not read` and this batch does not read
@@ -818,12 +820,37 @@ tables. Its spreads, however, are the tightest of the four — `N.pool8` cold
 64 KiB runs 427.78 to 447.04 around 434.33, and cold 4 KiB 379.22 to 413.11
 around 399.02 — so what it is short of is the label and not the tightness.
 
-Linux in the same run reproduces its own unresolved reading rather than
-settling it: the many-files job on an EPYC 7763 reads `C/S` 128.73/120.94 =
-1.064, against 1.058 on the 8573C draw and 1.041 and 1.045 in batch 0090 on an
-EPYC 9V74. Four draws on three processors now put C between 4.1 and 6.4 per
-cent slower than S on that job, which is batch 0090's own finding and not a
-new one.
+**The same run is also the Linux read draw this record says is owed**, and it
+is the better half of the news. `bench-linux-read` landed on an AMD EPYC 9V74
+with the tree on NVMe, and its uncached 4 KiB table is the only Linux cold
+table on this branch whose probe confirmed the label at both ends. There the
+eight-wide program reads 1216.03 ms against its own sequential build's
+4108.74, an eight-thread pool's 1482.48 and a hand-written 32-deep io_uring
+pipeline's 1448.85 — faster than every native line in the table. And its warm
+half does not reproduce the reading this record could not resolve:
+
+```text
+draw           commit    processor     warm 64  warm 4   narrow 64  narrow 4
+0092           6ac36126  Xeon 8370C     0.982    0.941     1.004      1.011
+earlier        96bb4778  EPYC 7763      0.984    0.946     1.002      1.016
+this record    266acf4f  Xeon 8573C     1.026    1.055     0.997      1.051
+follow-up      a06c53f9  EPYC 9V74      1.010    0.989     0.998      1.015
+```
+
+Three of four draws put warm `C.wide8` at or under `S.wide8` at 4 KiB. Every
+draw is on a different processor, so nothing isolates the 8573C; what the
+fourth draw does say is that the 1.055 is not a property of the runtime,
+because the same runtime plus this follow-up reads 0.989 on the next machine.
+The bar table above keeps its `unresolved` grade, because that table reads
+`266acf4f` and this is a different draw on different hardware — but what is
+owed has narrowed from "another Linux draw" to an explanation of the 8573C
+one.
+
+The many-files job in the same run does not improve: on an EPYC 7763 it reads
+`C/S` 128.73/120.94 = 1.064, against 1.058 on the 8573C draw and 1.041 and
+1.045 in batch 0090 on an EPYC 9V74. Four draws on three processors now put C
+between 4.1 and 6.4 per cent slower than S on that job, which is batch 0090's
+own finding and not a new one.
 
 ## Approval classes
 

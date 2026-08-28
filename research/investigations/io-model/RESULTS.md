@@ -1461,6 +1461,63 @@ step and runs the probes rather than the harness — the isolated core/read
 probe, and now the default-route bridge probe. What is owed here is another
 Linux draw.
 
+### A fourth Linux draw, at `a06c53f9`
+
+Pushing the correctness follow-up ran `io-bench` again, and its
+`bench-linux-read` job is the draw this section says is owed: run
+[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) on
+an AMD EPYC 9V74, 4 CPUs, tree on `nvme0n1p1`, load 0.50 at start. Two things
+make it worth more than a fourth number.
+
+**Its uncached 4 KiB table is the only Linux cold table on this branch whose
+probe confirmed the label at both ends** — `probe before the table: confirmed;
+probe after it: confirmed` — so it is the one cold reading here that is a
+reading of a cold device rather than of a cache. On it the eight-wide
+Whitefoot program is faster than every native line in the table:
+
+```text
+line                        median     min      max
+N.direct                   4914.02 3641.98  5119.62
+N.pool8                    1482.48 1453.84  1487.17
+N.uring32                  1448.85 1209.27  1498.67
+S.narrow                   3997.94 3852.94  5228.31
+S.wide8                    4108.74 3720.78  6790.88
+C.narrow.default           4336.82 3731.27  6871.13
+C.wide8.default            1216.03 1206.55  1864.42
+C.wide8.h0                 1470.85 1203.64  1629.84
+C.wide8.h8                 1490.76 1408.88  1742.53
+```
+
+`C.wide8.default` at 1216.03 ms is 3.38 times faster than its own sequential
+build, 1.22 times faster than an eight-thread pool and 1.19 times faster than
+a hand-written 32-deep io_uring pipeline. The 64 KiB table on the same run is a
+cold-start table by its own probe (confirmed before, refused after) and reads
+the same way less sharply: 1213.14 against `N.pool8`'s 1275.99 and `S.wide8`'s
+1587.44.
+
+**And its warm half does not reproduce the draw above.** Warm
+`C.wide8/S.wide8` here is 1.010 at 64 KiB and 0.989 at 4 KiB, with the narrow
+control at 0.998 and 1.015. Set beside the earlier readings:
+
+```text
+draw           commit    processor          warm 64  warm 4   narrow 64  narrow 4
+0092           6ac36126  Xeon 8370C          0.982    0.941     1.004      1.011
+earlier        96bb4778  EPYC 7763           0.984    0.946     1.002      1.016
+this section   266acf4f  Xeon 8573C          1.026    1.055     0.997      1.051
+follow-up      a06c53f9  EPYC 9V74           1.010    0.989     0.998      1.015
+```
+
+Three of the four draws put the completion build at or under its own
+sequential build warm at 4 KiB, and the fourth is the 8573C one this section
+reads. Every draw is on a different processor, so nothing here isolates the
+8573C; what it does say is that the 4 KiB reading of 1.055 is not a property
+of the runtime, because the same runtime plus this batch's follow-up reads
+0.989 on the next machine. **The no-regression bar is not refuted by the draw
+this section reads, and the bar table above keeps its `unresolved` grade
+because that table reads `266acf4f` and this is a different draw on different
+hardware.** What is owed has narrowed from "another Linux draw" to an
+explanation of the 8573C one.
+
 ### Linux hardware, many files
 
 `bench-linux` in the same run, for comparison with batch 0090's two draws of
