@@ -1524,7 +1524,7 @@ or owned parameter, and immutable state alone is shared.
 
 ## v0.38 amendment — the staged loop permission (activated 2026-08-27)
 
-**One added rule, PAR-3, and no other numbered change.** The counted permission
+**One added rule, PAR-3, and one amended sentence in SYS-2.** The counted permission
 PAR-2 divides an index range and recombines one accumulator; its unit is a
 subrange, which is why it needs a trip count, a compiler-owned binder, and an
 enumerated exactly-associative operation set, and why it admits only a
@@ -1535,13 +1535,29 @@ carry both would have put two permissions that share no condition under one
 rule id; PAR-3 states the second one on its own, and the two rules are
 independent — a loop may hold either, both, or neither.
 
+The SYS-2 amendment adds no rule and no record. It fills one entry in the
+milestone structure that rule already carries: the loan on the name an open
+borrows is released before target transfer, because forming the request copies
+the admitted code-unit range into compiler-owned storage and that copy is the
+operation's last access to the caller's buffer. Its derivation is the
+milestone's own — a borrow lives until the contract releases it, and the
+contract knows the release when it stops reading the buffer — and both shipped
+adapters already publish it there. PAR-3's condition on retained borrows does
+not consume it: the judgment reads every retained borrow to `terminal`, which
+is conservative against this contract and refuses only permission.
+
 **What it is derived from.** Nothing in PAR-3 is new authority. The cut is a
 dominator and post-dominator query on the body's own control-flow graph. Every
 footprint and every loan is PAR-1's, including the loan column v0.36 added.
 The four dispositions are OWN-5 exclusivity and OWN-7 place overlap read over
 the two segments the cut produces. The exit condition is FN-1, GIVE-1, and
 ERR-3's own edge classification. The replication condition consumes SYS-8's
-exact buffer disposition and EFF-2's call-boundary projection and nothing else.
+buffer disposition and EFF-2's call-boundary projection and nothing else — and
+it consumes them in the direction each states. SYS-8 fixes for the
+range-bearing operations only which bytes of a buffer *may* have changed, which
+is an upper bound and establishes no written byte; only its copy pair states a
+change exactly. The rule says so in its own words, so its coverage condition
+cannot read an upper bound as the lower bound it needs.
 
 **The two schedule restrictions are load-bearing.** Prologues execute in index
 order and never overlap one another; that sentence, and not an exemption, is
