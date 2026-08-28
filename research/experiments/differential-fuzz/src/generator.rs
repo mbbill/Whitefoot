@@ -54,6 +54,7 @@ pub enum Shape {
     DirectoryScan,
     Claim,
     GiveMatch,
+    SliceView,
     TypedExit,
     ArgumentRead,
 }
@@ -82,6 +83,7 @@ impl Shape {
             Shape::DirectoryScan => "directory-scan",
             Shape::Claim => "claim",
             Shape::GiveMatch => "give-match",
+            Shape::SliceView => "slice-view",
             Shape::TypedExit => "typed-exit",
             Shape::ArgumentRead => "argument-read",
         }
@@ -163,6 +165,7 @@ struct Gen {
     need_fold: bool,
     need_render: bool,
     need_mix: bool,
+    need_view: bool,
 
     scalars: Vec<Scalar>,
     buffers: Vec<Buffer>,
@@ -195,6 +198,7 @@ pub fn generate(seed: u64) -> Program {
         need_fold: false,
         need_render: true,
         need_mix: false,
+        need_view: false,
         scalars: Vec::new(),
         buffers: Vec::new(),
         shapes: BTreeSet::new(),
@@ -272,6 +276,10 @@ impl Gen {
         }
         if self.need_fold {
             source.push_str(FOLD_HELPER);
+            source.push('\n');
+        }
+        if self.need_view {
+            source.push_str(VIEW_HELPER);
             source.push('\n');
         }
         if self.need_render {
@@ -425,6 +433,31 @@ const FOLD_HELPER: &str = r#"fn fold_prefix['s](source: &'s buffer<u8>, produced
 }
 "#;
 
+const VIEW_HELPER: &str = r#"fn fold_view['r](view: own slice<'r, u8>, produced: own u64, seed: own u64) -> result: own u64 reads(view) {
+  doc "Folds one prefix of a direct view into a running order-sensitive checksum.";
+  let room = len(view);
+  let sum = seed;
+  let at = 0_u64;
+  loop @scan {
+    let scanned = ige(at, produced);
+    if scanned {
+      break @scan;
+    }
+    let readable = ilt(at, room);
+    if readable {
+    } else {
+      break @scan;
+    }
+    let byte = view[at];
+    let widened = cvt<u8, u64>(byte);
+    set sum = sum *wrap 31_u64;
+    set sum = sum +wrap widened;
+    set at = at +wrap 1_u64;
+  }
+  return sum;
+}
+"#;
+
 const RENDER_HELPER: &str = r#"fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
   let room = len(deref(destination));
@@ -475,6 +508,7 @@ impl Gen {
             (Shape::PureCallPair, 7),
             (Shape::Claim, 7),
             (Shape::GiveMatch, 6),
+            (Shape::SliceView, 6),
             (Shape::TypedExit, 3),
         ];
         if self.have_err {
@@ -527,6 +561,7 @@ impl Gen {
             Shape::DirectoryScan => self.directory_block(),
             Shape::Claim => self.claim_block(),
             Shape::GiveMatch => self.give_match_block(),
+            Shape::SliceView => self.slice_view_block(),
             Shape::TypedExit => self.typed_exit_block(),
             Shape::ArgumentRead => self.argument_block(),
             Shape::NestedLoop => self.counted_loop_block(),
@@ -1335,6 +1370,40 @@ impl Gen {
         self.body.line(&format!("set {store}[{index}] = {byte};"));
         self.body.line(&format!("set total = total +wrap {index};"));
         self.scalars.push(index);
+    }
+
+    /// A direct view over a live buffer, moved into a helper that reads through
+    /// it (P10). The slice descriptor carries a finite static origin set, so the
+    /// footprint the permission judgment forms for the call is the origin's, not
+    /// the descriptor's -- which is exactly the thing worth putting under an
+    /// overlap oracle.
+    fn slice_view_block(&mut self) {
+        self.need_view = true;
+        let (store, length) = match self.buffers.last() {
+            Some(buffer) => (buffer.name.clone(), buffer.length),
+            None => {
+                let length = *self.rng.pick(&[8_u64, 16, 32, 64]);
+                let fill = self.rng.between(48, 90);
+                (self.declare_buffer(length, fill), length)
+            }
+        };
+        let region = self.region();
+        let view = self.name("view");
+        let room = self.name("view_room");
+        let digest = self.name("view_digest");
+        let seed = self.rng.between(1, 97);
+        self.spend();
+        self.body.open(&format!("region {region} {{"));
+        self.body
+            .line(&format!("let {view} = slice_of(&{region} {store});"));
+        self.body.line(&format!("let {room} = len({view});"));
+        self.body.line(&format!(
+            "let {digest} = fold_view<{region}>(view: move {view}, produced: {length}_u64, seed: {seed}_u64);"
+        ));
+        self.body
+            .line(&format!("set total = total +wrap {digest};"));
+        self.body.line(&format!("set total = total +wrap {room};"));
+        self.body.close();
     }
 
     /// A conditional value: the `let`-initializer `match` of [GRAM-7], whose

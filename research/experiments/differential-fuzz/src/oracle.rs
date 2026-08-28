@@ -193,7 +193,13 @@ impl Ledger {
             stage_denied: 0,
         };
         for line in lines {
-            let permitted = line.contains("permitted");
+            // The verdict is a field of the line, not a word anywhere in it: a
+            // denial's reason text is prose and must never be read as a
+            // verdict.
+            let permitted = line
+                .split_whitespace()
+                .take(5)
+                .any(|field| field == "permitted");
             if line.starts_with("PAR permitted") {
                 ledger.pair_permitted += 1;
             } else if line.starts_with("PAR denied") {

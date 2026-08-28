@@ -335,9 +335,8 @@ fn render(tally: &Tally, elapsed: Duration, options: &Options) -> String {
     let mut text = String::new();
     text.push_str("\n== differential-fuzz campaign ==\n");
     text.push_str(&format!(
-        "seeds {}..{}, {} jobs, {} repetitions, {:.1} minutes\n",
+        "first seed {}, {} jobs, {} repetitions, {:.1} minutes\n",
         options.seed,
-        options.seed + tally.attempts,
         options.jobs,
         options.reps,
         elapsed.as_secs_f64() / 60.0
