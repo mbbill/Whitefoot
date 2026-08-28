@@ -536,8 +536,10 @@ by exempting the carrying block from the rule.
   applies.
 - IR identity: every `.wf` under `tests/programs`, `tests/codegen` and
   `tests/conformance/cases` compiled with `whitefootc --emit-llvm` at this
-  revision and at `main`, under the default, `--par` and `--no-overlap` — 630
-  sources each, 269 of which emit a module, all three passes byte-identical.
+  revision and at `main` (`10b76c66`), under the default, `--par` and
+  `--no-overlap` — 630 sources, 1,890 compilations each side, 807 of which
+  emit a module, every one byte-identical and no compilation succeeding on one
+  side and failing on the other.
 
 ## Status
 
