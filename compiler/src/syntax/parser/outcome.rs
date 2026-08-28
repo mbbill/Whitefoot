@@ -345,13 +345,6 @@ impl SyntaxIssue {
     pub const fn expected(self) -> ExpectedTerminals {
         self.expected
     }
-
-    /// Returns the one restructuring this rejection admits, when its rule has
-    /// exactly one.
-    #[must_use]
-    pub const fn mechanical_fix(self) -> Option<&'static str> {
-        self.mechanical_fix
-    }
 }
 
 /// Complete private grammar derivation over one classified bundle.

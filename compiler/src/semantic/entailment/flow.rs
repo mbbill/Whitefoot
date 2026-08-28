@@ -5517,10 +5517,7 @@ impl Analyzer<'_, '_> {
             self.judge_unrepresentable_system_range(
                 node_path,
                 1,
-                format!(
-                    "{} <= len({buffer_spelling})",
-                    self.render_expression(end)
-                ),
+                format!("{} <= len({buffer_spelling})", self.render_expression(end)),
                 states,
             );
             return;
@@ -5529,10 +5526,7 @@ impl Analyzer<'_, '_> {
             self.judge_unrepresentable_system_range(
                 node_path,
                 1,
-                format!(
-                    "{} <= len({buffer_spelling})",
-                    self.render_expression(end)
-                ),
+                format!("{} <= len({buffer_spelling})", self.render_expression(end)),
                 states,
             );
             return;
@@ -5566,10 +5560,7 @@ impl Analyzer<'_, '_> {
             comparison(end_goal, length_goal),
             end_term,
             length_term,
-            format!(
-                "{} <= len({buffer_spelling})",
-                self.render_expression(end)
-            ),
+            format!("{} <= len({buffer_spelling})", self.render_expression(end)),
             states,
         );
     }

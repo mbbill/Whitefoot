@@ -396,9 +396,11 @@ copy rather than a fact to rediscover:
   inline  PAR stage  probes/inline.wf:17  for  permitted  staged at open_file<'f, 'f>(…); 5 places classified
   helper  PAR stage  probes/helper.wf:26  for  denied     condition 3: a may-suspend call retains a borrow
                      past its own submission on storage the body writes and the iteration does not
-                     introduce; instead, give each iteration its own resource, or leave this loop
-                     sequential: storage that carries one position cannot be held by two iterations at
-                     once, at &uniq 'f files
+                     introduce; instead, give each iteration its own resource; or, where the body only
+                     publishes to that storage — an output stream is the pointed case — hoist the
+                     per-iteration write out of the loop, folding a total in the body and writing it
+                     once after the loop; or leave this loop sequential, because storage that carries
+                     one position cannot be held by two iterations at once, at &uniq 'f files
   ```
 
   When the factory is itself a borrow — which it is in any recursive walker —

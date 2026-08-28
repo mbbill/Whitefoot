@@ -315,9 +315,9 @@ fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
 /// `EffectMismatch`, `InvalidEffectRow`, and `InvalidBorrowLifetime`, and each
 /// asserts here exactly what it asserted when those kinds were unit variants:
 /// which rule rejected, and which kind it cited. Nothing was narrowed. The
-/// payload text of each of those kinds is pinned, byte for byte, by
-/// `semantic::tests::diagnostic_payloads`, which is where a change to the
-/// wording has to be made deliberately.
+/// payload text those kinds carry is pinned by
+/// `driver::pinned_sentences`, one row per sentence, which is where a change
+/// to the wording has to be made deliberately.
 fn assert_rule_kind(source: &[u8], rule: SemanticRule, kind: fn(&SemanticIssueKind) -> bool) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {

@@ -20,12 +20,6 @@ use super::{
     CheckStop, Checker, EffectSet, LocalBinding, ParameterSignature, PreludeType, TypedExpression,
 };
 
-/// The six [EFF-1] row conditions, each with the repair it admits.
-///
-/// The rule text carries every one of these sentences; the diagnostic did not,
-/// and the blind-writer trial of 2026-08-28 recorded a writer meeting the
-/// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
-/// rule number to work from.
 /// [TYPE-5]'s two sides where a type spelling that takes no type arguments
 /// carries a written `<...>` list.
 const TYPE5_NO_TARGS_EXPECTED: &str = "this type spelled with no type arguments";
@@ -41,6 +35,13 @@ const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a
 /// [TYPE-2]'s flat-element requirement, in the terms the rule states it.
 const TYPE2_FLAT_ELEMENT: &str = "a flat element type: an integer, a float, Bool, unit, or a struct or enum whose fields are themselves flat element types";
 
+/// [EFF-1]'s five row conditions, each with the repair it admits.
+///
+/// The rule text carries every one of these sentences; the diagnostic did not,
+/// and the blind-writer trial of 2026-08-28 recorded a writer meeting the
+/// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
+/// rule number to work from. The field-of-non-struct condition is cited at two
+/// sites, so five conditions cover six rejections.
 const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
 const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
 const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps";
