@@ -422,17 +422,34 @@ read at all. Its warm half is tight and disagrees with the two prior Linux
 draws, which agreed with each other: warm `C.wide8` over `S.wide8` is 1.026 and
 1.055 here against 0.982/0.941 in batch 0092 and 0.984/0.946 at `96bb4778`.
 
-The evidence does not settle which it is. Against a runtime regression: the
-only completion-source difference between `96bb4778`, which read 0.946, and
-`266acf4f`, read here, is the removal of the `WF_IO_TRACE` instrumentation, and
-removing instrumentation does not make a program slower. Not against it: the
-same movement appears on `C.narrow.default` over `S.narrow` — 1.051 here
-against 1.016 and 1.011 — and those programs state no overlap width, so
-whatever moved did not move only in the overlap path. The many-files Linux job
-in the same run does reproduce, at 1.058 against 0090's 1.041 and 1.045.
+The narrow lines are the control, and they do not exonerate the wide ones:
+
+```text
+warm C/S                  0092   96bb4778     this   delta
+64 KiB  C.wide8/S.wide8  0.9816   0.9840   1.0261   +0.042
+64 KiB  C.narrow/S.narrow 1.0035  1.0023   0.9969   -0.005
+ 4 KiB  C.wide8/S.wide8  0.9412   0.9460   1.0550   +0.109
+ 4 KiB  C.narrow/S.narrow 1.0112  1.0157   1.0514   +0.036
+```
+
+`C.narrow` and `S.narrow` are the same source with and without the completion
+lowering and state no overlap width, so a host difference should move them with
+the wide pair. At 64 KiB the narrow pair does not move at all while the wide
+pair moves 4.2 points, and at 4 KiB the wide pair moves three times as far. The
+movement is concentrated where the completion path does its work.
+
+What cuts the other way is that there is no change to point at. The only
+completion-source difference between `96bb4778`, which read 0.946, and
+`266acf4f`, read here, is the removal of the `WF_IO_TRACE` instrumentation —
+`git diff 96bb4778..266acf4f -- compiler/src/backend/completion/` is that and
+nothing else — and removing instrumentation does not make a program slower. The
+host also differs, at four cores against the previous draw's, and the wide
+lowering has more scheduling surface than the narrow one. The many-files Linux
+job in the same run does reproduce, at 1.058 against 0090's 1.041 and 1.045.
 
 So the honest reading is that one Linux draw on different hardware neither
-confirms nor refutes the no-regression bar, and another draw is owed. What is
+confirms nor refutes the no-regression bar, and another draw is owed — and the
+narrow control makes it a draw worth resolving rather than dismissing. What is
 not in doubt is Linux correctness: `io-hosts` `completion-linux` is green on
 this commit, including the required native io_uring adapter probe and the
 harness under the address, undefined and thread sanitizers, and the same

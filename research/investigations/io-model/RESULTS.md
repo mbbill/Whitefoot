@@ -1287,26 +1287,42 @@ commit `96bb4778`) measured 0.984 and 0.946. On both earlier draws the
 completion build was slightly faster than its own sequential build; on this one
 it is slightly slower.
 
-Two facts bear on whether that is a regression in the runtime.
+The narrow lines are the control for this. `C.narrow` and `S.narrow` compile
+the same source with and without the completion lowering but state no overlap
+width, so a host difference should move them with the wide pair and a change in
+the overlap path should not. They do not move together:
 
-Against it: the only difference in completion sources between `96bb4778` — the
-commit of the 0.946 reading — and `266acf4f`, measured here, is the removal of
-the `WF_IO_TRACE` stage instrumentation that `96bb4778` still carried. There is
-no drain, submit, publish or policy change between them; `git diff 96bb4778..266acf4f
--- compiler/src/backend/completion/` is that removal. Removing instrumentation
-does not make a program slower.
+```text
+warm C/S                  0092   96bb4778     this   delta vs 96bb4778
+64 KiB  C.wide8/S.wide8  0.9816   0.9840   1.0261         +0.042
+64 KiB  C.narrow/S.narrow 1.0035  1.0023   0.9969         -0.005
+ 4 KiB  C.wide8/S.wide8  0.9412   0.9460   1.0550         +0.109
+ 4 KiB  C.narrow/S.narrow 1.0112  1.0157   1.0514         +0.036
+```
 
-For it, or at least not against it: the movement is not confined to the lines
-that state width. `C.narrow.default` over `S.narrow` is 1.051 here against
-1.016 at `96bb4778` and 1.011 at 0092, and the narrow programs state no overlap
-width at all. Whatever moved moved for both, which is what a host difference
-looks like — this draw is a 4-core Xeon 8573C whose warm 4 KiB sequential line
-is 50.89 ms against the previous draw's 83.28 — but it is not proof of one.
+At 64 KiB the narrow pair does not move at all while the wide pair moves 4.2
+points; at 4 KiB the wide pair moves three times as far as the narrow one. So
+whatever this is, it is concentrated in the lines that state width, which is
+where the completion path does its work. That is what a change in the overlap
+path would look like.
+
+Cutting the other way: there is no such change to point at. The only difference
+in completion sources between `96bb4778` — the commit of the 0.946 reading —
+and `266acf4f`, measured here, is the removal of the `WF_IO_TRACE` stage
+instrumentation that `96bb4778` still carried; `git diff 96bb4778..266acf4f --
+compiler/src/backend/completion/` is that removal and nothing else. No drain,
+submit, publish or policy code differs between the two commits, and removing
+instrumentation does not make a program slower. The host also differs: a 4-core
+Xeon 8573C whose warm 4 KiB sequential line is 50.89 ms against the previous
+draw's 83.28, and the wide lowering has more scheduling surface than the narrow
+one, so a host with a different core count can move the wide pair further
+without any code being at fault.
 
 **So this section does not claim Linux is unregressed, and it does not claim it
 is regressed.** One draw on different hardware, whose cold half is unusable and
 whose warm half disagrees with two prior draws that agreed with each other, is
-not a reading of the bar. The correctness evidence is separate and is not in
+not a reading of the bar — but the narrow control makes it a draw worth
+resolving rather than one worth dismissing. The correctness evidence is separate and is not in
 doubt: `io-hosts` `completion-linux` is green on this commit, including the
 required native io_uring adapter probe and the harness under the address,
 undefined and thread sanitizers. What is owed here is another Linux draw.
