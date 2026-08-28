@@ -22,15 +22,17 @@ opinion of what the program should print.
 
 ## The property, and why it makes an exact oracle
 
-[PAR-1], [PAR-2], and [PAR-3] each close with the same sentence, in the same
-words. From `spec/kernel-spec.md`:
+All three permissions fix the same observable. [PAR-1] states it, and [PAR-3]
+repeats it verbatim, in `spec/kernel-spec.md`:
 
 ```text
 Under a permitted overlap, bindings and every Whitefoot state place equal the
 source-order result.
 ```
 
-and
+[PAR-2] states the same guarantee in its own unit — "every state-place
+observable is the one produced by executing L's iterations in index order" —
+and [PAR-1] closes the loop on what the implementation may not leak:
 
 ```text
 The number of workers, the identity of the host thread that executes a
@@ -38,9 +40,9 @@ statement, the schedule, and whether an overlap was performed at all are not
 observable, and no rule of this specification is stated in terms of them.
 ```
 
-That is a total order over the observables, so the oracle needs no model of the
-language. The reference is the same program compiled with `--no-overlap`, whose
-execution *is* the source order. The shipped completion build and the `--par`
+Those two sentences fix the observables exactly, so the oracle needs no model of
+the language. The reference is the same program compiled with `--no-overlap`,
+whose execution *is* the source order. The shipped completion build and the `--par`
 build must publish the same stdout bytes, the same stderr bytes, and the same
 exit status, under every `WF_WORKERS` × `WF_IO_HELPERS` setting. A difference is
 a defect in exactly one of four places, and the classification is mechanical:
@@ -101,6 +103,7 @@ writes only the easy middle:
 | `directory-scan` | `open_directory_source` plus a `directory_next` batch loop |
 | `claim` | an always-true residual claim in the shape [CLM-2] admits, so the trap path is never taken |
 | `bulk-write` | more than one host pipe buffer of bytes, so a delayed reader makes the write genuinely wait |
+| `slice-view` | a direct view (P10) over a live buffer, moved into a helper that reads through it — the descriptor's finite static origin set is what the permission judgment must form the footprint from |
 | `typed-exit` | a failure arm that leaves through an exit status |
 | `give-match`, `branch`, `counted-loop`, `unbounded-loop`, `nested-loop`, `arithmetic`, `argument-read` | ordinary control and value forms |
 
@@ -206,8 +209,9 @@ its diagnostic cites. That tally is the generator's own bias made visible: a
 rule that dominates it names a shape the generator writes wrong, or a language
 rule that is broader than a writer would guess.
 
-One rule dominates it, and it is the second kind. Every `[CLM-1]` rejection is
-this pair, which differ by one line and receive opposite verdicts:
+One rule dominates it, and it is the second kind. Every `[CLM-1]` rejection is a
+`NonLocalClaim`, and reducing one lands on this pair, whose two members differ
+by a single line and receive opposite verdicts:
 
 ```whitefoot
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
@@ -273,7 +277,7 @@ compile budget and buys a standing measurement of exactly this boundary.
 ## Where it lives, and when it goes
 
 `research/experiments/differential-fuzz/` — the existing home for measurement
-and evidence bundles that are not gates. Five source files, one Makefile, one
+and evidence bundles that are not gates. Six source files, one Makefile, one
 README, no dependencies, no new root entry, and no reachability from
 `make check`: the campaign builds thousands of executables and runs for tens of
 minutes, and its verdict is a report rather than a pass/fail a build should
