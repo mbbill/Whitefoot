@@ -396,10 +396,10 @@ where both cold tables were confirmed before and refused after. So each cold
 line here is a mixture of resident and non-resident reads rather than a cold
 one, which is why the two cold rows of the bar below are not read from *this*
 draw. They are graded from a later one — run 33172323795, at this record's own
-repair commit, the first on this branch whose probe confirms the uncached
-label at both ends of both cold tables — and the section below tabulates all
-five macOS draws' cache labels side by side instead of reading a cold ratio
-from whichever one is at hand.
+repair commit, the only one on this branch whose probe confirms the uncached
+label at both ends of both cold tables — and the section below reads the
+complete draw table in RESULTS, all nine macOS draws' cache labels together,
+instead of a cold ratio from whichever one is at hand.
 
 ### Against the bar
 
@@ -1064,97 +1064,82 @@ is the median, not the range.
 is the better half of the news. `bench-linux-read` landed on an AMD EPYC 9V74
 with the tree on NVMe, and its uncached 4 KiB table is confirmed at both ends
 — `probe before the table: confirmed; probe after it: confirmed`. It is not
-the only one: four of this branch's Linux cold 4 KiB tables carry that label,
-and reading the same row from all four is what the claim rests on rather than
-on one draw's exclusivity.
+the only one, and the count is not four: the complete draw table in RESULTS
+lists **eight** `bench-linux-read` uncached 4 KiB tables on this branch, every
+one of them confirmed at both ends, so the claim rests on reading the same row
+from all eight rather than on one draw's exclusivity. Read them there; what
+they say is this.
 
-```text
-run          commit    processor    C.wide8.default  S.wide8  N.pool8  N.uring32
-33153717709  96bb4778  EPYC 7763            1479.87  4227.07  1479.56    1469.81
-33155821397  266acf4f  Xeon 8573C           1514.79  8973.99  1435.03    1268.13
-33165141309  a06c53f9  EPYC 9V74            1216.03  4108.74  1482.48    1448.85
-33172323795  261070c8  Xeon 8370C           1465.26  3469.10  1481.78    1441.72
-```
-
-All four report four CPUs; the 7763 and the 8370C ran on `sda1`, the 8573C and
-the 9V74 on `nvme0n1p1`.
-
-The reading used is `33165141309`'s 1216.03 ms, and what makes it the reading
-rather than the flattering one is that it is the *only* row of the four where
-the eight-wide program is faster than every native line — 3.38 times its own
-sequential build, 1.22 times an eight-thread pool and 1.19 times a
-hand-written 32-deep io_uring pipeline. On the other three confirmed draws it
-is not: `96bb4778` puts it level with the native pool and the io_uring
-pipeline (1479.87 against 1479.56 and 1469.81), `261070c8` puts it a shade
-ahead of the pool and a shade behind the ring (1465.26 against 1481.78 and
-1441.72), and `266acf4f` puts it behind both (1514.79 against 1435.03 and
-1268.13). So the honest claim across the four is that the completion program
-is level with a hand-written native pipeline on this job on three Linux hosts
-and ahead of it on the fourth, and ahead of its own sequential build by 2.4 to
-5.9 times on all of them; the 1216.03 row is quoted because it is the draw the
-follow-up was measured on, and it is quoted beside the three that do not reach
-it.
+`N.uring32` is the fastest native line on all eight, so comparing C against it
+is comparing C against every native line of its table. C is ahead of it on
+three — `a06c53f9` 1216.03 against 1448.85, `72e98cba` 1249.62 against 1457.10
+and `caa66bad` 1455.21 against 1456.44, the last a 1.23 ms margin in 1456,
+which is a tie rather than a lead. On four more it is within 1.7 per cent
+behind (`34ac1ae2`, `96bb4778`, `261070c8`, `4a748d6e`), and on `266acf4f` it
+is 19.4 per cent behind, on the cold half this record calls unreadable for its
+spreads. So the honest claim across the eight is that the completion program
+is level with a hand-written 32-deep io_uring pipeline on this job and clearly
+ahead of it on two of the eight draws, and ahead of its own sequential build
+on every one — `S/C` runs from 2.11 to 5.92. The reading quoted here,
+`33165141309`'s 1216.03 ms, is quoted because it is the draw the follow-up was
+measured on; it is also the lowest `C.wide8.default` of the eight, which is a
+reason to be careful with it rather than a reason to prefer it.
 
 And its warm half does not reproduce the reading this record could not
-resolve:
-
-```text
-draw           commit    processor     warm 64  warm 4   narrow 64  narrow 4
-0092           6ac36126  Xeon 8370C     0.982    0.941     1.004      1.011
-earlier        96bb4778  EPYC 7763      0.984    0.946     1.002      1.016
-this record    266acf4f  Xeon 8573C     1.026    1.055     0.997      1.051
-follow-up      a06c53f9  EPYC 9V74      1.010    0.989     0.998      1.015
-repair         261070c8  Xeon 8370C     1.015    1.000     0.996      0.999
-```
-
-Three of the five draws put warm `C.wide8` at or under `S.wide8` at 4 KiB and
-a fourth sits on it exactly. The last row is the one that changes the
-argument. It is on a **Xeon 8370C — batch 0092's own processor**, the one that
-read 0.941 — and it reads 1.000. So the 4 KiB ratio moves from 0.941 to 1.000
-on the same processor model between two draws, which means the spread across
-these rows is not the hardware being different: it is what a hosted runner
-gives this pair from one draw to the next. That removes the framing the
-earlier rows invited, that the 8573C is an outlier to be explained. What is
-owed is not an explanation of one machine; it is a reading of this pair that
-does not move 6 points between draws, which needs repeated draws on one label
-rather than one more draw on a new one. The bar table above keeps its
-`unresolved` grade for exactly that reason.
+resolve. The seven `bench-linux-read` warm draws on this branch — the two
+cancelled runs stopped before their warm halves — are in the RESULTS draw
+table with batch 0092's draw on top, and the warm 4 KiB `C/S` column reads
+0.9412 for 0092 and then, in branch order, 0.9271, 1.0004, 0.9460, 1.0550,
+1.0402, 0.9887, 0.9998. Four readings are below one, two sit on it to within
+half a thousandth, and two are above it by four points or more: 1.0550 on the
+Xeon 8573C and 1.0402 on the EPYC 9V45, which are different processors on
+different disks. So the 8573C is not an outlier to be explained; it is the
+larger of two. The three Xeon 8370C draws say the same thing a second way —
+0.9412 in batch 0092, 0.9271 at this branch's merge base, 0.9998 at the repair
+round — so the ratio moves seven points across three draws of one processor
+model, which is what a hosted runner gives this pair from one draw to the next
+rather than a property of a machine. What is owed is not an explanation of one
+machine; it is a reading of this pair that does not move six points between
+draws, which needs repeated draws on one label rather than one more draw on a
+new one. The bar table above keeps its `unresolved` grade for exactly that
+reason.
 
 The many-files job does not improve, and it is not the machine that separates
-the readings: `bench-linux` ran on an AMD EPYC 7763 in both of this batch's
-first two draws — the EPYC 9V74 above is the `bench-linux-read` job's host in
-the same run, not this one's — on an EPYC 9V74 in both of batch 0090's, and on
-an EPYC 9V45 in the repair draw. It reads `C/S` 128.73/120.94 = 1.064 at
-`a06c53f9`, against 1.058 on the other 7763 draw, 1.050 at `261070c8`, and
-1.041 and 1.045 in batch 0090. The pair that differs most is same-processor,
-and five draws on three processors now put C between 4.1 and 6.4 per cent
-slower than S on that job, which is batch 0090's own finding and not a new one.
+the readings. `bench-linux` completed its table in all nine of this branch's
+runs, including both that were cancelled later, and the draw table lists all
+nine: `C/S` spans 1.0383 to 1.0697, and the seven draws that ran on one
+processor model, the AMD EPYC 7763, by themselves span 1.0550 to 1.0697. A
+run's `bench-linux` host is not its `bench-linux-read` host — they are
+separate runners and the draw table records each — so the EPYC 9V74 named
+above is the read job's machine, not this job's. Batch 0090's two draws of the
+same job, on an EPYC 9V74, read 1.041 and 1.045, inside the branch span.
+Eleven draws now put C between 3.8 and 7.0 per cent slower than S on that job,
+which is batch 0090's own finding and not a new one.
 
 ### A draw of the repaired runtime
 
-Pushing this repair ran `io-bench` a fifth time, at `261070c8`: run
+Pushing this repair ran `io-bench` a ninth time, at `261070c8`: run
 [33172323795](https://github.com/mbbill/Whitefoot/actions/runs/33172323795),
 all three jobs green. It is reported here in full because the record's own
 standard is that no draw of these jobs may be left out, and because two of its
 three halves answer questions the earlier draws could not.
 
 Its `bench-macos-read` job is the draw this record kept saying was owed: the
-uncached label is confirmed *before and after* both cold tables, the first
-time on this branch. "Against the bar" above takes the two cold grades from
-it. Its other rows, for completeness — warm `C/S` 0.989 at 64 KiB and 1.028 at
+uncached label is confirmed *before and after* both cold tables, which is
+true of no other run on this branch. "Against the bar" above takes the two
+cold grades from it. Its other rows, for completeness — warm `C/S` 0.989 at 64 KiB and 1.028 at
 4 KiB, narrow control 0.968 and 1.013, many-files 146.59/144.37 = 1.015 —
 agree with the tables this record reports to within the noise those tables
 carry, on a runner whose load average was 5.60 at the start.
 
 Its `bench-linux-read` job lands on a Xeon 8370C with the tree on `sda1`, and
-its uncached 4 KiB table is confirmed at both ends as well, which makes four
-such Linux tables on this branch. On it `C.wide8.default` reads 1465.26 ms
-against `N.pool8`'s 1481.78, `N.uring32`'s 1441.72 and its own sequential
+its uncached 4 KiB table is confirmed at both ends as well, as all eight of
+this branch's are. On it `C.wide8.default` reads 1465.26 ms against `N.pool8`'s 1481.78, `N.uring32`'s 1441.72 and its own sequential
 build's 3469.10 — 2.37 times faster than the sequential build, 1.1 per cent
 faster than an eight-thread native pool, and 1.6 per cent behind a
-hand-written 32-deep io_uring pipeline. That is the fourth reading of that row
-and the third of the four where the completion program is level with or
-ahead of the native pool.
+hand-written 32-deep io_uring pipeline. That is the eighth reading of that
+row, and on seven of the eight — every draw but `266acf4f` — the completion
+program is level with or ahead of the native eight-thread pool.
 
 Its `bench-linux` job is the many-files draw folded into the paragraph above.
 
