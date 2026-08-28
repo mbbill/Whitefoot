@@ -92,6 +92,9 @@ jobs:
       - name: Thread sanitizer
         run: make -C compiler completion-core-read-tsan CC=/usr/bin/clang
 
+      - name: Thread sanitizer over the bridge and the ring
+        run: make -C compiler completion-tsan CC=/usr/bin/clang
+
   bench-linux:
     name: bench-linux (ubuntu-24.04)
     runs-on: ubuntu-24.04

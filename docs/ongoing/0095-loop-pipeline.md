@@ -132,6 +132,12 @@ item 2), and the driver is Stage B.
 - Negative controls run by hand on Linux, both of which failed the harness as
   they must: restoring the immediate kick fails the doorbell test, and
   disabling the ring's retry fails the exhaustion test.
+- `make -C compiler completion-tsan`, new here and wired into the io-hosts
+  Linux job. `completion-core-read-tsan` links neither the bridge nor the ring
+  by design, so the deferred doorbell's staging, the retire-and-retry hand-back
+  and the readiness flag the flush reads had nothing checking them. The whole
+  harness runs clean under the thread sanitizer at zero, one and four helpers
+  on macOS and, with `WF_REQUIRE_LINUX_IO_URING=1`, in the Linux container.
 - IR identity: every `.wf` under `tests/programs`, `tests/codegen` and
   `tests/conformance/cases` compiled with `whitefootc --emit-llvm` at this
   revision and at `main`, under the default, `--par` and `--no-overlap` — 630
@@ -143,5 +149,7 @@ item 2), and the driver is Stage B.
 - [x] item 2 — deferred doorbell and its four flush points
 - [x] item 3 — retire-and-retry on both target routes
 - [x] item 4 — carrying and draining, with the IR-identity oracle
-- [ ] `make check`, `completion-sanitize`, TSan, Linux container run
+- [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
+      `completion-core-read-tsan` — green on macOS and in the Linux container
+- [ ] `make check`
 - [ ] CI green (gate + io-hosts)

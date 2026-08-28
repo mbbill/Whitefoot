@@ -157,6 +157,31 @@ completion-core-read-stress: completion-core-read-test
 	done
 	@echo "completion core/read stress: PASS (200 runs)"
 
+# The bridge and the native adapters, under the thread sanitizer.
+#
+# `completion-core-read-tsan` below covers the isolated core and the bounded
+# POSIX adapter and deliberately links neither the bridge nor the ring. Those
+# two carry their own shared state — the deferred doorbell's staging, the
+# retire-and-retry hand-back, the helper policy's readiness flags — and nothing
+# was checking it. This runs the whole harness instead, at the helper counts
+# `completion-test` runs it at, which is where a helper and a joining scheduler
+# actually contend.
+completion-tsan:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
+		-DWF_COMPLETION_POLL=wf_completion_test_poll \
+		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
+		-fsanitize=thread \
+		$(COMPLETION_SOURCES) \
+		-o "$(COMPLETION_TMP)/harness-tsan"
+	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=0 \
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=1 \
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=4 \
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+
 completion-core-read-tsan: completion-core-read-source-boundary
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
@@ -205,5 +230,6 @@ completion-windows-cross:
 
 .PHONY: check format lint test docs spec completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
-	completion-core-read-stress completion-core-read-tsan completion-sanitize \
+	completion-core-read-stress completion-core-read-tsan completion-tsan \
+	completion-sanitize \
 	completion-core-read-sanitize completion-windows-cross
