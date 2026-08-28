@@ -87,39 +87,57 @@ opens consume.
 So an open the host refuses for want of a descriptor is not published while
 this runtime is still holding a descriptor it could give back. Both target
 routes retire what they own and re-attempt once, and on both the re-attempt is
-gated on a *fact* rather than on a moment — some other operation this runtime
-owns has actually finished:
+gated on a *fact* rather than on a state: has any other operation this runtime
+owns published its completion **since this open's host attempt began**. Only a
+published completion means the kernel has actually taken a descriptor back,
+and only "since the attempt" is the right window — a close that finished while
+the open was inside `openat` has already made room, and a rule that read the
+present instead would answer from a world where nothing is left in flight and
+publish an exhaustion that no longer exists.
 
-- the ring holds the entry, and the refusal with it, in a state no doorbell can
-  stage. The gate is that the adapter's count of published completions has moved
-  since the refusal, because only a published completion means the kernel has
-  taken its descriptor back. When that happens the entry is re-staged and the
-  one re-attempt is counted. When nothing else is in flight at all, the refusal
-  is the outcome and it is published unchanged;
-- the bounded POSIX adapter first runs its queued work, which is work the
-  sequential execution performs anyway. When nothing is queued — the ordinary
-  case with several helpers, where the descriptors that would make room are
-  held by operations already running on other threads — it waits for one of
-  those to publish and then re-attempts. When no engine is left that could
-  produce a retirement, the refusal is the outcome.
+- the ring snapshots its published-completion count when the operation is
+  submitted, which is before the kernel can run the `openat`. A refused open
+  whose snapshot has moved is re-attempted at once; one whose snapshot has not
+  moved but which still has company in flight is held — in a state no doorbell
+  may stage — until it does; one with neither has its refusal published
+  unchanged. Holding matters because re-staging inside the reap pass that saw
+  the refusal would not do: that pass sees only the completions the ring had
+  already posted, so a close submitted before this open would lose the race to
+  the very open it was making room for;
+- the bounded POSIX adapter reads the same generation — its two execution
+  counters — before every host attempt. On a refusal it first runs its queued
+  work, which is work the sequential execution performs anyway. When nothing is
+  queued, which is the ordinary case with several helpers, it asks whether the
+  generation has moved since the attempt and, if it has not, waits for an
+  operation running on another engine to publish. When no engine is left that
+  could produce a retirement, the refusal is the outcome.
 
-Two earlier shapes of this were wrong in the same way, and both were caught by
-the Stage A verification rather than by a test:
+Three shapes of this were wrong before the rule was stated that way, and the
+first two were caught by the Stage A verification rather than by a test:
 
-- the ring re-staged the refused open at the end of the *same* reap pass. That
-  pass sees only the completions the ring had posted when it read the tail, so
+- the ring re-staged the refused open at the end of the *same* reap pass, so
   the source order `close(held); open(path)` — which succeeds sequentially —
-  lost the race to the very close it was making room for and published
-  `Err(EMFILE)`, deterministically, at every helper setting;
+  lost the race to that close and published `Err(EMFILE)`, deterministically,
+  at every helper setting;
 - the adapter asked the host a second time only when it found queued work to
   drain. With several helpers each simultaneous open lands on its own helper
   and looks at an empty queue, so the descriptors a retirement would return —
   held by operations running on the *other* helpers — were never waited for and
   the refusal was published instead. Where one of those operations really is
   the close that frees the descriptor, that loses an `Ok` the sequential
-  program produces.
+  program produces;
+- both routes then asked whether anything was *still* in flight at the moment
+  the refusal was being decided, rather than whether anything had retired since
+  the attempt. That is the same defect one step further in: a close that
+  published between the failing `openat` and the decision left nothing in
+  flight, so the refusal was published although its descriptor was already
+  back. It survived the first repair and showed up as
+  `test_bridge_open_behind_a_submitted_close_succeeds` failing 17 of 2,500 runs
+  at four helpers on macOS — found by hunting the shipped harness for longer
+  than the earlier 200-run measurement, not by any check that was already
+  there.
 
-Both are now covered by tests that fail without the fix:
+Both routes are covered by tests that fail without the fix:
 `test_bridge_open_behind_a_submitted_close_succeeds` and
 `test_open_exhaustion_waits_for_another_engine`.
 
@@ -226,15 +244,22 @@ by exempting the carrying block from the rule.
   `a_carrying_region_with_no_exit_is_refused`,
   `a_drain_emitted_before_the_hand_out_it_retires_is_refused`.
 - The two exhaustion tests each fail without the fix they cover, which is what
-  makes them evidence rather than decoration. Measured against the shipped
-  harness with only the fix reverted, 30 runs at each helper setting:
+  makes them evidence rather than decoration. Both were measured against the
+  shipped harness with only the runtime hunk reverted.
   `test_open_exhaustion_waits_for_another_engine`, with the adapter's old
-  `drained == 0` give-up restored, fails 30/30 at zero, one and four helpers on
-  macOS; `test_bridge_open_behind_a_submitted_close_succeeds`, with the ring's
-  old same-pass re-stage restored, fails 30/30, 29/30 and 28/30 at zero, one
-  and four helpers in the Linux container. The ring case is not quite 30/30
-  because the kernel is free to run the close first, in which case the open is
-  never refused at all and the old code has nothing to get wrong.
+  `drained == 0` give-up restored, fails 30 of 30 runs at zero, one and four
+  helpers on macOS: that schedule is arranged rather than raced for, so the
+  control is deterministic.
+  `test_bridge_open_behind_a_submitted_close_succeeds`, with the ring restored
+  to `14c89cf3`, fails 21 of 150 runs at one helper and 21 of 150 at four in
+  the Linux container, where the shipped ring fails 0 of 150 at each under the
+  same load in the same minute. The ring control is a rate and not a certainty
+  because the kernel is free to run the submitted close before the open, in
+  which case the open is never refused and the old code has nothing to get
+  wrong; how often that happens depends on how loaded the host is, and the same
+  binary measured 28 to 30 failures in 30 on an idle host earlier the same day.
+  What the pair establishes either way is the direction: with the fix the test
+  never fails, without it the test fails.
   `a_drain_emitted_before_the_hand_out_it_retires_is_refused` emits a module
   with the ordering check removed, and the loop's `break` exit in that module
   carries a bare `ret` with no `wf__completion_file_join` while the
@@ -264,17 +289,21 @@ by exempting the carrying block from the rule.
   refused open — and the property it was reaching for is carried by the two
   deterministic tests above. Its own comment says so.
 
-- Repetition counts after both fixes, at every helper setting the suites use.
-  macOS (`completion-test` build): 1,000 runs at zero helpers, 1,000 at one and
-  2,400 at four, 0 failures — where the old code would have failed about 156 of
-  the four-helper runs. macOS `completion-tsan`: 60 runs at zero helpers, 90 at
-  one and 120 at four, 0 failures; the one-helper count matters because that is
-  where the second defect, the test's own assertion, still showed at 1 in 20
-  after the adapter fix alone. Linux container (`wf-io-bench:linux`, aarch64,
-  kernel 6.8, io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs
-  each at zero, one and four helpers, 0 failures; `completion-tsan` 20 runs
-  each at zero, one and four helpers, 0 failures; 50 runs with
-  `WF_REQUIRE_LINUX_IO_URING=1` at four helpers, 0 failures.
+- Repetition counts after all three fixes, at every helper setting the suites
+  use. macOS (`completion-test` build): 900 runs at zero helpers, 900 at one and
+  8,000 at four, 0 failures. The four-helper number is large on purpose: the
+  first repair left a residual that showed at 17 in 2,500, which 200 runs would
+  not have found, and the counts here are what says the third one did not.
+  macOS `completion-tsan`: 30 runs at zero helpers, 40 at one and 80 at four, 0
+  failures; the one-helper count matters because that is where the test's own
+  assertion, the second defect, still showed at 1 in 20 after the adapter fix
+  alone. Linux container (`wf-io-bench:linux`, aarch64, kernel 6.8, io_uring
+  enabled, `--security-opt seccomp=unconfined`): 300 runs each at zero, one and
+  four helpers, 0 failures; `completion-tsan` 20 runs each at zero, one and
+  four helpers, 0 failures; 100 runs with
+  `WF_REQUIRE_LINUX_IO_URING=1` at four helpers, 0 failures. The container also
+  builds and runs the harness with `gcc`, which is the compiler `gate-linux`
+  uses.
 - `make -C research/experiments/io-completion-bench verify` on macOS: every line
   of every workload — the hand-written native shape, the `--no-overlap`
   sequential reference, and the shipping overlapped build — publishes
