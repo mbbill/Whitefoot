@@ -222,71 +222,6 @@ labelled by what was measured, not the absence of a table, so the script
 always runs the probe, always prints its per-file medians, and prints the
 verdict on the table's own label line.
 
-## What the tables say
-
-The tables are in `research/investigations/io-model/RESULTS.md`; run
-[33130875022](https://github.com/mbbill/Whitefoot/actions/runs/33130875022) at
-commit `6ac36126`, `bench-linux-read` on `ubuntu-24.04` (Xeon Platinum 8370C,
-4 CPUs, 16 GiB, ext4 on a local disk) and `bench-macos-read` on `macos-14`
-(virtual Apple M1, 3 CPUs, 7 GiB, APFS). Seven recorded passes after two
-warm-ups, the plan reversed on alternate passes.
-
-**The uncached Linux tables are the first result that meets both halves of the
-standing bar.** At width eight the shipped completion build finishes 1228.53 ms
-against the eight-thread native pool's 1278.13 and a raw io_uring pipeline's
-1274.99 at depth 8; at 4 KiB it finishes 1463.43 against `N.uring32`'s 1459.84,
-a fifth of a per cent apart. Against the same source compiled with no overlap
-lowering it is 1.43x faster at 64 KiB and 2.10x at 4 KiB. The bar asked for
-within ten per cent of the best native shape at matched width; this is faster
-than it. The honest qualifier is that the fastest native line in the 64 KiB
-table is `N.pool2` at two threads, not eight, and against that C is 10.5 per
-cent behind.
-
-**Warm, the same lowering costs what it has always cost**, because there is no
-wait to overlap and what remains is the submission, the token and the join.
-Linux: within two per cent either way. macOS: 1.27x slower at 64 KiB and 2.88x
-at 4 KiB — and `WF_IO_HELPERS=0` on the same program brings that to five per
-cent, so the distance is the helper pool spun up for operations that never
-wait, not the lowering.
-
-**The system-time column is the mechanism.** On the Linux 4 KiB uncached table
-the completion build spends 202 ms of system CPU where the sequential build
-spends 349 and finishes 2.1 times faster: one ring submission carries eight
-reads that the sequential build enters the kernel eight times for. On macOS the
-ratio inverts — 756 against 474 uncached — because the bounded POSIX adapter
-has no ring and buys its overlap with threads, spending system time rather than
-saving it. Uncached that trade returns 1.73x; warm it costs 1.27x.
-
-**The macOS many-files run retires a claim this project has carried since batch
-0084.** "Overlap is worth about two times on a program that exposes width" was
-measured on a machine whose endpoint-security stack charges 116 us for an
-`openat`. The same workload on a macOS runner without that stack costs 17.2 us
-per open-read-close against 139 us on the maintainer's M4 — eight times faster
-on a virtual M1 with three cores — and there the completion build is **1.20x
-slower** than its own sequential build, the same sign as batch 0090 found on
-Linux hardware. The two-times figure was the hook, not the lowering.
-
-## What the macOS runner taught about the threshold
-
-The residency probe confirmed both macOS uncached tables before they ran and
-refused both after, and the refusal is worth more than the confirmation.
-
-`F_NOCACHE` is a mode of the descriptor, so no line in a macOS uncached table
-can have populated the page cache, and the after-probe's numbers agree that
-nothing was resident: a resident 64 KiB read on that host costs 5.5 to 6.0 us
-and the after-probe saw 37 to 55 us. But it saw about half what the same files
-cost before the table, which ran 75 to 315 us. There are three populations on
-a virtualized host, not two — the guest's page cache, the hypervisor's disk
-cache, and the device — and a threshold calibrated on a physical machine
-between 6 us and 134 us cannot separate three. The 40 us line falls inside the
-middle one.
-
-The probe was right to refuse and the script was right not to stop: the
-finding is that the macOS runner's storage got faster as the table ran, which
-is a fact about the table that a reader needs and that a refusal would have
-hidden. Both directions of that warming land on every line equally, because
-the passes alternate.
-
 ## What the runners measured
 
 Run `https://github.com/mbbill/Whitefoot/actions/runs/33130875022`, jobs
@@ -358,20 +293,28 @@ the many-files workload.
 4. **The macOS cold tables are published with their drift stated.** Their
    after-probes found 37 to 55 us reads where the before-probes found 76 to
    316 and the warm probes find 4 to 6. That is a cache below the guest, which
-   `F_NOCACHE` cannot reach. It is reported rather than worked around, and the
-   interleaved schedule is what keeps it from becoming a ranking.
+   `F_NOCACHE` cannot reach: a virtualized host has three populations, not
+   two, and a single threshold chosen between a physical machine's 6 us and
+   134 us falls inside the middle one. It is reported rather than worked
+   around, and the interleaved schedule is what keeps it from becoming a
+   ranking.
 5. **The runner became a pass-interleaving runner in this batch.** It runs the
    whole plan, then runs it again reversed, and takes each line's median across
    passes. A grouped schedule measures the first line against a different
    machine from the last one whenever the host drifts, and both of these hosts
    drift. The local provisional table predates the change and is labelled with
    that among its reasons.
-6. **The gate workflow is red on this branch and was red before it.** Both
-   `gate-linux` and `gate-macos` fail at host-timing observations -- worker-pool
-   steal, scheduler-lane resumption, stack-ledger rows -- on the tip of
-   `batch/0090-ci-real-hosts` that this branch merged, and on this branch they
-   fail the same way. Nothing here touches those tests. Canonical `make check`
-   passes on the maintainer's machine, which is the merge requirement.
+6. **The gate workflow is red on this branch and was red before it.** On the
+   tip of `batch/0090-ci-real-hosts` that this branch merged, run
+   [33128887524](https://github.com/mbbill/Whitefoot/actions/runs/33128887524),
+   `gate-macos` fails at
+   `backend::tests::parallel::an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`
+   and `gate-linux` at two `backend::stack_ledger::tests` rows and
+   `backend::tests::parallel::the_runtime_replaces_the_modules_weak_refusal`.
+   These are host-timing and host-layout observations, and `gate-macos` fails
+   the same way on this branch. Nothing in this batch touches them. Canonical
+   `make check` passes on the maintainer's machine, which is the merge
+   requirement.
 
 ## Approval classes
 
