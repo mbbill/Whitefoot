@@ -280,7 +280,8 @@ The sharpest measurement is the direct one. Every one of the 203 programs the
 new compiler accepted was recompiled with the base compiler: **5 of 203 are
 refused, and all 5 cite `NonLocalClaim`.** No program moves the other way, and
 neither run's oracle found a divergence, an unstable reference, a timeout, a
-crash, or a lowering refusal.
+crash, or a lowering refusal. The narrowed run was repeated after the discharge
+repair described above and produced the same figures, program for program.
 
 The pair `docs/done/0097-differential-fuzz.md` minimized is hand-written into
 the corpus as the two `accept-clm1-local-claim-after-boundary-*` cases; the base
