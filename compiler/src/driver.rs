@@ -569,6 +569,52 @@ mod tests {
         ledger
     }
 
+    /// A source read from a host path the closed logical spelling cannot hold
+    /// is still named by that host path everywhere a reader looks.
+    ///
+    /// An absolute path is how a script, a Makefile, and an agent all invoke
+    /// this compiler. Renaming it to a positional `input0.wf` made every
+    /// ledger line and every byte offset refer to a file that exists nowhere
+    /// on disk, so the output was not usable as emitted.
+    #[test]
+    fn a_ledger_names_the_host_path_the_source_was_read_from() {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let host = "/absolute/path/staged.wf";
+        let (_, ledger) = compile_with_permission_ledger(
+            &[SourceInput::from_host_path("input0.wf", host, source)],
+            CompilerLimits::default(),
+            OverlapLowering::Off,
+        )
+        .expect("the fixture compiles");
+        assert!(
+            ledger.iter().all(|line| line.contains(host)),
+            "every ledger line names the host path: {ledger:?}"
+        );
+        assert!(
+            ledger.iter().all(|line| !line.contains("input0.wf")),
+            "the bundle's own key is not reader-facing text: {ledger:?}"
+        );
+    }
+
     const TREE_PRELUDE: &str = "enum BoxNode {
   Leaf(w: u64);
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);

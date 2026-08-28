@@ -35,10 +35,7 @@ fn run() -> Result<(), String> {
             std::fs::read(source)
                 .map_err(|error| format!("cannot read {}: {error}", source.display()))?,
         );
-        paths.push((
-            logical_path(source, index),
-            source.to_string_lossy().into_owned(),
-        ));
+        paths.push(source_names(source, index));
     }
     let inputs: Vec<_> = paths
         .iter()
@@ -268,6 +265,20 @@ fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> 
     }
 }
 
+/// The two names one source argument carries: the bundle's own name, then the
+/// name every reader is shown.
+///
+/// The display name is the argument, unchanged. That is the whole point: an
+/// absolute path is how a script, a Makefile, and an agent all invoke this
+/// compiler, and a diagnostic or ledger line that renames the file to
+/// `input0.wf` names a file that exists nowhere on disk.
+fn source_names(path: &Path, index: usize) -> (String, String) {
+    (
+        logical_path(path, index),
+        path.to_string_lossy().into_owned(),
+    )
+}
+
 /// The bundle's own name for one source.
 ///
 /// This is program identity, not presentation: it orders the bundle and
@@ -440,11 +451,37 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use super::Options;
+    use std::path::Path;
+
+    use super::{Options, source_names};
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
         Options::parse(&owned)
+    }
+
+    /// Every reader-facing name is the argument the caller typed, including an
+    /// absolute one, while the bundle's own key stays inside the closed
+    /// portable spelling.
+    ///
+    /// The two answers differ exactly when the host path cannot be spelled as
+    /// a logical path, and that is the case a writer meets first: a diagnostic
+    /// that renamed `/tmp/wc.wf` to `input0.wf` cited a file that does not
+    /// exist.
+    #[test]
+    fn a_source_is_shown_by_the_path_the_caller_wrote() {
+        let (logical, display) = source_names(Path::new("/tmp/wc.wf"), 0);
+        assert_eq!(display, "/tmp/wc.wf");
+        assert_eq!(logical, "input0.wf");
+
+        let (logical, display) = source_names(Path::new("../out of tree.wf"), 3);
+        assert_eq!(display, "../out of tree.wf");
+        assert_eq!(logical, "input3.wf");
+
+        // A portable relative path is already both names.
+        let (logical, display) = source_names(Path::new("programs/wc.wf"), 0);
+        assert_eq!(display, "programs/wc.wf");
+        assert_eq!(logical, "programs/wc.wf");
     }
 
     /// The permission ledger is an opt-in developer channel: off unless the
