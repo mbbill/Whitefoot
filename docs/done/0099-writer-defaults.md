@@ -294,6 +294,29 @@ merge.
 `research/investigations/proof-derived-parallelism/gap-hunt-findings.md` F7,
 open since 2026-08-22, is closed in place by item 1.
 
+## Gate results
+
+Local canonical `make check` on macOS: green.
+
+CI `gate` on the branch: `gate-macos (macos-14)` green, `gate-linux
+(ubuntu-24.04)` failing on six conformance cases that this branch does not
+reach. All six report `TargetQualification(MissingMapping(Operation(12)))` —
+the four `sys14-*` directory cases plus
+`accept-sysfile-two-permits-shared-directory` and
+`accept-par3-staged-denied-opaque-cursor` — against `Pass=503 Fail=6 Skip=1`.
+
+That failure is `main`'s, by construction rather than by inference.
+`operation_row` in `compiler/src/backend/qualification.rs` answers
+`MissingMapping` for operations 12 and 13 whenever the target has no directory
+enumeration, and the `x86_64-unknown-linux-gnu` row on `main` supplies `None`
+for exactly that field, with the comment saying why: "Linux supplies
+`getdents64`, but this compiler intentionally has no approved ABI/record
+mapping for it yet. Qualification must therefore report MissingMapping rather
+than pretending the target lacks the semantic facility." This branch's diff
+against `main` under `compiler/src/backend/` is empty, so that row is unchanged
+here. `batch/0094-linux-directory-row` is the branch landing the mapping, and
+its gate is green.
+
 ## What this batch did not do
 
 - D1, D7, and D11 are owner decisions and were not touched.
