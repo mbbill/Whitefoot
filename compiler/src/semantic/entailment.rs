@@ -960,11 +960,14 @@ pub(crate) struct CheckedGenericClaimConcreteReport {
     pub(crate) name: String,
 }
 
-/// Bundle-local source identity of one concrete checked claim occurrence.
+/// Source identity of one concrete checked claim occurrence.
 /// This value deliberately has no hash or meaning outside its checked program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ClaimSourceIdentity {
-    pub(crate) logical_path: String,
+    /// The name a reader is shown for this source: the host path the driver
+    /// read it from. The bundle's own portable key names the program to the
+    /// program, and nothing prints that.
+    pub(crate) display_path: String,
     pub(crate) coordinate: SyntaxCoordinate,
     pub(crate) node_path: NodePath,
     pub(crate) declaration: DeclarationId,

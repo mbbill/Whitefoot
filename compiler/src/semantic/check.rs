@@ -1265,10 +1265,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .claims
                         .iter()
                         .map(|claim| {
-                            let (logical_path, coordinate) =
+                            let (display_path, coordinate) =
                                 self.tree.source_identity(&claim.node_path)?;
                             Ok(ClaimSourceIdentity {
-                                logical_path,
+                                display_path,
                                 coordinate,
                                 node_path: claim.node_path.clone(),
                                 declaration: function.declaration,
