@@ -122,12 +122,29 @@ them as selections in every case: the matching binder (its own arm's tag), the
 binder (its endpoint). Each was narrowed from the whole live control to that
 one selector, so an outer boundary arm no longer taints them.
 
-Frame *removal* is deleted along with the exhaustiveness bookkeeping that drove
-it — `unrepresented_exit`, the exhaustive-break count, the
-exhaustively-delivering-arm count, and the three discharge loops. A frame the
-merge's entry state already carries is excluded by `acquired` on its own, so a
-discharge that only affected reachability had nothing left to affect. This is
-strictly fewer special cases on one path, not a second path.
+Frame discharge is kept, and it changed meaning. v0.38 dropped a selector's
+frame when reaching the continuation stopped depending on it; v0.39 drops it at
+the merge that joins every edge the selector produces, after that merge has read
+it as its own selection. The two coincide for an exhaustive reconvergence and
+for a counted loop whose body neither returns, gives, nor breaks outward, so
+those two discharges keep v0.38's conditions verbatim. They differ for breaks:
+v0.38 dropped the frame from the break states of a match all of whose arms break
+to one loop, and the merge that joins those edges is the loop's exit, so
+dropping it earlier would hide the selector from the merge that needs it. That
+discharge is therefore gone, replaced by dropping every frame the loop's own
+exit merge acquired — in `walk_loop` and `walk_counted` alike — under the same
+no-escaping-edge condition. A construct with an escaping edge keeps its frame,
+because that edge's own state carries a copy and an enclosing loop head still
+depends on the selector.
+
+The first attempt deleted discharge outright, on the reasoning that a frame the
+merge's entry state already carries is excluded by `acquired` anyway. That is
+true of merges downstream of the construct and false of an enclosing loop head:
+`tests/programs/wide_scan.wf` has an exhaustive match on an `arg_get` result
+inside a counted loop, and with the frame retained the loop head attributed its
+own selection to that match and refused a claim v0.38 admitted. The canonical
+`make check` caught it, which is why this record's evidence is quoted from the
+run after the repair.
 
 `entailment/flow.rs`'s `claim_locality_failure` loses its control-witness
 fallback and the `control_fallback` tie-break bit that existed only to let a
@@ -289,12 +306,14 @@ admits lowers to the ordinary executed check and moves no published byte.
   repeated walks of one body, is compared only with another identity of the same
   component of the same binding, and is never rendered, published, or ordered,
   so no scratch identity escapes into a diagnostic or an emitted byte.
-- **Frame removal is deleted rather than kept.** With the selection measured
-  against the merge's own entry control, a frame the entry already carries is
-  excluded on its own, so the three exhaustiveness discharges — reconvergence,
-  breaks to one loop, exhaustive delivery — could no longer change any answer,
-  and `unrepresented_exit` existed only to drive them. Keeping dead bookkeeping
-  beside a live rule is the larger risk, so it went in the same change.
+- **Frame discharge is kept and moved, not deleted.** Deleting it read
+  plausibly — `acquired` already ignores a frame the merge's entry carries —
+  and it was wrong: an enclosing loop head's entry predates the construct, so a
+  retained frame made the loop head attribute its own selection to an inner
+  match that had already reconverged. The discharge now happens at the merge
+  that joins every edge a selector produces, which is where the rule says the
+  selection is spent. The one condition that moved is the break case, whose
+  joining merge is the loop exit rather than the match.
 - **Three sites keep an unconditional selector.** The matching binder, the
   `value_if`/`value_match` delivered value, and the counted binder are
   selections in every case and the rule says so, so each unions its own

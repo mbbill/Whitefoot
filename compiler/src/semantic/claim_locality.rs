@@ -179,6 +179,15 @@ impl ControlAuthority {
         result
     }
 
+    /// Drop one frame.  A frame is dropped exactly at the merge that joins
+    /// every edge its construct produces, after that merge has read it as its
+    /// own selection: from there on the construct has chosen nothing the
+    /// continuation can still observe, and a construct whose edges are not all
+    /// joined here keeps its frame on each edge that is still pending.
+    fn remove(&mut self, site: usize) {
+        self.frames.retain(|frame| frame.site != site);
+    }
+
     /// The earliest witness among the frames these edges acquired since
     /// `self`.  This is the authority of the edge choice a merge whose entry
     /// state carried `self` performs, and nothing else: a frame `self` already
@@ -710,6 +719,12 @@ struct FlowResult {
     normal: Option<AuthorityState>,
     breaks: HashMap<CheckedLoopId, Vec<AuthorityState>>,
     gives: Vec<GiveEdge>,
+    /// At least one path leaves the represented normal/break/give graph, for
+    /// example by returning from the function or by remaining in an ordinary
+    /// loop forever.  A selector with such an edge is never fully joined at a
+    /// merge inside the construct that holds it: whether an enclosing loop
+    /// iterates again still depends on it.
+    unrepresented_exit: bool,
 }
 
 impl FlowResult {
@@ -725,6 +740,7 @@ impl FlowResult {
             self.breaks.entry(target).or_default().append(&mut states);
         }
         self.gives.append(&mut other.gives);
+        self.unrepresented_exit |= other.unrepresented_exit;
     }
 }
 
@@ -952,7 +968,13 @@ impl AuthorityPass<'_> {
                 // Only the Ok edge reaches the following statement, so that
                 // continuation itself reveals the Result discriminant.
                 state.control = state.control.with_added(control_site, selector);
-                Ok(FlowResult::normal(state))
+                Ok(FlowResult {
+                    normal: Some(state),
+                    // The implicit Err edge leaves the function, so this
+                    // selector is never fully joined inside an enclosing loop.
+                    unrepresented_exit: true,
+                    ..FlowResult::default()
+                })
             }
             CheckedStatement::Set { target, value, .. } => {
                 let offset = self.target_selector_witness(target, &state)?;
@@ -993,7 +1015,10 @@ impl AuthorityPass<'_> {
             }
             CheckedStatement::Return { value, .. } => {
                 let _ = self.expression(value, &state)?;
-                Ok(FlowResult::default())
+                Ok(FlowResult {
+                    unrepresented_exit: true,
+                    ..FlowResult::default()
+                })
             }
             CheckedStatement::Give { value, .. } => {
                 // The delivery merge reads this edge's own control, so a give
@@ -1060,6 +1085,7 @@ impl AuthorityPass<'_> {
         let mut exits = Vec::new();
         let mut abrupt = FlowResult::default();
         let mut deliveries = Vec::new();
+        let mut exhaustively_delivering_arms = 0usize;
         for arm in arms {
             let mut arm_state = entry.clone();
             arm_state.control = branch_control.clone();
@@ -1083,6 +1109,13 @@ impl AuthorityPass<'_> {
                 );
             }
             let mut arm_result = self.walk_block(&arm.body, arm_state)?;
+            if arm_result.normal.is_none()
+                && !arm_result.gives.is_empty()
+                && arm_result.breaks.is_empty()
+                && !arm_result.unrepresented_exit
+            {
+                exhaustively_delivering_arms += 1;
+            }
             if let Some(exit) = arm_result.normal.take() {
                 exits.push(exit);
             }
@@ -1119,6 +1152,11 @@ impl AuthorityPass<'_> {
             }
             let mut state = merge_states(&states, self.nominals, selection.as_ref(), merge)?
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            // Every path in every arm delivered, so this merge joined every
+            // edge the selector produces and it selects nothing after it.
+            if exhaustively_delivering_arms == arms.len() {
+                state.control.remove(control_site);
+            }
             let mut delivered = delivered.ok_or(SemanticCompilerFailure::InvalidResolution)?;
             if delivered.ty != result_type {
                 delivered = AuthorityValue::uniform(result_type, delivered.aggregate());
@@ -1139,7 +1177,21 @@ impl AuthorityPass<'_> {
         // reconvergence.  A component every arm reaches through one definition
         // is not chosen here, however the arm itself was selected.
         let selection = incoming_control.acquired(exits.iter().map(|exit| &exit.control));
-        abrupt.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
+        let mut merged = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
+        // An exhaustive reconvergence with no escaping edge joins every edge
+        // the selector produces, so the frame is discharged after this merge
+        // has read it.  An arm that returns, breaks, gives, or diverges leaves
+        // an edge this merge does not join, and an enclosing loop head still
+        // depends on that selector, so the frame stays on every reaching edge.
+        if exits.len() == arms.len()
+            && !abrupt.unrepresented_exit
+            && abrupt.breaks.is_empty()
+            && deliveries.is_empty()
+            && let Some(state) = merged.as_mut()
+        {
+            state.control.remove(control_site);
+        }
+        abrupt.normal = merged;
         abrupt.gives = deliveries;
         Ok(abrupt)
     }
@@ -1197,11 +1249,27 @@ impl AuthorityPass<'_> {
             head = next;
         };
         let mut result = final_result;
+        // A surviving backedge may iterate forever, which is an edge no merge
+        // below joins.
+        result.unrepresented_exit |= result.normal.is_some();
         let exits = result.breaks.remove(&id).unwrap_or_default();
         let selection = entry
             .control
             .acquired(exits.iter().map(|exit| &exit.control));
-        result.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
+        let mut merged = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
+        // This merge joins every edge that leaves the loop, so a selector
+        // wholly inside the body has chosen everything it can choose and its
+        // frames are discharged once the merge has read them.  An edge that
+        // escapes the loop entirely — a return, a give, or a break to an outer
+        // loop — leaves a construct unjoined, and its own state keeps them.
+        if !result.unrepresented_exit
+            && result.gives.is_empty()
+            && result.breaks.is_empty()
+            && let Some(state) = merged.as_mut()
+        {
+            state.control = entry.control.clone();
+        }
+        result.normal = merged;
         Ok(result)
     }
 
@@ -1268,11 +1336,20 @@ impl AuthorityPass<'_> {
         // The false-header edge exists even when the body never runs, and the
         // endpoint chose it.  A component every exit reaches through one
         // definition is nonetheless untouched by that choice.
+        let body_is_exhaustive =
+            !result.unrepresented_exit && result.gives.is_empty() && result.breaks.is_empty();
         let mut false_header = entry;
         false_header.control = loop_control;
         exits.push(false_header);
         let selection = entry_control.acquired(exits.iter().map(|exit| &exit.control));
-        result.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
+        let mut merged = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
+        // As in an ordinary loop: this merge joins the exhaustion edge, the
+        // false header, and every break, so the endpoint and every selector
+        // wholly inside the body are discharged once the merge has read them.
+        if body_is_exhaustive && let Some(state) = merged.as_mut() {
+            state.control = entry_control.clone();
+        }
+        result.normal = merged;
         Ok(result)
     }
 
