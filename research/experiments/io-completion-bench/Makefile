@@ -392,9 +392,16 @@ bench-read: read-verify $(WORK)/read-plan-64k.txt $(WORK)/read-plan-4k.txt
 		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_4K)"
 	$(BUILD)/read_baseline $(BIGTREE) probe-warm $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
 
-# The Linux read table, in the same container the many-files `linux` target
+# The Linux read tables, in the same container the many-files `linux` target
 # uses and for the same reason: the tree must sit on a container-local
 # filesystem, and io_uring needs the unconfined seccomp profile.
+#
+# `read-bench.sh` is one protocol for every host that can run it -- this
+# container, a hosted Linux runner, a hosted macOS runner -- and differs from
+# `bench-read` above in one deliberate way: it labels a table by what the
+# residency probe measured instead of refusing to print one the probe did not
+# confirm. Its header says why. `bench-read` keeps the refusal, because on
+# this machine the two populations the threshold separates are known.
 linux-read: linux-image
 	@mkdir -p $(LINUX_TARGET)
 	docker run --rm --security-opt seccomp=unconfined \
@@ -407,7 +414,7 @@ linux-read: linux-image
 		-e EXPECTED_READ_64K="$(EXPECTED_READ_64K)" \
 		-e EXPECTED_READ_4K="$(EXPECTED_READ_4K)" \
 		$(DOCKER_IMAGE) \
-		sh /work/research/experiments/io-completion-bench/linux-read-bench.sh
+		sh /work/research/experiments/io-completion-bench/read-bench.sh
 
 clean:
 	rm -rf $(WORK)

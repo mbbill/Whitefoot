@@ -167,6 +167,33 @@ back.
 `linux-read` runs the read-heavy tables in the same container for the same
 reasons, and adds the `io_uring` baselines at depths 4, 8, and 32.
 
+It does that by running `read-bench.sh`, which is one protocol for every host
+that can run it: the container, the project's Linux runner, and its macOS
+runner. Only paths and the host's own capabilities differ -- `ROOT`, `OUT`,
+`CLANG` and `CARGO_TARGET_DIR` name the paths, and `uname -s` decides whether
+the io_uring lines are in the plan. The `io-hosts` workflow's
+`bench-linux-read` and `bench-macos-read` jobs run exactly those bytes.
+
+The script differs from `bench-read` in one deliberate way. `bench-read`
+refuses to print a table whose cache-state label the probe did not confirm,
+which is the right rule on a machine whose two populations are known and far
+apart. A hosted runner's storage is not known in advance, and its "device" may
+be a host-cached network disk that answers faster than the threshold; there
+the honest result is a table labelled by what was measured rather than no
+table at all. So the script always runs the probe, always prints its per-file
+medians and its verdict, and prints that verdict on the table's own label
+line.
+
+The two probes around a table are not worth the same on both hosts, and the
+script says so where it runs them. Before the table each host is making the
+same claim and the probe checks it. After it, only Darwin is: `F_NOCACHE` is a
+mode of the descriptor, so a Darwin table that asked for uncached reads cannot
+have populated the cache itself, and a refusal there means something outside
+the benchmark made the tree resident. Linux has no per-descriptor mode; its
+one lever evicts at open and nothing later, so every Linux line starts from a
+cold tree and warms it as it reads. The Linux after-probe measures how far
+that went and is reported as that, not as a verdict.
+
 `FILES`, `MAX_KIB`, `ROUNDS`, `WARMUP`, `PIPE_ROUNDS`, and `PIPE_DELAY_US`
 override the many-files shape. `FILES` or `MAX_KIB` change the checksum;
 `make expected` prints the new one for `EXPECTED`. `READ_FILES`, `READ_KIB`,

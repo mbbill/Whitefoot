@@ -1,13 +1,16 @@
-# Completion I/O evidence from the two hosts the maintainer's machine cannot
-# produce: a real Linux kernel on real hardware, and Windows at all.
+# Completion I/O evidence from hosts the maintainer's machine cannot produce:
+# a real Linux kernel on real hardware, Windows at all, and an ordinary macOS
+# system without a corporate endpoint-security stack in the I/O path.
 #
 # Everything the repository knew about Linux io_uring came from a container on
-# an aarch64 virtual machine, and everything it knew about Windows IOCP came
-# from a cross-link that was never executed. These three jobs close both gaps
-# with runs rather than with builds. A job here fails loudly rather than
-# recording a fallback: `completion-linux` requires io_uring, and
-# `completion-windows` reports the exact failure instead of being marked
-# expected-to-fail.
+# an aarch64 virtual machine, everything it knew about Windows IOCP came from
+# a cross-link that was never executed, and every macOS number it had was
+# taken on a machine that charges 116 us for an `openat`. These jobs close
+# those gaps with runs rather than with builds. A correctness job here fails
+# loudly rather than recording a fallback: `completion-linux` requires
+# io_uring, and `completion-windows` reports the exact failure instead of
+# being marked expected-to-fail. The bench jobs record; they state the host
+# and the measured cache state beside every table rather than asserting one.
 name: io-hosts
 
 on:
@@ -162,6 +165,184 @@ jobs:
           path: |
             host.txt
             bench.txt
+
+  # The read-dominated tables, on hosts the maintainer's machine cannot stand
+  # in for. The macOS job matters twice over: its numbers are the first clean
+  # macOS numbers this project has, because the maintainer's machine runs a
+  # corporate endpoint-security stack that charges 116 us for an `openat` and
+  # reads the benchmark tree behind the benchmark's back. A hosted macOS
+  # runner has neither.
+  #
+  # Both jobs run `read-bench.sh`, the same bytes the `linux-read` container
+  # target runs. It labels each table by what the residency probe measured
+  # rather than refusing to print one, because a hosted runner's storage is
+  # not known in advance; a table whose probe refused the label says so on its
+  # own label line.
+  bench-linux-read:
+    name: bench-linux-read (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the host toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang
+          test -x /usr/bin/clang
+          /usr/bin/clang --version
+          rustup default stable
+          cargo --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+          key: bench-linux-read-${{ hashFiles('compiler/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            bench-linux-read-${{ hashFiles('compiler/Cargo.lock') }}-
+            bench-linux-read-
+
+      - name: Fetch the recorded crate dependencies
+        run: cargo fetch --locked --manifest-path compiler/Cargo.toml
+
+      # A table taken on a shared runner is only readable beside the machine
+      # that produced it, and the storage matters more here than anywhere
+      # else: this workload is a measurement of what one read costs.
+      - name: Record the host
+        run: |
+          {
+            echo "kernel: $(uname -srvmo)"
+            echo "cpus: $(nproc)"
+            echo "model: $(awk -F': ' '/^model name/ {print $2; exit}' /proc/cpuinfo)"
+            echo "memory: $(awk '/^MemTotal/ {print $2 " kB"}' /proc/meminfo)"
+            echo "io_uring_disabled: $(cat /proc/sys/kernel/io_uring_disabled 2>/dev/null || echo absent)"
+            echo "bench filesystem: $(findmnt -no SOURCE,FSTYPE --target "$RUNNER_TEMP")"
+            echo "bench free space: $(df -h --output=avail "$RUNNER_TEMP" | tail -1 | tr -d ' ')"
+            echo "rotational: $(lsblk -no NAME,ROTA 2>/dev/null | tr '\n' ' ')"
+            echo "load: $(cat /proc/loadavg)"
+          } | tee host-read.txt
+
+      - name: Run the read-heavy protocol
+        env:
+          ROOT: ${{ github.workspace }}
+          ROUNDS: "7"
+          WARMUP: "2"
+        run: |
+          export OUT="$RUNNER_TEMP/io-read-bench"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/compiler/target"
+          sh research/experiments/io-completion-bench/read-bench.sh 2>&1 | tee bench-read.txt
+
+      - name: Publish the tables
+        if: always()
+        run: |
+          {
+            echo '## bench-linux-read'
+            echo
+            echo '```text'
+            cat host-read.txt
+            echo
+            cat bench-read.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-linux-read
+          path: |
+            host-read.txt
+            bench-read.txt
+
+  bench-macos-read:
+    name: bench-macos-read (macos-14)
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the host toolchain
+        run: |
+          test -x /usr/bin/clang
+          /usr/bin/clang --version
+          rustup default stable
+          cargo --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+          key: bench-macos-read-${{ hashFiles('compiler/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            bench-macos-read-${{ hashFiles('compiler/Cargo.lock') }}-
+            bench-macos-read-
+
+      - name: Fetch the recorded crate dependencies
+        run: cargo fetch --locked --manifest-path compiler/Cargo.toml
+
+      - name: Record the host
+        run: |
+          {
+            echo "kernel: $(uname -srvm)"
+            echo "product: $(sw_vers -productName) $(sw_vers -productVersion)"
+            echo "cpus: $(sysctl -n hw.ncpu)"
+            echo "model: $(sysctl -n machdep.cpu.brand_string)"
+            echo "memory: $(sysctl -n hw.memsize)"
+            echo "bench filesystem: $(df -h "$RUNNER_TEMP" | tail -1)"
+            echo "load: $(sysctl -n vm.loadavg)"
+          } | tee host-read.txt
+
+      - name: Run the read-heavy protocol
+        env:
+          ROOT: ${{ github.workspace }}
+          ROUNDS: "7"
+          WARMUP: "2"
+        run: |
+          export OUT="$RUNNER_TEMP/io-read-bench"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/compiler/target"
+          sh research/experiments/io-completion-bench/read-bench.sh 2>&1 | tee bench-read.txt
+
+      # The many-files workload, which every earlier macOS table measured on
+      # the maintainer's machine. There an `openat` costs 116 us and the table
+      # is mostly a measurement of the endpoint-security stack; here there is
+      # no such stack, so this is the first reading of that workload's open
+      # path on an ordinary macOS system.
+      - name: Run the many-files protocol
+        if: always()
+        env:
+          ROUNDS: "7"
+          WARMUP: "2"
+        run: |
+          export WHITEFOOT_SCRATCH_ROOT="$RUNNER_TEMP/scratch"
+          make -C research/experiments/io-completion-bench bench 2>&1 | tee bench-many.txt
+
+      - name: Publish the tables
+        if: always()
+        run: |
+          {
+            echo '## bench-macos-read'
+            echo
+            echo '```text'
+            cat host-read.txt
+            echo
+            cat bench-read.txt
+            echo
+            cat bench-many.txt 2>/dev/null || echo "the many-files table did not run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-macos-read
+          path: |
+            host-read.txt
+            bench-read.txt
+            bench-many.txt
 
   completion-windows:
     name: completion-windows (windows-latest)
