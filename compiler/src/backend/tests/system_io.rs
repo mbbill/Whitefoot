@@ -709,7 +709,9 @@ const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own
 fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
     let failure = compile_rejection(OUT_OF_RANGE_WRITE);
     assert_eq!(failure.rule_id(), Some("SYS-8"));
-    assert!(failure.detail().contains("9_u64 <= len(buffer)"));
+    // The residual names the caller's own buffer, not the operation's
+    // declared parameter.
+    assert!(failure.detail().contains("9_u64 <= len(bytes)"));
 }
 
 /// Publishes three reservations through one Output root.

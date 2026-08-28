@@ -495,7 +495,10 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("SYS-8"));
-    assert!(failure.detail().contains("5_u64 <= len(buffer)"));
+    // The residual names the caller's own buffer, not the operation's
+    // declared parameter: with two buffers in scope, `len(buffer)` did not say
+    // which one the bound is about.
+    assert!(failure.detail().contains("5_u64 <= len(bytes)"));
 }
 
 #[test]
