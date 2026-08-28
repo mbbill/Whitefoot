@@ -884,11 +884,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         };
         let blocks = self.function.blocks();
         let mut escapes = vec![false; blocks.len()];
-        for index in 0..blocks.len() {
+        for (index, escaped) in escapes.iter_mut().enumerate() {
             let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
-            if !pipeline.carries(id) {
-                escapes[index] = true;
-            }
+            *escaped = !pipeline.carries(id);
         }
         let mut changed = true;
         while changed {
@@ -2024,7 +2022,9 @@ fn definition_exit_label(
 fn block_successors(block: &IrBlock) -> Vec<IrBlockId> {
     match block.terminator() {
         IrTerminator::Jump { target, .. } => vec![*target],
-        IrTerminator::Match { targets, .. } => targets.iter().map(|target| target.block()).collect(),
+        IrTerminator::Match { targets, .. } => {
+            targets.iter().map(|target| target.block()).collect()
+        }
         IrTerminator::Return { .. } | IrTerminator::Unreachable => Vec::new(),
     }
 }

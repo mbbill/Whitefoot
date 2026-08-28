@@ -57,8 +57,7 @@ pub(crate) const COMPLETION_RUNTIME_FALLBACK: &str = concat!(
 /// One is always a legal window and reproduces the sequential program exactly,
 /// so a module that asks for one and finds no runtime to answer stages no loop
 /// and still publishes the same bytes.
-pub(crate) const COMPLETION_WINDOW_FALLBACK: &str =
-    "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) {\nentry:\n  ret i64 1\n}\n\n";
+pub(crate) const COMPLETION_WINDOW_FALLBACK: &str = "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) {\nentry:\n  ret i64 1\n}\n\n";
 
 /// True exactly when this emitted module contains a completion actualization.
 pub fn module_requires_completion_runtime(module: &str) -> bool {
