@@ -219,7 +219,8 @@ above the threshold at which a handoff pays for itself.
 
 Its ceiling was the machine's core count. A helper inside a host call holds no
 CPU, so what bounds useful I/O concurrency is how many operations a program
-can have outstanding — the bridge's operation bound. Sizing by cores capped
+can have outstanding. The shipped ceiling is `WF_BRIDGE_MAX_HELPERS`, eight
+(bridge.c), below the bridge's operation capacity of 64. Sizing by cores capped
 the three-core runner at three outstanding reads for a program that states
 eight, which is a device left idle rather than a machine kept busy.
 
@@ -540,10 +541,12 @@ reads 1.0402 warm at 4 KiB on an EPYC 9V45 — and batch 0092 read 0.982 and
 0.941 on a third processor model.
 
 The narrow lines are the control, and on this draw they do not exonerate the
-wide ones. Every Linux warm draw that exists, batch 0092's on top and then
+wide ones. Every Linux warm draw on this branch, batch 0092's on top and then
 this branch's seven in branch order — the two cancelled runs stopped before
-their warm halves, and 0092's draw is on a different branch and outside that
-table's enumeration:
+their warm halves; 0092's draw is on a different branch and outside that
+table's enumeration, and the two further 0092-era draws recorded under
+"Reproduced on two further pairs of runners" in RESULTS.md (runs 33131934257
+and 33133182075) are not repeated here:
 
 ```text
 draw          run          commit    processor   disk  wide 64  wide 4  narrow 64  narrow 4
@@ -607,9 +610,10 @@ between a submission enqueueing work and a helper being scheduled to run it.
 ns; this row reads `cold 64K h8`.) On a three-core runner, eight helpers is
 more threads than cores, and that wake latency is the host scheduler rather
 than the adapter. That column covers the cold
-64 KiB row; there is no cold 4 KiB column, so the same account is inferred for
-that row and not measured. Nothing in this batch's change set addresses
-either.
+64 KiB row. The same artifact carries the cold 4 KiB column too (medians over
+the nine passes: claim 77.8, submit 2,357.5, wake 27,782.4, execute 113,298.1,
+publish 2,151.6, drain 368.4, consume 114.7, park 3,391.0 ns), and it tells
+the same story. Nothing in this batch's change set addresses either.
 
 
 ## Tests
@@ -699,7 +703,7 @@ by this batch.
   probe on this machine under eight spinning threads at a one-minute load
   average of 13.5 rising to 42.7: the shipped build passed all six, declining
   15 835, 4 297, 0, 2 263, 15 811 and 647 of 16 000 positioned reads with 0,
-  2, 4, 4, 0 and 3 helpers — both branches appearing, and one run taking both.
+  2, 4, 4, 0 and 3 helpers — both branches appearing, and three runs taking both.
   Making `wf_bridge_positioned_read_runs_on_caller` return 0, which removes
   the decline alone, failed five of its six runs with `the demand-driven
   policy took neither branch in 16000 positioned reads` and passed the sixth
@@ -842,9 +846,10 @@ by this batch.
   be measuring whatever the policy happened to choose, and the pair
   `h0`-against-`default` that prices the machinery at 7.92 ms over `S.wide8`
   would not exist.
-- **The helper ceiling is the bridge's operation bound, not the core count.** A
-  helper inside a host call holds no CPU, so what bounds useful I/O concurrency
-  is how many operations a program can have outstanding. Sizing by cores capped
+- **The helper ceiling is a fixed eight, not the core count.** A helper inside
+  a host call holds no CPU, so what bounds useful I/O concurrency is how many
+  operations a program can have outstanding; the shipped cap is
+  `WF_BRIDGE_MAX_HELPERS` = 8 in bridge.c, below the operation capacity of 64. Sizing by cores capped
   the three-core runner at three outstanding reads for a program that states
   eight, which is a device left idle rather than a machine kept busy.
 - **The wake fast path is Dekker's exclusion, not a lock.** `notify_scheduler`
@@ -879,9 +884,9 @@ by this batch.
   before the amortised park — against a 168 us host call, with a wake latency
   beside them, enqueue to a helper being scheduled to run the work, of
   38.5 us. On a three-core runner eight helpers is more threads than cores, so
-  that latency is the host scheduler rather than the adapter. There is no cold
-  4 KiB column, so the same reading is inferred for
-  that row rather than measured, and neither column is on the draw the grade
+  that latency is the host scheduler rather than the adapter. The cold 4 KiB
+  column of the same run reads the same way (wake 27,782 ns, execute
+  113,298 ns, park 3,391 ns), and neither column is on the draw the grade
   now comes from; closing either would need its own instrumented run.
 - **Windows.** The IOCP adapter is untouched. `completion-windows` links and
   passes as before; none of the Darwin helper-path work applies to it.
@@ -1028,7 +1033,8 @@ supported are withdrawn rather than softened.
   averaging. On Linux with io_uring the ring takes every positioned read, so
   the adapter branch is never reached at all and only liveness and the byte
   check are covered there. On macOS a quiet host declines about 15 800 of the
-  16 000 and grows no helper; a loaded one grows helpers and declines none.
+  16 000 and grows no helper; a loaded one grows helpers and, in three of the
+  six loaded runs above, still declines a part.
   Growth to a *bound* is not what this probe decides in any case — four lanes
   each hold one read at a time, so the queue rarely outruns the pool. That is
   decided by `test_pool_grows_when_operations_wait` and
@@ -1127,7 +1133,7 @@ three — `a06c53f9` 1216.03 against 1448.85, `72e98cba` 1249.62 against 1457.10
 and `caa66bad` 1455.21 against 1456.44, the last a 1.23 ms margin in 1456,
 which is a tie rather than a lead. On four more it is within 1.7 per cent
 behind (`34ac1ae2`, `96bb4778`, `261070c8`, `4a748d6e`), and on `266acf4f` it
-is 19.4 per cent behind, on the cold half this record calls unreadable for its
+is 19.5 per cent behind, on the cold half this record calls unreadable for its
 spreads. So the honest claim across the eight is that the completion program
 is level with a hand-written 32-deep io_uring pipeline on this job and clearly
 ahead of it on two of the eight draws, and ahead of its own sequential build

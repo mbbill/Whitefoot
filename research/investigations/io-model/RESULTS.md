@@ -1571,8 +1571,8 @@ event by name; a queue entry no longer copies a kilobyte of path storage for a
 read or a write; the helper wake is issued outside the queue lock and only to
 a helper the lock says is asleep; a joining scheduler reads the ready count
 for a bounded window before announcing sleep; the helper pool starts empty and
-grows on a measured wait rather than on queue depth, bounded by the bridge's
-operation count rather than the core count; and a positioned read is executed
+grows on a measured wait rather than on queue depth, bounded by
+`WF_BRIDGE_MAX_HELPERS` (eight) rather than the core count; and a positioned read is executed
 where it was stated when the adapter holds no helper, has nothing queued and
 has measured its operations as not waiting.
 
@@ -1737,10 +1737,10 @@ median, not a ranking.
 ```text
 run          commit    processor   C.wide8.default  S.wide8  N.pool8  N.uring32   C/S  C/uring32
 33149563172  caa66bad  Xeon 8370C          1455.21  3075.32  1488.00    1456.44 0.473      0.999
-33150416900* 34ac1ae2  EPYC 7763           1470.94  3747.70  1474.69    1466.31 0.393      1.003
+33150416900* 34ac1ae2  EPYC 7763           1470.94  3747.70  1474.69    1466.31 0.392      1.003
 33151353052  4a748d6e  EPYC 7763           1482.81  4496.24  1486.45    1458.48 0.330      1.017
 33153717709  96bb4778  EPYC 7763           1479.87  4227.07  1479.56    1469.81 0.350      1.007
-33155821397  266acf4f  Xeon 8573C          1514.79  8973.99  1435.03    1268.13 0.169      1.194
+33155821397  266acf4f  Xeon 8573C          1514.79  8973.99  1435.03    1268.13 0.169      1.195
 33158144391  72e98cba  EPYC 9V45           1249.62  5085.89  1474.52    1457.10 0.246      0.858
 33165141309  a06c53f9  EPYC 9V74           1216.03  4108.74  1482.48    1448.85 0.296      0.839
 33172323795  261070c8  Xeon 8370C          1465.26  3469.10  1481.78    1441.72 0.422      1.016
@@ -1795,9 +1795,12 @@ and reads the same way less sharply:
 `C.wide8/S.wide8` here is 1.010 at 64 KiB and 0.989 at 4 KiB, with the narrow
 control at 0.998 and 1.015. Set beside the earlier readings:
 
-This is every Linux warm draw that exists, not a selection: the seven
+This is every Linux warm draw on this branch, not a selection: the seven
 `bench-linux-read` warm tables of the draw table above — the two cancelled
-runs stopped before their warm halves — with batch 0092's draw on top.
+runs stopped before their warm halves — with batch 0092's draw on top. The
+two further 0092-era draws under "Reproduced on two further pairs of runners"
+above (runs 33131934257 and 33133182075) are on other commits and are not
+repeated here.
 
 ```text
 draw         run          commit    processor   disk  warm 64  warm 4  narrow 64  narrow 4
@@ -1842,8 +1845,8 @@ later. All nine are here, with batch 0090's two draws of the same job on top:
 
 ```text
 draw          run          commit    processor   S.wide8  C.wide8.default    C/S
-0090 run 1    33114336424  -         EPYC 9V74    141.26           147.04  1.0410
-0090 run 2    33115297530  -         EPYC 9V74    110.94           115.97  1.0450
+0090 run 1    33114336424  -         EPYC 9V74    141.26           147.04  1.0409
+0090 run 2    33115297530  -         EPYC 9V74    110.94           115.97  1.0453
 merge base    33149563172  caa66bad  EPYC 7763    123.91           131.09  1.0579
 traced        33150416900* 34ac1ae2  EPYC 9V74    142.25           147.70  1.0383
 repair        33151353052  4a748d6e  EPYC 7763    122.60           131.14  1.0697
