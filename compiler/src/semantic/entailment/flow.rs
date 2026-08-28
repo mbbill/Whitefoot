@@ -5430,10 +5430,11 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        let Some(buffer_ordinal) = row
+        let Some((buffer_ordinal, buffer_parameter)) = row
             .parameters
             .iter()
-            .position(|parameter| parameter.ty == crate::SystemTypeRef::BufferU8)
+            .enumerate()
+            .find(|(_, parameter)| parameter.ty == crate::SystemTypeRef::BufferU8)
         else {
             return;
         };
@@ -5487,33 +5488,54 @@ impl Analyzer<'_, '_> {
             );
         }
 
-        let Some(end_goal) = end_goal else {
-            self.judge_unrepresentable_system_range(
-                node_path,
-                1,
-                format!("{} <= len(buffer)", self.render_expression(end)),
-                states,
-            );
-            return;
-        };
-        let (buffer_binding, buffer_fields, buffer_element) = match buffer {
+        // The second conjunct bounds the end against the caller's own buffer,
+        // so the residual names the caller's place — `wide <= len(header)` —
+        // the way [OP-4]'s bounds residual does. Printing the operation's
+        // declared parameter name instead leaves a writer with two buffers in
+        // scope unable to tell which one the bound is about. The declared name
+        // remains the fallback for an argument that carries no place at all.
+        let buffer_root = match buffer {
             CheckedExpression::BorrowBuffer { root, .. } => {
-                (root.binding, root.fields.clone(), root.element)
+                Some((root.binding, root.fields.clone(), root.element))
             }
             CheckedExpression::Binding {
                 binding,
                 ty: CheckedType::Buffer { element },
                 ..
-            } => (*binding, Vec::new(), *element),
-            _ => {
-                self.judge_unrepresentable_system_range(
-                    node_path,
-                    1,
-                    format!("{} <= len(buffer)", self.render_expression(end)),
-                    states,
-                );
-                return;
-            }
+            } => Some((*binding, Vec::new(), *element)),
+            _ => None,
+        };
+        let buffer_spelling = match &buffer_root {
+            Some((binding, fields, _)) => self.render_place(&PlaceTerm {
+                root: PlaceRoot::Binding(*binding),
+                deref: self.is_holder(*binding),
+                fields: fields.clone(),
+            }),
+            None => buffer_parameter.name.to_owned(),
+        };
+        let Some(end_goal) = end_goal else {
+            self.judge_unrepresentable_system_range(
+                node_path,
+                1,
+                format!(
+                    "{} <= len({buffer_spelling})",
+                    self.render_expression(end)
+                ),
+                states,
+            );
+            return;
+        };
+        let Some((buffer_binding, buffer_fields, buffer_element)) = buffer_root else {
+            self.judge_unrepresentable_system_range(
+                node_path,
+                1,
+                format!(
+                    "{} <= len({buffer_spelling})",
+                    self.render_expression(end)
+                ),
+                states,
+            );
+            return;
         };
         let buffer_goal = self.goal_binding_place(
             buffer_binding,
@@ -5544,7 +5566,10 @@ impl Analyzer<'_, '_> {
             comparison(end_goal, length_goal),
             end_term,
             length_term,
-            format!("{} <= len(buffer)", self.render_expression(end)),
+            format!(
+                "{} <= len({buffer_spelling})",
+                self.render_expression(end)
+            ),
             states,
         );
     }

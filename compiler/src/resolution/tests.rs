@@ -817,6 +817,7 @@ fn system_names_are_reserved_even_without_a_valid_entry() {
         let ResolutionIssueKind::DeclarationCollision {
             spelling,
             conflicts,
+            ..
         } = issue.kind()
         else {
             panic!("expected a declaration collision: {issue:?}");
@@ -851,6 +852,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             let ResolutionIssueKind::DeclarationCollision {
                 spelling,
                 conflicts,
+                ..
             } = issue.kind()
             else {
                 panic!("expected a declaration collision: {issue:?}");
@@ -883,6 +885,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         let ResolutionIssueKind::DeclarationCollision {
             spelling,
             conflicts,
+            ..
         } = issue.kind()
         else {
             panic!("expected a declaration collision: {issue:?}");
@@ -907,6 +910,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         let ResolutionIssueKind::DeclarationCollision {
             spelling,
             conflicts,
+            ..
         } = issue.kind()
         else {
             panic!("expected a declaration collision: {issue:?}");
@@ -932,6 +936,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         let ResolutionIssueKind::DeclarationCollision {
             spelling,
             conflicts,
+            ..
         } = issue.kind()
         else {
             panic!("expected a declaration collision: {issue:?}");
@@ -959,6 +964,7 @@ fn a_prelude_collision_keeps_rank_four_ahead_of_the_global_system_domain() {
         let ResolutionIssueKind::DeclarationCollision {
             spelling,
             conflicts,
+            ..
         } = issue.kind()
         else {
             panic!("expected a declaration collision: {issue:?}");
@@ -1828,7 +1834,7 @@ fn duplicate_main_conformance_case_is_type6() {
         assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::DeclarationCollision { spelling, conflicts }
+            ResolutionIssueKind::DeclarationCollision { spelling, conflicts, .. }
                 if spelling == "main" && conflicts.len() == 1
         ));
     });

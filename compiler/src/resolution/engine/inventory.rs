@@ -309,6 +309,7 @@ fn collision_issue(
             declaration,
             prelude_conflicts,
             ResolutionRule::Type6,
+            COLLIDES_WITH_PRELUDE,
         )));
     }
 
@@ -342,6 +343,7 @@ fn collision_issue(
             declaration,
             system_conflicts,
             ResolutionRule::Type6,
+            COLLIDES_WITH_SYSTEM,
         )));
     }
 
@@ -369,6 +371,7 @@ fn collision_issue(
             declaration,
             same_scope,
             ResolutionRule::Type6,
+            COLLIDES_IN_ONE_SCOPE,
         )));
     }
 
@@ -401,7 +404,14 @@ fn collision_issue(
         );
     }
     sort_conflicts(&mut shadows, tables.declarations);
-    Ok((!shadows.is_empty()).then(|| collision(declaration, shadows, ResolutionRule::Type6)))
+    Ok((!shadows.is_empty()).then(|| {
+        collision(
+            declaration,
+            shadows,
+            ResolutionRule::Type6,
+            COLLIDES_WITH_LIVE_OUTER,
+        )
+    }))
 }
 
 fn meta_for_record(
@@ -440,10 +450,25 @@ fn collect_domain_conflicts(
     }
 }
 
+/// The four colliding situations [TYPE-6] selects between, each with the
+/// repair it admits.
+///
+/// The payload locates both declarations and stops there, which leaves the
+/// surprise of the fourth one unstated: a binding whose value has been
+/// consumed is dead as a value while its declaration is still live, so an
+/// inner declaration of the same spelling still collides with it. The
+/// blind-writer trial of 2026-08-28 met that one twice and repaired it by
+/// guessing.
+const COLLIDES_WITH_PRELUDE: &str = "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration";
+const COLLIDES_WITH_SYSTEM: &str = "a source declaration never displaces, overrides, or shadows an admitted system declaration of the same spelling and domain [SYS-1, SYS-3], and neither declaration resolves after the collision; rename this declaration";
+const COLLIDES_IN_ONE_SCOPE: &str = "one scope declares each spelling once in a domain, so this is a redeclaration and not a shadow; rename this declaration, or delete the earlier one when nothing reads it";
+const COLLIDES_WITH_LIVE_OUTER: &str = "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point";
+
 fn collision(
     declaration: &DeclarationRecord,
     conflicts: Vec<DeclarationConflict>,
     rule: ResolutionRule,
+    mechanical_fix: &'static str,
 ) -> ResolutionIssue {
     ResolutionIssue {
         rule,
@@ -451,6 +476,7 @@ fn collision(
         kind: ResolutionIssueKind::DeclarationCollision {
             spelling: declaration.spelling.clone(),
             conflicts,
+            mechanical_fix,
         },
     }
 }

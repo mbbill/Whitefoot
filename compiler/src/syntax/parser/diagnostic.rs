@@ -52,6 +52,47 @@ pub(crate) struct ProbeContext {
 const GRAM9_BODY_FIX: &str = "a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`";
 const GRAM9_CONTRACT_FIX: &str = "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`";
 
+/// [FORM-3]'s lexical class for each name slot, with the repair a slot filled
+/// from another class admits.
+///
+/// A name slot's class is a grammar position: `const_decl` writes IDENT,
+/// `struct_decl` writes TYPEID, and no class is admitted in another's slot.
+/// The expectation list names the class and never says what the class is, so
+/// a writer who spelled a const `Limit` read only `expected: ["IDENT"]`.
+const FORM3_IDENT_FIX: &str = "an IDENT slot admits only [FORM-3]'s IDENT `[a-z][a-z0-9_]*`, so a `const`, `fn`, parameter, `let`, field, or binder name is lowercase and is never a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the IDENT shape";
+const FORM3_TYPEID_FIX: &str = "a TYPEID slot admits only [FORM-3]'s TYPEID `[A-Z][A-Za-z0-9]*`, so a struct, enum, contract, variant, or constructor name is capitalized and is never an IDENT `[a-z][a-z0-9_]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the TYPEID shape";
+const FORM3_REGIONID_FIX: &str = "a REGIONID slot admits only [FORM-3]'s REGIONID `'[a-z][a-z0-9_]*`, the one region spelling, so write the leading apostrophe; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a LABEL `@[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here";
+const FORM3_LABEL_FIX: &str = "a LABEL slot admits only [FORM-3]'s LABEL `@[a-z][a-z0-9_]*`, so write the leading `@`; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here";
+const FORM3_OPNAME_FIX: &str = "an OPNAME slot admits only [FORM-3]'s OPNAME `[a-z][a-z0-9_]*.(wrap|defined|checked|sat|strict)`, so write the mode suffix; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, and a LABEL `@[a-z][a-z0-9_]*` are other lexical classes and none is admitted here";
+
+/// [GRAM-2] fixes the order of a `contract_block`: every `contract_define`,
+/// then every `requires_clause`, then every `ensures_clause`. A clause written
+/// out of that order leaves the frontier at a position whose expectation list
+/// names only the sections still open, which states what is admitted next
+/// without ever stating the order that was broken.
+const GRAM2_CONTRACT_ORDER_FIX: &str = "a `contract_block` is written in one fixed order: all `define` definitions first, then all `requires` requirements, then all `ensures` postconditions. A clause of an earlier section written after a later one is not admitted, so move it above the first clause of the later section";
+
+/// The repair the failing production admits, when the production itself fixes
+/// one. The decision is the grammar position, never the text of the line.
+const fn production_fix(production: Production) -> Option<&'static str> {
+    match production {
+        Production::ContractBlock => Some(GRAM2_CONTRACT_ORDER_FIX),
+        _ => None,
+    }
+}
+
+/// The repair a name slot admits, selected by the lexical class the slot's
+/// grammar position writes.
+const fn name_class_fix(expected: NamePredicate) -> &'static str {
+    match expected {
+        NamePredicate::Identifier => FORM3_IDENT_FIX,
+        NamePredicate::TypeIdentifier => FORM3_TYPEID_FIX,
+        NamePredicate::RegionIdentifier => FORM3_REGIONID_FIX,
+        NamePredicate::Label => FORM3_LABEL_FIX,
+        NamePredicate::OperationName => FORM3_OPNAME_FIX,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ProbeTask {
     Execute(GrammarNodeId, ProbeContext),
@@ -268,14 +309,16 @@ fn actual_name(token: &ClassifiedToken<'_>) -> Option<NamePredicate> {
     .find(|predicate| has(token, predicate.terminal()))
 }
 
+/// The owning rule and the lexical class the slot admits, for a name slot
+/// filled from another class.
 fn name_slot_owner(
     token: &ClassifiedToken<'_>,
     transparent: Option<NamePredicate>,
     paths_agree: bool,
-) -> Option<SyntaxRule> {
+) -> Option<(SyntaxRule, NamePredicate)> {
     let actual = actual_name(token)?;
     let expected = transparent?;
-    (paths_agree && actual != expected).then_some(SyntaxRule::Form3)
+    (paths_agree && actual != expected).then_some((SyntaxRule::Form3, expected))
 }
 
 fn construct_override(
@@ -482,7 +525,7 @@ fn override_issue(
                 mechanical_fix: None,
             }));
         }
-        if let Some(rule) = name_slot_owner(
+        if let Some((rule, admitted)) = name_slot_owner(
             token,
             frontier.transparent_name,
             !frontier.transparent_disagreement,
@@ -498,7 +541,7 @@ fn override_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: frontier.expected,
-                mechanical_fix: None,
+                mechanical_fix: Some(name_class_fix(admitted)),
             }));
         }
     }
@@ -599,7 +642,7 @@ fn descend_or_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: value.expected,
-                mechanical_fix: None,
+                mechanical_fix: production_fix(decision.production()),
             }));
         };
         tasks.clear();
@@ -618,7 +661,7 @@ fn descend_or_issue(
         )
         .map_err(DiagnosticResult::Compiler)?,
         expected: value.expected,
-        mechanical_fix: None,
+        mechanical_fix: production_fix(decision.production()),
     }))
 }
 
@@ -668,7 +711,7 @@ pub(crate) fn direct_mismatch(
         ]
         .into_iter()
         .find(|name| name.terminal() == expected_terminal);
-        if let Some(rule) = name_slot_owner(token, transparent, true) {
+        if let Some((rule, admitted)) = name_slot_owner(token, transparent, true) {
             return DiagnosticResult::Issue(SyntaxIssue {
                 rule,
                 coordinate: SyntaxCoordinate::new(
@@ -677,7 +720,7 @@ pub(crate) fn direct_mismatch(
                     token.token().id().end(),
                 ),
                 expected,
-                mechanical_fix: None,
+                mechanical_fix: Some(name_class_fix(admitted)),
             });
         }
     }
@@ -686,7 +729,7 @@ pub(crate) fn direct_mismatch(
             rule: SyntaxRule::from(context.production.owner()),
             coordinate,
             expected,
-            mechanical_fix: None,
+            mechanical_fix: production_fix(context.production),
         }),
         Err(failure) => DiagnosticResult::Compiler(failure),
     }
@@ -957,6 +1000,6 @@ pub(crate) fn diagnose_decision(
         rule: SyntaxRule::from(decision.production().owner()),
         coordinate,
         expected: value.expected,
-        mechanical_fix: None,
+        mechanical_fix: production_fix(decision.production()),
     })
 }

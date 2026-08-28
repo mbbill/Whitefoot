@@ -1968,6 +1968,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         );
                     };
                     let ty = self.parse_type_with(ty, caller)?;
+                    // `Unbounded` states no requirement, so it has no sentence
+                    // to print and no argument to refuse; the two bounds that
+                    // do carry a requirement carry the requirement's own words.
+                    let requirement = match bound {
+                        GenericBound::Unbounded => None,
+                        GenericBound::Int => {
+                            Some("an integer type, which the parameter's `Int` bound requires")
+                        }
+                        GenericBound::Float => {
+                            Some("a float type, which the parameter's `Float` bound requires")
+                        }
+                    };
                     let satisfies_bound = match bound {
                         GenericBound::Unbounded => true,
                         GenericBound::Int => {
@@ -1977,19 +1989,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             matches!(ty, CheckedType::Float(_) | CheckedType::GenericFloat(_))
                         }
                     };
-                    if !satisfies_bound {
-                        // `Unbounded` admits every type and never reaches here;
-                        // it is named so the match stays exhaustive by rule
-                        // rather than by a wildcard.
-                        let required = match bound {
-                            GenericBound::Unbounded => "any type",
-                            GenericBound::Int => {
-                                "an integer type, which the parameter's `Int` bound requires"
-                            }
-                            GenericBound::Float => {
-                                "a float type, which the parameter's `Float` bound requires"
-                            }
-                        };
+                    if let Some(required) = requirement
+                        && !satisfies_bound
+                    {
                         return self.issue_node(
                             SemanticRule::Fn3,
                             argument,
