@@ -350,12 +350,17 @@ by exempting the carrying block from the rule.
   one branch reaches it.
   `test_bridge_every_record_holding_a_refused_open_publishes`, with the owed
   queue read once instead of on every pass, stops at four helpers on macOS in
-  three runs of four and the watchdog names it; the same control hangs the
+  three runs of five and the watchdog names it; the same control hangs the
   verifiers' `attack_probe` in six runs of six. Two other controls separate the
   cause from its neighbours: with a submission no longer waking a waiter, and
   with the owed queue run once instead of on every pass, the probe passes six
   of six — so the live read is the fix and the other two are the rule it needs
   to stay one.
+  `test_bridge_open_waits_for_the_other_engine`, with the retirement no longer
+  announcing itself on the scheduler's endpoint, stops in the Linux container
+  at one helper; that is the control for the missed wake, and it is a rate
+  rather than a certainty because the window is the few instructions between a
+  publication and the retirement it belongs to.
   `test_open_exhaustion_waits_for_another_engine`, with the adapter's old
   `drained == 0` give-up restored, fails 30 of 30 runs at zero, one and four
   helpers on macOS.
@@ -407,17 +412,20 @@ by exempting the carrying block from the rule.
   deterministic tests above. Its own comment says so.
 
 - Repetition counts at this revision, at every helper setting the suites use
-  and two hosts. macOS (`completion-test` build): 200 runs each at zero, one,
-  two and four helpers, 0 failures; `completion-tsan` 20 runs at each of the
-  same four, 0 failures. Linux container (`wf-io-bench:linux`, aarch64, kernel
-  6.8, io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs each at
+  and two hosts. Linux container (`wf-io-bench:linux`, aarch64, kernel 6.8,
+  io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs each at
   zero, one, two and four helpers, 0 failures; `completion-tsan` 20 runs at
   each of the same four, 0 failures; `completion-sanitize` (ASan + UBSan)
-  passes. Two helpers is in the list because that is where the two-opens defect
-  showed at 74 in 200 and the shipped suites do not run it. The probes above,
-  15 runs each at zero, one and four helpers on both hosts, 0 failures.
-  Earlier counts in this record measured earlier revisions and are superseded
-  by these.
+  passes; the `WF_REQUIRE_LINUX_IO_URING=1` run passes; the two-opens probe 200
+  runs at each of the same four, 0 failures. macOS (`completion-test` build):
+  200 runs each at zero, one, two and four helpers, run concurrently so the
+  four contend, 0 failures; `completion-tsan` 20 runs at each of the same four,
+  0 failures. Two helpers is in both lists because that is where the two-opens
+  defect showed at 74 in 200 and the shipped suites do not run it; the counts
+  at one helper matter because that is where the missed wake showed, twice in
+  four hundred. The probes above, 15 runs each at zero, one and four helpers on
+  both hosts, 0 failures. Earlier counts in this record measured earlier
+  revisions and are superseded by these.
 - `make -C research/experiments/io-completion-bench verify` on macOS: every line
   of every workload — the hand-written native shape, the `--no-overlap`
   sequential reference, and the shipping overlapped build — publishes
