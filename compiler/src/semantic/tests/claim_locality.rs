@@ -703,8 +703,11 @@ command fn main() -> status: own ExitStatus pure {{
     );
 }
 
+/// The delivered value is selected and stays non-local; `cursor` is not, and
+/// no arm writes it, so the continuation's claim over it is local.  v0.38
+/// refused this one on the continuation's control frame.
 #[test]
-fn value_delivery_keeps_boundary_control_when_one_arm_can_return() {
+fn a_delivery_with_a_returning_arm_leaves_an_untouched_local_alone() {
     let source = format!(
         r#"fn hidden_true() -> result: own Bool pure {{
   return True();
@@ -721,7 +724,7 @@ fn read(values: own array<u8, 4>, cursor: own u64, leave: own Bool) -> result: o
   }} else {{
     give 1_u64;
   }}
-  claim reviewed_delivery_continuation: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_delivery_continuation: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   return values[cursor];
 }}
 
@@ -730,13 +733,7 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_delivery_continuation",
-        0,
-        "cursor",
-        "hidden_true",
-    );
+    assert_complete(source.as_bytes());
 }
 
 #[test]
@@ -1088,8 +1085,12 @@ command fn main() -> status: own ExitStatus pure {{
     assert_complete(source.as_bytes());
 }
 
+/// v0.39 narrowed [CLM-1]: standing on a boundary-selected edge is not itself
+/// a selection.  The condition chose which arm runs and no operand of the
+/// predicate, so a claim over an ordinary parameter inside the arm is local.
+/// Under v0.38 this fixture was refused with carrier `cursor`.
 #[test]
-fn boundary_control_rejects_a_claim_inside_the_selected_arm() {
+fn a_local_claim_inside_a_selected_arm_is_admitted() {
     let source = format!(
         r#"fn hidden_true() -> result: own Bool pure {{
   return True();
@@ -1098,7 +1099,7 @@ fn boundary_control_rejects_a_claim_inside_the_selected_arm() {
 fn read(values: own array<u8, 4>, cursor: own u64) -> result: own u8 traps {{
   let condition = hidden_true();
   if condition {{
-    claim reviewed_arm_control: ilt(cursor, 4_u64) because "{REVIEW}";
+    claim reviewed_arm_control: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
     return values[cursor];
   }} else {{
     return 0_u8;
@@ -1110,17 +1111,15 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_arm_control",
-        0,
-        "cursor",
-        "hidden_true",
-    );
+    assert_complete(source.as_bytes());
 }
 
+/// One arm returns, so the continuation is reached only through the other
+/// edge.  `cursor` is untouched on that edge, so both incoming reaching
+/// definitions of it are the same definition and the selector chose nothing
+/// about it.  Under v0.38 the continuation itself carried the witness.
 #[test]
-fn boundary_control_survives_a_partial_arm_continuation() {
+fn a_partial_arm_continuation_leaves_an_untouched_local_alone() {
     let source = format!(
         r#"fn hidden_true() -> result: own Bool pure {{
   return True();
@@ -1133,7 +1132,7 @@ fn read(values: own array<u8, 4>, cursor: own u64) -> result: own u8 traps {{
   }} else {{
     let still_local = cursor;
   }}
-  claim reviewed_continuation_control: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_continuation_control: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   return values[cursor];
 }}
 
@@ -1142,17 +1141,13 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_continuation_control",
-        0,
-        "cursor",
-        "hidden_true",
-    );
+    assert_complete(source.as_bytes());
 }
 
+/// The same narrowing through a nested branch: no arm writes `cursor`, so no
+/// merge selects it however the arms leave.
 #[test]
-fn boundary_control_survives_a_nested_partial_return() {
+fn a_nested_partial_return_leaves_an_untouched_local_alone() {
     let source = format!(
         r#"fn hidden_true() -> result: own Bool pure {{
   return True();
@@ -1169,7 +1164,7 @@ fn read(values: own array<u8, 4>, cursor: own u64, leave: own Bool) -> result: o
   }} else {{
     let skipped = 0_u8;
   }}
-  claim reviewed_nested_return: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_nested_return: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   return values[cursor];
 }}
 
@@ -1178,17 +1173,18 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_nested_return",
-        0,
-        "cursor",
-        "hidden_true",
-    );
+    assert_complete(source.as_bytes());
 }
 
+/// A claim component whose supports are a named const and a literal reads
+/// nothing a boundary returned.  v0.38 refused it on the occurrence's control
+/// authority alone, which is exactly the position clause v0.39 repealed.  With
+/// that clause gone the occurrence is local and reaches the next judgment, so
+/// this fixture now fails [CLM-2] as a redundant claim rather than [CLM-1] as
+/// a non-local one.  That is the honest verdict for a component the checker
+/// decides on its own: a control-only [CLM-1] rejection no longer exists.
 #[test]
-fn control_authority_rejects_a_component_without_binding_supports() {
+fn a_local_named_const_component_reaches_the_redundancy_judgment() {
     let source = format!(
         r#"const four: u64 = 4_u64;
 
@@ -1199,7 +1195,7 @@ fn hidden_true() -> result: own Bool pure {{
 fn probe() -> result: own unit traps {{
   let condition = hidden_true();
   if condition {{
-    claim reviewed_constant_control: ieq(four, 4_u64) because "{REVIEW}";
+    claim reviewed_constant_control: ieq(four, 4_u64) because "{LOCAL_REVIEW}";
     return unit;
   }} else {{
     return unit;
@@ -1213,22 +1209,9 @@ command fn main() -> status: own ExitStatus pure {{
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("expected control-only CLM-1 rejection, got {outcome:?}");
+            panic!("expected the local component to reach CLM-2, got {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Clm1);
-        let SemanticIssueKind::NonLocalClaim(detail) = issue.kind() else {
-            panic!("expected non-local claim detail, got {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "reviewed_constant_control");
-        assert_eq!(detail.component, 0);
-        assert!(!detail.carrier.is_empty());
-        let ClaimBoundaryResultDetail::UserCall { callee, .. } = &detail.boundary else {
-            panic!(
-                "expected user-call control boundary, got {:?}",
-                detail.boundary
-            );
-        };
-        assert_eq!(callee, "hidden_true");
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
     });
 }
 
@@ -1405,8 +1388,12 @@ command fn main() -> status: own ExitStatus pure {{
     assert_complete(source.as_bytes());
 }
 
+/// The endpoint selects how many iterations run and, at the loop head, which
+/// definition of a loop-carried value arrives.  It selects no operand of a
+/// claim over an untouched parameter, so the body's claim is local under
+/// v0.39; v0.38 refused it on the body's endpoint control frame.
 #[test]
-fn a_call_result_counted_endpoint_controls_claims_in_the_body() {
+fn a_counted_endpoint_leaves_an_untouched_local_in_the_body_alone() {
     let source = format!(
         r#"fn endpoint(value: own u64) -> result: own u64 pure {{
   return value;
@@ -1415,7 +1402,7 @@ fn a_call_result_counted_endpoint_controls_claims_in_the_body() {
 fn read(values: own array<u8, 4>, input: own u64, cursor: own u64) -> result: own u8 traps {{
   let upper = endpoint(value: input);
   for @items item in 0_u64..upper {{
-    claim reviewed_counted_body: ilt(cursor, 4_u64) because "{REVIEW}";
+    claim reviewed_counted_body: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
     return values[cursor];
   }}
   return 0_u8;
@@ -1426,13 +1413,7 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_counted_body",
-        0,
-        "cursor",
-        "endpoint",
-    );
+    assert_complete(source.as_bytes());
 }
 
 #[test]
@@ -1459,8 +1440,10 @@ command fn main() -> status: own ExitStatus pure {{
     assert_complete(source.as_bytes());
 }
 
+/// A body that returns makes the post-loop path endpoint-dependent, but not
+/// the value of a parameter no iteration wrote.
 #[test]
-fn a_counted_endpoint_controls_a_post_loop_path_when_the_body_returns() {
+fn a_counted_endpoint_leaves_a_post_loop_local_alone_when_the_body_returns() {
     let source = format!(
         r#"fn endpoint(value: own u64) -> result: own u64 pure {{
   return value;
@@ -1471,7 +1454,7 @@ fn read(values: own array<u8, 4>, input: own u64, cursor: own u64) -> result: ow
   for @items item in 0_u64..upper {{
     return 0_u8;
   }}
-  claim reviewed_counted_exit: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_counted_exit: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   return values[cursor];
 }}
 
@@ -1480,17 +1463,12 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_counted_exit",
-        0,
-        "cursor",
-        "endpoint",
-    );
+    assert_complete(source.as_bytes());
 }
 
+/// The same with a partial return inside the body.
 #[test]
-fn a_counted_endpoint_controls_a_post_loop_path_with_a_partial_return() {
+fn a_counted_endpoint_leaves_a_post_loop_local_alone_with_a_partial_return() {
     let source = format!(
         r#"fn endpoint(value: own u64) -> result: own u64 pure {{
   return value;
@@ -1505,7 +1483,7 @@ fn read(values: own array<u8, 4>, input: own u64, cursor: own u64, stop: own Boo
       let observed = item;
     }}
   }}
-  claim reviewed_partial_counted_exit: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_partial_counted_exit: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   return values[cursor];
 }}
 
@@ -1514,17 +1492,13 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_partial_counted_exit",
-        0,
-        "cursor",
-        "endpoint",
-    );
+    assert_complete(source.as_bytes());
 }
 
+/// The same with a propagating body, whose implicit error edge leaves the
+/// function.
 #[test]
-fn a_counted_endpoint_controls_a_post_loop_path_with_propagation() {
+fn a_counted_endpoint_leaves_a_post_loop_local_alone_with_propagation() {
     let source = format!(
         r#"fn endpoint(value: own u64) -> result: own u64 pure {{
   return value;
@@ -1535,7 +1509,7 @@ fn read(values: own array<u8, 4>, input: own u64, cursor: own u64) -> result: ow
   for @items item in 0_u64..upper {{
     let ignored = propagate cursor +checked 1_u64;
   }}
-  claim reviewed_propagating_counted_exit: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_propagating_counted_exit: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   let observed = values[cursor];
   return Ok<u8, Overflow>(value: observed);
 }}
@@ -1545,17 +1519,13 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_propagating_counted_exit",
-        0,
-        "cursor",
-        "endpoint",
-    );
+    assert_complete(source.as_bytes());
 }
 
+/// A boundary-selected break decides whether the loop is left, not the value
+/// of a parameter no iteration wrote.
 #[test]
-fn an_ordinary_loop_keeps_boundary_control_on_its_selected_break() {
+fn an_ordinary_loop_leaves_an_untouched_local_alone_after_a_selected_break() {
     let source = format!(
         r#"fn hidden_true() -> result: own Bool pure {{
   return True();
@@ -1570,7 +1540,7 @@ fn read(values: own array<u8, 4>, cursor: own u64) -> result: own u8 traps {{
       return 0_u8;
     }}
   }}
-  claim reviewed_break_control: ilt(cursor, 4_u64) because "{REVIEW}";
+  claim reviewed_break_control: ilt(cursor, 4_u64) because "{LOCAL_REVIEW}";
   return values[cursor];
 }}
 
@@ -1579,13 +1549,7 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_user_call_locality(
-        source.as_bytes(),
-        "reviewed_break_control",
-        0,
-        "cursor",
-        "hidden_true",
-    );
+    assert_complete(source.as_bytes());
 }
 
 #[test]
@@ -1735,6 +1699,212 @@ fn write['r](pool: &uniq 'r Pool, seed: own u64, witnesses: own array<u64, 4>) -
     let unchanged = observed;
   }}
   return observed;
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_complete(source.as_bytes());
+}
+
+/// The narrowing keeps the selection the join performs.  One arm writes the
+/// place and the other does not, so the reconvergence has two different
+/// reaching definitions of it and the call result chose which one arrives.
+#[test]
+fn a_write_on_one_arm_only_is_selected_at_the_join() {
+    let source = format!(
+        r#"fn hidden_true() -> result: own Bool pure {{
+  return True();
+}}
+
+fn read(values: own array<u8, 4>, unused: own u64) -> result: own u8 traps {{
+  let cursor = 3_u64;
+  let condition = hidden_true();
+  if condition {{
+    set cursor = 0_u64;
+  }} else {{
+    let untouched = 0_u8;
+  }}
+  claim reviewed_one_arm_write: ilt(cursor, 4_u64) because "{REVIEW}";
+  return values[cursor];
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_user_call_locality(
+        source.as_bytes(),
+        "reviewed_one_arm_write",
+        0,
+        "cursor",
+        "hidden_true",
+    );
+}
+
+/// A definition formed after that same join, from literals alone, is a new
+/// reaching definition no edge chose, so it is local although the write above
+/// it is not.  This is the differential-fuzz shape at unit scale.
+#[test]
+fn a_local_definition_after_a_selected_join_is_local() {
+    let source = format!(
+        r#"fn hidden_true() -> result: own Bool pure {{
+  return True();
+}}
+
+fn read(values: own array<u8, 4>, unused: own u64) -> result: own u8 traps {{
+  let cursor = 3_u64;
+  let condition = hidden_true();
+  if condition {{
+    set cursor = 0_u64;
+  }} else {{
+    let untouched = 0_u8;
+  }}
+  let position = 2_u64 % 4_u64;
+  claim reviewed_post_join_local: ilt(position, 4_u64) because "{LOCAL_REVIEW}";
+  return values[position];
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_complete(source.as_bytes());
+}
+
+/// Loop-carried state a boundary-selected iteration updates keeps the
+/// endpoint's witness: the loop head and the loop exit each merge the
+/// definition written before the loop with the one an iteration wrote.
+#[test]
+fn a_counted_endpoint_selects_loop_carried_state() {
+    let source = format!(
+        r#"fn endpoint(value: own u64) -> result: own u64 pure {{
+  return imin(value, 2_u64);
+}}
+
+fn read(values: own array<u8, 4>, input: own u64) -> result: own u8 traps {{
+  let upper = endpoint(value: input);
+  let cursor = 0_u64;
+  for @steps step in 0_u64..upper {{
+    set cursor = 1_u64;
+  }}
+  claim reviewed_carried_update: ilt(cursor, 4_u64) because "{REVIEW}";
+  return values[cursor];
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_user_call_locality(
+        source.as_bytes(),
+        "reviewed_carried_update",
+        0,
+        "cursor",
+        "endpoint",
+    );
+}
+
+/// The same for an ordinary loop whose break the boundary result selects: the
+/// loop exit merges the entry definition with the one the body wrote.
+#[test]
+fn an_ordinary_loop_selects_state_its_iterations_wrote() {
+    let source = format!(
+        r#"fn hidden_true() -> result: own Bool pure {{
+  return True();
+}}
+
+fn read(values: own array<u8, 4>, unused: own u64) -> result: own u8 traps {{
+  let cursor = 3_u64;
+  let condition = hidden_true();
+  loop @again {{
+    if condition {{
+      break @again;
+    }} else {{
+      set cursor = 0_u64;
+    }}
+  }}
+  claim reviewed_loop_write: ilt(cursor, 4_u64) because "{REVIEW}";
+  return values[cursor];
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_user_call_locality(
+        source.as_bytes(),
+        "reviewed_loop_write",
+        0,
+        "cursor",
+        "hidden_true",
+    );
+}
+
+/// A matching binder is the payload its own tag selected and stays non-local
+/// in the arm that introduced it.
+#[test]
+fn a_matching_binder_is_selected_by_its_own_tag() {
+    let source = format!(
+        r#"fn measure(value: own u64) -> result: own Result<u64, Overflow> pure {{
+  return value +checked 1_u64;
+}}
+
+fn read(values: own array<u8, 4>, input: own u64) -> result: own u8 traps {{
+  match measure(value: input) {{
+    Ok(value: measured) => {{
+      claim reviewed_selected_payload: ilt(measured, 4_u64) because "{REVIEW}";
+      return values[measured];
+    }}
+    Err(error: overflow) => {{
+      return 0_u8;
+    }}
+  }}
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_user_call_locality(
+        source.as_bytes(),
+        "reviewed_selected_payload",
+        0,
+        "measured",
+        "measure",
+    );
+}
+
+/// A value construct whose own selector is local delivers a local value even
+/// inside a boundary-selected arm: the selection that chose the delivery is
+/// the inner condition, and the outer edge chose no operand of it.
+#[test]
+fn a_local_delivery_inside_a_selected_arm_is_local() {
+    let source = format!(
+        r#"fn hidden_true() -> result: own Bool pure {{
+  return True();
+}}
+
+fn read(values: own array<u8, 4>, choose: own Bool) -> result: own u8 traps {{
+  let condition = hidden_true();
+  if condition {{
+    let picked = if choose {{
+      give 0_u64;
+    }} else {{
+      give 1_u64;
+    }}
+    claim reviewed_inner_delivery: ilt(picked, 4_u64) because "{LOCAL_REVIEW}";
+    return values[picked];
+  }} else {{
+    return 0_u8;
+  }}
 }}
 
 command fn main() -> status: own ExitStatus pure {{

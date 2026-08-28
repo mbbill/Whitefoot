@@ -183,10 +183,7 @@ impl ControlAuthority {
     /// `self`.  This is the authority of the edge choice a merge whose entry
     /// state carried `self` performs, and nothing else: a frame `self` already
     /// carries chose the path into the merge's entry, not between its edges.
-    fn acquired<'a>(
-        &self,
-        edges: impl IntoIterator<Item = &'a Self>,
-    ) -> Option<BoundaryWitness> {
+    fn acquired<'a>(&self, edges: impl IntoIterator<Item = &'a Self>) -> Option<BoundaryWitness> {
         let mut selected = None;
         for edge in edges {
             for frame in &edge.frames {
@@ -611,10 +608,7 @@ impl AuthorityValue {
             if left_step != right_step {
                 return Err(SemanticCompilerFailure::InvalidResolution);
             }
-            children.push((
-                *left_step,
-                left.merge(right, nominals, selection, merge)?,
-            ));
+            children.push((*left_step, left.merge(right, nominals, selection, merge)?));
         }
         Ok(Self {
             ty: self.ty,
@@ -888,8 +882,8 @@ impl AuthorityPass<'_> {
     fn record_snapshot(&mut self, claim: &NodePath, state: &AuthorityState) -> LocalityResult<()> {
         match self.snapshots.get_mut(claim) {
             Some(previous) => {
-                let selection = ControlAuthority::default()
-                    .acquired([&previous.control, &state.control]);
+                let selection =
+                    ControlAuthority::default().acquired([&previous.control, &state.control]);
                 *previous = previous.merge(
                     state,
                     self.nominals,
@@ -1204,7 +1198,9 @@ impl AuthorityPass<'_> {
         };
         let mut result = final_result;
         let exits = result.breaks.remove(&id).unwrap_or_default();
-        let selection = entry.control.acquired(exits.iter().map(|exit| &exit.control));
+        let selection = entry
+            .control
+            .acquired(exits.iter().map(|exit| &exit.control));
         result.normal = merge_states(&exits, self.nominals, selection.as_ref(), merge)?;
         Ok(result)
     }
