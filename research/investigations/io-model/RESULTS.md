@@ -1022,45 +1022,74 @@ Linux hardware, now reached on macOS, and it retires the last table in this
 document that credited the overlap lowering with a win on the many-files
 workload.
 
-### Reproduced on a second pair of runners
+### Reproduced on two further pairs of runners
 
-The same workflow ran again at commit `e2e4535d`, run
-[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257),
-on separately provisioned hosts: the Linux job landed on an AMD EPYC 7763
-rather than the Intel Xeon 8370C above, and the macOS job on another virtual
-M1. Different silicon, and every ordering holds.
+The same workflow ran twice more, at commits `e2e4535d` (run
+[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257))
+and `031df30e` (run
+[33133182075](https://github.com/mbbill/Whitefoot/actions/runs/33133182075)),
+each time on separately provisioned hosts: the second Linux job landed on an
+AMD EPYC 7763 rather than the Intel Xeon 8370C above. Different silicon, and
+every ordering holds.
 
 ```text
-                                  run 1        run 2
-Linux 64 KiB cold   C vs S      1.43x faster  1.58x faster
-                    C vs pool8  1.04x faster  1.00x of it
-Linux  4 KiB unc.   C vs S      2.10x faster  2.61x faster
-                    C vs uring32 1.00x of it  1.01x slower
-Linux 64 KiB warm   C vs S      1.02x faster  1.04x faster
-Linux  4 KiB warm   C vs S      1.06x faster  1.08x faster
-macOS 64 KiB cold   C vs S      1.73x faster  1.65x faster
-macOS  4 KiB cold   C vs S      1.58x faster  1.81x faster
-macOS 64 KiB warm   C vs S      1.27x slower  1.24x slower
-macOS  4 KiB warm   C vs S      2.88x slower  2.73x slower
-many files / macOS  C vs S      1.20x slower  1.17x slower
-                    N.direct    17.2 us/file  17.9 us/file
+                                  run 1        run 2         run 3
+Linux 64 KiB cold   C vs S      1.43x faster  1.58x faster  1.89x faster
+                    C vs pool8  1.04x faster  1.00x of it   1.06x slower
+Linux  4 KiB unc.   C vs S      2.10x faster  2.61x faster  3.29x faster
+                    C vs uring32 1.00x of it  1.01x slower  1.00x of it
+Linux 64 KiB warm   C vs S      1.02x faster  1.04x faster  1.01x faster
+Linux  4 KiB warm   C vs S      1.06x faster  1.08x faster  1.12x faster
+macOS 64 KiB cold   C vs S      1.73x faster  1.65x faster  1.64x faster
+macOS  4 KiB cold   C vs S      1.58x faster  1.81x faster  1.81x faster
+macOS 64 KiB warm   C vs S      1.27x slower  1.24x slower  1.28x slower
+macOS  4 KiB warm   C vs S      2.88x slower  2.73x slower  2.90x slower
+many files / macOS  C vs S      1.20x slower  1.17x slower  1.21x slower
+                    N.direct    17.2 us/file  17.9 us/file  17.2 us/file
 ```
 
-Two things in the second run are worth more than the agreement.
+The C-against-S ratio grows from run to run, and the absolute numbers say why:
 
-Its macOS uncached probes refused the label **before** the tables ran, not
-only after, and the script printed the refusal on the label line and went on:
-"treat the label as a claim about what was asked for, not about what was
-measured". That is the behaviour the runner jobs were built for, and it means
-the macOS cold rows above should be read as what the second run says they
-are — a device that was already partly answering from somewhere other than
-itself. The macOS ordering holds anyway, on both runs, at every window.
+```text
+Linux uncached, C.wide8.default   run 1     run 2     run 3    spread
+  64 KiB                        1228.53   1261.38   1339.04     9.0%
+   4 KiB                        1463.43   1471.43   1482.16     1.3%
+Linux uncached, N.pool8
+  64 KiB                        1278.13   1265.51   1267.32     1.0%
+   4 KiB                        1487.68   1479.46   1484.21     0.6%
+Linux uncached, S.wide8
+  64 KiB                        1751.03   1998.54   2536.27    44.8%
+   4 KiB                        3071.27   3834.41   4875.91    58.8%
+```
 
-And the Linux `N.uring32` warm line moved from 324.71 ms to 942.12 with 913 ms
-of system time. A 32-deep ring over a warm page cache is doing nothing but
-paying for submissions on that host, and the second runner charged three times
-as much for them. It is the one line in either table whose two readings do not
-agree, and it is a native baseline rather than a Whitefoot line.
+**The completion build's cost is pinned to the native floor across three
+different machines; the sequential build's is not.** C and the eight-thread
+pool land within one to nine per cent of themselves on three separately
+provisioned runners, while the same source built `--no-overlap` swings by 45
+and 59 per cent. The mechanism is the one the design claims: a program with
+one read outstanding pays 32,768 times whatever this runner's per-read latency
+happens to be, and these runners' latencies differ by more than half. A
+program with eight outstanding pays what the device will deliver, which varies
+far less. Overlap is not only faster here; it is what makes the program's cost
+a property of the storage rather than of the queue in front of it.
+
+Two things in the later runs are worth more than the agreement.
+
+Their macOS uncached probes refused the label **before** the tables ran, not
+only after — run 3 refused at both ends of both tables — and the script
+printed the refusal on the label line and went on: "treat the label as a claim
+about what was asked for, not about what was measured". That is the behaviour
+the runner jobs were built for, and it means the macOS cold rows above should
+be read as what those runs say they are: a device that was already partly
+answering from somewhere other than itself. The macOS ordering holds anyway,
+on all three runs, at every window.
+
+And the Linux `N.uring32` warm line moved from 324.71 ms in run 1 to 942.12 in
+run 2 and 934.39 in run 3, with about 900 ms of system time in each. A 32-deep
+ring over a warm page cache is doing nothing but paying for submissions, and
+two of the three runners charged three times as much for them as the first.
+It is the one line whose readings do not agree, and it is a native baseline
+rather than a Whitefoot line.
 
 ### What WF_IO_NOCACHE does
 
