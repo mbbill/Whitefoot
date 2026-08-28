@@ -383,14 +383,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch("a source struct, whose declared field this suffix selects", self.checked_type_name(place.ty)?),
                 );
             };
             let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch("a source struct, whose declared field this suffix selects", self.checked_type_name(place.ty)?),
                 );
             };
             let Some((index, field)) = fields
@@ -401,7 +401,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch(format!("a declared field of {}", self.checked_type_name(place.ty)?), format!("the field name `{name}`, which that struct does not declare")),
                 );
             };
             let field_index =

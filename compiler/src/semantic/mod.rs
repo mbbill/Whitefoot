@@ -746,7 +746,12 @@ pub enum SemanticIssueKind {
         mechanical_fix: &'static str,
     },
     /// Two exact written modes or types disagree.
-    TypeMismatch,
+    TypeMismatch {
+        /// The exact type, mode, or written form the position requires.
+        expected: String,
+        /// The exact type, mode, or written form found there.
+        found: String,
+    },
     /// A constant was selected as an assignment target.
     ImmutableSetTarget,
     /// SET-1's closed writability relation did not admit the target root.
@@ -793,7 +798,16 @@ pub enum SemanticIssueKind {
         mechanical_fix: &'static str,
     },
     /// A borrow was stored or passed into a region it cannot outlive.
-    InvalidBorrowLifetime,
+    InvalidBorrowLifetime {
+        /// The region written where this borrow is created or stored, exactly
+        /// as the source spells it.
+        region: String,
+        /// The binding whose storage the borrow views, exactly as the source
+        /// spells it.
+        binder: String,
+        /// Where a region this borrow can name must be introduced.
+        mechanical_fix: String,
+    },
     /// A read, write, move, or new borrow conflicts with a live loan.
     BorrowConflict,
     /// A written child reborrow does not satisfy OWN-6's closed form.
@@ -1146,6 +1160,24 @@ pub enum SemanticIssueKind {
     InvalidContractLaw,
     /// A valid law declaration cannot be discharged for one conformance.
     UndischargedContractLaw,
+}
+
+impl SemanticIssueKind {
+    /// One [TYPE-5] disagreement, in the spellings the source uses.
+    ///
+    /// The rejection published neither side for four blind-writer rounds: a
+    /// writer was told two types disagree and had to work out which two. Both
+    /// are always in hand at the judgment, so both are published. Where the
+    /// disagreement is about the written form rather than two types — a
+    /// generic form written with no type arguments, a `move` where a place is
+    /// required — each side states that form.
+    #[must_use]
+    pub(crate) fn type_mismatch(expected: impl Into<String>, found: impl Into<String>) -> Self {
+        Self::TypeMismatch {
+            expected: expected.into(),
+            found: found.into(),
+        }
+    }
 }
 
 /// One deterministic post-resolution source-language rejection.

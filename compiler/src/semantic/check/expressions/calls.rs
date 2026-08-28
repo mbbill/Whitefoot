@@ -207,7 +207,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (index, atom) in atoms.iter().copied().enumerate() {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
             if argument.mode != CheckedMode::Own {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(argument.expression.ty())?), self.checked_value_name(argument.mode, argument.expression.ty())?));
             }
             let selected = match operand_type {
                 Some(selected) => selected,
@@ -225,7 +225,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             };
             if Some(argument.expression.ty()) != operation.argument_type(selected, index) {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch(match operation.argument_type(selected, index) { Some(ty) => format!("own {}", self.checked_type_name(ty)?), None => format!("no operand in position {index} for this row") }, self.checked_value_name(argument.mode, argument.expression.ty())?));
             }
             effects = effects.union(argument.effects);
             let source = match &argument.expression {
@@ -397,7 +397,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(content)?), self.checked_value_name(value.mode, value.expression.ty())?),
             );
         }
         // The region's allocation list exists exactly for the local region
@@ -440,7 +440,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(value.expression.ty())?), self.checked_value_name(value.mode, value.expression.ty())?),
             );
         }
         let referent = value.expression.ty();
@@ -506,7 +506,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for atom in atoms {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
             if argument.expression.ty() != CheckedType::Bool || argument.mode != CheckedMode::Own {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch("own Bool", self.checked_value_name(argument.mode, argument.expression.ty())?));
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -540,7 +540,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(first.expression.ty())?), self.checked_value_name(first.mode, first.expression.ty())?),
             );
         }
         let operand_type = first.expression.ty();
@@ -566,7 +566,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     *atom,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(operand_type)?), self.checked_value_name(argument.mode, argument.expression.ty())?),
                 );
             }
             effects = effects.union(argument.effects);

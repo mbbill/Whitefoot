@@ -26,6 +26,23 @@ use super::{
 /// and the blind-writer trial of 2026-08-28 recorded a writer meeting the
 /// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
 /// rule number to work from.
+/// [TYPE-5]'s two sides where a type spelling that takes no type arguments
+/// carries a written `<...>` list.
+const TYPE5_NO_TARGS_EXPECTED: &str = "this type spelled with no type arguments";
+const TYPE5_NO_TARGS_FOUND: &str =
+    "a written `<...>` type-argument list on a type that takes none";
+/// The two spellings that carry `Result`'s type arguments.
+///
+/// This judgment is reached from a type position and from a variant
+/// constructor alike, and a writer meeting it at `Ok(value: v)` sees only a
+/// constructor name; naming both spellings is what makes the repair
+/// mechanical there.
+const RESULT_TARGS_EXPECTED: &str = "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`";
+const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a type `Option<u64>`, and as a variant constructor `Some<u64>(value: v)`";
+/// [TYPE-2]'s flat-element requirement, in the terms the rule states it.
+const TYPE2_FLAT_ELEMENT: &str =
+    "a flat element type: an integer, a float, Bool, unit, or a struct or enum whose fields are themselves flat element types";
+
 const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
 const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
 const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps";
@@ -132,13 +149,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let targs = self.tree.first_child_with(node, Production::Targs)?;
         if let Some(ty) = self.integer_type(node)? {
             if targs.is_some() {
-                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(TYPE5_NO_TARGS_EXPECTED, TYPE5_NO_TARGS_FOUND));
             }
             return Ok(CheckedType::Integer(ty));
         }
         if self.has_fixed(node, FixedTerminal::Unit)? {
             if targs.is_some() {
-                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(TYPE5_NO_TARGS_EXPECTED, TYPE5_NO_TARGS_FOUND));
             }
             return Ok(CheckedType::Unit);
         }
@@ -250,7 +267,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             SemanticRule::Type5,
                             node,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(TYPE5_NO_TARGS_EXPECTED, TYPE5_NO_TARGS_FOUND),
                         );
                     }
                     return Ok(CheckedType::Bool);
@@ -278,7 +295,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             SemanticRule::Type5,
                             node,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(TYPE5_NO_TARGS_EXPECTED, TYPE5_NO_TARGS_FOUND),
                         );
                     }
                     let ty = match id.ordinal() {
@@ -323,7 +340,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             SemanticRule::Type5,
                             node,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(TYPE5_NO_TARGS_EXPECTED, TYPE5_NO_TARGS_FOUND),
                         );
                     }
                     let Some(ty) = substitution.type_argument(declaration) else {
@@ -338,7 +355,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             SemanticRule::Type5,
                             node,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(TYPE5_NO_TARGS_EXPECTED, TYPE5_NO_TARGS_FOUND),
                         );
                     }
                     return Ok(CheckedType::Nominal(self.system_nominal(index)?));
@@ -425,19 +442,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: &GenericSubstitution,
     ) -> Result<(CheckedType, CheckedType), CheckStop> {
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(RESULT_TARGS_EXPECTED, "Result with no written type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let [ok, error] = arguments.as_slice() else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("Result<T, E> with exactly two type arguments", "a Result type-argument list of a different length"));
         };
         self.reject_region_bearing_generic_argument(*ok, substitution)?;
         self.reject_region_bearing_generic_argument(*error, substitution)?;
         let Some(ok) = self.tree.first_child_with(*ok, Production::Type)? else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("a type in each Result type-argument position", "a const argument in a Result type-argument position"));
         };
         let Some(error) = self.tree.first_child_with(*error, Production::Type)? else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("a type in each Result type-argument position", "a const argument in a Result type-argument position"));
         };
         let ok = self.parse_type_with(ok, substitution)?;
         let error = self.parse_type_with(error, substitution)?;
@@ -450,15 +467,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(OPTION_TARGS_EXPECTED, "Option with no written type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let [value] = arguments.as_slice() else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("Option<T> with exactly one type argument", "an Option type-argument list of a different length"));
         };
         self.reject_region_bearing_generic_argument(*value, substitution)?;
         let Some(value) = self.tree.first_child_with(*value, Production::Type)? else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch("a type in the Option type-argument position", "a const argument in the Option type-argument position"));
         };
         let value = self.parse_type_with(value, substitution)?;
         Ok(value)
@@ -1403,7 +1420,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedFlatElement, CheckStop> {
         match self.flat_element(ty)? {
             Some(element) => Ok(element),
-            None => self.issue_node(SemanticRule::Type2, node, SemanticIssueKind::TypeMismatch),
+            None => self.issue_node(SemanticRule::Type2, node, SemanticIssueKind::type_mismatch(TYPE2_FLAT_ELEMENT, self.checked_type_name(ty)?)),
         }
     }
 

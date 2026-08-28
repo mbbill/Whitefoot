@@ -329,11 +329,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 match context.delivered.get() {
                     None => context.delivered.set(Some(delivered)),
                     Some(earlier) if earlier == delivered => {}
-                    Some(_) => {
+                    Some((mode, ty)) => {
                         return self.issue_node(
                             SemanticRule::Give1,
                             node,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(
+                                self.checked_value_name(mode, ty)?,
+                                self.checked_value_name(value.mode, value.expression.ty())?,
+                            ),
                         );
                     }
                 }
@@ -381,7 +384,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Type5,
                         expression_node,
-                        SemanticIssueKind::TypeMismatch,
+                        SemanticIssueKind::type_mismatch(self.checked_type_name(target.ty())?, self.checked_type_name(value.expression.ty())?),
                     );
                 }
                 if !bindings
@@ -737,7 +740,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 expression_node,
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(target.ty())?), self.checked_value_name(value.mode, value.expression.ty())?),
             );
         }
         if !bindings

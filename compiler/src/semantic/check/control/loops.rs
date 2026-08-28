@@ -192,7 +192,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         if endpoint.mode != CheckedMode::Own || endpoint.expression.ty() != required {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(required)?), self.checked_value_name(endpoint.mode, endpoint.expression.ty())?));
         }
         if !self.counted_endpoint_is_term_or_constant(node)? {
             return self.issue_node(

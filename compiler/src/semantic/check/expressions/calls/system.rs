@@ -126,7 +126,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             let expected_type = self.system_type(parameter.ty)?;
             if argument.expression.ty() != expected_type {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch(self.checked_type_name(expected_type)?, self.checked_type_name(argument.expression.ty())?));
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
             state_origins.push(self.state_origins_of_value(&argument, bindings)?);
@@ -193,11 +193,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if operation.regions.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::type_mismatch(format!("{} written region arguments", operation.regions.len()), "no type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if arguments.len() != operation.regions.len() {
-            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::type_mismatch(format!("{} written region arguments", operation.regions.len()), format!("{} written arguments", arguments.len())));
         }
         arguments
             .into_iter()
@@ -211,7 +211,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     _ => self.issue_node(
                         SemanticRule::Sys2,
                         argument,
-                        SemanticIssueKind::TypeMismatch,
+                        SemanticIssueKind::type_mismatch("a region argument in this position", "an argument that does not name a region"),
                     ),
                 }
             })

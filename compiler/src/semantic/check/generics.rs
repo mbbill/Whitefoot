@@ -1916,18 +1916,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .first_child_with(node, Production::Targs)?
                     .is_some()
             {
-                return self.issue_node(argument_rule, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch("no type arguments, because this form declares no generic parameters", "a written `<...>` type-argument list"));
             }
             return Ok(GenericSubstitution::default());
         }
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(argument_rule, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch(format!("{} written type arguments", parameters.len()), "no type-argument list"));
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if (allow_trailing_regions && arguments.len() < parameters.len())
             || (!allow_trailing_regions && arguments.len() != parameters.len())
         {
-            return self.issue_node(argument_rule, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(argument_rule, node, SemanticIssueKind::type_mismatch(format!("{} written type arguments", parameters.len()), format!("{} written type arguments", arguments.len())));
         }
         for argument in arguments.iter().take(parameters.len()) {
             self.reject_region_bearing_generic_argument(*argument, caller)?;
@@ -1940,7 +1940,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             argument_rule,
                             argument,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch("a type in this type-argument position", "a const argument in a type-parameter position"),
                         );
                     };
                     let ty = self.parse_type_with(ty, caller)?;
@@ -1957,7 +1957,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             SemanticRule::Fn3,
                             argument,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(
+                            match bound {
+                                GenericBound::Unbounded => "any type",
+                                GenericBound::Int => {
+                                    "an integer type, which the parameter's `Int` bound requires"
+                                }
+                                GenericBound::Float => {
+                                    "a float type, which the parameter's `Float` bound requires"
+                                }
+                            },
+                            self.checked_type_name(ty)?,
+                        ),
                         );
                     }
                     GenericArgument::Type(ty)
@@ -1968,7 +1979,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             argument_rule,
                             argument,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch("a const argument in this type-argument position", "a type in a const-parameter position"),
                         );
                     };
                     GenericArgument::Const(self.parse_const_expression_with(value, caller)?)

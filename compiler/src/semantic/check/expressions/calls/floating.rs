@@ -71,7 +71,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
             let operand_type = *selected.get_or_insert(argument.expression.ty());
             if argument.mode != CheckedMode::Own || argument.expression.ty() != operand_type {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch(format!("own {}", self.checked_type_name(operand_type)?), self.checked_value_name(argument.mode, argument.expression.ty())?));
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);

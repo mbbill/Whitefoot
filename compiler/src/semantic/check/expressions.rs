@@ -339,6 +339,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// One value's exact written mode and type, as `own u64`, `&'r
+    /// buffer<u8>`, or `&uniq 'r Output`.
+    pub(in crate::semantic::check) fn checked_value_name(
+        &self,
+        mode: CheckedMode,
+        ty: CheckedType,
+    ) -> Result<String, CheckStop> {
+        Ok(format!(
+            "{} {}",
+            self.checked_mode_name(mode)?,
+            self.checked_type_name(ty)?
+        ))
+    }
+
+    /// One written mode, with the region spelled as the source spells it.
+    pub(in crate::semantic::check) fn checked_mode_name(
+        &self,
+        mode: CheckedMode,
+    ) -> Result<String, CheckStop> {
+        Ok(match mode {
+            CheckedMode::Own => "own".to_owned(),
+            CheckedMode::Shared(region) => format!("&{}", self.declaration_spelling(region)?),
+            CheckedMode::Unique(region) => format!("&uniq {}", self.declaration_spelling(region)?),
+        })
+    }
+
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
         Ok(match ty {
             CheckedType::Unit => "unit".to_owned(),
@@ -470,7 +496,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch("a source struct, whose declared field this suffix selects", self.checked_type_name(ty)?),
                 );
             };
             let CheckedNominalKind::Struct {
@@ -480,7 +506,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch("a source struct, whose declared field this suffix selects", self.checked_type_name(ty)?),
                 );
             };
             let Some((index, field)) = declared_fields
@@ -491,7 +517,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch(format!("a declared field of {}", self.checked_type_name(ty)?), format!("the field name `{name}`, which that struct does not declare")),
                 );
             };
             fields
@@ -798,7 +824,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedValue::NumericIdentity { ty, one }
             }
             _ => {
-                return self.issue_node(SemanticRule::Form5, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Form5, node, SemanticIssueKind::type_mismatch("an integer or float type, whose 0 and 1 this form names", self.checked_type_name(ty)?));
             }
         };
         Ok(TypedExpression::owned(
@@ -1399,7 +1425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let value = self.check_atom(function, atom, bindings, loop_depth)?;
             if value.expression.ty() != declared.ty {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::type_mismatch(self.checked_type_name(declared.ty)?, self.checked_type_name(value.expression.ty())?));
             }
             if value.mode != CheckedMode::Own {
                 return self.issue_node(

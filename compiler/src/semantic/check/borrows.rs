@@ -88,6 +88,14 @@ const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child
      return it as the complete return expression from a parameter or let-bound holder, \
      or return the holder itself";
 
+/// [OWN-10]'s storage-duration condition for a borrow of local storage.
+///
+/// The rejection published nothing at all: not the region it refused, not the
+/// binding whose storage the borrow views, and not where a region it would
+/// accept has to be introduced. All three are in hand at every one of these
+/// judgments.
+const OWN10_LOCAL_STORAGE: &str = "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage.";
+
 /// OWN-6's statement-scoped-region condition, in the terms a writer has.
 ///
 /// The rule reads "a locally-introduced region whose block does not extend
@@ -552,7 +560,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime,
+                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(local.declaration)?, mechanical_fix: OWN10_LOCAL_STORAGE.to_owned() },
             );
         }
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
@@ -750,7 +758,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime,
+                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(local.declaration)?, mechanical_fix: OWN10_LOCAL_STORAGE.to_owned() },
             );
         }
         // The written suffix chain still selects a real field of the content
@@ -804,7 +812,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime,
+                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(owner)?, mechanical_fix: OWN10_LOCAL_STORAGE.to_owned() },
             );
         }
         Ok(())
@@ -922,7 +930,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Own10,
                         node,
-                        SemanticIssueKind::InvalidBorrowLifetime,
+                        SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(holder)?, mechanical_fix: format!("a returned child reborrow names a region its holder's own region {} outlives; name {} itself, or a region {} outlives, on the returned reborrow", self.declaration_spelling(parent.region)?, self.declaration_spelling(parent.region)?, self.declaration_spelling(parent.region)?) },
                     );
                 }
                 // [OWN-14] admission: a parameter or let-bound holder, never a
@@ -1215,20 +1223,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let Some(mut borrow) = value.borrow.clone() else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(self.checked_mode_name(destination)?, self.checked_value_name(value.mode, value.expression.ty())?));
         };
         let destination_region = match (destination, borrow.kind) {
             (CheckedMode::Shared(region), BorrowKind::Shared)
             | (CheckedMode::Unique(region), BorrowKind::Unique) => region,
             _ => {
-                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::type_mismatch(
+                    self.checked_mode_name(destination)?,
+                    format!(
+                        "{} {}",
+                        match borrow.kind {
+                            BorrowKind::Shared => "&",
+                            BorrowKind::Unique => "&uniq",
+                        },
+                        self.declaration_spelling(borrow.region)?
+                    ),
+                ));
             }
         };
         if !self.region_outlives(borrow.region, destination_region)? {
             return self.issue_node(
                 SemanticRule::Own4,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime,
+                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(destination_region)?, binder: self.declaration_spelling(borrow.place.root)?, mechanical_fix: format!("the value's borrow is live for {}, and {} is not inside it; store or pass it under a region {} outlives, or introduce {} inside {}'s block", self.declaration_spelling(borrow.region)?, self.declaration_spelling(destination_region)?, self.declaration_spelling(borrow.region)?, self.declaration_spelling(destination_region)?, self.declaration_spelling(borrow.region)?) },
             );
         }
         borrow.region = destination_region;

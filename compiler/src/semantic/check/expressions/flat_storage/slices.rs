@@ -56,14 +56,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.issue_value(
                     SemanticRule::Type5,
                     atoms[0],
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch("a written shared borrow of the viewed storage, `&'r place`", "an atom that is not a borrow expression"),
                 )
             })?;
         if self.has_fixed(borrow, FixedTerminal::Uniq)? {
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::type_mismatch("a written shared borrow of the viewed storage, `&'r place`", "a `&uniq` borrow, which slice_of does not take"),
             );
         }
         // [OP-2] the result region is the one the operand's borrow writes.
@@ -99,7 +99,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     atoms[0],
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch("a borrow of a runtime value binding or a named const", "a borrow of a declaration that is neither"),
                 );
             }
         };
@@ -290,7 +290,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 borrow,
-                SemanticIssueKind::InvalidBorrowLifetime,
+                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(declaration)?, mechanical_fix: format!("arena content outlives its arena's region {}, not the arena binding; name {} on this view, or a region {} outlives", self.declaration_spelling(arena_region)?, self.declaration_spelling(arena_region)?, self.declaration_spelling(arena_region)?) },
             );
         }
         // TEMPORARY capability stop, judged after the [OWN-1] and [OWN-10]

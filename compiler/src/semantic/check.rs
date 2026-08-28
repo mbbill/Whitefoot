@@ -1025,7 +1025,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One declaration's exact source spelling, including any sigil.
-    fn declaration_spelling(&self, declaration: DeclarationId) -> Result<String, CheckStop> {
+    pub(in crate::semantic::check) fn declaration_spelling(
+        &self,
+        declaration: DeclarationId,
+    ) -> Result<String, CheckStop> {
         self.resolved
             .declarations()
             .iter()
