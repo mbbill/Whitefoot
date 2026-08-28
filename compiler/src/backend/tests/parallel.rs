@@ -934,7 +934,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
     );
     if a_steal_is_observable(4) {
         let observed_grants = if granted == 0 {
-            grants_over_runs(&module, &directory, Some("4"), 4)
+            grants_over_runs(&module, &directory, Some("4"), GRANT_OBSERVATION_RUNS)
         } else {
             granted
         };
@@ -978,13 +978,13 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // pool thread has to be given a CPU before the offering lane finishes the
     // work itself. On a saturated host that can fail to happen in one run of
     // a program this short, so the existential claim (the default build CAN
-    // be granted lanes) is re-observed over a bounded number of runs, exactly as
-    // the WF_WORKERS=4 case above does. A pool that never grants fails every
-    // one of them; the opt-out runs below stay exact.
+    // be granted lanes) is re-observed over [`GRANT_OBSERVATION_RUNS`] runs,
+    // exactly as the WF_WORKERS=4 case above does. A pool that never grants
+    // fails every one of them; the opt-out runs below stay exact.
     let (defaulted, published) = run_counting_grants(&module, &directory, None);
     assert_eq!(published.status.code(), Some(0));
     let observed_grants = if defaulted == 0 {
-        grants_over_runs(&module, &directory, None, 4)
+        grants_over_runs(&module, &directory, None, GRANT_OBSERVATION_RUNS)
     } else {
         defaulted
     };
@@ -1300,6 +1300,20 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
     }
     true
 }
+
+/// How many runs an existential grant observation samples before it reports
+/// that the runtime granted nothing.
+///
+/// A steal is a scheduling event, so one run samples the host's schedule
+/// rather than the lowering: the offering thread can finish the work itself
+/// before any pool thread reaches the offer, and on a busy machine it often
+/// does. Measured in batch 0090 on the three-core `macos-14` runner, where the
+/// default-pool observation totalled zero over five runs in one gate run and
+/// was granted on the first run of the next — five runs were sampling that
+/// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
+/// cost one link and a fraction of a second, and a runtime that grants nothing
+/// still totals zero over all of them.
+pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 
 pub(super) fn grants_over_runs(
     module: &str,

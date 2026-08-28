@@ -311,6 +311,12 @@ fn the_corpus_units_cover_every_program_file() {
 /// usage when invoked with no arguments, so for that one unit this case
 /// reaches the argument-handling path only and the link is what carries it;
 /// its search path is covered with real arguments in `wfgrep.rs`.
+///
+/// What a host cannot build is read from the compiler rather than assumed: a
+/// target with no approved [SYS-14] directory-enumeration row reports one, the
+/// units it reports are recorded, and the case ends by requiring that they are
+/// only the two programs that walk a directory. Everything else that host can
+/// build is still linked and still compared.
 #[test]
 fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
     let mut beyond_this_target: Vec<String> = Vec::new();
