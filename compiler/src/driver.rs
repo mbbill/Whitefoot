@@ -1179,6 +1179,75 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         );
     }
 
+    /// The disposition table prints one row per classified place even when two
+    /// rows come out byte-identical.
+    ///
+    /// Every operand read of one statement is cited at that statement, so the
+    /// two enclosing buffers this body reads in one `let` carry the same
+    /// citation, the same disposition, and the same reason. Collapsing lines by
+    /// their text alone dropped one of them and printed a five-row table under
+    /// a `stage` line counting six places — a table that is evidence of nothing
+    /// if the reader cannot tell a missing place from a repeated one. The
+    /// collapse that keeps two instances of one generic to one reported site
+    /// still holds, because those two rows agree on their position in the table
+    /// as well as on their text.
+    #[test]
+    fn a_disposition_table_keeps_one_row_per_place_when_two_rows_read_alike() {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(16_u64, 97_u8);
+  let left = buffer_new(8_u64, 1_u8);
+  let right = buffer_new(8_u64, 2_u8);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            let sum = left[0_u64] +wrap right[0_u64];
+            let wide = cvt<u8, u64>(sum);
+            set total = total +wrap wide;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let ledger = ledger_of("alike.wf", source);
+        let stage = ledger
+            .iter()
+            .find(|line| line.starts_with("PAR stage"))
+            .expect("the loop performs I/O and carries a stage line");
+        assert!(
+            stage.ends_with("; 6 places classified"),
+            "the two buffers are two places: {stage}"
+        );
+        let places: Vec<&String> = ledger
+            .iter()
+            .filter(|line| line.starts_with("PAR place"))
+            .collect();
+        assert_eq!(
+            places.len(),
+            6,
+            "the table has a row for every place the stage line counts: {ledger:?}"
+        );
+        let shared = "PAR place       alike.wf:6  read-only     let sum = left[0_u64] +wrap \
+                      right[0_u64];  no footprint of the body writes it or any place \
+                      overlapping it, and every loan on it is shared";
+        assert_eq!(
+            places
+                .iter()
+                .filter(|line| line.as_str() == shared)
+                .count(),
+            2,
+            "both buffers are read-only and both are printed: {ledger:?}"
+        );
+    }
+
     /// A denial names the numbered condition, the place, and one admitted
     /// writer form.
     ///

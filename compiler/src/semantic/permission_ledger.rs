@@ -73,9 +73,17 @@ pub(crate) trait LedgerSource {
 ///
 /// The table is dense by `FunctionId`, so one source function that is
 /// monomorphized more than once contributes its pairs more than once. Lines
-/// that come out byte-identical are therefore collapsed: the ledger reports
-/// source sites, and two instances of one generic that agree on the verdict
-/// are one reported site. Two instances that disagree keep both lines.
+/// that come out byte-identical *at the same position of the same table* are
+/// therefore collapsed: the ledger reports source sites, and two instances of
+/// one generic that agree on the verdict are one reported site. Two instances
+/// that disagree keep both lines.
+///
+/// The position is part of the key because a disposition table holds one row
+/// per place and two different places can render identically: every operand
+/// read of one statement is cited at that statement, so two enclosing buffers
+/// read by one `let` carry the same citation, the same disposition, and the
+/// same reason. Collapsing those would print fewer rows than the `stage` line
+/// above them counts, and the table is only evidence if it is complete.
 pub(crate) fn render_ledger<Source: LedgerSource>(
     metadata: &PermissionMetadata,
     source: &Source,
@@ -216,7 +224,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             .then(left.3.cmp(&right.3))
             .then(left.4.cmp(&right.4))
     });
-    entries.dedup_by(|left, right| left.4 == right.4);
+    entries.dedup_by(|left, right| left.3 == right.3 && left.4 == right.4);
     Ok(entries.into_iter().map(|(.., line)| line).collect())
 }
 
