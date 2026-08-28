@@ -697,11 +697,13 @@ by this batch.
   is the runner's cold tables, where `C.wide8.default` lands on its own pinned
   eight-helper line. A warm macOS page cache is exactly the case where the rule
   is meant not to fire, so this host cannot supply that observation.
-- **A corpus program that reaches submit and join.** No program under
-  `compiler/tests/programs` emits `wf__completion_file_pread_submit` or
-  `wf__completion_file_join` in any lowering — `wfgrep` is the only one that
-  reaches the completion runtime at all, through
-  `wf__completion_file_pread_direct` — so the overlap-versus-`--no-overlap`
+- **A corpus program that reaches submit and join.** Counted over
+  `whitefootc --emit-llvm` for every program in `tests/programs`, in the
+  default lowering and again under `--par`, not one emits a completion
+  `*_submit` or `*_join` call; every completion call the corpus emits is a
+  `*_direct` one (`wfgrep` and `raw_deflate_boundary` read files through
+  `wf__completion_file_pread_direct`, `wfgrep` and `dir_walk` enumerate
+  directories, the rest only write). So the overlap-versus-`--no-overlap`
   differential over that corpus covers the new direct routing and not the
   submitted path. The programs that do exercise it are the bench programs in
   `research/experiments/io-completion-bench/programs/`, and that is where the

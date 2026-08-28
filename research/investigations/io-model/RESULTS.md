@@ -1337,14 +1337,19 @@ Four limits, stated here so a later reader does not have to rediscover them.
   own pinned eight-helper line. No test on the maintainer's machine watches a
   real program grow a pool, because a warm macOS page cache is exactly the
   case where the rule is meant not to fire.
-- **The corpus differential does not reach this path.** No program under
-  `compiler/tests/programs` emits `wf__completion_file_pread_submit` or
-  `wf__completion_file_join` in any lowering; `wfgrep` is the only one that
-  reaches the completion runtime at all, and it does so through
-  `wf__completion_file_pread_direct`. The programs that do exercise submit and
-  join are the bench programs in
-  `research/experiments/io-completion-bench/programs/`, which is where the
-  overlap-versus-`--no-overlap` differential has to be run.
+- **The corpus differential does not reach this path.** Counted over
+  `whitefootc --emit-llvm` for every program in `tests/programs`, in the
+  default lowering and again under `--par`, not one of them emits a completion
+  `*_submit` or `*_join` call: every completion call the corpus emits is a
+  `*_direct` one. `wfgrep` and `raw_deflate_boundary` emit
+  `wf__completion_file_pread_direct`; `wfgrep` and `dir_walk` also emit
+  `open_at_direct`, `close_direct` and `directory_next_direct`; the rest emit
+  only `write_direct`. So that differential covers the direct routing this
+  batch changed — which is worth having, since routing every `*_direct` entry
+  through `wf_file_execute_timed` is one of its changes — and not the
+  submitted path. The programs that do exercise submit and join are the bench
+  programs in `research/experiments/io-completion-bench/programs/`, which is
+  where the overlap-versus-`--no-overlap` differential has to be run.
 - **The decline check costs a queue lock.** `wf_file_adapter_transfer_runs_on_caller`
   asks whether anything is queued, and that term takes the adapter's queue
   lock, so every positioned read that reaches the question pays one
