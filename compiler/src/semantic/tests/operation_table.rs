@@ -137,68 +137,15 @@ fn row_of<'rows>(rows: &'rows [OpsRow], spelling: &str) -> &'rows OpsRow {
     row
 }
 
-/// The [OP-1] spelling of each integer operation the compiler models.
+/// The [OP-1] spelling of each integer operation, from the compiler's own
+/// exhaustive map.
 ///
-/// Exhaustive by construction: a new variant is a compile error here, which is
-/// the point — the row it belongs to must be named before it can be checked.
+/// The map moved to `CheckedIntegerOperation::spelling` when FN-8 began
+/// rendering its goal in source terms: one map serves the diagnostic and this
+/// lock, so a diagnostic can never print a spelling this test has not compared
+/// with the specification table.
 const fn integer_spelling(operation: CheckedIntegerOperation) -> &'static str {
-    use CheckedIntegerOperation as Op;
-    match operation {
-        Op::AddWrap => "+wrap",
-        Op::SubtractWrap => "-wrap",
-        Op::MultiplyWrap => "*wrap",
-        Op::AddExact => "+",
-        Op::SubtractExact => "-",
-        Op::MultiplyExact => "*",
-        Op::AddDefined => "+defined",
-        Op::SubtractDefined => "-defined",
-        Op::MultiplyDefined => "*defined",
-        Op::AddChecked => "+checked",
-        Op::SubtractChecked => "-checked",
-        Op::MultiplyChecked => "*checked",
-        Op::DivideExact => "/",
-        Op::RemainderExact => "%",
-        Op::DivideDefined => "/defined",
-        Op::RemainderDefined => "%defined",
-        Op::DivideChecked => "/checked",
-        Op::RemainderChecked => "%checked",
-        Op::AbsoluteWrap => "iabs.wrap",
-        Op::AbsoluteExact => "iabs",
-        Op::AbsoluteDefined => "iabs.defined",
-        Op::AbsoluteChecked => "iabs.checked",
-        Op::NegateWrap => "ineg.wrap",
-        Op::NegateExact => "ineg",
-        Op::NegateDefined => "ineg.defined",
-        Op::NegateChecked => "ineg.checked",
-        Op::BitAnd => "iand",
-        Op::BitOr => "ior",
-        Op::BitXor => "ixor",
-        Op::BitNot => "inot",
-        Op::ShiftLeftWrap => "ishl.wrap",
-        Op::ShiftRightWrap => "ishr.wrap",
-        Op::ShiftLeftExact => "ishl",
-        Op::ShiftRightExact => "ishr",
-        Op::ShiftLeftDefined => "ishl.defined",
-        Op::ShiftRightDefined => "ishr.defined",
-        Op::RotateLeft => "irotl",
-        Op::RotateRight => "irotr",
-        Op::PopulationCount => "ipopcount",
-        Op::LeadingZeros => "iclz",
-        Op::TrailingZeros => "ictz",
-        Op::ByteSwap => "ibswap",
-        Op::MultiplyHigh => "imulhi",
-        Op::AddSaturating => "+sat",
-        Op::SubtractSaturating => "-sat",
-        Op::MultiplySaturating => "*sat",
-        Op::Minimum => "imin",
-        Op::Maximum => "imax",
-        Op::Equal => "ieq",
-        Op::NotEqual => "ine",
-        Op::Less => "ilt",
-        Op::LessEqual => "ile",
-        Op::Greater => "igt",
-        Op::GreaterEqual => "ige",
-    }
+    operation.spelling()
 }
 
 const INTEGER_OPERATIONS: [CheckedIntegerOperation; 54] = {
@@ -261,34 +208,10 @@ const INTEGER_OPERATIONS: [CheckedIntegerOperation; 54] = {
     ]
 };
 
+/// The [OP-1] spelling of each float operation, from the compiler's own
+/// exhaustive map.
 const fn float_spelling(operation: CheckedFloatOperation) -> &'static str {
-    use CheckedFloatOperation as Op;
-    match operation {
-        Op::AddStrict => "fadd.strict",
-        Op::SubtractStrict => "fsub.strict",
-        Op::MultiplyStrict => "fmul.strict",
-        Op::DivideStrict => "fdiv.strict",
-        Op::Equal => "feq",
-        Op::Less => "flt",
-        Op::LessEqual => "fle",
-        Op::Greater => "fgt",
-        Op::GreaterEqual => "fge",
-        Op::NotEqual => "fne",
-        Op::Negate => "fneg",
-        Op::Absolute => "fabs",
-        Op::CopySign => "fcopysign",
-        Op::Minimum => "fmin",
-        Op::Maximum => "fmax",
-        Op::Floor => "ffloor",
-        Op::Ceil => "fceil",
-        Op::Truncate => "ftrunc",
-        Op::RoundEven => "froundeven",
-        Op::Remainder => "frem",
-        Op::SquareRootStrict => "fsqrt.strict",
-        Op::FusedMultiplyAddStrict => "ffma.strict",
-        Op::Infinity => "finf",
-        Op::Nan => "fnan",
-    }
+    operation.spelling()
 }
 
 const FLOAT_OPERATIONS: [CheckedFloatOperation; 24] = {

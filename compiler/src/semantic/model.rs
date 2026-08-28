@@ -461,6 +461,18 @@ pub(crate) enum CheckedBooleanOperation {
     Not,
 }
 
+impl CheckedBooleanOperation {
+    /// The [OP-1] spelling of each Bool row, exhaustive by construction.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::And => "band",
+            Self::Or => "bor",
+            Self::ExclusiveOr => "bxor",
+            Self::Not => "bnot",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedFloatOperation {
     AddStrict,
@@ -490,6 +502,38 @@ pub(crate) enum CheckedFloatOperation {
 }
 
 impl CheckedFloatOperation {
+    /// The [OP-1] spelling of each float operation the compiler models,
+    /// exhaustive by construction and locked against the specification table
+    /// by `semantic::tests::operation_table`.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::AddStrict => "fadd.strict",
+            Self::SubtractStrict => "fsub.strict",
+            Self::MultiplyStrict => "fmul.strict",
+            Self::DivideStrict => "fdiv.strict",
+            Self::Equal => "feq",
+            Self::Less => "flt",
+            Self::LessEqual => "fle",
+            Self::Greater => "fgt",
+            Self::GreaterEqual => "fge",
+            Self::NotEqual => "fne",
+            Self::Negate => "fneg",
+            Self::Absolute => "fabs",
+            Self::CopySign => "fcopysign",
+            Self::Minimum => "fmin",
+            Self::Maximum => "fmax",
+            Self::Floor => "ffloor",
+            Self::Ceil => "fceil",
+            Self::Truncate => "ftrunc",
+            Self::RoundEven => "froundeven",
+            Self::Remainder => "frem",
+            Self::SquareRootStrict => "fsqrt.strict",
+            Self::FusedMultiplyAddStrict => "ffma.strict",
+            Self::Infinity => "finf",
+            Self::Nan => "fnan",
+        }
+    }
+
     pub(crate) const fn operand_count(self) -> usize {
         match self {
             Self::Infinity | Self::Nan => 0,
@@ -545,6 +589,73 @@ impl CheckedIntegerErrorClass {
 }
 
 impl CheckedIntegerOperation {
+    /// The [OP-1] spelling of each integer operation the compiler models.
+    ///
+    /// Exhaustive by construction: a new variant is a compile error here,
+    /// which is the point — the row it belongs to must be named before it can
+    /// be checked. `semantic::tests::operation_table` locks this map against
+    /// the specification's own `wf-ops` table in both directions, so every
+    /// diagnostic that renders an operation in source terms renders the
+    /// spelling the specification fixes.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::AddWrap => "+wrap",
+            Self::SubtractWrap => "-wrap",
+            Self::MultiplyWrap => "*wrap",
+            Self::AddExact => "+",
+            Self::SubtractExact => "-",
+            Self::MultiplyExact => "*",
+            Self::AddDefined => "+defined",
+            Self::SubtractDefined => "-defined",
+            Self::MultiplyDefined => "*defined",
+            Self::AddChecked => "+checked",
+            Self::SubtractChecked => "-checked",
+            Self::MultiplyChecked => "*checked",
+            Self::DivideExact => "/",
+            Self::RemainderExact => "%",
+            Self::DivideDefined => "/defined",
+            Self::RemainderDefined => "%defined",
+            Self::DivideChecked => "/checked",
+            Self::RemainderChecked => "%checked",
+            Self::AbsoluteWrap => "iabs.wrap",
+            Self::AbsoluteExact => "iabs",
+            Self::AbsoluteDefined => "iabs.defined",
+            Self::AbsoluteChecked => "iabs.checked",
+            Self::NegateWrap => "ineg.wrap",
+            Self::NegateExact => "ineg",
+            Self::NegateDefined => "ineg.defined",
+            Self::NegateChecked => "ineg.checked",
+            Self::BitAnd => "iand",
+            Self::BitOr => "ior",
+            Self::BitXor => "ixor",
+            Self::BitNot => "inot",
+            Self::ShiftLeftWrap => "ishl.wrap",
+            Self::ShiftRightWrap => "ishr.wrap",
+            Self::ShiftLeftExact => "ishl",
+            Self::ShiftRightExact => "ishr",
+            Self::ShiftLeftDefined => "ishl.defined",
+            Self::ShiftRightDefined => "ishr.defined",
+            Self::RotateLeft => "irotl",
+            Self::RotateRight => "irotr",
+            Self::PopulationCount => "ipopcount",
+            Self::LeadingZeros => "iclz",
+            Self::TrailingZeros => "ictz",
+            Self::ByteSwap => "ibswap",
+            Self::MultiplyHigh => "imulhi",
+            Self::AddSaturating => "+sat",
+            Self::SubtractSaturating => "-sat",
+            Self::MultiplySaturating => "*sat",
+            Self::Minimum => "imin",
+            Self::Maximum => "imax",
+            Self::Equal => "ieq",
+            Self::NotEqual => "ine",
+            Self::Less => "ilt",
+            Self::LessEqual => "ile",
+            Self::Greater => "igt",
+            Self::GreaterEqual => "ige",
+        }
+    }
+
     pub(crate) const fn is_exact(self) -> bool {
         matches!(
             self,

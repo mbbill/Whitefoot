@@ -1075,6 +1075,11 @@ pub(crate) struct CallGoalOutcome {
     /// Exact `requires_clause` occurrence in the concrete callee.
     pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
+    /// The same goal in the terms the source wrote it in, rendered here
+    /// because this is where the caller's binding names are in scope. [FN-8]
+    /// publishes it as its `instantiated_goal` payload, the way [OP-4] and
+    /// [SYS-8] publish their residual.
+    pub(crate) rendered_goal: String,
     /// Exact declared-order actual count at this concrete call occurrence.
     /// This remains zero for a legal zero-argument call with a requirement.
     pub(crate) argument_count: u32,
@@ -1103,6 +1108,9 @@ pub(crate) struct CallGoalCounterfactual {
     pub(crate) callee: FunctionId,
     pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
+    /// The same goal in source terms, rendered where the caller's binding
+    /// names are in scope.
+    pub(crate) rendered_goal: String,
     pub(crate) actual_obligations_ok: bool,
     pub(crate) goal_disposition: CallGoalDisposition,
     pub(crate) goal_evidence: Vec<CallGoalEvidence>,

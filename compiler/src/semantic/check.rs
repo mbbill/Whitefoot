@@ -37,7 +37,7 @@ use super::entailment::{
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
-    GoalOperation, GoalProjection, first_ephemeral_argument, render_goal,
+    GoalOperation, GoalProjection, first_ephemeral_argument,
 };
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
@@ -4772,7 +4772,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             crate::UndischargedCallRequirementDetail {
                                 concrete_callee: signature.symbol.clone(),
                                 requires_clause: outcome.requires_clause.clone(),
-                                instantiated_goal: render_goal(&outcome.goal.root),
+                                instantiated_goal: outcome.rendered_goal.clone(),
                                 disposition,
                                 mechanical_fix,
                             },

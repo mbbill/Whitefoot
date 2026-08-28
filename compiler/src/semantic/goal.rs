@@ -222,43 +222,6 @@ pub(crate) enum GoalOperation {
     },
 }
 
-/// Deterministic complete diagnostic rendering of one typed goal. The active
-/// specification fixes the payload's contents but not a cross-implementation
-/// byte encoding; this compiler nevertheless uses one stable structural form.
-pub(crate) fn render_goal(expression: &GoalExpression) -> String {
-    match expression {
-        GoalExpression::Datum(GoalDatum::EphemeralActual {
-            caller,
-            call,
-            argument,
-            captured_type,
-            projections,
-            ty,
-        }) => format!(
-            "argument #{argument} pre-transfer value \
-             (caller={caller:?}, call={call:?}, captured={captured_type:?}, \
-             projections={projections:?}, type={ty:?})"
-        ),
-        GoalExpression::Datum(datum) => format!("{datum:?}"),
-        GoalExpression::Operation {
-            row,
-            type_arguments,
-            const_arguments,
-            result,
-            arguments,
-        } => {
-            let arguments = arguments
-                .iter()
-                .map(render_goal)
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(
-                "{row:?}<types={type_arguments:?}, consts={const_arguments:?}>({arguments}):{result:?}"
-            )
-        }
-    }
-}
-
 /// First occurrence-local actual value in structural operand order, when a
 /// call goal needs FN-8's stronger bind-then-prove restructuring.
 pub(crate) fn first_ephemeral_argument(expression: &GoalExpression) -> Option<u32> {
