@@ -23,7 +23,9 @@ Held:
   restored, a reader racing a shutdown draws a ThreadSanitizer report at
   `wf_file_adapter_queued` naming the destroyed mutex.
 
-Refuted: the block comment in `wf_bridge_spin_for_completion`.
+Refuted: the block comment in `wf_bridge_spin_for_completion` — though the
+re-measurement below narrows the refutation to the comment's attribution
+rather than to all of it.
 
 ## 1. The refuted comment (`compiler/src/backend/completion/bridge.c`)
 
@@ -34,27 +36,41 @@ spin never calls [`wf_bridge_progress`], so the loop's other exit cannot fire
 on its own and the join never ends"; and cited a measurement that "the Linux
 io_uring route makes no progress at all" without the guard.
 
-All three are false against the code immediately below the comment. The
-periodic sample is `if (now == 0 || now >= deadline) return 0;` — a failed
-clock ends the spin at the first sample, so the bound exists and is at most 64
-turns. And sibling lanes reaping the completion queue raise the ready-event
-count, so the loop's other exit does fire without this thread calling
-`wf_bridge_progress`.
+The first claim is false against the code three lines below it. The periodic
+sample is `if (now == 0 || now >= deadline) return 0;`, so a failed clock ends
+the spin at the first sample — the bound exists, it is at most 64 turns, and
+it is that term rather than the `started == 0` guard that provides it. The
+cited Linux measurement is false with it: with the guard removed and the term
+in place the ring route finishes in the ordinary time.
 
-Measured today on the 4-lane default probe, Linux, io_uring route:
+Re-measured here on the four-lane default probe with `wf_bridge_monotonic_ns`
+forced to answer zero — the failed clock the comment is about:
 
 ```text
-guard present                          116 ms   PASS
-guard removed                          116 ms   PASS
-guard and the `now == 0` term removed  117 ms   PASS
+shipped (guard + `now == 0` term), ring       ~113 ms   PASS 6/6
+guard removed, `now == 0` term kept, ring     ~105 ms   PASS 6/6
+both removed, ring                                      PASS 3/12, hung 9/12
+both removed, WF_IO_NO_NATIVE_RING=1                    PASS 6/6
 ```
 
-The comment now states only the two things that are true: the `now == 0` term
-of the periodic sample is what bounds the spin under a failed clock, and the
-`started == 0` early return only skips at most 64 futile counter reads before
-that sample would have ended it anyway. The two measurement sentences are
-deleted rather than restated — the Linux one was false, and the macOS one
-cannot be re-measured from this host, so no replacement claim is made.
+The last two rows say the comment's *route contrast* was right and its
+*attribution* was wrong. An unbounded spin really does fail to end on the
+native ring, for the reason the old comment gave — this spin never reaps the
+completion queue — and really does end on the POSIX adapter, where a helper
+raises the count. What the comment got wrong is which line provides the bound:
+it credited the `started == 0` guard, and the guard is worth 64 counter reads.
+
+The batch brief predicted the third row would be a clean pass (117 ms), which
+is why it read the whole route contrast as refuted. On this host that outcome
+is 3 runs in 12; the other 9 hang to the probe's watchdog. The record and the
+rewritten comment follow the 12-run measurement, not the single run.
+
+The rewritten comment therefore says what the measurement supports: the
+`now == 0` term is the bound, the early return only skips the turns before it,
+and the term matters because on the ring the loop's other exit is not one this
+thread can cause. The unreproducible sentences are gone — the macOS one is not
+replaced by a guess, and its Linux analogue is now measured directly, on the
+adapter route that batch item 4 below makes reachable here.
 
 ## 2. Coverage for the shutdown ordering (gap 1)
 
@@ -71,8 +87,8 @@ blocked queue, shuts the adapter down, and asserts that
 `wf_file_adapter_set_helper_cap` are all refused at the guard, and that a
 second `wf_file_adapter_shutdown` returns `EINVAL` rather than joining threads
 that are gone and destroying the mutex twice. It is wired into the harness's
-`main` beside the other growth cases, so it runs on all four
-`completion-test` arms.
+`main` beside the other growth cases, so it runs on every `completion-test`
+harness arm and under the sanitizer builds.
 
 ### Red/green
 

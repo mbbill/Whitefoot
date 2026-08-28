@@ -334,16 +334,27 @@ static int wf_bridge_spin_for_completion(void) {
     uint64_t started = wf_bridge_monotonic_ns();
     uint64_t deadline;
     unsigned turn = 0;
-    /* A failed clock is bounded below, not here.  The periodic sample treats
-     * `now == 0` exactly as it treats a passed deadline and returns 0, so a
-     * clock this thread cannot read still ends the spin after at most 64
-     * turns.  That term, not this early return, is what keeps an unreadable
-     * clock from spinning without a bound.
+    /* A clock this thread cannot read is bounded by the `now == 0` term of
+     * the periodic sample below, not by this early return.  That sample
+     * treats a zero reading exactly as it treats a passed deadline, so a
+     * failed clock ends the spin within 64 turns whatever happens here; this
+     * early return only skips those 64 reads of a counter the loop would have
+     * read anyway.
      *
-     * This early return only skips those turns.  Their cost is 64 reads of a
-     * counter this thread would go on to read anyway, so the guard is a small
-     * saving on a rare path rather than the thing that terminates it; leaving
-     * the spin early costs at worst a park this thread was about to make. */
+     * The term it defers to is load-bearing rather than defensive, because on
+     * the native ring the loop's other exit is not one this thread can cause:
+     * a submitted read becomes a ready event only when `wf_bridge_progress`
+     * reaps the completion queue, and this spin never calls it.  Measured on
+     * Linux with `wf_bridge_monotonic_ns` forced to answer zero, on the
+     * four-lane default probe: the shipped spin, and the spin with only this
+     * early return removed, both finish in about 110 ms; with the `now == 0`
+     * term removed as well the run hangs on the ring in 9 of 12 attempts,
+     * the other 3 being lucky in which lane published last.  The same build
+     * forced onto the POSIX adapter finishes every time, because there a
+     * helper thread raises the count without this thread doing anything.
+     *
+     * Leaving the spin early costs at worst a park this thread was about to
+     * make. */
     if (started == 0) {
         return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
     }
