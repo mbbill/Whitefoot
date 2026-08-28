@@ -900,10 +900,15 @@ static int wf_linux_publish_entry_locked(
         1,
         memory_order_relaxed
     );
-    /* Reported after the terminal publication: an open refused on any engine
-     * is entitled to see this descriptor come back, and the ledger is where
-     * it looks. */
     wf_completion_operation_retired();
+    /* A held open — this ring's or the bounded adapter's — is released by
+     * whichever thread next asks the ledger, and that thread may have asked
+     * in the instant before the line above and parked on the wake the
+     * publication gave it.  So the retirement gets a wake of its own, and
+     * only where something is waiting for one. */
+    if (wf_completion_retirement_waiters() != 0) {
+        wf_completion_notify_capacity(adapter->runtime);
+    }
     return published == WF_COMPLETION_PUBLISHED ? 0 : EPROTO;
 }
 

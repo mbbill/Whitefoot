@@ -1121,6 +1121,13 @@ static wf_file_result wf_bridge_execute_direct(
         result = wf_bridge_retire_and_retry_direct(request, result, seen);
     }
     wf_completion_operation_retired();
+    /* A direct call publishes nothing, so nothing else tells a scheduler
+     * parked on the completion endpoint that this runtime just gave a
+     * descriptor back.  A held open waiting for exactly that is released by a
+     * scheduler asking the ledger again, and this is what gets it there. */
+    if (wf_bridge_ready != 0 && wf_completion_retirement_waiters() != 0) {
+        wf_completion_notify_capacity(&wf_bridge_runtime);
+    }
     return result;
 }
 

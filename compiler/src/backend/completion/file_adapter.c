@@ -399,12 +399,11 @@ static int wf_file_take_work(
     return present;
 }
 
-/* Records that one operation this adapter owned has published its result and
- * given back whatever the host lent it.
+/* Records that one operation this adapter owned has finished its host work.
  *
  * A refused open asks the process-wide ledger, not this adapter, whether a
- * descriptor came back, so every publication reports there as well as into
- * this adapter's own execution counts.  That is the whole of what makes the
+ * descriptor came back, so every operation reports there as well as into this
+ * adapter's own execution counts.  That is the whole of what makes the
  * exhaustion rule one rule: an open refused on the kernel ring can see a read
  * finishing on a helper thread here, and this open can see that ring's close.
  */
@@ -416,6 +415,15 @@ static void wf_file_finish_execution(wf_file_adapter *adapter, int helper) {
         memory_order_relaxed
     );
     wf_completion_operation_retired();
+    /* A held open is released by whichever thread next asks the ledger, and
+     * on a target with a kernel ring that thread is a scheduler parked on the
+     * completion endpoint.  The publication above already woke it, but it may
+     * have asked and found nothing in the instant before the line above, so
+     * the retirement gets a wake of its own.  Only where something is
+     * actually waiting: on the ordinary path this is one atomic load. */
+    if (wf_completion_retirement_waiters() != 0) {
+        wf_completion_notify_capacity(adapter->runtime);
+    }
 }
 
 /* True exactly for the results of an open the host refused because it had no

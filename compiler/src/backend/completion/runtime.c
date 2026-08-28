@@ -1142,6 +1142,13 @@ void wf_completion_retirement_defer_end(void) {
     );
 }
 
+size_t wf_completion_retirement_waiters(void) {
+    return atomic_load_explicit(
+        &wf_retirement_waiter_count,
+        memory_order_acquire
+    );
+}
+
 uint64_t wf_completion_retirement_waits(void) {
     return atomic_load_explicit(
         &wf_retirement_wait_starts,

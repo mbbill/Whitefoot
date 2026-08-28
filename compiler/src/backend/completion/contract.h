@@ -453,6 +453,15 @@ void wf_completion_operation_retired(void);
  * standing at that moment reads this; nothing in the runtime decides on it. */
 uint64_t wf_completion_retirement_waits(void);
 
+/* How many refused opens are waiting for a retirement right now.
+ *
+ * An engine reads this after it retires an operation, to decide whether the
+ * retirement is worth announcing on the scheduler's own wake endpoint.  It is
+ * worth it exactly when something is waiting: a held open is released by some
+ * thread asking the ledger again, and on the ordinary path — nothing refused,
+ * nobody waiting — this is one atomic load and no wake at all. */
+size_t wf_completion_retirement_waiters(void);
+
 /* Enters and leaves the process-wide waiter order.  Every refused open that
  * does not publish immediately is registered, whether a thread is blocked on
  * it (the bounded adapter, a direct call) or an entry is holding it (the
