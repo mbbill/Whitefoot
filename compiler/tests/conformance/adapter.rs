@@ -41,10 +41,10 @@ use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS,
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, SourceInput,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
+    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
+    SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -262,6 +262,9 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     }
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
+        // One link recipe: a case that reaches a libm entry point links here
+        // exactly as it links under the shipped driver.
+        .args(HOST_LINK_LIBRARIES)
         .arg("-o")
         .arg(&executable)
         .output()
