@@ -128,8 +128,12 @@ both are the same fact — an operation nobody may wait for, because waiting for
 it would be waiting for the waiter. One is local: the operations this waiter's
 own thread would have to run itself, which is the queue a drained sibling's
 suspended caller still owes and is nothing at all for a held ring entry, since
-that blocks no thread. The other is global: an operation whose thread is inside
-another operation is *deferred* for as long as it is.
+that blocks no thread. The ledger asks the engine for that queue where it
+decides, inside the lock every wake takes, instead of being handed a reading of
+it taken earlier; the queue is a live fact, and a decision made on a stale
+reading of it is the third deadlock recorded below. The other is global: an
+operation whose thread is inside another operation is *deferred* for as long as
+it is.
 
 How each route waits is mechanical, and it is the only per-route thing left.
 The ring holds the refused entry — in a state no doorbell may stage — and asks
@@ -138,17 +142,22 @@ a staged re-attempt rings immediately, including where the submission queue was
 full, so a re-attempt never sits behind a completion-only sleep. The bounded
 adapter's thread first runs the work its own queue still owes, oldest first,
 which is the order the program wrote and the order that reproduces the
-sequential outcome, and only then sleeps on the ledger's signal. A blocking
-direct open waits by driving the engines and parking on the runtime's own
-endpoint, because on a target with a ring it may be the only thread that can
-reap the completion it is waiting for.
+sequential outcome, and only then sleeps on the ledger's signal — and it never
+sleeps while an item is still in that queue, because running that item is the
+answer rather than a reason to wait for one. A blocking direct open waits by
+driving the engines and parking on the runtime's own endpoint, because on a
+target with a ring it may be the only thread that can reap the completion it is
+waiting for.
 
 ### What this record said before, and what was false
 
-Five shapes of this were wrong before the rule was stated that way. None was
-caught by a test; the first two were found by the Stage A verification, the
-next two by re-verification of the repair, and the fifth by reading the repair
-for the same class of defect.
+Five shapes of this were wrong before the rule was stated that way, and the
+rule then stopped the process three times before it was right. None of the
+eight was caught by a test as written: the first two were found by the Stage A
+verification, the next two by re-verification of the repair, the fifth by
+reading the repair for the same class of defect, and the three deadlocks by
+running the suite and the verifiers' probes to the point where a stall is
+distinguishable from a slow host.
 
 - the ring re-staged the refused open at the end of the *same* reap pass, so
   the source order `close(held); open(path)` — which succeeds sequentially —
@@ -215,13 +224,38 @@ for the same class of defect.
   endpoint instead — only where the ledger says something is waiting for one,
   so the ordinary path pays one atomic load and no wake at all.
 
+- and it stopped a third time, on the last input the decision still read
+  outside its own lock. A refused open handed the ledger the size of the queue
+  it was answerable for, and the ledger then decided under the lock every wake
+  has to take. A submission landing between that reading and that lock made the
+  reading too small; the wake it sent had already passed by the time the waiter
+  reached the condition variable, and the answer "something else is running"
+  became permanent. One helper asleep in the ledger, work in its queue, the
+  main thread parked in the join, and no CPU consumed by any of them over
+  fifteen seconds of watching. It appeared once in a twenty-run TSan sweep at
+  one helper on macOS and once more in two hundred and ten scripted repetitions
+  of the same configuration.
+
+  The rule is now that every input the decision reads is read where the
+  decision is made. The ledger asks the engine for that queue through a
+  callback it calls inside its own lock, and the callback takes no lock of its
+  own — the adapter's queue count is atomic, so it needs none, and the order
+  every submission takes cannot be inverted. Work arriving while a waiter is
+  deciding is then either seen by that decision or announced after the waiter
+  is already on the condition variable, which is the difference between a wake
+  that is unlikely to be missed and one that cannot be. The same callback says
+  the other half of the fact: a thread that will run that queue itself does not
+  sleep while an item is in it, because running the item is the answer. The
+  reading passed in as a parameter is gone.
+
 Each of the three routes is covered by a test that fails without the fix, and
-so are the third exit and the deadlock:
+so are the third exit, the deadlocks and the moment the queue is read:
 `test_bridge_open_waits_for_the_other_engine`,
 `test_bridge_one_of_two_opens_behind_a_close_succeeds`,
 `test_bridge_open_behind_a_submitted_close_succeeds`,
 `test_open_exhaustion_waits_for_another_engine`,
-`test_a_retirement_between_the_ledger_reads_is_not_missed` and
+`test_a_retirement_between_the_ledger_reads_is_not_missed`,
+`test_the_work_a_waiter_owes_is_read_where_it_decides` and
 `test_bridge_every_record_holding_a_refused_open_publishes`.
 
 A deadlock is now a failure mode of this suite, so the harness has a watchdog:
@@ -348,6 +382,11 @@ by exempting the carrying block from the rule.
   `a_drain_retires_only_what_the_branches_that_reach_it_started`, with the
   sibling removal deleted, reports the first exit joining two operations where
   one branch reaches it.
+  `test_the_work_a_waiter_owes_is_read_where_it_decides`, with the ledger
+  reading that queue once when the waiter registers instead of asking for it
+  where it decides, fails at zero, one and four helpers on macOS on
+  `state == WF_RETIREMENT_UNREACHABLE`: the ledger waits for a retirement no
+  operation can produce, which is the shape that stopped the process.
   `test_bridge_every_record_holding_a_refused_open_publishes`, with the owed
   queue read once instead of on every pass, stops at four helpers on macOS in
   three runs of five and the watchdog names it; the same control hangs the
@@ -414,20 +453,26 @@ by exempting the carrying block from the rule.
   deterministic tests above. Its own comment says so.
 
 - Repetition counts at this revision, at every helper setting the suites use
-  and two hosts. Linux container (`wf-io-bench:linux`, aarch64, kernel 6.8,
-  io_uring enabled, `--security-opt seccomp=unconfined`): 200 runs each at
-  zero, one, two and four helpers, 0 failures; `completion-tsan` 20 runs at
-  each of the same four, 0 failures; `completion-sanitize` (ASan + UBSan)
-  passes; the `WF_REQUIRE_LINUX_IO_URING=1` run passes; the two-opens probe 200
-  runs at each of the same four, 0 failures. macOS (`completion-test` build):
-  200 runs each at zero, one, two and four helpers, run concurrently so the
-  four contend, 0 failures; `completion-tsan` 20 runs at each of the same four,
-  0 failures. Two helpers is in both lists because that is where the two-opens
-  defect showed at 74 in 200 and the shipped suites do not run it; the counts
-  at one helper matter because that is where the missed wake showed, twice in
-  four hundred. The probes above, 15 runs each at zero, one and four helpers on
-  both hosts, 0 failures. Earlier counts in this record measured earlier
-  revisions and are superseded by these.
+  and two hosts. Linux container (aarch64, kernel 6.8, io_uring enabled, clang
+  16, `--security-opt seccomp=unconfined`): 200 runs each at zero, one, two and
+  four helpers, 0 failures; `completion-tsan` 20 runs at each of the same four,
+  0 failures; `completion-sanitize` (ASan + UBSan) passes; the
+  `WF_REQUIRE_LINUX_IO_URING=1` run passes 30 of 30; the two-opens probe 200
+  runs at each of the same four, `lost_ok=0`. macOS (`completion-test` build):
+  200 runs each at zero, one, two and four helpers, 0 failures;
+  `completion-tsan` 20 runs at each of the same four, 0 failures; the two-opens
+  probe 200 runs at each of the same four, `lost_ok=0`. Two helpers is in both
+  lists because that is where the two-opens defect showed at 74 in 200 and the
+  shipped suites do not run it; the counts at one helper matter because that is
+  where both missed wakes showed — one twice in four hundred, the other once in
+  twenty under TSan. That last one is why the one-helper TSan configuration
+  also has 210 scripted repetitions on macOS under a stall watchdog with a
+  sampler: 0 stalls, against the 1 the same 210 found before the queue was read
+  where the decision is made. The probes above, 15 runs each at zero, one and
+  four helpers on both hosts, 0 failures. The container's aarch64 TSan needs
+  ASLR off (`setarch -R`) or it aborts on every run with `unexpected memory
+  mapping` before reaching a test; that is the host, not the suite. Earlier
+  counts in this record measured earlier revisions and are superseded by these.
 - `make -C research/experiments/io-completion-bench verify` on macOS: every line
   of every workload — the hand-written native shape, the `--no-overlap`
   sequential reference, and the shipping overlapped build — publishes
