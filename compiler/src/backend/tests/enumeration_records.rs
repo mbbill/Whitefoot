@@ -381,7 +381,10 @@ fn every_native_entry_kind_maps_into_the_closed_portable_set() {
 /// prefix of the same range and never overruns it.
 #[test]
 fn a_batch_that_fills_the_range_decodes_every_record_it_holds() {
-    let entries: Vec<ScriptedEntry> = (0..64u16)
+    // More records than any 4096-byte range can hold on either family, so
+    // the batch always stops at the range and the case always tests a
+    // range-filling batch rather than a batch that happened to fit.
+    let entries: Vec<ScriptedEntry> = (0..200u16)
         .map(|position| {
             ScriptedEntry::regular(
                 b'a' + u8::try_from(position % 26).expect("a small index"),

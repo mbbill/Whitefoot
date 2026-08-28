@@ -2266,26 +2266,27 @@ fn emit_directory_record_normalizer(
         // one name byte before a single byte of the name is read, because the
         // scan's bound is the extent itself.
         EntryNameLength::NulTerminated => format!(
-            "  %extent.bounded = icmp ule i64 %record.extent, %remaining\n  \
-             %extent.named = icmp ugt i64 %record.extent, {name_offset}\n  \
-             %scannable = and i1 %extent.bounded, %extent.named\n  \
-             br i1 %scannable, label %measure, label %tcb.defect\n\
-             measure:\n  \
+            "  %name.bounded = icmp ule i64 %record.extent, %remaining\n  \
+             %name.present = icmp ugt i64 %record.extent, {name_offset}\n  \
+             %name.scannable = and i1 %name.bounded, %name.present\n  \
+             br i1 %name.scannable, label %name.measure, label %tcb.defect\n\
+             name.measure:\n  \
              %name.span = sub nuw i64 %record.extent, {name_offset}\n  \
              %name.base = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
-             br label %scan\n\
-             scan:\n  \
-             %scanned = phi i64 [ 0, %measure ], [ %scanned.next, %scan.step ]\n  \
-             %scan.exhausted = icmp uge i64 %scanned, %name.span\n  \
-             br i1 %scan.exhausted, label %tcb.defect, label %scan.step\n\
-             scan.step:\n  \
-             %scan.at = getelementptr inbounds i8, ptr %name.base, i64 %scanned\n  \
-             %scan.byte = load i8, ptr %scan.at, align 1\n  \
-             %scan.terminator = icmp eq i8 %scan.byte, 0\n  \
-             %scanned.next = add i64 %scanned, 1\n  \
-             br i1 %scan.terminator, label %measured, label %scan\n\
-             measured:\n  \
-             %named = phi i64 [ %scanned, %scan.step ]\n  \
+             br label %name.scan\n\
+             name.scan:\n  \
+             %name.scanned = phi i64 [ 0, %name.measure ], \
+             [ %name.scanned.next, %name.scan.step ]\n  \
+             %name.unterminated = icmp uge i64 %name.scanned, %name.span\n  \
+             br i1 %name.unterminated, label %tcb.defect, label %name.scan.step\n\
+             name.scan.step:\n  \
+             %name.at = getelementptr inbounds i8, ptr %name.base, i64 %name.scanned\n  \
+             %name.byte = load i8, ptr %name.at, align 1\n  \
+             %name.terminator = icmp eq i8 %name.byte, 0\n  \
+             %name.scanned.next = add i64 %name.scanned, 1\n  \
+             br i1 %name.terminator, label %name.measured, label %name.scan\n\
+             name.measured:\n  \
+             %named = phi i64 [ %name.scanned, %name.scan.step ]\n  \
              br label %validate\n"
         ),
     };

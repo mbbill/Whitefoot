@@ -8,16 +8,6 @@ mod buffers;
 mod checked_division;
 mod completion;
 /// The §9.1 cost census, every case of which compiles `wfgrep`.
-///
-/// Host-limited to a target with an approved [SYS-14] directory-enumeration
-/// row. `wfgrep` walks directories, and `backend/qualification.rs` states
-/// deliberately that Linux has no such row: `getdents64` writes no per-entry
-/// name length, and the portable record the emitted shim fills needs one, so
-/// qualification reports `MissingMapping(Operation(12))` rather than
-/// pretending the facility is there. A `wfgrep` module therefore does not
-/// exist on Linux to take a census of. The limit is the target table's, not
-/// this module's: the day a Linux enumeration row lands, this line goes.
-#[cfg(target_os = "macos")]
 mod cost_shape;
 mod counted_ranges;
 mod deterministic_target;
@@ -533,19 +523,8 @@ fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
 /// Runs one emitted module, optionally linked against one host translation
 /// unit.
 fn compile_link_and_run(llvm: &str, host: Option<&str>, arguments: &[&[u8]]) -> Output {
-    compile_link_and_run_with(llvm, host, &[], arguments)
-}
-
-/// Runs one emitted module linked against one host translation unit and one
-/// set of facility-substitution definitions.
-fn compile_link_and_run_with(
-    llvm: &str,
-    host: Option<&str>,
-    defines: &[String],
-    arguments: &[&[u8]],
-) -> Output {
     let directory = test_directory();
-    let executable = build_linked_executable(llvm, host, defines, &directory);
+    let executable = build_linked_executable(llvm, host, &[], &directory);
     let output = Command::new(&executable)
         .args(
             arguments
@@ -556,6 +535,35 @@ fn compile_link_and_run_with(
         .expect("run backend test executable");
     std::fs::remove_file(&executable).expect("remove backend test executable");
     std::fs::remove_dir(&directory).expect("remove backend test directory");
+    output
+}
+
+/// Runs one emitted module linked against one host translation unit and one
+/// set of facility-substitution definitions, inside a directory of its own.
+///
+/// The program's working directory is the test's own directory rather than
+/// the test runner's, because a case reaching this helper may end a program
+/// at the trusted-computing-base defect arm and a host that writes a core
+/// file writes it into the working directory of the process that died. The
+/// directory is therefore removed whole rather than file by file.
+fn compile_link_and_run_with(
+    llvm: &str,
+    host: Option<&str>,
+    defines: &[String],
+    arguments: &[&[u8]],
+) -> Output {
+    let directory = test_directory();
+    let executable = build_linked_executable(llvm, host, defines, &directory);
+    let output = Command::new(&executable)
+        .current_dir(&directory)
+        .args(
+            arguments
+                .iter()
+                .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
+        )
+        .output()
+        .expect("run backend test executable");
+    std::fs::remove_dir_all(&directory).expect("remove backend test directory");
     output
 }
 
@@ -600,9 +608,7 @@ fn host_optimized_module(llvm: &str) -> String {
 /// everything the finished program calls has to include it, or it is complete
 /// over every generated function except the one whose call it would not
 /// otherwise account for.
-/// Reached only from the `wfgrep` cost census, which is itself host-limited
-/// to a target with an approved directory-enumeration row.
-#[cfg(target_os = "macos")]
+/// Reached only from the `wfgrep` cost census.
 pub(super) fn optimized_main_wrapper(module: &str) -> &str {
     let start = module
         .find("define i32 @main(")

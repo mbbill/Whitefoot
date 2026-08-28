@@ -8,6 +8,7 @@ COMPLETION_DIR := src/backend/completion
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
+	-DWF_COMPLETION_GETDENTS64=wf_completion_test_getdents64 \
 	-DWF_COMPLETION_POLL=wf_completion_test_poll
 # The harness names the WF_IO_NOCACHE application so it can count it. The
 # named function performs the same host call the shipped policy performs, so
@@ -129,6 +130,7 @@ completion-sanitize: completion-core-read-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
+		-DWF_COMPLETION_GETDENTS64=wf_completion_test_getdents64 \
 		-DWF_COMPLETION_POLL=wf_completion_test_poll \
 		-fsanitize=address,undefined \
 		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \

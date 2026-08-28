@@ -775,8 +775,19 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
     assert_eq!(output.status.code(), Some(0));
 }
 
+/// Every triple this compiler recognizes now has an approved [SYS-14]
+/// enumeration row, and a target with no enumeration facility at all still
+/// fails qualification for those semantic IDs rather than having a scan built
+/// for it out of other operations [QUAL-2].
+///
+/// This case superseded the one that recorded the opposite for Linux. That
+/// case asserted `MissingMapping(Operation(12))` on a Linux triple because
+/// this compiler had no `getdents64` record model; the model landed with the
+/// Linux row, so the condition it named no longer exists on any recognized
+/// triple. What remains true, and is what a table without a Linux row was
+/// only ever standing in for, is the refusal below.
 #[test]
-fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
+fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'c {
     let permit = reserve_file<'c>(factory: &uniq 'c files);
@@ -791,14 +802,26 @@ fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
 }
 "#;
     with_ir(source, |program| {
-        let linux = SystemTarget::for_triple("x86_64-unknown-linux-gnu")
-            .expect("Linux is a recognized system target");
-        let failure = qualify_program(linux, program)
-            .expect_err("Linux has enumeration but no approved getdents ABI mapping");
-        assert!(matches!(
-            failure,
-            crate::BackendFailure::TargetQualification(QualificationFailure::MissingMapping(_))
-        ));
+        for triple in [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu",
+        ] {
+            let target = SystemTarget::for_triple(triple).expect("a recognized system target");
+            qualify_program(target, program)
+                .unwrap_or_else(|failure| panic!("{triple} must qualify: {failure:?}"));
+        }
+        let bare = SystemTarget::probe_without_enumeration();
+        assert_eq!(
+            qualify_program(bare, program),
+            Err(crate::BackendFailure::TargetQualification(
+                QualificationFailure::UnmetGuarantee {
+                    facility: Facility::Operation(12),
+                    guarantee: TargetGuarantee::DirectoryEnumeration,
+                }
+            ))
+        );
     });
 }
 
@@ -1166,4 +1189,93 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
     assert!(!llvm.contains("call i64 @__getdirentries64"));
     let optimized = host_optimized_module(&llvm);
     assert!(optimized.contains("@wf__completion_directory_next_direct"));
+}
+
+/// The Linux row derives a name's length by one scan bounded by the record's
+/// own extent, because `struct linux_dirent64` states no length [SYS-14].
+///
+/// This is the whole difference between the two approved enumeration rows, so
+/// it is asserted on the emitted text of both: the Linux shim must hold the
+/// bounded scan and must load no name-length field, and the Darwin shim must
+/// hold the field load and no scan. Everything else about the walk — the
+/// extent validation, the in-place rewrite, the defect arm — is one text both
+/// rows embed, which the two counted assertions below state.
+#[test]
+fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let destination = buffer_new(64_u64, 0_u8);
+  region 'c {
+    let permit = reserve_file<'c>(factory: &uniq 'c files);
+    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
+      Ok(value: list) => {
+        region 'l {
+          region 'd {
+            let outcome = directory_next<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+          }
+        }
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let (linux, darwin) = with_ir(source, |program| {
+        let linux = SystemTarget::for_triple("x86_64-unknown-linux-gnu")
+            .expect("Linux is a recognized system target");
+        let darwin = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("Darwin is a recognized system target");
+        (
+            emit_llvm_for_target(program, linux)
+                .expect("Linux must qualify and emit directory_next")
+                .into_string(),
+            emit_llvm_for_target(program, darwin)
+                .expect("Darwin must qualify and emit directory_next")
+                .into_string(),
+        )
+    });
+
+    // `struct linux_dirent64`: d_reclen at 16, d_type at 18, d_name at 19.
+    assert!(
+        linux.contains("%record.extent.at = getelementptr inbounds i8, ptr %entry.record, i64 16")
+    );
+    assert!(linux.contains("%kind.at = getelementptr inbounds i8, ptr %entry.record, i64 18"));
+    assert!(linux.contains("%name.base = getelementptr inbounds i8, ptr %entry.record, i64 19"));
+    // The scan is bounded by the record's own extent, and the extent is
+    // checked against the reported batch before one name byte is read.
+    assert!(linux.contains("%name.bounded = icmp ule i64 %record.extent, %remaining"));
+    assert!(linux.contains("%name.present = icmp ugt i64 %record.extent, 19"));
+    assert!(linux.contains("%name.span = sub nuw i64 %record.extent, 19"));
+    assert!(linux.contains("%name.unterminated = icmp uge i64 %name.scanned, %name.span"));
+    assert!(linux.contains("br i1 %name.unterminated, label %tcb.defect, label %name.scan.step"));
+    // No length field is read, because the record states none.
+    assert!(!linux.contains("%named.native = load i16"));
+    // The component limit is the Linux family's own [SYS-14].
+    assert!(linux.contains("%nameable = icmp ule i64 %named, 255"));
+    assert!(darwin.contains("%nameable = icmp ule i64 %named, 1023"));
+    // The Darwin row reads its field and needs no scan at all.
+    assert!(darwin.contains("%named.at = getelementptr inbounds i8, ptr %entry.record, i64 18"));
+    assert!(darwin.contains("%named.native = load i16, ptr %named.at, align 1"));
+    assert!(!darwin.contains("%name.span = sub nuw"));
+    // Both rows embed one walk, in both the direct route and the completion
+    // mapper: the record model varies, the normalization does not.
+    for module in [&linux, &darwin] {
+        assert_eq!(module.matches("%record.extent = zext").count(), 2);
+        assert_eq!(
+            module
+                .matches("%source.next = add i64 %source, %record.extent")
+                .count(),
+            2
+        );
+        assert_eq!(
+            module
+                .matches("%fits = icmp ule i64 %after, %extent")
+                .count(),
+            2
+        );
+        assert!(module.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
+        assert!(module.contains("@wf__completion_directory_next_direct"));
+    }
+    assert!(!linux.contains("call i64 @getdents64"));
 }

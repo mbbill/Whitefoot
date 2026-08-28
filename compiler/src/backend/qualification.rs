@@ -1047,6 +1047,23 @@ impl SystemTarget {
         target.directory_relative = directory_relative;
         target
     }
+
+    /// A probe target with no directory-enumeration facility at all.
+    ///
+    /// This is [QUAL-2]'s fourth guarantee withheld: such a target fails
+    /// qualification for the enumeration semantic IDs rather than having a
+    /// scan built for it out of other operations. It is a separate builder
+    /// because it also drops the record, and a target that reported a record
+    /// while denying the facility would be describing something that does not
+    /// exist.
+    #[cfg(test)]
+    pub(crate) fn probe_without_enumeration() -> Self {
+        let mut target = Self::for_triple("aarch64-apple-darwin")
+            .expect("the probe base triple is a qualified target");
+        target.directory_enumeration_facility = false;
+        target.directory_enumeration = None;
+        target
+    }
 }
 
 /// The complete qualification of one program against one selected target.

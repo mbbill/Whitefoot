@@ -46,23 +46,24 @@
         }                                                                     \
     } while (0)
 
-#if defined(__APPLE__)
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
 static unsigned wf_directory_host_calls;
 static unsigned wf_directory_poll_calls;
 static int wf_directory_poll_descriptor;
 static short wf_directory_poll_events;
 static int wf_directory_poll_timeout;
 
-/* Deterministic Darwin target answers: interruption, readiness refusal, then
- * one successful byte. The pipe descriptor used by the test is already
- * readable when the adapter performs its exact POLLIN wait. */
-ssize_t wf_completion_test_getdirentries64(
-    int descriptor,
-    void *buffer,
-    size_t count,
-    int64_t *position
-) {
-    (void)descriptor;
+/* Deterministic enumeration answers for whichever family this build has:
+ * interruption, readiness refusal, then one successful byte. The pipe
+ * descriptor used by the test is already readable when the adapter performs
+ * its exact POLLIN wait.
+ *
+ * One body serves both families; only the signature differs, because Darwin's
+ * facility carries a base-position cell and Linux's keeps the whole cursor in
+ * the descriptor. The facility this stands in for is selected by the same
+ * macro the file adapter uses, so the adapter is exercised exactly as shipped
+ * with only the host call replaced. */
+static ssize_t wf_completion_test_directory_batch(void *buffer, size_t count) {
     wf_directory_host_calls += 1;
     if (wf_directory_host_calls == 1) {
         errno = EINTR;
@@ -72,14 +73,40 @@ ssize_t wf_completion_test_getdirentries64(
         errno = EAGAIN;
         return -1;
     }
-    if (buffer == NULL || count == 0 || position == NULL) {
+    if (buffer == NULL || count == 0) {
         errno = EINVAL;
         return -1;
     }
     ((unsigned char *)buffer)[0] = 'd';
-    *position = 17;
     return 1;
 }
+
+#if defined(__APPLE__)
+ssize_t wf_completion_test_getdirentries64(
+    int descriptor,
+    void *buffer,
+    size_t count,
+    int64_t *position
+) {
+    ssize_t reported;
+    (void)descriptor;
+    if (position == NULL) {
+        wf_directory_host_calls += 1;
+        errno = EINVAL;
+        return -1;
+    }
+    reported = wf_completion_test_directory_batch(buffer, count);
+    if (reported > 0) {
+        *position = 17;
+    }
+    return reported;
+}
+#else
+ssize_t wf_completion_test_getdents64(int descriptor, void *buffer, size_t count) {
+    (void)descriptor;
+    return wf_completion_test_directory_batch(buffer, count);
+}
+#endif
 #endif
 
 int wf_completion_test_poll(
@@ -87,7 +114,7 @@ int wf_completion_test_poll(
     nfds_t count,
     int timeout
 ) {
-#if defined(__APPLE__)
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     if (wf_directory_host_calls != 0) {
         wf_directory_poll_calls += 1;
         wf_directory_poll_descriptor = count == 1 ? descriptors[0].fd : -1;
@@ -2553,8 +2580,27 @@ static int test_native_contract_inventory(void) {
     return 0;
 }
 
-static int test_darwin_directory_progress_is_internal(void) {
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+/* The base-position cell after one progressing attempt: the value the Darwin
+ * stub above writes, and the caller's own zero on a family whose facility
+ * takes no such cell. */
+static int64_t wf_expected_position(void) {
 #if defined(__APPLE__)
+    return 17;
+#else
+    return 0;
+#endif
+}
+#endif
+
+/* One admitted enumeration is one progress-producing host attempt, whichever
+ * family supplies the facility: interruption repeats the attempt, readiness
+ * refusal waits for exactly one POLLIN on the enumerated descriptor and
+ * repeats it, and only progress crosses the ABI. The Darwin facility's
+ * base-position cell is written on the progressing attempt; Linux's facility
+ * has none, and this case asserts the cell is left as the caller gave it. */
+static int test_directory_progress_is_internal(void) {
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     int descriptors[2];
     wf_completion_token token;
     unsigned char readiness = 'r';
@@ -2583,7 +2629,7 @@ static int test_darwin_directory_progress_is_internal(void) {
     CHECK(wf_directory_poll_events == POLLIN);
     CHECK(wf_directory_poll_timeout == -1);
     CHECK(byte == 'd');
-    CHECK(position == 17);
+    CHECK(position == wf_expected_position());
 
     wf_directory_host_calls = 0;
     wf_directory_poll_calls = 0;
@@ -2603,7 +2649,7 @@ static int test_darwin_directory_progress_is_internal(void) {
     CHECK(wf_directory_host_calls == 3);
     CHECK(wf_directory_poll_calls == 1);
     CHECK(byte == 'd');
-    CHECK(position == 17);
+    CHECK(position == wf_expected_position());
     CHECK(close(descriptors[0]) == 0);
     CHECK(close(descriptors[1]) == 0);
 #endif
@@ -2705,7 +2751,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());
     RUN_TEST(test_native_contract_inventory());
-    RUN_TEST(test_darwin_directory_progress_is_internal());
+    RUN_TEST(test_directory_progress_is_internal());
     RUN_TEST(benchmark_core_roundtrip(&roundtrip_ns));
 #undef RUN_TEST
     printf(
