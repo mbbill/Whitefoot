@@ -109,6 +109,13 @@ core's own and the Linux target's external `epoll` wait — name that order
 explicitly at their increment and recheck, because the fast path is only
 correct while both do.
 
+*The number that kept it.* Publication cost 55 ns an operation with no helper
+and 1,467 with three — it does no more work in the second case, it contends.
+Every publication took this process-wide lock, every submission took it again
+and every consumption a third time, so one program crossed one global mutex
+three times per operation, and on Darwin a contended `pthread_mutex` is a
+system call.
+
 ### A drain that knows when not to look, and one that is asked by name
 
 Two changes, neither of which alters what a sweep does when it runs:
@@ -129,12 +136,23 @@ drain could try that slot before sweeping, which turned the common case — one
 event, taken by the next drain — into a single compare-exchange. It is under
 "What was tried and removed" below, with the bound it broke.
 
+*The number that kept them.* With no helper the whole path cost about 450 ns
+an operation and 222 of those were the drain: a sweep has no idea where an
+event is, so it compared and exchanged across a sixteen-slot window of a
+sixty-four slot array, and consecutive drains took disjoint windows — 51.86
+slot probes to find one event.
+
 ### One kilobyte less inside the queue lock
 
 A queue entry holds an open's path bytes, and moving an entry out copied the
 whole record — a kilobyte of path storage for every read and write as well,
 inside the one lock every submission and every execution has to take. Only an
 open needs its path, and now only an open pays for it.
+
+*The number that kept it.* Submission cost 84 ns an operation with no helper
+and 1,280 with three, inside the one lock every submission and every execution
+has to take. The copy is a fixed part of that, paid by reads and writes that
+have no path at all.
 
 ### The wake goes outside the lock, and only to a sleeper
 
@@ -144,6 +162,11 @@ rather than a guess — and the submission issues the signal after unlocking. A
 helper that woke on its own in between only makes the signal spurious, which
 its predicate loop already tolerates.
 
+*The number that kept it.* One wake was issued per operation — `helper wakes
+issued 1.00` — and each was signalled while the signaller still held the queue
+lock, so the woken helper's first act was to block on it. Measured beside a
+wake latency of 10,791 ns an operation warm and 38,533 cold.
+
 ### A bounded look before a joining scheduler sleeps
 
 Announcing sleep and being woken is two system calls, paid by the waiter and
@@ -152,6 +175,10 @@ measured operations that wait, and those waits end while the joining thread
 has nothing else to do, so it reads the ready-event count for a bounded window
 before announcing sleep. It is a bound on wasted CPU, not a latency target: a
 wait longer than the window still ends in a sleep.
+
+*The number that kept it.* Parks cost 1,779 ns an operation amortised warm and
+6,158 cold, at 0.15 and 0.08 parks per operation — the joining scheduler
+announced sleep and was woken again for about one operation in seven.
 
 ### The helper policy: none until something waits, and bounded by operations
 
@@ -171,6 +198,13 @@ CPU, so what bounds useful I/O concurrency is how many operations a program
 can have outstanding — the bridge's operation bound. Sizing by cores capped
 the three-core runner at three outstanding reads for a program that states
 eight, which is a device left idle rather than a machine kept busy.
+
+*The number that kept it.* On the after run the demand-driven default is
+within two per cent of its own pinned eight-helper line on both cold tables —
+591.82 ms against 585.05 at 64 KiB, 489.75 against 478.59 at 4 KiB — where in
+batch 0092 the default trailed `C.wide8.h8` by 1.30 and 1.39 times. The policy
+is no longer what limits the cold rows. Warm, it grows no pool at all, which
+is the other half of the same rule.
 
 ### A positioned read the submitting thread would run itself is not submitted
 
@@ -205,6 +239,16 @@ The measurement keeps running while the policy is declining, because every
 direct execution is timed by the same adapter. A program whose reads start
 waiting is submitting again within a few operations, which is what keeps a
 cold program from being demoted into its own sequential build.
+
+*The number that kept it.* This is the change that decides the warm tables,
+and `C.wide8.h0` is the control for it: the same program, same width, on the
+completion path with the pool pinned off — and therefore never declined,
+because a written `WF_IO_HELPERS` pins the route as well as the count. Warm at
+4 KiB it costs 40.57 ms against `S.wide8`'s 32.65, which is the 24 per cent
+the machinery charges an operation with nothing to overlap. With the policy
+free to decline, the same program costs 33.57. It removes 17 of those 24
+points, and the cold tables show it does not remove the overlap: the same
+binary is 2.84 times faster than `S.wide8` on the cold 4 KiB table.
 
 ## What was tried and removed
 

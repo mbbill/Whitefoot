@@ -4,12 +4,15 @@ Status: measured at the program level on 2026-08-27, on macOS and on Linux
 with io_uring, re-measured the same day with the base commit and the branch
 interleaved in one plan on a quiet host, then measured on real Linux hardware
 and on a clean macOS host through the repository's own continuous integration,
-and finally against a read-dominated workload whose files are opened once and
-whose reads are taken past the page cache.
+then against a read-dominated workload whose files are opened once and
+whose reads are taken past the page cache, and finally re-measured on 2026-08-28
+after the Darwin helper path's per-operation cost was rebuilt.
 
-Read the batch-0092 section first: it is the only workload here whose
-operations genuinely wait, and it is where the design's own question is
-answered. Read the batch-0090 section for the Linux-hardware result that the
+Read the batch-0096 section last and the batch-0092 section first. Batch 0092
+is the only workload here whose operations genuinely wait, and it is where the
+design's own question is answered; batch 0096 is the same workload re-measured
+after the Darwin adapter was changed, and it is the current reading of the
+standing bar. Read the batch-0090 section for the Linux-hardware result that the
 container's headline ratio does not reproduce, the batch-0086 one for absolute
 values on the many-files workload, and the batch-0084 one for the findings it
 established; everything before that date was a C-level measurement of the
@@ -41,7 +44,10 @@ Batch 0084's and 0086's "overlap is worth about two times on a program that
 exposes width" was a macOS reading taken on a machine whose endpoint-security
 stack charges 116 us for an `openat`; batch 0092 re-ran that workload on an
 ordinary macOS system and found the completion build 1.20 times *slower* than
-its own sequential build. Neither retirement touches what those sections
+its own sequential build. Batch 0096 narrowed that 1.20 to 1.02 by removing
+per-operation cost from the Darwin adapter, which changes the size of the gap
+and not its sign: on this workload the completion build is still not faster
+than the sequential one. Neither retirement touches what those sections
 measured; both change what may be concluded from it.
 
 ## Program-level results, batch 0084 (2026-08-27)
