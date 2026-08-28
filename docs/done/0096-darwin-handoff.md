@@ -102,7 +102,8 @@ completion path touches.
 it is system calls.** That figure is the `warm 4K h3` column's own stages —
 claim 70, submit 1,280, publish 1,467, drain 302, consume 101 and 1,779 of
 amortised park, 4,999 ns in all — beside a 1.9 us host call; the `cold 64K h8`
-column is a different sum and is read separately below. Submission rose from 84 ns to 1,280 and publication from 55 to
+column is a different sum and is read separately below. Submission rose from
+84 ns to 1,280 and publication from 55 to
 1,467 — neither does more work than before; both are contending. Every
 publication took a process-wide wake lock, every submission took it again, and
 every consumption a third time, so a program crossed one global mutex three
@@ -832,14 +833,15 @@ by this batch.
 - **The two cold rows are read and missed, and why is not measured.** On the
   one macOS draw whose uncached label its probe confirms at both ends of both
   cold tables — run 33172323795 at the repair commit — they stand at 1.477 and
-  1.557 times `N.pool8` against a bar of 1.10. What this batch does not have is an
-  attribution of the gap on that draw: the stage table has a column for one of
-  the two rows only, `cold 64K h8`, and it was taken on the earlier runtime.
+  1.557 times `N.pool8` against a bar of 1.10. What this batch does not have
+  is an attribution of the gap on that draw: the stage table has a column for
+  one of the two rows only, `cold 64K h8`, and it was taken on the earlier runtime.
   There the adapter's own stages sum to 14.3 us an operation — 8.2 us of it
   before the amortised park — against a 168 us host call, with a wake latency
   beside them, enqueue to a helper being scheduled to run the work, of
   38.5 us. On a three-core runner eight helpers is more threads than cores, so
-  that latency is the host scheduler rather than the adapter. There is no cold 4 KiB column, so the same reading is inferred for
+  that latency is the host scheduler rather than the adapter. There is no cold
+  4 KiB column, so the same reading is inferred for
   that row rather than measured, and neither column is on the draw the grade
   now comes from; closing either would need its own instrumented run.
 - **Windows.** The IOCP adapter is untouched. `completion-windows` links and
