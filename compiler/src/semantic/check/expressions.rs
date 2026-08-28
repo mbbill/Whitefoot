@@ -360,9 +360,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<String, CheckStop> {
         Ok(match mode {
             CheckedMode::Own => "own".to_owned(),
-            CheckedMode::Shared(region) => format!("&{}", self.declaration_spelling(region)?),
-            CheckedMode::Unique(region) => format!("&uniq {}", self.declaration_spelling(region)?),
+            CheckedMode::Shared(region) => format!("&{}", self.region_spelling(region)),
+            CheckedMode::Unique(region) => format!("&uniq {}", self.region_spelling(region)),
         })
+    }
+
+    /// One region as the source spells it, or its dense identity when the
+    /// declaration is not reachable.
+    ///
+    /// A rendering is presentation: a region a diagnostic cannot name must not
+    /// turn a source rejection into a compiler failure.
+    pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
+        self.declaration_spelling(region)
+            .unwrap_or_else(|_| format!("'region#{}", region.index()))
     }
 
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
@@ -400,8 +410,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
             CheckedType::Slice { region, element } => format!(
-                "slice<'region#{}, {}>",
-                region.index(),
+                "slice<{}, {}>",
+                self.region_spelling(region),
                 self.checked_type_name(element.ty())?
             ),
             CheckedType::Buffer { element } => {
