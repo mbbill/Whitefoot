@@ -605,10 +605,28 @@ int wf_file_adapter_init(
     }
     /* Cleared before anything else is written, so that a record left half
      * built by a failure below is never mistaken for a usable one, and set
-     * again only when every field is in place.  This is also why the fields
-     * are assigned one by one rather than with a `memset`: a bulk write over
-     * `initialized` would be exactly the unsynchronized write the atomic
-     * exists to exclude, since a direct execution may be reading it now. */
+     * again only when every field is in place.
+     *
+     * That pair of stores is what makes the record safe to read, and it is the
+     * only thing that does.  The field-by-field assignment below is not:
+     * `atomic_init` is a plain write by definition, and adjacent plain writes
+     * may be merged.  At -O2 on aarch64 clang merges these -- one 16-byte
+     * store covering `mean_execute_ns` and `execute_ticks`, two more covering
+     * the four statistics counters -- so a `memset` here would differ in
+     * nothing that matters.  What excludes the race is that no reader touches
+     * any of these fields without first passing
+     * `wf_file_adapter_initialized`, whose acquire load pairs with the release
+     * store this function ends on.
+     *
+     * A reader can therefore see one of these writes only if the record it
+     * already holds is initialized *again* underneath it, which this adapter's
+     * contract does not allow and the bridge never does: it initializes once,
+     * under a `pthread_once`, with the flag still zero.  A probe that breaks
+     * that contract on purpose -- readers running across repeated
+     * init/shutdown cycles -- does draw a ThreadSanitizer report, between
+     * `atomic_init(&adapter->mean_execute_ns, 0)` below and the acquire load
+     * of that same field in `wf_file_adapter_wait_verdict`.  What that report
+     * names is the re-initialization, not this line. */
     atomic_store_explicit(&adapter->initialized, 0, memory_order_release);
     adapter->runtime = runtime;
     adapter->queue = queue_storage;
@@ -933,6 +951,22 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
             first_error = error;
         }
     }
+    /* The record stops answering "usable" before the lock behind that answer
+     * is destroyed, not after.
+     *
+     * Every reader of this adapter passes `wf_file_adapter_initialized` first
+     * and then takes `queue_lock` -- `wf_file_adapter_queued` does, and so
+     * does the decline check `wf_file_adapter_transfer_runs_on_caller` through
+     * it.  Storing zero after the destroys would leave a window in which that
+     * guard still answers yes and the mutex it guards no longer exists, so a
+     * reader admitted through it locks destroyed storage.  Storing zero first
+     * closes the window to the ordinary one this function's precondition
+     * already covers: a reader that passed the guard before this store.
+     *
+     * It is stored whatever the joins and destroys reported.  A record whose
+     * condition variable and mutex have been destroyed is not usable, and
+     * saying so is not conditional on the teardown having been clean. */
+    atomic_store_explicit(&adapter->initialized, 0, memory_order_release);
     {
         int error = pthread_cond_destroy(&adapter->queue_available);
         if (first_error == 0 && error != 0) {
@@ -944,9 +978,6 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
         if (first_error == 0 && error != 0) {
             first_error = error;
         }
-    }
-    if (first_error == 0) {
-        atomic_store_explicit(&adapter->initialized, 0, memory_order_release);
     }
     return first_error;
 }

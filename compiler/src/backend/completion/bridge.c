@@ -309,10 +309,26 @@ static int wf_bridge_spin_for_completion(void) {
     uint64_t deadline;
     unsigned turn = 0;
     /* The bound on this wait is a clock reading, so a clock this thread cannot
-     * read leaves no bound at all: every later sample answers zero, the
-     * deadline is never reached, and the join spins forever instead of
-     * parking.  A failed clock therefore ends the spin, which costs at worst
-     * a park this thread was about to make anyway. */
+     * read leaves no bound at all: every later sample answers zero and the
+     * deadline is never reached.  What an unbounded spin then costs is a
+     * property of the route the completion is coming from, and the two routes
+     * differ.
+     *
+     * On the native ring it is the whole run.  A submitted read becomes a
+     * ready event only when `wf_bridge_progress` reaps the completion queue,
+     * and this spin never calls it, so the loop's other exit cannot fire on
+     * its own and the join never ends.  Measured with `clock_gettime` forced
+     * to fail: the Linux io_uring route makes no progress at all, while the
+     * guarded build finishes the same work in milliseconds.
+     *
+     * On the POSIX adapter the guard is defence rather than rescue.  A helper
+     * thread publishes the completion, so the ready-event count becomes
+     * nonzero without this thread doing anything and the loop leaves by its
+     * other exit.  Measured the same way on macOS: the unguarded build
+     * finishes, at the same wall time as the guarded one.
+     *
+     * A failed clock therefore ends the spin, which costs at worst a park this
+     * thread was about to make anyway. */
     if (started == 0) {
         return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
     }

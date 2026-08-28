@@ -442,21 +442,29 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * With zero helpers, the calling thread performs the bounded typed work one
  * entry at a time until the accepted queue is empty.
  *
- * Precondition: no thread is inside `wf_file_adapter_submit`, and none will
- * enter it, when this is called.  That is not a caution, it is the design.  A
- * submission announces its queue entry *after* releasing the queue lock, on
+ * Precondition: no thread is inside `wf_file_adapter_submit` or
+ * `wf_file_adapter_transfer_runs_on_caller`, and none will enter either, when
+ * this is called.  That is not a caution, it is the design.
+ *
+ * A submission announces its queue entry *after* releasing the queue lock, on
  * purpose -- signalling under the lock wakes a helper whose next act is to
  * block on the same lock, which is a system call spent to start a thread and
  * immediately stall it -- so between that release and that signal the
  * submitter holds no lock, and a shutdown running in the window destroys the
- * condition variable the submitter is about to signal.
+ * condition variable the submitter is about to signal.  The decline check is
+ * named beside it because it is the other entry a delivered program reaches
+ * without holding anything: it asks `wf_file_adapter_queued`, which takes the
+ * queue lock, so a shutdown running in its window destroys the mutex it is
+ * about to take.  Shutdown clears the record's `initialized` flag before
+ * destroying either object, which is what bounds both windows to a caller
+ * that had already passed the flag.
  *
- * Closing the window would mean either signalling under the lock, which is the
- * cost this shape exists to remove, or a second lock on the submission path
- * to serialize against a shutdown that happens once per process.  Neither is
- * worth it for an overlap no caller has: the bridge's only shutdown is its
- * `atexit` handler, and a program still submitting operations while the
- * process exits has no defined completion for them anyway. */
+ * Closing them completely would mean either signalling under the lock, which
+ * is the cost this shape exists to remove, or a second lock on the submission
+ * path to serialize against a shutdown that happens once per process.
+ * Neither is worth it for an overlap no caller has: the bridge's only
+ * shutdown is its `atexit` handler, and a program still submitting operations
+ * while the process exits has no defined completion for them anyway. */
 int wf_file_adapter_shutdown(wf_file_adapter *adapter);
 
 wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(
