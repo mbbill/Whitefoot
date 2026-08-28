@@ -224,6 +224,50 @@ outline. The census now accounts for it on the same terms as
 `wf_resource_abort` — `noreturn`, on no success path — and asserts the
 `noreturn` declaration rather than arguing it.
 
+**The offset-fault case assumed the memory below a stack was empty, and once
+in ten Linux runs it was not.**
+`only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` faults at
+chosen distances below the floor's entry stack and requires the two in-band
+rows to end in the floor's abort with the stack record, and the three
+past-the-stride rows — four pages, 64 KiB, 16 MiB — to keep `SIGSEGV` with no
+record. Nine Linux gates passed it; the gate of `7ec7bc1a`
+([33137459268](https://github.com/mbbill/Whitefoot/actions/runs/33137459268))
+did not: the four-page row exited 0 — no signal, no record. Nothing faulted,
+so the floor never ran; the write four pages below the stack found a writable
+page. The fixture had assumed the memory below a stack is empty, and the
+floor's own layout says otherwise: `wf__floor_attach_thread` maps a 64 KiB
+read-write alternate signal stack *after* the entry stack, and the kernel's
+top-down search drops it into the first gap below the stack block.
+`/proc/self/maps` from the same fixture linked against the same floor, in this
+project's Linux container (glibc 2.39, the runner's), shows it:
+
+```text
+f1d709640000-f1d709650000 rw-p    the entry thread's alternate signal stack
+f1d709650000-f1d709660000 ---p    the guard glibc puts under the stack
+f1d709660000-f1d749660000 rw-p    the 1 GiB entry stack
+```
+
+The container never lost the row because its guard is 64 KiB, so four pages
+below the stack is still inside the guard; x86-64 glibc's guard is one page,
+so there the write lands in the alternate stack in every run where the kernel
+has placed it under the stack rather than in a hole higher up, which the
+runner's ten gates that reached the row did once. That is not a floor defect
+— the floor classifies faults, and no fault happened — and not a host limit
+to declare, because the premise was never the host's to keep. The fixture now
+keeps it: the fault comes from a thread the fixture creates on a stack it
+allocates at the top of one reservation, attached to the floor exactly as a
+pool lane is, and the thread unmaps the 16 MiB below its stack after
+attaching and reading its bounds — both map memory, and the same search would
+put either into a fresh hole — and just before it writes. The pad is unmapped
+rather than left `PROT_NONE` because Darwin reports a protected page as
+`SIGBUS` and an unmapped one as `SIGSEGV`, and the rows assert the host's own
+signal for a pointer into nothing. The assertions are byte-for-byte what they
+were. Verified by running the shipped fixture text against the shipped floor:
+in the Linux container, twenty of twenty runs on every row — abort and record
+at half a page and one page below, `SIGSEGV` and no record at four pages,
+64 KiB and 16 MiB; on this machine, whose page is 16 KiB, the same at 8 KiB
+and 16 KiB against 64 KiB and 16 MiB.
+
 ### Host limits, now declared
 
 Each of these is a case that cannot be reached on a host, stated as a
@@ -271,7 +315,8 @@ reported, and the job's value is everything it checks before reaching it.
 ### The runs this record stands on
 
 Both workflows run on every push. These are the runs of `196525e7`, the last
-commit in this batch that changes code:
+commit of the batch's first Linux picture that changes code, and of every
+code-changing commit after it, oldest first:
 
 | run | job | host | outcome |
 |---|---|---|---|
@@ -279,6 +324,11 @@ commit in this batch that changes code:
 | | `gate-macos` | macos-14, arm64, 3 CPUs, Apple clang 15.0.0, stable 1.96.0 | green |
 | [io-hosts 33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `completion-linux` | ubuntu-24.04 | green |
 | | `bench-linux` | ubuntu-24.04, AMD EPYC 7763, `/dev/sda1` ext4 | green: N.direct 101.57, S.wide 123.15, C.wide.default 130.73 milliseconds, so C.wide 6 percent slower than S.wide. An earlier revision of this row put 119.31, 141.91 and 147.85 here; those are the numbers of [io-hosts 33131919667](https://github.com/mbbill/Whitefoot/actions/runs/33131919667) on `e7720a0a`, an EPYC 9V74 runner, and the table under *The Linux-hardware bench* now names every run beside its own numbers |
+| | `completion-windows` | windows-2025 | green |
+| [gate 33137459268](https://github.com/mbbill/Whitefoot/actions/runs/33137459268) on `7ec7bc1a` | `gate-linux` | ubuntu-24.04, x86-64, 4 CPUs | red inside the library suite, where "red only on the five cases" did not hold: 1319 library cases pass and `only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` fails on its four-page row with exit 0 — the finding under *Tests that were measuring the host* — so neither `tests/programs.rs` nor the conformance run was reached; the library suite took 980 s |
+| | `gate-macos` | macos-14 | green |
+| [io-hosts 33137459242](https://github.com/mbbill/Whitefoot/actions/runs/33137459242) on `7ec7bc1a` | `completion-linux` | ubuntu-24.04 | green |
+| | `bench-linux` | ubuntu-24.04, AMD EPYC 9V74, `/dev/sda1` ext4 | green: N.direct 118.79, S.wide 140.86, C.wide.default 148.71 milliseconds, C.wide 5.6 percent slower than S.wide |
 | | `completion-windows` | windows-2025 | green |
 
 `make check` on the maintainer's machine — macOS on arm64, ten cores, Apple
@@ -338,7 +388,7 @@ C.wide.default      149.47    115.92    118.14
 ```
 
 `bench-linux` runs on every push, and each run draws its own runner, so the
-branch has eleven readings on three CPU models. Every one of them, beside the
+branch has twelve readings on three CPU models. Every one of them, beside the
 commit it ran on, the host and disk the job itself reported, and the three
 lines the finding turns on, medians in milliseconds:
 
@@ -355,8 +405,9 @@ lines the finding turns on, medians in milliseconds:
 | [33133174447](https://github.com/mbbill/Whitefoot/actions/runs/33133174447) | `6fc4c71b` | EPYC 9V74, `sda1` | 119.41 | 141.73 | 147.00 | +3.7% |
 | [33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `196525e7` | EPYC 7763, `sda1` | 101.57 | 123.15 | 130.73 | +6.2% |
 | [33135242838](https://github.com/mbbill/Whitefoot/actions/runs/33135242838) | `db7d997b` | Xeon Platinum 8573C, `nvme0n1p1` | 77.25 | 95.32 | 101.49 | +6.5% |
+| [33137459242](https://github.com/mbbill/Whitefoot/actions/runs/33137459242) | `7ec7bc1a` | EPYC 9V74, `sda1` | 118.79 | 140.86 | 148.71 | +5.6% |
 
-The completion build loses to the sequential build on all eleven, by 3 to 7
+The completion build loses to the sequential build on all twelve, by 3 to 7
 percent, on three CPU models and both disk kinds. The io_uring reading is not
 as portable, and the tabulated runners are the ones on which it holds: on the
 EPYC 9V74 the ring equals the loop at every depth; on the Xeon it is within 8
@@ -476,6 +527,14 @@ sentence, measured.
     job — 35 minutes of `make check` and 17 more of diagnosis — and now that
     the only red left is the conformance gap, `make check`'s own output names
     it.
+11. **The offset-fault case was neither excused nor loosened; its fixture now
+    owns the premise it had been borrowing.** A `#[cfg]` would have said the
+    band's boundary is unobservable on Linux, which is false, and a
+    conditional assertion — if it faulted, then — would have let the row pass
+    while testing nothing. The row's claim is about where the floor draws its
+    band, and that claim needs a fault at a known address; a fixture that
+    makes the memory below its own stack empty is the only way to have one on
+    every layout.
 
 ## What this batch did not do
 
@@ -498,3 +557,34 @@ sentence, measured.
   whose five attempts each pay for their own link, and the join-less
   comparison in `backend/tests/parallel.rs`, which asks twelve runs to
   disagree. A host slower than any measured here can still lose either.
+- It did not touch the five cases that own most of the library suite's time
+  on the four-CPU runner, where the suite takes 980 s against about 90 s on
+  this machine. This is the input to a follow-up on test economy, so the next
+  batch does not rediscover it. Measured on the gate of `7ec7bc1a` as the gap
+  between a case's result line and the one before it — under four test
+  threads that is a lower bound on the case's own time, not the time itself:
+  `parallel::the_repeat_reports_a_lowering_whose_joins_were_removed`, 412 s,
+  one link and twelve process runs of a join-less lowering asked to disagree
+  with the reference;
+  `trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record`,
+  210 s, forty runs of two threads racing to trap;
+  `trap_latch::a_single_false_claim_reports_the_same_bytes_at_every_worker_count`,
+  138 s, four worker counts by four runs;
+  `trap_latch::the_sequential_schedule_names_one_claim_every_run`, 42 s, two
+  sequential settings by eight runs. Those four are about 13 of the suite's
+  16 minutes. The fifth,
+  `exhaustion::a_frame_larger_than_the_guard_region_is_still_reported`, links
+  and runs a recursion into a 1 GiB stack twice, probed and ablated; it shows
+  no gap of its own because other cases finish around it, and it completed
+  103 s after the suite began among the first cases started, so a minute or
+  more of that is its own. Every one of the five samples schedules or
+  exhausts a stack on purpose; what a follow-up has to decide is how many
+  samples each purpose needs on a slow host, not whether to keep them.
+- It did not move the floor's alternate signal stack. The map above shows it
+  mapped read-write directly under the entry stack's guard, and on x86-64
+  glibc that guard is one page. Generated frames probe their pages and cannot
+  step over it, so nothing this batch measured is unsafe; a runtime or libc
+  frame larger than a page, running near the bottom of the stack, would write
+  into the alternate stack without a fault. Mapping the alternate stack
+  before the entry stack, or with a guard of its own, is a small change a
+  follow-up should weigh with that picture in front of it.
