@@ -1146,6 +1146,199 @@ happen to be well matched on the warm and many-files halves — `N.direct` warm
 58.10 — and not matched on the cold halves, where this draw is faster on every
 line including the native baselines.
 
+### Every io-bench draw on this branch
+
+Three rounds of this record miscounted its own draws — "the only", "four of",
+"three of the five" — every time because a run had been left out of a count
+taken in prose. This table is the repair, and the prose below no longer
+counts: it cites rows.
+
+It is not a selection. It is every `io-bench` run on
+`batch/0096-darwin-handoff`, enumerated with
+
+```text
+gh run list --branch batch/0096-darwin-handoff --workflow io-bench.yml \
+  --limit 50 --json databaseId,headSha,conclusion,createdAt
+```
+
+which answers nine, with every artifact of all nine downloaded and parsed.
+Nine runs against ten tables apiece — `bench-linux` (many files),
+`bench-linux-read` (uncached and warm at 64 KiB and 4 KiB), and
+`bench-macos-read`, whose artifact carries a many-files half as well as the
+same four read tables — would be ninety rows; two runs were cancelled part way
+and produced eight and seven tables instead of ten, so there are **85 rows,
+one per (run, job, table)**. The cancelled runs' completed tables are kept and
+their run ids marked `*`: a cancelled `bench-linux-read` job does not make its
+`bench-macos-read` sibling's tables less real, and dropping them is exactly the
+omission this table exists to prevent.
+
+`S.wide8` is the eight-wide program compiled `--no-overlap`; `C.wide8` is
+`C.wide8.default`, the same source on the completion path with the shipped
+helper policy; both are medians in milliseconds over that table's recorded
+interleaved passes. `C/S` is the ratio the warm and many-files bars read,
+`C/N8` the one the cold bar reads, and `fastN`/`C/fN` name the *fastest* native
+line in that table and compare against it — so a `C/fN` below 1, and nothing
+else, is a row where the Whitefoot program beat every native line. `label` is
+that table's own cache probe before and after it, `conf` confirmed and `ref`
+refused. `proc` is `E` for AMD EPYC, `X` for Intel Xeon Platinum, `M1v` for
+Apple M1 (Virtual); every Linux runner in the table reports 4 CPUs and every
+macOS runner 3. `load` is the one-minute load average the job read at its
+start — the `bench-linux` host record prints none.
+
+Ratios are comparable within a row. Milliseconds are not comparable across
+rows, because every row is a separate draw of a hosted runner label.
+
+```text
+run          commit   proc   disk   load label      S.wide8  C.wide8    C/S  N.pool8   C/N8 fastN   fastN_ms   C/fN
+
+-- bench-linux-read, uncached 64 KiB  (9 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/ref   1766.60  1224.38 0.6931  1281.05 0.9558 pool2    1105.50 1.1075
+33150416900* 34ac1ae2 E7763  sda1   0.38 conf/ref   1991.67  1244.17 0.6247  1277.80 0.9737 pool2    1142.59 1.0889
+33151353052  4a748d6e E7763  sda1   0.30 conf/ref   1956.06  1263.14 0.6458  1270.42 0.9943 pool2    1153.59 1.0950
+33153717709  96bb4778 E7763  sda1   1.95 conf/ref   2180.75  1281.59 0.5877  1272.73 1.0070 pool2    1186.10 1.0805
+33155045849* 135abdf2 E9V74  nvme   0.33 conf/ref   2127.72  1364.23 0.6412  1341.81 1.0167 pool4    1226.53 1.1123
+33155821397  266acf4f X8573C nvme   0.48 conf/ref   4628.62  3413.10 0.7374  1348.85 2.5304 pool8    1348.85 2.5304
+33158144391  72e98cba E9V45  nvme   0.97 conf/ref   2269.59  1451.01 0.6393  1224.54 1.1849 pool8    1224.54 1.1849
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/ref   1587.44  1213.14 0.7642  1275.99 0.9507 pool2    1124.36 1.0790
+33172323795  261070c8 X8370C sda1   0.56 conf/ref   1863.93  1235.62 0.6629  1275.88 0.9684 pool2    1115.67 1.1075
+
+-- bench-linux-read, uncached 4 KiB  (8 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/conf  3075.32  1455.21 0.4732  1488.00 0.9780 uring32  1456.44 0.9992
+33150416900* 34ac1ae2 E7763  sda1   0.38 conf/conf  3747.70  1470.94 0.3925  1474.69 0.9975 uring32  1466.31 1.0032
+33151353052  4a748d6e E7763  sda1   0.30 conf/conf  4496.24  1482.81 0.3298  1486.45 0.9976 uring32  1458.48 1.0167
+33153717709  96bb4778 E7763  sda1   1.95 conf/conf  4227.07  1479.87 0.3501  1479.56 1.0002 uring32  1469.81 1.0068
+33155821397  266acf4f X8573C nvme   0.48 conf/conf  8973.99  1514.79 0.1688  1435.03 1.0556 uring32  1268.13 1.1945
+33158144391  72e98cba E9V45  nvme   0.97 conf/conf  5085.89  1249.62 0.2457  1474.52 0.8475 uring32  1457.10 0.8576
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/conf  4108.74  1216.03 0.2960  1482.48 0.8203 uring32  1448.85 0.8393
+33172323795  261070c8 X8370C sda1   0.56 conf/conf  3469.10  1465.26 0.4224  1481.78 0.9889 uring32  1441.72 1.0163
+
+-- bench-linux-read, warm 64 KiB  (7 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/conf   343.24   343.12 0.9997   100.94 3.3992 pool4      97.76 3.5098
+33151353052  4a748d6e E7763  sda1   0.30 conf/conf   285.81   289.01 1.0112    81.85 3.5310 pool4      78.29 3.6915
+33153717709  96bb4778 E7763  sda1   1.95 conf/conf   289.92   285.27 0.9840    80.56 3.5411 pool8      80.56 3.5411
+33155821397  266acf4f X8573C nvme   0.48 conf/conf   284.31   291.74 1.0261    80.72 3.6142 pool4      79.77 3.6573
+33158144391  72e98cba E9V45  nvme   0.97 conf/conf   227.61   229.38 1.0078    74.34 3.0856 pool4      72.42 3.1674
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/conf   280.52   283.30 1.0099    81.55 3.4739 pool8      81.55 3.4739
+33172323795  261070c8 X8370C sda1   0.56 conf/conf   327.23   332.08 1.0148   103.01 3.2238 pool4      98.95 3.3560
+
+-- bench-linux-read, warm 4 KiB  (7 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/conf    75.31    69.82 0.9271    13.54 5.1566 pool4      10.94 6.3821
+33151353052  4a748d6e E7763  sda1   0.30 conf/conf    81.02    81.05 1.0004    15.25 5.3148 pool4      12.35 6.5628
+33153717709  96bb4778 E7763  sda1   1.95 conf/conf    83.28    78.78 0.9460    15.49 5.0859 pool4      12.09 6.5161
+33155821397  266acf4f X8573C nvme   0.48 conf/conf    50.89    53.69 1.0550     8.51 6.3090 pool4       8.16 6.5797
+33158144391  72e98cba E9V45  nvme   0.97 conf/conf    61.51    63.98 1.0402    11.26 5.6821 pool4      10.63 6.0188
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/conf    72.82    72.00 0.9887    14.88 4.8387 pool4      12.44 5.7878
+33172323795  261070c8 X8370C sda1   0.56 conf/conf    65.87    65.86 0.9998    12.72 5.1777 pool4      11.18 5.8909
+
+-- bench-linux, many files  (9 rows)
+33149563172  caa66bad E7763  sda1      - -           123.91   131.09 1.0579    33.66 3.8945 pool4      31.09 4.2165
+33150416900* 34ac1ae2 E9V74  sda1      - -           142.25   147.70 1.0383    40.75 3.6245 pool4      34.21 4.3175
+33151353052  4a748d6e E7763  sda1      - -           122.60   131.14 1.0697    35.42 3.7024 pool4      31.09 4.2181
+33153717709  96bb4778 E7763  sda1      - -           122.83   130.17 1.0598    34.04 3.8240 pool4      30.92 4.2099
+33155045849* 135abdf2 E7763  sda1      - -           121.93   128.64 1.0550    34.36 3.7439 pool4      30.84 4.1712
+33155821397  266acf4f E7763  sda1      - -           122.49   129.55 1.0576    35.43 3.6565 pool4      30.84 4.2007
+33158144391  72e98cba E7763  sda1      - -           121.61   128.91 1.0600    32.65 3.9482 pool4      30.35 4.2474
+33165141309  a06c53f9 E7763  sda1      - -           120.94   128.73 1.0644    34.67 3.7130 pool4      29.76 4.3256
+33172323795  261070c8 E9V45  nvme      - -            96.04   100.85 1.0501    26.92 3.7463 pool4      24.18 4.1708
+
+-- bench-macos-read, uncached 64 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 ref/conf   1615.36   938.79 0.5812   433.57 2.1653 pool8     433.57 2.1653
+33150416900* 34ac1ae2 M1v    disk3 13.88 ref/conf   2124.56  1099.83 0.5177   752.66 1.4613 pool8     752.66 1.4613
+33151353052  4a748d6e M1v    disk3  4.00 conf/ref   1784.93   897.95 0.5031   523.24 1.7161 pool8     523.24 1.7161
+33153717709  96bb4778 M1v    disk3  1.10 conf/conf  1754.70   817.47 0.4659   808.79 1.0107 pool8     808.79 1.0107
+33155045849* 135abdf2 M1v    disk3  0.63 ref/conf   1639.47   581.13 0.3545   429.81 1.3521 pool8     429.81 1.3521
+33155821397  266acf4f M1v    disk3  5.29 ref/conf   1487.24   591.82 0.3979   424.58 1.3939 pool8     424.58 1.3939
+33158144391  72e98cba M1v    disk3 10.74 ref/ref    1547.00   609.97 0.3943   555.63 1.0978 pool8     555.63 1.0978
+33165141309  a06c53f9 M1v    disk3  8.81 ref/ref    1500.48   565.31 0.3768   434.33 1.3016 pool8     434.33 1.3016
+33172323795  261070c8 M1v    disk3  5.60 conf/conf  2381.05  1150.39 0.4831   779.08 1.4766 pool8     779.08 1.4766
+
+-- bench-macos-read, uncached 4 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 ref/ref    1416.82   807.70 0.5701   383.68 2.1051 pool8     383.68 2.1051
+33150416900* 34ac1ae2 M1v    disk3 13.88 ref/ref    1833.91  1165.03 0.6353   553.63 2.1043 pool8     553.63 2.1043
+33151353052  4a748d6e M1v    disk3  4.00 conf/conf  1820.21   690.79 0.3795   486.70 1.4193 pool8     486.70 1.4193
+33153717709  96bb4778 M1v    disk3  1.10 conf/ref   1714.06   675.60 0.3942   439.22 1.5382 pool8     439.22 1.5382
+33155045849* 135abdf2 M1v    disk3  0.63 ref/ref    1812.50   545.98 0.3012   609.28 0.8961 pool8     609.28 0.8961
+33155821397  266acf4f M1v    disk3  5.29 ref/conf   1392.83   489.75 0.3516   381.86 1.2825 pool8     381.86 1.2825
+33158144391  72e98cba M1v    disk3 10.74 ref/ref    1672.36   960.86 0.5746   587.85 1.6345 pool8     587.85 1.6345
+33165141309  a06c53f9 M1v    disk3  8.81 ref/ref    1428.18   490.57 0.3435   399.02 1.2294 pool8     399.02 1.2294
+33172323795  261070c8 M1v    disk3  5.60 conf/conf  2172.94  1058.71 0.4872   679.86 1.5572 pool8     679.86 1.5572
+
+-- bench-macos-read, warm 64 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 conf/conf   167.84   214.64 1.2788    72.33 2.9675 pool8      72.33 2.9675
+33150416900* 34ac1ae2 M1v    disk3 13.88 conf/conf   187.46   246.17 1.3132    78.44 3.1383 pool8      78.44 3.1383
+33151353052  4a748d6e M1v    disk3  4.00 conf/conf   194.01   205.37 1.0586    86.22 2.3819 pool8      86.22 2.3819
+33153717709  96bb4778 M1v    disk3  1.10 conf/conf   185.75   177.91 0.9578    77.45 2.2971 pool8      77.45 2.2971
+33155045849* 135abdf2 M1v    disk3  0.63 conf/conf   166.61   167.61 1.0060    72.90 2.2992 pool8      72.90 2.2992
+33155821397  266acf4f M1v    disk3  5.29 conf/conf   172.94   173.97 1.0060    80.13 2.1711 pool8      80.13 2.1711
+33158144391  72e98cba M1v    disk3 10.74 conf/conf   167.56   167.92 1.0021    71.21 2.3581 pool8      71.21 2.3581
+33165141309  a06c53f9 M1v    disk3  8.81 conf/conf   167.06   168.48 1.0085    71.58 2.3537 pool8      71.58 2.3537
+33172323795  261070c8 M1v    disk3  5.60 conf/conf   199.10   196.90 0.9890    88.81 2.2171 pool8      88.81 2.2171
+
+-- bench-macos-read, warm 4 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 conf/conf    32.80    96.10 2.9299    15.20 6.3224 pool8      15.20 6.3224
+33150416900* 34ac1ae2 M1v    disk3 13.88 conf/conf    37.44   113.93 3.0430    16.66 6.8385 pool8      16.66 6.8385
+33151353052  4a748d6e M1v    disk3  4.00 conf/conf    44.11    52.72 1.1952    22.93 2.2992 pool8      22.93 2.2992
+33153717709  96bb4778 M1v    disk3  1.10 conf/conf    37.61    38.24 1.0168    16.36 2.3374 pool4      16.23 2.3561
+33155045849* 135abdf2 M1v    disk3  0.63 conf/conf    32.64    33.58 1.0288    15.09 2.2253 pool8      15.09 2.2253
+33155821397  266acf4f M1v    disk3  5.29 conf/conf    32.65    33.57 1.0282    15.03 2.2335 pool8      15.03 2.2335
+33158144391  72e98cba M1v    disk3 10.74 conf/conf    32.92    33.77 1.0258    15.14 2.2305 pool8      15.14 2.2305
+33165141309  a06c53f9 M1v    disk3  8.81 conf/conf    32.66    33.67 1.0309    15.24 2.2093 pool8      15.24 2.2093
+33172323795  261070c8 M1v    disk3  5.60 conf/conf    32.99    33.91 1.0279    15.25 2.2236 pool8      15.25 2.2236
+
+-- bench-macos-read (many-files half), many files  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 -           144.06   176.08 1.2223    58.42 3.0140 pool6      57.99 3.0364
+33150416900* 34ac1ae2 M1v    disk3 13.88 -           160.03   229.84 1.4362    75.33 3.0511 pool10     74.78 3.0735
+33151353052  4a748d6e M1v    disk3  4.00 -           174.24   183.43 1.0527    85.06 2.1565 pool10     75.68 2.4238
+33153717709  96bb4778 M1v    disk3  1.10 -           155.18   164.10 1.0575    59.86 2.7414 pool8      59.86 2.7414
+33155045849* 135abdf2 M1v    disk3  0.63 -           145.11   147.53 1.0167    58.84 2.5073 pool6      57.91 2.5476
+33155821397  266acf4f M1v    disk3  5.29 -           145.01   148.23 1.0222    58.10 2.5513 pool6      57.68 2.5699
+33158144391  72e98cba M1v    disk3 10.74 -           144.65   147.41 1.0191    58.34 2.5267 pool6      57.33 2.5713
+33165141309  a06c53f9 M1v    disk3  8.81 -           145.44   147.54 1.0144    58.44 2.5246 pool6      58.05 2.5416
+33172323795  261070c8 M1v    disk3  5.60 -           144.37   146.59 1.0154    58.07 2.5244 pool6      57.39 2.5543
+```
+
+The commits, in branch order, and what each one is:
+
+```text
+caa66bad  the merge base: the runtime this batch started from
+34ac1ae2  the same runtime under the WF_IO_TRACE stage instrumentation
+4a748d6e  the Darwin per-operation repair
+96bb4778  a positioned read is left where it was stated when nothing waits
+135abdf2  the stage instrumentation removed
+266acf4f  the drain hint removed -- the runtime the before/after tables read
+72e98cba  a record commit; its only source change is a comment in bridge.c
+a06c53f9  the correctness follow-up: named-drain generation, atomic readiness,
+          helper cap bounded by its storage, clock guard, shutdown ordering
+261070c8  this record's repair round -- and, since everything after it on the
+          branch changes only these two documents, the tip's runtime as well
+```
+
+What the table says without anyone counting in prose:
+
+- **The cache labels are uniform everywhere except the macOS uncached
+  tables.** All nine `bench-linux-read` uncached 64 KiB tables are
+  `conf/ref` — confirmed before, refused after — so every one of them is a
+  cold-start table rather than an uncached one. All eight uncached 4 KiB
+  tables are `conf/conf`. So are all fourteen Linux warm tables and all
+  eighteen macOS warm tables. The macOS uncached tables are the only ones that
+  disagree with each other, and only `261070c8`'s draw confirms the label at
+  both ends of *both* of them.
+- **Four of the 85 rows have `C/fN` below 1.** Three are `bench-linux-read`
+  uncached 4 KiB tables — `caa66bad` at 0.9992, `72e98cba` at 0.8576 and
+  `a06c53f9` at 0.8393 — and the fourth is `135abdf2`'s macOS uncached 4 KiB
+  table at 0.8961, in a cancelled run and on a table whose probe refused the
+  uncached label at both ends. `caa66bad`'s margin is 1.23 ms in 1456, which
+  is a tie by any honest reading of a hosted runner.
+- **The macOS warm 4 KiB `C/S` column is where this batch's work shows.** It
+  reads 2.9299 on the merge base and 3.0430 on the traced build of the same
+  runtime, then 1.1952, 1.0168, 1.0288, 1.0282, 1.0258, 1.0309, 1.0279 — the
+  repair landing at `4a748d6e` and holding across six later draws.
+- **The Linux warm columns move a few points between draws and do not settle.**
+  Over the seven draws that reached them, warm 64 KiB `C/S` spans 0.9840 to
+  1.0261 and warm 4 KiB spans 0.9271 to 1.0550, with no ordering by processor.
+- **Linux many-files `C/S` is between 1.0383 and 1.0697 on all nine draws**,
+  seven of them on the same EPYC 7763.
+
 ### macOS runner, read-heavy
 
 ```text
