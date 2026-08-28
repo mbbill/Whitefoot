@@ -253,7 +253,16 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                         source.spelling(&place.citation)?,
                         place.reason
                     ),
-                    false,
+                    // The `stage` line above names the one condition the
+                    // judgment stopped at, and a loop that fails one condition
+                    // usually fails others: the verification of 2026-08-28 read
+                    // a default-channel denial naming a break, repaired the
+                    // break, and found two more denied places waiting behind
+                    // it. Every denied row of a denied loop is therefore a
+                    // notice too, so the default channel states the whole cost
+                    // of that loop and not its first cause. The line is the
+                    // report's own, byte for byte.
+                    !judged.verdict.is_permitted() && place.disposition.is_denied(),
                 ));
             }
         }
@@ -266,7 +275,21 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             .then(left.3.cmp(&right.3))
             .then(left.4.cmp(&right.4))
     });
-    entries.dedup_by(|left, right| left.3 == right.3 && left.4 == right.4);
+    // The rendered text carries the path, the line, and the kind, so ordinal
+    // and text are the whole reported identity. The notice flag is not part of
+    // it: one source loop of a generic monomorphized twice can render one
+    // `loop` line whose staged sibling was denied in one instance and granted
+    // in the other, and the two entries then differ only in the flag. Dropping
+    // one of them silently would make the default channel depend on table
+    // order, so the surviving line carries the flag when any instance raised
+    // it.
+    entries.dedup_by(|left, right| {
+        let same = left.3 == right.3 && left.4 == right.4;
+        if same {
+            right.5 |= left.5;
+        }
+        same
+    });
     Ok(entries
         .into_iter()
         .map(|(.., text, notice)| LedgerLine { text, notice })
@@ -458,7 +481,7 @@ fn staged_denied_detail<Source: LedgerSource>(
         StagedDenial::NoCut { reason, statement } => {
             ((*reason).to_owned(), statement.as_ref(), None)
         }
-        StagedDenial::ExitInRemainder { edge, statement } => {
+        StagedDenial::ExitInRemainder { edge, statement, .. } => {
             (exit(edge), statement.as_ref(), None)
         }
         StagedDenial::RetainedBorrow {
