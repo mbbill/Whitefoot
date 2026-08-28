@@ -95,23 +95,37 @@ already made room, and a rule that read the present would answer from a world
 where nothing is left in flight and publish an exhaustion that no longer
 exists.
 
-The ledger is process-wide, because a descriptor is. It holds one retirement
-generation, incremented whenever any operation on any engine retires — a close
-completing, a refused open being published, any completion that ends an
-operation — and one in-flight count, which every operation either engine
-accepts joins, blocking direct calls included for as long as they execute. It
+The ledger is process-wide, because a descriptor is. It holds two counts,
+because the rule turns on two different facts and one count for both gets the
+rule wrong. The first is how many descriptors this runtime has put back in the
+host's table: a close completing, and an open whose descriptor the kind check
+refused and the runtime disposed of. That is the only event that can make a
+second host attempt answer differently from the first, so it is the only thing
+that justifies spending the one re-attempt. The second is the in-flight count,
+which every operation either engine accepts joins, blocking direct calls
+included for as long as they execute, and which is what "still holding a
+descriptor it could give back" is read from. An operation that ends without
+returning anything — a read, a write, a status, a directory batch — moves the
+second and not the first. It
 lives with the completion core (`contract.h`, `runtime.c`) because the core is
 the one unit both target engines and the bridge link; the bounded POSIX adapter
 and the Linux ring are qualified separately and share no other code.
 
 Every refused open, whichever engine attempted it, then follows four steps:
 
-1. read the generation before the host attempt;
-2. on `EMFILE`/`ENFILE`, if the generation has moved since, re-attempt once;
-3. otherwise, while an operation is in flight anywhere else, wait for the next
-   retirement, then re-attempt once;
-4. otherwise publish the refusal, which is the outcome source order produces
-   too.
+1. read the descriptor-return count before the host attempt;
+2. on `EMFILE`/`ENFILE`, if that count has moved since, re-attempt once;
+3. otherwise, while an operation is in flight anywhere else, wait: it may still
+   give a descriptor back, so this refusal is not the answer yet;
+4. otherwise nothing is left that could give one back, so this is the last
+   moment at which a second attempt could see anything the first did not —
+   re-attempt once here too, and publish what it says.
+
+Step 4 attempts rather than publishes because a descriptor can come back from
+outside this runtime: a thread of the program's own closing one while this
+runtime carries the read that thread is answering. No ledger can see that
+close, so the only honest moment to look again is the moment the ledger runs
+out of reasons to wait.
 
 Exactly one re-attempt per refused open, so an exhausted host cannot turn one
 `open_file` call into unbounded work; if the second attempt also fails, that is
@@ -122,8 +136,8 @@ correct path changes and T3 holds.
 
 Waiting terminates because a waiter counts itself out of "in flight anywhere
 else": when every operation still in flight is a waiter, the earliest of them
-publishes its refusal, and that publication is itself a retirement which
-releases the others. Two more things are counted out alongside the waiters, and
+answers, and leaving the waiter order hands that place, and the same answer, to
+the next one. Two more things are counted out alongside the waiters, and
 both are the same fact — an operation nobody may wait for, because waiting for
 it would be waiting for the waiter. One is local: the operations this waiter's
 own thread would have to run itself, which is the queue a drained sibling's
@@ -151,13 +165,14 @@ waiting for.
 
 ### What this record said before, and what was false
 
-Five shapes of this were wrong before the rule was stated that way, and the
+Six shapes of this were wrong before the rule was stated that way, and the
 rule then stopped the process three times before it was right. None of the
-eight was caught by a test as written: the first two were found by the Stage A
+nine was caught by a test as written: the first two were found by the Stage A
 verification, the next two by re-verification of the repair, the fifth by
-reading the repair for the same class of defect, and the three deadlocks by
-running the suite and the verifiers' probes to the point where a stall is
-distinguishable from a slow host.
+reading the repair for the same class of defect, the sixth by a third
+re-verification, and the three deadlocks by running the suite and the
+verifiers' probes to the point where a stall is distinguishable from a slow
+host.
 
 - the ring re-staged the refused open at the end of the *same* reap pass, so
   the source order `close(held); open(path)` — which succeeds sequentially —
@@ -187,8 +202,26 @@ distinguishable from a slow host.
   counts. A retirement whose generation increment landed after the first read
   and whose in-flight decrement landed before the second was invisible to both,
   so the decision could publish a refusal a descriptor had already answered. It
-  re-reads the generation at that exit now, and the ledger's schedule point is
-  named so a test can stand exactly between the two reads;
+  re-reads that count at that exit now, and the ledger's schedule point is
+  named so a test can stand exactly between the two reads. Since step 4 became
+  an attempt rather than a publication, that re-read no longer keeps the `Ok`
+  by itself — the attempt does — and what it keeps is the ledger naming which
+  fact ended the wait, which is what the schedule-point test observes;
+- **"a descriptor came back" and "an operation ended" were the same count**,
+  and they are not the same fact. A read finishing on a helper thread returns
+  no descriptor, but it moved the generation, so every open the ring was
+  holding spent its single re-attempt on it — before the close it was actually
+  waiting for had finished — and then published `Err(EMFILE)`. Source order
+  runs the read, then the close, then the opens, and one open succeeds; that
+  shape produced none. The measurement is `close(held)` on the ring with a
+  cross-engine read in flight and four opens racing, 1,000 repetitions per
+  cell on an x86-64 Linux host with a real io_uring, the scratch file on
+  `overlayfs` so that `IORING_OP_CLOSE` has a `flush` to run and is genuinely
+  asynchronous: 7, 16, 3 and 7 lost `Ok`s per thousand at zero, one, two and
+  four helpers, and 0 per thousand in every cell with the read removed — the
+  read is the whole discriminator. On a host whose close runs inline the
+  kernel frees the descriptor before the opens it was staged with are
+  attempted, so the schedule does not arise and the shape reports nothing;
 - and the first version of *this* rule deadlocked, which is the failure mode a
   rule about waiting has. A refused open running work its own adapter owed read
   the size of that queue once, before it waited. The queue then grew — the
@@ -255,7 +288,8 @@ so are the third exit, the deadlocks and the moment the queue is read:
 `test_bridge_open_behind_a_submitted_close_succeeds`,
 `test_open_exhaustion_waits_for_another_engine`,
 `test_a_retirement_between_the_ledger_reads_is_not_missed`,
-`test_the_work_a_waiter_owes_is_read_where_it_decides` and
+`test_the_work_a_waiter_owes_is_read_where_it_decides`,
+`test_an_ending_that_returns_nothing_grants_no_reattempt` and
 `test_bridge_every_record_holding_a_refused_open_publishes`.
 
 A deadlock is now a failure mode of this suite, so the harness has a watchdog:
@@ -382,6 +416,10 @@ by exempting the carrying block from the rule.
   `a_drain_retires_only_what_the_branches_that_reach_it_started`, with the
   sibling removal deleted, reports the first exit joining two operations where
   one branch reaches it.
+  `test_an_ending_that_returns_nothing_grants_no_reattempt`, with the two
+  counts merged back into one, fails on the second of its three states: the
+  read's ending answers `HAPPENED` where the close it is waiting for is still
+  in flight.
   `test_the_work_a_waiter_owes_is_read_where_it_decides`, with the ledger
   reading that queue once when the waiter registers instead of asking for it
   where it decides, fails at zero, one and four helpers on macOS on
@@ -420,7 +458,8 @@ by exempting the carrying block from the rule.
   they are the shape a harness test cannot reach, a whole process narrowing its
   own `RLIMIT_NOFILE`. At this revision, at zero, one and four helpers on both
   hosts, `attack_probe` passes every case — including `A1` (`oks=1 errs=1`),
-  `A3` (four refused together, four refusals, three re-attempts), `A4` (the
+  `A3` (four refused together, four refusals, four re-attempts — one each,
+  since step 4 attempts), `A4` (the
   cross-engine open, `value=8 error=0` on Linux where it was `-1/EMFILE`), `A5`
   (64 opens against a full table) and `A6` (300 repetitions, `lost_ok=0`) — and
   `verify_probe`'s deferred-doorbell and `close(held); open(path)` cases pass
@@ -432,7 +471,15 @@ by exempting the carrying block from the rule.
 - `make -C compiler completion-tsan`, new here and wired into the io-hosts
   Linux job. `completion-core-read-tsan` links neither the bridge nor the ring
   by design, so the deferred doorbell's staging, the retire-and-retry hand-back
-  and the readiness flag the flush reads had nothing checking them.
+  and the readiness flag the flush reads had nothing checking them. It now
+  names its hooks through `COMPLETION_DEFINES` and
+  `COMPLETION_HARNESS_DEFINES` rather than a hand-written list of its own,
+  which is what the comment on those variables already required of every build
+  that links the harness. The hand-written list left out the scripted clock, so
+  on a host fast enough for the unscripted one the growth rule's measured half
+  read `SHORT` where the test scripts a millisecond, and the sanitizer build
+  was running a different runtime from the ordinary one. That held at the
+  previous revision too; it is a build-list defect, not a runtime one.
 - What the sanitizers actually say, replacing an earlier claim in this record
   that the harness ran clean under the thread sanitizer on macOS at every
   helper setting. At `14c89cf3` it did not:
@@ -452,27 +499,28 @@ by exempting the carrying block from the rule.
   refused open — and the property it was reaching for is carried by the two
   deterministic tests above. Its own comment says so.
 
-- Repetition counts at this revision, at every helper setting the suites use
-  and two hosts. Linux container (aarch64, kernel 6.8, io_uring enabled, clang
-  16, `--security-opt seccomp=unconfined`): 200 runs each at zero, one, two and
-  four helpers, 0 failures; `completion-tsan` 20 runs at each of the same four,
-  0 failures; `completion-sanitize` (ASan + UBSan) passes; the
-  `WF_REQUIRE_LINUX_IO_URING=1` run passes 30 of 30; the two-opens probe 200
-  runs at each of the same four, `lost_ok=0`. macOS (`completion-test` build):
-  200 runs each at zero, one, two and four helpers, 0 failures;
-  `completion-tsan` 20 runs at each of the same four, 0 failures; the two-opens
-  probe 200 runs at each of the same four, `lost_ok=0`. Two helpers is in both
-  lists because that is where the two-opens defect showed at 74 in 200 and the
-  shipped suites do not run it; the counts at one helper matter because that is
-  where both missed wakes showed — one twice in four hundred, the other once in
-  twenty under TSan. That last one is why the one-helper TSan configuration
-  also has 210 scripted repetitions on macOS under a stall watchdog with a
-  sampler: 0 stalls, against the 1 the same 210 found before the queue was read
-  where the decision is made. The probes above, 15 runs each at zero, one and
-  four helpers on both hosts, 0 failures. The container's aarch64 TSan needs
-  ASLR off (`setarch -R`) or it aborts on every run with `unexpected memory
-  mapping` before reaching a test; that is the host, not the suite. Earlier
-  counts in this record measured earlier revisions and are superseded by these.
+- Repetition counts. These were measured on an x86-64 Linux host (kernel 6.18,
+  real io_uring, GCC 14) at **this** revision: `completion-test` at zero, one
+  and four helpers plus the `WF_IO_NOCACHE` arm, green; 200 harness runs each
+  at zero, one, two and four helpers, 0 failures and 0 stalls; `completion-tsan`
+  20 runs at each of the same four, 0 failures and 0 stalls;
+  `completion-sanitize` (ASan + UBSan) green; the `WF_REQUIRE_LINUX_IO_URING=1`
+  run green; `attack_probe` and `verify_probe` 15 runs each at zero, one, two
+  and four helpers, 120 of 120 passing; and the cross-engine-read shape at
+  1,000 repetitions per cell, at the same four helper counts with the read
+  present and absent, 0 lost `Ok`s in all eight cells — against 7, 16, 3 and 7
+  per thousand with the read present before this rule.
+
+  Two helpers is in the list because that is where the two-opens defect showed
+  at 74 in 200 and the shipped suites do not run it; one helper matters because
+  that is where both missed wakes showed — one twice in four hundred, the other
+  once in twenty under TSan. The earlier counts in this record were measured on
+  macOS and in an aarch64 Linux container at earlier revisions; they are what
+  those revisions did, and the macOS half of this revision is `io-hosts`' to
+  re-measure, because the host that produced the numbers above has no macOS.
+  That aarch64 container's TSan needs ASLR off (`setarch -R`) or it aborts on
+  every run with `unexpected memory mapping` before reaching a test; that is
+  the host, not the suite.
 - `make -C research/experiments/io-completion-bench verify` on macOS: every line
   of every workload — the hand-written native shape, the `--no-overlap`
   sequential reference, and the shipping overlapped build — publishes
@@ -497,10 +545,11 @@ by exempting the carrying block from the rule.
       what an answer of one means is now stated as a property of the runtime,
       not as something Stage A demonstrates
 - [x] item 2 — deferred doorbell and its four flush points
-- [x] item 3 — retire-and-retry as one rule over one process-wide retirement
-      ledger, asked at the moment of the host attempt, with the two per-engine
-      gates it replaces gone and a deterministic test for each route and for
-      the one exit that could miss a retirement
+- [x] item 3 — retire-and-retry as one rule over one process-wide ledger of two
+      counts — descriptors returned, and operations in flight — asked at the
+      moment of the host attempt, with the two per-engine gates it replaces
+      gone and a deterministic test for each route, for the one exit that could
+      miss a return, and for the ending that returns nothing
 - [x] item 4 — carrying and draining, with every drain including the first
       given exactly what the blocks that reach it started, the out-of-order
       descriptor refused, and the IR-identity oracle re-run: 630 sources,
