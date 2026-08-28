@@ -726,8 +726,12 @@ those two numbers is device wait, and eight reads stated consecutively in
 Whitefoot source recover all of it.
 
 The 64 KiB table is a *cold-start* table rather than an uncached one, and the
-probes say so: the tree was not resident when the table began (per-file
-medians 158.9..201.6 us) and was resident when it ended (8.7..9.7 us). At
+probes say so. "Cold start" is this document's word for it; the job log calls
+every `WF_IO_NOCACHE=1` table uncached, because that is what the run asked
+for, and prints the probe verdict beside it so a reader can tell which of the
+two it got. The verdicts here: the tree was not resident when the table began
+(per-file medians 158.9..201.6 us) and was resident when it ended (8.7 to
+9.7 us). At
 64 KiB the plan reads 2 GiB over a 512 MiB tree on a host with 16 GB of RAM,
 so each line warms the cache as it goes. Every line starts cold all the same,
 because `POSIX_FADV_DONTNEED` runs on each of the eight opens and evicts what
@@ -735,7 +739,7 @@ the previous line left, and every line covers the identical read schedule; the
 self-warming is therefore the same constant in all of them.
 
 ```text
-== read-heavy 64 KiB, cold start (WF_IO_NOCACHE=1) ==
+== read-heavy 64 KiB, WF_IO_NOCACHE=1, cold start ==
 probe before: 1 of 128 sampled reads at or below 40 us; per-file medians 158.9..201.6 us
 probe after:  127 of 128 at or below 40 us; per-file medians 8.7..9.7 us  (label refused)
 line                                median_ms     min_ms     max_ms    user_ms     sys_ms
