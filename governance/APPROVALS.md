@@ -1629,5 +1629,12 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   the `accept` verdict, which is the only verdict a permission rule that
   refuses nothing can carry; each case's `rules` list names [PAR-3] beside the
   rules its source genuinely exercises. No pre-existing `expect` verdict
-  changes. Coverage moves from 137/137 to 138/138 rules.
+  changes. Coverage moves from 137/137 to 138/138 rules. Outside
+  `tests/conformance`, exactly one conformance-evidence file changes:
+  - `compiler/tests/conformance/adapter.rs`:
+    `9f4d7d9661883d10c5c4004c38c7b1563d1932e34b8d7484bd98cff3684abce9`
+    -> `0c640b5de84ac4f7026b92c4b832b5dc836439a1526c4f5edcf94cc7c682e063`
+    (the native compile-and-run adapter links emitted modules through the
+    driver's `HOST_LINK_LIBRARIES` constant, one link recipe with the shipped
+    driver; no verdict logic changes).
 ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619

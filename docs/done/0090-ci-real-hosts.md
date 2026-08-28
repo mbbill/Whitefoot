@@ -224,6 +224,71 @@ outline. The census now accounts for it on the same terms as
 `wf_resource_abort` — `noreturn`, on no success path — and asserts the
 `noreturn` declaration rather than arguing it.
 
+**The offset-fault case assumed the memory below a stack was empty, and once
+in ten Linux runs it was not.**
+`only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` faults at
+chosen distances below the floor's entry stack and requires the two in-band
+rows to end in the floor's abort with the stack record, and the three
+past-the-stride rows — four pages, 64 KiB, 16 MiB — to keep `SIGSEGV` with no
+record. Nine Linux gates passed it; the gate of `7ec7bc1a`
+([33137459268](https://github.com/mbbill/Whitefoot/actions/runs/33137459268))
+did not: the four-page row exited 0 — no signal, no record. Nothing faulted,
+so the floor never ran; the write four pages below the stack found a writable
+page. The fixture had assumed the memory below a stack is empty, and the
+floor's own layout says otherwise: `wf__floor_attach_thread` maps a 64 KiB
+read-write alternate signal stack *after* the entry stack, and the kernel's
+top-down search drops it into the first gap below the stack block.
+`/proc/self/maps` from the same fixture linked against the same floor, in this
+project's Linux container (glibc 2.39, the runner's), shows it:
+
+```text
+f1d709640000-f1d709650000 rw-p    the entry thread's alternate signal stack
+f1d709650000-f1d709660000 ---p    the guard glibc puts under the stack
+f1d709660000-f1d749660000 rw-p    the 1 GiB entry stack
+```
+
+The container never lost the row because its guard is 64 KiB, so four pages
+below the stack is still inside the guard; x86-64 glibc's guard is one page,
+so there the write lands in the alternate stack in every run where the kernel
+has placed it under the stack rather than in a hole higher up, which the
+runner's ten gates that reached the row did once. That is not a floor defect
+— the floor classifies faults, and no fault happened — and not a host limit
+to declare, because the premise was never the host's to keep. The fixture now
+keeps it: the fault comes from a thread the fixture creates on a stack it
+allocates at the top of one reservation, attached to the floor exactly as a
+pool lane is, and the thread unmaps the 16 MiB below its stack after
+attaching and reading its bounds — both map memory, and the same search would
+put either into a fresh hole — and just before it writes. The pad is unmapped
+rather than left `PROT_NONE` because Darwin reports a protected page as
+`SIGBUS` and an unmapped one as `SIGSEGV`, and the rows assert the host's own
+signal for a pointer into nothing. The assertions are byte-for-byte what they
+were. Verified by running the shipped fixture text against the shipped floor:
+in the Linux container, twenty of twenty runs on every row — abort and record
+at half a page and one page below, `SIGSEGV` and no record at four pages,
+64 KiB and 16 MiB; on this machine, whose page is 16 KiB, the same at 8 KiB
+and 16 KiB against 64 KiB and 16 MiB.
+
+**The latch control was a race sampled at one host's rate.**
+`the_latch_is_what_keeps_the_record_single` defeats the trap latch with a
+one-token injection and requires that at least one of eight runs show both
+racing threads writing a record before the winner's `abort` takes the process
+down. On this machine, ten cores, it is caught 200 of 200 runs. On the
+three-core `macos-14` runner it is a race the second thread often loses, and
+the gate of `25ac56ef`
+([33142388164](https://github.com/mbbill/Whitefoot/actions/runs/33142388164))
+caught none in eight, after twelve gates that had caught at least one — a
+rate near one run in four. The record's not-done list had named this class
+as one no run had lost; one now had. The same move as the migration
+observation: the first eight runs still always happen, every caught one
+checked in full, and after them the loop stops at the first catch or at 512
+attempts. At one in four that misses about never; at one in fifty, about once
+in thirty thousand gates; a host that never catches spends about ten seconds,
+at twenty milliseconds an attempt, before failing honestly. Every assertion
+is what it was. Batch 0093, the gate time budget, is restructuring the
+process-spawning sampling cases in `trap_latch`, `parallel`, `stackless` and
+`exhaustion` with red/green verification; this resizing is the minimal one and
+is handed to that batch, whose shape supersedes it.
+
 ### Host limits, now declared
 
 Each of these is a case that cannot be reached on a host, stated as a
@@ -271,7 +336,8 @@ reported, and the job's value is everything it checks before reaching it.
 ### The runs this record stands on
 
 Both workflows run on every push. These are the runs of `196525e7`, the last
-commit in this batch that changes code:
+commit of the batch's first Linux picture that changes code, and of every
+code-changing commit after it, oldest first:
 
 | run | job | host | outcome |
 |---|---|---|---|
@@ -280,10 +346,25 @@ commit in this batch that changes code:
 | [io-hosts 33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `completion-linux` | ubuntu-24.04 | green |
 | | `bench-linux` | ubuntu-24.04, AMD EPYC 7763, `/dev/sda1` ext4 | green: N.direct 101.57, S.wide 123.15, C.wide.default 130.73 milliseconds, so C.wide 6 percent slower than S.wide. An earlier revision of this row put 119.31, 141.91 and 147.85 here; those are the numbers of [io-hosts 33131919667](https://github.com/mbbill/Whitefoot/actions/runs/33131919667) on `e7720a0a`, an EPYC 9V74 runner, and the table under *The Linux-hardware bench* now names every run beside its own numbers |
 | | `completion-windows` | windows-2025 | green |
+| [gate 33137459268](https://github.com/mbbill/Whitefoot/actions/runs/33137459268) on `7ec7bc1a` | `gate-linux` | ubuntu-24.04, x86-64, 4 CPUs | red inside the library suite, where "red only on the five cases" did not hold: 1319 library cases pass and `only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` fails on its four-page row with exit 0 — the finding under *Tests that were measuring the host* — so neither `tests/programs.rs` nor the conformance run was reached; the library suite took 980 s |
+| | `gate-macos` | macos-14 | green |
+| [io-hosts 33137459242](https://github.com/mbbill/Whitefoot/actions/runs/33137459242) on `7ec7bc1a` | `completion-linux` | ubuntu-24.04 | green |
+| | `bench-linux` | ubuntu-24.04, AMD EPYC 9V74, `/dev/sda1` ext4 | green: N.direct 118.79, S.wide 140.86, C.wide.default 148.71 milliseconds, C.wide 5.6 percent slower than S.wide |
+| | `completion-windows` | windows-2025 | green |
+| [gate 33142388164](https://github.com/mbbill/Whitefoot/actions/runs/33142388164) on `25ac56ef` | `gate-linux` | ubuntu-24.04, x86-64, 4 CPUs | red, and red only where this record says it is: `== WHITEFOOT COMPILER GATE GREEN ==`, 1320 library cases in 1105.59 s with `only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` green on x86-64, 37 program cases — `an_enumeration_handle_is_not_usable_after_it_is_moved`, `an_enumeration_match_that_omits_an_outcome_is_rejected` and `program_bytes_still_cannot_become_a_path_value` among them, the three `7ec7bc1a` restored — and every research suite pass, and `conformance-run` then reports `Pass=497  Fail=5  Skip=1` on the five named cases |
+| | `gate-macos` | macos-14, arm64, 3 CPUs | red on one case, `trap_latch::the_latch_is_what_keeps_the_record_single`, with 1331 of 1332 library cases passing: the three-core sampling limit under *Tests that were measuring the host*. The resizing in this record's head is the minimal one; batch 0093, the gate time budget, is restructuring the process-spawning sampling cases in `trap_latch`, `parallel`, `stackless` and `exhaustion` with red/green verification, and this case is handed to it |
+| [io-hosts 33142388146](https://github.com/mbbill/Whitefoot/actions/runs/33142388146) on `25ac56ef` | `completion-linux` | ubuntu-24.04 | green |
+| | `bench-linux` | ubuntu-24.04, AMD EPYC 7763, `/dev/sda1` ext4 | green: N.direct 102.62, S.wide 124.62, C.wide.default 128.94 milliseconds, C.wide 3.5 percent slower than S.wide |
+| | `completion-windows` | windows-2025 | green |
 
 `make check` on the maintainer's machine — macOS on arm64, ten cores, Apple
 clang 21, stable 1.97.1 — is green on the same tree, which is the third host
 and the only one where the whole gate passes.
+
+The head of the branch carries the latch-control resizing and this record's
+final revision. Its own runs are not named here: the batch's CI iteration
+closed on the runs of `25ac56ef`, and a further round on runner sampling would
+collide with batch 0093.
 
 ### Linux completion I/O, on a real kernel
 
@@ -338,7 +419,7 @@ C.wide.default      149.47    115.92    118.14
 ```
 
 `bench-linux` runs on every push, and each run draws its own runner, so the
-branch has eleven readings on three CPU models. Every one of them, beside the
+branch has thirteen readings on three CPU models. Every one of them, beside the
 commit it ran on, the host and disk the job itself reported, and the three
 lines the finding turns on, medians in milliseconds:
 
@@ -355,12 +436,14 @@ lines the finding turns on, medians in milliseconds:
 | [33133174447](https://github.com/mbbill/Whitefoot/actions/runs/33133174447) | `6fc4c71b` | EPYC 9V74, `sda1` | 119.41 | 141.73 | 147.00 | +3.7% |
 | [33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `196525e7` | EPYC 7763, `sda1` | 101.57 | 123.15 | 130.73 | +6.2% |
 | [33135242838](https://github.com/mbbill/Whitefoot/actions/runs/33135242838) | `db7d997b` | Xeon Platinum 8573C, `nvme0n1p1` | 77.25 | 95.32 | 101.49 | +6.5% |
+| [33137459242](https://github.com/mbbill/Whitefoot/actions/runs/33137459242) | `7ec7bc1a` | EPYC 9V74, `sda1` | 118.79 | 140.86 | 148.71 | +5.6% |
+| [33142388146](https://github.com/mbbill/Whitefoot/actions/runs/33142388146) | `25ac56ef` | EPYC 7763, `sda1` | 102.62 | 124.62 | 128.94 | +3.5% |
 
-The completion build loses to the sequential build on all eleven, by 3 to 7
+The completion build loses to the sequential build on all thirteen, by 3 to 7
 percent, on three CPU models and both disk kinds. The io_uring reading is not
 as portable, and the tabulated runners are the ones on which it holds: on the
 EPYC 9V74 the ring equals the loop at every depth; on the Xeon it is within 8
-percent of it (N.uring32 83.18 against N.direct 77.25); on all three EPYC 7763
+percent of it (N.uring32 83.18 against N.direct 77.25); on all four EPYC 7763
 runs the ring at depth 4 and above sits at 125 to 128 ms against a 102 to 104
 ms loop, a quarter slower, while depth 2 is nearly equal (105 to 107). Why
 that CPU pays for a deeper ring is not settled here.
@@ -476,6 +559,14 @@ sentence, measured.
     job — 35 minutes of `make check` and 17 more of diagnosis — and now that
     the only red left is the conformance gap, `make check`'s own output names
     it.
+11. **The offset-fault case was neither excused nor loosened; its fixture now
+    owns the premise it had been borrowing.** A `#[cfg]` would have said the
+    band's boundary is unobservable on Linux, which is false, and a
+    conditional assertion — if it faulted, then — would have let the row pass
+    while testing nothing. The row's claim is about where the floor draws its
+    band, and that claim needs a fault at a known address; a fixture that
+    makes the memory below its own stack empty is the only way to have one on
+    every layout.
 
 ## What this batch did not do
 
@@ -489,12 +580,46 @@ sentence, measured.
   the experiment that would separate the two candidates.
 - It did not run the pipe workload or the macOS bench in CI. The local machine
   covers macOS, and the pipe workload discriminated nothing in batch 0084.
-- It did not make the scheduler observations deterministic. The grant and
-  migration cases still sample a race; what changed is that the samples are
-  now sized from the rate the runners actually show rather than from the rate
-  this machine shows. Two of the same class were left as they are because no
-  run of this batch lost them: the corpus case
+- It did not make the scheduler observations deterministic. The grant,
+  migration and latch-control cases still sample a race; what changed is that
+  the samples are now sized from the rate the runners actually show rather
+  than from the rate this machine shows. Two of the same class were left as
+  they are because no run of this batch lost them: the corpus case
   `the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes`,
   whose five attempts each pay for their own link, and the join-less
   comparison in `backend/tests/parallel.rs`, which asks twelve runs to
-  disagree. A host slower than any measured here can still lose either.
+  disagree. A host slower than any measured here can still lose either — the
+  three-core macOS runner lost the latch control once, at a sample this
+  machine had never lost, before it was resized.
+- It did not touch the five cases that own most of the library suite's time
+  on the four-CPU runner, where the suite takes 980 s against about 90 s on
+  this machine. This is the input to a follow-up on test economy, so the next
+  batch does not rediscover it. Measured on the gate of `7ec7bc1a` as the gap
+  between a case's result line and the one before it — under four test
+  threads that is a lower bound on the case's own time, not the time itself:
+  `parallel::the_repeat_reports_a_lowering_whose_joins_were_removed`, 412 s,
+  one link and twelve process runs of a join-less lowering asked to disagree
+  with the reference;
+  `trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record`,
+  210 s, forty runs of two threads racing to trap;
+  `trap_latch::a_single_false_claim_reports_the_same_bytes_at_every_worker_count`,
+  138 s, four worker counts by four runs;
+  `trap_latch::the_sequential_schedule_names_one_claim_every_run`, 42 s, two
+  sequential settings by eight runs. Those four are about 13 of the suite's
+  16 minutes. The fifth,
+  `exhaustion::a_frame_larger_than_the_guard_region_is_still_reported`, links
+  and runs a recursion into a 1 GiB stack twice, probed and ablated; it shows
+  no gap of its own because other cases finish around it, and it completed
+  103 s after the suite began among the first cases started, so a minute or
+  more of that is its own. Every one of the five samples schedules or
+  exhausts a stack on purpose; what a follow-up has to decide is how many
+  samples each purpose needs on a slow host, not whether to keep them. Batch
+  0093, the gate time budget, is that follow-up.
+- It did not move the floor's alternate signal stack. The map above shows it
+  mapped read-write directly under the entry stack's guard, and on x86-64
+  glibc that guard is one page. Generated frames probe their pages and cannot
+  step over it, so nothing this batch measured is unsafe; a runtime or libc
+  frame larger than a page, running near the bottom of the stack, would write
+  into the alternate stack without a fault. Mapping the alternate stack
+  before the entry stack, or with a guard of its own, is a small change a
+  follow-up should weigh with that picture in front of it.

@@ -123,30 +123,14 @@ command fn main() -> status: own ExitStatus traps {
 /// confidence in a rate.
 const SAMPLES: usize = 40;
 
-/// How many times [`the_latch_is_what_keeps_the_record_single`] runs the
-/// defeated build before reporting that defeating the latch changed nothing.
-///
-/// Unlike [`SAMPLES`], this one is a rate, and the rate is the host's rather
-/// than the lowering's: the control needs *two* threads to reach the writer,
-/// which needs the pool to grant the handed-out call a lane and needs the
-/// losing thread to get a CPU before the winner's `abort` finishes. Both are
-/// scheduling events.
-///
-/// Measured rather than guessed, and the measurement is why the number is this
-/// large. Two hundred runs of the defeated build on the three-core `macos-14`
-/// runner caught 117 — a rate of 0.585, at which even eight runs would miss
-/// about once in a thousand. But eight runs *did* miss, in one of batch 0093's
-/// three gate runs on that same runner label, which says the rate is not a
-/// constant of the host: it is a constant of the machine that run happened to
-/// draw and of what else was on it. A bound sized from the good case would be
-/// a bound sized from the case that never fails.
-///
-/// Two hundred is therefore sized for a bad draw: it misses only where the
-/// rate has fallen below about two percent, an order of magnitude under
-/// anything observed. It costs about two seconds — the runs are process spawns
-/// of a few milliseconds each — and every one of them is checked, so the wide
-/// sample widens what the control verifies rather than diluting it.
-const DEFEATED_LATCH_RUNS: usize = 200;
+/// How many runs of the latch-defeated control always happen, every caught one
+/// checked in full: the sample the control had before any host lost it.
+const CONTROL_RUNS_ALWAYS: usize = 8;
+
+/// How many runs the control may take in all before it gives up looking for
+/// a caught one, sized for the slowest host the gate has shown; see the
+/// control's own comment for the rate and the arithmetic.
+const CONTROL_RUNS_AT_MOST: usize = 512;
 
 /// The record channel of one run, split into its lines, with the exit status.
 fn trap_run(executable: &std::path::Path, workers: &str) -> (Option<i32>, Vec<u8>) {
@@ -301,13 +285,22 @@ fn a_single_false_claim_reports_the_same_bytes_at_every_worker_count() {
 ///
 /// The injection is one token — the latch is still taken, and its answer is
 /// still computed, but every thread is sent down the writing edge — so what it
-/// removes is exactly the mechanism and nothing else.
+/// removes is exactly the mechanism and nothing else. Detection was measured
+/// at 200 of 200 runs on this machine, ten cores, both threads reaching the
+/// writer because `abort` on the winner is not instantaneous. On the
+/// three-core `macos-14` runner it is a race the second thread often loses:
+/// the gate of `25ac56ef` caught none in eight runs after twelve gates that
+/// had caught at least one, which puts that host's rate near one run in four.
+/// So the sample is sized for that host rather than this one. The first
+/// [`CONTROL_RUNS_ALWAYS`] runs always happen and every caught one is checked
+/// in full, as before; after them the loop stops at the first catch, or at
+/// [`CONTROL_RUNS_AT_MOST`] attempts. A host catching one run in four then
+/// misses about never, one catching one in fifty misses about once in thirty
+/// thousand gates, and a host that never catches spends about ten seconds —
+/// twenty milliseconds an attempt here — before saying so.
 ///
 /// A caught run must carry **two** well-formed records rather than merely not
 /// one, so an empty record channel cannot pass for a defeated latch.
-///
-/// Detection is a race and the sample is [`DEFEATED_LATCH_RUNS`] because of
-/// what that race does across hosts, not because a bigger number felt safer.
 #[test]
 fn the_latch_is_what_keeps_the_record_single() {
     let module = emit_with_overlap_and_false_claims(
@@ -330,7 +323,10 @@ fn the_latch_is_what_keeps_the_record_single() {
     let executable = build_executable(&defeated, &directory);
 
     let mut caught = 0;
-    for run in 0..DEFEATED_LATCH_RUNS {
+    for run in 0..CONTROL_RUNS_AT_MOST {
+        if caught > 0 && run >= CONTROL_RUNS_ALWAYS {
+            break;
+        }
         let (_, stderr) = trap_run(&executable, "4");
         if sole_record(&stderr).is_ok() {
             continue;
@@ -361,8 +357,8 @@ fn the_latch_is_what_keeps_the_record_single() {
     }
     assert!(
         caught > 0,
-        "defeating the latch changed nothing observable in \
-         {DEFEATED_LATCH_RUNS} runs, so these cases cannot see a second record"
+        "defeating the latch changed nothing observable in {CONTROL_RUNS_AT_MOST} \
+         runs, so these cases cannot see a second record"
     );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");

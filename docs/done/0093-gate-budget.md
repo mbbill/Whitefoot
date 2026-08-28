@@ -597,6 +597,15 @@ pre-fix run and 52 to 56 s across these five is
 
 ## Not done
 
+- Merging `main` (`b2e2e267`) into this branch on 2026-08-28 adopted batch
+  0090's form of the latch-defeated control (`CONTROL_RUNS_ALWAYS` = 8 runs
+  always, then stop at the first catch or `CONTROL_RUNS_AT_MOST` = 512) in
+  place of this batch's `DEFEATED_LATCH_RUNS` = 200 fixed sample, and `main`'s
+  version of the closed-destination harness fix, which is the same fix with
+  its reasoning in a comment. The 200-run measurement above stands as the
+  evidence for the rate; the shipped control is the cheaper bounded form that
+  batch 0090 verified five of five on the runner.
+
 - The two eight-lane grant controls in `compiler/src/backend/tests/loop_split.rs`
   (`a_split_loop_carries_its_captures_and_a_second_combine` and
   `every_admitted_combine_splits_and_publishes_the_unsplit_bytes`), which

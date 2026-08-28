@@ -1,10 +1,14 @@
 # Batch 0092 — a read-dominated workload, and reads that really wait
 
-Branch: `batch/0092-read-workload`, from `main` at `79b29665`.
-Deliverables: the `WF_IO_NOCACHE` target policy in `compiler/`, the read-heavy
-workload and its page-cache verification in
-`research/experiments/io-completion-bench/`, the read-dominated section of
-`research/investigations/io-model/RESULTS.md`, this record.
+Branch: `batch/0092-read-workload`, from `main` at `79b29665`, with
+`batch/0090-ci-real-hosts` merged in at its tip `7c644216` for the workflow the
+tables are taken through.
+Deliverables: the `WF_IO_NOCACHE` target policy in `compiler/`; the read-heavy
+workload, its page-cache verification, and the host-portable `read-bench.sh`
+in `research/experiments/io-completion-bench/`; the `bench-linux-read` and
+`bench-macos-read` jobs in `.github/workflows/io-hosts.yml`; the
+read-dominated section of `research/investigations/io-model/RESULTS.md`; this
+record.
 
 ## Charter
 
@@ -58,6 +62,16 @@ of every file back in through plain descriptors, rather than relying on
 whatever the previous table left behind. It is a full sequential pass and not
 a rerun of the workload, because 32,768 pseudo-random reads leave about two
 per cent of the blocks untouched.
+
+**A fresh tree is left alone before it is measured.** `make read-settle` runs
+the same probe the table is gated on, quietly, until it passes. Writing half a
+gigabyte makes this host's malware scanner walk the new files: a probe every
+fifteen seconds on an otherwise idle machine watches residency move from the
+first file towards the last over a minute or two and then vanish as the pages
+age out, with no benchmark line running. Waiting that out is a wait for an
+outside reader to finish, not a softer threshold; the gate probe below is
+unchanged and still refuses the table. It applies to the local target only --
+the runners have no such reader.
 
 **The label is measured, not asserted.** `read_baseline probe-uncached` times
 sixteen positioned reads in each of the eight files, through descriptors that
@@ -268,13 +282,24 @@ Batch 0090 reached this conclusion on Linux hardware; it now holds on macOS,
 and no table in the document still credits the overlap lowering with a win on
 the many-files workload.
 
-**Both readings were taken twice.** The workflow ran again at commit
-`e2e4535d`, run
-[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257),
-on separately provisioned hosts -- the Linux job on an AMD EPYC 7763 rather
-than an Intel Xeon 8370C. Every ordering above holds and every ratio lands
-within about half a step of its first reading; RESULTS.md tabulates the pair.
-The second run also refused the macOS uncached label *before* its tables ran
+**Every reading was taken three times.** The workflow ran again at commits
+`e2e4535d` and `031df30e` (runs
+[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257) and
+[33133182075](https://github.com/mbbill/Whitefoot/actions/runs/33133182075)),
+each on separately provisioned hosts -- the second Linux job on an AMD EPYC
+7763 rather than an Intel Xeon 8370C. Every ordering holds on all three.
+
+The three runs also say something one could not: **the completion build's cost
+is pinned to the native floor and the sequential build's is not.** Across the
+three Linux runners `C.wide8.default` uncached varies by 9.0 per cent at
+64 KiB and 1.3 at 4 KiB, and `N.pool8` by 1.0 and 0.6 -- while the same source
+built `--no-overlap` varies by 44.8 and 58.8. A program with one read
+outstanding pays 32,768 times whatever that host's per-read latency happens to
+be, and these hosts differ by more than half; a program with eight pays what
+the device delivers, which varies far less. That is the design's own claim,
+and it is the first time this repository has measured it.
+
+The later runs also refused the macOS uncached label *before* their tables ran
 rather than only after, printed that on the label line, and went on. That is
 the labelling behaviour these jobs were built for, and it is the reason to
 read the macOS cold rows as an ordering rather than as a device measurement.
@@ -330,6 +355,17 @@ read the macOS cold rows as an ordering rather than as a device measurement.
    cases now, listed in `docs/done/0091-par3-judgment.md` — is what `gate-linux`
    reaches once these rows are fixed, not a competing account of the same
    failure.
+7. **The local gate is load-sensitive too, and this batch saw it.**
+   `backend::tests::completion::independent_io_reaches_the_second_operation_before_the_first_unblocks`
+   gives a helper three seconds of wall time to write its marker while another
+   operation is blocked on a full pipe. One `make check` run during this batch
+   -- on a machine that was also polling continuous integration and had just
+   finished a benchmark -- exceeded that budget at `WF_IO_HELPERS=1`. Four
+   runs of the same tree, including one at this branch's tip with the machine
+   quiet, passed. The test is a real observation about the runtime and is left
+   exactly as it is; what the failure adds is that its three-second budget is
+   a property of the host as much as of the model, which is the same lesson
+   the CI failures above teach.
 
 ## Approval classes
 
