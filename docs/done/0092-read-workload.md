@@ -287,6 +287,101 @@ is a fact about the table that a reader needs and that a refusal would have
 hidden. Both directions of that warming land on every line equally, because
 the passes alternate.
 
+## What the runners measured
+
+Run `https://github.com/mbbill/Whitefoot/actions/runs/33130875022`, jobs
+`bench-linux-read` (ubuntu-24.04, 4 x Xeon 8370C, ext4) and `bench-macos-read`
+(macos-14, 3 x Apple M1 virtual, APFS). Seven recorded interleaved passes
+after two warm-ups, medians across passes with the minimum and maximum beside
+them. The full tables are in
+`research/investigations/io-model/RESULTS.md`; what follows is what they say.
+
+**The model works where there are waits.** The Linux 4 KiB table is uncached
+at both ends -- the residency probe confirmed the label immediately before and
+immediately after it -- and in it the eight-wide Whitefoot program costs
+1463.43 ms against a hand-written 32-deep io_uring pipeline's 1459.84 ms. A
+quarter of a per cent. The same source built `--no-overlap` costs 3071.27 ms,
+so overlap is worth 2.10 times, and the whole of that distance is device wait:
+one read outstanding costs 2993.34 ms and thirty-two cost 1459.84. Eight reads
+stated consecutively in Whitefoot source recover all of it. At 64 KiB on the
+same runner C is 1.43 times faster than S, 1.04 times faster than an
+eight-thread pool and an eight-deep ring, and 1.10 times slower than the best
+native line, which is a two-thread pool on a four-core host.
+
+**The model costs where there are none.** Every warm table has C at best level
+with S. On Linux that is level: 1.02 and 1.06 times faster, with C's system
+time at 0.87 of S's. On macOS it is a loss: 1.27 times slower at 64 KiB and
+2.88 times slower at 4 KiB, with five times S's system time. The same program
+with `WF_IO_HELPERS=0` costs 41.84 ms where the default costs 94.72, so what
+is being paid for is the helper handoff and not the completion state machine.
+
+**The system-time ratio is the sharpest statement.** C at eight wide against S
+at eight wide: 0.58 on the Linux uncached 4 KiB table, 0.98 on the Linux
+64 KiB one, 1.55 and 1.60 on the macOS cold tables, 5.00 on the macOS warm
+4 KiB one. Overlap does not cost kernel work on Linux; it saves it. The model
+does not change between those hosts. The adapter does.
+
+**The many-files result from batch 0084 is retired.** The macOS runner ran
+that workload too, and it is the first macOS reading of it not taken through
+an endpoint-security stack: one open, read, close and fold of a small file
+costs 17.2 us here against 116 us on the maintainer's machine. With that
+constant gone, C is 1.20 times *slower* than S at eight wide and 1.51 times
+slower at four, where batch 0084 recorded C 2.05 times *faster*. The 2.05x was
+the 116 us `openat` -- a wait that large is worth overlapping whatever the
+handoff costs, and when it drops to 17 us the handoff is all that remains.
+Batch 0090 reached this conclusion on Linux hardware; it now holds on macOS,
+and no table in the document still credits the overlap lowering with a win on
+the many-files workload.
+
+## Judgment calls
+
+1. **`linux-read-bench.sh` became `read-bench.sh`, host-portable, rather than
+   being copied for macOS.** `ROOT`, `OUT` and `CLANG` name the paths and
+   `uname -s` decides the io_uring lines, so the container target and both
+   runner jobs execute one protocol. This follows batch 0090's decision for
+   `linux-bench.sh`; a second script would have been a second protocol.
+2. **The script labels; `make bench-read` refuses.** On the maintainer's
+   machine the two populations the 40 us threshold separates are known and far
+   apart, so refusing to print an unconfirmed table is right there. A hosted
+   runner's storage is not known in advance, and the honest outcome of a
+   surprising device is a table labelled by what was measured rather than no
+   table. Both probes always run and always print; only the consequence
+   differs, and the script's header says so.
+3. **The 64 KiB Linux table is published as "cold start", not "uncached".**
+   Its after-probe refused the label and the record says why: 2 GiB of reads
+   over a 512 MiB tree on a 16 GB host ends with the tree resident, and Linux
+   has no per-descriptor mode that would stop it. Every line still starts cold,
+   because the eviction runs on each open, and every line covers the same
+   schedule, so the self-warming is a constant common to all of them. The
+   alternative -- moving the threshold until the label passed -- would have
+   been the batch's original mistake with a different number.
+4. **The macOS cold tables are published with their drift stated.** Their
+   after-probes found 37 to 55 us reads where the before-probes found 76 to
+   316 and the warm probes find 4 to 6. That is a cache below the guest, which
+   `F_NOCACHE` cannot reach. It is reported rather than worked around, and the
+   interleaved schedule is what keeps it from becoming a ranking.
+5. **The runner became a pass-interleaving runner in this batch.** It runs the
+   whole plan, then runs it again reversed, and takes each line's median across
+   passes. A grouped schedule measures the first line against a different
+   machine from the last one whenever the host drifts, and both of these hosts
+   drift. The local provisional table predates the change and is labelled with
+   that among its reasons.
+6. **The gate workflow is red on this branch and was red before it.** Both
+   `gate-linux` and `gate-macos` fail at host-timing observations -- worker-pool
+   steal, scheduler-lane resumption, stack-ledger rows -- on the tip of
+   `batch/0090-ci-real-hosts` that this branch merged, and on this branch they
+   fail the same way. Nothing here touches those tests. Canonical `make check`
+   passes on the maintainer's machine, which is the merge requirement.
+
+## Approval classes
+
+- **No specification change.** `spec/kernel-spec.md` is untouched.
+- **No conformance change.** No case, manifest line, adapter, runner, or
+  collection wiring is added, modified, deleted, or renamed.
+- **No new root entry.** `.github/workflows/io-hosts.yml` gains two jobs;
+  `research/experiments/io-completion-bench/` gains one renamed script.
+- Ordinary compiler, research, and documentation changes otherwise.
+
 ## Not done
 
 - **Linux cannot hold a descriptor uncached.** `F_NOCACHE` is a mode of the

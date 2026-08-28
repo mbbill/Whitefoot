@@ -27,9 +27,21 @@ make -C research/experiments/io-completion-bench bench-read   # macOS, read-heav
 make -C research/experiments/io-completion-bench linux-read   # Linux, read-heavy
 ```
 
-The Linux-hardware run is the `bench-linux` job in
-`.github/workflows/io-hosts.yml`, which runs the same `linux-bench.sh` with no
-container in the way; its table is uploaded as a job artifact.
+The runner tables come from `.github/workflows/io-hosts.yml`: `bench-linux`
+runs `linux-bench.sh` on Linux hardware with no container in the way, and
+`bench-linux-read` and `bench-macos-read` run `read-bench.sh` on both hosts.
+Every one of them uploads its table as a job artifact and prints it to the job
+summary.
+
+Two claims in the dated sections below have since been retired by a later
+measurement, and each section says so where it stands. Batch 0084's "a thread
+pool beats io_uring only where opens dominate" was retired by batch 0090.
+Batch 0084's and 0086's "overlap is worth about two times on a program that
+exposes width" was a macOS reading taken on a machine whose endpoint-security
+stack charges 116 us for an `openat`; batch 0092 re-ran that workload on an
+ordinary macOS system and found the completion build 1.20 times *slower* than
+its own sequential build. Neither retirement touches what those sections
+measured; both change what may be concluded from it.
 
 ## Program-level results, batch 0084 (2026-08-27)
 
@@ -347,7 +359,10 @@ Linux  C.wide8 against N.pool2               2.97x slower     missed
 ```
 
 C beats its own sequential build everywhere, by about two times on macOS and
-2.8 times on Linux. The depth-matched Linux comparison batch 0084 reported —
+2.8 times on Linux. Both halves of that sentence were later retired: batch
+0090 for Linux, on hardware rather than in a container, and batch 0092 for
+macOS, on a host without this machine's endpoint-security stack. What is
+measured here stands; what may be concluded from it is in those sections. The depth-matched Linux comparison batch 0084 reported —
 the four-wide program against a hand-written ring at queue depth four — still
 holds, at 6 percent. It opens to 26 percent when both are widened to eight,
 and that widening is the finding about where the distance lives.
