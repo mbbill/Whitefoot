@@ -1,0 +1,8 @@
+PAR loop        probes/probe_b1_write_after_loop.wf:17  loop  denied      condition 2: an iteration holds an exclusive loan on storage the iteration does not introduce, at &uniq 'f files
+PAR stage       probes/probe_b1_write_after_loop.wf:17  for   permitted   staged at open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 2_u64); 5 places classified
+PAR place       probes/probe_b1_write_after_loop.wf:17  serialized-P  &uniq 'f files  every footprint element and loan touching it belongs to the prologue, and prologues run in index order without overlapping
+PAR place       probes/probe_b1_write_after_loop.wf:17  read-only     &'f cwd  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       probes/probe_b1_write_after_loop.wf:17  serialized-E  set digest = digest +wrap widened;  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR place       probes/probe_b1_write_after_loop.wf:17  replicated    let name = buffer_new(16_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR place       probes/probe_b1_write_after_loop.wf:17  replicated    let data = buffer_new(65536_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR loop        probes/probe_b1_write_after_loop.wf:34  loop  permitted   eligible; one accumulator under +wrap

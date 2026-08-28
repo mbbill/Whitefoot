@@ -1,0 +1,17 @@
+PAR loop        programs/p3_checksum.wf:39  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR loop        programs/p3_checksum.wf:54  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p3_checksum.wf:115  loop  denied      condition 2: a return leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission, at return Err<unit, IoError>(error: move problem);
+PAR place       programs/p3_checksum.wf:115  denied        let pending = ilt(sent, length);  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p3_checksum.wf:115  read-only     let pending = ilt(sent, length);  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p3_checksum.wf:115  denied        &uniq 'attempt deref(output)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p3_checksum.wf:115  read-only     source  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR stage       programs/p3_checksum.wf:145  loop  denied      condition 2: a break naming this loop leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission
+PAR place       programs/p3_checksum.wf:145  denied        let capacity = len(deref(chunk));  the body writes it and a may-suspend call retains a borrow of it past its own submission
+PAR place       programs/p3_checksum.wf:145  denied        set status = 6_u8;  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p3_checksum.wf:145  read-only     handle  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p3_checksum.wf:145  denied        offset  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p3_checksum.wf:145  serialized-E  let mixed = ixor(digest, widened);  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR place       programs/p3_checksum.wf:145  serialized-E  set total = total +wrap received;  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR loop        programs/p3_checksum.wf:166  loop  denied      condition 1: the loop writes storage outliving the iteration that no exactly associative operation reduces, at set digest = mixed *wrap 1099511628211_u64;
+PAR loop        programs/p3_checksum.wf:189  loop  denied      condition 1: the loop writes storage outliving the iteration that no exactly associative operation reduces, at set status = outcome;
+PAR stage       programs/p3_checksum.wf:189  for   denied      condition 1: a statement of the body neither executes before the submission on every path nor is reached only through it; instead, write the body so its first I/O submission is reached on every path through it and everything else is reached only through it, at clean

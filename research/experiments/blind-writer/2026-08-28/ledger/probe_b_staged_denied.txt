@@ -1,0 +1,9 @@
+PAR loop        programs/probe_b_staged_denied.wf:17  loop  denied      condition 2: an iteration holds an exclusive loan on storage the iteration does not introduce, at &uniq 'f files
+PAR stage       programs/probe_b_staged_denied.wf:17  for   denied      condition 3: a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce; instead, give each iteration its own resource, or leave this loop sequential: storage that carries one position cannot be held by two iterations at once, at &uniq 'say out
+PAR place       programs/probe_b_staged_denied.wf:17  serialized-P  &uniq 'f files  every footprint element and loan touching it belongs to the prologue, and prologues run in index order without overlapping
+PAR place       programs/probe_b_staged_denied.wf:17  read-only     &'f cwd  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/probe_b_staged_denied.wf:17  serialized-E  set digest = digest +wrap widened;  every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order
+PAR place       programs/probe_b_staged_denied.wf:17  denied        &uniq 'say out  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/probe_b_staged_denied.wf:17  replicated    let name = buffer_new(16_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR place       programs/probe_b_staged_denied.wf:17  replicated    let data = buffer_new(65536_u64, 0_u8);  iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of
+PAR loop        programs/probe_b_staged_denied.wf:34  loop  permitted   eligible; one accumulator under +wrap

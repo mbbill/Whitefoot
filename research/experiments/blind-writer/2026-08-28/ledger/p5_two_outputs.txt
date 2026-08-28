@@ -1,0 +1,8 @@
+PAR loop        programs/p5_two_outputs.wf:35  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p5_two_outputs.wf:96  loop  denied      condition 2: a return leaves the loop from the remainder; instead, take every early return, break, or propagate in the prologue, before the body's first I/O submission, at return Err<unit, IoError>(error: move problem);
+PAR place       programs/p5_two_outputs.wf:96  denied        let pending = ilt(sent, length);  the body reaches it on both sides of the cut, so no single segment serializes it
+PAR place       programs/p5_two_outputs.wf:96  read-only     let pending = ilt(sent, length);  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR place       programs/p5_two_outputs.wf:96  denied        &uniq 'attempt deref(output)  the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own
+PAR place       programs/p5_two_outputs.wf:96  read-only     source  no footprint of the body writes it or any place overlapping it, and every loan on it is shared
+PAR loop        programs/p5_two_outputs.wf:114  loop  denied      condition 2: the body contains a statement that forms a borrow of storage the iteration does not introduce
+PAR stage       programs/p5_two_outputs.wf:114  for   denied      condition 1: a statement of the body neither executes before the submission on every path nor is reached only through it; instead, write the body so its first I/O submission is reached on every path through it and everything else is reached only through it, at log_fits

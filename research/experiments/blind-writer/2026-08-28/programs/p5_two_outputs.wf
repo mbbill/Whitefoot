@@ -1,0 +1,179 @@
+const report_label: array<u8, 8> =[114_u8, 101_u8, 112_u8, 111_u8, 114_u8, 116_u8, 32_u8, 35_u8];
+
+const log_label: array<u8, 5> =[108_u8, 111_u8, 103_u8, 32_u8, 35_u8];
+
+const line_break: array<u8, 1> =[10_u8];
+
+fn digit_byte(value: own u64) -> result: own u8 pure {
+  doc "Renders one decimal digit value as its ASCII byte.";
+  let shifted = value +wrap 48_u64;
+  match cvt<u64, u8>(shifted) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: problem) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) -> result: own u64 reads(destination), writes(destination) {
+  doc "Stores one byte when the destination holds that position and reports the next position.";
+  let capacity = len(deref(destination));
+  let fits = ilt(at, capacity);
+  if fits {
+    set deref(destination)[at] = value;
+    return at +wrap 1_u64;
+  }
+  return at;
+}
+
+fn put_text['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, text: own slice<'s, u8>) -> result: own u64 reads(destination, text), writes(destination) {
+  doc "Copies every byte of one read-only text view into the destination.";
+  let cursor = at;
+  let count = len(text);
+  for @copy step in 0_u64..count {
+    let byte = text[step];
+    region 'one {
+      set cursor = put_byte<'one>(destination: &uniq 'one deref(destination), at: cursor, value: byte);
+    }
+  }
+  return cursor;
+}
+
+fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination), allocates(heap) {
+  doc "Renders one unsigned value in decimal into the destination.";
+  let scratch = buffer_new(20_u64, 0_u8);
+  let count = 0_u64;
+  let rest = value;
+  loop @split {
+    let digit = rest % 10_u64;
+    let byte = digit_byte(value: digit);
+    let capacity = len(scratch);
+    let room = ilt(count, capacity);
+    if room {
+      set scratch[count] = byte;
+      set count = count +wrap 1_u64;
+    }
+    set rest = rest / 10_u64;
+    let done = ieq(rest, 0_u64);
+    if done {
+      break @split;
+    }
+  }
+  let cursor = at;
+  loop @unwind {
+    let empty = ieq(count, 0_u64);
+    if empty {
+      break @unwind;
+    }
+    set count = count -wrap 1_u64;
+    let capacity = len(scratch);
+    let inside = ilt(count, capacity);
+    if inside {
+      let byte = scratch[count];
+      region 'one {
+        set cursor = put_byte<'one>(destination: &uniq 'one deref(destination), at: cursor, value: byte);
+      }
+    }
+  }
+  return cursor;
+}
+
+fn emit_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define capacity = len(deref(source));
+  requires ile(length, capacity);
+} {
+  doc "Writes one prefix of the source buffer, reattempting until the host accepts every byte.";
+  let sent = 0_u64;
+  loop @publish {
+    let pending = ilt(sent, length);
+    if pending {
+    } else {
+      break @publish;
+    }
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Writes a numbered report line to standard output and a matching log line to standard error, alternating between the two sinks.";
+  let report = buffer_new(64_u64, 0_u8);
+  let log = buffer_new(64_u64, 0_u8);
+  let failed = 0_u8;
+  for @rows index in 0_u64..8_u64 {
+    let report_end = 0_u64;
+    region 'report_label_view {
+      let view = slice_of(&'report_label_view report_label);
+      region 'report_label_put {
+        set report_end = put_text<'report_label_put, 'report_label_view>(destination: &uniq 'report_label_put report, at: report_end, text: move view);
+      }
+    }
+    region 'report_number {
+      set report_end = put_decimal<'report_number>(destination: &uniq 'report_number report, at: report_end, value: index);
+    }
+    region 'report_break_view {
+      let view = slice_of(&'report_break_view line_break);
+      region 'report_break_put {
+        set report_end = put_text<'report_break_put, 'report_break_view>(destination: &uniq 'report_break_put report, at: report_end, text: move view);
+      }
+    }
+    let report_room = len(report);
+    let report_fits = ile(report_end, report_room);
+    if report_fits {
+      region 'report_emit {
+        match emit_all<'report_emit, 'report_emit>(output: &uniq 'report_emit out, source: &'report_emit report, length: report_end) {
+          Ok(value: done) => {
+          }
+          Err(error: problem) => {
+            set failed = 2_u8;
+          }
+        }
+      }
+    } else {
+      set failed = 2_u8;
+    }
+    let log_end = 0_u64;
+    region 'log_label_view {
+      let view = slice_of(&'log_label_view log_label);
+      region 'log_label_put {
+        set log_end = put_text<'log_label_put, 'log_label_view>(destination: &uniq 'log_label_put log, at: log_end, text: move view);
+      }
+    }
+    region 'log_number {
+      set log_end = put_decimal<'log_number>(destination: &uniq 'log_number log, at: log_end, value: index);
+    }
+    region 'log_break_view {
+      let view = slice_of(&'log_break_view line_break);
+      region 'log_break_put {
+        set log_end = put_text<'log_break_put, 'log_break_view>(destination: &uniq 'log_break_put log, at: log_end, text: move view);
+      }
+    }
+    let log_room = len(log);
+    let log_fits = ile(log_end, log_room);
+    if log_fits {
+      region 'log_emit {
+        match emit_all<'log_emit, 'log_emit>(output: &uniq 'log_emit err, source: &'log_emit log, length: log_end) {
+          Ok(value: done) => {
+          }
+          Err(error: problem) => {
+            set failed = 2_u8;
+          }
+        }
+      }
+    } else {
+      set failed = 2_u8;
+    }
+  }
+  return exit_status(code: failed);
+}
