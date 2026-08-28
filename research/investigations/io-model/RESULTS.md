@@ -1699,25 +1699,35 @@ make it worth more than a fourth number.
 
 **Its uncached 4 KiB table is confirmed at both ends** — `probe before the
 table: confirmed; probe after it: confirmed` — so it is a reading of a cold
-device rather than of a cache. It is not the only such table on this branch:
-four Linux cold 4 KiB tables carry that label, and the row this section quotes
-is worth quoting only beside the other three. `266acf4f`'s cold half is the
-one this section calls unreadable for its spreads, so its row below is a
-confirmed label around a median, not a ranking.
+device rather than of a cache. It is not the only such table on this branch,
+and the count is not four: the draw table above lists **eight**
+`bench-linux-read` uncached 4 KiB tables and every one of them is
+`confirmed/confirmed`, so the row this section quotes is worth quoting only
+beside the other seven. `266acf4f`'s cold half is the one this section calls
+unreadable for its spreads, so its row below is a confirmed label around a
+median, not a ranking.
 
 ```text
-run          commit    processor    C.wide8.default  S.wide8  N.pool8  N.uring32
-33153717709  96bb4778  EPYC 7763            1479.87  4227.07  1479.56    1469.81
-33155821397  266acf4f  Xeon 8573C           1514.79  8973.99  1435.03    1268.13
-33165141309  a06c53f9  EPYC 9V74            1216.03  4108.74  1482.48    1448.85
-33172323795  261070c8  Xeon 8370C           1465.26  3469.10  1481.78    1441.72
+run          commit    processor   C.wide8.default  S.wide8  N.pool8  N.uring32   C/S  C/uring32
+33149563172  caa66bad  Xeon 8370C          1455.21  3075.32  1488.00    1456.44 0.473      0.999
+33150416900* 34ac1ae2  EPYC 7763           1470.94  3747.70  1474.69    1466.31 0.393      1.003
+33151353052  4a748d6e  EPYC 7763           1482.81  4496.24  1486.45    1458.48 0.330      1.017
+33153717709  96bb4778  EPYC 7763           1479.87  4227.07  1479.56    1469.81 0.350      1.007
+33155821397  266acf4f  Xeon 8573C          1514.79  8973.99  1435.03    1268.13 0.169      1.194
+33158144391  72e98cba  EPYC 9V45           1249.62  5085.89  1474.52    1457.10 0.246      0.858
+33165141309  a06c53f9  EPYC 9V74           1216.03  4108.74  1482.48    1448.85 0.296      0.839
+33172323795  261070c8  Xeon 8370C          1465.26  3469.10  1481.78    1441.72 0.422      1.016
 ```
 
-All four report four CPUs; the 7763 and the 8370C ran on `sda1`, the 8573C and
-the 9V74 on `nvme0n1p1`.
+`N.uring32` is the fastest native line on every one of the eight, so
+`C/uring32` is also C against *every* native line of its table. All eight
+runners report four CPUs; the 8370C and 7763 draws ran on `sda1`, the 8573C,
+9V45 and 9V74 draws on `nvme0n1p1`. `34ac1ae2`'s run was cancelled after this
+table completed and carries the draw table's `*`.
 
-On this run's table, and on this run's alone, the eight-wide Whitefoot program
-is faster than every native line:
+Three of the eight put the eight-wide Whitefoot program ahead of every native
+line — 0.999, 0.858 and 0.839 — and this run's table is the furthest ahead of
+the three:
 
 ```text
 line                        median     min      max
@@ -1734,17 +1744,21 @@ C.wide8.h8                 1490.76 1408.88  1742.53
 
 `C.wide8.default` at 1216.03 ms is 3.38 times faster than its own sequential
 build, 1.22 times faster than an eight-thread pool and 1.19 times faster than
-a hand-written 32-deep io_uring pipeline. On the other three confirmed tables
-it does not reach that: `96bb4778` puts it level with both native lines
-(1479.87 against `N.pool8`'s 1479.56 and `N.uring32`'s 1469.81), `261070c8`
-puts it a shade ahead of the pool and a shade behind the ring (1465.26 against
-1481.78 and 1441.72), and `266acf4f` puts it behind both (1514.79 against
-1435.03 and 1268.13). All four beat the sequential build by a wide margin —
-2.86, 2.37, 5.92 and 3.38 times. So what four confirmed Linux cold tables
-support is that the completion program is between level with and clearly ahead
-of a hand-written native pipeline on this job, and the 1216.03 reading is this
-section's because this run is the follow-up's draw, not because it is the best
-of the four. The 64 KiB table on the same run is a cold-start table by its own
+a hand-written 32-deep io_uring pipeline. `72e98cba` reads almost as far
+ahead — 1249.62 against `N.pool8`'s 1474.52 and `N.uring32`'s 1457.10, 1.18
+and 1.17 times — and `caa66bad` is a tie rather than a lead, 1455.21 against
+the ring's 1456.44, which is 1.23 ms in 1456. Of the remaining five, four sit
+within 1.7 per cent behind the ring — `96bb4778` 1479.87 against 1469.81,
+`34ac1ae2` 1470.94 against 1466.31, `261070c8` 1465.26 against 1441.72,
+`4a748d6e` 1482.81 against 1458.48 — and the fifth, `266acf4f`, sits 19.4 per
+cent behind it (1514.79 against 1268.13) on the cold half this record already
+calls unreadable for its spreads. All eight beat their own sequential build by
+a wide margin: `S/C` in table order is 2.11, 2.55, 3.03, 2.86, 5.92, 4.07,
+3.38 and 2.37 times. So what eight confirmed Linux cold 4 KiB tables support
+is that the completion program is level with a hand-written native pipeline on
+this job and sometimes well ahead of it, and the 1216.03 reading is this
+section's because this run is the follow-up's draw — it is also, as the table
+shows, the lowest of the eight. The 64 KiB table on the same run is a cold-start table by its own
 probe (confirmed before, refused after) and reads the same way less sharply:
 1213.14 against `N.pool8`'s 1275.99 and `S.wide8`'s 1587.44.
 
@@ -1752,59 +1766,80 @@ probe (confirmed before, refused after) and reads the same way less sharply:
 `C.wide8/S.wide8` here is 1.010 at 64 KiB and 0.989 at 4 KiB, with the narrow
 control at 0.998 and 1.015. Set beside the earlier readings:
 
+This is every Linux warm draw that exists, not a selection: the seven
+`bench-linux-read` warm tables of the draw table above — the two cancelled
+runs stopped before their warm halves — with batch 0092's draw on top.
+
 ```text
-draw           commit    processor          warm 64  warm 4   narrow 64  narrow 4
-0092           6ac36126  Xeon 8370C          0.982    0.941     1.004      1.011
-earlier        96bb4778  EPYC 7763           0.984    0.946     1.002      1.016
-this section   266acf4f  Xeon 8573C          1.026    1.055     0.997      1.051
-follow-up      a06c53f9  EPYC 9V74           1.010    0.989     0.998      1.015
-repair         261070c8  Xeon 8370C          1.015    1.000     0.996      0.999
+draw         run          commit    processor   disk  warm 64  warm 4  narrow 64  narrow 4
+0092         33130875022  6ac36126  Xeon 8370C  sda1   0.9816  0.9412     1.0035    1.0112
+merge base   33149563172  caa66bad  Xeon 8370C  sda1   0.9997  0.9271     0.9983    0.9940
+repair       33151353052  4a748d6e  EPYC 7763   sda1   1.0112  1.0004     0.9941    0.9974
+earlier      33153717709  96bb4778  EPYC 7763   sda1   0.9840  0.9460     1.0023    1.0157
+this section 33155821397  266acf4f  Xeon 8573C  nvme   1.0261  1.0550     0.9969    1.0514
+record       33158144391  72e98cba  EPYC 9V45   nvme   1.0078  1.0402     1.0092    1.0128
+follow-up    33165141309  a06c53f9  EPYC 9V74   nvme   1.0099  0.9887     0.9984    1.0149
+repair round 33172323795  261070c8  Xeon 8370C  sda1   1.0148  0.9998     0.9956    0.9990
 ```
 
-Three of the five draws put the completion build under its own sequential
-build warm at 4 KiB and a fourth sits on it exactly; the outlier is the 8573C
-one this section reads. The last row is what changes the argument, because it
-is on a **Xeon 8370C — batch 0092's own processor**, the one that read 0.941,
-and it reads 1.000. The 4 KiB ratio therefore moves from 0.941 to 1.000 on the
-same processor model between two draws, which says the spread across these
-rows is not the hardware being different; it is what a hosted runner gives
-this pair from one draw to the next. That retires the framing the earlier rows
-invited, that the 8573C is an outlier to be explained. **Nothing across the
-five draws refutes the no-regression bar, and the bar table above keeps its
-`unresolved` grade all the same, because that table reads `266acf4f` and every
-other draw is a different one.** What is owed is not an explanation of one
-machine but a reading of this pair that does not move six points between
-draws, which needs repeated draws on one label rather than one more draw on a
-new one.
+Read the warm 4 KiB column down: 0.9412, 0.9271, 1.0004, 0.9460, 1.0550,
+1.0402, 0.9887, 0.9998. Four readings are below one, two are on it to within
+half a thousandth, and **two are above it by four points or more — 1.0550 on
+the Xeon 8573C and 1.0402 on the EPYC 9V45**, which are different processors
+on different disks. So the 8573C is not an outlier to be explained; it is the
+larger of two. The 8370C rows say the same thing a second way: batch 0092 read
+0.9412 on that processor model, this branch's merge base read 0.9271 on it,
+and the repair round read 0.9998 on it — the ratio moves seven points across
+three draws of one processor model, which is what a hosted runner gives this
+pair from one draw to the next rather than a property of a machine. The warm
+64 KiB column spans 0.9840 to 1.0261 over the same seven branch draws.
+**Nothing across these draws refutes the no-regression bar, and the bar table
+above keeps its `unresolved` grade all the same, because that table reads
+`266acf4f` and every other draw is a different one.** What is owed is not an
+explanation of one machine but a reading of this pair that does not move six
+points between draws, which needs repeated draws on one label rather than one
+more draw on a new one.
 
-Every figure in the table above was recomputed from the five runs' own
-artifacts: 328.38/334.53 and 71.69/76.17 for 0092, 285.27/289.92 and
-78.78/83.28 for `96bb4778`, and the tables printed in this section and under
-"A draw of the repaired runtime" in the handoff for the other three.
+Every figure in the table above was recomputed from each run's own artifact:
+328.38/334.53 and 71.69/76.17 for 0092, and for the seven branch rows the
+`S.wide8`, `C.wide8.default`, `S.narrow` and `C.narrow.default` medians of
+that run's warm tables — the same parse that produced the draw table above.
 
 ### Linux hardware, many files
 
-`bench-linux` in the same run, for comparison with batch 0090's two draws of
-the same job and with the two later draws on this branch:
+`bench-linux` ran in every one of this branch's nine `io-bench` runs and
+completed its table in all nine, including both runs that were cancelled
+later. All nine are here, with batch 0090's two draws of the same job on top:
 
 ```text
-line              0090 run 1  0090 run 2   266acf4f   a06c53f9   261070c8
-processor          EPYC 9V74   EPYC 9V74  EPYC 7763  EPYC 7763  EPYC 9V45
-S.wide8               141.26      110.94     122.49     120.94      96.04
-C.wide8.default       147.04      115.97     129.55     128.73     100.85
-C/S                    1.041       1.045      1.058      1.064      1.050
+draw          run          commit    processor   S.wide8  C.wide8.default    C/S
+0090 run 1    33114336424  -         EPYC 9V74    141.26           147.04  1.0410
+0090 run 2    33115297530  -         EPYC 9V74    110.94           115.97  1.0450
+merge base    33149563172  caa66bad  EPYC 7763    123.91           131.09  1.0579
+traced        33150416900* 34ac1ae2  EPYC 9V74    142.25           147.70  1.0383
+repair        33151353052  4a748d6e  EPYC 7763    122.60           131.14  1.0697
+left in place 33153717709  96bb4778  EPYC 7763    122.83           130.17  1.0598
+trace removed 33155045849* 135abdf2  EPYC 7763    121.93           128.64  1.0550
+drain removed 33155821397  266acf4f  EPYC 7763    122.49           129.55  1.0576
+record        33158144391  72e98cba  EPYC 7763    121.61           128.91  1.0600
+follow-up     33165141309  a06c53f9  EPYC 7763    120.94           128.73  1.0644
+repair round  33172323795  261070c8  EPYC 9V45     96.04           100.85  1.0501
 ```
 
 The ordering reproduces on every draw — C is slower than S here as it was in
 both 0090 draws, which is what batch 0090 recorded and this batch does not
-change — and the five ratios span 1.041 to 1.064, against the within-run
-spread of about 2 per cent batch 0090 reports for this job. The two that
-differ most, 1.058 and 1.064, are on the same processor, so the spread is not
-the hardware; and 1.050 at `261070c8` sits between the 0090 pair and this
-branch's own two. Five draws across a change that no one of them can resolve
-is neither enough to call a regression nor enough to call the row met, which
-is why the bar table above grades it `unresolved` rather than `yes`. What it
-would take is repeated draws on one label, not another host.
+change. The nine branch ratios span 1.0383 to 1.0697 and the two 0090 ratios
+sit inside that span, against the within-run spread of about 2 per cent batch
+0090 reports for this job. Seven of the nine branch draws are on one processor
+model, the EPYC 7763, and those seven alone span 1.0550 to 1.0697, so the
+spread is not the hardware. Batch 0090 had a third runner as well, run
+33118248259, which that section records only by its headline lines — `S.wide`
+112.19 against `C.wide.default` 118.14, a ratio of 1.053 on the unpinned wide
+pair rather than on the eight-wide one this table reads — so it is named here
+and not tabulated. Eleven draws across a change that no one of them
+can resolve is neither enough to call a regression nor enough to call the row
+met, which is why the bar table above grades it `unresolved` rather than
+`yes`. What it would take is repeated draws on one label, not another host.
 
 
 ## Historical C-core results
