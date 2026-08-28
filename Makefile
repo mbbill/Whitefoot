@@ -299,8 +299,14 @@ research-tests:
 # `ulimit -c 0` for the same reason `compiler/Makefile` sets it: the trap cases
 # execute programs that abort on purpose, and a host that hands each abort to a
 # crash-report handler makes the gate pay for core files nothing reads.
+#
+# `--profile gate` for the reason `compiler/Cargo.toml` states: this adapter
+# runs the whole compiler over five hundred cases, which is exactly the
+# compute-bound front-end analysis the gate profile exists for, and it kept
+# every debug assertion and overflow check. Left at the default profile it was
+# both a second unoptimized build of the crate and an unoptimized run of it.
 conformance-run:
-	ulimit -c 0; cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
+	ulimit -c 0; cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
 
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:

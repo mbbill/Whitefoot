@@ -157,7 +157,7 @@ jobs:
       - name: ${{ matrix.stage }}
         run: |
           set -o pipefail
-          ${{ matrix.run }} 2>&1 \
+          ( ${{ matrix.run }} ) 2>&1 \
             | perl -MTime::HiRes=time -ne 'BEGIN { $| = 1 } printf "%.3f %s", time, $_' \
             | tee "$RUNNER_TEMP/stage.log" \
             | cut -d' ' -f2-

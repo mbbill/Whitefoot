@@ -103,9 +103,12 @@ make install-hooks   # once: enable immutable-archive pre-commit protection
 make check           # compiler, conformance, and specification identity gate
 ```
 
-The same `make check` runs on every push through
+`make check` ends with the wall time of each of its stages, so a gate that
+grew names the stage that grew it. The same stages run on every push through
 [`.github/workflows/gate.yml`](.github/workflows/gate.yml), on a GitHub-hosted
-Linux runner and a GitHub-hosted macOS runner.
+Linux runner and a GitHub-hosted macOS runner: one job per stage rather than
+one job per host, so the wait is the slowest stage instead of the sum, and each
+job is capped at eight minutes.
 [`.github/workflows/io-hosts.yml`](.github/workflows/io-hosts.yml) carries the
 completion-I/O evidence that no machine here can produce: the Linux io_uring
 adapter and sanitizers on a real kernel, the program-level I/O benches on real
