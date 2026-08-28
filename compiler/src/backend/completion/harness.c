@@ -2486,43 +2486,196 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     return 0;
 }
 
-/* A program whose operations do wait gets helpers, up to the cap and no
- * further, and gets them without the queue having to be deeper than the cap. */
-static int test_pool_grows_when_operations_wait(const char *directory) {
-    wf_completion_runtime runtime;
-    wf_completion_slot slots[8];
-    wf_file_adapter adapter;
-    wf_file_work queue[8];
-    pthread_t helpers[4];
-    char path[512];
-    int descriptor;
-    size_t held;
+/* How many requests the two growth cases queue behind a pool that cannot
+ * empty it.
+ *
+ * Growth adds at most one helper per submission and only while the queue is
+ * deeper than the pool, so a pool of `n` needs a submission numbered past
+ * `2n` to reach `n + 1` in the worst interleaving, where every helper takes
+ * one entry the instant it is created.  Twenty carries a pool of eight, which
+ * is the largest ceiling either case below asks for. */
+#define WF_POOL_GROWTH_DEPTH 20u
 
-    CHECK(directory != NULL);
+/* Drives the helper pool against a queue it cannot empty and answers how
+ * large the pool became.
+ *
+ * `drive_reads_to_completion` waits for each request before submitting the
+ * next, so its queue never holds more than one entry.  Growth is gated on
+ * `queue_count > held`, which that shape satisfies only while the pool is
+ * empty: the first helper it creates is also its last, however high the cap
+ * is.  A case that asserts an upper bound above one therefore asserts nothing
+ * under that driver -- the bound is not approached, let alone reached, and
+ * deleting the code that enforces it changes no verdict.
+ *
+ * These requests are reads of an empty pipe instead, so a helper that takes
+ * one blocks in the host call and never returns for another.  At most one
+ * entry per helper ever leaves the queue, so after `i` submissions the queue
+ * holds at least `i - held` entries and every submission past twice the
+ * current pool size finds `queue_count > held` and adds a helper.  Growth
+ * then stops only where the cap stops it, which is the question both cases
+ * below ask.
+ *
+ * The first read is served by a byte written before it, because growth also
+ * requires a measured wait and an adapter that has executed nothing has
+ * measured none.  Its execution is the sampled one -- the interval starts at
+ * the first -- and the caller performs it, because the pool is still empty.
+ * The pipe is fed the rest of its bytes only after the pool count has been
+ * read, so that count is the pool's final one. */
+static int grow_pool_against_a_blocked_queue(
+    wf_completion_runtime *runtime,
+    wf_file_adapter *adapter,
+    int read_descriptor,
+    int write_descriptor,
+    size_t *held
+) {
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+    wf_completion_token tokens[WF_POOL_GROWTH_DEPTH];
+    unsigned char bytes[WF_POOL_GROWTH_DEPTH];
+    char feed[WF_POOL_GROWTH_DEPTH];
+    wf_completion_token primer_token;
+    wf_file_request request;
+    wf_file_result result;
+    wf_completion_event event;
+    wf_completion_outcome outcome;
+    unsigned char primer_byte = 0;
+    unsigned index;
+
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_READ;
+    request.operation.read.descriptor = read_descriptor;
+    request.operation.read.buffer = &primer_byte;
+    request.operation.read.count = 1;
+
+    CHECK(write(write_descriptor, "w", 1) == 1);
+    CHECK(wf_completion_claim(runtime, &primer_token) == WF_COMPLETION_CLAIMED);
+    /* Nothing is measured yet, so this submission cannot grow the pool
+     * whatever its cap says, and the caller is the queue's only engine. */
     CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-pool-waits-%ld",
-            directory,
-            (long)getpid()
-        ) > 0
+        wf_file_adapter_submit(adapter, primer_token, &request)
+        == WF_FILE_TARGET_OWNS
     );
-    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
-    CHECK(descriptor >= 0);
-    CHECK(write(descriptor, "wf", 2) == 2);
+    CHECK(wf_file_adapter_helper_count(adapter) == 0);
+    CHECK(wf_file_adapter_progress(adapter, 1) == 1);
+    CHECK(drain_and_consume_file(runtime, primer_token, &result) == 0);
+    CHECK(result.error_code == 0);
+    CHECK(result.value == 1);
+    CHECK(primer_byte == 'w');
+    /* One scripted millisecond a call is a wait by any reading of the
+     * threshold, so the growth rule's measured half now holds. */
+    CHECK(wf_file_adapter_wait_verdict(adapter) == WF_FILE_WAIT_LONG);
 
-    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 4, 0) == 0);
+    /* The deep queue.  Nothing feeds the pipe from here, so every helper the
+     * pool gains blocks on its first read and the queue only deepens. */
+    for (index = 0; index < WF_POOL_GROWTH_DEPTH; ++index) {
+        bytes[index] = 0;
+        feed[index] = 'q';
+        CHECK(
+            wf_completion_claim(runtime, &tokens[index])
+            == WF_COMPLETION_CLAIMED
+        );
+        request.operation.read.buffer = &bytes[index];
+        CHECK(
+            wf_file_adapter_submit(adapter, tokens[index], &request)
+            == WF_FILE_TARGET_OWNS
+        );
+    }
+    /* Admission has stopped and growth happens only on admission, so this is
+     * the size the policy settled on. */
+    *held = wf_file_adapter_helper_count(adapter);
+
+    /* One byte for each submitted read: from here no read of this pipe can
+     * block, so the pool -- whatever size it reached -- drains the queue, and
+     * the caller helps in case the pool is empty. */
+    CHECK(
+        write(write_descriptor, feed, sizeof(feed))
+        == (ssize_t)sizeof(feed)
+    );
+    for (index = 0; index < WF_POOL_GROWTH_DEPTH; ++index) {
+        unsigned attempts;
+        int drained = 0;
+        for (attempts = 0; attempts < 100000u && drained == 0; ++attempts) {
+            if (wf_completion_drain_token(runtime, tokens[index], &event)
+                != 0) {
+                drained = 1;
+                break;
+            }
+            if (wf_file_adapter_progress(adapter, 1) == 0) {
+                (void)nanosleep(&delay, NULL);
+            }
+        }
+        CHECK(drained == 1);
+        CHECK(event.token.slot == tokens[index].slot);
+        CHECK(event.token.generation == tokens[index].generation);
+        CHECK(
+            wf_completion_consume(
+                runtime,
+                tokens[index],
+                &result,
+                sizeof(result),
+                &outcome
+            ) == WF_COMPLETION_CONSUMED
+        );
+        CHECK(result.error_code == 0);
+        CHECK(result.value == 1);
+        CHECK(bytes[index] == 'q');
+    }
+    return 0;
+}
+
+/* A program whose operations do wait gets helpers, up to the cap and no
+ * further.
+ *
+ * Both ends of that promise need a queue the pool cannot empty.  With one
+ * request in flight at a time the pool stops itself at one helper, so a cap of
+ * four is neither reached nor tested; against the blocked queue the pool
+ * climbs until the cap is the only thing left stopping it, and the count it
+ * settles on is the cap exactly. */
+static int test_pool_grows_when_operations_wait(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
+    wf_file_adapter adapter;
+    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
+    pthread_t helpers[4];
+    int descriptors[2];
+    size_t held = 0;
+
+    CHECK(pipe(descriptors) == 0);
+    CHECK(
+        wf_completion_runtime_init(
+            &runtime,
+            slots,
+            WF_POOL_GROWTH_DEPTH + 1u
+        ) == 0
+    );
+    CHECK(
+        wf_file_adapter_init(
+            &adapter,
+            &runtime,
+            queue,
+            WF_POOL_GROWTH_DEPTH + 1u,
+            helpers,
+            4,
+            0
+        ) == 0
+    );
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
-    /* A millisecond a call is a wait by any reading of the threshold. */
+    /* Nothing measured yet is not evidence of anything, and neither policy
+     * fires on it. */
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+
     wf_script_clock(1000000u);
-    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 32) == 0);
+    CHECK(
+        grow_pool_against_a_blocked_queue(
+            &runtime,
+            &adapter,
+            descriptors[0],
+            descriptors[1],
+            &held
+        ) == 0
+    );
     wf_script_clock(0);
-    held = wf_file_adapter_helper_count(&adapter);
-    CHECK(held >= 1);
-    CHECK(held <= 4);
+    CHECK(held == 4);
     CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_LONG);
     /* A transfer submitted now would be overlapped by a helper, so the
      * submitting thread must not take it itself. */
@@ -2530,58 +2683,76 @@ static int test_pool_grows_when_operations_wait(const char *directory) {
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    CHECK(close(descriptor) == 0);
-    CHECK(unlink(path) == 0);
+    CHECK(close(descriptors[0]) == 0);
+    CHECK(close(descriptors[1]) == 0);
     return 0;
 }
 
-/* The ceiling a policy asks for is a wish; the array the caller handed over is
- * the fact.  The growth rule writes `helpers[held]`, so a cap above that
- * array's length is a `pthread_create` past its end -- which is why the cap is
- * clamped to the storage rather than trusted.  Storage of two against a cap of
- * eight makes the clamp the only thing keeping the run inside the array. */
-static int test_helper_growth_stops_at_the_helper_storage(
-    const char *directory
-) {
+/* The ceiling a policy asks for is a wish; the storage the caller handed to
+ * `wf_file_adapter_init` is the fact.  The growth rule writes `helpers[held]`,
+ * so a cap above that storage is a `pthread_create` past its end -- which is
+ * why `wf_file_adapter_set_helper_cap` clamps the cap to the storage rather
+ * than trusting it.  A cap of eight against storage of two leaves the clamp as
+ * the only thing keeping the pool inside the caller's array.
+ *
+ * The array below is deliberately longer than the two entries init is told
+ * about.  The bound under test is the declared capacity, and the slack decides
+ * only whether a violation of it is *reported* -- a pool larger than the
+ * storage it was given -- or executed as a write past the end of this frame,
+ * which ends the run before any check is reached.  With the clamp in place
+ * nothing beyond `helpers[1]` is ever written, so the slack is unreachable in
+ * a passing run. */
+static int test_helper_growth_stops_at_the_helper_storage(void) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[8];
+    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
     wf_file_adapter adapter;
-    wf_file_work queue[8];
-    pthread_t helpers[2];
-    char path[512];
-    int descriptor;
-    size_t held;
+    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
+    pthread_t helpers[WF_POOL_GROWTH_DEPTH];
+    int descriptors[2];
+    size_t held = 0;
 
-    CHECK(directory != NULL);
+    CHECK(pipe(descriptors) == 0);
     CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-pool-storage-%ld",
-            directory,
-            (long)getpid()
-        ) > 0
+        wf_completion_runtime_init(
+            &runtime,
+            slots,
+            WF_POOL_GROWTH_DEPTH + 1u
+        ) == 0
     );
-    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
-    CHECK(descriptor >= 0);
-    CHECK(write(descriptor, "wf", 2) == 2);
-
-    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 2, 0) == 0);
-    /* Accepted, and silently reduced to the two helpers that exist. */
+    CHECK(
+        wf_file_adapter_init(
+            &adapter,
+            &runtime,
+            queue,
+            WF_POOL_GROWTH_DEPTH + 1u,
+            helpers,
+            2,
+            0
+        ) == 0
+    );
+    /* Accepted, and silently reduced to the two helpers init was given. */
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 8) == 0);
 
     wf_script_clock(1000000u);
-    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 64) == 0);
+    CHECK(
+        grow_pool_against_a_blocked_queue(
+            &runtime,
+            &adapter,
+            descriptors[0],
+            descriptors[1],
+            &held
+        ) == 0
+    );
     wf_script_clock(0);
-    held = wf_file_adapter_helper_count(&adapter);
-    CHECK(held >= 1);
-    CHECK(held <= 2);
+    /* Two, not the eight that were asked for: the queue stayed deeper than
+     * the pool for every one of the twenty submissions, so the cap is the
+     * only thing that stopped it, and the cap is the storage. */
+    CHECK(held == 2);
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
-    CHECK(close(descriptor) == 0);
-    CHECK(unlink(path) == 0);
+    CHECK(close(descriptors[0]) == 0);
+    CHECK(close(descriptors[1]) == 0);
     return 0;
 }
 
@@ -3061,8 +3232,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
-    RUN_TEST(test_pool_grows_when_operations_wait(argv[1]));
-    RUN_TEST(test_helper_growth_stops_at_the_helper_storage(argv[1]));
+    RUN_TEST(test_pool_grows_when_operations_wait());
+    RUN_TEST(test_helper_growth_stops_at_the_helper_storage());
     RUN_TEST(test_helper_count_above_its_storage_is_refused());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
