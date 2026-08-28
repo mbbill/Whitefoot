@@ -555,7 +555,9 @@ static int wf_bridge_submit_linux_open_at(
     void *dependent_frame
 ) {
     wf_linux_file_request request;
-    if (path == NULL || has_mode > 1u
+    /* Anything the ring would refuse is answered before an operation is
+     * claimed, and a name the ring entry cannot hold is one of them. */
+    if (!wf_file_path_fits(path) || has_mode > 1u
         || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
         return -1;
     }
@@ -697,7 +699,12 @@ int wf__completion_file_open_at_submit(
     void *token_storage
 ) {
     wf_file_request request;
-    if (token_storage == NULL || path == NULL || has_mode > 1u
+    /* A submitted open outlives this call, so its name must fit the operation
+     * record that will own the bytes.  A longer name is refused here, before
+     * anything is claimed, and the caller's direct open carries it instead —
+     * that path resolves the caller's buffer inside its own call and needs no
+     * copy at all. */
+    if (token_storage == NULL || !wf_file_path_fits(path) || has_mode > 1u
         || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
         return 0;
     }

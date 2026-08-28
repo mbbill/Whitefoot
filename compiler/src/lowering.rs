@@ -1460,6 +1460,42 @@ impl IrProgram<'_, '_, '_> {
         }
         false
     }
+
+    /// Test-only malformed-IR probe: emits one submitted completion call a
+    /// second time in place, so a second operation of one call site is handed
+    /// out while the first is still outstanding.
+    ///
+    /// The step selected submits and does not finish, which is exactly what
+    /// leaves its operation outstanding across the duplicate. No schedule this
+    /// lowering forms can produce that shape — a completion hand-out is joined
+    /// before its block's terminator, so control cannot reach a site again
+    /// while its operation is in flight — which is why it has to be injected
+    /// to observe the emitter refuse it rather than share one storage element
+    /// between two live operations.
+    #[cfg(test)]
+    pub(crate) fn duplicate_outstanding_completion_call_for_test(&mut self) -> bool {
+        for function in &mut self.functions {
+            let Some(site) = function
+                .completion_steps
+                .iter()
+                .find(|step| step.submit() && !step.finish())
+                .map(IrCompletionStep::call)
+            else {
+                continue;
+            };
+            for block in &mut function.blocks {
+                let Some(at) = block.instructions.iter().position(|instruction| {
+                    matches!(instruction, IrInstruction::Define { result, .. } if *result == site)
+                }) else {
+                    continue;
+                };
+                let duplicate = block.instructions[at].clone();
+                block.instructions.insert(at + 1, duplicate);
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

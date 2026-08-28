@@ -35,8 +35,10 @@ typedef struct wf_linux_file_request {
     union {
         void *read_buffer;
         const void *write_buffer;
-        /* Caller-owned until the operation reaches terminal, exactly like a
-         * transfer buffer. */
+        /* Caller-owned only while the request is still the caller's.  The
+         * SQE keeps this pointer to completion and the caller regains its
+         * name buffer the moment submission returns, so submission copies the
+         * bytes into the entry's own storage and repoints this at them. */
         const char *path;
     } buffer;
     size_t count;
@@ -75,6 +77,10 @@ typedef struct wf_linux_io_uring_entry {
     wf_completion_token token;
     enum wf_linux_file_operation_kind kind;
     wf_linux_file_request request;
+    /* An open's path bytes, owned by this entry.  `request.buffer.path` names
+     * these from submission onwards, including across a resubmission, so the
+     * kernel never reads the caller's buffer. */
+    char path_storage[WF_FILE_PATH_CAPACITY];
     unsigned waiting_readiness;
     /* An open's answer, decided when its completion is reaped. The descriptor
      * is named even where the kind check refused and disposed of it, which is

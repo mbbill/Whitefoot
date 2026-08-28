@@ -9,6 +9,7 @@ mod split;
 mod storage;
 
 use crate::CheckedProgram;
+use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
     BindingId, CheckedArrayRoot, CheckedConstructor, CheckedDrop, CheckedEntryForm,
@@ -403,11 +404,13 @@ struct IrBuilder<'program> {
     /// call defines exactly the callee's declared result type — an address
     /// for a borrow of addressed content [OWN-2, TYPE-7].
     function_results: &'program [IrType],
-    /// For each `let` whose right-hand side is exactly one named-function
-    /// call, the block the call's definition landed in and the value it
-    /// defined. The permission table names its sites by the binding each
-    /// defines, so this is how a permitted group is found in the IR.
-    call_results: HashMap<BindingId, (IrBlockId, IrValueId)>,
+    /// For each statement holding exactly one named-function call in call
+    /// position — a `let` right-hand side or a `match` scrutinee — the block
+    /// the call's definition landed in and the value it defined. The
+    /// permission table names its sites by call occurrence, which is the one
+    /// identity every written call position has, so this is how a permitted
+    /// group is found in the IR.
+    call_results: HashMap<NodePath, (IrBlockId, IrValueId)>,
     /// The permission table of the source function this body belongs to: the
     /// [PAR-1] groups its statements may overlap and the [PAR-2] verdict of
     /// each of its counted loops.
@@ -619,13 +622,15 @@ impl<'program> IrBuilder<'program> {
             let mut members = Vec::new();
             let mut home = None;
             for site in &run.sites {
-                let Some((block, value)) = self.call_results.get(&site.binding).copied() else {
+                let Some((block, value)) = self.call_results.get(&site.call).copied() else {
                     break;
                 };
                 if *home.get_or_insert(block) != block {
                     break;
                 }
-                let addressed = self.addressed_bindings.contains(&site.binding);
+                let addressed = site
+                    .binding
+                    .is_some_and(|binding| self.addressed_bindings.contains(&binding));
                 members.push(value);
                 if addressed {
                     // This member must be the group's last, so it ends it.
@@ -665,7 +670,7 @@ impl<'program> IrBuilder<'program> {
                 .iter()
                 .map(|step| {
                     self.call_results
-                        .get(&step.site.binding)
+                        .get(&step.site.call)
                         .copied()
                         .map(|(block, value)| (step, block, value))
                 })
@@ -688,7 +693,7 @@ impl<'program> IrBuilder<'program> {
                 .filter(|(step, _, value)| {
                     step.has_later_independent_call && self.direct_may_suspend_system_call(*value)
                 })
-                .map(|(step, _, value)| (step.site.binding, *value))
+                .map(|(step, _, value)| (&step.site.call, *value))
                 .collect::<HashMap<_, _>>();
             if submitted.is_empty() {
                 start = end + 1;
@@ -698,18 +703,44 @@ impl<'program> IrBuilder<'program> {
                 let wait_for = step
                     .wait_for
                     .iter()
-                    .filter_map(|binding| submitted.get(binding).copied())
+                    .filter_map(|call| submitted.get(call).copied())
                     .collect();
                 lowered.push(IrCompletionStep::new(
                     *value,
                     wait_for,
-                    submitted.contains_key(&step.site.binding),
+                    submitted.contains_key(&step.site.call),
                     ordinal + 1 == resolved.len(),
                 ));
             }
             start = end + 1;
         }
         lowered
+    }
+
+    /// Records where a named-function call in call position landed, whatever
+    /// written position it was in.
+    ///
+    /// The permission judgment reaches a call as a `let` right-hand side and as
+    /// a `match` scrutinee alike, and both are named by their call occurrence,
+    /// so one recording serves both. Which of them a group can actually keep is
+    /// decided later and by the IR alone: every member of a group must be
+    /// defined in one block, and a scrutinee's own dispatch terminates its
+    /// block, so a scrutinee call is only ever a group's last member.
+    fn note_call_result(
+        &mut self,
+        expression: &CheckedExpression,
+        value: IrValueId,
+    ) -> Result<(), LoweringFailure> {
+        let (CheckedExpression::UserCall { call, .. } | CheckedExpression::SystemCall { call, .. }) =
+            expression
+        else {
+            return Ok(());
+        };
+        // The block the call's own definition landed in, which is the block
+        // current after the arguments are lowered.
+        let block = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        self.call_results.insert(call.clone(), (block, value));
+        Ok(())
     }
 
     fn direct_may_suspend_system_call(&self, value: IrValueId) -> bool {
@@ -743,17 +774,9 @@ impl<'program> IrBuilder<'program> {
                     ..
                 } => {
                     let value = self.expression(expression)?;
-                    // The block the call's own definition landed in, which is
-                    // the block current after the arguments are lowered.
-                    let block = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    self.note_call_result(expression, value)?;
                     if self.bindings.insert(*binding, value).is_some() {
                         return Err(LoweringFailure::InvalidCheckedProgram);
-                    }
-                    if matches!(
-                        expression,
-                        CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. }
-                    ) {
-                        self.call_results.insert(*binding, (block, value));
                     }
                     self.promote_binding_if_needed(*binding)?;
                 }
@@ -959,7 +982,9 @@ impl<'program> IrBuilder<'program> {
         value_binding: Option<(BindingId, IrType)>,
         outer_give_target: Option<GiveTarget>,
     ) -> Result<(), LoweringFailure> {
+        let scrutinee_expression = scrutinee;
         let scrutinee = self.expression(scrutinee)?;
+        self.note_call_result(scrutinee_expression, scrutinee)?;
         let base_bindings = self.bindings.clone();
         let mut carried_bindings = base_bindings.keys().copied().collect::<Vec<_>>();
         carried_bindings.sort_by_key(|binding| binding.0);

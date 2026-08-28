@@ -413,12 +413,15 @@ impl PermissionVerdict {
 /// One analyzed call statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionSite {
-    /// The owning `let_stmt` node.
+    /// The statement node that owns the call: the `let_stmt` node, or the call
+    /// occurrence where the statement form carries no node of its own.
     pub(crate) statement: NodePath,
-    /// The binding the statement defines. A join must complete before the
-    /// first use of it.
-    pub(crate) binding: BindingId,
-    /// The call occurrence inside it.
+    /// The binding the statement defines, or `None` for a call whose result
+    /// its own statement consumes. A join must complete before the first use
+    /// of it.
+    pub(crate) binding: Option<BindingId>,
+    /// The call occurrence inside it. This is the site's identity: it exists
+    /// in every written call position, where a defining binding does not.
     pub(crate) call: NodePath,
     pub(crate) callee_name: String,
     /// Compiler-owned execution summary selected for this call. The
@@ -444,15 +447,15 @@ pub(crate) struct PermissionRun {
 
 /// One source-ordered call step in a dependency-driven completion schedule.
 ///
-/// The sites in one schedule are consecutive plain `let` call statements.
-/// `wait_for` names only earlier calls whose ordinary value, memory access, or
-/// loan conflicts with this call.  It contains no resource family or target
-/// operation identity; lowering later decides which direct may-suspend calls
-/// have an executable completion route.
+/// The sites in one schedule are consecutive call statements. `wait_for` names
+/// only earlier calls whose ordinary value, memory access, or loan conflicts
+/// with this call, by their call occurrences.  It contains no resource family
+/// or target operation identity; lowering later decides which direct
+/// may-suspend calls have an executable completion route.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionCompletionStep {
     pub(crate) site: PermissionSite,
-    pub(crate) wait_for: Vec<BindingId>,
+    pub(crate) wait_for: Vec<NodePath>,
     /// At least one immediately following call may run before this call's
     /// result and loans return. The final call of a schedule is false.
     pub(crate) has_later_independent_call: bool,
@@ -525,16 +528,34 @@ pub(super) struct Program<'check> {
     signatures: &'check [PermissionSignature],
 }
 
-/// One candidate statement: a `let` whose right-hand side is exactly one
+/// One candidate statement: a statement whose call position holds exactly one
 /// named-function call.
+///
+/// A call reaches this analysis in two written positions: as the whole
+/// right-hand side of a `let`, and as the scrutinee of a `match`. The two are
+/// the same call and get the same judgment; what differs is who reads the
+/// result. A `let` names it, so nothing reads it until a later statement does.
+/// A scrutinee is read by its own statement's dispatch, so every statement
+/// after that one already stands behind a read of it — which is what
+/// `result_read_by_own_statement` records and what
+/// [`Program::judge`] turns into the window that refuses the pair.
 struct Candidate<'check> {
+    /// The statement node that owns the call. A `match` statement carries no
+    /// node of its own in the checked model, so a scrutinee candidate names
+    /// its call occurrence here; both are inside the same statement and both
+    /// sort, locate, and enclose identically.
     statement: NodePath,
     /// Position of this statement in its own block. Two candidates and the
     /// statements between their positions are one judged window.
     index: usize,
-    /// The binding the statement defines.
-    binding: BindingId,
+    /// The binding the statement defines, or `None` where the call's result is
+    /// consumed by the statement itself and never named.
+    binding: Option<BindingId>,
     call: CallProjection<'check>,
+    /// The statement's own remainder reads this call's result — a scrutinee
+    /// dispatch and the arms it selects. The result is therefore live before
+    /// any later statement runs.
+    result_read_by_own_statement: bool,
     /// An exit edge of this statement that does not reach its successor.
     exit: Option<ExitKind>,
 }
@@ -767,7 +788,7 @@ impl<'check> Program<'check> {
             for current in start..=end {
                 let wait_for = (start..current)
                     .filter(|earlier| !self.judge(windows, *earlier, current).is_eligible())
-                    .map(|earlier| candidates[earlier].binding)
+                    .map(|earlier| candidates[earlier].call.call.clone())
                     .collect();
                 permissions.completion_steps.push(PermissionCompletionStep {
                     site: self.site(&candidates[current]),
@@ -853,10 +874,17 @@ impl<'check> Program<'check> {
     ) -> PermissionVerdict {
         let first = &windows.candidates[first_ordinal];
         let second = &windows.candidates[second_ordinal];
-        let mut interposed = Vec::with_capacity(second.index - first.index);
+        // Where s1's own statement reads s1's result, the rest of that
+        // statement — the dispatch and the arm it selects — runs between the
+        // call and everything after it, so the statement is itself the
+        // window's first interposed member. It is classified exactly as any
+        // other statement of its form is, which is what makes a scrutinee
+        // candidate deny as a first member without a rule of its own.
+        let window_start = first.index + usize::from(!first.result_read_by_own_statement);
+        let mut interposed = Vec::with_capacity(second.index - window_start);
         for (offset, classified) in windows
             .statements
-            .get(first.index + 1..second.index)
+            .get(window_start..second.index)
             .unwrap_or_default()
             .iter()
             .enumerate()
@@ -878,9 +906,11 @@ impl<'check> Program<'check> {
         for argument in second.call.arguments {
             collect_used_bindings(argument, &mut used);
         }
-        if used.contains(&first.binding) {
+        if let Some(defined) = first.binding
+            && used.contains(&defined)
+        {
             return PermissionVerdict::Denied(Denial::Dataflow {
-                binding: first.binding,
+                binding: defined,
                 definer: PairSide::First,
                 reader: PairSide::Second,
             });
@@ -888,9 +918,11 @@ impl<'check> Program<'check> {
         for (offset, record) in interposed.iter().enumerate() {
             // Where s1 takes the lane its value does not exist until the join,
             // so nothing between them may read it.
-            if record.uses.contains(&first.binding) {
+            if let Some(defined) = first.binding
+                && record.uses.contains(&defined)
+            {
                 return PermissionVerdict::Denied(Denial::Dataflow {
-                    binding: first.binding,
+                    binding: defined,
                     definer: PairSide::First,
                     reader: PairSide::Between(offset),
                 });
@@ -1661,31 +1693,47 @@ pub(super) fn collect_consumed_places(
 }
 
 /// One candidate statement, or `None` for every other statement shape.
+/// The call one statement holds in call position, whatever the position is.
+///
+/// The enumeration is over written call positions, not over statement kinds
+/// that happen to be convenient: a `match` scrutinee is the same call as a
+/// `let` right-hand side, gets the same [EFF-2] projection, and is judged by
+/// the same four conditions. What the position changes is one recorded fact —
+/// whether the statement itself reads the result — and `judge` derives the
+/// window from that fact rather than from the statement's spelling.
 fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<'_>> {
-    let (node_path, binding, value, exit) = match statement {
+    let (node_path, binding, value, read_by_own_statement, exit) = match statement {
         CheckedStatement::Let {
             node_path,
             binding,
             value,
-        } => (node_path, binding, value, None),
+        } => (Some(node_path), Some(*binding), value, false, None),
         CheckedStatement::PropagateLet {
             node_path,
             binding,
             scrutinee,
             ..
         } => (
-            node_path,
-            binding,
+            Some(node_path),
+            Some(*binding),
             scrutinee,
+            false,
             Some(ExitKind::PropagateError),
         ),
+        // A scrutinee call. `Match` carries no statement node in the checked
+        // model and `ValueMatchLet`'s binding names the match's result rather
+        // than the call's, so neither supplies a defining binding here.
+        CheckedStatement::Match { scrutinee, .. }
+        | CheckedStatement::ValueMatchLet { scrutinee, .. } => (None, None, scrutinee, true, None),
         _ => return None,
     };
+    let call = call_projection(value)?;
     Some(Candidate {
-        statement: node_path.clone(),
+        statement: node_path.unwrap_or(call.call).clone(),
         index,
-        binding: *binding,
-        call: call_projection(value)?,
+        binding,
+        call,
+        result_read_by_own_statement: read_by_own_statement,
         exit,
     })
 }

@@ -407,8 +407,10 @@ static int wf_linux_request_valid(const wf_linux_file_request *request) {
     case WF_LINUX_FILE_OPEN_AT:
         /* An open resolves its path against a directory descriptor, and
          * AT_FDCWD is a negative one, so the transfer descriptor check does
-         * not apply here. */
-        return request->buffer.path != NULL && request->has_open_mode <= 1u
+         * not apply here.  The name must fit the entry that will own it,
+         * because that copy is what the kernel resolves. */
+        return wf_file_path_fits(request->buffer.path)
+            && request->has_open_mode <= 1u
             && request->expected_kind <= WF_FILE_EXPECT_DIRECTORY;
     case WF_LINUX_FILE_CLOSE:
         return request->descriptor >= 0;
@@ -621,6 +623,14 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     entry->token = token;
     entry->kind = request->kind;
     entry->request = *request;
+    if (request->kind == WF_LINUX_FILE_OPEN_AT) {
+        /* The SQE keeps this pointer until the kernel resolves the name, and
+         * the caller regains its buffer as soon as submission returns, so the
+         * bytes become the entry's before any SQE names them.  The length was
+         * checked by wf_linux_request_valid before anything was claimed. */
+        (void)wf_file_stage_path(entry->path_storage, request->buffer.path);
+        entry->request.buffer.path = entry->path_storage;
+    }
     entry->waiting_readiness = 0;
     entry->opened_descriptor = -1;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
@@ -638,6 +648,23 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
             : WF_LINUX_IO_URING_SUBMIT_INVALID;
     }
 
+    if (request->kind == WF_LINUX_FILE_OPEN_AT) {
+        /* [SYS-2]'s `loan-released(path)` for this open holds from here: the
+         * name the kernel will resolve is the entry's own, so the caller's
+         * buffer is free before the SQE exists.  A refusal is an
+         * adapter/core contract defect; it is counted, never retried. */
+        if (wf_completion_publish_milestone(
+                adapter->runtime,
+                token,
+                WF_COMPLETION_PAYLOAD_RELEASED
+            ) != WF_COMPLETION_PUBLISHED) {
+            atomic_fetch_add_explicit(
+                &adapter->stat_publication_failures,
+                1,
+                memory_order_relaxed
+            );
+        }
+    }
     atomic_fetch_add_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     wf_linux_stage_entry_locked(adapter, entry_index, entry);
     atomic_fetch_add_explicit(

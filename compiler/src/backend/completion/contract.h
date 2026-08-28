@@ -260,6 +260,31 @@ enum wf_completion_transition_result wf_completion_set_adapter_tag(
     uint32_t adapter_tag
 );
 
+/* Publishes one non-terminal milestone fact for an operation the target is
+ * submitting or already holds.
+ *
+ * The facts of one operation are independent, and one of them can hold long
+ * before the operation is terminal: once a submitted open's path bytes are the
+ * operation record's own, the caller's name buffer is free whatever the host
+ * does next, so `loan-released(path)` is true from that moment.  Publishing it
+ * here is what makes that an observable fact rather than a comment inside an
+ * adapter.
+ *
+ * This is not a terminal route.  It writes no result byte, does not move the
+ * phase, and raises no completion event, so a one-shot operation still has
+ * exactly one event and exactly one terminal.  A fact published here is
+ * visible to wf_completion_observe immediately and is carried by the
+ * operation's own terminal event; by itself it wakes nothing, so no frame may
+ * be left depending on it alone.
+ *
+ * WF_COMPLETION_TERMINAL is refused: the terminal fact is published only by
+ * the routes that carry the result. */
+enum wf_completion_publish_result wf_completion_publish_milestone(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t milestones
+);
+
 /* The asynchronous terminal route is valid only after target acceptance. */
 enum wf_completion_publish_result wf_completion_publish_terminal(
     wf_completion_runtime *runtime,

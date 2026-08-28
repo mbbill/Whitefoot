@@ -3,8 +3,11 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+use super::system::with_mutated_completion_ir;
 use super::{build_executable, emit, emit_lowered, emitted_function, test_directory};
 use crate::OverlapLowering;
+use crate::backend::emitter::emit_llvm_for_target;
+use crate::backend::qualification::SystemTarget;
 
 const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bulk = buffer_new(1048576_u64, 65_u8);
@@ -699,6 +702,35 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     assert!(!bridge.contains("wf_completion_park_if_unchanged(\n                    &wf_bridge_runtime,\n                    epoch,\n                    1u"));
 }
 
+/// How long a probe child's expected output may take to arrive before the case
+/// calls it stuck.
+///
+/// Both cases that wait on a child prove an *order*, not a latency, and in both
+/// the failing behaviour produces the bytes never rather than late:
+///
+/// - `independent_io_reaches_the_second_operation_before_the_first_unblocks`
+///   reads nothing from the child's stdout until the marker has arrived, so the
+///   child's one-megabyte write to that pipe is blocked for the whole wait and a
+///   marker byte at any point in it is proof that the second operation ran while
+///   the first was outstanding.
+/// - `reused_output_progress_preserves_ac_around_an_independent_rejected_open`
+///   fails when C is serialized behind an open that does not come back, and
+///   then `AC` never appears at all.
+///
+/// The bound is therefore a liveness cut-off in both, and making it generous
+/// weakens neither assertion.
+///
+/// It used to be three seconds and five, which are inside the scheduling delay
+/// a loaded host produces: each case spawns a child and waits for one of its
+/// threads to be scheduled, and between them they failed on five separate gate
+/// runs across three people, every one on a host running more than one compiler
+/// gate at once, while passing every time in isolation — the second of them in
+/// under a second, three orders of magnitude inside its own bound. Each such
+/// failure reported a regression that had not happened. Sixty seconds is far
+/// outside any scheduling delay and still bounded, so the regression each case
+/// exists to catch fails the run rather than hanging it.
+const PROBE_OUTPUT_LIMIT: Duration = Duration::from_secs(60);
+
 #[test]
 fn independent_io_reaches_the_second_operation_before_the_first_unblocks() {
     let module = emit(INDEPENDENT_WRITES);
@@ -731,7 +763,7 @@ fn independent_io_reaches_the_second_operation_before_the_first_unblocks() {
         });
 
         let (read, marker) = receive
-            .recv_timeout(Duration::from_secs(3))
+            .recv_timeout(PROBE_OUTPUT_LIMIT)
             .unwrap_or_else(|_| {
                 let _ = child.kill();
                 panic!(
@@ -822,7 +854,7 @@ fn reused_output_progress_preserves_ac_around_an_independent_rejected_open() {
         let _ = send.send((read, observed));
     });
     let (read, observed) = receive
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(PROBE_OUTPUT_LIMIT)
         .unwrap_or_else(|_| {
             let _ = child.kill();
             panic!("C(out) waited for the independent rejected B(open)")
@@ -1319,4 +1351,286 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
             }
         }
     }
+}
+
+/// The same two independent writes, differing only in whether the second call
+/// is written as a `let` right-hand side or directly as a `match` scrutinee.
+///
+/// A call is a call in either position: both programs perform the same two
+/// operations in the same order, publish the same bytes, and are judged by the
+/// same [PAR-1] pair. Before the schedule saw scrutinee calls, the second
+/// program had no pair at all — one candidate is not a window — so its first
+/// write was never handed out and the two spellings compiled to different
+/// work for no semantic reason.
+const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Two independent writes whose second call is bound before it is matched.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          let first = write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          let second = write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+          match second {
+            Ok(value: written) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Two independent writes whose second call is written in scrutinee position.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          let first = write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          match write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64) {
+            Ok(value: written) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The same second call written as the scrutinee of a *value* match, whose
+/// binding names the match's result rather than the call's.
+///
+/// `CheckedStatement::Match` and `CheckedStatement::ValueMatchLet` are two
+/// statements with one scrutinee expression between them, and the judgment
+/// reaches the call through the scrutinee in both. This form is the one where
+/// a binding exists and is the wrong identity for the site — `written` is what
+/// the arms give, not what `write_once` returned — which is why the site's
+/// identity had to become the call occurrence.
+const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Two independent writes whose second call is a value match's scrutinee.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          let first = write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          let written = match write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64) {
+            Ok(value: count) => {
+              give count;
+            }
+            Err(error: problem) => {
+              give 0_u64;
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The scrutinee call written *first*, with an independent call after it.
+///
+/// This one must stay sequential, and not by accident: the match's own
+/// dispatch and the arm it selects read the call's result, so every statement
+/// after the match already stands behind that read. Handing the scrutinee call
+/// out would run the second write before the first write's arms.
+const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "A scrutinee call followed by an independent call, which cannot overlap.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          match write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64) {
+            Ok(value: written) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+          let second = write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The submissions, joins, and direct calls of one emitted command entry.
+fn completion_write_shape(module: &str) -> (usize, usize, usize) {
+    let body = module
+        .split_once("@wf_main(")
+        .expect("command entry is emitted")
+        .1;
+    (
+        body.matches("call i32 @wf__completion_file_write_submit")
+            .count(),
+        body.matches("call void @wf__completion_file_join").count(),
+        body.matches("@wf.sys.write_once.v1(").count(),
+    )
+}
+
+/// Runs one emitted module in every helper configuration and returns nothing
+/// but the assurance that each run published the same two bytes.
+fn assert_publishes_marked_streams(module: &str) {
+    for helpers in ["0", "1", "4"] {
+        let directory = test_directory();
+        let executable = build_executable(module, &directory);
+        let output = Command::new(&executable)
+            .env("WF_IO_HELPERS", helpers)
+            .env("WF_WORKERS", "0")
+            .output()
+            .expect("run the scrutinee-position probe");
+        assert!(
+            output.status.success(),
+            "probe exited with {} at WF_IO_HELPERS={helpers}",
+            output.status
+        );
+        assert_eq!(output.stdout, b"A", "WF_IO_HELPERS={helpers}");
+        assert_eq!(output.stderr, b"M", "WF_IO_HELPERS={helpers}");
+        std::fs::remove_file(executable).expect("remove the probe");
+        std::fs::remove_dir(directory).expect("remove the probe directory");
+    }
+}
+
+#[test]
+fn a_call_in_scrutinee_position_is_handed_out_exactly_as_a_bound_call_is() {
+    let bound = emit(SCRUTINEE_TAIL_LET_FORM);
+    let scrutinee = emit(SCRUTINEE_TAIL_MATCH_FORM);
+    assert_eq!(
+        completion_write_shape(&bound),
+        (1, 1, 2),
+        "the bound form submits the first write and leaves the second direct"
+    );
+    assert_eq!(
+        completion_write_shape(&scrutinee),
+        completion_write_shape(&bound),
+        "a call written in scrutinee position is the same call"
+    );
+    assert_publishes_marked_streams(&bound);
+    assert_publishes_marked_streams(&scrutinee);
+}
+
+/// A value match's scrutinee is the same call in the same position, and the
+/// binding its statement defines is not the call's result.
+///
+/// This is the second of the two statement forms fix 1 opened, and it is the
+/// one that shows why a site is identified by its call occurrence: the
+/// statement here *does* define a binding, and taking that binding for the
+/// site's identity would name the value the arms give rather than the value
+/// the call returned.
+#[test]
+fn a_value_match_scrutinee_call_is_handed_out_exactly_as_a_bound_call_is() {
+    let bound = emit(SCRUTINEE_TAIL_LET_FORM);
+    let value_match = emit(SCRUTINEE_VALUE_MATCH_FORM);
+    assert_eq!(
+        completion_write_shape(&value_match),
+        completion_write_shape(&bound),
+        "a call in a value match's scrutinee is the same call"
+    );
+    assert_publishes_marked_streams(&value_match);
+}
+
+#[test]
+fn a_scrutinee_call_before_an_independent_call_stays_sequential() {
+    let module = emit(SCRUTINEE_HEAD_MATCH_FORM);
+    assert_eq!(
+        completion_write_shape(&module),
+        (0, 0, 2),
+        "the match's own arms read the first result, so nothing may overtake it"
+    );
+    assert_publishes_marked_streams(&module);
+}
+
+/// Completion storage is reserved as an indexed element of a per-site array
+/// rather than as a bare shared slot.
+///
+/// That is the whole of what this observes, and it is worth stating exactly:
+/// every `alloca` in the handed-out probe is a one-element array reached
+/// through element zero, which is the count and the index the emitter reserves
+/// today. It does *not* observe that two hand-outs of one site would get two
+/// elements — one hand-out per site is all the current schedule can express,
+/// and the emitter refuses a second outstanding one outright, which
+/// `a_second_operation_of_one_completion_site_is_refused` is the evidence for.
+/// This case is the guard against regressing to the bare shared allocas that
+/// made the staged path bug possible, and against the reserved count silently
+/// ceasing to be the one the site's hand-outs need.
+#[test]
+fn completion_storage_is_reserved_as_an_indexed_element_not_a_bare_slot() {
+    let module = emit(POSITIONED_READS);
+    let body = emitted_function(&module, "probe");
+    let storages = body
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("%"))
+        .filter_map(|line| line.split_once(" = alloca "))
+        .map(|(name, ty)| (name.to_owned(), ty.trim().to_owned()))
+        .collect::<Vec<_>>();
+    assert!(
+        !storages.is_empty(),
+        "the handed-out probe allocates completion storage"
+    );
+    for (name, ty) in &storages {
+        assert!(
+            ty.starts_with("[1 x "),
+            "completion storage %{name} is {ty}, not one element per outstanding operation"
+        );
+        assert!(
+            body.contains(&format!(
+                "getelementptr inbounds {ty}, ptr %{name}, i64 0, i64 0"
+            )),
+            "completion storage %{name} is not reached through its hand-out's index"
+        );
+    }
+}
+
+/// One element per site is sound only while a site holds one outstanding
+/// operation, and that precondition is enforced rather than assumed.
+///
+/// No schedule this lowering forms can hand a site a second operation while
+/// its first is in flight: `emit_terminator` joins everything outstanding
+/// before it writes any terminator, so a completion hand-out never leaves the
+/// block that made it and control cannot reach the site again while the
+/// operation is live. The shape therefore has to be injected — one submitted,
+/// unfinished completion call emitted twice in place — and what this pins is
+/// that the emitter refuses it. Sharing the element instead would let the
+/// second operation overwrite a result or a staged path the first is still
+/// being read from, with no compile error and no crash, which is exactly the
+/// class of defect fix 2 of this batch had to repair.
+#[test]
+fn a_second_operation_of_one_completion_site_is_refused() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    let accepted = with_mutated_completion_ir(INDEPENDENT_WRITES, |program| {
+        emit_llvm_for_target(program, target).is_ok()
+    });
+    assert!(
+        accepted,
+        "the unmutated program must emit, or the refusal below proves nothing"
+    );
+    with_mutated_completion_ir(INDEPENDENT_WRITES, |program| {
+        assert!(
+            program.duplicate_outstanding_completion_call_for_test(),
+            "the probe must have a submitted completion call that does not finish its schedule"
+        );
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::SecondOutstandingCompletionOperation),
+            "a second operation of one site must be refused, not given the first's storage"
+        );
+    });
 }

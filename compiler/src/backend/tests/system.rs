@@ -65,6 +65,26 @@ fn with_mutated_ir_for<ResultValue>(
     with_mutated_ir_for_overlap(source, inventory, OverlapLowering::Off, run)
 }
 
+/// [`with_mutated_ir`] under the shipped completion lowering.
+///
+/// `OverlapLowering::Off` consults no permission group at all, so a program
+/// lowered that way carries no completion schedule to mutate. A probe of the
+/// completion emitter needs the lowering the compiler actually ships, which is
+/// the one that actualizes direct target operations and no compute group.
+pub(super) fn with_mutated_completion_ir<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &mut IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_mutated_ir_for_overlap(
+        source,
+        crate::Inventory::ACTIVE,
+        OverlapLowering::Completion,
+        run,
+    )
+}
+
 fn with_mutated_ir_for_overlap<ResultValue>(
     source: &[u8],
     inventory: crate::Inventory,

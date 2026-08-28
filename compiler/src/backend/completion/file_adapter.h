@@ -18,6 +18,7 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #if defined(__cplusplus)
@@ -25,6 +26,50 @@ extern "C" {
 #endif
 
 #define WF_FILE_STATUS_CAPACITY 192u
+
+/* The path bytes one submitted open resolves, held by the operation record.
+ *
+ * A submitted open outlives the call that formed it, so the caller's name
+ * buffer must stop being the operation's storage the moment submission
+ * returns: the writer regains that buffer then and may rewrite it while the
+ * host is still resolving the name.  Every target adapter therefore copies
+ * the bytes into its own record at submission and resolves that copy.
+ *
+ * The bound is every admitted name.  A generated open resolves exactly one
+ * relative component, and the widest qualified component limit is Darwin's
+ * 1023 bytes, which this holds together with its terminator; the Linux family
+ * admits 255.  The runtime's own harness resolves absolute scratch paths
+ * instead, and 1024 is Darwin's whole `PATH_MAX`.  Storage is bounded and
+ * static because a submission may not allocate.
+ *
+ * A name that does not fit is refused before an operation is claimed, and the
+ * caller opens it directly instead — that path resolves the caller's buffer
+ * inside its own call and needs no copy.  It is a throughput fallback of the
+ * same class as a full queue, never a changed outcome. */
+#define WF_FILE_PATH_CAPACITY 1024u
+
+/* Copies one path into an operation record's own storage.  Returns zero for a
+ * name that does not fit, which every caller must answer before claiming an
+ * operation; truncating a name would resolve a different file. */
+static inline int wf_file_stage_path(char *storage, const char *path) {
+    size_t length;
+    if (storage == NULL || path == NULL) {
+        return 0;
+    }
+    length = strlen(path);
+    if (length >= (size_t)WF_FILE_PATH_CAPACITY) {
+        return 0;
+    }
+    memcpy(storage, path, length + 1u);
+    return 1;
+}
+
+/* Whether one path can become an operation record's own bytes.  Asked before
+ * an operation is claimed, so a refusal is an honest fallback to the direct
+ * path rather than a fail-stop after ownership moved. */
+static inline int wf_file_path_fits(const char *path) {
+    return path != NULL && strlen(path) < (size_t)WF_FILE_PATH_CAPACITY;
+}
 
 enum wf_file_operation_kind {
     WF_FILE_OPEN_AT = 1,
@@ -83,6 +128,10 @@ typedef struct wf_file_request {
     union {
         struct {
             int directory;
+            /* Names the operation record's own bytes once the request is
+             * queued; the caller's buffer only while the request is still the
+             * caller's, which is the direct path and the moment before
+             * `wf_file_work_bind_path` runs. */
             const char *path;
             int flags;
             unsigned mode;
@@ -140,7 +189,22 @@ typedef struct wf_file_result {
 typedef struct wf_file_work {
     wf_completion_token token;
     wf_file_request request;
+    /* An open's path bytes, owned by this record. */
+    char path_storage[WF_FILE_PATH_CAPACITY];
 } wf_file_work;
+
+/* Points a staged open at this record's own path bytes.
+ *
+ * A work record is copied whenever it moves — into the bounded queue at
+ * submission, out of it at execution — and a pointer into the record it was
+ * copied *from* would name storage the queue is free to reuse.  Every copy
+ * therefore rebinds, and the invariant is that a work record's open never
+ * names bytes outside itself. */
+static inline void wf_file_work_bind_path(wf_file_work *work) {
+    if (work != NULL && work->request.kind == WF_FILE_OPEN_AT) {
+        work->request.operation.open_at.path = work->path_storage;
+    }
+}
 
 enum wf_file_submit_result {
     WF_FILE_TARGET_OWNS = 0,

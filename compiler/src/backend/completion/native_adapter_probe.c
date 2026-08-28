@@ -435,6 +435,79 @@ static int probe_open_and_close_cases(
     return 0;
 }
 
+/* A submitted open's path bytes belong to the entry, not to the caller.
+ *
+ * The SQE names the bytes until the kernel resolves them, and the caller
+ * regains its name buffer the moment submission returns.  This is asserted of
+ * the entry rather than of the outcome, and deliberately: on this kernel
+ * `IORING_OP_OPENAT` copies the name during the `io_uring_enter` the submit
+ * performs, so a behavioural probe would pass over a caller-owned pointer
+ * today and only start failing once the doorbell is deferred.  The property
+ * that has to hold is that the record owns the bytes, so that is what is
+ * checked.
+ *
+ * The release milestone is checked in the same place and for the same reason:
+ * `loan-released(path)` is exactly the claim that the caller's buffer is free
+ * while the operation is still outstanding. */
+static int probe_open_stages_its_own_path_case(
+    wf_completion_runtime *runtime,
+    wf_linux_io_uring_adapter *adapter,
+    const char *data_path
+) {
+    wf_linux_file_request request;
+    wf_linux_file_result result;
+    wf_completion_token token;
+    char requested[512];
+    size_t index;
+    size_t staged = 0;
+    uint32_t milestones = 0;
+    unsigned phase = 0;
+
+    PROBE_CHECK(
+        (size_t)snprintf(requested, sizeof(requested), "%s", data_path)
+        < sizeof(requested)
+    );
+    probe_open_request(&request, requested, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, token, &request)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+
+    for (index = 0; index < adapter->entry_capacity; ++index) {
+        wf_linux_io_uring_entry *entry = &adapter->entries[index];
+        if (entry->token.slot != token.slot
+            || entry->token.generation != token.generation
+            || entry->kind != WF_LINUX_FILE_OPEN_AT) {
+            continue;
+        }
+        PROBE_CHECK(entry->request.buffer.path == entry->path_storage);
+        PROBE_CHECK(strcmp(entry->path_storage, data_path) == 0);
+        staged += 1;
+    }
+    PROBE_CHECK(staged == 1);
+
+    PROBE_CHECK(
+        wf_completion_observe(runtime, token, &milestones, &phase)
+        == WF_COMPLETION_TRANSITIONED
+    );
+    PROBE_CHECK((milestones & WF_COMPLETION_PAYLOAD_RELEASED) != 0);
+    PROBE_CHECK((milestones & WF_COMPLETION_TERMINAL) == 0);
+
+    /* The caller's buffer really is free from here. */
+    memset(requested, 'z', sizeof(requested) - 1u);
+    requested[sizeof(requested) - 1u] = 0;
+    PROBE_CHECK(probe_drive_to_terminal(runtime, adapter, token, &result) == 0);
+    PROBE_CHECK(result.kind == WF_LINUX_FILE_OPEN_AT);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(result.error_code == 0 && result.value >= 0);
+
+    probe_close_request(&request, (int)result.value);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.value == 0 && result.error_code == 0);
+    return 0;
+}
+
 /* An open exhausts the adapter's bounded entries like any other operation,
  * says so without taking ownership, and succeeds once an entry returns. */
 static int probe_open_capacity_case(
@@ -879,6 +952,9 @@ int main(int argc, char **argv) {
     }
 
     PROBE_CHECK(probe_open_and_close_cases(&runtime, &adapter, argv[1]) == 0);
+    PROBE_CHECK(
+        probe_open_stages_its_own_path_case(&runtime, &adapter, argv[1]) == 0
+    );
     PROBE_CHECK(probe_open_capacity_case(&runtime, &adapter, argv[1]) == 0);
     PROBE_CHECK(probe_open_generation_cases() == 0);
 
