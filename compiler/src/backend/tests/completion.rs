@@ -1956,3 +1956,131 @@ fn a_carrying_region_with_no_exit_is_refused() {
         );
     });
 }
+
+/// Two independent reads inside a loop that already has two ways out.
+///
+/// This differs from `READS_ACROSS_A_LOOP` in the one way that matters to the
+/// emitter's walk. There the reads are handed out before the loop, in the
+/// entry block, so every exit from the loop is numbered after the hand-out.
+/// Here they are handed out inside the loop body, and lowering numbers blocks
+/// in source order, so the block the loop leaves through on `break` — written
+/// first in the body — is numbered before the block that starts them.
+const READS_BELOW_A_LOOP_EXIT: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
+  let left = buffer_new(1_u64, 0_u8);
+  let right = buffer_new(1_u64, 0_u8);
+  let total = 0_u64;
+  let cursor = 0_u64;
+  loop @spin {
+    let done = ieq(cursor, rounds);
+    if done {
+      break @spin;
+    }
+    let bail = ieq(cursor, 7_u64);
+    if bail {
+      return 1_u64;
+    }
+    region 'file {
+      region 'left {
+        region 'right {
+          let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+          let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+          match move first {
+            ReadBytes(next: produced) => {
+              set total = total +wrap produced;
+            }
+            ReadEnd() => {
+            }
+            ReadFailed(error: problem) => {
+            }
+          }
+          match move second {
+            ReadBytes(next: produced) => {
+              set total = total +wrap produced;
+            }
+            ReadEnd() => {
+            }
+            ReadFailed(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+    set cursor = cursor +wrap 1_u64;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// A drain the emission walk reaches before the hand-out it must retire is
+/// refused, rather than emitted with the join simply missing.
+///
+/// Blocks are emitted in index order and a drain can only retire hand-outs
+/// that already exist, so a carrying block that starts an operation and is
+/// numbered after one of the region's exits leaves that exit with no join at
+/// all. Above, the loop's `break` exit is numbered before the block that hands
+/// the read out, and walking straight through emits a bare `ret` there while
+/// the operation is still owned by a target — which would write its result
+/// into storage the frame no longer exists to hold.
+///
+/// Nothing downstream catches it: a function carrying a pipeline is exempt
+/// from the straight-line check at the end of emission, exactly because a
+/// carrying block is free to be the last block emitted. So the ordering is a
+/// precondition on the descriptor and it is checked, like the region's other
+/// precondition, before a line of the function is written.
+///
+/// It is the ordering and not the shape. `READS_ACROSS_A_LOOP` takes the same
+/// kind of carrying set and emits, and its latch is numbered after the typed
+/// exit its back edge reaches — which is admitted, because a block that starts
+/// no operation leaves that exit nothing to be missing.
+#[test]
+fn a_drain_emitted_before_the_hand_out_it_retires_is_refused() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    // The source itself is an ordinary accepted program; only the descriptor
+    // below is out of order.
+    let sequential = with_mutated_completion_ir(READS_BELOW_A_LOOP_EXIT, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the probe must emit")
+            .into_string()
+    });
+    let sequential = emitted_function(&sequential, "probe");
+    let submissions = ir_blocks_containing(sequential, "@wf__completion_file_pread_submit(");
+    assert_eq!(
+        submissions.len(),
+        1,
+        "the probe must hand one of its two independent reads to a target: {submissions:?}"
+    );
+    assert!(
+        submissions.iter().all(|block| block != "entry"),
+        "the hand-out must be inside the loop, or nothing is out of order: {submissions:?}"
+    );
+
+    with_mutated_completion_ir(READS_BELOW_A_LOOP_EXIT, |program| {
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let carrying = blocks_that_reach_the_back_edge(probe);
+        assert!(
+            carrying.len() > 1,
+            "the probe's loop must span more than one block"
+        );
+        assert!(program.set_completion_pipeline_for_test(
+            "probe",
+            crate::IrCompletionPipeline::new(
+                crate::IrBlockId::from_index(0).expect("the entry block"),
+                carrying,
+                crate::IrCompletionWindow::new(0, 65_536, 32),
+            ),
+        ));
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::UnretiredCompletionOperation),
+            "a drain numbered before the hand-out it retires must be refused"
+        );
+    });
+}

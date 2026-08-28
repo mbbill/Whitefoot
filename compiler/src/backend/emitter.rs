@@ -730,7 +730,16 @@ struct FunctionEmitter<'program, 'state> {
     /// edge. These are the drains — the loop's normal exit and every typed
     /// exit out of its prologue — and there is generally more than one.
     pipeline_drains: HashSet<IrBlockId>,
-    /// Every completion hand-out the carrying region made.
+    /// For each drain, the carrying blocks that reach it without leaving the
+    /// region first.
+    ///
+    /// This is what decides which operations one drain retires. It is a fact
+    /// about the control-flow graph, so a drain retires the same window
+    /// however the blocks around it happen to be numbered, and a carrying
+    /// block on a path that cannot reach this drain contributes nothing to it.
+    pipeline_feeders: HashMap<IrBlockId, HashSet<IrBlockId>>,
+    /// Every completion hand-out the carrying region made, with the carrying
+    /// block that made it.
     ///
     /// [`Self::handed_out`] is a straight-line simulation: it holds what one
     /// walk through the blocks in index order has outstanding. That is exact
@@ -739,9 +748,10 @@ struct FunctionEmitter<'program, 'state> {
     /// exits and each of them must retire the same operations — the walk
     /// reaches the first exit, empties the simulation there, and would leave
     /// the second exit emitting nothing. This is what each exit is seeded
-    /// from, so every drain retires the whole window and no path leaves an
-    /// accepted operation owned by nobody.
-    pipeline_outstanding: Vec<completion::CompletionHandedOut>,
+    /// from, and the block recorded beside each hand-out is what lets a drain
+    /// take the operations that actually reach it rather than everything the
+    /// walk has seen so far.
+    pipeline_outstanding: Vec<(IrBlockId, completion::CompletionHandedOut)>,
     /// Whether any function in this module emitted a typed completion handoff.
     completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
@@ -845,6 +855,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             handed_out: Vec::new(),
             pipeline: function.completion_pipeline(),
             pipeline_drains: pipeline_drain_blocks(function),
+            pipeline_feeders: pipeline_feeder_blocks(function),
             pipeline_outstanding: Vec::new(),
             completion_used,
             sequential_clones,
@@ -904,34 +915,84 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 }
             }
         }
-        if escapes.iter().all(|escaped| *escaped) {
-            Ok(())
-        } else {
-            Err(BackendFailure::UnretiredCompletionOperation)
+        if !escapes.iter().all(|escaped| *escaped) {
+            return Err(BackendFailure::UnretiredCompletionOperation);
         }
+        // A drain retires what the carrying blocks that reach it handed out,
+        // and a hand-out exists to be retired only once its own block has been
+        // emitted. The walk is in block-index order, so a feeder that hands
+        // out an operation and is numbered at or after its own drain would
+        // leave that drain emitting nothing for it — silently, because a
+        // function with a pipeline is exempt from the straight-line check at
+        // the end of emission, a carrying block being free to be the last one
+        // emitted. That is the same defect as a region with no drain and it is
+        // refused in the same place.
+        //
+        // A feeder that hands nothing out is not that defect: a loop's latch
+        // is numbered after the typed exit its back edge reaches, and where it
+        // starts no operation there is nothing for that exit to be missing.
+        for (drain, feeders) in &self.pipeline_feeders {
+            for feeder in feeders {
+                if feeder.index() >= drain.index() && self.block_hands_out_completion(*feeder) {
+                    return Err(BackendFailure::UnretiredCompletionOperation);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether this block starts an operation a drain would have to retire.
+    ///
+    /// It answers the same question `emit_instruction` answers when it decides
+    /// to hand a system call to a target, read from the same source-ordered
+    /// steps, so the ordering rule above is checked against what the walk will
+    /// actually emit.
+    fn block_hands_out_completion(&self, block: IrBlockId) -> bool {
+        self.function
+            .blocks()
+            .get(block.index())
+            .is_some_and(|block| {
+                block.instructions().iter().any(|instruction| {
+                    matches!(
+                        instruction,
+                        IrInstruction::Define { result, .. }
+                            if self
+                                .completion_steps
+                                .get(result)
+                                .is_some_and(crate::IrCompletionStep::submit)
+                    )
+                })
+            })
     }
 
     /// Seeds a drain block with the operations the carrying region left in
-    /// flight.
+    /// flight on the paths that reach it.
     ///
     /// The first drain reached in emission order already has them and is left
     /// alone; every later one is walked into with an empty simulation and
     /// needs them back, in the order they were handed out, so that each exit
-    /// retires the whole window in index order.
+    /// retires its whole window in hand-out order. Which operations those are
+    /// is decided by the graph — the carrying blocks that reach this drain —
+    /// not by how much of the region the walk happens to have passed.
     fn seed_pipeline_drain(&mut self, block: IrBlockId) {
         if !self.pipeline_drains.contains(&block) {
             return;
         }
-        for pending in self.pipeline_outstanding.clone() {
-            if !self.completion_operation_is_outstanding(pending.result()) {
+        let Some(feeders) = self.pipeline_feeders.get(&block).cloned() else {
+            return;
+        };
+        for (carrying, pending) in self.pipeline_outstanding.clone() {
+            if feeders.contains(&carrying)
+                && !self.completion_operation_is_outstanding(pending.result())
+            {
                 self.handed_out.push(HandedOut::Completion(pending));
             }
         }
     }
 
-    /// Records what a carrying block handed out, so every exit from the region
-    /// can retire it.
-    fn record_pipeline_handouts(&mut self) {
+    /// Records what a carrying block handed out, so every exit the block
+    /// reaches can retire it.
+    fn record_pipeline_handouts(&mut self, block: IrBlockId) {
         for pending in &self.handed_out {
             let HandedOut::Completion(pending) = pending else {
                 continue;
@@ -939,9 +1000,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             if !self
                 .pipeline_outstanding
                 .iter()
-                .any(|carried| carried.result() == pending.result())
+                .any(|(_, carried)| carried.result() == pending.result())
             {
-                self.pipeline_outstanding.push(pending.clone());
+                self.pipeline_outstanding.push((block, pending.clone()));
             }
         }
     }
@@ -1135,7 +1196,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             // it with the operations still owned by the target, and every
             // block the pipeline does not name retires them.
             if self.block_carries_completion(block) {
-                self.record_pipeline_handouts();
+                self.record_pipeline_handouts(block);
             } else if step.finish() {
                 self.emit_all_completion_joins()?;
             }
@@ -2051,6 +2112,58 @@ fn pipeline_drain_blocks(function: &IrFunction) -> HashSet<IrBlockId> {
         .flatten()
         .filter(|successor| !pipeline.carries(*successor))
         .collect()
+}
+
+/// Which carrying blocks each drain retires the work of.
+///
+/// A drain must retire exactly the operations the region can still have in
+/// flight when control arrives there, and those are the ones handed out by the
+/// carrying blocks that reach it without leaving the region on the way — a
+/// fact about the edges, not about the order the blocks are numbered in.
+/// Reading it from the graph is what keeps a drain from retiring work that
+/// cannot reach it and, together with the ordering rule `validate_pipeline`
+/// applies, from missing work that can.
+fn pipeline_feeder_blocks(function: &IrFunction) -> HashMap<IrBlockId, HashSet<IrBlockId>> {
+    let Some(pipeline) = function.completion_pipeline() else {
+        return HashMap::new();
+    };
+    let blocks = function.blocks();
+    let mut predecessors: Vec<Vec<IrBlockId>> = vec![Vec::new(); blocks.len()];
+    for (index, block) in blocks.iter().enumerate() {
+        let Ok(id) = IrBlockId::from_index(index) else {
+            continue;
+        };
+        for successor in block_successors(block) {
+            if let Some(edges) = predecessors.get_mut(successor.index()) {
+                edges.push(id);
+            }
+        }
+    }
+    let carrying_predecessors = |block: IrBlockId| -> Vec<IrBlockId> {
+        predecessors
+            .get(block.index())
+            .map(|edges| {
+                edges
+                    .iter()
+                    .copied()
+                    .filter(|edge| pipeline.carries(*edge))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut feeders = HashMap::new();
+    for drain in pipeline_drain_blocks(function) {
+        let mut reached: HashSet<IrBlockId> = HashSet::new();
+        let mut frontier = carrying_predecessors(drain);
+        while let Some(block) = frontier.pop() {
+            if !reached.insert(block) {
+                continue;
+            }
+            frontier.extend(carrying_predecessors(block));
+        }
+        feeders.insert(drain, reached);
+    }
+    feeders
 }
 
 fn block_label(block: IrBlockId) -> String {

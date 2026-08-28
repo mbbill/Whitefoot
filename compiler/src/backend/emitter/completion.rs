@@ -150,7 +150,7 @@ impl FunctionEmitter<'_, '_> {
             // the region's exits must stop expecting it. A drain reaches this
             // with the record already taken, and the retain is nothing there.
             self.pipeline_outstanding
-                .retain(|carried| carried.result() != *dependency);
+                .retain(|(_, carried)| carried.result() != *dependency);
         }
         Ok(())
     }
