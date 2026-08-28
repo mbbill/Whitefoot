@@ -1,0 +1,150 @@
+<!-- ==========================================================================
+     explain-code page skeleton
+     ==========================================================================
+     Start with the prose document below. Add a visual only when you can name
+     the extra relationship it reveals. The optional snippets at the bottom are
+     deliberately commented out; copy one into a section only when it earns its
+     place.
+
+     For a standalone file, write only the body and run:
+         assets/assemble.sh "Page title" body.html out.html
+
+     A host that supplies its own page shell needs this body plus the contents
+     of house-style.css and comments.js, without an html/head/body wrapper.
+     ========================================================================= -->
+
+<header class="mast">
+  <div class="eyebrow">
+    <span>repo · path/to/file.rs</span>
+    <span>Explanation</span>
+    <span>2026-01-01</span>
+  </div>
+  <h1>The concrete question this page answers</h1>
+  <p class="standfirst">
+    Name the input, the work, and the output in one sentence the reader can keep
+    in mind while reading the rest.
+  </p>
+</header>
+
+<section>
+  <h2>The concrete case</h2>
+  <div class="col">
+    <p>
+      Begin with the smallest literal execution that makes the section's question
+      concrete. Put it here before terminology or general rules.
+    </p>
+<pre>input: the smallest concrete value
+step 1: the first important state
+step 2: the decisive state                 → observable result</pre>
+    <p>
+      <strong>What this shows:</strong> point to the decisive line and explain why
+      it matters. If this is a failure or unsafe rewrite, show both paths and say
+      “See the problem” before naming the general concept.
+    </p>
+  </div>
+  <aside class="checkpoint">
+    State the conclusion the reader should be able to reconstruct so far.
+  </aside>
+</section>
+
+<section>
+  <h2>How the mechanism works</h2>
+  <div class="col">
+    <p>
+      Describe the input and output, then show the smallest data shape that makes
+      the mechanism understandable.
+    </p>
+<pre><span class="c">// path/to/file.rs</span>
+Record {
+    field: Type,
+}</pre>
+    <p>
+      Walk through state changes in execution order. Say what each cursor,
+      collection, or retained value means, when output becomes visible, and what
+      happens if a step fails.
+    </p>
+    <h3>A worked execution</h3>
+    <p>
+      Trace one realistic input through the important intermediate values to the
+      observable result. Derive the conclusion instead of merely asserting it.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>Checks, boundaries, and evidence</h2>
+  <div class="col">
+    <p>
+      State what this component can establish from the information it owns.
+      Then name what it cannot establish, which later component owns that
+      decision, and why the information belongs there.
+    </p>
+    <ul class="prose">
+      <li><strong>Checked here:</strong> the local property and its enforcement.</li>
+      <li><strong>Checked elsewhere:</strong> the named owner and required input.</li>
+      <li><strong>Failure:</strong> what the caller observes.</li>
+      <li><strong>Limit:</strong> what this explanation or evidence does not prove.</li>
+    </ul>
+  </div>
+</section>
+
+<footer class="close">
+  Sources, version, or evidence status<br>
+  What this page does not claim
+</footer>
+
+<!-- OPTIONAL REAL DESIGN FORK
+     Include only when the implementation genuinely had alternatives.
+
+<div class="col">
+  <h3>The realistic choices</h3>
+  <ul class="prose">
+    <li><strong>Option one.</strong> What it buys and what it costs.</li>
+    <li><strong>Option two.</strong> The different tradeoff it makes.</li>
+    <li><strong>Chosen approach.</strong> Why this code selects it.</li>
+  </ul>
+</div>
+-->
+
+<!-- OPTIONAL SIDE-BY-SIDE TRACE
+     Use only when the same mechanism on contrasting inputs is the point.
+
+<figure class="fig">
+  <div class="trace">
+    <div class="tpanel">
+      <header><span>Input it handles</span><span class="pill p-ok">Accepted</span></header>
+      <div class="tbody">
+<pre>real input
+real intermediate values</pre>
+        <div class="verdict v-ok"><b>Conclusion:</b> what the mechanism proved.</div>
+      </div>
+    </div>
+    <div class="tpanel">
+      <header><span>Boundary case</span><span class="pill p-stop">Stops</span></header>
+      <div class="tbody">
+<pre>contrasting input
+the same intermediate steps</pre>
+        <div class="verdict v-stop"><b>Conclusion:</b> where it stopped and why.</div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>Figure 1.</b> State the consequence, not merely the contents.</figcaption>
+</figure>
+-->
+
+<!-- OPTIONAL EXACT-MAPPING TABLE
+     Use only for several records sharing the same meaningful columns.
+
+<figure class="fig">
+  <div class="tw">
+    <table>
+      <thead><tr><th>Input</th><th>Owner</th><th>Observable result</th></tr></thead>
+      <tbody>
+        <tr><td class="sys">case_a</td><td>Component A</td><td>Accepted</td></tr>
+        <tr><td class="sys">case_b</td><td>Component B</td><td>Rejected</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figcaption><b>Table 1.</b> Explain the mapping's consequence.</figcaption>
+</figure>
+-->

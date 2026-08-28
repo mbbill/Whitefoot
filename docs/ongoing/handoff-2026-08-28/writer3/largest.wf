@@ -1,0 +1,370 @@
+const digit: array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
+
+fn read_chunk['f, 'd](file: &'f ReadFile, scratch: &uniq 'd buffer<u8>, offset: own u64) -> outcome: own ReadOutcome reads(file, scratch), writes(scratch) {
+  let limit = len(deref(scratch));
+  let taken = read_at<'f, 'd>(file: file, destination: move scratch, file_offset: offset, start: 0_u64, end: limit);
+  return move taken;
+}
+
+fn count_file['f, 'd](file: &'f ReadFile, scratch: &uniq 'd buffer<u8>) -> total: own u64 reads(file, scratch), writes(scratch) {
+  let sum = 0_u64;
+  loop @chunk {
+    region 'c {
+      match read_chunk<'f, 'c>(file: file, scratch: &uniq 'c deref(scratch), offset: sum) {
+        ReadBytes(next: taken) => {
+          set sum = sum +wrap taken;
+        }
+        ReadEnd() => {
+          break @chunk;
+        }
+        ReadFailed(error: problem) => {
+          break @chunk;
+        }
+      }
+    }
+  }
+  return sum;
+}
+
+fn render_u64['d](digits: &uniq 'd buffer<u8>, value: own u64) -> begin: own u64 reads(digits), writes(digits) {
+  let width = len(deref(digits));
+  let cursor = width;
+  let rest = value;
+  loop @render {
+    let low = rest % 10_u64;
+    let shrunk = rest / 10_u64;
+    set cursor = cursor -wrap 1_u64;
+    let fits = ilt(cursor, width);
+    if fits {
+      let small = ilt(low, 10_u64);
+      if small {
+        let ch = digit[low];
+        set deref(digits)[cursor] = ch;
+      }
+    }
+    set rest = shrunk;
+    let done = ieq(shrunk, 0_u64);
+    if done {
+      break @render;
+    }
+  }
+  return cursor;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(out, files), writes(out, files), allocates(heap) {
+  let stack = buffer_vacant<DirectoryRead>(512_u64);
+  let spath = buffer_new(65536_u64, 0_u8);
+  let slen = buffer_new(512_u64, 0_u64);
+  let sizes = buffer_new(10_u64, 0_u64);
+  let lengths = buffer_new(10_u64, 0_u64);
+  let names = buffer_new(2560_u64, 0_u8);
+  let batch = buffer_new(8192_u64, 0_u8);
+  let scratch = buffer_new(65536_u64, 0_u8);
+  let digits = buffer_new(20_u64, 48_u8);
+  let punct = buffer_new(2_u64, 32_u8);
+  let cur = buffer_new(128_u64, 0_u8);
+  let full = buffer_new(512_u64, 0_u8);
+  set punct[1_u64] = 10_u8;
+  let scap = len(stack);
+  let pcap = len(spath);
+  let lscap = len(slen);
+  let zcap = len(sizes);
+  let lcap = len(lengths);
+  let ncap = len(names);
+  let bcap = len(batch);
+  let dcap = len(digits);
+  let ccap = len(cur);
+  let fcap = len(full);
+  let vacated = replace stack[0_u64] = Some<DirectoryRead>(value: move cwd);
+  set slen[0_u64] = 0_u64;
+  let sp = 1_u64;
+  loop @drain {
+    let empty = ieq(sp, 0_u64);
+    if empty {
+      break @drain;
+    }
+    set sp = sp -wrap 1_u64;
+    let inb = ilt(sp, scap);
+    let inl = ilt(sp, lscap);
+    let popok = band(inb, inl);
+    if popok {
+      let taken = replace stack[sp] = None<DirectoryRead>();
+      let plen = slen[sp];
+      let slot = sp *wrap 128_u64;
+      for @pc j in 0_u64..plen {
+        let src = slot +wrap j;
+        let q1 = ilt(src, pcap);
+        let q2 = ilt(j, ccap);
+        let qok = band(q1, q2);
+        if qok {
+          let one = spath[src];
+          set cur[j] = one;
+        }
+      }
+      match taken {
+        Some(value: here) => {
+          region 'g {
+            let permit = reserve_file<'g>(factory: &uniq 'g files);
+            region 's {
+              match open_directory_source<'s>(permit: move permit, directory: &'s here) {
+                Ok(value: lister) => {
+                  loop @list {
+                    region 'e {
+                      match directory_next<'e, 'e>(source: &uniq 'e lister, destination: &uniq 'e batch, start: 0_u64, end: bcap) {
+                        ListBytes(next: stop, entries: howmany) => {
+                          let cursor = 0_u64;
+                          for @rec r in 0_u64..howmany {
+                            let p1 = cursor +wrap 1_u64;
+                            let p2 = cursor +wrap 2_u64;
+                            let p3 = cursor +wrap 3_u64;
+                            let h0 = ile(p3, stop);
+                            let h1 = ilt(cursor, bcap);
+                            let h2 = ilt(p1, bcap);
+                            let h3 = ilt(p2, bcap);
+                            let ha = band(h0, h1);
+                            let hb = band(h2, h3);
+                            let hok = band(ha, hb);
+                            if hok {
+                              let kind = batch[cursor];
+                              let lo = batch[p1];
+                              let hi = batch[p2];
+                              let lo64 = cvt<u8, u64>(lo);
+                              let hi64 = cvt<u8, u64>(hi);
+                              let scaled = hi64 *wrap 256_u64;
+                              let nlen = lo64 +wrap scaled;
+                              let nend = p3 +wrap nlen;
+                              let e0 = ile(nend, stop);
+                              let e1 = ile(p3, nend);
+                              let e2 = ilt(p3, bcap);
+                              let ea = band(e0, e1);
+                              let eok = band(ea, e2);
+                              if eok {
+                                let p4 = p3 +wrap 1_u64;
+                                let first = batch[p3];
+                                let second = 0_u8;
+                                let s2 = ilt(p4, bcap);
+                                if s2 {
+                                  set second = batch[p4];
+                                }
+                                let isdot = ieq(first, 46_u8);
+                                let isdot2 = ieq(second, 46_u8);
+                                let one1 = ieq(nlen, 1_u64);
+                                let two2 = ieq(nlen, 2_u64);
+                                let selfdot = band(isdot, one1);
+                                let updots = band(isdot, isdot2);
+                                let updot = band(updots, two2);
+                                let special = bor(selfdot, updot);
+                                let usable = bnot(special);
+                                if usable {
+                                  let base = plen;
+                                  for @cp j in 0_u64..plen {
+                                    let a1 = ilt(j, ccap);
+                                    let a2 = ilt(j, fcap);
+                                    let aok = band(a1, a2);
+                                    if aok {
+                                      let one = cur[j];
+                                      set full[j] = one;
+                                    }
+                                  }
+                                  let needsep = igt(plen, 0_u64);
+                                  if needsep {
+                                    let s3 = ilt(plen, fcap);
+                                    if s3 {
+                                      set full[plen] = 47_u8;
+                                      set base = plen +wrap 1_u64;
+                                    }
+                                  }
+                                  let flen = base +wrap nlen;
+                                  for @cn k in 0_u64..nlen {
+                                    let src = p3 +wrap k;
+                                    let dst = base +wrap k;
+                                    let b1 = ilt(src, bcap);
+                                    let b2 = ilt(dst, fcap);
+                                    let bok = band(b1, b2);
+                                    if bok {
+                                      let one = batch[src];
+                                      set full[dst] = one;
+                                    }
+                                  }
+                                  let isdir = ieq(kind, 2_u8);
+                                  if isdir {
+                                    let space = ilt(sp, scap);
+                                    let shortp = ile(flen, ccap);
+                                    let pushok = band(space, shortp);
+                                    if pushok {
+                                      region 'g2 {
+                                        let permit2 = reserve_file<'g2>(factory: &uniq 'g2 files);
+                                        region 'n2 {
+                                          match open_directory<'n2, 'n2>(permit: move permit2, root: &'n2 here, name: &'n2 batch, start: p3, end: nend) {
+                                            Ok(value: child) => {
+                                              let vac2 = replace stack[sp] = Some<DirectoryRead>(value: move child);
+                                              let nslot = sp *wrap 128_u64;
+                                              for @sc k in 0_u64..flen {
+                                                let dst = nslot +wrap k;
+                                                let c1 = ilt(k, fcap);
+                                                let c2 = ilt(dst, pcap);
+                                                let cok = band(c1, c2);
+                                                if cok {
+                                                  let one = full[k];
+                                                  set spath[dst] = one;
+                                                }
+                                              }
+                                              let lok = ilt(sp, lscap);
+                                              if lok {
+                                                set slen[sp] = flen;
+                                              }
+                                              set sp = sp +wrap 1_u64;
+                                            }
+                                            Err(error: problem) => {
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  } else {
+                                    region 'g3 {
+                                      let permit3 = reserve_file<'g3>(factory: &uniq 'g3 files);
+                                      region 'n3 {
+                                        match open_file<'n3, 'n3>(permit: move permit3, root: &'n3 here, name: &'n3 batch, start: p3, end: nend) {
+                                          Ok(value: target) => {
+                                            region 'q {
+                                              let size = count_file<'q, 'q>(file: &'q target, scratch: &uniq 'q scratch);
+                                              let minslot = 0_u64;
+                                              let minsize = 0_u64;
+                                              let z0 = ilt(0_u64, zcap);
+                                              if z0 {
+                                                set minsize = sizes[0_u64];
+                                              }
+                                              for @fm k in 0_u64..zcap {
+                                                let k1 = ilt(k, zcap);
+                                                if k1 {
+                                                  let v = sizes[k];
+                                                  let sm = ilt(v, minsize);
+                                                  if sm {
+                                                    set minsize = v;
+                                                    set minslot = k;
+                                                  }
+                                                }
+                                              }
+                                              let bigger = igt(size, minsize);
+                                              let shortn = ile(flen, 256_u64);
+                                              let better = band(bigger, shortn);
+                                              if better {
+                                                let m1 = ilt(minslot, zcap);
+                                                let m2 = ilt(minslot, lcap);
+                                                let mok = band(m1, m2);
+                                                if mok {
+                                                  set sizes[minslot] = size;
+                                                  set lengths[minslot] = flen;
+                                                }
+                                                let nslot2 = minslot *wrap 256_u64;
+                                                for @nc k in 0_u64..flen {
+                                                  let dst = nslot2 +wrap k;
+                                                  let d1 = ilt(k, fcap);
+                                                  let d2 = ilt(dst, ncap);
+                                                  let dok = band(d1, d2);
+                                                  if dok {
+                                                    let one = full[k];
+                                                    set names[dst] = one;
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                          Err(error: problem) => {
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                                set cursor = nend;
+                              }
+                            }
+                          }
+                        }
+                        ListEnd() => {
+                          break @list;
+                        }
+                        ListFailed(error: problem) => {
+                          break @list;
+                        }
+                      }
+                    }
+                  }
+                }
+                Err(error: problem) => {
+                }
+              }
+            }
+          }
+        }
+        None() => {
+        }
+      }
+    }
+  }
+  for @row t in 0_u64..zcap {
+    let bestslot = 0_u64;
+    let bestsize = 0_u64;
+    let found = 0_u64;
+    for @fx k in 0_u64..zcap {
+      let g1 = ilt(k, zcap);
+      let g2 = ilt(k, lcap);
+      let gok = band(g1, g2);
+      if gok {
+        let ln = lengths[k];
+        let sz = sizes[k];
+        let live = igt(ln, 0_u64);
+        let big = igt(sz, bestsize);
+        let take = band(live, big);
+        if take {
+          set bestsize = sz;
+          set bestslot = k;
+          set found = 1_u64;
+        }
+      }
+    }
+    let any = ieq(found, 1_u64);
+    if any {
+      region 'w1 {
+        let dstart = render_u64<'w1>(digits: &uniq 'w1 digits, value: bestsize);
+        let dok2 = ile(dstart, dcap);
+        if dok2 {
+          region 'w2 {
+            let sent = write_once<'w2, 'w2>(output: &uniq 'w2 out, source: &'w2 digits, start: dstart, end: dcap);
+          }
+        }
+      }
+      region 'w3 {
+        let sent = write_once<'w3, 'w3>(output: &uniq 'w3 out, source: &'w3 punct, start: 0_u64, end: 1_u64);
+      }
+      let nb = bestslot *wrap 256_u64;
+      let nl = 0_u64;
+      let bok2 = ilt(bestslot, lcap);
+      if bok2 {
+        set nl = lengths[bestslot];
+      }
+      let ne = nb +wrap nl;
+      let r1 = ile(nb, ne);
+      let r2 = ile(ne, ncap);
+      let rok = band(r1, r2);
+      if rok {
+        region 'w4 {
+          let sent = write_once<'w4, 'w4>(output: &uniq 'w4 out, source: &'w4 names, start: nb, end: ne);
+        }
+      }
+      region 'w5 {
+        let sent = write_once<'w5, 'w5>(output: &uniq 'w5 out, source: &'w5 punct, start: 1_u64, end: 2_u64);
+      }
+      let c1 = ilt(bestslot, zcap);
+      let c2 = ilt(bestslot, lcap);
+      let cok2 = band(c1, c2);
+      if cok2 {
+        set sizes[bestslot] = 0_u64;
+        set lengths[bestslot] = 0_u64;
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

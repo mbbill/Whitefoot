@@ -1,0 +1,166 @@
+const digit: array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
+
+fn read_chunk['f, 'd](file: &'f ReadFile, scratch: &uniq 'd buffer<u8>, offset: own u64) -> outcome: own ReadOutcome reads(file, scratch), writes(scratch) {
+  let limit = len(deref(scratch));
+  let taken = read_at<'f, 'd>(file: file, destination: move scratch, file_offset: offset, start: 0_u64, end: limit);
+  return move taken;
+}
+
+fn count_file['f, 'd](file: &'f ReadFile, scratch: &uniq 'd buffer<u8>) -> total: own u64 reads(file, scratch), writes(scratch) {
+  let sum = 0_u64;
+  loop @chunk {
+    region 'c {
+      match read_chunk<'f, 'c>(file: file, scratch: &uniq 'c deref(scratch), offset: sum) {
+        ReadBytes(next: taken) => {
+          set sum = sum +wrap taken;
+        }
+        ReadEnd() => {
+          break @chunk;
+        }
+        ReadFailed(error: problem) => {
+          break @chunk;
+        }
+      }
+    }
+  }
+  return sum;
+}
+
+fn render_u64['d](digits: &uniq 'd buffer<u8>, value: own u64) -> begin: own u64 reads(digits), writes(digits) {
+  let width = len(deref(digits));
+  let cursor = width;
+  let rest = value;
+  loop @render {
+    let low = rest % 10_u64;
+    let shrunk = rest / 10_u64;
+    set cursor = cursor -wrap 1_u64;
+    let fits = ilt(cursor, width);
+    if fits {
+      let small = ilt(low, 10_u64);
+      if small {
+        let ch = digit[low];
+        set deref(digits)[cursor] = ch;
+      }
+    }
+    set rest = shrunk;
+    let done = ieq(shrunk, 0_u64);
+    if done {
+      break @render;
+    }
+  }
+  return cursor;
+}
+
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
+  let content = buffer_new(65536_u64, 0_u8);
+  let scratch = buffer_new(65536_u64, 0_u8);
+  let digits = buffer_new(20_u64, 48_u8);
+  let punct = buffer_new(3_u64, 32_u8);
+  set punct[1_u64] = 63_u8;
+  set punct[2_u64] = 10_u8;
+  region 'a {
+    let picked = arg_get<'a>(args: &'a args, position: 1_u64);
+    match picked {
+      Ok(value: given) => {
+        match relative_path(value: move given) {
+          Ok(value: path) => {
+            region 'g {
+              let permit = reserve_file<'g>(factory: &uniq 'g files);
+              region 'p {
+                match open_read<'g, 'p>(permit: move permit, root: &'g cwd, path: &'p path) {
+                  Ok(value: listing) => {
+                    let capacity = len(content);
+                    let filled = 0_u64;
+                    loop @slurp {
+                      let more = ilt(filled, capacity);
+                      if more {
+                        region 'r {
+                          match read_at<'r, 'r>(file: &'r listing, destination: &uniq 'r content, file_offset: filled, start: filled, end: capacity) {
+                            ReadBytes(next: reached) => {
+                              set filled = reached;
+                            }
+                            ReadEnd() => {
+                              break @slurp;
+                            }
+                            ReadFailed(error: problem) => {
+                              break @slurp;
+                            }
+                          }
+                        }
+                      } else {
+                        break @slurp;
+                      }
+                    }
+                    let room = ilt(filled, capacity);
+                    if room {
+                      set content[filled] = 10_u8;
+                      set filled = filled +wrap 1_u64;
+                    }
+                    let inrange = ile(filled, capacity);
+                    if inrange {
+                      let begin = 0_u64;
+                      for @scan index in 0_u64..filled {
+                        let byte = content[index];
+                        let eol = ieq(byte, 10_u8);
+                        if eol {
+                          let nonempty = ilt(begin, index);
+                          if nonempty {
+                            region 'w1 {
+                              let sent = write_once<'w1, 'w1>(output: &uniq 'w1 out, source: &'w1 content, start: begin, end: index);
+                            }
+                            region 'w2 {
+                              let sent = write_once<'w2, 'w2>(output: &uniq 'w2 out, source: &'w2 punct, start: 0_u64, end: 1_u64);
+                            }
+                            region 'g2 {
+                              let permit2 = reserve_file<'g2>(factory: &uniq 'g2 files);
+                              region 'n2 {
+                                match open_file<'g2, 'n2>(permit: move permit2, root: &'g2 cwd, name: &'n2 content, start: begin, end: index) {
+                                  Ok(value: target) => {
+                                    region 'q {
+                                      let size = count_file<'q, 'q>(file: &'q target, scratch: &uniq 'q scratch);
+                                      let dstart = render_u64<'q>(digits: &uniq 'q digits, value: size);
+                                      let dwidth = len(digits);
+                                      let dok = ile(dstart, dwidth);
+                                      if dok {
+                                        region 'w3 {
+                                          let sent = write_once<'w3, 'w3>(output: &uniq 'w3 out, source: &'w3 digits, start: dstart, end: dwidth);
+                                        }
+                                      }
+                                    }
+                                  }
+                                  Err(error: problem) => {
+                                    region 'w4 {
+                                      let sent = write_once<'w4, 'w4>(output: &uniq 'w4 out, source: &'w4 punct, start: 1_u64, end: 2_u64);
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                            region 'w5 {
+                              let sent = write_once<'w5, 'w5>(output: &uniq 'w5 out, source: &'w5 punct, start: 2_u64, end: 3_u64);
+                            }
+                          }
+                          set begin = index +wrap 1_u64;
+                        }
+                      }
+                    }
+                    return exit_status(code: 0_u8);
+                  }
+                  Err(error: problem) => {
+                    return exit_status(code: 3_u8);
+                  }
+                }
+              }
+            }
+          }
+          Err(error: problem) => {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+}
