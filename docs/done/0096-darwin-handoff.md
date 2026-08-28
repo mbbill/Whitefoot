@@ -616,6 +616,24 @@ by this batch.
 
 ## Judgment calls
 
+- **The two cold rows are graded `not read`, not `missed`.** They were graded
+  `no` while the draw they are read from had its uncached label refused before
+  both cold tables. A grade of `no` on a table that is not cold claims more
+  than the measurement supports, and turning the same numbers into a pass
+  would claim far more; `not read` is what the artifact allows, and the
+  measured ratios stay printed beside it so nothing is hidden by the grade.
+- **The bar table is not re-read from the later draws.** Two further draws
+  exist — `72e98cba` and `a06c53f9` — and one of them would move two rows in
+  the program's favour. Reading a bar row from whichever draw flatters it is
+  the error this record was corrected for; the table stays on the run its
+  tables come from, and the other draws are reported in full beside it so a
+  reader can see every reading rather than the chosen one.
+- **The follow-up's runtime changes are recorded here rather than under
+  "What shipped".** They land after the measurement and none of them changes a
+  route, a policy or a threshold, so putting them among the changes the tables
+  price would suggest the tables priced them. The fourth macOS draw taken at
+  `a06c53f9` is what prices them, and it is reported as its own reading rather
+  than folded into the before/after tables.
 - **The drain hint was removed rather than made legal.** It could have been kept
   by hinting only into the window the sweep was about to scan, which is the
   sweep it existed to skip, or by widening `scan_budget`'s meaning, which is
