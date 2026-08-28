@@ -88,6 +88,18 @@ into unbounded work; if the second attempt also fails, that is the outcome
 source-order execution produces and the program sees it. Cost is paid only on
 the exhausted path, so nothing on the correct path changes and T3 holds.
 
+**What the runtime cannot do, and Stage B must.** §2.10 says the adapter
+"completes every older slot in index order (which runs their compiler-derived
+closes)". A compiler-derived close is writer code, and completion never invokes
+writer code (FIRST-PRINCIPLES.md §14), so the runtime can only give back the
+descriptors held by operations *it* still owns — a close already submitted, not
+one the driver has not reached. That covers the pipeline's steady state, where a
+slot's close is submitted when its read retires and is often still in flight
+when the slot's next open is. It does not cover a window whose older slots have
+not been driven that far, so the driver has to retire its own slots in index
+order on a published `ResourceExhausted` before it treats one as the program's
+answer. Stage B owns that half.
+
 ## 4. Back-edge-tolerant joins
 
 `compiler/src/backend/emitter.rs` and `emitter/completion.rs`, opting in on
