@@ -9,8 +9,10 @@ Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
 This document carries active v0.38 guidance, including the unified-state
-completion-I/O forms activated by v0.37 and the per-iteration scratch form
-[PAR-3] admits (P15).
+completion-I/O forms activated by v0.37, the per-iteration scratch form
+[PAR-3] admits (P15), and the three forms the 2026-08-28 blind-writer trial
+found a writer lacking: the inline factory reserve inside P15, the hoisted
+length fact (P16), and the subtotal-returning walk (P17).
 
 Implementation boundary: the current backend emits no effect-derived
 attributes or alias metadata, performs no proof-driven check elision, has no
@@ -433,6 +435,112 @@ Replaces: hoisting scratch buffers out of loops for allocation cost, and every
 writer-visible depth, window, batch, or `par for` marker a language would
 otherwise need to express I/O overlap. There is no source spelling for how many
 operations stay outstanding; the runtime chooses it.
+
+## P16. One length fact above the writes
+
+Problem: a program fills a buffer through `&uniq` callees and then hands a
+prefix of it to a call whose `requires` bounds that prefix by the buffer's
+length. The habit — and the reading of [ENT-5] an unguided writer forms in
+twenty minutes — is that the callee's write killed the length fact, so `let
+room = len(line);` has to be re-bound after every call that wrote through the
+borrow. The write did not kill it. [ENT-5] kills, for each length term
+`len(P)`, the root binding of `P` but not `P`'s element storage: an element
+write never kills a length fact, and the compiler honours that across a callee
+boundary. Only re-binding the root itself — a fresh `buffer_new`, a `set` of
+the whole binding — kills it.
+
+Pattern: bind the length once, above the loop and above every write, and
+discharge every later requirement from that one binding.
+
+```whitefoot
+let room = len(line);
+let fits = ile(end, room);
+```
+
+The first line sits above the loop and above every `put_text` that writes
+through `&uniq 'put line`. The second sits inside the loop after all of them,
+and it still discharges `emit_all`'s `requires ile(length, capacity)`, because
+nothing between the two killed `len(line)`.
+
+Evidence that it compiles as written:
+`research/experiments/blind-writer/2026-08-28/probes/probe_e_hoisted_length.wf`
+is a whole program in that shape — both length bindings above the loop, above
+every `put_text` and every `put_decimal` — and it is accepted.
+
+Current value: the fact is load-bearing, not ceremony. It is the re-bind that
+is redundant, and the compiler accepts the re-bind, which is why the belief
+survives a whole program: 34 of the 41 length bindings in the five programs of
+the 2026-08-28 blind-writer trial existed only to re-establish a fact that had
+never died. What the hoisted fact holds off is the rejection you get with no
+live length fact at all:
+
+```text
+whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, …, kind:
+UndischargedCallRequirement(UndischargedCallRequirementDetail { concrete_callee: "emit",
+…, disposition: Unproved, mechanical_fix: "establish the complete callee requirement with
+one dominating branch before the call, or, only when it is an independently true theorem
+outside checker rules, add a CLM-2-admissible residual claim with a complete exact
+`because` record" }) } at line.wf:33:16 in line "    let sent = emit<'e>(source: &'e line, length: end);"
+```
+
+Replaces: defensive re-measurement of a container after every call that wrote
+into it, which in a language without a length fact is the only way to be safe.
+
+## P17. Subtotal return instead of a threaded accumulator
+
+Problem: a recursive walk accumulates counts into a record. Every other
+language writes `totals = walk(dir, totals)`. Here that record is affine —
+[OWN-1] makes every owned composite affine regardless of its field types, so
+three `u64`s in a struct need `move` at every use — and the assignment is a
+`set` on an affine place, which [STOR-1] refuses outright. Reaching for
+[STOR-1]'s `replace` does not save it either when the call consumed the target
+to compute the value: there is then no live owner to bind out, and [OWN-1]
+rejects the reuse.
+
+Pattern: the walk returns its own subtotal, and the caller binds it under a
+fresh `let` and combines field by field. `move` at each use of the record, and
+a new binding for the combined value.
+
+```whitefoot
+let sub = walk<'recurse, 'c>(factory: &uniq 'recurse deref(factory), directory: dir);
+let carried = move totals;
+let added = move sub;
+let lines = carried.lines +wrap added.lines;
+let bytes = carried.bytes +wrap added.bytes;
+let next = Counts(lines: lines, bytes: bytes);
+```
+
+`replace` is the right commit in the other case, and only in it: when the value
+being committed leaves the target's root alive, `replace` writes the new owner
+in and binds the previous one out, which is the only way to give an affine
+binding a new owner in place.
+
+```whitefoot
+let stale = replace totals = fresh(lines: 3_u64);
+```
+
+Current value: this is a design the language pushes you to rather than a
+ceremony it charges you. A walk that returns its subtotal has no accumulator
+parameter to alias, so [OWN-6] never enters, and the caller's fold is the
+ordinary source-order `set` P15 wants on `lines` and `bytes` separately.
+
+Without the form, the two rejections a writer meets, in the order they meet
+them:
+
+```text
+whitefootc: Semantics/Source [OWN-1]: SemanticIssue { rule: Own1, …, kind: BareAffineUse
+{ mechanical_fix: "write `move p` for the affine place" } } at counts.wf:7:16 in line
+"  let totals = running;"
+
+whitefootc: Semantics/Source [STOR-1]: SemanticIssue { rule: Stor1, …, kind: AffineSetTarget
+{ target_type: "Counts", mechanical_fix: "the right-hand side consumes the target root, so
+replace cannot commit into it: bind the result under a new let, and combine it with the old
+value field by field" } } at counts.wf:14:7 in line
+"  set totals = walk(running: move totals);"
+```
+
+Replaces: a mutable accumulator parameter threaded by reference, and `+=` into
+a caller's struct.
 
 ## Known gaps (findings, not yet patterns)
 
