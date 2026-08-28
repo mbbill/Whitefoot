@@ -53,6 +53,9 @@ static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
 static pthread_once_t wf_bridge_file_once = PTHREAD_ONCE_INIT;
 static int wf_bridge_error;
 static int wf_bridge_file_error;
+/* Whether WF_IO_HELPERS named the pool, which pins the route as well as the
+ * count: see wf_bridge_helper_policy. */
+static int wf_bridge_helpers_pinned;
 static unsigned wf_bridge_ready;
 static unsigned wf_bridge_file_ready;
 /* Opens the completion path refused because no operation record can hold the
@@ -107,6 +110,12 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
             }
             *initial = (size_t)parsed;
             *cap = (size_t)parsed;
+            /* A written setting is an instruction about how to run, so the
+             * runtime stops choosing: it pins the pool exactly and keeps every
+             * admitted operation on the completion path.  That is what makes a
+             * pinned line of a measurement a measurement of the completion
+             * path rather than of the policy that may decline it. */
+            wf_bridge_helpers_pinned = 1;
             return;
         }
     }
@@ -761,6 +770,43 @@ int wf__completion_file_read_submit(
     );
 }
 
+/* Whether a positioned read is better made where it was stated than submitted.
+ *
+ * The completion path exists so that a program is not stalled by a wait it
+ * could have overlapped.  When the bounded adapter holds no helper, has
+ * nothing queued, and has measured its own operations as not waiting, there is
+ * no wait to overlap and no other thread to overlap it on: the submitted
+ * operation would be executed by this very thread, at its join, after a queue
+ * crossing, a claim, four slot transitions and a drain.  Declining the
+ * submission leaves the caller its ordinary direct call, which is the same
+ * host call without any of that.  The refusal is a throughput event of the
+ * same class as a full queue, and takes the same already-emitted route.
+ *
+ * Only a *positioned* transfer is declined, and that is the whole liveness
+ * argument.  An offset is meaningful only on a seekable object, and the typed
+ * opens that produce one admit nothing but a regular file, so a positioned
+ * read waits on storage.  A non-positioned read or write may be waiting on
+ * something another part of the same program has to do — a pipe the program
+ * itself must drain — and running one where it was stated could stall the very
+ * thread that would unblock it.  Those keep the queue.
+ *
+ * A read of nothing is declined either, in the sense that it is left alone: it
+ * makes no host call at all, so there is nothing to run here and nothing to
+ * overlap, and the bridge already answers it inline without reaching the
+ * adapter.
+ *
+ * A written WF_IO_HELPERS declines nothing: it pins the route with the count.
+ *
+ * The measurement keeps running while this is true, because every direct
+ * execution is timed by the same adapter, so a program whose reads start
+ * waiting is submitting again within a few operations. */
+static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {
+    return count != 0
+        && wf_bridge_helpers_pinned == 0
+        && wf_bridge_file_ready != 0
+        && wf_file_adapter_transfer_runs_on_caller(&wf_bridge_adapter);
+}
+
 int wf__completion_file_pread_submit(
     int descriptor,
     void *buffer,
@@ -788,6 +834,9 @@ int wf__completion_file_pread_submit(
         }
     }
 #endif
+    if (wf_bridge_positioned_read_runs_on_caller(count)) {
+        return 0;
+    }
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_PREAD;
     request.operation.pread.descriptor = descriptor;
@@ -1098,7 +1147,7 @@ int64_t wf__completion_file_pread_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 }
 
 int64_t wf__completion_file_write_direct(
@@ -1116,7 +1165,7 @@ int64_t wf__completion_file_write_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 }
 
 int wf__completion_file_open_at_direct(
@@ -1146,7 +1195,7 @@ int wf__completion_file_open_at_direct(
     request.operation.open_at.has_mode = has_mode;
     request.operation.open_at.expected_kind =
         (enum wf_file_expected_kind)expected_kind;
-    result = wf_file_execute_direct(&request);
+    result = wf_file_execute_timed(&wf_bridge_adapter, &request);
     *error_code = result.error_code;
     *open_outcome = (unsigned)result.open_outcome;
     return (int)wf_bridge_return_direct(result);
@@ -1167,7 +1216,7 @@ int wf__completion_file_status_direct(
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_STATUS;
     request.operation.status.descriptor = descriptor;
-    result = wf_file_execute_direct(&request);
+    result = wf_file_execute_timed(&wf_bridge_adapter, &request);
     if (result.value == 0) {
         if ((uint64_t)result.status_size > status_capacity) {
             errno = EOVERFLOW;
@@ -1183,7 +1232,7 @@ int wf__completion_file_close_direct(int descriptor) {
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_CLOSE;
     request.operation.close.descriptor = descriptor;
-    return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return (int)wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 }
 
 
@@ -1206,7 +1255,7 @@ int64_t wf__completion_directory_next_direct(
     request.operation.getdirentries64.buffer = buffer;
     request.operation.getdirentries64.count = (size_t)count;
     request.operation.getdirentries64.position = position;
-    return wf_bridge_return_direct(wf_file_execute_direct(&request));
+    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
 #else
     (void)descriptor;
     (void)buffer;

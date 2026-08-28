@@ -1043,7 +1043,14 @@ static int test_bridge_independent_positioned_reads(
 
     /* Both stable tokens are submitted before either result is joined.  The
      * two requests name one descriptor but independent file offsets; pread
-     * leaves the shared cursor out of their semantics. */
+     * leaves the shared cursor out of their semantics.
+     *
+     * This asserts the *submitted* route, so it depends on the bridge being
+     * willing to take it.  Under a written WF_IO_HELPERS it always is.  Under
+     * the demand-driven policy the bridge declines a positioned read once it
+     * has measured this host's reads as not waiting, so a case like this one
+     * belongs before any bridge operation has been executed — where it is —
+     * and a reordering that moves it after one must pin the route instead. */
     CHECK(
         wf__completion_file_pread_submit(
             descriptor,
@@ -2021,7 +2028,10 @@ static int test_open_results_reach_every_independent_owner(
  * because a helper inside a host call holds no CPU. What is left that this
  * process-wide case can honestly assert is the ceiling — how many helpers a
  * program *has* here depends on whether this harness's own temporary-file
- * operations happened to wait, which is a property of the machine.
+ * operations happened to wait, which is a property of the machine. Its unset
+ * arm no longer runs at all, because `main` pins the route for every
+ * invocation that did not name one; the ceiling it asserts is the one thing
+ * that holds either way.
  *
  * The rest of the promise did not go untested: it moved to
  * `test_pool_stays_empty_when_operations_do_not_wait` and
@@ -2385,12 +2395,21 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
+    /* Nothing measured yet is not evidence of anything, and neither policy
+     * fires on it: the first operations take the completion path unchanged. */
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 0);
+
     /* One microsecond a call: real work, and an order of magnitude under the
      * wait that would make a second thread worth its handoff. */
     wf_script_clock(1000u);
     CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 32) == 0);
     wf_script_clock(0);
     CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_SHORT);
+    /* With no helper, nothing queued and no wait measured, a transfer
+     * submitted now would be executed by the submitting thread itself. */
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 1);
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
@@ -2436,6 +2455,10 @@ static int test_pool_grows_when_operations_wait(const char *directory) {
     held = wf_file_adapter_helper_count(&adapter);
     CHECK(held >= 1);
     CHECK(held <= 4);
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_LONG);
+    /* A transfer submitted now would be overlapped by a helper, so the
+     * submitting thread must not take it itself. */
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 0);
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
@@ -2861,6 +2884,23 @@ int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
         return 2;
+    }
+    /* The bridge cases below assert which route an operation took, and under
+     * the demand-driven policy that is the runtime's choice: it declines a
+     * positioned read once it has measured this host's reads as not waiting,
+     * so whether a case sees the submitted route would depend on what the
+     * cases before it happened to execute. A written WF_IO_HELPERS pins the
+     * route with the count, so an invocation that did not name one gets one
+     * here and every case asserts a route that is fixed.
+     *
+     * What that leaves untested here is the policy itself, and it is tested
+     * where it can be decided rather than sampled:
+     * `test_pool_stays_empty_when_operations_do_not_wait` and
+     * `test_pool_grows_when_operations_wait` script the clock the policy
+     * measures with, and `compiler/tests/programs` runs whole compiled
+     * programs under the unset policy. */
+    if (getenv("WF_IO_HELPERS") == NULL) {
+        (void)setenv("WF_IO_HELPERS", "1", 0);
     }
     RUN_TEST(test_capacity_and_product_state());
     RUN_TEST(test_generation_and_duplicate_terminal());

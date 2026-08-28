@@ -464,6 +464,51 @@ static void wf_file_count_execution(wf_file_adapter *adapter, int helper) {
     );
 }
 
+wf_file_result wf_file_execute_timed(
+    wf_file_adapter *adapter,
+    const wf_file_request *request
+) {
+    int timed;
+    uint64_t started;
+    wf_file_result result;
+    if (adapter == NULL || adapter->initialized == 0) {
+        return wf_file_execute_direct(request);
+    }
+    timed = wf_file_execution_should_be_timed(adapter);
+    started = timed ? wf_file_monotonic_ns() : 0u;
+    result = wf_file_execute_direct(request);
+    if (timed) {
+        wf_file_note_execution(adapter, started);
+    }
+    return result;
+}
+
+enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
+    const wf_file_adapter *adapter
+) {
+    uint64_t mean;
+    if (adapter == NULL || adapter->initialized == 0) {
+        return WF_FILE_WAIT_UNMEASURED;
+    }
+    mean = atomic_load_explicit(
+        &adapter->mean_execute_ns,
+        memory_order_relaxed
+    );
+    if (mean == 0) {
+        return WF_FILE_WAIT_UNMEASURED;
+    }
+    return mean >= WF_FILE_OVERLAP_WAIT_NS ? WF_FILE_WAIT_LONG
+                                           : WF_FILE_WAIT_SHORT;
+}
+
+int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter) {
+    if (wf_file_adapter_wait_verdict(adapter) != WF_FILE_WAIT_SHORT
+        || wf_file_adapter_helper_count(adapter) != 0) {
+        return 0;
+    }
+    return wf_file_adapter_queued(adapter) == 0;
+}
+
 static void wf_file_run_work(
     wf_file_adapter *adapter,
     const wf_file_work *work,
@@ -486,14 +531,7 @@ static void wf_file_run_work(
             );
         }
     }
-    {
-        int timed = wf_file_execution_should_be_timed(adapter);
-        uint64_t started = timed ? wf_file_monotonic_ns() : 0u;
-        result = wf_file_execute_direct(&work->request);
-        if (timed) {
-            wf_file_note_execution(adapter, started);
-        }
-    }
+    result = wf_file_execute_timed(adapter, &work->request);
     if (traced != 0) {
         wf_completion_trace_add(
             &wf__completion_trace.execute_ns,
@@ -692,8 +730,7 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
         || adapter->queue_count <= held) {
         return;
     }
-    if (atomic_load_explicit(&adapter->mean_execute_ns, memory_order_relaxed)
-        < WF_FILE_OVERLAP_WAIT_NS) {
+    if (wf_file_adapter_wait_verdict(adapter) != WF_FILE_WAIT_LONG) {
         return;
     }
     if (pthread_create(

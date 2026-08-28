@@ -352,6 +352,44 @@ enum wf_file_submit_result wf_file_adapter_submit(
     const wf_file_request *request
 );
 
+/* What this adapter has measured about how long its own host calls take.
+ *
+ * Both policies this answers are conditional on a *measurement*, never on the
+ * absence of one: an adapter that has executed nothing knows nothing, and a
+ * program's first operations therefore take the completion path unchanged and
+ * are measured there. */
+enum wf_file_wait_verdict {
+    /* Nothing executed yet. */
+    WF_FILE_WAIT_UNMEASURED = 0,
+    /* The host answers without waiting: overlapping buys nothing. */
+    WF_FILE_WAIT_SHORT = 1,
+    /* The host makes these operations wait: overlapping is worth its handoff. */
+    WF_FILE_WAIT_LONG = 2
+};
+
+enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
+    const wf_file_adapter *adapter
+);
+
+/* Whether a transfer submitted now would simply be executed by the submitting
+ * thread, so that submitting it can only add a queue crossing to a host call
+ * the caller is about to make anyway.
+ *
+ * True when this adapter has no helper, nothing queued, and has measured its
+ * own operations as not waiting.  It is the adapter's half of the answer; the
+ * caller decides whether the operation is one whose wait no part of the same
+ * program has to satisfy. */
+int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter);
+
+/* Executes one typed request and records what the host call cost, from a
+ * sample of executions, into the average the policy above reads.  Every route
+ * that makes a host call for this adapter goes through here, so the average is
+ * of the program's operations and not of one route's. */
+wf_file_result wf_file_execute_timed(
+    wf_file_adapter *adapter,
+    const wf_file_request *request
+);
+
 /* Executes one typed request to its first terminal host answer. EINTR and
  * read/write/directory readiness refusal are adapter progress; close is never
  * retried because one ambiguous close attempt has already consumed authority.
