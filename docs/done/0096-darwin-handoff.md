@@ -452,61 +452,60 @@ after*, at both sizes — and on it the two rows read 1.477 and 1.557 against a
 bar of 1.10. That is a miss, not a pass, and it is a wider miss than the
 unlabelled mixture the `after` column above reports.
 
-```text
-run          commit    cold 64 label        cold 64 C/N.pool8   N.pool8 spread
-33153717709  96bb4778  confirmed/confirmed  817.47/808.79=1.011 445.55..898.44
-33155821397  266acf4f  refused/confirmed    591.82/424.58=1.394 417.49..453.58
-33158144391  72e98cba  refused/refused      609.97/555.63=1.098 416.53..1075.57
-33165141309  a06c53f9  refused/refused      565.31/434.33=1.302 427.78..447.04
-33172323795  261070c8  confirmed/confirmed 1150.39/779.08=1.477 584.73..991.44
+Rather than repeat a partial table here, the complete one is in
+`research/investigations/io-model/RESULTS.md` under **"Every io-bench draw on
+this branch"** — every `io-bench` run on this branch, every job, every table,
+one row each, enumerated with `gh run list` — and beside it, under "Against
+the standing bar", a nine-row `bench-macos-read` cold table giving each draw's
+probe verdicts, its `C/N.pool8`, and the min..max of both lines that ratio is
+taken from. There are nine macOS draws, not five. What they say about this
+grade:
 
-run          commit    cold 4 label         cold 4 C/N.pool8    note
-33153717709  96bb4778  confirmed/refused    675.60/439.22=1.538
-33155821397  266acf4f  refused/confirmed    489.75/381.86=1.283
-33158144391  72e98cba  refused/refused      960.86/587.85=1.635 C max 26351.72
-33165141309  a06c53f9  refused/refused      490.57/399.02=1.229 C max  4996.77
-33172323795  261070c8  confirmed/confirmed 1058.71/679.86=1.557 C max  4332.72
-```
+- `33172323795` at `261070c8` is the **only** draw on this branch that
+  confirms the uncached label at both ends of *both* cold tables. Its medians
+  are the grade: 1.477 at 64 KiB and 1.557 at 4 KiB.
+- Of the eighteen macOS cold tables — nine draws at two sizes — four are
+  confirmed at both ends: `261070c8`'s two, `33153717709`/`96bb4778`'s 64 KiB
+  one at 1.011, which would pass, and `33151353052`/`4a748d6e`'s 4 KiB one at
+  1.419, which would not. The other fourteen have a probe that refused the
+  label at one end or both, so they are not readings of a cold device.
 
-`33172323795` is this record's own repair commit, `261070c8`: pushing the
-repair ran `io-bench`, and its `bench-macos-read` job is the first on this
-branch to confirm the uncached label at both ends of both cold tables. Its
-medians are the grade. Its spreads are also the worst of the five on the line
-the bar reads — `C.wide8.default` runs 1044.77 to 14961.31 cold at 64 KiB and
-560.66 to 4332.72 cold at 4 KiB, on a runner whose load average was 5.60 at
-the start — so the reading is a confirmed-cold one taken on a busy machine,
-and the honest thing is to say what survives that noise and what does not. At
-64 KiB it survives: `C.wide8.default`'s *minimum* over `N.pool8`'s median is
-still 1.34, outside the bar without needing the median at all. At 4 KiB it
-does not survive as cleanly: C's minimum over `N.pool8`'s median is 0.82, so
-the two lines' ranges overlap and only their medians separate them. Neither
-row is met on any statistic that puts C ahead, so both are graded `no`; the
-4 KiB row is the weaker of the two gradings and this says so.
+The graded draw is noisy: `C.wide8.default` runs 1044.77 to 14961.31 cold at
+64 KiB and 560.66 to 4332.72 cold at 4 KiB, on a runner whose load average was
+5.60 at the start — so the honest thing is to say what survives that noise and
+what does not. At 64 KiB it survives: `C.wide8.default`'s *minimum* over
+`N.pool8`'s median is still 1.34, outside the bar without needing the median
+at all. At 4 KiB it does not survive as cleanly: C's minimum over `N.pool8`'s
+median is 0.82, so the two lines' ranges overlap and only their medians
+separate them. Neither row is met on any statistic that puts C ahead, so both
+are graded `no`; the 4 KiB row is the weaker of the two gradings and this says
+so — with `4a748d6e`'s confirmed 4 KiB table agreeing with the grade from the
+other side at 1.419.
 
-The earlier draws are kept above because a record that argues about which draw
-to read the bar from cannot leave a draw out. Of them, `96bb4778`'s 64 KiB
-table is the other one whose label its probe confirmed at both ends, and it
-reads 1.011 and would pass — on the noisiest baseline of the five: `N.pool8`
-runs 445.55 to 898.44 around a median of 808.79, and `C.wide8.default`'s own
-maximum on that line is 8252.57 against a median of 817.47. So the two
-confirmed-cold 64 KiB readings this branch has are 1.011 and 1.477, which is
-the range a single hosted runner covers, and the `no` grade rests on the
-newer of them being the one where both probes agree *and* the baseline is not
-the noisiest.
+`96bb4778`'s 1.011 is the one confirmed reading that would pass, and its
+baseline moves: `N.pool8` runs 445.55 to 898.44 around a median of 808.79, and
+`C.wide8.default`'s own maximum on that line is 8252.57 against a median of
+817.47. So the two confirmed-cold 64 KiB readings this branch has are 1.011
+and 1.477, which is the range a single hosted runner label covers, and the
+`no` grade rests on the newer of them being the one where both probes agree at
+both sizes.
 
-The third draw, run
-[33158144391](https://github.com/mbbill/Whitefoot/actions/runs/33158144391) at
-commit `72e98cba`, is a doc-only commit on the same runtime, taken after the
+Run [33158144391](https://github.com/mbbill/Whitefoot/actions/runs/33158144391)
+at commit `72e98cba` is a doc-only commit on the same runtime, taken after the
 tables above were written. Its warm and many-files halves corroborate this
 one — 1.002 warm at 64 KiB, 1.026 warm at 4 KiB, 1.019 many-files — and its
-cold half is the worst of the five: both labels refused at both ends,
-`N.pool8` cold 64 KiB spanning 416.53 to 1075.57, and `C.wide8.default` cold
-4 KiB reaching 26351.72 against a median of 960.86.
+cold half is unreadable: both labels refused at both ends, `N.pool8` cold
+64 KiB spanning 416.53 to 1075.57, and `C.wide8.default` cold 4 KiB reaching
+26351.72 against a median of 960.86, which is the widest `C.wide8.default`
+4 KiB spread of the nine.
 
-The numbers reported above the bar are `33155821397`'s because that is the run
-whose warm and many-files halves are tightest and whose commit `266acf4f` is
-the measured runtime. It is not this branch's last runtime: the follow-up read
-under "What the follow-up cost" changes `runtime.c`, `bridge.c`,
+The numbers reported above the bar are `33155821397`'s because its commit
+`266acf4f` is the runtime the before/after comparison is about — not because
+its halves are the tightest, which they are not: the draw table puts
+`96bb4778` closer to 1 on macOS warm 4 KiB (1.0168 against 1.0282) and
+`a06c53f9` closer on macOS many files (1.0144 against 1.0222). `266acf4f` is
+not this branch's last runtime: the follow-up read under "What the follow-up
+cost" changes `runtime.c`, `bridge.c`,
 `file_adapter.c/.h` and `contract.h` after it, at `a06c53f9`, and this
 record's own repairs change the runtime once more after that. **What was owed
 is no longer a confirmed cold label — that arrived and the answer was a miss.
