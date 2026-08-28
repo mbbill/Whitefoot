@@ -399,6 +399,115 @@ except the last, which is now the largest case in the suite and is the cost of
 recursing until a stack is gone twice — the recursion's own time, not a
 handler's.
 
+## The offset-fault row the x86-64 runner lost about once in sixteen
+
+The gate of ba95aa93 failed one case on `sampling (ubuntu-24.04)`, run
+[33147446051](https://github.com/mbbill/Whitefoot/actions/runs/33147446051):
+
+```
+panicked at src/backend/tests/exhaustion.rs:546:9:
+assertion `left == right` failed: a wild fault 16384 bytes below the stack
+must keep its own signal: ExitStatus(unix_wait_status(0))
+  left: None
+ right: Some(11)
+```
+
+`only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` writes
+four pages below the running thread's stack and requires the floor to leave it
+alone — SIGSEGV, no record — because four pages is past anything a probed
+descent can reach. Nothing faulted: the process wrote its word and exited 0. So
+there was no fault to classify and this is neither a floor defect nor a flaky
+assertion. The row's premise, that the memory below a stack is nothing, was
+false on that run.
+
+### The change that fixes it was already written, on another branch
+
+This branch forked at 7ec7bc1a. Batch 0090 hit the same failure at that same
+commit and fixed it in 25ac56ef, *let the offset-fault fixture own the memory
+below its stack*, which is an ancestor of nothing here: the fixture text on this
+branch was byte-identical to the one that commit repaired, and
+`git diff 25ac56ef^ ba95aa93 -- compiler/src/backend/tests/exhaustion.rs` is
+empty. The failure is not this batch's restructuring, and the fix is that
+commit's fixture change carried over unchanged rather than a second fix written
+beside it. The other commit this branch never received, bc4f09a4, resizes the
+same latch control this batch resized from its own measurement of the same
+runner, and is superseded here rather than adopted.
+
+### What the x86-64 runner has under the entry stack
+
+25ac56ef read its account from this project's aarch64 Linux container, whose
+64 KiB guard never loses the row. A temporary diagnostic ran the pre-fix body
+200 times on the runner itself, printing the address written, the thread's own
+`sigaltstack`, and `/proc/self/maps`. Gate runs
+[33148142621](https://github.com/mbbill/Whitefoot/actions/runs/33148142621) and
+[33148390275](https://github.com/mbbill/Whitefoot/actions/runs/33148390275),
+`sampling (ubuntu-24.04)`: 14 of 200 and 11 of 200 runs completed the write —
+25 of 400, about one run in sixteen, against a case that runs the row once per
+gate.
+
+A run whose write completed:
+
+```
+low=7fc36b9f0000 target=7fc36b9ec000 altstack=7fc36b9df000+10000
+HIT  7fc36b9df000-7fc36b9ef000 rw-p 00000000 00:00 0
+```
+
+A run whose write faulted:
+
+```
+low=7f6d41400000 target=7f6d413fc000 altstack=7f6d817cc000+10000
+```
+
+The mapping the write landed in is the floor's own alternate signal stack,
+named by address rather than inferred from its size: `ss_sp` is exactly the
+mapping's first byte and `ss_size` is exactly its 64 KiB. `wf__floor_run`
+creates the entry stack at 1 GiB, glibc puts a one-page `---p` guard under it,
+`pthread_getattr_np` reports `low` as the top of that guard, and
+`wf__floor_attach_thread` then maps the 64 KiB alternate stack — after the
+stack block exists, so the kernel's top-down search offers it the gap directly
+underneath. When it takes that gap, `low - 16384` is inside a writable mapping
+three pages under the guard. When it does not — the faulted sample puts it
+3.8 MiB *above* the 1 GiB block's top, in a gap the placement left there — the
+memory under the guard is nothing and the row passes. Both rows past the stride
+were exposed, not only the one that failed: with the alternate stack at
+`[low - 0x11000, low - 0x1000)` the 64 KiB row's target is inside it too. The
+case fails on the four-page row first because the loop reaches it first.
+
+Nothing here says the floor misclassifies. Every generated definition carries
+the probe, so a descent's first touch below the stack is at most one page under
+it and lands on the guard; a mapping *below* the guard is not something a
+descent can step into. It is only the fixture's premise that the placement
+falsified. Batch 0090 already carries that placement forward as a floor
+observation in its own record, which this batch does not edit.
+
+### The fix, and what it measures at
+
+The fixture now owns the memory it writes into. Its faulting thread is its own:
+it reserves 16 MiB + 64 KiB + 1 MiB `PROT_NONE` in one mapping, makes the top
+megabyte its stack with `pthread_attr_setstack` — which leaves no guard, so
+`pthread_getattr_np` reports exactly the address the fixture chose — attaches to
+the floor exactly as a pool lane does, reads its bounds, and only then unmaps
+the pad below itself, so that between the `munmap` and the write nothing in the
+process maps anything. Every address any row names is then inside a hole the
+fixture opened. The pad is unmapped rather than left `PROT_NONE` because the
+rows assert the host's own signal, and Darwin reports a protected page as
+SIGBUS where an unmapped one is SIGSEGV.
+
+The same temporary diagnostic, 40 runs of every row of the case, on both hosts:
+
+| row | ubuntu-24.04, two runs | macos-14, 16 KiB pages |
+|---|---|---|
+| half a page below | 80/80 abort, `{"resource":"stack"}` | 40/40 |
+| one page below | 80/80 abort, `{"resource":"stack"}` | 40/40 |
+| four pages below | 80/80 SIGSEGV, no bytes | 40/40 |
+| 64 KiB below | 80/80 SIGSEGV, no bytes | 40/40 |
+| 16 MiB below | 80/80 SIGSEGV, no bytes | 40/40 |
+
+Every assertion in the case is what it was: the in-band rows still require the
+floor's abort and its exact record, the rows past the stride still require
+SIGSEGV and an empty channel. The diagnostic was deleted with the same commit
+that carried its result into this record.
+
 ## Judgment calls
 
 - **The five sampling modules are named by measurement, not by subject.**
@@ -435,6 +544,14 @@ handler's.
 - **No test learned to look at a clock.** The budget is enforced by
   `timeout-minutes` outside the process. A wall-clock assertion inside a test
   fails on a loaded machine and passes on an idle one.
+- **The offset-fault fixture was adopted, not rewritten.** Batch 0090 had
+  already diagnosed and repaired the same failure in 25ac56ef, on text
+  identical to this branch's. Writing a second fix here — reserving the region
+  with `MAP_FIXED_NOREPLACE`, or placing the address relative to the observed
+  mapping — would have left two shapes of the same fixture to reconcile at the
+  merge, for no property the adopted one lacks. What this batch adds is the
+  evidence a container could not give: the runner's own rate, and the mapping
+  named by address rather than by size.
 
 ## Not done
 
