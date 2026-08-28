@@ -1167,9 +1167,10 @@ C.wide8.h8          940.47  793.93 205.61 118.48 585.05  478.59 224.20 83.33
 
 **Cache labels on the after run: each cold table's probe refused the uncached
 label before the table ran and confirmed it after.** Both warm tables were
-confirmed warm at both ends (0.0 per cent of sampled reads at or above 40 us,
-per-file medians 4.0 to 5.0 us). The job's own words for the 64 KiB cold
-table:
+confirmed warm at both ends (0.0 per cent of sampled reads at or above 40 us;
+the four probes report per-file medians of 4.0..5.0, 4.0..5.0, 4.0..5.0 and
+5.0..6.0 us, so 4.0 to 6.0 across the run). The job's own words for the 64 KiB
+cold table:
 
 ```text
 read_baseline: refusing the uncached label -- 93 of 128 sampled reads (72.7%)
@@ -1287,9 +1288,13 @@ noisiest: `N.pool8` runs 445.55 to 898.44 around a median of 808.79, and
 the tightness and not the label, and the third has neither. The row this
 section reports its numbers from is `33155821397`, because it is the run whose
 warm and many-files halves are the tightest and because its commit `266acf4f`
-is this branch's final runtime; the cold rows of any of the three are a
-reading of the runner's cache state as much as of the program. **What is owed
-is a macOS draw whose cold labels are confirmed at both ends.**
+is the measured runtime; the cold rows of any of the three are a reading of
+the runner's cache state as much as of the program. `266acf4f` is not this
+branch's last runtime: `git diff --stat 266acf4f a06c53f9` changes
+`runtime.c`, `bridge.c`, `file_adapter.c/.h` and `contract.h` alongside the
+harness, the probes, the `Makefile` and `io-hosts.yml`, and this record's own
+repairs change the runtime once more after `a06c53f9`. **What is owed is a
+macOS draw whose cold labels are confirmed at both ends.**
 
 What the cold rows do show, and this does not depend on the label because both
 lines ran interleaved inside the same table, is the demand-driven helper
@@ -1310,7 +1315,8 @@ on the named drain, an atomically published adapter readiness flag, a helper
 cap bounded by its storage, a clock guard on the join spin, and a gate arm
 that runs the bridge on the shipped default helper policy. None of those
 changes a route, a policy or a threshold, and a fourth macOS draw taken at
-`a06c53f9`, the branch's last runtime commit (run
+`a06c53f9`, the last commit that changed the runtime before this record's own
+repairs (run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309),
 commit `a06c53f9`) reproduces the two warm rows of the bar to three decimal
 places — 1.0085 against 1.006 at 64 KiB, 1.0309 against 1.028 at 4 KiB — with
@@ -1470,11 +1476,23 @@ Pushing the correctness follow-up ran `io-bench` again, and its
 an AMD EPYC 9V74, 4 CPUs, tree on `nvme0n1p1`, load 0.50 at start. Two things
 make it worth more than a fourth number.
 
-**Its uncached 4 KiB table is the only Linux cold table on this branch whose
-probe confirmed the label at both ends** — `probe before the table: confirmed;
-probe after it: confirmed` — so it is the one cold reading here that is a
-reading of a cold device rather than of a cache. On it the eight-wide
-Whitefoot program is faster than every native line in the table:
+**Its uncached 4 KiB table is confirmed at both ends** — `probe before the
+table: confirmed; probe after it: confirmed` — so it is a reading of a cold
+device rather than of a cache. It is not the only such table on this branch:
+three Linux cold 4 KiB tables carry that label, and the row this section
+quotes is worth quoting only beside the other two. `266acf4f`'s cold half is
+the one this section calls unreadable for its spreads, so its row below is a
+confirmed label around a median, not a ranking.
+
+```text
+run          commit    processor    disk       C.wide8.default  S.wide8  N.pool8  N.uring32
+33153717709  96bb4778  EPYC 7763    sda1               1479.87  4227.07  1479.56    1469.81
+33155821397  266acf4f  Xeon 8573C   nvme0n1p1          1514.79  8973.99  1435.03    1268.13
+33165141309  a06c53f9  EPYC 9V74    nvme0n1p1          1216.03  4108.74  1482.48    1448.85
+```
+
+On this run's table, and on this run's alone, the eight-wide Whitefoot program
+is faster than every native line:
 
 ```text
 line                        median     min      max
@@ -1491,10 +1509,18 @@ C.wide8.h8                 1490.76 1408.88  1742.53
 
 `C.wide8.default` at 1216.03 ms is 3.38 times faster than its own sequential
 build, 1.22 times faster than an eight-thread pool and 1.19 times faster than
-a hand-written 32-deep io_uring pipeline. The 64 KiB table on the same run is a
-cold-start table by its own probe (confirmed before, refused after) and reads
-the same way less sharply: 1213.14 against `N.pool8`'s 1275.99 and `S.wide8`'s
-1587.44.
+a hand-written 32-deep io_uring pipeline. On the other two confirmed tables it
+does not reach that: `96bb4778` puts it level with both native lines (1479.87
+against `N.pool8`'s 1479.56 and `N.uring32`'s 1469.81) and `266acf4f` puts it
+behind both (1514.79 against 1435.03 and 1268.13). All three beat the
+sequential build by a wide margin — 2.86, 5.92 and 3.38 times. So what three
+confirmed Linux cold tables support is that the completion program is between
+level with and clearly ahead of a hand-written native pipeline on this job,
+and the 1216.03 reading is this section's because this run is the follow-up's
+draw, not because it is the best of the three. The 64 KiB table on the same
+run is a cold-start table by its own probe (confirmed before, refused after)
+and reads the same way less sharply: 1213.14 against `N.pool8`'s 1275.99 and
+`S.wide8`'s 1587.44.
 
 **And its warm half does not reproduce the draw above.** Warm
 `C.wide8/S.wide8` here is 1.010 at 64 KiB and 0.989 at 4 KiB, with the narrow

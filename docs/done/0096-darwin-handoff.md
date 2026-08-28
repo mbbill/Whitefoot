@@ -456,10 +456,10 @@ run          commit    cold 4 label         cold 4 C/N.pool8    note
 ```
 
 A fourth draw exists, run 33165141309 at `a06c53f9` — the commit that carries
-the follow-up's last runtime change, every commit after it being this record.
-It refuses both cold labels at both ends as well, so it settles nothing here
-either, and it is reported under "What the follow-up cost" below because its
-subject is the follow-up rather than this measurement.
+the follow-up's last runtime change. It refuses both cold labels at both ends
+as well, so it settles nothing here either, and it is reported under "What the
+follow-up cost" below because its subject is the follow-up rather than this
+measurement.
 
 The third of these, run
 [33158144391](https://github.com/mbbill/Whitefoot/actions/runs/33158144391) at
@@ -478,8 +478,12 @@ median of 808.79, and `C.wide8.default`'s own maximum on that line is 8252.57
 against a median of 817.47. One candidate has the label and not the tightness,
 one the tightness and not the label, and one has neither. The numbers reported
 above are `33155821397`'s because that is the run whose warm and many-files
-halves are tightest and whose commit is this branch's final runtime; **what is
-owed is a macOS draw whose cold labels are confirmed at both ends.**
+halves are tightest and whose commit `266acf4f` is the measured runtime. It is
+not this branch's last runtime: the follow-up read under "What the follow-up
+cost" changes `runtime.c`, `bridge.c`, `file_adapter.c/.h` and `contract.h`
+after it, at `a06c53f9`, and this record's own repairs change the runtime once
+more after that. **What is owed is a macOS draw whose cold labels are confirmed
+at both ends.**
 
 What the cold tables do say, and this does not depend on the label because
 both lines ran interleaved inside one table, is that the demand-driven policy
@@ -557,15 +561,29 @@ either.
 Every case below is an ordinary compiler or harness test. No conformance case,
 manifest, verdict, adapter, or collection wiring is added, changed, or removed
 by this batch.
+- **The growth rule is decided, not sampled, and the cases reach the bounds
+  they name.** The helper policy now turns on a measurement, so a case that
+  sleeps and hopes would test the machine. The adapter reads its clock through
+  a named seam of the same class as `WF_COMPLETION_PREAD` and
+  `WF_COMPLETION_POLL`; the harness build names it and three cases script it.
+  `test_pool_stays_empty_when_operations_do_not_wait` scripts warm work and
+  requires no helper to appear.
 
-- **The growth rule is decided, not sampled.** The helper policy now turns on a
-  measurement, so a case that sleeps and hopes would test the machine. The
-  adapter reads its clock through a named seam of the same class as
-  `WF_COMPLETION_PREAD` and `WF_COMPLETION_POLL`; the harness build names it and
-  two cases script it. `test_pool_stays_empty_when_operations_do_not_wait`
-  scripts warm work and requires no helper to appear;
-  `test_pool_grows_when_operations_wait` scripts waiting work and requires
-  growth to the cap and no further.
+  The other two need a queue the pool cannot empty, and getting that right is
+  the whole of what makes them worth having. Growth is gated on
+  `queue_count > held`, so a driver that waits for each request before
+  submitting the next holds the queue at one entry and the pool at one helper
+  whatever cap it was given — a case written against such a driver and
+  asserting an upper bound above one asserts nothing, because the bound is
+  never approached and deleting the code that enforces it changes no verdict.
+  That is what the first versions of these two cases did. They now submit
+  twenty reads of an *empty pipe* without waiting: a helper that takes one
+  blocks in the host call and never returns for another, so the queue only
+  deepens and the pool climbs until its cap stops it.
+  `test_pool_grows_when_operations_wait` then requires exactly four helpers
+  against a cap of four, and
+  `test_helper_growth_stops_at_the_helper_storage` exactly two against a cap
+  of eight and storage of two.
 - **The process-wide budget case keeps only what it can assert.** How many
   helpers a program *has* depends on whether this harness's own temporary-file
   operations happened to wait, which is a property of the machine. The ceiling
@@ -580,26 +598,44 @@ by this batch.
   the cases before it happened to execute. `main` writes `WF_IO_HELPERS` when
   the invocation did not name one, which pins the route with the count, and
   every bridge case then asserts a route that is fixed rather than sampled.
-- **What that pinning leaves out is covered where it can be decided.** The
-  declining policy itself is exercised by the two scripted-clock cases above;
-  end to end, by `independent_io_reaches_the_second_operation_before_the_first_unblocks`,
-  whose fourth arm removes `WF_IO_HELPERS` from the environment entirely; and by
-  `compiler/tests/programs`, which builds and runs whole compiled programs —
-  `wfgrep` and `raw_deflate` read real files — with nothing pinned, so a
-  declined positioned read that returned the wrong bytes would fail them.
+- **What that pinning leaves out is covered where it can be decided, and the
+  corpus is not one of those places.** The declining policy itself is
+  exercised by the scripted-clock cases above, by
+  `independent_io_reaches_the_second_operation_before_the_first_unblocks`,
+  whose fourth arm removes `WF_IO_HELPERS` from the environment entirely, and
+  by `bridge_default_probe.c` below. It is *not* exercised by
+  `compiler/tests/programs`: a decline is a zero returned from
+  `wf__completion_file_pread_submit`, and counted over
+  `whitefootc --emit-llvm` no corpus program emits that call at all —
+  `wfgrep` and `raw_deflate_boundary` read their files through
+  `wf__completion_file_pread_direct`, which is the route a decline falls back
+  to and not the decision. "What is not evidence" below carries the count.
 - **The shipped default route has its own translation unit.**
   `bridge_default_probe.c` runs the bridge with `WF_IO_HELPERS` unset and
   refuses to run with it set, four lanes and sixteen thousand positioned reads
   against a fixture whose byte at offset `o` is `o % 251`, so that every read
   must deliver its own byte whichever route the bridge chose. It exists
   because pinning the route for the harness — which the bullet above explains
-  and which is right for the harness — left the two policies this batch is
-  about covered by no test at all. `completion-test` and `completion-sanitize`
-  run it, and `completion-default-route-tsan` gives `io-hosts` a thread
-  sanitizer over the bridge.
+  and which is right for the harness — left the declined positioned read
+  covered by no bridge test at all. It reads the route it took from the
+  runtime's own submission counters and asserts it: a submitted positioned
+  read on either route, and a declined one on the POSIX-adapter route. It does
+  not cover growth — `helpers=0` in every run of it on either host — and "What
+  the follow-up cost" says so where it reports the probe.
+  `completion-test` and `completion-sanitize` run it, and
+  `completion-default-route-tsan` gives `io-hosts` a thread sanitizer over the
+  bridge.
 - **The helper storage bounds the helper cap, and two cases say so.**
-  `test_helper_growth_stops_at_the_helper_storage` gives the adapter two
-  helpers of storage and a cap of eight and requires the pool to stop at two;
+  `test_helper_growth_stops_at_the_helper_storage` tells
+  `wf_file_adapter_init` it has two helpers of storage, asks for a cap of
+  eight, and requires the pool to reach exactly two against the deep queue
+  described above. Its array is deliberately longer than the two entries init
+  is told about: the bound under test is the declared capacity, and the slack
+  decides only whether a missing clamp is *reported* as a pool larger than its
+  storage or executed as a write past the end of the frame, which ends the run
+  before any check is reached. Deleting the clamp from
+  `wf_file_adapter_set_helper_cap` makes it fail with
+  `check failed: held == 2` at a measured `held` of eight.
   `test_helper_count_above_its_storage_is_refused` requires an initial count
   above the storage to be refused outright rather than clamped, because that
   one is threads to start now rather than a ceiling to grow towards.
@@ -726,16 +762,23 @@ by this batch.
   eight-helper line. A warm macOS page cache is exactly the case where the rule
   is meant not to fire, so this host cannot supply that observation.
 - **A corpus program that reaches submit and join.** Counted over
-  `whitefootc --emit-llvm` for every program in `tests/programs`, in the
-  default lowering and again under `--par`, not one emits a completion
-  `*_submit` or `*_join` call; every completion call the corpus emits is a
-  `*_direct` one (`wfgrep` and `raw_deflate_boundary` read files through
+  `whitefootc --emit-llvm` for all 22 programs in `tests/programs`, in the
+  default lowering and again under `--par` — 44 modules — not one emits a
+  completion `*_submit` or `*_join` call; every completion call the corpus
+  emits is a `*_direct` one. Five programs emit a completion call at all:
+  `wfgrep` and `raw_deflate_boundary` read files through
   `wf__completion_file_pread_direct`, `wfgrep` and `dir_walk` enumerate
-  directories, the rest only write). So the overlap-versus-`--no-overlap`
-  differential over that corpus covers the new direct routing and not the
-  submitted path. The programs that do exercise it are the bench programs in
-  `research/experiments/io-completion-bench/programs/`, and that is where the
-  differential has to be run until a corpus program states overlapped I/O.
+  directories, and `byte_string` and `par_layout` reach only
+  `wf__completion_file_write_direct`. The other seventeen — 34 of the 44
+  modules — emit no completion call whatever. So the
+  overlap-versus-`--no-overlap` differential over that corpus covers the new
+  direct routing and not the submitted path, and nothing in
+  `compiler/tests/programs` can observe a declined positioned read, because a
+  decline is a refusal returned from `wf__completion_file_pread_submit` and no
+  corpus program calls it. The programs that do exercise it are the bench
+  programs in `research/experiments/io-completion-bench/programs/`, and that
+  is where the differential has to be run until a corpus program states
+  overlapped I/O.
 
 ## After the tables
 
@@ -777,28 +820,54 @@ land after the measurement and none of them is a performance change.
 - **A failed clock ends the join spin.** `wf_bridge_monotonic_ns` answers zero
   when `clock_gettime` fails, and the spin's only bound was a clock reading,
   so the deadline was never reached and the join spun instead of parking.
-- **The shipped default route is tested.** `harness.c`'s `main` pins
-  `WF_IO_HELPERS` for any run that named none, and `completion-test` names 0,
-  1 and 4, so the demand-driven pool and the declined positioned read — the
-  two policies this batch is about — were reachable from no test in the tree.
-  `bridge_default_probe.c` is that arm: sixteen thousand positioned reads
-  across four lanes with `WF_IO_HELPERS` unset, each of which must deliver the
-  byte at its offset whichever route the bridge chose. It is wired to
-  `completion-test` and `completion-sanitize`, and it gives `io-hosts` a
-  thread-sanitizer run over the bridge, which the isolated core/read probe by
-  construction cannot provide.
+- **The shipped default route is tested, for the half of it a bridge run can
+  decide.** `harness.c`'s `main` pins `WF_IO_HELPERS` for any run that named
+  none, and `completion-test` names 0, 1 and 4, so the declined positioned
+  read and the demand-driven pool were reachable from no bridge test in the
+  tree. `bridge_default_probe.c` is that arm: sixteen thousand positioned
+  reads across four lanes with `WF_IO_HELPERS` unset, each of which must
+  deliver the byte at its offset whichever route the bridge chose, and it now
+  asserts the split it counts rather than only printing it — the route is read
+  from the runtime's own submission counters, both routes owe a submitted
+  positioned read, and the POSIX-adapter route owes a declined one.
 
+  What it does *not* cover is growth. Every run of it made on either host
+  reports `helpers=0`: four lanes each hold one read at a time, so the queue
+  never outruns the pool and the growth rule's queue-depth term is never true.
+  The evidence for growth is elsewhere — the two scripted-clock harness cases,
+  which drive a queue the pool cannot empty, and the runners' cold tables,
+  where `C.wide8.default` lands on its own pinned eight-helper line. The two
+  hosts also split the decline between them: on macOS the probe declines
+  almost every read (about 15 800 of 16 000) and submits the rest; on Linux
+  with io_uring the ring takes every positioned read and it declines none, so
+  the decline half is covered on the POSIX-adapter host only, which is what
+  the probe's own assertion says.
+
+  It is wired to `completion-test` and `completion-sanitize`, and it gives
+  `io-hosts` a thread-sanitizer run over the bridge, which the isolated
+  core/read probe by construction cannot provide.
+- **The adapter stops answering "usable" before its lock is destroyed.**
+  `wf_file_adapter_shutdown` destroyed the condition variable and the mutex and
+  only then stored zero into `initialized`, so over that window the acquire
+  guard every reader passes still answered yes while the mutex behind it no
+  longer existed — and a reader admitted through it takes that mutex, because
+  the decline check reaches `wf_file_adapter_queued`. The store now comes
+  first, and unconditionally: a record whose lock has been destroyed is not
+  usable whatever the joins reported. The window that remains is the one the
+  precondition already covers, a reader that passed the guard before the
+  store.
 - **Two things were written down rather than changed.** A submission signals
   the queue's condition variable *after* releasing the queue lock, so a
   shutdown concurrent with a submission destroys the variable the submitter is
   about to signal; closing that window costs either the wake-inside-the-lock
   this batch removed or a second lock on the submission path, and no caller
   has the overlap — the bridge's only shutdown is its `atexit` handler. The
-  precondition is now stated at `wf_file_adapter_shutdown`. And the decline
-  check takes the queue lock for its "nothing queued" term, so every
-  positioned read that reaches the question pays an uncontended lock and
-  unlock; that is now stated at
-  `wf_file_adapter_transfer_runs_on_caller` beside what it saves.
+  precondition is now stated at `wf_file_adapter_shutdown`, and it names the
+  decline check beside the submission, because those are the two entries a
+  delivered program reaches while holding nothing. And the decline check takes
+  the queue lock for its "nothing queued" term, so every positioned read that
+  reaches the question pays an uncontended lock and unlock; that is now stated
+  at `wf_file_adapter_transfer_runs_on_caller` beside what it saves.
 
 ### What the follow-up cost
 
@@ -812,9 +881,9 @@ policy and no threshold changes.
 Then the measurement, because an argument about cost is not one. Pushing the
 follow-up ran `io-bench` on it: run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) at
-commit `a06c53f9` — the last commit of this branch that changes the runtime,
-every commit after it being this record — same `macos-14` label, same script,
-and a fourth separate draw. Against the tables above, which are `266acf4f`'s:
+commit `a06c53f9` — the last commit of this branch that changed the runtime
+when this section was written — same `macos-14` label, same script, and a
+fourth separate draw. Against the tables above, which are `266acf4f`'s:
 
 ```text
 row                       266acf4f   a06c53f9   delta
@@ -836,18 +905,48 @@ were measured; this is the shipped runtime's own reading beside them.
 
 Its cache labels leave it unable to carry a cold bar like the rest:
 `probe before the table: refused; probe after it: refused` on both cold
-tables. Its spreads, however, are the tightest of the four — `N.pool8` cold
-64 KiB runs 427.78 to 447.04 around 434.33, and cold 4 KiB 379.22 to 413.11
-around 399.02 — so what it is short of is the label and not the tightness.
+tables. Its spreads are not uniformly better either, and on the line the bar
+reads they are much worse. At 64 KiB it is the tighter draw: `N.pool8` runs
+427.78 to 447.04 around 434.33, a factor of 1.05 against `266acf4f`'s 1.09
+(417.49 to 453.58), and `C.wide8.default` 553.98 to 596.73 against 558.77 to
+644.12, 1.08 against 1.15. At 4 KiB it is the looser one: `N.pool8` runs
+379.22 to 413.11 around 399.02, a factor of 1.09 against `266acf4f`'s 1.01
+(379.97 to 383.57), and `C.wide8.default` — the line the cold bar is read
+from — spans 487.42 to 4996.77 around a median of 490.57, a factor of 10.25,
+against `266acf4f`'s 469.00 to 508.36 at 1.08. So this draw is short of the
+label and, at 4 KiB, of the tightness as well; what carries its cold reading
+is the median, not the range.
 
 **The same run is also the Linux read draw this record says is owed**, and it
 is the better half of the news. `bench-linux-read` landed on an AMD EPYC 9V74
-with the tree on NVMe, and its uncached 4 KiB table is the only Linux cold
-table on this branch whose probe confirmed the label at both ends. There the
-eight-wide program reads 1216.03 ms against its own sequential build's
-4108.74, an eight-thread pool's 1482.48 and a hand-written 32-deep io_uring
-pipeline's 1448.85 — faster than every native line in the table. And its warm
-half does not reproduce the reading this record could not resolve:
+with the tree on NVMe, and its uncached 4 KiB table is confirmed at both ends
+— `probe before the table: confirmed; probe after it: confirmed`. It is not
+the only one: three of this branch's Linux cold 4 KiB tables carry that label,
+and reading the same row from all three is what the claim rests on rather than
+on one draw's exclusivity.
+
+```text
+run          commit    processor    disk    C.wide8.default  S.wide8  N.pool8  N.uring32
+33153717709  96bb4778  EPYC 7763    sda1            1479.87  4227.07  1479.56    1469.81
+33155821397  266acf4f  Xeon 8573C   nvme0n1p1       1514.79  8973.99  1435.03    1268.13
+33165141309  a06c53f9  EPYC 9V74    nvme0n1p1       1216.03  4108.74  1482.48    1448.85
+```
+
+The reading used is `33165141309`'s 1216.03 ms, and what makes it the reading
+rather than the flattering one is that it is the *only* row of the three where
+the eight-wide program is faster than every native line — 3.38 times its own
+sequential build, 1.22 times an eight-thread pool and 1.19 times a
+hand-written 32-deep io_uring pipeline. On the other two confirmed draws it is
+not: `96bb4778` puts it level with the native pool and the io_uring pipeline
+(1479.87 against 1479.56 and 1469.81), and `266acf4f` puts it behind both
+(1514.79 against 1435.03 and 1268.13). So the honest claim across the three is
+that the completion program is level with a hand-written native pipeline on
+this job on two Linux hosts and ahead of it on the third, not that it is ahead
+everywhere; the 1216.03 row is quoted because it is the draw the follow-up was
+measured on, and it is quoted beside the two that do not reach it.
+
+And its warm half does not reproduce the reading this record could not
+resolve:
 
 ```text
 draw           commit    processor     warm 64  warm 4   narrow 64  narrow 4
@@ -866,11 +965,15 @@ The bar table above keeps its `unresolved` grade, because that table reads
 owed has narrowed from "another Linux draw" to an explanation of the 8573C
 one.
 
-The many-files job in the same run does not improve: on an EPYC 7763 it reads
-`C/S` 128.73/120.94 = 1.064, against 1.058 on the 8573C draw and 1.041 and
-1.045 in batch 0090 on an EPYC 9V74. Four draws on three processors now put C
-between 4.1 and 6.4 per cent slower than S on that job, which is batch 0090's
-own finding and not a new one.
+The many-files job in the same run does not improve, and it is not the machine
+that separates the readings: `bench-linux` ran on an AMD EPYC 7763 in both of
+this batch's draws — the EPYC 9V74 above is the `bench-linux-read` job's host
+in the same run, not this one's — and on an EPYC 9V74 in both of batch 0090's.
+It reads `C/S` 128.73/120.94 = 1.064 here, against 1.058 on the other 7763
+draw and 1.041 and 1.045 in batch 0090. So the pair that differs most is
+same-processor, and four draws on two processors now put C between 4.1 and 6.4
+per cent slower than S on that job, which is batch 0090's own finding and not a
+new one.
 
 ## Approval classes
 
