@@ -382,6 +382,19 @@ directory goes when the campaign stops paying — when a full run over current
 shapes finds nothing across two consecutive language or runtime changes to the
 overlap path, and `probes/` is empty.
 
+## The gate
+
+`make check` on the merge candidate: green, once.
+
+```text
+conformance adapter: Pass=509  Skip=1
+== WHITEFOOT ALL TESTS GREEN ==
+```
+
+`cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` are clean on
+the new crate, run through its own `make lint` target. The crate has no
+dependencies and builds `--locked --offline`.
+
 ## Judgment calls
 
 **"Grammar-driven" means the fence plus an environment, not free derivation.**
