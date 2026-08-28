@@ -21,6 +21,13 @@ CHECK_STAGES := repository-invariants approval-history-integrity spec-append-onl
 # later. `make -C compiler check` prints its own breakdown the same way.
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
+# Kept identical to `compiler/Makefile`'s, which carries the explanation.
+ifeq ($(shell uname -s),Linux)
+NO_CORE_DUMPS := ulimit -c 1;
+else
+NO_CORE_DUMPS := ulimit -c 0;
+endif
+
 check:
 	@mkdir -p "$(STAGE_DIR)"
 	@: > "$(STAGE_DIR)/summary"
@@ -296,8 +303,9 @@ research-tests:
 # executed, while the declared pending case is reported as Skip. `check`
 # depends on this target.
 #
-# `ulimit -c 0` for the same reason `compiler/Makefile` sets it: the trap cases
-# execute programs that abort on purpose, and a host that hands each abort to a
+# `NO_CORE_DUMPS` for the reason `compiler/Makefile` states where it defines
+# the same variable and explains the Linux value: the trap cases execute
+# programs that abort on purpose, and a host that hands each abort to a
 # crash-report handler makes the gate pay for core files nothing reads.
 #
 # `--profile gate` for the reason `compiler/Cargo.toml` states: this adapter
@@ -306,7 +314,7 @@ research-tests:
 # every debug assertion and overflow check. Left at the default profile it was
 # both a second unoptimized build of the crate and an unoptimized run of it.
 conformance-run:
-	ulimit -c 0; cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
+	$(NO_CORE_DUMPS) cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
 
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:

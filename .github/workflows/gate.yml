@@ -151,16 +151,26 @@ jobs:
           echo "core file limit: $(ulimit -c)"
           df -h .
 
-      # Every line the stage prints, stamped with the moment it arrived. The
-      # report step below turns that into the ranking; nothing here changes
-      # what runs.
+      # Every line the stage prints, copied to a file with the moment it
+      # arrived and passed through to the log unchanged. The report step below
+      # turns the file into the ranking; nothing here changes what runs.
+      #
+      # One process rather than a `tee` into a `cut`: `cut` block-buffers when
+      # its output is not a terminal, which arrives at the runner as the whole
+      # stage completing in one instant and destroys the timestamps the raw log
+      # is read for.
       - name: ${{ matrix.stage }}
+        env:
+          STAGE_LOG: ${{ runner.temp }}/stage.log
         run: |
           set -o pipefail
-          ( ${{ matrix.run }} ) 2>&1 \
-            | perl -MTime::HiRes=time -ne 'BEGIN { $| = 1 } printf "%.3f %s", time, $_' \
-            | tee "$RUNNER_TEMP/stage.log" \
-            | cut -d' ' -f2-
+          ( ${{ matrix.run }} ) 2>&1 | perl -MTime::HiRes=time -e '
+            open(my $stamped, ">", $ENV{STAGE_LOG}) or die "$ENV{STAGE_LOG}: $!";
+            $| = 1;
+            while (my $line = <STDIN>) {
+              printf $stamped "%.3f %s", time, $line;
+              print $line;
+            }'
 
       # A budget holds only while somebody can see it slipping. This prints the
       # ten largest gaps between one case reporting and the next, so the case
@@ -192,14 +202,22 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
 
-  # TEMPORARY, batch 0093. The discriminating measurement behind
-  # `compiler/Makefile`'s `NO_CORE_DUMPS`: one case, one tree, one host, run
-  # twice, differing only in the core-file limit the spawned programs inherit.
-  # Delete this job once its numbers are in `docs/done/0093-gate-budget.md`.
+  # TEMPORARY, batch 0093. The discriminating measurement for where the Linux
+  # gate's time goes: one case, one tree, one host, run under four different
+  # core-dump dispositions. `ulimit -c` is already 0 on this runner, and
+  # `kernel.core_pattern` pipes to `systemd-coredump`; the kernel ignores
+  # RLIMIT_CORE for a *piped* pattern except for the magic value 1, so a
+  # soft limit of zero is expected to change nothing and a limit of one is
+  # expected to skip the handler. `coredumpctl` says directly how many dumps
+  # each arm produced, so the answer is read off the mechanism and not only
+  # off the clock. Delete this job once its numbers are in
+  # `docs/done/0093-gate-budget.md`.
   core-dump-cost:
     name: core-dump cost (ubuntu-24.04)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
+    env:
+      CASE: backend::tests::trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record
     steps:
       - uses: actions/checkout@v4
       - name: Install the host toolchain
@@ -211,17 +229,30 @@ jobs:
         run: |
           nproc
           echo "core_pattern: $(cat /proc/sys/kernel/core_pattern)"
-          echo "core file limit: $(ulimit -c)"
-      - name: The racing-claim case at the host's own core limit
+          echo "soft core limit: $(ulimit -c)"
+          echo "hard core limit: $(ulimit -H -c)"
+          coredumpctl list --no-pager | tail -3 || true
+      - name: Arm 1 — the host as it comes
         run: |
-          ulimit -c
           cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact \
-            backend::tests::trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record
-      - name: The same case with core dumps off
+          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
+          coredumpctl list --no-pager | wc -l
+      - name: Arm 2 — soft core limit 0
         run: |
           ulimit -c 0
-          ulimit -c
           cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact \
-            backend::tests::trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record
+          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
+          coredumpctl list --no-pager | wc -l
+      - name: Arm 3 — soft core limit 1, the kernel's skip-the-pipe value
+        run: |
+          ulimit -c 1
+          cd compiler
+          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
+          coredumpctl list --no-pager | wc -l
+      - name: Arm 4 — core_pattern a plain name, soft limit 0
+        run: |
+          sudo sysctl -w kernel.core_pattern=core
+          ulimit -c 0
+          cd compiler
+          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
+          coredumpctl list --no-pager | wc -l

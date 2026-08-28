@@ -13,16 +13,33 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 # Cases here are deliberately about programs that die: a false claim aborts
 # [DIAG-3], an exhausted stack faults [PROG-3], a lowering with its joins
 # removed is expected to crash. One gate run therefore kills a few hundred
-# processes on purpose. On a host whose kernel pipes every one of them to a
-# crash-report handler — which `ubuntu-24.04` does, `kernel.core_pattern`
-# naming apport — the gate pays to have a core file written and analyzed for
-# each, and reads none of them. That is where the Linux gate's time went: the
-# same library suite took 980 seconds on the four-core Linux runner and 75 on
-# the three-core macOS runner beside it, whose core limit is already zero, and
-# the whole difference sat in the five cases that spawn aborting programs.
+# processes on purpose, and on a host that hands each one to a crash-report
+# handler the gate pays to have a core written and analyzed for every one and
+# reads none of them. That is where the Linux gate's time went: the same
+# library suite took 1016 seconds on the four-core `ubuntu-24.04` runner and 55
+# on the three-core `macos-14` runner beside it, and the whole difference sat
+# in the five cases that spawn dying programs — 18 milliseconds a spawn there
+# against about five seconds here.
+#
+# `ulimit -c 1` on Linux is not a typo and not a smaller limit than zero. When
+# `kernel.core_pattern` begins with a pipe — `ubuntu-24.04` names
+# `systemd-coredump` — the kernel deliberately ignores `RLIMIT_CORE` and dumps
+# anyway, because the limit is about writing a file and a pipe writes none. The
+# single exception is the value 1, which `fs/coredump.c` reads as "skip this
+# dump"; it exists so a crashing core handler cannot recurse, and it is the one
+# way a process that is not root can decline a piped dump. A soft limit of zero
+# suppresses nothing there, and zero is already what the runner starts with.
+# Everywhere else 1 is below the minimum size of any core and declines the dump
+# the ordinary way, so the rule is one sentence with one exception rather than
+# two policies.
+#
 # Nothing a case asserts depends on a core file existing: the signal that kills
 # the process, its exit status and its record channel are all unchanged.
+ifeq ($(shell uname -s),Linux)
+NO_CORE_DUMPS := ulimit -c 1;
+else
 NO_CORE_DUMPS := ulimit -c 0;
+endif
 
 # The library suite, split by cost class rather than by subject. The modules
 # named here are the ones whose cases link a program and then run it tens or
@@ -117,18 +134,22 @@ lint:
 # below partition it and `test-partition` is what proves they do.
 test: test-partition test-unit test-sampling test-corpus
 
-# The fast half of the library and binary unit tests: everything the sampling
-# modules above are not.
+# The fast half of the library suite: everything the sampling modules above
+# are not.
 test-unit:
-	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --bins --locked --offline -- $(SAMPLING_SKIPS)
+	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_SKIPS)
 
 # The sampling half: the cases that link a program and run it many times.
 test-sampling:
 	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES)
 
-# The integration targets, which compile and link real programs.
+# Everything outside the library: the integration targets, which compile and
+# link real programs, and the binaries' own unit tests. The binaries are here
+# rather than beside the library half because linking their four test harnesses
+# costs more than running their cases does, and this is the job with the slack
+# for it.
 test-corpus:
-	$(NO_CORE_DUMPS) $(CARGO) test --profile gate $(patsubst %,--test %,$(INTEGRATION_TARGETS)) --locked --offline
+	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --bins $(patsubst %,--test %,$(INTEGRATION_TARGETS)) --locked --offline
 
 # The split above is a scheduling decision, and a scheduling decision that
 # quietly drops cases is the worst kind of green. This proves it does not:
