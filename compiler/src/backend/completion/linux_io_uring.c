@@ -1292,10 +1292,14 @@ int wf_linux_io_uring_park(
         (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
         return 0;
     }
+    /* Sequentially consistent, and paired with the sequentially consistent
+     * epoch load below: a core publisher raises the epoch and then reads this
+     * count without taking wake_lock, so this announcement and that read are
+     * what keeps an eventfd wake from being lost. */
     atomic_fetch_add_explicit(
         &adapter->runtime->parked_schedulers,
         1,
-        memory_order_relaxed
+        memory_order_seq_cst
     );
     atomic_fetch_add_explicit(
         &adapter->runtime->stat_parks,
@@ -1303,7 +1307,10 @@ int wf_linux_io_uring_park(
         memory_order_relaxed
     );
     announced = 1;
-    if (wf_completion_wake_epoch(adapter->runtime) != observed_epoch
+    if (atomic_load_explicit(
+            &adapter->runtime->wake_epoch,
+            memory_order_seq_cst
+        ) != observed_epoch
         || wf_linux_load_acquire(adapter->completion_head)
             != wf_linux_load_acquire(adapter->completion_tail)) {
         atomic_fetch_sub_explicit(

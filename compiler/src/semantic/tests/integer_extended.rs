@@ -1,7 +1,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{CheckedExpression, CheckedIntegerOperation, CheckedStatement};
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn retains_the_complete_nonfloating_integer_family() {
@@ -63,9 +63,9 @@ fn retains_the_complete_nonfloating_integer_family() {
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = ishl.wrap(1_i8, 1_i8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }

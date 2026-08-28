@@ -746,7 +746,12 @@ pub enum SemanticIssueKind {
         mechanical_fix: &'static str,
     },
     /// Two exact written modes or types disagree.
-    TypeMismatch,
+    TypeMismatch {
+        /// The exact type, mode, or written form the position requires.
+        expected: String,
+        /// The exact type, mode, or written form found there.
+        found: String,
+    },
     /// A constant was selected as an assignment target.
     ImmutableSetTarget,
     /// SET-1's closed writability relation did not admit the target root.
@@ -793,11 +798,23 @@ pub enum SemanticIssueKind {
         mechanical_fix: &'static str,
     },
     /// A borrow was stored or passed into a region it cannot outlive.
-    InvalidBorrowLifetime,
+    InvalidBorrowLifetime {
+        /// The region written where this borrow is created or stored, exactly
+        /// as the source spells it.
+        region: String,
+        /// The binding whose storage the borrow views, exactly as the source
+        /// spells it.
+        binder: String,
+        /// Where a region this borrow can name must be introduced.
+        mechanical_fix: String,
+    },
     /// A read, write, move, or new borrow conflicts with a live loan.
     BorrowConflict,
     /// A written child reborrow does not satisfy OWN-6's closed form.
-    InvalidChildReborrow,
+    InvalidChildReborrow {
+        /// Exact restructuring required by OWN-6 at this site.
+        mechanical_fix: &'static str,
+    },
     /// A written reborrow form occurred outside OWN-14's admitted positions,
     /// or a return-position reborrow failed OWN-14's admission.
     InvalidReborrowPosition {
@@ -1082,9 +1099,26 @@ pub enum SemanticIssueKind {
     /// `give` is absent, misplaced, duplicated, or followed by a statement.
     InvalidGive,
     /// The effect row is not a valid exact EFF-1 row.
-    InvalidEffectRow,
+    InvalidEffectRow {
+        /// Which EFF-1 condition this row failed.
+        reason: &'static str,
+        /// Exact repair required by EFF-1 for that condition.
+        mechanical_fix: &'static str,
+    },
     /// The written effect row differs from syntactically exhibited effects.
-    EffectMismatch,
+    EffectMismatch {
+        /// The row the body exhibits, in EFF-1 canonical spelling. This is
+        /// exactly what the declaration must say.
+        expected_row: String,
+        /// The row the declaration writes, in the same spelling.
+        found_row: String,
+        /// Exhibited categories and paths the declaration does not carry.
+        missing: Vec<String>,
+        /// Declared categories and paths the body does not exhibit.
+        extra: Vec<String>,
+        /// Exact restructuring required by EFF-2.
+        mechanical_fix: &'static str,
+    },
     /// The written effect row omits a category contributed only by a
     /// compiler-derived release, which has no source occurrence [EFF-2].
     ReleaseEffectMismatch {
@@ -1128,6 +1162,37 @@ pub enum SemanticIssueKind {
     UndischargedContractLaw,
 }
 
+/// A written-argument count and the noun it agrees with, as `1 written type
+/// argument` or `2 written type arguments`.
+///
+/// A diagnostic a writer reads is prose, and "1 written region arguments" is
+/// the kind of sentence that makes a reader doubt the rest of it.
+pub(crate) fn written_count(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("{count} written {noun}")
+    } else {
+        format!("{count} written {noun}s")
+    }
+}
+
+impl SemanticIssueKind {
+    /// One [TYPE-5] disagreement, in the spellings the source uses.
+    ///
+    /// The rejection published neither side for four blind-writer rounds: a
+    /// writer was told two types disagree and had to work out which two. Both
+    /// are always in hand at the judgment, so both are published. Where the
+    /// disagreement is about the written form rather than two types — a
+    /// generic form written with no type arguments, a `move` where a place is
+    /// required — each side states that form.
+    #[must_use]
+    pub(crate) fn type_mismatch(expected: impl Into<String>, found: impl Into<String>) -> Self {
+        Self::TypeMismatch {
+            expected: expected.into(),
+            found: found.into(),
+        }
+    }
+}
+
 /// One deterministic post-resolution source-language rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticIssue {
@@ -1151,8 +1216,10 @@ impl SemanticIssue {
     }
 
     /// Returns the exact DIAG-1 semantic location.
+    ///
+    /// The driver reads it to quote the offending source line, so a semantic
+    /// rejection names a file and a line rather than a `SourceId` and a byte.
     #[must_use]
-    #[cfg(test)]
     pub const fn location(&self) -> &SemanticLocation {
         &self.location
     }

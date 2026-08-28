@@ -8,7 +8,7 @@
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
 use super::super::model::{CheckedResultStateOrigin, CheckedResultStatePath};
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
@@ -89,11 +89,9 @@ fn a_borrowed_resource_parameter_contributes_no_release_row() {
     assert_complete(BORROWED_ACCEPT);
     // A shared loan cannot authorize a state transition. The signature is
     // rejected at EFF-1 before release attribution is considered.
-    assert_rule(
-        BORROWED_REJECT,
-        SemanticRule::Eff1,
-        SemanticIssueKind::InvalidEffectRow,
-    );
+    assert_rule_kind(BORROWED_REJECT, SemanticRule::Eff1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidEffectRow { .. })
+    });
 }
 
 #[test]
@@ -101,10 +99,10 @@ fn over_declaring_the_release_row_rejects_likewise() {
     // Preserve the old test's declared-but-unexhibited direction under the
     // state-row model: Args release is empty and the body performs no
     // state action, so `reads(args)` is an exact over-declaration.
-    assert_rule(
+    assert_rule_kind(
         b"fn ignore_arguments(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -225,20 +223,20 @@ fn release_attribution_is_transitive_over_owned_content() {
 fn the_two_categories_keep_eff1_canonical_order_and_multiplicity() {
     // The replacement keeps the same canonical-order and multiplicity
     // coverage over the live categories: reads, writes, allocates, traps.
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit allocates(heap), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
-        SemanticIssueKind::InvalidEffectRow,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
-        SemanticIssueKind::InvalidEffectRow,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit traps, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
-        SemanticIssueKind::InvalidEffectRow,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
 }
 
@@ -249,10 +247,10 @@ fn user_calls_substitute_state_formals_to_actual_origins() {
     assert_complete(
         b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit writes(file) {\n  let moved = move file;\n  release_read_file(file: move moved);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit pure {\n  release_read_file(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -274,11 +272,9 @@ fn a_user_result_cannot_wash_an_output_formal_origin() {
     let accepted = pass_output_program("reads(out), writes(out), allocates(heap)");
     assert_complete(&accepted);
     let washed = pass_output_program("allocates(heap)");
-    assert_rule(
-        &washed,
-        SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
-    );
+    assert_rule_kind(&washed, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
     with_semantics(&accepted, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the pass-through program must check: {outcome:?}");
@@ -363,11 +359,9 @@ fn a_control_flow_result_projects_to_every_possible_formal() {
         choose_output_program("reads(out, err), writes(out, err), allocates(heap)", false);
     assert_complete(&accepted);
     let narrowed = choose_output_program("reads(out), writes(out), allocates(heap)", false);
-    assert_rule(
-        &narrowed,
-        SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
-    );
+    assert_rule_kind(&narrowed, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
     with_semantics(&accepted, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the finite-origin choice must check: {outcome:?}");
@@ -895,10 +889,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_copy_only_parameter_is_a_valid_path_but_must_be_exhibited() {
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(value: own u64) -> result: own unit reads(value) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 

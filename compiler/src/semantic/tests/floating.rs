@@ -3,7 +3,7 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::model::{
     CheckedExpression, CheckedFloatOperation, CheckedStatement, CheckedType, FloatType,
 };
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn retains_the_complete_direct_float_operation_family() {
@@ -92,9 +92,9 @@ fn float_literal_and_operation_failures_keep_their_rule_owners() {
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = fadd.strict(1.0_f64, 2_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }

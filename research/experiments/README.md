@@ -31,6 +31,33 @@ high-level sequencing; plans do not grant or withhold branch permission.
 
 ## Completed current-compiler bounded research
 
+- `differential-fuzz/` — the mechanical source of programs nobody wrote, for the
+  one property [PAR-1], [PAR-2], and [PAR-3] all state: under a permitted
+  overlap the observables equal the source-order ones, and whether an overlap
+  happened is not observable. A seeded generator writes accepted command
+  programs that do real I/O and control flow from the [GRAM-4]/[GRAM-5] fence
+  under a typing and ownership environment; the oracle compiles each three ways,
+  establishes that the program agrees with itself, and then requires the
+  overlapping builds to publish the same stdout, stderr, and exit status across
+  `WF_WORKERS` x `WF_IO_HELPERS`, some of them with stdout on a FIFO whose reader
+  is delayed. First campaign, 2026-08-28: 2004 accepted programs, 78 156
+  executions, 1255 permitted [PAR-1] pairs, 678 permitted [PAR-2] loops, 857
+  permitted [PAR-3] stages, zero divergences, zero unstable programs. The two
+  findings were a harness defect (argument zero reaching a program's digest,
+  fixed) and a spec-conformant [CLM-1] rejection recorded for the owner. Not a
+  gate and not reachable from `make check`; report and reasoning in
+  [`docs/done/0097-differential-fuzz.md`](../../docs/done/0097-differential-fuzz.md).
+- `blind-writer/` — the standing corpus of what unguided writers write, one
+  dated directory per trial. The 2026-08-28 trial handed a senior systems
+  programmer with no prior Whitefoot exposure the spec, `docs/patterns.md`, the
+  gate binary and `tests/programs/`, and asked for five ordinary I/O utilities.
+  All five compile and are correct against their Unix references with zero
+  `claim` statements; all five, and every worked I/O example in the repository,
+  compile to code byte-identical to `--no-overlap`, against a hand-widened
+  comparator 1.78x faster on this host and 2.17x/2.90x faster on the committed
+  quiet-host medians. Fourteen defects with dispositions in
+  [`docs/done/0098-blind-writer.md`](../../docs/done/0098-blind-writer.md). It
+  is removed when the language stops changing.
 - `io-completion-bench/` — the program-level answer to whether the unified-state
   completion I/O model reaches native performance on whole programs, which
   until 2026-08-27 had only C-level component evidence. Three lines per

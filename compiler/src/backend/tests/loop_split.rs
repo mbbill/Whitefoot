@@ -15,8 +15,8 @@
 use std::process::Command;
 
 use super::parallel::{
-    build_executable_without_parallel_runtime, clone_symbols, function_body, grants_over_runs,
-    identical, run_counting_grants,
+    CountedProgram, build_executable_without_parallel_runtime, clone_symbols, function_body,
+    identical,
 };
 use super::{
     build_executable, emit, emit_with_overlap, module_requires_parallel_runtime, test_directory,
@@ -31,10 +31,15 @@ use super::{
 /// few dozen offers, so the sample is thin — measured on this machine at a
 /// one-minute load average of 7.1, twelve runs each, [`PERMITTED_FOLD`] was
 /// granted 3-8 lanes at `WF_WORKERS=4` and 3-14 at 8, against the pair path's
-/// `par_layout`, which is granted 1 610-2 214 at two workers. A total over four
-/// runs puts the floor an order of magnitude above zero and still fails
-/// outright against a runtime that grants nothing, which is the whole of what
-/// these assertions are for; it buys no confidence in a rate, which is not.
+/// `par_layout`, which is granted 1 610-2 214 at two workers. Four runs make
+/// the assertion a question about the lowering rather than about one schedule,
+/// and it still fails outright against a runtime that grants nothing, which is
+/// the whole of what these assertions are for; it buys no confidence in a
+/// rate, which is not.
+///
+/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
+/// four is the bound the *ungranted* direction pays and the granted direction
+/// usually pays one run.
 const GRANT_RUNS: usize = 4;
 
 /// A counted `for` the judgment permits: one accumulator under `+wrap`, a
@@ -549,19 +554,20 @@ fn a_split_loop_publishes_one_byte_sequence_at_every_worker_count() {
     // runtime that granted nothing, so the counts that should overlap are
     // asked whether they did — over [`GRANT_RUNS`] runs, because one steal is
     // a race rather than a property of the lowering.
+    let counted = CountedProgram::link(&module, &directory);
     for workers in ["4", "8"] {
         let lanes: usize = workers.parse().expect("the worker setting is a number");
         if !super::parallel::a_steal_is_observable(lanes) {
             continue;
         }
-        let granted = grants_over_runs(&module, &directory, Some(workers), GRANT_RUNS);
+        let granted = counted.grants_over_runs(Some(workers), GRANT_RUNS);
         assert!(
             granted > 0,
             "WF_WORKERS={workers} granted no lane in {GRANT_RUNS} runs, so the repeat \
              above overlapped nothing"
         );
     }
-    let (opted_out, _) = run_counting_grants(&module, &directory, Some("1"));
+    let (opted_out, _) = counted.run(Some("1"));
     assert_eq!(opted_out, 0, "WF_WORKERS=1 must take the sequential world");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -616,7 +622,8 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
     // the repeat above already carries; on a smaller host the zero is the
     // host's and this says so instead of reporting the lowering.
     if super::parallel::a_steal_is_observable(8) {
-        let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
+        let granted =
+            CountedProgram::link(&split, &directory).grants_over_runs(Some("8"), GRANT_RUNS);
         assert!(
             granted > 0,
             "the comparison above overlapped nothing in {GRANT_RUNS} runs"
@@ -1096,7 +1103,8 @@ fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
     // control is direct, since narrowing [`COMBINE_SPAN`] to a hundred takes
     // this program's grant count to zero in every run.
     if super::parallel::a_steal_is_observable(8) {
-        let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
+        let granted =
+            CountedProgram::link(&split, &directory).grants_over_runs(Some("8"), GRANT_RUNS);
         assert!(
             granted > 0,
             "no row's range was cut in {GRANT_RUNS} runs, so the comparisons above \

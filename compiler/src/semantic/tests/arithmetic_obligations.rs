@@ -341,7 +341,11 @@ command fn main() -> status: own ExitStatus pure {
             panic!("an exact site does not justify a traps row: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
-        assert_eq!(issue.kind(), &SemanticIssueKind::EffectMismatch);
+        assert!(
+            matches!(issue.kind(), SemanticIssueKind::EffectMismatch { .. }),
+            "expected EffectMismatch, got {:?}",
+            issue.kind()
+        );
     });
     let pure_row = br#"fn bump(x: own u64) -> result: own u64 pure {
   let y = x + 1_u64;

@@ -5,7 +5,7 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::model::{
     CheckedExpression, CheckedNumericType, CheckedStatement, CheckedType, IntegerType,
 };
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const INTEGER_TYPES: [(&str, IntegerType); 8] = [
     ("i8", IntegerType::I8),
@@ -118,10 +118,10 @@ fn conversion_shape_and_operand_failures_keep_their_rule_owners() {
         SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt<i32, i64>(1_i16);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt<i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",

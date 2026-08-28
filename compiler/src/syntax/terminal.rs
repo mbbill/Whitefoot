@@ -313,105 +313,116 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
 
 impl FixedTerminal {
     /// Returns the exact one-token spelling of this predicate.
+    ///
+    /// Text rather than bytes because this is the spelling a writer types, and
+    /// a diagnostic that lists what was expected here prints it directly;
+    /// [`FixedTerminal::spelling_bytes`] serves the comparisons against raw
+    /// source.
     #[must_use]
-    pub const fn spelling(self) -> &'static [u8] {
+    pub const fn spelling(self) -> &'static str {
         match self {
-            Self::Struct => b"struct",
-            Self::LeftBrace => b"{",
-            Self::RightBrace => b"}",
-            Self::Colon => b":",
-            Self::Semicolon => b";",
-            Self::Enum => b"enum",
-            Self::LeftParen => b"(",
-            Self::RightParen => b")",
-            Self::Comma => b",",
-            Self::Fn => b"fn",
-            Self::ThinArrow => b"->",
-            Self::Requires => b"requires",
-            Self::Contract => b"contract",
-            Self::Law => b"law",
-            Self::Conform => b"conform",
-            Self::Const => b"const",
-            Self::Equal => b"=",
-            Self::Doc => b"doc",
-            Self::LeftAngle => b"<",
-            Self::RightAngle => b">",
-            Self::LeftBracket => b"[",
-            Self::RightBracket => b"]",
-            Self::I8 => b"i8",
-            Self::I16 => b"i16",
-            Self::I32 => b"i32",
-            Self::I64 => b"i64",
-            Self::U8 => b"u8",
-            Self::U16 => b"u16",
-            Self::U32 => b"u32",
-            Self::U64 => b"u64",
-            Self::F32 => b"f32",
-            Self::F64 => b"f64",
-            Self::Unit => b"unit",
-            Self::Array => b"array",
-            Self::Slice => b"slice",
-            Self::Box => b"box",
-            Self::Arena => b"arena",
-            Self::Buffer => b"buffer",
-            Self::Own => b"own",
-            Self::Ampersand => b"&",
-            Self::Uniq => b"uniq",
-            Self::Let => b"let",
-            Self::Propagate => b"propagate",
-            Self::Set => b"set",
-            Self::Return => b"return",
-            Self::Loop => b"loop",
-            Self::Break => b"break",
-            Self::Region => b"region",
-            Self::Define => b"define",
-            Self::Else => b"else",
-            Self::When => b"when",
-            Self::Give => b"give",
-            Self::Match => b"match",
-            Self::FatArrow => b"=>",
-            Self::Move => b"move",
-            Self::Deref => b"deref",
-            Self::Dot => b".",
-            Self::Pure => b"pure",
-            Self::Reads => b"reads",
-            Self::Writes => b"writes",
-            Self::Allocates => b"allocates",
-            Self::Heap => b"heap",
-            Self::Traps => b"traps",
-            Self::As => b"as",
-            Self::Claim => b"claim",
-            Self::Because => b"because",
-            Self::If => b"if",
-            Self::Plus => b"+",
-            Self::PlusWrap => b"+wrap",
-            Self::PlusChecked => b"+checked",
-            Self::PlusSat => b"+sat",
-            Self::Minus => b"-",
-            Self::MinusWrap => b"-wrap",
-            Self::MinusChecked => b"-checked",
-            Self::MinusSat => b"-sat",
-            Self::Star => b"*",
-            Self::StarWrap => b"*wrap",
-            Self::StarChecked => b"*checked",
-            Self::StarSat => b"*sat",
-            Self::Slash => b"/",
-            Self::SlashChecked => b"/checked",
-            Self::Percent => b"%",
-            Self::PercentChecked => b"%checked",
-            Self::For => b"for",
-            Self::In => b"in",
-            Self::DotDot => b"..",
-            Self::Ensures => b"ensures",
-            Self::DenyClaims => b"deny_claims",
-            Self::Replace => b"replace",
-            Self::Command => b"command",
-            Self::PlusDefined => b"+defined",
-            Self::MinusDefined => b"-defined",
-            Self::StarDefined => b"*defined",
-            Self::SlashDefined => b"/defined",
-            Self::PercentDefined => b"%defined",
+            Self::Struct => "struct",
+            Self::LeftBrace => "{",
+            Self::RightBrace => "}",
+            Self::Colon => ":",
+            Self::Semicolon => ";",
+            Self::Enum => "enum",
+            Self::LeftParen => "(",
+            Self::RightParen => ")",
+            Self::Comma => ",",
+            Self::Fn => "fn",
+            Self::ThinArrow => "->",
+            Self::Requires => "requires",
+            Self::Contract => "contract",
+            Self::Law => "law",
+            Self::Conform => "conform",
+            Self::Const => "const",
+            Self::Equal => "=",
+            Self::Doc => "doc",
+            Self::LeftAngle => "<",
+            Self::RightAngle => ">",
+            Self::LeftBracket => "[",
+            Self::RightBracket => "]",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Unit => "unit",
+            Self::Array => "array",
+            Self::Slice => "slice",
+            Self::Box => "box",
+            Self::Arena => "arena",
+            Self::Buffer => "buffer",
+            Self::Own => "own",
+            Self::Ampersand => "&",
+            Self::Uniq => "uniq",
+            Self::Let => "let",
+            Self::Propagate => "propagate",
+            Self::Set => "set",
+            Self::Return => "return",
+            Self::Loop => "loop",
+            Self::Break => "break",
+            Self::Region => "region",
+            Self::Define => "define",
+            Self::Else => "else",
+            Self::When => "when",
+            Self::Give => "give",
+            Self::Match => "match",
+            Self::FatArrow => "=>",
+            Self::Move => "move",
+            Self::Deref => "deref",
+            Self::Dot => ".",
+            Self::Pure => "pure",
+            Self::Reads => "reads",
+            Self::Writes => "writes",
+            Self::Allocates => "allocates",
+            Self::Heap => "heap",
+            Self::Traps => "traps",
+            Self::As => "as",
+            Self::Claim => "claim",
+            Self::Because => "because",
+            Self::If => "if",
+            Self::Plus => "+",
+            Self::PlusWrap => "+wrap",
+            Self::PlusChecked => "+checked",
+            Self::PlusSat => "+sat",
+            Self::Minus => "-",
+            Self::MinusWrap => "-wrap",
+            Self::MinusChecked => "-checked",
+            Self::MinusSat => "-sat",
+            Self::Star => "*",
+            Self::StarWrap => "*wrap",
+            Self::StarChecked => "*checked",
+            Self::StarSat => "*sat",
+            Self::Slash => "/",
+            Self::SlashChecked => "/checked",
+            Self::Percent => "%",
+            Self::PercentChecked => "%checked",
+            Self::For => "for",
+            Self::In => "in",
+            Self::DotDot => "..",
+            Self::Ensures => "ensures",
+            Self::DenyClaims => "deny_claims",
+            Self::Replace => "replace",
+            Self::Command => "command",
+            Self::PlusDefined => "+defined",
+            Self::MinusDefined => "-defined",
+            Self::StarDefined => "*defined",
+            Self::SlashDefined => "/defined",
+            Self::PercentDefined => "%defined",
         }
+    }
+
+    /// Returns the exact one-token spelling as raw source bytes.
+    #[must_use]
+    pub const fn spelling_bytes(self) -> &'static [u8] {
+        self.spelling().as_bytes()
     }
 
     /// Finds the fixed predicate with exactly these raw-token bytes.
@@ -420,7 +431,7 @@ impl FixedTerminal {
         ALL_FIXED_TERMINALS
             .iter()
             .copied()
-            .find(|terminal| terminal.spelling() == spelling)
+            .find(|terminal| terminal.spelling_bytes() == spelling)
     }
 
     /// Reports whether this is one of the sixteen GRAM-1 operator forms.
@@ -520,6 +531,28 @@ impl TerminalPredicate {
             Self::Literal => 100,
             Self::String => 101,
             Self::Digits => 102,
+        }
+    }
+
+    /// The source spelling a writer would have to write to satisfy this
+    /// predicate.
+    ///
+    /// A fixed terminal is its own bytes. A pattern predicate has no single
+    /// spelling, so it answers with the name [FORM-3] and [FORM-5] give the
+    /// class — the same name the grammar productions use, so a reader can look
+    /// it up.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::Fixed(terminal) => terminal.spelling(),
+            Self::Identifier => "IDENT",
+            Self::TypeIdentifier => "TYPEID",
+            Self::RegionIdentifier => "REGIONID",
+            Self::Label => "LABEL",
+            Self::OperationName => "OPNAME",
+            Self::Literal => "literal",
+            Self::String => "STRING",
+            Self::Digits => "digits",
         }
     }
 }
@@ -736,12 +769,12 @@ mod tests {
     fn fixed_inventory_is_unique_and_round_trips() {
         let spellings: BTreeSet<&[u8]> = ALL_FIXED_TERMINALS
             .iter()
-            .map(|terminal| terminal.spelling())
+            .map(|terminal| terminal.spelling_bytes())
             .collect();
         assert_eq!(spellings.len(), ALL_FIXED_TERMINALS.len());
         for terminal in ALL_FIXED_TERMINALS {
             assert_eq!(
-                FixedTerminal::from_spelling(terminal.spelling()),
+                FixedTerminal::from_spelling(terminal.spelling_bytes()),
                 Some(terminal)
             );
         }
@@ -758,11 +791,11 @@ mod tests {
     fn fixed_lower_words_are_excluded_from_identifiers() {
         for terminal in ALL_FIXED_TERMINALS {
             if terminal
-                .spelling()
+                .spelling_bytes()
                 .first()
                 .is_some_and(u8::is_ascii_lowercase)
             {
-                assert!(!is_identifier(terminal.spelling()));
+                assert!(!is_identifier(terminal.spelling_bytes()));
             }
         }
         for spelling in [b"x".as_slice(), b"deref_value", b"wrap", b"ieq"] {

@@ -3,7 +3,7 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::model::{
     CheckedExpression, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const ENDPOINT_TERM_FIX: &str =
     "bind the computed u64 value with one preceding ordinary let and use that term as the endpoint";
@@ -73,7 +73,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
 
 #[test]
 fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
-    assert_rule(
+    assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus pure {
   for @items i in 0_u32..1_u64 {
   }
@@ -81,7 +81,7 @@ fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
 }
 "#,
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 
     assert_rule(

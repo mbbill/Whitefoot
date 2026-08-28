@@ -6,12 +6,20 @@
 
 use core::fmt;
 
+mod rejection;
+
+/// The probe corpus that pins every diagnostic sentence by its rendered text.
+#[cfg(test)]
+mod pinned_sentences;
+
+use rejection::Located;
+
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits,
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, emit_llvm, finalize,
-    lex, lower_checked, parse, resolve_with_inventory,
+    ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
+    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
+    emit_llvm, finalize, lex, lower_checked, parse, resolve_with_inventory,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -277,7 +285,8 @@ pub fn compile_with_overlap(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<String, CompilationFailure> {
-    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap).map(|(module, _)| module)
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
+        .map(|reported| reported.module)
 }
 
 /// [`compile_with_overlap`] plus the non-normative permission ledger for the
@@ -296,6 +305,29 @@ pub fn compile_with_permission_ledger(
     overlap: crate::OverlapLowering,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
     compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
+        .map(|reported| (reported.module, reported.ledger))
+}
+
+/// [`compile_with_overlap`] plus the permission-ledger lines an ordinary
+/// compile reports on the default developer channel.
+///
+/// Exactly the denied verdicts of the program's I/O loops: a `[PAR-3]` staged
+/// denial, and the `[PAR-2]` counted denial of a loop the staged judgment also
+/// reached. Those are the two ways a loop a writer wrote to do I/O loses its
+/// pipeline, and they are missed optimizations on the source in front of the
+/// writer rather than a reading of the judgment, so they do not wait for a
+/// flag. A granted verdict is silent; `compile_with_permission_ledger` remains
+/// the full report.
+///
+/// Nothing here is a rejection. The compilation succeeded and the module is
+/// returned beside the notices.
+pub fn compile_with_io_notices(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+) -> Result<(String, Vec<String>), CompilationFailure> {
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
+        .map(|reported| (reported.module, reported.notices))
 }
 
 /// [`compile`] against one named [SYS-2] inventory state.
@@ -317,7 +349,19 @@ pub fn compile_with_inventory(
         inventory,
         crate::OverlapLowering::Completion,
     )
-    .map(|(module, _)| module)
+    .map(|reported| reported.module)
+}
+
+/// One compilation's module and the developer-channel text it produced.
+///
+/// Two channels, one rendering. `ledger` is the complete report a caller asks
+/// for by flag; `notices` is the subset every compile reports without one.
+/// They are projections of the same rendered lines, so a notice can never say
+/// something the full report does not.
+struct Reported {
+    module: String,
+    ledger: Vec<String>,
+    notices: Vec<String>,
 }
 
 /// The one compilation path, returning the module and the developer-channel
@@ -328,7 +372,7 @@ fn compile_reporting(
     limits: CompilerLimits,
     inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
-) -> Result<(String, Vec<String>), CompilationFailure> {
+) -> Result<Reported, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
@@ -394,10 +438,11 @@ fn compile_reporting(
     let parsed = match parse(&classified, limits.parser) {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
+            let coordinate = issue.coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::Parsing,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         ParseOutcome::ResourceFailure(failure) => {
@@ -442,10 +487,14 @@ fn compile_reporting(
     let canonical = match audit_canonical(finalized, limits.canonical) {
         CanonicalOutcome::Complete(complete) => complete,
         CanonicalOutcome::SourceIssue(issue) => {
+            // FORM-2's coordinate is the trivia gap between two terminals, not
+            // a written construct, so the reader is anchored inside the gap
+            // rather than at its first byte.
+            let coordinate = issue.location().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::CanonicalSource,
                 issue.rule().id(),
-                issue,
+                Located::in_gap(issue, classified.source_bundle(), coordinate),
             ));
         }
         CanonicalOutcome::ResourceFailure(failure) => {
@@ -466,10 +515,11 @@ fn compile_reporting(
     let resolved = match resolve_with_inventory(canonical, inventory) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
+            let coordinate = issue.origin().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         ResolutionOutcome::CompilerFailure { failure, .. } => {
@@ -483,17 +533,31 @@ fn compile_reporting(
     let checked = match check_semantics(resolved) {
         SemanticOutcome::Complete(complete) => *complete,
         SemanticOutcome::SourceIssue { issue, .. } => {
-            return Err(CompilationFailure::source(
-                CompilationStage::Semantics,
-                issue.rule_id(),
-                issue,
-            ));
+            // A semantic rejection carries the richest payload in the
+            // toolchain and, until now, the poorest location: `SourceId(0)`
+            // and a byte offset. The coordinate the rule already selected
+            // names a line of the file the caller named, so it is printed the
+            // same way a syntax rejection's is.
+            let rule_id = issue.rule_id();
+            let coordinate = match issue.location() {
+                SemanticLocation::SourceNode(_, coordinate) => Some(*coordinate),
+                SemanticLocation::BundleRoot(_) => None,
+            };
+            return Err(match coordinate {
+                Some(coordinate) => CompilationFailure::source(
+                    CompilationStage::Semantics,
+                    rule_id,
+                    Located::new(issue, classified.source_bundle(), coordinate),
+                ),
+                None => CompilationFailure::source(CompilationStage::Semantics, rule_id, issue),
+            });
         }
         SemanticOutcome::ResolutionIssue { issue, .. } => {
+            let coordinate = issue.origin().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         SemanticOutcome::Unsupported { unsupported, .. } => {
@@ -511,7 +575,7 @@ fn compile_reporting(
             ));
         }
     };
-    let mut permission_ledger = checked.data.permission_ledger.clone();
+    let permission_ledger = checked.data.permission_ledger.clone();
     let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
@@ -523,9 +587,22 @@ fn compile_reporting(
     // the judgment's own lines. The judgment reports the same verdicts with or
     // without `--par`; these lines report an actualization, which only a
     // compilation that asked for one has.
-    permission_ledger.extend_from_slice(ir.actualization_ledger());
+    let notices = permission_ledger
+        .iter()
+        .filter(|line| line.notice)
+        .map(|line| line.text.clone())
+        .collect();
+    let mut ledger: Vec<String> = permission_ledger
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+    ledger.extend_from_slice(ir.actualization_ledger());
     emit_llvm(&ir)
-        .map(|module| (module.into_string(), permission_ledger))
+        .map(|module| Reported {
+            module: module.into_string(),
+            ledger,
+            notices,
+        })
         .map_err(|failure: BackendFailure| {
             let (stage, kind) = match failure {
                 BackendFailure::TargetLayout(_) => (
@@ -548,7 +625,7 @@ fn compile_reporting(
 #[cfg(test)]
 mod tests {
     use super::{
-        CompilationFailureKind, CompilationStage, CompilerLimits, compile,
+        CompilationFailureKind, CompilationStage, CompilerLimits, compile, compile_with_io_notices,
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, SourceInput};
@@ -567,6 +644,417 @@ mod tests {
         )
         .expect("a permission-ledger fixture must compile");
         ledger
+    }
+
+    /// The ledger lines the same compilation reports without any flag.
+    fn notices_of(name: &str, source: &[u8]) -> Vec<String> {
+        let (_, notices) = compile_with_io_notices(
+            &[SourceInput::new(name, source)],
+            CompilerLimits::default(),
+            OverlapLowering::Off,
+        )
+        .expect("a permission-ledger fixture must compile");
+        notices
+    }
+
+    /// The scratch buffer hoisted above the loop, which denies the staged
+    /// verdict at `&uniq 'd data`.
+    const DENIED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(16_u64, 97_u8);
+  let data = buffer_new(64_u64, 0_u8);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            region 'h {
+              region 'd {
+                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                  ReadBytes(next: produced) => {
+                    set total = total +wrap produced;
+                  }
+                  ReadEnd() => {
+                  }
+                  ReadFailed(error: problem) => {
+                  }
+                }
+              }
+            }
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    /// The same loop with its scratch inside the body, which the staged
+    /// judgment grants.
+    const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    /// A denied I/O loop is reported on an ordinary compile; a granted one is
+    /// silent.
+    ///
+    /// The judgment was landed, correct, and unreachable: a writer compiled
+    /// five ordinary utilities, every I/O loop in them was denied, and nothing
+    /// said so, because the report was behind a flag they had no reason to
+    /// run. A loop that lost its pipeline is a missed optimization on the
+    /// program in front of them, so it does not wait to be asked for.
+    ///
+    /// The granted case is the other half and the harder one. Its counted
+    /// [PAR-2] verdict *is* denied — the counted rule refuses the short factory
+    /// loan the staged rule exists to admit — so a notice channel that reported
+    /// every denial would tell this writer their granted loop was denied.
+    #[test]
+    fn a_denied_io_loop_is_reported_without_a_flag_and_a_granted_one_is_silent() {
+        let notices = notices_of("hoisted.wf", DENIED_IO_LOOP);
+        let ledger = ledger_of("hoisted.wf", DENIED_IO_LOOP);
+        // Both verdicts of the one loop, and every place that denied it. The
+        // counted rule and the staged rule refuse it for different reasons, so
+        // both are losses the writer can act on; and the `stage` line names
+        // only the condition the judgment stopped at, so the denied rows of
+        // its table come with it. A repaired first cause otherwise uncovers a
+        // second denial the writer was never told about, which is what the
+        // verification of 2026-08-28 met on its first loop.
+        assert_eq!(notices.len(), 3, "{notices:?}");
+        assert!(
+            notices[0].starts_with("PAR loop        hoisted.wf:5") && notices[0].contains("denied"),
+            "{notices:?}"
+        );
+        assert!(
+            notices[1].starts_with("PAR stage       hoisted.wf:5")
+                && notices[1].contains("condition 3")
+                && notices[1].ends_with("&uniq 'd data"),
+            "{notices:?}"
+        );
+        assert!(
+            notices[2].starts_with("PAR place       hoisted.wf:5")
+                && notices[2].contains("denied")
+                && notices[2].contains("&uniq 'd data"),
+            "{notices:?}"
+        );
+        // A row that is not denied stays inside the full report: the notice
+        // channel states what cost the loop its pipeline, not the whole table.
+        assert!(
+            notices.iter().all(|notice| !notice.contains("read-only")),
+            "{notices:?}"
+        );
+        // Every notice is a line of the full report, verbatim: one rendering,
+        // two channels.
+        assert!(
+            notices.iter().all(|notice| ledger.contains(notice)),
+            "notices are a subset of the report: {ledger:?}"
+        );
+
+        assert!(
+            notices_of("staged.wf", GRANTED_IO_LOOP).is_empty(),
+            "a granted staged verdict says nothing without a flag"
+        );
+        // And the report still carries that loop's counted denial, which the
+        // notice channel deliberately withholds.
+        assert!(
+            ledger_of("staged.wf", GRANTED_IO_LOOP)
+                .iter()
+                .any(|line| line.starts_with("PAR loop") && line.contains("denied")),
+            "the counted denial stays in the full report"
+        );
+    }
+
+    /// A syntax rejection prints the spellings it expected and the line it
+    /// stopped in.
+    ///
+    /// Flat three-address form is the largest departure from every other
+    /// systems language, so this is the rule an unguided writer hits first.
+    /// They hit it as `TerminalSet(38424498140022966840644862354)` and a byte
+    /// offset, and ran `head -c` on their own program to find out what it
+    /// meant. The compiler holds the expected set and the source bytes; both
+    /// are printed here.
+    #[test]
+    fn a_syntax_rejection_prints_the_expected_spellings_and_the_offending_line() {
+        let source = br#"command fn main() -> status: own ExitStatus pure {
+  doc "Writes a nested call where the grammar admits an atom.";
+  let dotted = 1_u8;
+  let addressable = 2_u8;
+  let skip = bor(dotted, bnot(addressable));
+  return exit_status(code: skip);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::from_host_path(
+                "input0.wf",
+                "/absolute/path/wc.wf",
+                source,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect_err("a nested call is not an atom");
+        assert_eq!(failure.rule_id(), Some("GRAM-9"));
+        let detail = failure.detail();
+        // The set as spellings, in the grammar's own order.
+        assert!(
+            detail.contains(r#"expected: ["{", ";", ")", ",", "["#),
+            "{detail}"
+        );
+        // The line the writer wrote, and where in it the parser stopped.
+        assert!(
+            detail.contains(r#"at /absolute/path/wc.wf:5:26 in line "  let skip = bor(dotted, bnot(addressable));""#),
+            "{detail}"
+        );
+    }
+
+    /// A canonical-form rejection prints the bytes it wanted and the bytes it
+    /// found.
+    ///
+    /// FORM-2 is machine-decided, so the auditor knows both at the point it
+    /// stops. It used to print neither, and one double space in an effect row
+    /// cost a writer a compile round spent bisecting a byte offset.
+    #[test]
+    fn a_canonical_rejection_prints_the_expected_bytes_beside_the_found_bytes() {
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
+        let failure = compile(
+            &[SourceInput::from_host_path(
+                "input0.wf",
+                "/absolute/path/report.wf",
+                source,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect_err("a double space is not canonical form");
+        assert_eq!(failure.rule_id(), Some("FORM-2"));
+        let detail = failure.detail();
+        assert!(detail.contains(r#"expected: " ", found: "  ""#), "{detail}");
+        assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
+    }
+
+    /// The one rule the blind writer could not apply from the specification
+    /// text now says what it means and states the whole working idiom.
+    ///
+    /// This is the writer's own shape: reserve a permit from a borrowed
+    /// factory and open through it, which is what every recursive directory
+    /// walker wants and what a one-statement region cannot hold. Batch 0099
+    /// gave the rejection two routes and the verification writer took neither
+    /// to a working walker — `replace` cannot commit where the call consumed
+    /// the target's root, which `move permit` does, and the helper alone is
+    /// one third of the idiom `tests/programs/dir_walk.wf` uses.
+    #[test]
+    fn a_child_reborrow_rejection_states_the_scope_rule_and_the_whole_idiom() {
+        let source = br#"fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
+  region 'source {
+    let permit = reserve_file<'source>(factory: &uniq 'source deref(factory));
+    match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
+      Ok(value: handle) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return 0_u8;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(16_u64, 0_u8);
+  let code = 0_u8;
+  region 'call {
+    set code = walk<'call, 'call>(factory: &uniq 'call files, root: &'call cwd, name: &'call name);
+  }
+  return exit_status(code: code);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::new("walk.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a two-statement region cannot carry a child reborrow");
+        assert_eq!(failure.rule_id(), Some("OWN-6"));
+        let detail = failure.detail();
+        // What the rule means, in the two facts a writer meets at once.
+        assert!(
+            detail.contains(
+                "a child reborrow's region admits exactly one statement, and a value that \
+                 statement binds dies at the region's end"
+            ),
+            "{detail}"
+        );
+        // All three parts of the idiom, in the vocabulary `docs/patterns.md`
+        // uses, and the exact limit of the `replace` route.
+        assert!(
+            detail.contains(
+                "move the reserve and the open into one helper that takes the holder as \
+                 `&uniq 'f` and returns the opened value"
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                "make the single statement of the region the `match` on that helper's call"
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                "write every statement that uses the opened value inside that `match` arm"
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains("P4 linear threading, P15 recursive walker"),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                "applies only where the call leaves the target's root alive: a call that \
+                 consumes the target root — one taking `move permit` — rejects OWN-1 instead"
+            ),
+            "{detail}"
+        );
+    }
+
+    /// A post-syntax rejection names the file it is talking about and quotes
+    /// the line, in both stages that reject source after parsing.
+    ///
+    /// The blind-writer trial's six rejections all printed `SourceId(0)` and a
+    /// byte offset, and the writer ran `head -c` on their own program to find
+    /// out what the offset meant. Semantics and resolution both already hold
+    /// the coordinate the rule selected; this is that coordinate resolved.
+    #[test]
+    fn a_post_syntax_rejection_names_its_file_and_quotes_its_line() {
+        let host = "/absolute/path/counts.wf";
+
+        // [OWN-1], reached in the semantic checker.
+        let affine = br#"struct Counts {
+  lines: u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let running = Counts(lines: 0_u64);
+  let totals = running;
+  return exit_status(code: 0_u8);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::from_host_path("input0.wf", host, affine)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a bare affine use is rejected");
+        assert_eq!(failure.rule_id(), Some("OWN-1"));
+        let detail = failure.detail();
+        assert!(detail.contains(&format!("{host}:7:16")), "{detail}");
+        assert!(detail.contains("let totals = running;"), "{detail}");
+        assert!(!detail.contains("input0.wf"), "{detail}");
+
+        // [TYPE-6], reached in the resolver.
+        let collision = br#"command fn main() -> status: own ExitStatus pure {
+  let permit = 1_u64;
+  region 'inner {
+    let permit = 2_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::from_host_path("input0.wf", host, collision)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a redeclared binder is rejected");
+        assert_eq!(failure.rule_id(), Some("TYPE-6"));
+        let detail = failure.detail();
+        assert!(detail.contains(&format!("{host}:4:9")), "{detail}");
+        assert!(detail.contains("let permit = 2_u64;"), "{detail}");
+    }
+
+    /// A lexical rejection names the host path too.
+    ///
+    /// It is the one stage that already printed a path of its own, from the
+    /// span rather than from a wrapper, and the path it printed was the
+    /// bundle's positional key — so the first rejection a writer can possibly
+    /// receive was also the one that cited a file that does not exist.
+    #[test]
+    fn a_lexical_rejection_names_the_host_path() {
+        let host = "/absolute/path/pound.wf";
+        let source = "command fn main() -> status: own ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
+        let failure = compile(
+            &[SourceInput::from_host_path(
+                "input0.wf",
+                host,
+                source.as_bytes(),
+            )],
+            CompilerLimits::default(),
+        )
+        .expect_err("a non-source byte is rejected");
+        assert_eq!(failure.rule_id(), Some("FORM-1"));
+        let detail = failure.detail();
+        assert!(detail.contains(host), "{detail}");
+        assert!(!detail.contains("input0.wf"), "{detail}");
+    }
+
+    /// A source read from a host path the closed logical spelling cannot hold
+    /// is still named by that host path everywhere a reader looks.
+    ///
+    /// An absolute path is how a script, a Makefile, and an agent all invoke
+    /// this compiler. Renaming it to a positional `input0.wf` made every
+    /// ledger line and every byte offset refer to a file that exists nowhere
+    /// on disk, so the output was not usable as emitted.
+    #[test]
+    fn a_ledger_names_the_host_path_the_source_was_read_from() {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let host = "/absolute/path/staged.wf";
+        let (_, ledger) = compile_with_permission_ledger(
+            &[SourceInput::from_host_path("input0.wf", host, source)],
+            CompilerLimits::default(),
+            OverlapLowering::Off,
+        )
+        .expect("the fixture compiles");
+        assert!(
+            ledger.iter().all(|line| line.contains(host)),
+            "every ledger line names the host path: {ledger:?}"
+        );
+        assert!(
+            ledger.iter().all(|line| !line.contains("input0.wf")),
+            "the bundle's own key is not reader-facing text: {ledger:?}"
+        );
     }
 
     const TREE_PRELUDE: &str = "enum BoxNode {
@@ -1968,5 +2456,370 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
                 "{name}: published diagnostic omitted FORM-1: {failure}"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 0100: the payloads the verification re-writer of 2026-08-28 asked
+    // for, each pinned by the exact rendered text a writer reads. A change to
+    // any of these sentences is a change to what the compiler teaches, and has
+    // to be made here on purpose.
+    // -----------------------------------------------------------------------
+
+    /// The numbered rule and the rendered detail of one compilation that must
+    /// fail, in the shape `whitefootc` prints them.
+    fn rejection(name: &str, source: &[u8]) -> String {
+        let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
+            .expect_err("this fixture exists to be rejected");
+        format!(
+            "[{}] {}",
+            failure.rule_id().unwrap_or("no rule"),
+            failure.detail()
+        )
+    }
+
+    /// [GRAM-9] names the binding form its grammar position admits.
+    ///
+    /// The rule's own repair is "bind the computed value with a preceding
+    /// `let`", and inside a `contract_block` that repair is wrong: the block
+    /// has no `let_stmt` and its binding form is `define IDENT = expr;`. The
+    /// position is read from the open production frames, never from the text.
+    #[test]
+    fn a_forbidden_atom_names_the_binding_form_its_grammar_position_admits() {
+        let body = rejection(
+            "body.wf",
+            br#"fn double(value: own u64) -> out: own u64 pure {
+  return value +wrap value;
+}
+
+fn helper(value: own u64) -> out: own u64 pure {
+  let a = double(value: double(value: value));
+  return a;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(body.contains("[GRAM-9]"), "{body}");
+        assert!(
+            body.contains(
+                r#"mechanical_fix: "a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`""#
+            ),
+            "{body}"
+        );
+
+        let contract = rejection(
+            "contract.wf",
+            br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+  requires ile(end, len(deref(data)));
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(contract.contains("[GRAM-9]"), "{contract}");
+        assert!(
+            contract.contains(
+                r#"mechanical_fix: "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`""#
+            ),
+            "{contract}"
+        );
+    }
+
+    /// The `define` route the contract-block repair names is accepted.
+    ///
+    /// A repair the compiler refuses is worse than no repair, so the two are
+    /// pinned together: the rejection above and the program below differ only
+    /// by taking it.
+    #[test]
+    fn the_contract_block_repair_gram9_names_is_accepted() {
+        compile(
+            &[SourceInput::new(
+                "repaired.wf",
+                br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
+  define room = len(deref(data));
+  requires ile(end, room);
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect("the repair GRAM-9 names must be accepted");
+    }
+
+    /// [EFF-1] states the condition the row failed and the row that repairs it.
+    ///
+    /// `writes(cwd), writes(out)` is two occurrences of one category, which the
+    /// rule forbids in one sentence the diagnostic did not carry.
+    #[test]
+    fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
+        let detail = rejection(
+            "row.wf",
+            br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(cwd, out), writes(cwd), writes(out) {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[EFF-1]"), "{detail}");
+        assert!(
+            detail.contains(
+                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps""#
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps""#
+            ),
+            "{detail}"
+        );
+    }
+
+    /// [EFF-2] publishes both rows and the exact difference between them.
+    ///
+    /// Four blind-writer rounds met a bare `EffectMismatch`: the writer was
+    /// told two rows differ and had to derive both sides by hand.
+    #[test]
+    fn an_effect_mismatch_publishes_both_rows_and_the_exact_difference() {
+        let detail = rejection(
+            "effects.wf",
+            br#"fn count['b](data: &'b buffer<u8>) -> lines: own u64 reads(data) {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[EFF-2]"), "{detail}");
+        assert!(detail.contains(r#"expected_row: "pure""#), "{detail}");
+        assert!(detail.contains(r#"found_row: "reads(data)""#), "{detail}");
+        assert!(detail.contains("missing: []"), "{detail}");
+        assert!(detail.contains(r#"extra: ["reads(data)"]"#), "{detail}");
+        assert!(
+            detail.contains(
+                r#"mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions""#
+            ),
+            "{detail}"
+        );
+    }
+
+    /// [TYPE-5] publishes the two sides it compared.
+    #[test]
+    fn a_type_mismatch_publishes_the_type_required_and_the_type_written() {
+        let detail = rejection(
+            "types.wf",
+            br#"command fn main() -> status: own ExitStatus pure {
+  let a = 1_u64;
+  let b = 2_u32;
+  let c = ile(a, b);
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[TYPE-5]"), "{detail}");
+        assert!(
+            detail.contains(r#"TypeMismatch { expected: "own u64", found: "own u32" }"#),
+            "{detail}"
+        );
+    }
+
+    /// A generic form written with no type arguments names both spellings that
+    /// carry them.
+    ///
+    /// A writer meeting this at `Ok(value: v)` sees a constructor name and no
+    /// type anywhere, so naming the type spelling alone would not locate the
+    /// repair.
+    #[test]
+    fn a_generic_form_without_type_arguments_names_both_spellings() {
+        let detail = rejection(
+            "result.wf",
+            br#"fn helper(value: own u8) -> out: own Result<u8, unit> pure {
+  return Ok(value: value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[TYPE-5]"), "{detail}");
+        assert!(
+            detail.contains(
+                r#"expected: "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`", found: "Result with no written type-argument list""#
+            ),
+            "{detail}"
+        );
+        // And the spelling it names is accepted.
+        compile(
+            &[SourceInput::new(
+                "result-repaired.wf",
+                br#"fn helper(value: own u8) -> out: own Result<u8, unit> pure {
+  return Ok<u8, unit>(value: value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect("the constructor spelling TYPE-5 names must be accepted");
+    }
+
+    /// [OWN-10] names the region, the binder, and where a region it admits has
+    /// to be introduced.
+    #[test]
+    fn a_borrow_lifetime_rejection_names_the_region_the_binder_and_the_repair() {
+        let detail = rejection(
+            "lifetime.wf",
+            br#"fn sum['r](data: &'r buffer<u8>) -> out: own u64 reads(data) {
+  return len(deref(data));
+}
+
+fn caller['r](anchor: &'r buffer<u8>) -> out: own u64 allocates(heap) {
+  let local = buffer_new(4_u64, 0_u8);
+  return sum<'r>(data: &'r local);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        );
+        assert!(detail.contains("[OWN-10]"), "{detail}");
+        assert!(
+            detail.contains(
+                r#"InvalidBorrowLifetime { region: "'r", binder: "local", mechanical_fix: "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage." }"#
+            ),
+            "{detail}"
+        );
+    }
+
+    /// [FORM-2] quotes the line its offending bytes are in.
+    ///
+    /// The coordinate is the trivia gap between two terminals, and a gap that
+    /// carries a line break starts at the end of the line *before* the one the
+    /// writer must edit: the verification writer was shown the enclosing item's
+    /// header with a byte offset two lines further down.
+    #[test]
+    fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
+        let detail = rejection(
+            "indent.wf",
+            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        );
+        assert!(detail.contains("[FORM-2]"), "{detail}");
+        assert!(
+            detail.contains(r#"at indent.wf:3:1 in line "    let b = a +wrap 2_u64;""#),
+            "{detail}"
+        );
+
+        // A gap that stays inside one line is unchanged: the reader is sent to
+        // the first byte of the gap, which is where the wrong bytes begin.
+        let inline = rejection(
+            "spacing.wf",
+            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        );
+        assert!(
+            inline.contains(r#"at spacing.wf:3:12 in line "  let b = a  +wrap 2_u64;""#),
+            "{inline}"
+        );
+    }
+
+    /// One output stream written per iteration is offered the remedy that
+    /// works, and the program that takes it is granted.
+    ///
+    /// Replication is not advice a writer can take for stdout, and "leave this
+    /// loop sequential" was the only other half of the sentence. The remedy
+    /// that works is to take the write out of the loop: the two programs below
+    /// differ in that and in nothing else.
+    #[test]
+    fn a_one_position_resource_is_offered_the_hoist_that_works() {
+        const EMIT: &str = r#"fn emit['o](out: &uniq 'o Output, value: own u8) -> written: own u64 reads(out), writes(out), allocates(heap) {
+  let one = buffer_new(1_u64, value);
+  let sent = 0_u64;
+  region 'w {
+    match write_once<'w, 'w>(output: &uniq 'w deref(out), source: &'w one, start: 0_u64, end: 1_u64) {
+      Ok(value: n) => {
+        set sent = n;
+      }
+      Err(error: e) => {
+      }
+    }
+  }
+  return sent;
+}
+"#;
+        let per_iteration = format!(
+            "{EMIT}
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+  for @scan index in 0_u64..4_u64 {{
+    region 'p {{
+      let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
+    }}
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let notices = notices_of("stream.wf", per_iteration.as_bytes());
+        let staged = notices
+            .iter()
+            .find(|notice| notice.starts_with("PAR stage"))
+            .unwrap_or_else(|| panic!("the per-iteration write must deny the stage: {notices:?}"));
+        assert!(
+            staged.contains(
+                // Written on one line: a sentence a test pins has to be
+                // greppable as the bytes a writer reads.
+                "instead, give each iteration its own resource; or, where the body only publishes to that storage — an output stream is the pointed case — hoist the per-iteration write out of the loop, folding a total in the body and writing it once after the loop; or leave this loop sequential, because storage that carries one position cannot be held by two iterations at once"
+            ),
+            "{staged}"
+        );
+
+        // The same program with the write hoisted out: the loop is granted and
+        // the default channel says nothing about it.
+        let hoisted = format!(
+            "{EMIT}
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {{
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {{
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {{
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {{
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {{
+          Ok(value: handle) => {{
+            set total = total +wrap 1_u64;
+          }}
+          Err(error: problem) => {{
+          }}
+        }}
+      }}
+    }}
+  }}
+  region 'p {{
+    let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert!(
+            notices_of("hoisted-stream.wf", hoisted.as_bytes()).is_empty(),
+            "the hoisted form is what the remedy names, so it must be granted"
+        );
     }
 }

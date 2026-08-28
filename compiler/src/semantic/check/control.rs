@@ -329,11 +329,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 match context.delivered.get() {
                     None => context.delivered.set(Some(delivered)),
                     Some(earlier) if earlier == delivered => {}
-                    Some(_) => {
+                    Some((mode, ty)) => {
                         return self.issue_node(
                             SemanticRule::Give1,
                             node,
-                            SemanticIssueKind::TypeMismatch,
+                            SemanticIssueKind::type_mismatch(
+                                self.checked_value_name(mode, ty)?,
+                                self.checked_value_name(value.mode, value.expression.ty())?,
+                            ),
                         );
                     }
                 }
@@ -362,16 +365,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
 
                 // SET-1 fixes this order: form and check the target first, then
-                // evaluate the RHS, then re-establish target writability.
-                let (declaration, target, target_effects) =
-                    self.check_set_target(function, target_node, bindings, scope.loops.len())?;
+                // evaluate the RHS, then re-establish target writability. The
+                // right-hand side is read once before that, for its shape
+                // alone: [STOR-1]'s restructuring depends on whether the value
+                // being committed consumes the root it is committed into, and
+                // only this statement holds both nodes.
+                let affine_fix = self.set_affine_restructuring(target_node, expression_node)?;
+                let (declaration, target, target_effects) = self.check_set_target(
+                    function,
+                    target_node,
+                    bindings,
+                    scope.loops.len(),
+                    affine_fix,
+                )?;
                 let value =
                     self.check_expression(function, expression_node, bindings, scope.loops.len())?;
                 if value.expression.ty() != target.ty() {
                     return self.issue_node(
                         SemanticRule::Type5,
                         expression_node,
-                        SemanticIssueKind::TypeMismatch,
+                        SemanticIssueKind::type_mismatch(
+                            self.checked_type_name(target.ty())?,
+                            self.checked_type_name(value.expression.ty())?,
+                        ),
                     );
                 }
                 if !bindings
@@ -727,7 +743,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Type5,
                 expression_node,
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::type_mismatch(
+                    format!("own {}", self.checked_type_name(target.ty())?),
+                    self.checked_value_name(value.mode, value.expression.ty())?,
+                ),
             );
         }
         if !bindings

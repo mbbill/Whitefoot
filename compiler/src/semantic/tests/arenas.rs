@@ -1,6 +1,6 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 /// [STOR-4] a value of type `arena<'r, T>` may not be returned, so a result
 /// type naming an arena is rejected at the callable boundary — and the
@@ -97,7 +97,7 @@ fn arena_content_views_stay_outside_the_slice_return_ceiling() {
 /// under an incomparable caller region fails closed [OWN-3].
 #[test]
 fn arena_content_borrows_obey_own10_with_the_arena_region() {
-    assert_rule(
+    assert_rule_kind(
         br#"fn views['r, 's](storage: own arena<'r, array<u8, 2>>) -> result: own slice<'s, u8> pure {
   let view = slice_of(&'s deref(storage));
   return move view;
@@ -108,7 +108,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
 }
 
@@ -234,7 +234,7 @@ command fn main() -> status: own ExitStatus traps {
 fn arena_content_borrows_keep_their_region_rejections() {
     // An enclosing region outlives the arena's, so its storage is too
     // short-lived for the borrow.
-    assert_rule(
+    assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus traps {
   region 'o {
     region 'r {
@@ -246,10 +246,10 @@ fn arena_content_borrows_keep_their_region_rejections() {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
     // A caller-supplied region is never comparable to a local arena's [OWN-3].
-    assert_rule(
+    assert_rule_kind(
         br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes(n) {
   set deref(n) = 1_i32;
   return unit;
@@ -268,7 +268,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
     assert_rule(
         br#"command fn main() -> status: own ExitStatus traps {
@@ -341,7 +341,7 @@ fn arena_deliveries_may_not_leave_their_region_block() {
 /// [STOR-2, TYPE-5] `arena_new<'r, T>(v)` requires `v` to produce exactly T.
 #[test]
 fn arena_new_operands_must_match_the_written_content_type() {
-    assert_rule(
+    assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_u64);
@@ -350,7 +350,7 @@ fn arena_new_operands_must_match_the_written_content_type() {
 }
 "#,
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 

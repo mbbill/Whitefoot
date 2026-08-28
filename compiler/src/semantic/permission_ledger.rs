@@ -56,13 +56,34 @@ use super::permission::{
 };
 use super::staged_permission::{StagedDenial, StagedPermission, StagedVerdict};
 
+/// One rendered ledger line and whether an ordinary compile reports it.
+///
+/// Every line belongs to the full `--par-ledger` report. A `notice` line also
+/// belongs on the default channel, because it is a verdict about a loop the
+/// writer wrote for I/O that the completion model could not stage — the one
+/// class of ledger fact that is a missed optimization on the program in front
+/// of them rather than a reading of the judgment. The blind-writer trial of
+/// 2026-08-28 found every I/O loop in five ordinary utilities denied, and the
+/// writer heard nothing: the flag they would have had to know about is the
+/// flag they had no reason to run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LedgerLine {
+    /// The rendered line, identical in both channels.
+    pub(crate) text: String,
+    /// Whether an ordinary compile reports this line without a flag.
+    pub(crate) notice: bool,
+}
+
 /// The source facts one ledger line needs, supplied by the checker because
 /// only the checker still holds the syntax tree and the source bundle.
 pub(crate) trait LedgerSource {
     /// Why a node path could not be resolved.
     type Error;
 
-    /// The logical source name and one-based line of one node.
+    /// The name a reader is shown for one node's source, and its one-based
+    /// line. That is the host path the driver read the bytes from, not the
+    /// bundle's own portable key, because every consumer of this pair prints
+    /// it for a person to open.
     fn location(&self, path: &NodePath) -> Result<(String, u64), Self::Error>;
 
     /// The exact canonical source spelling of one node.
@@ -87,7 +108,7 @@ pub(crate) trait LedgerSource {
 pub(crate) fn render_ledger<Source: LedgerSource>(
     metadata: &PermissionMetadata,
     source: &Source,
-) -> Result<Vec<String>, Source::Error> {
+) -> Result<Vec<LedgerLine>, Source::Error> {
     // A chain starts at its first member's statement, so it shares a location
     // with the pair that opens it. This ordinal sorts the pairs of one
     // location ahead of the chain they compose into, which is the order a
@@ -103,28 +124,44 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     // order of the walk that found them, which the text alone would not
     // preserve.
     const ONLY: u32 = 0;
-    let mut entries = Vec::new();
+    let mut entries: Vec<Entry> = Vec::new();
     for permissions in &metadata.functions {
+        // A loop whose body performs I/O is exactly a loop the staged judgment
+        // reached, because the staged cut is that body's first may-suspend
+        // call. Where that judgment granted the loop its pipeline, the counted
+        // [PAR-2] rule's own denial is not a loss and stays inside the full
+        // report: the counted rule refuses the short factory loan that the
+        // staged rule exists to admit, and reporting it by default would tell
+        // a writer their granted loop was denied. Where the staged judgment
+        // denied the loop, both verdicts are losses on the same loop and both
+        // are reported, because they refuse it for different reasons.
+        let lost_pipeline: Vec<&NodePath> = permissions
+            .staged
+            .iter()
+            .filter(|judged| !judged.verdict.is_permitted())
+            .filter_map(|judged| judged.head.as_ref())
+            .collect();
         for pair in &permissions.pairs {
-            let (logical_path, line) = source.location(&pair.first.statement)?;
+            let (display_path, line) = source.location(&pair.first.statement)?;
             let verdict = match &pair.verdict {
                 PermissionVerdict::PermittedEligible => "permitted",
                 PermissionVerdict::Denied(_) => "denied",
             };
             let detail = detail(&pair.verdict, source)?;
-            entries.push((
-                logical_path.clone(),
+            entries.push(Entry::new(
+                display_path.clone(),
                 line,
                 PAIR,
                 ONLY,
                 format!(
-                    "PAR {verdict:<10}  {logical_path}:{line}  pair({}, {})  {detail}",
+                    "PAR {verdict:<10}  {display_path}:{line}  pair({}, {})  {detail}",
                     pair.first.callee_name, pair.second.callee_name
                 ),
+                false,
             ));
         }
         for run in &permissions.runs {
-            let (logical_path, line) = source.location(&run.sites[0].statement)?;
+            let (display_path, line) = source.location(&run.sites[0].statement)?;
             let last = run.sites.last().expect("a chain has at least two members");
             let (_, last_line) = source.location(&last.statement)?;
             let members = run
@@ -133,31 +170,33 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 .map(|site| site.callee_name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            entries.push((
-                logical_path.clone(),
+            entries.push(Entry::new(
+                display_path.clone(),
                 line,
                 CHAIN,
                 ONLY,
                 format!(
-                    "PAR chain       {logical_path}:{line}  run({members})  {} members through line {last_line}",
+                    "PAR chain       {display_path}:{line}  run({members})  {} members through line {last_line}",
                     run.sites.len()
                 ),
+                false,
             ));
         }
         for judged in &permissions.loops {
-            let (logical_path, line) = source.location(&judged.statement)?;
+            let (display_path, line) = source.location(&judged.statement)?;
             let verdict = if judged.verdict.is_permitted() {
                 "permitted"
             } else {
                 "denied"
             };
             let detail = loop_detail(judged, source)?;
-            entries.push((
-                logical_path.clone(),
+            entries.push(Entry::new(
+                display_path.clone(),
                 line,
                 LOOP,
                 ONLY,
-                format!("PAR loop        {logical_path}:{line}  loop  {verdict:<10}  {detail}"),
+                format!("PAR loop        {display_path}:{line}  loop  {verdict:<10}  {detail}"),
+                !judged.verdict.is_permitted() && lost_pipeline.contains(&&judged.statement),
             ));
             if !judged.advises_split {
                 continue;
@@ -166,15 +205,16 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 .verdict
                 .denied_condition()
                 .expect("only a refused loop carries split advice");
-            entries.push((
-                logical_path.clone(),
+            entries.push(Entry::new(
+                display_path.clone(),
                 line,
                 HINT,
                 ONLY,
                 format!(
-                    "PAR hint        {logical_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
+                    "PAR hint        {display_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
                     judged.combines.join(", ")
                 ),
+                false,
             ));
         }
         for judged in &permissions.staged {
@@ -182,50 +222,119 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             // loops that share a cut do not print two lines at one anchor; a
             // `loop_stmt` carries none and falls back to the cut.
             let anchor = judged.head.as_ref().unwrap_or(&judged.cut);
-            let (logical_path, line) = source.location(anchor)?;
+            let (display_path, line) = source.location(anchor)?;
             let verdict = if judged.verdict.is_permitted() {
                 "permitted"
             } else {
                 "denied"
             };
             let detail = staged_detail(judged, source)?;
-            entries.push((
-                logical_path.clone(),
+            entries.push(Entry::new(
+                display_path.clone(),
                 line,
                 STAGE,
                 ONLY,
                 format!(
-                    "PAR stage       {logical_path}:{line}  {:<4}  {verdict:<10}  {detail}",
+                    "PAR stage       {display_path}:{line}  {:<4}  {verdict:<10}  {detail}",
                     judged.form
                 ),
+                !judged.verdict.is_permitted(),
             ));
             for (ordinal, place) in judged.dispositions.iter().enumerate() {
                 let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-                entries.push((
-                    logical_path.clone(),
+                entries.push(Entry::new(
+                    display_path.clone(),
                     line,
                     PLACE,
                     ordinal,
                     format!(
-                        "PAR place       {logical_path}:{line}  {:<12}  {}  {}",
+                        "PAR place       {display_path}:{line}  {:<12}  {}  {}",
                         place.disposition.spelling(),
                         source.spelling(&place.citation)?,
                         place.reason
                     ),
+                    // The `stage` line above names the one condition the
+                    // judgment stopped at, and a loop that fails one condition
+                    // usually fails others: the verification of 2026-08-28 read
+                    // a default-channel denial naming a break, repaired the
+                    // break, and found two more denied places waiting behind
+                    // it. Every denied row of a denied loop is therefore a
+                    // notice too, so the default channel states the whole cost
+                    // of that loop and not its first cause. The line is the
+                    // report's own, byte for byte.
+                    !judged.verdict.is_permitted() && place.disposition.is_denied(),
                 ));
             }
         }
     }
+    collapse(&mut entries);
+    Ok(entries
+        .into_iter()
+        .map(|entry| LedgerLine {
+            text: entry.text,
+            notice: entry.notice,
+        })
+        .collect())
+}
+
+/// One rendered line before collapsing, with the keys that order it and the
+/// keys that identify it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Entry {
+    display_path: String,
+    line: u64,
+    kind: u8,
+    ordinal: u32,
+    text: String,
+    notice: bool,
+}
+
+impl Entry {
+    fn new(
+        display_path: String,
+        line: u64,
+        kind: u8,
+        ordinal: u32,
+        text: String,
+        notice: bool,
+    ) -> Self {
+        Self {
+            display_path,
+            line,
+            kind,
+            ordinal,
+            text,
+            notice,
+        }
+    }
+}
+
+/// Sorts the rendered lines into source order and collapses the duplicates one
+/// generic's several instances produce.
+///
+/// The rendered text carries the path, the line, and the kind, so ordinal and
+/// text are the whole reported identity. The notice flag is not part of it: one
+/// source loop of a generic monomorphized twice can render one `loop` line
+/// whose staged sibling was denied in one instance and granted in the other,
+/// and the two entries then differ only in the flag. Dropping either silently
+/// would make the default channel depend on table order, so the surviving line
+/// carries the flag when any instance raised it.
+fn collapse(entries: &mut Vec<Entry>) {
     entries.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then(left.1.cmp(&right.1))
-            .then(left.2.cmp(&right.2))
-            .then(left.3.cmp(&right.3))
-            .then(left.4.cmp(&right.4))
+        left.display_path
+            .cmp(&right.display_path)
+            .then(left.line.cmp(&right.line))
+            .then(left.kind.cmp(&right.kind))
+            .then(left.ordinal.cmp(&right.ordinal))
+            .then(left.text.cmp(&right.text))
     });
-    entries.dedup_by(|left, right| left.3 == right.3 && left.4 == right.4);
-    Ok(entries.into_iter().map(|(.., line)| line).collect())
+    entries.dedup_by(|removed, retained| {
+        let same = removed.ordinal == retained.ordinal && removed.text == retained.text;
+        if same {
+            retained.notice |= removed.notice;
+        }
+        same
+    });
 }
 
 /// The part of the line that states the outcome.
@@ -413,7 +522,7 @@ fn staged_denied_detail<Source: LedgerSource>(
         StagedDenial::NoCut { reason, statement } => {
             ((*reason).to_owned(), statement.as_ref(), None)
         }
-        StagedDenial::ExitInRemainder { edge, statement } => {
+        StagedDenial::ExitInRemainder { edge, statement, .. } => {
             (exit(edge), statement.as_ref(), None)
         }
         StagedDenial::RetainedBorrow {
@@ -503,5 +612,107 @@ fn statement_name(side: PairSide) -> String {
         PairSide::First => "s1".to_owned(),
         PairSide::Second => "s2".to_owned(),
         PairSide::Between(index) => format!("interposed statement {}", index + 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Entry, collapse};
+
+    /// One source line reported by two instances of one generic keeps the
+    /// notice either instance raised.
+    ///
+    /// The two entries differ in nothing a reader can see — same path, same
+    /// line, same kind, same text — so the ledger reports one site, which is
+    /// what the dedup is for. The notice flag is not part of that text, and a
+    /// `loop` line's flag depends on the *staged* verdict of the same
+    /// instance: a generic whose staged sibling is denied in one instance and
+    /// granted in another renders exactly this pair. Keeping whichever
+    /// happened to sort first would make the default channel depend on the
+    /// order of the permission table.
+    #[test]
+    fn a_collapsed_line_keeps_the_notice_either_instance_raised() {
+        for (first, second) in [(false, true), (true, false)] {
+            let mut entries = vec![
+                Entry::new(
+                    "walk.wf".to_owned(),
+                    5,
+                    2,
+                    0,
+                    "PAR loop  denied".to_owned(),
+                    first,
+                ),
+                Entry::new(
+                    "walk.wf".to_owned(),
+                    5,
+                    2,
+                    0,
+                    "PAR loop  denied".to_owned(),
+                    second,
+                ),
+            ];
+            collapse(&mut entries);
+            assert_eq!(entries.len(), 1, "{entries:?}");
+            assert!(entries[0].notice, "{entries:?}");
+        }
+    }
+
+    /// Two lines that differ in their text stay two lines, and a flagged one
+    /// does not lend its flag to a neighbour.
+    #[test]
+    fn collapsing_keeps_two_distinct_lines_and_their_own_flags() {
+        let mut entries = vec![
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                1,
+                "PAR place  read-only".to_owned(),
+                false,
+            ),
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                0,
+                "PAR place  denied".to_owned(),
+                true,
+            ),
+        ];
+        collapse(&mut entries);
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        // Source order: the ordinal carries the order of the walk that found
+        // the rows, so the denied row at ordinal 0 comes first.
+        assert!(entries[0].notice, "{entries:?}");
+        assert!(!entries[1].notice, "{entries:?}");
+    }
+
+    /// One rendered identity repeated at two different ordinals is two rows.
+    ///
+    /// A disposition table holds one row per place and two different places
+    /// can render identically, so the position is part of the key: collapsing
+    /// those would print fewer rows than the `stage` line above them counts.
+    #[test]
+    fn collapsing_keeps_one_row_per_position_of_a_disposition_table() {
+        let mut entries = vec![
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                0,
+                "PAR place  read-only  n".to_owned(),
+                false,
+            ),
+            Entry::new(
+                "walk.wf".to_owned(),
+                5,
+                5,
+                1,
+                "PAR place  read-only  n".to_owned(),
+                false,
+            ),
+        ];
+        collapse(&mut entries);
+        assert_eq!(entries.len(), 2, "{entries:?}");
     }
 }

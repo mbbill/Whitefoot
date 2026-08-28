@@ -8,7 +8,34 @@ WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
 RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
 
-check: repository-invariants approval-history-integrity spec-append-only spec-archive-integrity spec-digest-sync conformance compiler research-tests conformance-run
+# The stages `check` runs, in order. Each is a target of its own, so the CI
+# jobs that run the gate in parallel run exactly these targets and nothing
+# beside them: what a job checks is what this list says it checks.
+CHECK_STAGES := repository-invariants approval-history-integrity spec-append-only \
+	spec-archive-integrity spec-digest-sync conformance compiler research-tests \
+	conformance-run
+
+# Where the stage table is assembled. A gate nobody can profile is a gate that
+# silently grows: `check` times each stage and ends with the breakdown, so a
+# stage that doubled is visible in the run that doubled it rather than a month
+# later. `make -C compiler check` prints its own breakdown the same way.
+STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
+
+# Kept identical to `compiler/Makefile`'s, which carries the explanation.
+NO_CORE_DUMPS := ulimit -c 0;
+
+check:
+	@mkdir -p "$(STAGE_DIR)"
+	@: > "$(STAGE_DIR)/summary"
+	@for stage in $(CHECK_STAGES); do \
+		started=$$(date +%s); \
+		$(MAKE) --no-print-directory "$$stage" || exit 1; \
+		printf '%-28s %6d s\n' "$$stage" "$$(( $$(date +%s) - started ))" \
+			>> "$(STAGE_DIR)/summary"; \
+	done
+	@echo ""
+	@echo "stage wall, this run:"
+	@cat "$(STAGE_DIR)/summary"
 	@echo "== WHITEFOOT ALL TESTS GREEN =="
 
 # Both supported agent entry points carry exactly the same project rules.
@@ -271,8 +298,19 @@ research-tests:
 # case reaches an actual compiler verdict; run/trap cases are linked and
 # executed, while the declared pending case is reported as Skip. `check`
 # depends on this target.
+#
+# `NO_CORE_DUMPS` for the reason `compiler/Makefile` states where it defines
+# the same variable and explains the Linux value: the trap cases execute
+# programs that abort on purpose, and a host that hands each abort to a
+# crash-report handler makes the gate pay for core files nothing reads.
+#
+# `--profile gate` for the reason `compiler/Cargo.toml` states: this adapter
+# runs the whole compiler over five hundred cases, which is exactly the
+# compute-bound front-end analysis the gate profile exists for, and it kept
+# every debug assertion and overflow check. Left at the default profile it was
+# both a second unoptimized build of the crate and an unoptimized run of it.
 conformance-run:
-	cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
+	$(NO_CORE_DUMPS) cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
 
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:

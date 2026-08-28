@@ -1,6 +1,18 @@
 # Linux directory enumeration — the disposition, and the delta for it
 
-Status: DELTA TEXT FOR LEAD INTEGRATION (batch 0072, W3, executor G2). This
+Status: SUPERSEDED (2026-08-28, batch 0094). This file's recommendation was
+(b), keep Linux unmapped, and §7 named the condition under which (a) becomes
+right: "a Linux host or CI runner able to execute the tree's own traversal
+tests". Batch 0090 supplied that runner and batch 0094 took (a): the approved
+Linux row is in `compiler/src/backend/qualification.rs` and the record is
+`docs/done/0094-linux-directory-row.md`. The compiler correction §5 asked for
+landed with it. What remains current here is the finding in §"Why not (a)"
+point 2 — `struct linux_dirent64` carries no name-length field, so the Linux
+rewrite is a different rewrite rather than a different constant table — which
+is exactly what the shipped record model encodes. Everything else below is the
+2026 disposition, kept as the reasoning that shaped it.
+
+Original status: DELTA TEXT FOR LEAD INTEGRATION (batch 0072, W3, executor G2). This
 file is delta input to one v0.33 candidate; nothing here changes
 `spec/kernel-spec.md`, and every byte lands only through the owner's
 exact-byte approval. Basis revision: ACTIVE v0.32 at `spec/kernel-spec.md`,

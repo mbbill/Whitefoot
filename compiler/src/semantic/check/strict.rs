@@ -4,7 +4,7 @@
 use super::super::entailment::{
     CallGoalCounterfactual, CallGoalDisposition, ClaimDisposition, PostconditionSchedule,
 };
-use super::super::goal::{first_ephemeral_argument, render_goal};
+use super::super::goal::first_ephemeral_argument;
 use super::super::model::{
     CheckedFunction, FunctionId, StrictClaimIdentity, StrictComponentDisposition,
     StrictComponentMetadata, StrictPartitionMetadata, StrictRootDisposition, StrictRootMetadata,
@@ -530,7 +530,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             concrete_caller: function.symbol.clone(),
                             concrete_callee: callee.symbol.clone(),
                             requires_clause: outcome.requires_clause.clone(),
-                            instantiated_goal: render_goal(&outcome.goal.root),
+                            instantiated_goal: outcome.rendered_goal.clone(),
                             disposition: Self::strict_disposition(outcome.goal_disposition)?,
                             view: crate::StrictProofView::Unasserted,
                             mechanical_fix,

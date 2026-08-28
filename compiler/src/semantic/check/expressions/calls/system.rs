@@ -126,7 +126,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             let expected_type = self.system_type(parameter.ty)?;
             if argument.expression.ty() != expected_type {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_type_name(expected_type)?,
+                        self.checked_type_name(argument.expression.ty())?,
+                    ),
+                );
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
             state_origins.push(self.state_origins_of_value(&argument, bindings)?);
@@ -193,15 +200,53 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if operation.regions.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(
+                SemanticRule::Sys2,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    crate::semantic::written_count(operation.regions.len(), "region argument"),
+                    "no type-argument list",
+                ),
+            );
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if arguments.len() != operation.regions.len() {
-            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(
+                SemanticRule::Sys2,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    crate::semantic::written_count(operation.regions.len(), "region argument"),
+                    crate::semantic::written_count(arguments.len(), "argument"),
+                ),
+            );
         }
         arguments
             .into_iter()
             .map(|argument| {
+                // `targ := type | REGIONID | const`, so a region argument is
+                // the one alternative carrying neither child production. The
+                // grammar decides that here, before any name is looked up: a
+                // `type` or `const` written in a region position records no
+                // region use at all, and asking the resolver for one turned a
+                // source rejection into an internal failure.
+                if self
+                    .tree
+                    .first_child_with(argument, Production::Type)?
+                    .is_some()
+                    || self
+                        .tree
+                        .first_child_with(argument, Production::Const)?
+                        .is_some()
+                {
+                    return self.issue_node(
+                        SemanticRule::Sys2,
+                        argument,
+                        SemanticIssueKind::type_mismatch(
+                            "a region argument in this position",
+                            "an argument that does not name a region",
+                        ),
+                    );
+                }
                 let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
                 match usage.target() {
                     ResolvedTarget::Source {
@@ -211,7 +256,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     _ => self.issue_node(
                         SemanticRule::Sys2,
                         argument,
-                        SemanticIssueKind::TypeMismatch,
+                        SemanticIssueKind::type_mismatch(
+                            "a region argument in this position",
+                            "an argument that does not name a region",
+                        ),
                     ),
                 }
             })

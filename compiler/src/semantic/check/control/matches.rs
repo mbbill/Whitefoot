@@ -490,7 +490,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Type5,
                         node,
-                        SemanticIssueKind::TypeMismatch,
+                        SemanticIssueKind::type_mismatch(
+                            "an enum scrutinee, whose variants the arms match",
+                            self.checked_type_name(ty)?,
+                        ),
                     );
                 };
                 let variants = variants
@@ -507,7 +510,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     variants,
                 })
             }
-            _ => self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch),
+            _ => self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "an enum scrutinee, whose variants the arms match",
+                    self.checked_type_name(ty)?,
+                ),
+            ),
         }
     }
 

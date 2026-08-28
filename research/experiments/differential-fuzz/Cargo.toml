@@ -1,0 +1,17 @@
+# A standalone crate, deliberately outside the compiler workspace and outside
+# `make check`: it spawns hundreds of compiler invocations and thousands of
+# process executions, which no build should depend on. See README.md.
+[package]
+name = "whitefoot-differential-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "wf-difffuzz"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 2

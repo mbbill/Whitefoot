@@ -174,7 +174,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let expected_type =
                 self.substitute_parameter_type(parameter.ty, signature, &actual_regions)?;
             if argument.expression.ty() != expected_type {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_type_name(expected_type)?,
+                        self.checked_type_name(argument.expression.ty())?,
+                    ),
+                );
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
             state_origins.push(self.state_origins_of_value(&argument, bindings)?);
@@ -523,7 +530,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if signature.region_parameters.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(
+                SemanticRule::Fn2,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    crate::semantic::written_count(
+                        signature.region_parameters.len(),
+                        "region argument",
+                    ),
+                    "no type-argument list",
+                ),
+            );
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let generic_count = signature.substitution.len();
@@ -531,7 +548,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .checked_add(signature.region_parameters.len())
             .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         if arguments.len() != expected {
-            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(
+                SemanticRule::Fn2,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    crate::semantic::written_count(expected, "type and region argument"),
+                    crate::semantic::written_count(arguments.len(), "argument"),
+                ),
+            );
         }
         arguments
             .into_iter()
@@ -546,7 +570,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     _ => self.issue_node(
                         SemanticRule::Fn2,
                         argument,
-                        SemanticIssueKind::TypeMismatch,
+                        SemanticIssueKind::type_mismatch(
+                            "a region argument in this position",
+                            "an argument that does not name a region",
+                        ),
                     ),
                 }
             })

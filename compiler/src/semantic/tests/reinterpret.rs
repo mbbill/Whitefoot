@@ -5,7 +5,7 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::model::{
     CheckedExpression, CheckedNumericType, CheckedStatement, FloatType, IntegerType,
 };
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const NUMERIC_TYPES: [(&str, CheckedNumericType); 10] = [
     ("i8", CheckedNumericType::Integer(IntegerType::I8)),
@@ -84,9 +84,9 @@ fn reinterpret_shape_pair_and_operand_failures_keep_their_rule_owners() {
             SemanticIssueKind::InvalidOperation,
         );
     }
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = reinterpret<i32, u32>(1_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }

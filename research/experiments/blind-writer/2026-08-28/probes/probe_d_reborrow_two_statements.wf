@@ -1,0 +1,23 @@
+fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
+  doc "Reborrows a borrowed factory inside a region that holds two statements.";
+  region 'source {
+    let permit = reserve_file<'source>(factory: &uniq 'source deref(factory));
+    match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
+      Ok(value: handle) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return 0_u8;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "Calls the walker once.";
+  let name = buffer_new(16_u64, 0_u8);
+  let code = 0_u8;
+  region 'call {
+    set code = walk<'call, 'call>(factory: &uniq 'call files, root: &'call cwd, name: &'call name);
+  }
+  return exit_status(code: code);
+}

@@ -11,7 +11,7 @@ use whitefoot::{
     CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES,
     HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
     PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
+    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
 };
 
@@ -35,12 +35,12 @@ fn run() -> Result<(), String> {
             std::fs::read(source)
                 .map_err(|error| format!("cannot read {}: {error}", source.display()))?,
         );
-        paths.push(logical_path(source, index));
+        paths.push(source_names(source, index));
     }
     let inputs: Vec<_> = paths
         .iter()
         .zip(&bytes)
-        .map(|(path, bytes)| SourceInput::new(path, bytes))
+        .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
     let overlap = if options.no_overlap {
         OverlapLowering::Off
@@ -65,8 +65,26 @@ fn run() -> Result<(), String> {
         }
         module
     } else {
-        compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
-            .map_err(|failure| failure.to_string())?
+        // The denied verdict of an I/O loop reaches the writer here, without a
+        // flag, because it is a missed optimization on the program they just
+        // compiled: a loop they wrote to read or write files lost its
+        // pipeline. The compilation succeeded, so the lines are notes on
+        // stderr, never a rejection, and a granted verdict says nothing at
+        // all. `--par-ledger` above already prints these lines inside the full
+        // report, so this branch is the only one that repeats them.
+        let (module, notices) =
+            compile_with_io_notices(&inputs, CompilerLimits::default(), overlap)
+                .map_err(|failure| failure.to_string())?;
+        for notice in &notices {
+            eprintln!("whitefootc: note: {notice}");
+        }
+        if !notices.is_empty() {
+            eprintln!(
+                "whitefootc: note: the compilation succeeded; run --par-ledger for the \
+                 complete permission report"
+            );
+        }
+        module
     };
     if options.stack_ledger {
         for line in print_stack_ledger(&module)? {
@@ -263,6 +281,27 @@ fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> 
     }
 }
 
+/// The two names one source argument carries: the bundle's own name, then the
+/// name every reader is shown.
+///
+/// The display name is the argument, unchanged. That is the whole point: an
+/// absolute path is how a script, a Makefile, and an agent all invoke this
+/// compiler, and a diagnostic or ledger line that renames the file to
+/// `input0.wf` names a file that exists nowhere on disk.
+fn source_names(path: &Path, index: usize) -> (String, String) {
+    (
+        logical_path(path, index),
+        path.to_string_lossy().into_owned(),
+    )
+}
+
+/// The bundle's own name for one source.
+///
+/// This is program identity, not presentation: it orders the bundle and
+/// detects a duplicate, and its spelling is the closed portable one, so a host
+/// path that cannot be spelled there falls back to a positional name. Nothing
+/// a reader sees comes from here — the diagnostic and the permission ledger
+/// both name the display path, which is exactly the argument the caller typed.
 fn logical_path(path: &Path, index: usize) -> String {
     let candidate = path.to_string_lossy();
     if !path.is_absolute() && portable_logical_path(&candidate) {
@@ -428,11 +467,37 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use super::Options;
+    use std::path::Path;
+
+    use super::{Options, source_names};
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
         Options::parse(&owned)
+    }
+
+    /// Every reader-facing name is the argument the caller typed, including an
+    /// absolute one, while the bundle's own key stays inside the closed
+    /// portable spelling.
+    ///
+    /// The two answers differ exactly when the host path cannot be spelled as
+    /// a logical path, and that is the case a writer meets first: a diagnostic
+    /// that renamed `/tmp/wc.wf` to `input0.wf` cited a file that does not
+    /// exist.
+    #[test]
+    fn a_source_is_shown_by_the_path_the_caller_wrote() {
+        let (logical, display) = source_names(Path::new("/tmp/wc.wf"), 0);
+        assert_eq!(display, "/tmp/wc.wf");
+        assert_eq!(logical, "input0.wf");
+
+        let (logical, display) = source_names(Path::new("../out of tree.wf"), 3);
+        assert_eq!(display, "../out of tree.wf");
+        assert_eq!(logical, "input3.wf");
+
+        // A portable relative path is already both names.
+        let (logical, display) = source_names(Path::new("programs/wc.wf"), 0);
+        assert_eq!(display, "programs/wc.wf");
+        assert_eq!(logical, "programs/wc.wf");
     }
 
     /// The permission ledger is an opt-in developer channel: off unless the

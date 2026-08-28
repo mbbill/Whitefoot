@@ -292,8 +292,14 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
             .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree)
     }
 
-    /// Resolves one checked node path to its bundle-local logical source and
-    /// exact byte extent. The pair is stable only within this checked program.
+    /// Resolves one checked node path to the name a reader is shown for its
+    /// source and its exact byte extent.
+    ///
+    /// The name is the display path — the host path the driver read the source
+    /// from — because every consumer of this pair prints it for a person to
+    /// act on. The bundle's own portable [`crate::LogicalPath`] stays the
+    /// program-internal key that orders the bundle and detects a duplicate.
+    /// The pair is stable only within this checked program.
     pub(super) fn source_identity(
         &self,
         path: &NodePath,
@@ -302,21 +308,20 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
             .node_with_path(path)
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let coordinate = self.coordinate(node)?;
-        let logical_path = self
+        let display_path = self
             .resolved
             .syntax()
             .classified_bundle()
             .source_bundle()
             .file(coordinate.source())
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?
-            .logical_path()
-            .as_str()
+            .display_path()
             .to_owned();
-        Ok((logical_path, coordinate))
+        Ok((display_path, coordinate))
     }
 
-    /// Resolves one checked node path to its bundle-local logical source and
-    /// one-based line number.
+    /// Resolves one checked node path to the name a reader is shown for its
+    /// source and its one-based line number.
     ///
     /// The line is developer-channel presentation only: the non-normative
     /// permission ledger prints it. No mandatory record and no normative
@@ -325,7 +330,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         &self,
         path: &NodePath,
     ) -> Result<(String, u64), SemanticCompilerFailure> {
-        let (logical_path, coordinate) = self.source_identity(path)?;
+        let (display_path, coordinate) = self.source_identity(path)?;
         let prefix = self
             .resolved
             .syntax()
@@ -337,7 +342,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         let line = u64::try_from(newlines)
             .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree)?
             .saturating_add(1);
-        Ok((logical_path, line))
+        Ok((display_path, line))
     }
 
     /// [`Self::source_spelling`] reached by node path rather than by node.

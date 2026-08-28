@@ -289,6 +289,11 @@ impl CanonicalGap {
         core::iter::repeat_n(b'\n', self.newlines).chain(core::iter::repeat_n(b' ', self.spaces))
     }
 
+    /// The gap as text, for a rejection to print beside what it found.
+    pub(super) fn text(self) -> String {
+        self.bytes().map(char::from).collect()
+    }
+
     /// Returns the gap's byte length.
     pub(super) fn len(self) -> Result<usize, Stop> {
         self.newlines
@@ -333,11 +338,11 @@ pub(super) fn gap_matches(
     left: Option<TerminalPredicate>,
     right: Option<TerminalPredicate>,
     work: &mut AuditWork,
-) -> Result<(bool, u64), Stop> {
+) -> Result<(bool, u64, CanonicalGap), Stop> {
     let gap = canonical_gap(style, depth, left, right)?;
     let expected_len = gap.len()?;
     let matches = bytes_match(actual, gap.bytes(), expected_len, work)?;
     let expected_len =
         u64::try_from(expected_len).map_err(|_| CanonicalCompilerFailure::CounterOverflow)?;
-    Ok((matches, expected_len))
+    Ok((matches, expected_len, gap))
 }

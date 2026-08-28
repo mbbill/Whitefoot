@@ -5,7 +5,9 @@ use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
-use super::{assert_rule, assert_unsupported, with_semantics, with_semantics_dark};
+use super::{
+    assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark,
+};
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
@@ -322,19 +324,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn buffer_effect_rows_are_checked_both_ways() {
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
         b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -403,20 +405,20 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
         SemanticIssueKind::InvalidOperation,
     );
     // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
         b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // [TYPE-5]: the one operand is the own u64 length.
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let slots = buffer_vacant<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -657,5 +659,116 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         SemanticRule::Stor5,
         expected,
+    );
+}
+
+/// [ENT-5]'s element-storage exception holds across a callee boundary: one
+/// `len` bound above every write still discharges a later requirement.
+///
+/// The rule says "for each length term `len(P)`, the root binding of `P` but
+/// not `P`'s element storage", so an element write never kills a length fact.
+/// A writer reading the rule's kill clause concluded the opposite and re-bound
+/// `len` after every call that wrote through a `&uniq` parameter: 34 of the 41
+/// length bindings in five programs existed only to re-establish a fact that
+/// had never died. Nothing in the tree showed a length fact surviving a write,
+/// so the belief cost them nothing the compiler could tell them about.
+///
+/// The second half is what makes the first half worth stating: the guard is
+/// load-bearing. Without any live length fact the call is undischarged, so the
+/// hoisted fact is doing real work rather than being redundant ceremony.
+#[test]
+fn a_hoisted_length_fact_survives_a_callee_element_write() {
+    with_semantics(
+        br#"fn fill['d](destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes one byte through the borrow and returns the next position.";
+  let room = len(deref(destination));
+  let inside = ilt(at, room);
+  if inside {
+    set deref(destination)[at] = 65_u8;
+  }
+  let next = at +wrap 1_u64;
+  return next;
+}
+
+fn emit['s](source: &'s buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = len(deref(source));
+  requires ile(length, capacity);
+} {
+  doc "Consumes a prefix whose length the caller has proved.";
+  let first = 0_u8;
+  let present = ilt(0_u64, length);
+  if present {
+    set first = deref(source)[0_u64];
+  }
+  return length;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "Emits a prefix without a live length fact.";
+  let line = buffer_new(64_u64, 0_u8);
+  let room = len(line);
+  let end = 0_u64;
+  region 'x {
+    set end = fill<'x>(destination: &uniq 'x line, at: end);
+  }
+  let fits = ile(end, room);
+  if fits {
+    region 'e {
+      let sent = emit<'e>(source: &'e line, length: end);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a length fact bound above the write must survive it: {outcome:?}");
+            };
+        },
+    );
+    with_semantics(
+        br#"fn fill['d](destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes one byte through the borrow and returns the next position.";
+  let room = len(deref(destination));
+  let inside = ilt(at, room);
+  if inside {
+    set deref(destination)[at] = 65_u8;
+  }
+  let next = at +wrap 1_u64;
+  return next;
+}
+
+fn emit['s](source: &'s buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = len(deref(source));
+  requires ile(length, capacity);
+} {
+  doc "Consumes a prefix whose length the caller has proved.";
+  let first = 0_u8;
+  let present = ilt(0_u64, length);
+  if present {
+    set first = deref(source)[0_u64];
+  }
+  return length;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "Emits a prefix without a live length fact.";
+  let line = buffer_new(64_u64, 0_u8);
+  let end = 0_u64;
+  region 'x {
+    set end = fill<'x>(destination: &uniq 'x line, at: end);
+  }
+  region 'e {
+    let sent = emit<'e>(source: &'e line, length: end);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("with no length fact at all the call is undischarged: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn8);
+        },
     );
 }

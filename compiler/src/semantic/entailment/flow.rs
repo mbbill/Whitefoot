@@ -26,8 +26,8 @@ use super::super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
     CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
     CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
-    ValueInitializerKind,
+    CheckedNominalKind, CheckedNumericType, CheckedSetTarget, CheckedStatement, CheckedType,
+    CheckedValue, FloatType, IntegerType, ValueInitializerKind,
 };
 use super::super::places::{BindingSummary, PlaceMap, ResolvedPlace};
 use super::super::postcondition::{
@@ -4993,11 +4993,13 @@ impl Analyzer<'_, '_> {
             self.derivations
                 .add_root(DerivationRootKind::CallGoal(ordinal), root);
         }
+        let rendered_goal = self.render_concrete_goal(&goal.root);
         self.call_goals.push(CallGoalOutcome {
             node_path: node_path.clone(),
             callee,
             requires_clause,
             goal,
+            rendered_goal,
             argument_count: u32::try_from(argument_count)
                 .expect("ENT call argument count exceeds the u32 identity space"),
             disposition,
@@ -5018,11 +5020,13 @@ impl Analyzer<'_, '_> {
     ) -> CallGoalCounterfactual {
         let (goal_disposition, goal_evidence, derivation) =
             self.call_goal_disposition(&goal, state);
+        let rendered_goal = self.render_concrete_goal(&goal.root);
         CallGoalCounterfactual {
             node_path: node_path.clone(),
             callee,
             requires_clause,
             goal,
+            rendered_goal,
             actual_obligations_ok,
             goal_disposition,
             goal_evidence,
@@ -5426,10 +5430,11 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        let Some(buffer_ordinal) = row
+        let Some((buffer_ordinal, buffer_parameter)) = row
             .parameters
             .iter()
-            .position(|parameter| parameter.ty == crate::SystemTypeRef::BufferU8)
+            .enumerate()
+            .find(|(_, parameter)| parameter.ty == crate::SystemTypeRef::BufferU8)
         else {
             return;
         };
@@ -5483,33 +5488,48 @@ impl Analyzer<'_, '_> {
             );
         }
 
-        let Some(end_goal) = end_goal else {
-            self.judge_unrepresentable_system_range(
-                node_path,
-                1,
-                format!("{} <= len(buffer)", self.render_expression(end)),
-                states,
-            );
-            return;
-        };
-        let (buffer_binding, buffer_fields, buffer_element) = match buffer {
+        // The second conjunct bounds the end against the caller's own buffer,
+        // so the residual names the caller's place — `wide <= len(header)` —
+        // the way [OP-4]'s bounds residual does. Printing the operation's
+        // declared parameter name instead leaves a writer with two buffers in
+        // scope unable to tell which one the bound is about. The declared name
+        // remains the fallback for an argument that carries no place at all.
+        let buffer_root = match buffer {
             CheckedExpression::BorrowBuffer { root, .. } => {
-                (root.binding, root.fields.clone(), root.element)
+                Some((root.binding, root.fields.clone(), root.element))
             }
             CheckedExpression::Binding {
                 binding,
                 ty: CheckedType::Buffer { element },
                 ..
-            } => (*binding, Vec::new(), *element),
-            _ => {
-                self.judge_unrepresentable_system_range(
-                    node_path,
-                    1,
-                    format!("{} <= len(buffer)", self.render_expression(end)),
-                    states,
-                );
-                return;
-            }
+            } => Some((*binding, Vec::new(), *element)),
+            _ => None,
+        };
+        let buffer_spelling = match &buffer_root {
+            Some((binding, fields, _)) => self.render_place(&PlaceTerm {
+                root: PlaceRoot::Binding(*binding),
+                deref: self.is_holder(*binding),
+                fields: fields.clone(),
+            }),
+            None => buffer_parameter.name.to_owned(),
+        };
+        let Some(end_goal) = end_goal else {
+            self.judge_unrepresentable_system_range(
+                node_path,
+                1,
+                format!("{} <= len({buffer_spelling})", self.render_expression(end)),
+                states,
+            );
+            return;
+        };
+        let Some((buffer_binding, buffer_fields, buffer_element)) = buffer_root else {
+            self.judge_unrepresentable_system_range(
+                node_path,
+                1,
+                format!("{} <= len({buffer_spelling})", self.render_expression(end)),
+                states,
+            );
+            return;
         };
         let buffer_goal = self.goal_binding_place(
             buffer_binding,
@@ -5540,7 +5560,7 @@ impl Analyzer<'_, '_> {
             comparison(end_goal, length_goal),
             end_term,
             length_term,
-            format!("{} <= len(buffer)", self.render_expression(end)),
+            format!("{} <= len({buffer_spelling})", self.render_expression(end)),
             states,
         );
     }
@@ -8295,6 +8315,118 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// One concrete [FN-8] call goal in the terms the source wrote it in.
+    ///
+    /// The structural dump this replaced published `Integer { operation:
+    /// LessEqual, .. }(Place { root: BindingId(6), .. })`: a writer cannot find
+    /// either half in their own program, and the blind-writer trial of
+    /// 2026-08-28 recorded four rounds of readers failing to. [OP-4] and
+    /// [SYS-8] already publish their residual as source terms from the
+    /// renderers below, so FN-8 publishes its goal from the same ones. The
+    /// operation spellings come from the compiler's own exhaustive maps, which
+    /// `semantic::tests::operation_table` locks against the specification.
+    pub(super) fn render_concrete_goal(&self, expression: &GoalExpression) -> String {
+        match expression {
+            GoalExpression::Datum(datum) => self.render_goal_datum(datum),
+            GoalExpression::Operation { row, arguments, .. } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.render_concrete_goal(argument))
+                    .collect::<Vec<_>>();
+                render_goal_row(row, &arguments)
+            }
+        }
+    }
+
+    fn render_goal_datum(&self, datum: &GoalDatum) -> String {
+        match datum {
+            // A concrete goal has no formal left in it, but a template
+            // rendered through this path names the position the formal holds.
+            GoalDatum::Parameter {
+                ordinal,
+                projections,
+                ..
+            } => self.render_goal_projections(format!("parameter #{ordinal}"), None, projections),
+            GoalDatum::NamedConst {
+                declaration,
+                projections,
+                ..
+            } => {
+                let (name, ty) = self.context.constant(*declaration).map_or_else(
+                    || ("?".to_owned(), None),
+                    |constant| (constant.name.clone(), Some(constant.ty)),
+                );
+                self.render_goal_projections(name, ty, projections)
+            }
+            GoalDatum::Place {
+                root, projections, ..
+            } => {
+                let base = self.binding_name(*root);
+                let ty = self.summary(*root).and_then(|summary| summary.ty);
+                // A holder's own name selects the holder; the source spells
+                // the referent `deref(h)`, and the goal carries that deref as
+                // a projection only where the source wrote one.
+                let implicit = self.is_holder(*root)
+                    && !matches!(projections.first(), Some(GoalProjection::Deref));
+                let base = if implicit {
+                    format!("deref({base})")
+                } else {
+                    base
+                };
+                self.render_goal_projections(base, ty, projections)
+            }
+            // Source cannot name this datum: it is the already-evaluated
+            // pre-transfer value of one direct-subscript actual, so the
+            // rendering says which argument it is instead of inventing a
+            // spelling. FN-8's stronger repair for exactly this shape is to
+            // bind it first, which then gives it a name.
+            GoalDatum::EphemeralActual { argument, .. } => {
+                format!("<argument #{argument} pre-transfer value>")
+            }
+            GoalDatum::Literal(value) => match value {
+                CheckedValue::Integer { ty, bits } => {
+                    format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty))
+                }
+                other => format!("{other:?}"),
+            },
+        }
+    }
+
+    fn render_goal_projections(
+        &self,
+        base: String,
+        root_type: Option<CheckedType>,
+        projections: &[GoalProjection],
+    ) -> String {
+        let mut rendered = base;
+        let mut ty = root_type;
+        for projection in projections {
+            match projection {
+                GoalProjection::Deref => {
+                    rendered = format!("deref({rendered})");
+                    ty = ty.and_then(|current| self.deref_type(current));
+                }
+                GoalProjection::Field(field) => {
+                    match ty
+                        .and_then(|current| self.field_name(current, *field))
+                        .unwrap_or(None)
+                    {
+                        Some((name, field_type)) => {
+                            rendered.push('.');
+                            rendered.push_str(&name);
+                            ty = Some(field_type);
+                        }
+                        None => {
+                            rendered.push_str(".?");
+                            ty = None;
+                        }
+                    }
+                }
+            }
+        }
+        rendered
+    }
+
     fn render_expression(&self, expression: &CheckedExpression) -> String {
         match expression {
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) => {
@@ -8442,6 +8574,70 @@ fn legacy_place(path: &ProjectedPlaceTerm) -> Option<PlaceTerm> {
         deref,
         fields,
     })
+}
+
+/// One goal operation applied to already-rendered operands, in the spelling
+/// the source uses for that row.
+///
+/// An operation whose [OP-1] spelling is a call name renders as a call; the
+/// arithmetic rows, whose only spelling is the infix operator [GRAM-6], render
+/// as the infix expression a writer would have to write.
+fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
+    match row {
+        GoalOperation::Integer { operation, .. } => {
+            render_operation_spelling(operation.spelling(), arguments)
+        }
+        GoalOperation::Float { operation, .. } => {
+            render_operation_spelling(operation.spelling(), arguments)
+        }
+        GoalOperation::Boolean(operation) => {
+            render_operation_spelling(operation.spelling(), arguments)
+        }
+        GoalOperation::EnumEquality { equal, .. } => {
+            render_operation_spelling(if *equal { "ieq" } else { "ine" }, arguments)
+        }
+        GoalOperation::NumericConversion {
+            source,
+            destination,
+        } => format!(
+            "cvt<{}, {}>({})",
+            numeric_type_name(*source),
+            numeric_type_name(*destination),
+            arguments.join(", ")
+        ),
+        GoalOperation::Reinterpret {
+            source,
+            destination,
+        } => format!(
+            "reinterpret<{}, {}>({})",
+            numeric_type_name(*source),
+            numeric_type_name(*destination),
+            arguments.join(", ")
+        ),
+        GoalOperation::ArrayFill { .. } => render_operation_spelling("array_new", arguments),
+        GoalOperation::ArrayLength { .. }
+        | GoalOperation::BufferLength { .. }
+        | GoalOperation::SliceLength { .. } => render_operation_spelling("len", arguments),
+        GoalOperation::BufferFits { .. } => render_operation_spelling("buffer_fits", arguments),
+    }
+}
+
+/// A call spelling renders `name(a, b)`; an operator spelling renders the
+/// binary infix form, which is the only form [GRAM-6] admits for those rows.
+fn render_operation_spelling(spelling: &str, arguments: &[String]) -> String {
+    let infix = !spelling.starts_with(|first: char| first.is_ascii_alphabetic());
+    match (infix, arguments) {
+        (true, [left, right]) => format!("{left} {spelling} {right}"),
+        _ => format!("{spelling}({})", arguments.join(", ")),
+    }
+}
+
+const fn numeric_type_name(ty: CheckedNumericType) -> &'static str {
+    match ty {
+        CheckedNumericType::Integer(integer) => integer_type_name(integer),
+        CheckedNumericType::Float(FloatType::F32) => "f32",
+        CheckedNumericType::Float(FloatType::F64) => "f64",
+    }
 }
 
 const fn integer_type_name(ty: IntegerType) -> &'static str {

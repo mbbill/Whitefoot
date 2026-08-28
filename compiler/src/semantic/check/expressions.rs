@@ -34,6 +34,48 @@ struct PlaceUseOptions {
     loop_depth: usize,
 }
 
+/// Which mutation statement is forming this target.
+///
+/// [SET-1] and [SET-2] share the whole writability relation and differ only in
+/// the final selected type's required [OWN-1] class, so one judgment serves
+/// both and this says which side of it applies. The `set` side carries the
+/// [STOR-1] restructuring its own right-hand side admits: `replace` is the
+/// right answer only when the right-hand side leaves the target root alive, so
+/// the statement that knows the right-hand side chooses the sentence.
+#[derive(Clone, Copy)]
+pub(super) enum MutationForm {
+    /// `set p = e`, with the [STOR-1] restructuring `e` admits.
+    Set {
+        /// The fix [STOR-1] offers for an affine target of this statement.
+        affine_fix: &'static str,
+    },
+    /// `replace p = e`.
+    Replace,
+}
+
+impl MutationForm {
+    /// Whether this is the [SET-2] side, whose commit also reads the target.
+    pub(super) const fn is_replace(self) -> bool {
+        matches!(self, Self::Replace)
+    }
+}
+
+/// [STOR-1]'s ordinary restructuring: `replace` names the previous owner.
+pub(super) const STOR1_REPLACE: &str =
+    "use replace: let old = replace p = e; binds the previous owner";
+
+/// [STOR-1]'s restructuring when the right-hand side consumes the target root.
+///
+/// `replace` cannot help there: it commits the value into the very root the
+/// right-hand side moved out of, so applying it produces the next rule's
+/// rejection instead of an accepted program. The blind-writer trial of
+/// 2026-08-28 recorded a writer spending two of six compile attempts on
+/// exactly that pair -- `[STOR-1]` offering `replace`, then `[OWN-1]`
+/// rejecting the result as a use after move -- so this offers the fresh `let`
+/// that `[OWN-1]` accepts.
+pub(super) const STOR1_FRESH_LET: &str = "the right-hand side consumes the target root, so replace cannot commit into it: \
+     bind the result under a new let, and combine it with the old value field by field";
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// [SET-2] target formation: exactly [SET-1]'s relation with the
     /// copy/affine class judgment inverted and the region-free demand added.
@@ -44,7 +86,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
-        self.check_mutation_target(function, node, bindings, loop_depth, true)
+        self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Replace)
     }
 
     pub(super) fn check_set_target(
@@ -53,8 +95,75 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
+        affine_fix: &'static str,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
-        self.check_mutation_target(function, node, bindings, loop_depth, false)
+        self.check_mutation_target(
+            function,
+            node,
+            bindings,
+            loop_depth,
+            MutationForm::Set { affine_fix },
+        )
+    }
+
+    /// Which [STOR-1] restructuring this `set` statement's right-hand side
+    /// admits.
+    ///
+    /// `replace` writes the new value into the target's own root and binds the
+    /// previous owner out of it. That works whenever the root is still alive at
+    /// the commit. It cannot work when the right-hand side moved the root away
+    /// to compute the value, because there is then no live owner to bind and
+    /// [OWN-1] rejects the reuse -- so a mechanical fix that offered `replace`
+    /// there spent an attempt and left the writer where they started. The
+    /// discriminator is exactly the written `move` of the target's root
+    /// somewhere in the value expression.
+    ///
+    /// This reads syntax, not the checked value: it runs before the target is
+    /// formed, so nothing here accepts or rejects anything. Only which of two
+    /// sentences a rejection prints depends on it.
+    pub(super) fn set_affine_restructuring(
+        &self,
+        target: NodeId,
+        value: NodeId,
+    ) -> Result<&'static str, CheckStop> {
+        let Some(root) = self.place_root_declaration(target)? else {
+            return Ok(STOR1_REPLACE);
+        };
+        for atom in self.tree.descendants_with(value, Production::Atom)? {
+            if !self.has_fixed(atom, FixedTerminal::Move)? {
+                continue;
+            }
+            let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+                continue;
+            };
+            if self.place_root_declaration(place)? == Some(root) {
+                return Ok(STOR1_FRESH_LET);
+            }
+        }
+        Ok(STOR1_REPLACE)
+    }
+
+    /// The source declaration a written place is rooted at, when its base is a
+    /// bare name.
+    ///
+    /// A `deref` base is rooted in a holder rather than in the storage the
+    /// place selects, and the question above is about the storage, so it
+    /// answers `None` and the ordinary restructuring stands.
+    fn place_root_declaration(&self, place: NodeId) -> Result<Option<DeclarationId>, CheckStop> {
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(None);
+        };
+        if self.has_fixed(pbase, FixedTerminal::Deref)? || !self.tree.children(pbase)?.is_empty() {
+            return Ok(None);
+        }
+        let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        Ok(match usage.target() {
+            ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Value,
+            } => Some(declaration),
+            _ => None,
+        })
     }
 
     /// One judgment of a place's [SET-1]/[SET-2] mutation-target class: the
@@ -66,7 +175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        for_replace: bool,
+        form: MutationForm,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let pbase = self
             .tree
@@ -96,17 +205,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_indexed_set_target(
-                function,
-                node,
-                &suffixes,
-                subscript,
-                bindings,
-                loop_depth,
-                for_replace,
+                function, node, &suffixes, subscript, bindings, loop_depth, form,
             );
         }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.check_dereferenced_set_target(node, pbase, bindings, for_replace);
+            return self.check_dereferenced_set_target(node, pbase, bindings, form);
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -170,11 +273,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         self.check_loan_access(bindings, None, &resolved, AccessKind::Write, node)?;
 
-        self.check_mutation_target_class(node, ty, for_replace)?;
+        self.check_mutation_target_class(node, ty, form)?;
         let mut effects = EffectSet::NONE;
         for path in self.effect_paths_for_place(&resolved, bindings)? {
             effects.add_write(path.clone());
-            if for_replace {
+            if form.is_replace() {
                 effects.add_read(path);
             }
         }
@@ -197,9 +300,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         ty: CheckedType,
-        for_replace: bool,
+        form: MutationForm,
     ) -> Result<(), CheckStop> {
-        if for_replace {
+        let MutationForm::Set { affine_fix } = form else {
             if self.is_copy_type(ty)? {
                 return self.issue_node(
                     SemanticRule::Set2,
@@ -222,18 +325,54 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
             return Ok(());
-        }
+        };
         if !self.is_copy_type(ty)? {
             return self.issue_node(
                 SemanticRule::Stor1,
                 node,
                 SemanticIssueKind::AffineSetTarget {
                     target_type: self.checked_type_name(ty)?,
-                    mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+                    mechanical_fix: affine_fix,
                 },
             );
         }
         Ok(())
+    }
+
+    /// One value's exact written mode and type, as `own u64`, `&'r
+    /// buffer<u8>`, or `&uniq 'r Output`.
+    pub(in crate::semantic::check) fn checked_value_name(
+        &self,
+        mode: CheckedMode,
+        ty: CheckedType,
+    ) -> Result<String, CheckStop> {
+        Ok(format!(
+            "{} {}",
+            self.checked_mode_name(mode)?,
+            self.checked_type_name(ty)?
+        ))
+    }
+
+    /// One written mode, with the region spelled as the source spells it.
+    pub(in crate::semantic::check) fn checked_mode_name(
+        &self,
+        mode: CheckedMode,
+    ) -> Result<String, CheckStop> {
+        Ok(match mode {
+            CheckedMode::Own => "own".to_owned(),
+            CheckedMode::Shared(region) => format!("&{}", self.region_spelling(region)),
+            CheckedMode::Unique(region) => format!("&uniq {}", self.region_spelling(region)),
+        })
+    }
+
+    /// One region as the source spells it, or its dense identity when the
+    /// declaration is not reachable.
+    ///
+    /// A rendering is presentation: a region a diagnostic cannot name must not
+    /// turn a source rejection into a compiler failure.
+    pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
+        self.declaration_spelling(region)
+            .unwrap_or_else(|_| format!("'region#{}", region.index()))
     }
 
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
@@ -271,8 +410,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
             CheckedType::Slice { region, element } => format!(
-                "slice<'region#{}, {}>",
-                region.index(),
+                "slice<{}, {}>",
+                self.region_spelling(region),
                 self.checked_type_name(element.ty())?
             ),
             CheckedType::Buffer { element } => {
@@ -367,7 +506,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch(
+                        "a source struct, whose declared field this suffix selects",
+                        self.checked_type_name(ty)?,
+                    ),
                 );
             };
             let CheckedNominalKind::Struct {
@@ -377,7 +519,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch(
+                        "a source struct, whose declared field this suffix selects",
+                        self.checked_type_name(ty)?,
+                    ),
                 );
             };
             let Some((index, field)) = declared_fields
@@ -388,7 +533,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Type5,
                     suffix,
-                    SemanticIssueKind::TypeMismatch,
+                    SemanticIssueKind::type_mismatch(
+                        format!("a declared field of {}", self.checked_type_name(ty)?),
+                        format!("the field name `{name}`, which that struct does not declare"),
+                    ),
                 );
             };
             fields
@@ -695,7 +843,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedValue::NumericIdentity { ty, one }
             }
             _ => {
-                return self.issue_node(SemanticRule::Form5, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(
+                    SemanticRule::Form5,
+                    node,
+                    SemanticIssueKind::type_mismatch(
+                        "an integer or float type, whose 0 and 1 this form names",
+                        self.checked_type_name(ty)?,
+                    ),
+                );
             }
         };
         Ok(TypedExpression::owned(
@@ -1024,7 +1179,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        for_replace: bool,
+        form: MutationForm,
         root: (LocalBinding, OwnedContent),
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let (local, content) = root;
@@ -1055,7 +1210,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             AccessKind::Write,
             node,
         )?;
-        self.check_mutation_target_class(node, ty, for_replace)?;
+        self.check_mutation_target_class(node, ty, form)?;
         // TEMPORARY capability stop, judged after every [OWN-1], [OWN-5], and
         // [STOR-1] source rejection above.
         match content {
@@ -1073,7 +1228,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        for_replace: bool,
+        form: MutationForm,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         // [SET-1] makes a `deref` target writable through either of two roots:
         // an explicit `deref` of a live usable `&uniq` holder, or a live
@@ -1085,7 +1240,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // misreported as invalid source, and the mutation-target twin of the
         // same defect in the borrow dispatch.
         if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
-            return self.check_owned_content_set_target(node, bindings, for_replace, root);
+            return self.check_owned_content_set_target(node, bindings, form, root);
         }
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
@@ -1107,11 +1262,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             AccessKind::Write,
             node,
         )?;
-        self.check_mutation_target_class(node, ty, for_replace)?;
+        self.check_mutation_target_class(node, ty, form)?;
         let mut effects = EffectSet::NONE;
         for path in self.effect_paths_for_place(&resolved, bindings)? {
             effects.add_write(path.clone());
-            if for_replace {
+            if form.is_replace() {
                 // [SET-2, EFF-2]: the commit is one read and one write of
                 // the target's ultimate storage origin.
                 effects.add_read(path);
@@ -1296,7 +1451,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let value = self.check_atom(function, atom, bindings, loop_depth)?;
             if value.expression.ty() != declared.ty {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_type_name(declared.ty)?,
+                        self.checked_type_name(value.expression.ty())?,
+                    ),
+                );
             }
             if value.mode != CheckedMode::Own {
                 return self.issue_node(

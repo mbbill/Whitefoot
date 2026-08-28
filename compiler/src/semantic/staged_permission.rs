@@ -241,6 +241,11 @@ pub(crate) enum Disposition {
 }
 
 impl Disposition {
+    /// Whether this row is one of the reasons its loop lost the pipeline.
+    pub(crate) const fn is_denied(self) -> bool {
+        matches!(self, Self::Denied)
+    }
+
     /// The word the ledger prints.
     pub(crate) const fn spelling(self) -> &'static str {
         match self {
@@ -284,6 +289,11 @@ pub(crate) enum StagedDenial {
         edge: &'static str,
         /// Absent for a `break_stmt`, which carries no node path.
         statement: Option<NodePath>,
+        /// Whether the edge is the cut statement's own, so the submission's
+        /// outcome selects it directly. Such an edge cannot be moved ahead of
+        /// the submission by any rewrite, and the remedy has to say so rather
+        /// than repeat advice the writer cannot take.
+        selected_by_submission: bool,
     },
     /// Condition 3: a `may-suspend` call retains a borrow on enclosing storage
     /// the body writes.
@@ -343,6 +353,26 @@ pub(crate) enum StagedDenial {
     Unresolved { argument: NodePath },
 }
 
+/// Condition 2's two remedies, and condition 3's for storage carrying one
+/// position.
+///
+/// A remedy a writer cannot take is worse than no remedy: the blind-writer
+/// verification of 2026-08-28 met the condition-2 sentence on a read-to-EOF
+/// loop whose only exit is selected by the read's own `ReadEnd` outcome, and
+/// the sentence told them to move an exit that cannot be moved. The rule is
+/// not changed here; the report is made honest about what it can and cannot
+/// stage, and it names the loop shapes that are staged today.
+const EXIT_IN_REMAINDER: &str = "take every early return, break, or propagate in the prologue, before the body's first I/O submission. Where the exit is selected by the may-suspend call's own outcome — a read-to-EOF loop's `ReadEnd` break is — it cannot be taken before the submission and PAR-3 cannot stage that loop as written: the shapes staged today are a fixed-trip bounded loop and a per-file loop over names, and one file's chunk loop stays sequential";
+const EXIT_SELECTED_BY_SUBMISSION: &str = "PAR-3 cannot stage this loop as written: the submission's own outcome selects this edge, so no rewrite takes it before the submission. The shapes staged today are a fixed-trip bounded loop and a per-file loop over names; one file's chunk loop stays sequential";
+/// Condition 3 and 4's remedy for storage that carries one position.
+///
+/// Replication is not advice a writer can take for an output stream or an
+/// enumeration cursor, and "leave this loop sequential" was the only other
+/// half. The remedy that works for a stream the body only publishes to is to
+/// take the write out of the loop entirely, which the verification's own
+/// probe pair showed flips the same loop to permitted.
+const ONE_POSITION: &str = "give each iteration its own resource; or, where the body only publishes to that storage — an output stream is the pointed case — hoist the per-iteration write out of the loop, folding a total in the body and writing it once after the loop; or leave this loop sequential, because storage that carries one position cannot be held by two iterations at once";
+
 impl StagedDenial {
     /// The judgment condition this denial cites. The ledger prints it and the
     /// judgment tests assert it; acceptance never reads it.
@@ -367,9 +397,11 @@ impl StagedDenial {
             Self::NoCut { .. } => {
                 "write the body so its first I/O submission is reached on every path through it and everything else is reached only through it"
             }
-            Self::ExitInRemainder { .. } => {
-                "take every early return, break, or propagate in the prologue, before the body's first I/O submission"
-            }
+            Self::ExitInRemainder {
+                selected_by_submission: true,
+                ..
+            } => EXIT_SELECTED_BY_SUBMISSION,
+            Self::ExitInRemainder { .. } => EXIT_IN_REMAINDER,
             // A denial the [OWN-7] class decided is not about one path. The
             // writer sees two statements naming different paths, so the advice
             // has to say they are one storage before any of the advice below
@@ -393,9 +425,7 @@ impl StagedDenial {
             // Storage with one position — an enumeration cursor is the pointed
             // case — cannot be given to two iterations at once at any element
             // type, so the per-iteration form is not advice a writer can take.
-            Self::RetainedBorrow { .. } | Self::RemainderExclusiveLoan { .. } => {
-                "give each iteration its own resource, or leave this loop sequential: storage that carries one position cannot be held by two iterations at once"
-            }
+            Self::RetainedBorrow { .. } | Self::RemainderExclusiveLoan { .. } => ONE_POSITION,
             Self::NoDisposition {
                 overlapping: Some(_),
                 ..
@@ -979,7 +1009,7 @@ struct StagedSurvey<'check, 'run> {
     not_replicable: Option<NodePath>,
     /// The first edge that leaves the loop from the remainder, which is
     /// condition 2's whole content.
-    exit_in_remainder: Option<(&'static str, Option<NodePath>)>,
+    exit_in_remainder: Option<(&'static str, Option<NodePath>, bool)>,
 }
 
 impl<'check> StagedSurvey<'check, '_> {
@@ -1079,7 +1109,7 @@ impl<'check> StagedSurvey<'check, '_> {
         if let (Segment::Remainder, Some(edge)) = (edge_segment, node.leaves)
             && self.exit_in_remainder.is_none()
         {
-            self.exit_in_remainder = Some((edge, statement_citation(node.statement)));
+            self.exit_in_remainder = Some((edge, statement_citation(node.statement), is_cut));
         }
         let statement = node.statement;
         let citation = statement_citation(statement).unwrap_or_else(|| self.cut.clone());
@@ -1470,10 +1500,11 @@ impl<'check> StagedSurvey<'check, '_> {
         if let Some((form, admits)) = self.form_refusal {
             return Some(StagedDenial::BodyForm { form, admits });
         }
-        if let Some((edge, statement)) = &self.exit_in_remainder {
+        if let Some((edge, statement, selected_by_submission)) = &self.exit_in_remainder {
             return Some(StagedDenial::ExitInRemainder {
                 edge,
                 statement: statement.clone(),
+                selected_by_submission: *selected_by_submission,
             });
         }
         for (entry, class) in self.touched.iter().zip(classes) {

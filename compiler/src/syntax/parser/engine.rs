@@ -113,12 +113,15 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 requested: actual,
             })
         })?;
+        let in_contract = self.frames.last().is_some_and(|frame| frame.in_contract)
+            || production == Production::ContractBlock;
         self.frames.push(Frame {
             production,
             element_start: self.elements.len(),
             child_count: 0,
             extent: None,
             atom_only,
+            in_contract,
         });
         Ok(())
     }
@@ -151,6 +154,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         Ok(ProbeContext {
             production: frame.production,
             atom_only: frame.atom_only,
+            in_contract: frame.in_contract,
         })
     }
 

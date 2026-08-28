@@ -4,12 +4,15 @@ Status: measured at the program level on 2026-08-27, on macOS and on Linux
 with io_uring, re-measured the same day with the base commit and the branch
 interleaved in one plan on a quiet host, then measured on real Linux hardware
 and on a clean macOS host through the repository's own continuous integration,
-and finally against a read-dominated workload whose files are opened once and
-whose reads are taken past the page cache.
+then against a read-dominated workload whose files are opened once and
+whose reads are taken past the page cache, and finally re-measured on 2026-08-28
+after the Darwin helper path's per-operation cost was rebuilt.
 
-Read the batch-0092 section first: it is the only workload here whose
-operations genuinely wait, and it is where the design's own question is
-answered. Read the batch-0090 section for the Linux-hardware result that the
+Read the batch-0096 section last and the batch-0092 section first. Batch 0092
+is the only workload here whose operations genuinely wait, and it is where the
+design's own question is answered; batch 0096 is the same workload re-measured
+after the Darwin adapter was changed, and it is the current reading of the
+standing bar. Read the batch-0090 section for the Linux-hardware result that the
 container's headline ratio does not reproduce, the batch-0086 one for absolute
 values on the many-files workload, and the batch-0084 one for the findings it
 established; everything before that date was a C-level measurement of the
@@ -27,7 +30,8 @@ make -C research/experiments/io-completion-bench bench-read   # macOS, read-heav
 make -C research/experiments/io-completion-bench linux-read   # Linux, read-heavy
 ```
 
-The runner tables come from `.github/workflows/io-hosts.yml`: `bench-linux`
+The runner tables come from `.github/workflows/io-bench.yml` (until batch 0093
+they lived in `io-hosts.yml`): `bench-linux`
 runs `linux-bench.sh` on Linux hardware with no container in the way, and
 `bench-linux-read` and `bench-macos-read` run `read-bench.sh` on both hosts.
 Every one of them uploads its table as a job artifact and prints it to the job
@@ -40,7 +44,10 @@ Batch 0084's and 0086's "overlap is worth about two times on a program that
 exposes width" was a macOS reading taken on a machine whose endpoint-security
 stack charges 116 us for an `openat`; batch 0092 re-ran that workload on an
 ordinary macOS system and found the completion build 1.20 times *slower* than
-its own sequential build. Neither retirement touches what those sections
+its own sequential build. Batch 0096 narrowed that 1.20 to 1.02 by removing
+per-operation cost from the Darwin adapter, which changes the size of the gap
+and not its sign: on this workload the completion build is still not faster
+than the sequential one. Neither retirement touches what those sections
 measured; both change what may be concluded from it.
 
 ## Program-level results, batch 0084 (2026-08-27)
@@ -417,7 +424,7 @@ project's macOS machine: an aarch64 guest with two virtual CPUs, its tree on
 the container's own overlay filesystem. That is a Linux kernel, but it is not
 Linux hardware, and the section below shows the difference is not a rounding
 error. These numbers come from GitHub-hosted `ubuntu-24.04` runners through
-`.github/workflows/io-hosts.yml`, which builds the bundle natively — no
+`.github/workflows/io-bench.yml` (then `io-hosts.yml`), which builds the bundle natively — no
 container, no bind mount — and runs `linux-bench.sh` with the same protocol,
 the same `workload.h`, and the same published checksum.
 
@@ -698,9 +705,11 @@ underneath its own page cache there is a host cache it cannot address.
 
 The 4 KiB table is the cleanest measurement in this document. Its probe
 confirmed the uncached label immediately before *and* immediately after the
-table, no line's minimum or maximum is more than four per cent from its own
-median across seven interleaved passes, and every read in it reached the
-device.
+table, no line's minimum or maximum is more than six per cent from its own
+median across seven interleaved passes — seventeen of the twenty lines are
+inside four per cent, and the three that are not are `N.pool1` at +4.96,
+`N.pool2` at -4.97 and +5.31, and `C.narrow.h1` at +5.96 — and every read in
+it reached the device.
 
 ```text
 == read-heavy 4 KiB, uncached (WF_IO_NOCACHE=1) ==
@@ -1104,6 +1113,766 @@ on before any line reports a time.
 What it does *not* do is make a table uncached on its own. It cannot evict,
 so the tree has to arrive non-resident and be checked; that is what the
 regeneration and the probes above are for.
+
+## Darwin helper-path cost, batch 0096 (2026-08-28)
+
+Batch 0092 left one result standing on macOS: where operations wait the
+completion model works, and where they do not it costs. This section is the
+re-measurement after batch 0096 rebuilt the Darwin helper path's
+per-operation cost. It is the same workload, the same script and the same
+runner label as the batch-0092 macOS section above, which is the **before**
+for every number here.
+
+- **before**: batch-0092 macOS-runner section above.
+- **after**: run
+  [33155821397](https://github.com/mbbill/Whitefoot/actions/runs/33155821397),
+  commit `266acf4f`, branch `batch/0096-darwin-handoff`.
+- **hosts**: `bench-macos-read` on `macos-14` — Darwin 23.6.0, macOS 14.8.7,
+  Apple M1 (Virtual), 3 CPUs, 7516192768 B, load 5.29 at start;
+  `bench-linux-read` on `ubuntu-24.04`.
+- **passes**: two unrecorded warm-up passes and then seven recorded ones per
+  table, interleaved, order reversed every other pass, medians of the seven
+  reported. (`io-bench.yml` sets `ROUNDS: "7"`, `WARMUP: "2"` for both
+  read-bench jobs. The stage-attribution table in
+  `docs/done/0096-darwin-handoff.md` says nine, and that is a different count
+  and correct for it: the trace prints on the warm-up passes too.) Every
+  table's cache label is probed immediately before and after it and the
+  verdict is printed beside it.
+
+The two draws are separate draws of the `macos-14` label, so **ratios within a
+run are the evidence and absolute milliseconds across runs are not.** They
+happen to be well matched on the warm and many-files halves — `N.direct` warm
+4 KiB 33.10 before against 33.04 after, `N.pool8` many-files 57.95 against
+58.10 — and not matched on the cold halves, where this draw is faster on every
+line including the native baselines.
+
+### Every io-bench draw on this branch
+
+Three rounds of this record miscounted its own draws — "the only", "four of",
+"three of the five" — every time because a run had been left out of a count
+taken in prose. This table is the repair, and the prose below no longer
+counts: it cites rows.
+
+It is not a selection. It is every `io-bench` run on
+`batch/0096-darwin-handoff`, enumerated with
+
+```text
+gh run list --branch batch/0096-darwin-handoff --workflow io-bench.yml \
+  --limit 50 --json databaseId,headSha,conclusion,createdAt
+```
+
+which answers nine, with every artifact of all nine downloaded and parsed.
+Nine runs against ten tables apiece — `bench-linux` (many files),
+`bench-linux-read` (uncached and warm at 64 KiB and 4 KiB), and
+`bench-macos-read`, whose artifact carries a many-files half as well as the
+same four read tables — would be ninety rows; two runs were cancelled part way
+and produced eight and seven tables instead of ten, so there are **85 rows,
+one per (run, job, table)**. The cancelled runs' completed tables are kept and
+their run ids marked `*`: a cancelled `bench-linux-read` job does not make its
+`bench-macos-read` sibling's tables less real, and dropping them is exactly the
+omission this table exists to prevent.
+
+`S.wide8` is the eight-wide program compiled `--no-overlap`; `C.wide8` is
+`C.wide8.default`, the same source on the completion path with the shipped
+helper policy; both are medians in milliseconds over that table's recorded
+interleaved passes. `C/S` is the ratio the warm and many-files bars read,
+`C/N8` the one the cold bar reads, and `fastN`/`C/fN` name the *fastest* native
+line in that table and compare against it — so a `C/fN` below 1, and nothing
+else, is a row where the Whitefoot program beat every native line. `label` is
+that table's own cache probe before and after it, `conf` confirmed and `ref`
+refused. `proc` is `E` for AMD EPYC, `X` for Intel Xeon Platinum, `M1v` for
+Apple M1 (Virtual); every Linux runner in the table reports 4 CPUs and every
+macOS runner 3. `load` is the one-minute load average the job read at its
+start — the `bench-linux` host record prints none.
+
+Ratios are comparable within a row. Milliseconds are not comparable across
+rows, because every row is a separate draw of a hosted runner label.
+
+```text
+run          commit   proc   disk   load label      S.wide8  C.wide8    C/S  N.pool8   C/N8 fastN   fastN_ms   C/fN
+
+-- bench-linux-read, uncached 64 KiB  (9 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/ref   1766.60  1224.38 0.6931  1281.05 0.9558 pool2    1105.50 1.1075
+33150416900* 34ac1ae2 E7763  sda1   0.38 conf/ref   1991.67  1244.17 0.6247  1277.80 0.9737 pool2    1142.59 1.0889
+33151353052  4a748d6e E7763  sda1   0.30 conf/ref   1956.06  1263.14 0.6458  1270.42 0.9943 pool2    1153.59 1.0950
+33153717709  96bb4778 E7763  sda1   1.95 conf/ref   2180.75  1281.59 0.5877  1272.73 1.0070 pool2    1186.10 1.0805
+33155045849* 135abdf2 E9V74  nvme   0.33 conf/ref   2127.72  1364.23 0.6412  1341.81 1.0167 pool4    1226.53 1.1123
+33155821397  266acf4f X8573C nvme   0.48 conf/ref   4628.62  3413.10 0.7374  1348.85 2.5304 pool8    1348.85 2.5304
+33158144391  72e98cba E9V45  nvme   0.97 conf/ref   2269.59  1451.01 0.6393  1224.54 1.1849 pool8    1224.54 1.1849
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/ref   1587.44  1213.14 0.7642  1275.99 0.9507 pool2    1124.36 1.0790
+33172323795  261070c8 X8370C sda1   0.56 conf/ref   1863.93  1235.62 0.6629  1275.88 0.9684 pool2    1115.67 1.1075
+
+-- bench-linux-read, uncached 4 KiB  (8 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/conf  3075.32  1455.21 0.4732  1488.00 0.9780 uring32  1456.44 0.9992
+33150416900* 34ac1ae2 E7763  sda1   0.38 conf/conf  3747.70  1470.94 0.3925  1474.69 0.9975 uring32  1466.31 1.0032
+33151353052  4a748d6e E7763  sda1   0.30 conf/conf  4496.24  1482.81 0.3298  1486.45 0.9976 uring32  1458.48 1.0167
+33153717709  96bb4778 E7763  sda1   1.95 conf/conf  4227.07  1479.87 0.3501  1479.56 1.0002 uring32  1469.81 1.0068
+33155821397  266acf4f X8573C nvme   0.48 conf/conf  8973.99  1514.79 0.1688  1435.03 1.0556 uring32  1268.13 1.1945
+33158144391  72e98cba E9V45  nvme   0.97 conf/conf  5085.89  1249.62 0.2457  1474.52 0.8475 uring32  1457.10 0.8576
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/conf  4108.74  1216.03 0.2960  1482.48 0.8203 uring32  1448.85 0.8393
+33172323795  261070c8 X8370C sda1   0.56 conf/conf  3469.10  1465.26 0.4224  1481.78 0.9889 uring32  1441.72 1.0163
+
+-- bench-linux-read, warm 64 KiB  (7 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/conf   343.24   343.12 0.9997   100.94 3.3992 pool4      97.76 3.5098
+33151353052  4a748d6e E7763  sda1   0.30 conf/conf   285.81   289.01 1.0112    81.85 3.5310 pool4      78.29 3.6915
+33153717709  96bb4778 E7763  sda1   1.95 conf/conf   289.92   285.27 0.9840    80.56 3.5411 pool8      80.56 3.5411
+33155821397  266acf4f X8573C nvme   0.48 conf/conf   284.31   291.74 1.0261    80.72 3.6142 pool4      79.77 3.6573
+33158144391  72e98cba E9V45  nvme   0.97 conf/conf   227.61   229.38 1.0078    74.34 3.0856 pool4      72.42 3.1674
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/conf   280.52   283.30 1.0099    81.55 3.4739 pool8      81.55 3.4739
+33172323795  261070c8 X8370C sda1   0.56 conf/conf   327.23   332.08 1.0148   103.01 3.2238 pool4      98.95 3.3560
+
+-- bench-linux-read, warm 4 KiB  (7 rows)
+33149563172  caa66bad X8370C sda1   0.29 conf/conf    75.31    69.82 0.9271    13.54 5.1566 pool4      10.94 6.3821
+33151353052  4a748d6e E7763  sda1   0.30 conf/conf    81.02    81.05 1.0004    15.25 5.3148 pool4      12.35 6.5628
+33153717709  96bb4778 E7763  sda1   1.95 conf/conf    83.28    78.78 0.9460    15.49 5.0859 pool4      12.09 6.5161
+33155821397  266acf4f X8573C nvme   0.48 conf/conf    50.89    53.69 1.0550     8.51 6.3090 pool4       8.16 6.5797
+33158144391  72e98cba E9V45  nvme   0.97 conf/conf    61.51    63.98 1.0402    11.26 5.6821 pool4      10.63 6.0188
+33165141309  a06c53f9 E9V74  nvme   0.50 conf/conf    72.82    72.00 0.9887    14.88 4.8387 pool4      12.44 5.7878
+33172323795  261070c8 X8370C sda1   0.56 conf/conf    65.87    65.86 0.9998    12.72 5.1777 pool4      11.18 5.8909
+
+-- bench-linux, many files  (9 rows)
+33149563172  caa66bad E7763  sda1      - -           123.91   131.09 1.0579    33.66 3.8945 pool4      31.09 4.2165
+33150416900* 34ac1ae2 E9V74  sda1      - -           142.25   147.70 1.0383    40.75 3.6245 pool4      34.21 4.3175
+33151353052  4a748d6e E7763  sda1      - -           122.60   131.14 1.0697    35.42 3.7024 pool4      31.09 4.2181
+33153717709  96bb4778 E7763  sda1      - -           122.83   130.17 1.0598    34.04 3.8240 pool4      30.92 4.2099
+33155045849* 135abdf2 E7763  sda1      - -           121.93   128.64 1.0550    34.36 3.7439 pool4      30.84 4.1712
+33155821397  266acf4f E7763  sda1      - -           122.49   129.55 1.0576    35.43 3.6565 pool4      30.84 4.2007
+33158144391  72e98cba E7763  sda1      - -           121.61   128.91 1.0600    32.65 3.9482 pool4      30.35 4.2474
+33165141309  a06c53f9 E7763  sda1      - -           120.94   128.73 1.0644    34.67 3.7130 pool4      29.76 4.3256
+33172323795  261070c8 E9V45  nvme      - -            96.04   100.85 1.0501    26.92 3.7463 pool4      24.18 4.1708
+
+-- bench-macos-read, uncached 64 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 ref/conf   1615.36   938.79 0.5812   433.57 2.1653 pool8     433.57 2.1653
+33150416900* 34ac1ae2 M1v    disk3 13.88 ref/conf   2124.56  1099.83 0.5177   752.66 1.4613 pool8     752.66 1.4613
+33151353052  4a748d6e M1v    disk3  4.00 conf/ref   1784.93   897.95 0.5031   523.24 1.7161 pool8     523.24 1.7161
+33153717709  96bb4778 M1v    disk3  1.10 conf/conf  1754.70   817.47 0.4659   808.79 1.0107 pool8     808.79 1.0107
+33155045849* 135abdf2 M1v    disk3  0.63 ref/conf   1639.47   581.13 0.3545   429.81 1.3521 pool8     429.81 1.3521
+33155821397  266acf4f M1v    disk3  5.29 ref/conf   1487.24   591.82 0.3979   424.58 1.3939 pool8     424.58 1.3939
+33158144391  72e98cba M1v    disk3 10.74 ref/ref    1547.00   609.97 0.3943   555.63 1.0978 pool8     555.63 1.0978
+33165141309  a06c53f9 M1v    disk3  8.81 ref/ref    1500.48   565.31 0.3768   434.33 1.3016 pool8     434.33 1.3016
+33172323795  261070c8 M1v    disk3  5.60 conf/conf  2381.05  1150.39 0.4831   779.08 1.4766 pool8     779.08 1.4766
+
+-- bench-macos-read, uncached 4 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 ref/ref    1416.82   807.70 0.5701   383.68 2.1051 pool8     383.68 2.1051
+33150416900* 34ac1ae2 M1v    disk3 13.88 ref/ref    1833.91  1165.03 0.6353   553.63 2.1043 pool8     553.63 2.1043
+33151353052  4a748d6e M1v    disk3  4.00 conf/conf  1820.21   690.79 0.3795   486.70 1.4193 pool8     486.70 1.4193
+33153717709  96bb4778 M1v    disk3  1.10 conf/ref   1714.06   675.60 0.3942   439.22 1.5382 pool8     439.22 1.5382
+33155045849* 135abdf2 M1v    disk3  0.63 ref/ref    1812.50   545.98 0.3012   609.28 0.8961 pool8     609.28 0.8961
+33155821397  266acf4f M1v    disk3  5.29 ref/conf   1392.83   489.75 0.3516   381.86 1.2825 pool8     381.86 1.2825
+33158144391  72e98cba M1v    disk3 10.74 ref/ref    1672.36   960.86 0.5746   587.85 1.6345 pool8     587.85 1.6345
+33165141309  a06c53f9 M1v    disk3  8.81 ref/ref    1428.18   490.57 0.3435   399.02 1.2294 pool8     399.02 1.2294
+33172323795  261070c8 M1v    disk3  5.60 conf/conf  2172.94  1058.71 0.4872   679.86 1.5572 pool8     679.86 1.5572
+
+-- bench-macos-read, warm 64 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 conf/conf   167.84   214.64 1.2788    72.33 2.9675 pool8      72.33 2.9675
+33150416900* 34ac1ae2 M1v    disk3 13.88 conf/conf   187.46   246.17 1.3132    78.44 3.1383 pool8      78.44 3.1383
+33151353052  4a748d6e M1v    disk3  4.00 conf/conf   194.01   205.37 1.0586    86.22 2.3819 pool8      86.22 2.3819
+33153717709  96bb4778 M1v    disk3  1.10 conf/conf   185.75   177.91 0.9578    77.45 2.2971 pool8      77.45 2.2971
+33155045849* 135abdf2 M1v    disk3  0.63 conf/conf   166.61   167.61 1.0060    72.90 2.2992 pool8      72.90 2.2992
+33155821397  266acf4f M1v    disk3  5.29 conf/conf   172.94   173.97 1.0060    80.13 2.1711 pool8      80.13 2.1711
+33158144391  72e98cba M1v    disk3 10.74 conf/conf   167.56   167.92 1.0021    71.21 2.3581 pool8      71.21 2.3581
+33165141309  a06c53f9 M1v    disk3  8.81 conf/conf   167.06   168.48 1.0085    71.58 2.3537 pool8      71.58 2.3537
+33172323795  261070c8 M1v    disk3  5.60 conf/conf   199.10   196.90 0.9890    88.81 2.2171 pool8      88.81 2.2171
+
+-- bench-macos-read, warm 4 KiB  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 conf/conf    32.80    96.10 2.9299    15.20 6.3224 pool8      15.20 6.3224
+33150416900* 34ac1ae2 M1v    disk3 13.88 conf/conf    37.44   113.93 3.0430    16.66 6.8385 pool8      16.66 6.8385
+33151353052  4a748d6e M1v    disk3  4.00 conf/conf    44.11    52.72 1.1952    22.93 2.2992 pool8      22.93 2.2992
+33153717709  96bb4778 M1v    disk3  1.10 conf/conf    37.61    38.24 1.0168    16.36 2.3374 pool4      16.23 2.3561
+33155045849* 135abdf2 M1v    disk3  0.63 conf/conf    32.64    33.58 1.0288    15.09 2.2253 pool8      15.09 2.2253
+33155821397  266acf4f M1v    disk3  5.29 conf/conf    32.65    33.57 1.0282    15.03 2.2335 pool8      15.03 2.2335
+33158144391  72e98cba M1v    disk3 10.74 conf/conf    32.92    33.77 1.0258    15.14 2.2305 pool8      15.14 2.2305
+33165141309  a06c53f9 M1v    disk3  8.81 conf/conf    32.66    33.67 1.0309    15.24 2.2093 pool8      15.24 2.2093
+33172323795  261070c8 M1v    disk3  5.60 conf/conf    32.99    33.91 1.0279    15.25 2.2236 pool8      15.25 2.2236
+
+-- bench-macos-read (many-files half), many files  (9 rows)
+33149563172  caa66bad M1v    disk3  0.47 -           144.06   176.08 1.2223    58.42 3.0140 pool6      57.99 3.0364
+33150416900* 34ac1ae2 M1v    disk3 13.88 -           160.03   229.84 1.4362    75.33 3.0511 pool10     74.78 3.0735
+33151353052  4a748d6e M1v    disk3  4.00 -           174.24   183.43 1.0527    85.06 2.1565 pool10     75.68 2.4238
+33153717709  96bb4778 M1v    disk3  1.10 -           155.18   164.10 1.0575    59.86 2.7414 pool8      59.86 2.7414
+33155045849* 135abdf2 M1v    disk3  0.63 -           145.11   147.53 1.0167    58.84 2.5073 pool6      57.91 2.5476
+33155821397  266acf4f M1v    disk3  5.29 -           145.01   148.23 1.0222    58.10 2.5513 pool6      57.68 2.5699
+33158144391  72e98cba M1v    disk3 10.74 -           144.65   147.41 1.0191    58.34 2.5267 pool6      57.33 2.5713
+33165141309  a06c53f9 M1v    disk3  8.81 -           145.44   147.54 1.0144    58.44 2.5246 pool6      58.05 2.5416
+33172323795  261070c8 M1v    disk3  5.60 -           144.37   146.59 1.0154    58.07 2.5244 pool6      57.39 2.5543
+```
+
+The commits, in branch order, and what each one is:
+
+```text
+caa66bad  the merge base: the runtime this batch started from
+34ac1ae2  the same runtime under the WF_IO_TRACE stage instrumentation
+4a748d6e  the Darwin per-operation repair
+96bb4778  a positioned read is left where it was stated when nothing waits
+135abdf2  the stage instrumentation removed
+266acf4f  the drain hint removed -- the runtime the before/after tables read
+72e98cba  a record commit; its only source change is a comment in bridge.c
+a06c53f9  the correctness follow-up: named-drain generation, atomic readiness,
+          helper cap bounded by its storage, clock guard, shutdown ordering
+261070c8  this record's repair round -- and, since everything after it on the
+          branch changes only these two documents, the tip's runtime as well
+```
+
+What the table says without anyone counting in prose:
+
+- **The cache labels are uniform everywhere except the macOS uncached
+  tables.** All nine `bench-linux-read` uncached 64 KiB tables are
+  `conf/ref` — confirmed before, refused after — so every one of them is a
+  cold-start table rather than an uncached one. All eight uncached 4 KiB
+  tables are `conf/conf`. So are all fourteen Linux warm tables and all
+  eighteen macOS warm tables. The macOS uncached tables are the only ones that
+  disagree with each other, and only `261070c8`'s draw confirms the label at
+  both ends of *both* of them.
+- **Four of the 85 rows have `C/fN` below 1.** Three are `bench-linux-read`
+  uncached 4 KiB tables — `caa66bad` at 0.9992, `72e98cba` at 0.8576 and
+  `a06c53f9` at 0.8393 — and the fourth is `135abdf2`'s macOS uncached 4 KiB
+  table at 0.8961, in a cancelled run and on a table whose probe refused the
+  uncached label at both ends. `caa66bad`'s margin is 1.23 ms in 1456, which
+  is a tie by any honest reading of a hosted runner.
+- **The macOS warm 4 KiB `C/S` column is where this batch's work shows.** It
+  reads 2.9299 on the merge base and 3.0430 on the traced build of the same
+  runtime, then 1.1952, 1.0168, 1.0288, 1.0282, 1.0258, 1.0309, 1.0279 — the
+  repair landing at `4a748d6e` and holding across six later draws.
+- **The Linux warm columns move a few points between draws and do not settle.**
+  Over the seven draws that reached them, warm 64 KiB `C/S` spans 0.9840 to
+  1.0261 and warm 4 KiB spans 0.9271 to 1.0550, with no ordering by processor.
+- **Linux many-files `C/S` is between 1.0383 and 1.0697 on all nine draws**,
+  seven of them on the same EPYC 7763.
+
+### macOS runner, read-heavy
+
+```text
+                          before (0092)              after (33155821397)
+line                cold64  cold4  warm64 warm4  cold64  cold4 warm64  warm4
+N.direct           2345.41 1971.16 169.00 33.10 1472.85 1372.47 176.24 33.04
+N.pool2            1120.59 1100.27  97.04 20.18  928.74  883.28 101.63 20.11
+N.pool4             853.27  808.40  73.05 15.36  627.14  572.90  81.75 15.21
+N.pool8             772.34  532.07  71.08 15.18  424.58  381.86  80.13 15.03
+S.narrow           2045.43 1663.83 152.57 31.20 1488.30 1370.55 159.86 31.30
+S.wide8            2108.61 1736.79 166.31 32.88 1487.24 1392.83 172.94 32.65
+C.narrow.default   1952.50 1889.77 153.01 31.34 1516.75 1382.75 160.51 31.64
+C.wide8.default    1220.68 1100.57 211.58 94.72  591.82  489.75 173.97 33.57
+C.wide8.h0         1681.74 1611.22 175.21 41.84 1452.09 1432.86 180.33 40.57
+C.wide8.h2         1252.02 1160.21 241.57 98.04 1054.36  971.97 246.49 75.37
+C.wide8.h4         1048.26  962.59 211.97 98.50  746.67  658.61 219.11  71.25
+C.wide8.h8          940.47  793.93 205.61 118.48 585.05  478.59 224.20 83.33
+```
+
+Two cells of the `before` column are not findable in the 0092 section this
+column names: its macOS warm tables list no `C.wide8.h4` row at all. The
+211.97 and 98.50 here are read from that run's own artifact — run
+[33130875022](https://github.com/mbbill/Whitefoot/actions/runs/33130875022),
+`bench-macos-read`, which does print the row — rather than from the prose
+above, and they are the only two cells of this table for which that is true.
+
+**Cache labels on the after run: each cold table's probe refused the uncached
+label before the table ran and confirmed it after.** Both warm tables were
+confirmed warm at both ends (0.0 per cent of sampled reads at or above 40 us;
+the four probes report per-file medians of 4.0..5.0, 4.0..5.0, 4.0..5.0 and
+5.0..6.0 us, so 4.0 to 6.0 across the run). The job's own words for the 64 KiB
+cold table:
+
+```text
+read_baseline: refusing the uncached label -- 93 of 128 sampled reads (72.7%)
+  were at or below 40.0 us, past the stated 10.0% bound; per-file medians
+  36.5..44.0 us
+probe: uncached confirmed -- 4 of 128 sampled reads (3.1%) were at or below
+  40.0 us, within the stated 10.0% bound; per-file medians 47.5..51.0 us
+table: 64 KiB uncached -- probe before the table: refused; probe after it:
+  confirmed
+table: 64 KiB uncached -- the label above is NOT confirmed: the probe refused
+  it before the table ran, so read the per-file medians printed above and
+  treat the label as a claim about what was asked for, not about what was
+  measured
+```
+
+and for the 4 KiB one, the same four lines with 120 of 128 (93.8 per cent)
+refused before and 3 of 128 (2.3 per cent) confirmed after.
+
+That is the **opposite** direction from the 0092 macOS tables, whose probes
+confirmed the label before each cold table and refused it after
+(`probe before the table: confirmed; probe after it: refused`) — there the
+tree started non-resident and each line warmed the cache as it read, here it
+started resident and ended non-resident. So the cold tables of this draw are
+neither uncached nor cold-start: each line is a mixture whose composition
+depends on where in the table it ran, and the interleaved schedule does not
+cancel that, because it reverses order between passes rather than restoring
+the cache between them.
+
+The batch-0092 section already recorded this happening — "Their macOS uncached
+probes refused the label **before** the tables ran, not only after" — on the
+runs it reproduced against; this section had it the other way round and is
+corrected here.
+
+What that costs is stated with the bar below rather than hidden here: it does
+not touch the warm or many-files halves, and it means this draw's cold rows
+are not a reading of a cold bar. The cold grades are taken from a later draw
+that is one — run 33172323795, which confirms the label at both ends of both
+cold tables — and it grades them `no`.
+
+### macOS runner, many files
+
+```text
+line                 before (0092)   after (33155821397)
+N.direct                    141.06                141.84
+N.pool8                      57.95                 58.10
+S.narrow                    143.75                144.48
+S.wide8                     144.28                145.01
+C.narrow.default            144.31                144.83
+C.wide.default              216.89                147.27
+C.wide8.default             173.16                148.23
+C.wide8.h0                  149.36                149.42
+C.wide8.h4                  174.27                173.62
+```
+
+### Against the standing bar
+
+The bar: warm `C.wide8` not slower than `S.wide8`; cold `C.wide8` within ten
+per cent of `N.pool8`; many-files `C` not slower than `S`; Linux must not
+regress.
+
+```text
+row                       before   after   bar          met         before is
+warm 64 KiB  C/S          1.27x    1.006x  <= 1.00x     0.6% over   0092 macOS
+warm  4 KiB  C/S          2.88x    1.028x  <= 1.00x     2.8% over   0092 macOS
+cold 64 KiB  C/N.pool8    1.58x    1.394x  <= 1.10x     no          0092 macOS
+cold  4 KiB  C/N.pool8    2.07x    1.283x  <= 1.10x     no          0092 macOS
+many-files   C/S          1.20x    1.022x  <= 1.00x     2.2% over   0092 macOS
+Linux warm 64 KiB C/S     0.98x    1.026x  no regress   unresolved  0092 Linux
+Linux warm  4 KiB C/S     0.94x    1.055x  no regress   unresolved  0092 Linux
+Linux many   C/S          1.041x   1.058x  no regress   unresolved  0090 Linux
+                          1.045x
+```
+
+The `before is` column is there because the five macOS rows and the three
+Linux rows do not share a baseline. The Linux read rows are against the
+batch-0092 Linux-runner section; the Linux many-files row has no 0092 reading
+at all and is against batch 0090's **two** draws of that job, 1.041 and 1.045.
+
+The two warm rows and the many-files row land within three per cent of a bar
+they missed by 27, 188 and 20 per cent, and none is met on a strict reading.
+`C.wide8.h0` says where the residue is: the same program on the completion
+path with the pool pinned off — and therefore never declined, because a
+written `WF_IO_HELPERS` pins the route as well as the count — costs 40.57 ms
+warm at 4 KiB against S's 32.65. That 24 per cent is what the machinery
+charges an operation with nothing to overlap. In milliseconds over `S.wide8`
+that is 7.92; with the policy free to decline it is 0.92, so 88 per cent of the
+charge is gone and what remains is the operations the policy does not decline,
+which are the opens and closes.
+
+**Both cold rows are graded `no`, and the draw that reads them arrived last.**
+For most of this batch they had no grade: this draw's cold tables are the
+mixture the probes described above, and a table whose own runner refused its
+uncached label before it ran cannot grade a bar about cold reads. On that
+mixture C is 1.394 and 1.283 times `N.pool8`, which is a statement about what
+was measured and not a grade. Pushing this batch's repair then ran `io-bench`
+at `261070c8`, whose `bench-macos-read` job is the only one on this branch to
+confirm the uncached label *before and after* both cold tables. On it the two
+rows read 1.477 and 1.557 against a bar of 1.10 — a miss, and a wider one than
+the unlabelled mixture.
+
+Not five draws, nine. Every `bench-macos-read` cold table on this branch, in
+branch order, with its own probe verdicts, its own `C/N.pool8`, and the
+min..max of both lines that ratio is taken from; `*` marks a run cancelled
+later, as in the draw table above:
+
+```text
+-- uncached 64 KiB  (9 rows)
+run          commit   label      C.wide8  N.pool8  C/N8   N.pool8 min..max     C.wide8 min..max
+33149563172  caa66bad ref/conf    938.79   433.57 2.165   428.18..435.96     916.50..2968.47
+33150416900* 34ac1ae2 ref/conf   1099.83   752.66 1.461   430.94..1104.90    903.81..1721.45
+33151353052  4a748d6e conf/ref    897.95   523.24 1.716   495.10..1052.44    676.63..1749.48
+33153717709  96bb4778 conf/conf   817.47   808.79 1.011   445.55..898.44     644.26..8252.57
+33155045849* 135abdf2 ref/conf    581.13   429.81 1.352   425.23..487.68     576.47..665.93
+33155821397  266acf4f ref/conf    591.82   424.58 1.394   417.49..453.58     558.77..644.12
+33158144391  72e98cba ref/ref     609.97   555.63 1.098   416.53..1075.57    557.78..1176.62
+33165141309  a06c53f9 ref/ref     565.31   434.33 1.302   427.78..447.04     553.98..596.73
+33172323795  261070c8 conf/conf  1150.39   779.08 1.477   584.73..991.44    1044.77..14961.31
+
+-- uncached 4 KiB  (9 rows)
+run          commit   label      C.wide8  N.pool8  C/N8   N.pool8 min..max     C.wide8 min..max
+33149563172  caa66bad ref/ref     807.70   383.68 2.105   379.88..387.60     806.44..826.43
+33150416900* 34ac1ae2 ref/ref    1165.03   553.63 2.104   414.62..682.65     823.29..1450.92
+33151353052  4a748d6e conf/conf   690.79   486.70 1.419   419.97..705.92     552.35..1142.65
+33153717709  96bb4778 conf/ref    675.60   439.22 1.538   374.18..727.81     480.67..2181.79
+33155045849* 135abdf2 ref/ref     545.98   609.28 0.896   380.07..797.56     488.81..15724.38
+33155821397  266acf4f ref/conf    489.75   381.86 1.283   379.97..383.57     469.00..508.36
+33158144391  72e98cba ref/ref     960.86   587.85 1.635   380.15..764.48     494.70..26351.72
+33165141309  a06c53f9 ref/ref     490.57   399.02 1.229   379.22..413.11     487.42..4996.77
+33172323795  261070c8 conf/conf  1058.71   679.86 1.557   587.93..801.67     560.66..4332.72
+```
+
+Two of the nine confirm the 64 KiB label at both ends and two confirm the
+4 KiB one, and `261070c8` is in both pairs — it is the only draw that confirms
+both tables at both ends, which is why the grade is taken from it. The other
+two confirmed tables are `96bb4778`'s 64 KiB one at 1.011, which would pass,
+and `4a748d6e`'s 4 KiB one at 1.419, which would not. Both confirmed 64 KiB
+readings sit on lines that move: `96bb4778`'s `N.pool8` runs 445.55 to 898.44
+around a median of 808.79 while its `C.wide8.default` reaches 8252.57 against
+a median of 817.47, and `261070c8`'s `C.wide8.default` spans 1044.77 to
+14961.31 cold at 64 KiB and 560.66 to 4332.72 cold at 4 KiB, on a runner whose
+load average was 5.60 at the start — so its reading is confirmed-cold and
+noisy at once. At 64 KiB the grade does not depend on that noise: C's
+*minimum* over `N.pool8`'s median is 1.34, outside the bar without the median.
+At 4 KiB it does: C's minimum over `N.pool8`'s median is 0.82, so the ranges
+overlap and only the medians separate them. Neither row is met on any
+statistic that puts C ahead, so both are `no`, and the 4 KiB grading is the
+weaker of the two — with `4a748d6e`'s confirmed 4 KiB table agreeing with it
+from the other side at 1.419.
+
+The row this section reports its numbers from is `33155821397`, because its
+commit `266acf4f` is the runtime the before/after comparison is about — not
+because its halves are the tightest, which they are not: the draw table above
+puts `96bb4778` closer to 1 on macOS warm 4 KiB (1.0168 against 1.0282) and
+`a06c53f9` closer on macOS many files (1.0144 against 1.0222). The cold rows
+of any of the nine are a reading of the runner's cache state as much as of the
+program. `266acf4f` is not this branch's last runtime: `git diff --stat
+266acf4f a06c53f9` changes `runtime.c`, `bridge.c`, `file_adapter.c/.h` and
+`contract.h` alongside the harness, the probes, the `Makefile` and
+`io-hosts.yml`, and this record's own repairs change the runtime once more
+after `a06c53f9`. **What was owed — a macOS draw whose cold labels are
+confirmed at both ends — arrived, and the answer was a miss. What is owed now
+is such a draw on a quiet runner, which would narrow the 1.011-to-1.477 range
+these two confirmed 64 KiB tables span rather than decide whether a cold table
+can be read at all.**
+
+What the cold rows do show, and this does not depend on the label because both
+lines ran interleaved inside the same table, is the demand-driven helper
+policy working: `C.wide8.default` is within 1.2 per cent of its own pinned
+eight-helper line at 64 KiB (591.82 against 585.05) and 2.3 per cent at 4 KiB
+(489.75 against 478.59), where in 0092 the default trailed `C.wide8.h8` by
+1.30 and 1.39 times. Against its own sequential build the completion program
+is 2.51 and 2.84 times faster on those tables, where in 0092 it was 1.73 and
+1.58.
+
+### What changed in the runtime
+
+Batch 0096's changes are recorded in `docs/done/0096-darwin-handoff.md` with
+the stage-level attribution that motivated each, and its "After the tables"
+section records the correctness follow-up that landed after this run: the
+tables here are read at commit `266acf4f`, and the tip adds a generation check
+on the named drain, an atomically published adapter readiness flag, a helper
+cap bounded by its storage, a clock guard on the join spin, an adapter that
+stops reading as usable before its own lock is destroyed, and a gate arm that
+runs the bridge on the shipped default helper policy. None of those changes a
+route, a policy or a threshold, and the macOS draw taken at `a06c53f9` — the
+last commit that changed the runtime before this record's own repairs, and the
+eighth of the nine draws in the table above (run
+[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309)) —
+reproduces the two warm rows of the bar to three decimal places: 1.0085
+against 1.006 at 64 KiB, 1.0309 against 1.028 at 4 KiB, with many-files at
+1.0144 and the two cold rows at 1.302 and 1.229. Its cold labels are refused
+at both ends of both tables — the draw table above says which of the nine
+confirm and which refuse — so it does not settle the cold bar either; the
+handoff records it line by line. In short: the process-wide
+wake lock is taken only when there is a sleeper; a drain returns immediately
+when the durable ready-event count is zero and a token owner may drain its own
+event by name; a queue entry no longer copies a kilobyte of path storage for a
+read or a write; the helper wake is issued outside the queue lock and only to
+a helper the lock says is asleep; a joining scheduler reads the ready count
+for a bounded window before announcing sleep; the helper pool starts empty and
+grows on a measured wait rather than on queue depth, bounded by
+`WF_BRIDGE_MAX_HELPERS` (eight) rather than the core count; and a positioned read is executed
+where it was stated when the adapter holds no helper, has nothing queued and
+has measured its operations as not waiting.
+
+### What this reading does not cover
+
+Four limits, stated here so a later reader does not have to rediscover them.
+
+- **The cold tables' cache state**, above: refused before, confirmed after, on
+  both of them, in the draw these numbers come from.
+- **The growth path is asserted, not observed on this host.** That a pool
+  appears when operations wait, and does not when they do not, is pinned by
+  two harness cases with a *scripted* clock
+  (`test_pool_stays_empty_when_operations_do_not_wait`,
+  `test_pool_grows_when_operations_wait`) — deliberately, so the rule is
+  tested rather than the machine. The evidence that it also fires on a real
+  program is the runner's cold tables, where `C.wide8.default` lands on its
+  own pinned eight-helper line. No test on the maintainer's machine watches a
+  real program grow a pool, because a warm macOS page cache is exactly the
+  case where the rule is meant not to fire.
+- **The corpus differential does not reach this path.** `whitefootc
+  --emit-llvm` was run over the 22 units of `CORPUS_UNITS` in
+  `compiler/tests/programs/parallel.rs` — 25 `.wf` files, since each
+  `raw_deflate_*` unit compiles four — in the default lowering and again under
+  `--par`, and every `wf__completion_` symbol of all 44 modules was listed.
+  Not one module names a `*_submit` or `*_join` entry; the two lowerings emit
+  the same set for every unit; and five units emit a completion call at all.
+  `byte_string` and `par_layout` emit `write_direct` alone. `dir_walk` emits
+  `open_at_direct`, `close_direct`, `directory_next_direct` and
+  `write_direct`. `raw_deflate_boundary` emits `open_at_direct`,
+  `close_direct`, `pread_direct` and `write_direct`. `wfgrep` emits those four
+  and `directory_next_direct`. The other seventeen units — 34 of the 44
+  modules — emit no completion call whatever. So that differential covers the
+  direct routing this batch changed — which is worth having, since routing
+  every `*_direct` entry through `wf_file_execute_timed` is one of its
+  changes — and not the submitted path. The programs that do exercise submit
+  and join are the bench programs in
+  `research/experiments/io-completion-bench/programs/`, which is where the
+  overlap-versus-`--no-overlap` differential has to be run.
+- **The decline check costs a queue lock.** `wf_file_adapter_transfer_runs_on_caller`
+  asks whether anything is queued, and that term takes the adapter's queue
+  lock, so every positioned read that reaches the question pays one
+  uncontended lock and unlock — against the queue crossing, claim, four slot
+  transitions and drain it saves when the answer is yes.
+
+### Linux runner, read-heavy — a draw that does not reproduce
+
+`bench-linux-read` in the same run, on `ubuntu-24.04`: kernel
+`6.17.0-1022-azure`, 4 CPUs, INTEL(R) XEON(R) PLATINUM 8573C, 16 GB, tree on
+`nvme0n1p1` (ext4, non-rotational), `io_uring_disabled=0`, load 0.48 at start.
+Seven recorded interleaved passes after two warm-ups, medians in
+milliseconds, with the observed spread because this draw needs it.
+
+```text
+                    cold 64 KiB              cold 4 KiB
+line             median     min     max   median     min      max
+N.direct        6158.09 2781.77 7661.14 11356.66 6661.56 12219.16
+N.pool8         1348.85 1167.15 3037.12  1435.03 1288.90  1628.03
+N.uring32       1414.28 1116.78 1668.42  1268.13 1202.11  2446.87
+S.narrow        4258.41 2478.62 11054.60 8454.51 6171.66 15366.55
+S.wide8         4628.62 3645.02 8092.69  8973.99 5298.00 14097.85
+C.narrow.default 5579.62 2748.91 9898.19 11129.62 6956.06 12735.69
+C.wide8.default 3413.10 1706.37 4882.94  1514.79 1341.48  3200.83
+C.wide8.h0      2394.95 1436.40 4715.79  2655.82 1954.60  3487.78
+C.wide8.h8      3548.17 1349.15 4765.59  2460.87 1372.74  3495.35
+
+                    warm 64 KiB              warm 4 KiB
+line             median     min     max   median     min      max
+N.direct         243.84  241.55  253.97    20.95   18.89    22.05
+N.pool8           80.72   78.90   83.64     8.51    7.53     8.70
+S.narrow         234.92  227.47  244.60    47.90   45.71    51.88
+S.wide8          284.31  274.11  298.30    50.89   48.80    56.93
+C.narrow.default 234.20  228.59  242.84    50.36   48.90    56.60
+C.wide8.default  291.74  280.70  294.55    53.69   53.38    60.63
+C.wide8.h0       281.88  276.57  292.72    53.00   51.56    55.66
+C.wide8.h8       282.55  276.19  289.80    53.64   51.38    57.56
+```
+
+**The cold half of this draw cannot be read.** `N.direct` at 64 KiB spans 2781
+to 7661 ms around a median of 6158 — a 2.75-fold range inside one line — and
+`S.narrow` spans 2478 to 11054, a 4.46-fold one. Across all forty cold lines
+of the two tables the maximum-over-minimum ratio runs from 1.26 (`N.pool8` at
+4 KiB) to 4.98 (`C.wide8.h2` at 4 KiB), and nineteen of the forty exceed 2.5.
+Batch 0092's Linux 4 KiB table — the cleanest measurement in this document —
+held seventeen of its twenty lines' minima and maxima inside four per cent of
+their own medians, the three exceptions reaching 4.96, 5.31 and 5.96. A
+ranking taken from lines as wide as this draw's is a ranking of the runner.
+The interleaved schedule protects against monotonic drift, not against this.
+
+**The warm half is tight, and it does not reproduce the two earlier Linux
+readings.** Warm `C.wide8.default` over `S.wide8` is 1.026 at 64 KiB and 1.055
+at 4 KiB here, where batch 0092 measured 0.982 and 0.941 and the earlier run on
+this branch ([33153717709](https://github.com/mbbill/Whitefoot/actions/runs/33153717709),
+commit `96bb4778`) measured 0.984 and 0.946. On both earlier draws the
+completion build was slightly faster than its own sequential build; on this one
+it is slightly slower.
+
+The narrow lines are the control for this. `C.narrow` and `S.narrow` compile
+the same source with and without the completion lowering but state no overlap
+width, so a host difference should move them with the wide pair and a change in
+the overlap path should not. They do not move together:
+
+```text
+warm C/S                  0092   96bb4778     this   delta vs 96bb4778
+64 KiB  C.wide8/S.wide8  0.9816   0.9840   1.0261         +0.042
+64 KiB  C.narrow/S.narrow 1.0035  1.0023   0.9969         -0.005
+ 4 KiB  C.wide8/S.wide8  0.9412   0.9460   1.0550         +0.109
+ 4 KiB  C.narrow/S.narrow 1.0112  1.0157   1.0514         +0.036
+```
+
+At 64 KiB the narrow pair does not move at all while the wide pair moves 4.2
+points; at 4 KiB the wide pair moves three times as far as the narrow one. So
+whatever this is, it is concentrated in the lines that state width, which is
+where the completion path does its work. That is what a change in the overlap
+path would look like.
+
+Cutting the other way: there is no such change to point at. The only difference
+in completion sources between `96bb4778` — the commit of the 0.946 reading —
+and `266acf4f`, measured here, is the removal of the `WF_IO_TRACE` stage
+instrumentation that `96bb4778` still carried; `git diff 96bb4778..266acf4f --
+compiler/src/backend/completion/` is that removal and nothing else. No drain,
+submit, publish or policy code differs between the two commits, and removing
+instrumentation does not make a program slower. The host also differs, though
+not in the way first written here: every Linux runner in the draw table above
+reports 4 CPUs, and so did 0092's, so core count is not what separates them. The processor and the disk are — Xeon
+Platinum 8370C on `sda1` for 0092, EPYC 7763 on `sda1` for `96bb4778`, Xeon
+Platinum 8573C on `nvme0n1p1` here —
+and the 8573C's warm 4 KiB sequential line is 50.89 ms against the previous
+draw's 83.28, which is a different machine by any reading. The wide lowering
+has more scheduling surface than the narrow one, so a host that different can
+move the wide pair further without any code being at fault.
+
+**So this section does not claim Linux is unregressed, and it does not claim it
+is regressed.** One draw on different hardware, whose cold half is unusable and
+whose warm half is the top of both warm ranges the draw table above records, is
+not a reading of the bar — but the narrow control makes it a draw worth
+resolving rather than one worth dismissing. The correctness evidence is
+separate and is not in doubt: `io-hosts` `completion-linux` is green on this
+commit, including the required native io_uring adapter probe and the harness
+under the address and undefined sanitizers. Thread sanitizer is a separate
+step and runs the probes rather than the harness — the isolated core/read
+probe, and now the default-route bridge probe. The Linux draw this owed is
+below: "The Linux draw at `a06c53f9`".
+
+### The Linux draw at `a06c53f9`
+
+Pushing the correctness follow-up ran `io-bench` again, and its
+`bench-linux-read` job is the draw this section says is owed: run
+[33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309) on
+an AMD EPYC 9V74, 4 CPUs, tree on `nvme0n1p1`, load 0.50 at start. Two things
+make it worth reading on its own rather than as one more row of the table.
+
+**Its uncached 4 KiB table is confirmed at both ends** — `probe before the
+table: confirmed; probe after it: confirmed` — so it is a reading of a cold
+device rather than of a cache. It is not the only such table on this branch,
+and the count is not four: the draw table above lists **eight**
+`bench-linux-read` uncached 4 KiB tables and every one of them is
+`confirmed/confirmed`, so the row this section quotes is worth quoting only
+beside the other seven. `266acf4f`'s cold half is the one this section calls
+unreadable for its spreads, so its row below is a confirmed label around a
+median, not a ranking.
+
+```text
+run          commit    processor   C.wide8.default  S.wide8  N.pool8  N.uring32   C/S  C/uring32
+33149563172  caa66bad  Xeon 8370C          1455.21  3075.32  1488.00    1456.44 0.473      0.999
+33150416900* 34ac1ae2  EPYC 7763           1470.94  3747.70  1474.69    1466.31 0.392      1.003
+33151353052  4a748d6e  EPYC 7763           1482.81  4496.24  1486.45    1458.48 0.330      1.017
+33153717709  96bb4778  EPYC 7763           1479.87  4227.07  1479.56    1469.81 0.350      1.007
+33155821397  266acf4f  Xeon 8573C          1514.79  8973.99  1435.03    1268.13 0.169      1.195
+33158144391  72e98cba  EPYC 9V45           1249.62  5085.89  1474.52    1457.10 0.246      0.858
+33165141309  a06c53f9  EPYC 9V74           1216.03  4108.74  1482.48    1448.85 0.296      0.839
+33172323795  261070c8  Xeon 8370C          1465.26  3469.10  1481.78    1441.72 0.422      1.016
+```
+
+`N.uring32` is the fastest native line on every one of the eight, so
+`C/uring32` is also C against *every* native line of its table. All eight
+runners report four CPUs; the 8370C and 7763 draws ran on `sda1`, the 8573C,
+9V45 and 9V74 draws on `nvme0n1p1`. `34ac1ae2`'s run was cancelled after this
+table completed and carries the draw table's `*`.
+
+Three of the eight put the eight-wide Whitefoot program ahead of every native
+line — 0.999, 0.858 and 0.839 — and this run's table is the furthest ahead
+of
+the three:
+
+```text
+line                        median     min      max
+N.direct                   4914.02 3641.98  5119.62
+N.pool8                    1482.48 1453.84  1487.17
+N.uring32                  1448.85 1209.27  1498.67
+S.narrow                   3997.94 3852.94  5228.31
+S.wide8                    4108.74 3720.78  6790.88
+C.narrow.default           4336.82 3731.27  6871.13
+C.wide8.default            1216.03 1206.55  1864.42
+C.wide8.h0                 1470.85 1203.64  1629.84
+C.wide8.h8                 1490.76 1408.88  1742.53
+```
+
+`C.wide8.default` at 1216.03 ms is 3.38 times faster than its own sequential
+build, 1.22 times faster than an eight-thread pool and 1.19 times faster than
+a hand-written 32-deep io_uring pipeline. `72e98cba` reads almost as far
+ahead — 1249.62 against `N.pool8`'s 1474.52 and `N.uring32`'s 1457.10, 1.18
+and 1.17 times — and `caa66bad` is a tie rather than a lead, 1455.21 against
+the ring's 1456.44, which is 1.23 ms in 1456. Of the remaining five, four sit
+within 1.7 per cent behind the ring — `96bb4778` 1479.87 against 1469.81,
+`34ac1ae2` 1470.94 against 1466.31, `261070c8` 1465.26 against 1441.72,
+`4a748d6e` 1482.81 against 1458.48 — and the fifth, `266acf4f`, sits 19.4 per
+cent behind it (1514.79 against 1268.13) on the cold half this record already
+calls unreadable for its spreads. All eight beat their own sequential build by
+a wide margin: `S/C` in table order is 2.11, 2.55, 3.03, 2.86, 5.92, 4.07,
+3.38 and 2.37 times. So what eight confirmed Linux cold 4 KiB tables support
+is that the completion program is level with a hand-written native pipeline on
+this job and sometimes well ahead of it, and the 1216.03 reading is this
+section's because this run is the follow-up's draw — it is also, as the table
+shows, the lowest `C.wide8.default` of the eight. The 64 KiB table on the same
+run is a cold-start table by its own probe (confirmed before, refused after)
+and reads the same way less sharply:
+1213.14 against `N.pool8`'s 1275.99 and `S.wide8`'s 1587.44.
+
+**And its warm half does not reproduce the draw above.** Warm
+`C.wide8/S.wide8` here is 1.010 at 64 KiB and 0.989 at 4 KiB, with the narrow
+control at 0.998 and 1.015. Set beside the earlier readings:
+
+This is every Linux warm draw on this branch, not a selection: the seven
+`bench-linux-read` warm tables of the draw table above — the two cancelled
+runs stopped before their warm halves — with batch 0092's draw on top. The
+two further 0092-era draws under "Reproduced on two further pairs of runners"
+above (runs 33131934257 and 33133182075) are on other commits and are not
+repeated here.
+
+```text
+draw         run          commit    processor   disk  warm 64  warm 4  narrow 64  narrow 4
+0092         33130875022  6ac36126  Xeon 8370C  sda1   0.9816  0.9412     1.0035    1.0112
+merge base   33149563172  caa66bad  Xeon 8370C  sda1   0.9997  0.9271     0.9983    0.9940
+repair       33151353052  4a748d6e  EPYC 7763   sda1   1.0112  1.0004     0.9941    0.9974
+earlier      33153717709  96bb4778  EPYC 7763   sda1   0.9840  0.9460     1.0023    1.0157
+this section 33155821397  266acf4f  Xeon 8573C  nvme   1.0261  1.0550     0.9969    1.0514
+record       33158144391  72e98cba  EPYC 9V45   nvme   1.0078  1.0402     1.0092    1.0128
+follow-up    33165141309  a06c53f9  EPYC 9V74   nvme   1.0099  0.9887     0.9984    1.0149
+repair round 33172323795  261070c8  Xeon 8370C  sda1   1.0148  0.9998     0.9956    0.9990
+```
+
+Read the warm 4 KiB column down: 0.9412, 0.9271, 1.0004, 0.9460, 1.0550,
+1.0402, 0.9887, 0.9998. Four readings are below one, two are on it to within
+half a thousandth, and **two are above it by four points or more — 1.0550 on
+the Xeon 8573C and 1.0402 on the EPYC 9V45**, which are different processors
+on different disks. So the 8573C is not an outlier to be explained; it is the
+larger of two. The 8370C rows say the same thing a second way: batch 0092 read
+0.9412 on that processor model, this branch's merge base read 0.9271 on it,
+and the repair round read 0.9998 on it — the ratio moves seven points across
+three draws of one processor model, which is what a hosted runner gives this
+pair from one draw to the next rather than a property of a machine. The warm
+64 KiB column spans 0.9840 to 1.0261 over the same seven branch draws.
+**Nothing across these draws refutes the no-regression bar, and the bar table
+above keeps its `unresolved` grade all the same, because that table reads
+`266acf4f` and every other draw is a different one.** What is owed is not an
+explanation of one machine but a reading of this pair that does not move six
+points between draws, which needs repeated draws on one label rather than one
+more draw on a new one.
+
+Every figure in the table above was recomputed from each run's own artifact:
+328.38/334.53 and 71.69/76.17 for 0092, and for the seven branch rows the
+`S.wide8`, `C.wide8.default`, `S.narrow` and `C.narrow.default` medians of
+that run's warm tables — the same parse that produced the draw table above.
+
+### Linux hardware, many files
+
+`bench-linux` ran in every one of this branch's nine `io-bench` runs and
+completed its table in all nine, including both runs that were cancelled
+later. All nine are here, with batch 0090's two draws of the same job on top:
+
+```text
+draw          run          commit    processor   S.wide8  C.wide8.default    C/S
+0090 run 1    33114336424  -         EPYC 9V74    141.26           147.04  1.0409
+0090 run 2    33115297530  -         EPYC 9V74    110.94           115.97  1.0453
+merge base    33149563172  caa66bad  EPYC 7763    123.91           131.09  1.0579
+traced        33150416900* 34ac1ae2  EPYC 9V74    142.25           147.70  1.0383
+repair        33151353052  4a748d6e  EPYC 7763    122.60           131.14  1.0697
+left in place 33153717709  96bb4778  EPYC 7763    122.83           130.17  1.0598
+trace removed 33155045849* 135abdf2  EPYC 7763    121.93           128.64  1.0550
+drain removed 33155821397  266acf4f  EPYC 7763    122.49           129.55  1.0576
+record        33158144391  72e98cba  EPYC 7763    121.61           128.91  1.0600
+follow-up     33165141309  a06c53f9  EPYC 7763    120.94           128.73  1.0644
+repair round  33172323795  261070c8  EPYC 9V45     96.04           100.85  1.0501
+```
+
+The ordering reproduces on every draw — C is slower than S here as it was in
+both 0090 draws, which is what batch 0090 recorded and this batch does not
+change. The nine branch ratios span 1.0383 to 1.0697 and the two 0090 ratios
+sit inside that span, against the within-run spread of about 2 per cent batch
+0090 reports for this job. Seven of the nine branch draws are on one processor
+model, the EPYC 7763, and those seven alone span 1.0550 to 1.0697, so the
+spread is not the hardware. Batch 0090 had a third runner as well, run
+33118248259, which that section records only by its headline lines — `S.wide`
+112.19 against `C.wide.default` 118.14, a ratio of 1.053 on the unpinned wide
+pair rather than on the eight-wide one this table reads — so it is named here
+and not tabulated. Eleven draws across a change that no one of them
+can resolve is neither enough to call a regression nor enough to call the row
+met, which is why the bar table above grades it `unresolved` rather than
+`yes`. What it would take is repeated draws on one label, not another host.
+
 
 ## Historical C-core results
 

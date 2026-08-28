@@ -17,9 +17,9 @@
 //! `ExitStatus` onto the host process status exactly [PROG-3].
 
 use super::super::qualification::{
-    ApprovedImplementation, ORIGIN_DESCRIPTOR_STATUS, ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE,
-    ORIGIN_READ, ORIGIN_WRITE, ProgramKind, Qualification, ReleaseImplementation, SystemTarget,
-    qualified_representation,
+    ApprovedImplementation, DirectoryEnumeration, EntryNameLength, ORIGIN_DESCRIPTOR_STATUS,
+    ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_WRITE, ProgramKind, Qualification,
+    ReleaseImplementation, SystemTarget, qualified_representation,
 };
 use super::*;
 use crate::ACTIVE_KERNEL_SPEC_VERSION;
@@ -422,12 +422,18 @@ fn operation_declarations(
             let enumeration = target
                 .directory_enumeration()
                 .ok_or(BackendFailure::InvalidIr)?;
-            /* The C adapter is target-guarded and calls this exact Darwin
-             * facility. Refuse to reuse it if a future target contributes a
-             * different enumeration ABI or declaration. */
-            if enumeration.symbol() != "__getdirentries64"
-                || enumeration.declaration() != "declare i64 @__getdirentries64(i32, ptr, i64, ptr)"
-            {
+            /* The C adapter is target-guarded and calls exactly one of these
+             * two facilities behind the one private ABI symbol declared
+             * below. Refuse to reuse that symbol if a future target
+             * contributes a third enumeration ABI or declaration. */
+            let admitted = matches!(
+                (enumeration.symbol(), enumeration.declaration()),
+                (
+                    "__getdirentries64",
+                    "declare i64 @__getdirentries64(i32, ptr, i64, ptr)"
+                ) | ("getdents64", "declare i64 @getdents64(i32, ptr, i64)")
+            );
+            if !admitted {
                 return Err(BackendFailure::InvalidIr);
             }
             return Ok(vec![
@@ -2206,249 +2212,86 @@ fn emit_open_directory_source(
     Ok(format!("{mapper}{wrapper}"))
 }
 
-/// Emits the approved implementation of `directory_next` [SYS-14].
+/// Emits the one portable-record normalizer both `directory_next` routes
+/// embed [SYS-14].
 ///
-/// The shape is [SYS-8]'s: enter the statically authorized range, obtain at
-/// most one progress-producing host transfer through the target-progress
-/// wrapper, then one outcome check and a cold mapper [QUAL-3]. Interruption and
-/// readiness refusal remain inside that wrapper. The one addition is
-/// normalization — the facility writes its own records into the caller's
-/// range, and the shim rewrites them in place as the portable
+/// The facility writes its own records into the caller's range, and the shim
+/// rewrites them in place as the portable
 /// `[kind][little-endian u16 name length][name bytes]` sequence [SYS-14]. The
 /// rewrite moves every byte strictly toward the front, because a portable
-/// record's three-byte header is smaller than any native record's, so no
-/// unread byte is ever overwritten. Every native header field is validated
-/// against the reported extent before it is used, so a record the facility
-/// mis-sizes ends the walk instead of reading past the range.
-fn emit_directory_next(
-    program: &IrProgram<'_, '_, '_>,
-    implementation: ApprovedImplementation,
+/// record's three-byte header is smaller than any qualified target's native
+/// one, so no unread byte is ever overwritten. Every native header field is
+/// validated against the reported extent before it is used, so a record the
+/// facility mis-sizes ends the walk instead of reading past the range.
+///
+/// This is one text, emitted from one place, for both the direct route and the
+/// completion mapper and for every qualified target. The only target-selected
+/// part is the `header` block's tail, which answers exactly one question:
+/// where the name's byte length comes from. Darwin's record states it in a
+/// field; Linux's states none and NUL-terminates the name inside the extent
+/// `d_reclen` reports, so the length is derived by one scan bounded by that
+/// extent. The scan reads the name before any byte of this record is
+/// rewritten, and the rewrite target is strictly behind the record's own name,
+/// so measuring and copying never observe a byte the walk already moved.
+fn emit_directory_record_normalizer(
     shape: &ListOutcomeShape,
     target: SystemTarget,
-) -> Result<String, BackendFailure> {
-    let list = representation(SystemResourceType::DirectorySource);
-    let buffer = llvm_type(
-        program,
-        IrType::Buffer {
-            element: crate::IrFlatElement::Integer {
-                width: 8,
-                signed: false,
-            },
-        },
-    )?;
-    let enumeration = target
-        .directory_enumeration()
-        .ok_or(BackendFailure::InvalidIr)?;
+    enumeration: DirectoryEnumeration,
+) -> String {
     let ListOutcomeShape {
         llvm,
         bytes_tag,
         bytes_index,
-        end_tag,
-        failed_tag,
-        failed_index,
-        failed_llvm,
         ..
     } = shape;
     let entries_index = bytes_index + 1;
-    let entry = range_entry("  %position = alloca i64, align 8\n");
-    let (read_error, error) = native_error(target, "failure");
     let name_offset = enumeration.name_offset();
     let record_length_offset = enumeration.record_length_offset();
-    let name_length_offset = enumeration.name_length_offset();
     let entry_type_offset = enumeration.entry_type_offset();
     let native_regular = enumeration.native_regular();
     let native_directory = enumeration.native_directory();
     let native_symlink = enumeration.native_symlink();
     let native_unknown = enumeration.native_unknown();
     let component_limit = target.component_limit();
-    let mapper = emit_directory_next_completion_mapper(program, shape, target)?;
-    let wrapper = format!(
-        "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %start, \
-         i64 %end) alwaysinline {{\n\
-         {entry}\
-         measure:\n  \
-         store i64 0, ptr %position, align 8\n  \
-         %empty.range = icmp eq i64 %extent, 0\n  \
-         br i1 %empty.range, label %empty, label %transfer\n\
-         empty:\n  \
-         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %empty.endpoint = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
-         %empty.outcome = insertvalue {llvm} %empty.endpoint, i64 0, {entries_index}\n  \
-         ret {llvm} %empty.outcome\n\
-         transfer:\n  \
-         %base = extractvalue {buffer} %destination, 0\n  \
-         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %filled = call i64 @wf__completion_directory_next_direct({list} %list, ptr %window, i64 %extent, \
-         ptr %position)\n  \
-         %progress = icmp sgt i64 %filled, 0\n  \
-         br i1 %progress, label %sanitize, label %quiet\n\
-         sanitize:\n  \
-         %bounded.batch = icmp ule i64 %filled, %extent\n  \
-         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
-         quiet:\n  \
-         %ended = icmp eq i64 %filled, 0\n  \
-         br i1 %ended, label %exhausted, label %failure\n\
-         exhausted:\n  \
-         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
-         ret {llvm} %exhausted.outcome\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_READ})\n  \
-         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
-         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
-         {failed_index}\n  \
-         ret {llvm} %failed.outcome\n\
-         normalize:\n  \
-         br label %walk\n\
-         walk:\n  \
-         %source = phi i64 [ 0, %normalize ], [ %source.next, %step ]\n  \
-         %written = phi i64 [ 0, %normalize ], [ %written.next, %step ]\n  \
-         %entries = phi i64 [ 0, %normalize ], [ %entries.next, %step ]\n  \
-         %complete = icmp eq i64 %source, %filled\n  \
-         br i1 %complete, label %done, label %record\n\
-         record:\n  \
-         %remaining = sub nuw i64 %filled, %source\n  \
-         %headerless = icmp ult i64 %remaining, {name_offset}\n  \
-         br i1 %headerless, label %tcb.defect, label %header\n\
-         header:\n  \
-         %entry.record = getelementptr inbounds i8, ptr %window, i64 %source\n  \
-         %record.extent.at = getelementptr inbounds i8, ptr %entry.record, i64 {record_length_offset}\n  \
-         %record.extent.native = load i16, ptr %record.extent.at, align 1\n  \
-         %record.extent = zext i16 %record.extent.native to i64\n  \
-         %named.at = getelementptr inbounds i8, ptr %entry.record, i64 {name_length_offset}\n  \
-         %named.native = load i16, ptr %named.at, align 1\n  \
-         %named = zext i16 %named.native to i64\n  \
-         %kind.at = getelementptr inbounds i8, ptr %entry.record, i64 {entry_type_offset}\n  \
-         %kind.native = load i8, ptr %kind.at, align 1\n  \
-         %kind.value = zext i8 %kind.native to i64\n  \
-         %needed = add i64 {name_offset}, %named\n  \
-         %sized = icmp uge i64 %record.extent, %needed\n  \
-         %bounded = icmp ule i64 %record.extent, %remaining\n  \
-         %advancing = icmp uge i64 %record.extent, 1\n  \
-         %nameable = icmp ule i64 %named, {component_limit}\n  \
-         %naming = icmp uge i64 %named, 1\n  \
-         %named.usable = and i1 %nameable, %naming\n  \
-         %consistent = and i1 %sized, %bounded\n  \
-         %progressive = and i1 %advancing, %named.usable\n  \
-         %usable = and i1 %consistent, %progressive\n  \
-         br i1 %usable, label %room, label %tcb.defect\n\
-         room:\n  \
-         %portable = add i64 {ENTRY_HEADER}, %named\n  \
-         %after = add i64 %written, %portable\n  \
-         %fits = icmp ule i64 %after, %extent\n  \
-         br i1 %fits, label %record.header, label %tcb.defect\n\
-         record.header:\n  \
-         %regular = icmp eq i64 %kind.value, {native_regular}\n  \
-         %directory = icmp eq i64 %kind.value, {native_directory}\n  \
-         %symlink = icmp eq i64 %kind.value, {native_symlink}\n  \
-         %unclassified = icmp eq i64 %kind.value, {native_unknown}\n  \
-         %kind.other = select i1 %regular, i8 {KIND_REGULAR}, i8 {KIND_OTHER}\n  \
-         %kind.directory = select i1 %directory, i8 {KIND_DIRECTORY}, i8 %kind.other\n  \
-         %kind.symlink = select i1 %symlink, i8 {KIND_SYMLINK}, i8 %kind.directory\n  \
-         %kind.portable = select i1 %unclassified, i8 {KIND_UNKNOWN}, i8 %kind.symlink\n  \
-         %target.record = getelementptr inbounds i8, ptr %window, i64 %written\n  \
-         store i8 %kind.portable, ptr %target.record, align 1\n  \
-         %target.named.low = getelementptr inbounds i8, ptr %target.record, i64 1\n  \
-         %target.named.high = getelementptr inbounds i8, ptr %target.record, i64 2\n  \
-         %named.short = trunc i64 %named to i16\n  \
-         %named.low = trunc i16 %named.short to i8\n  \
-         %named.high.part = lshr i16 %named.short, 8\n  \
-         %named.high = trunc i16 %named.high.part to i8\n  \
-         store i8 %named.low, ptr %target.named.low, align 1\n  \
-         store i8 %named.high, ptr %target.named.high, align 1\n  \
-         %target.name = getelementptr inbounds i8, ptr %target.record, i64 {ENTRY_HEADER}\n  \
-         %source.name = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
-         br label %copy\n\
-         copy:\n  \
-         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.store ]\n  \
-         %copy.done = icmp uge i64 %copied, %named\n  \
-         br i1 %copy.done, label %step, label %copy.step\n\
-         copy.step:\n  \
-         %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
-         %copy.byte = load i8, ptr %copy.from, align 1\n  \
-         %copy.nul = icmp eq i8 %copy.byte, 0\n  \
-         %copy.separator = icmp eq i8 %copy.byte, {root}\n  \
-         %copy.invalid = or i1 %copy.nul, %copy.separator\n  \
-         br i1 %copy.invalid, label %tcb.defect, label %copy.store\n\
-         copy.store:\n  \
-         %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
-         store i8 %copy.byte, ptr %copy.to, align 1\n  \
-         %copied.next = add i64 %copied, 1\n  \
-         br label %copy\n\
-         step:\n  \
-         %source.next = add i64 %source, %record.extent\n  \
-         %written.next = add i64 %written, %portable\n  \
-         %entries.next = add i64 %entries, 1\n  \
-         br label %walk\n\
-         done:\n  \
-         %next = add nuw i64 %start, %written\n  \
-         %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %bytes.endpoint = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
-         %bytes.outcome = insertvalue {llvm} %bytes.endpoint, i64 %entries, \
-         {entries_index}\n  \
-         ret {llvm} %bytes.outcome\n\
-         tcb.defect:\n  \
-         call void @abort()\n  \
-         unreachable\n\
-         }}\n\n",
-        symbol = implementation.symbol(),
-        root = target.root_prefix(),
-    );
-    Ok(format!("{mapper}{wrapper}"))
-}
-
-fn emit_directory_next_completion_mapper(
-    program: &IrProgram<'_, '_, '_>,
-    shape: &ListOutcomeShape,
-    target: SystemTarget,
-) -> Result<String, BackendFailure> {
-    let buffer = llvm_type(
-        program,
-        IrType::Buffer {
-            element: crate::IrFlatElement::Integer {
-                width: 8,
-                signed: false,
-            },
-        },
-    )?;
-    let enumeration = target
-        .directory_enumeration()
-        .ok_or(BackendFailure::InvalidIr)?;
-    let ListOutcomeShape {
-        llvm,
-        bytes_tag,
-        bytes_index,
-        end_tag,
-        failed_tag,
-        failed_index,
-        failed_llvm,
-        ..
-    } = shape;
-    let entries_index = bytes_index + 1;
-    Ok(format!(
-        "define private {llvm} @{DIRECTORY_NEXT_COMPLETION_MAPPER}(i64 %filled, i32 %error, \
-         {buffer} %destination, i64 %start, i64 %extent) alwaysinline {{\n\
-         entry:\n  \
-         %base = extractvalue {buffer} %destination, 0\n  \
-         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %progress = icmp sgt i64 %filled, 0\n  \
-         br i1 %progress, label %sanitize, label %quiet\n\
-         sanitize:\n  \
-         %bounded.batch = icmp ule i64 %filled, %extent\n  \
-         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
-         quiet:\n  \
-         %ended = icmp eq i64 %filled, 0\n  \
-         br i1 %ended, label %exhausted, label %failure\n\
-         exhausted:\n  \
-         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
-         ret {llvm} %exhausted.outcome\n\
-         failure:\n  \
-         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {ORIGIN_READ})\n  \
-         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
-         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
-         {failed_index}\n  \
-         ret {llvm} %failed.outcome\n\
-         normalize:\n  \
+    // The `header` block's tail, and every block it needs before `validate`
+    // sees one `%named`.
+    let measure = match enumeration.name_length() {
+        EntryNameLength::Field { offset } => format!(
+            "  %named.at = getelementptr inbounds i8, ptr %entry.record, i64 {offset}\n  \
+             %named.native = load i16, ptr %named.at, align 1\n  \
+             %named = zext i16 %named.native to i64\n  \
+             br label %validate\n"
+        ),
+        // The extent must be inside the reported batch and must hold at least
+        // one name byte before a single byte of the name is read, because the
+        // scan's bound is the extent itself.
+        EntryNameLength::NulTerminated => format!(
+            "  %name.bounded = icmp ule i64 %record.extent, %remaining\n  \
+             %name.present = icmp ugt i64 %record.extent, {name_offset}\n  \
+             %name.scannable = and i1 %name.bounded, %name.present\n  \
+             br i1 %name.scannable, label %name.measure, label %tcb.defect\n\
+             name.measure:\n  \
+             %name.span = sub nuw i64 %record.extent, {name_offset}\n  \
+             %name.base = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
+             br label %name.scan\n\
+             name.scan:\n  \
+             %name.scanned = phi i64 [ 0, %name.measure ], \
+             [ %name.scanned.next, %name.scan.step ]\n  \
+             %name.unterminated = icmp uge i64 %name.scanned, %name.span\n  \
+             br i1 %name.unterminated, label %tcb.defect, label %name.scan.step\n\
+             name.scan.step:\n  \
+             %name.at = getelementptr inbounds i8, ptr %name.base, i64 %name.scanned\n  \
+             %name.byte = load i8, ptr %name.at, align 1\n  \
+             %name.terminator = icmp eq i8 %name.byte, 0\n  \
+             %name.scanned.next = add i64 %name.scanned, 1\n  \
+             br i1 %name.terminator, label %name.measured, label %name.scan\n\
+             name.measured:\n  \
+             %named = phi i64 [ %name.scanned, %name.scan.step ]\n  \
+             br label %validate\n"
+        ),
+    };
+    format!(
+        "normalize:\n  \
          br label %walk\n\
          walk:\n  \
          %source = phi i64 [ 0, %normalize ], [ %source.next, %step ]\n  \
@@ -2466,12 +2309,11 @@ fn emit_directory_next_completion_mapper(
          i64 {record_length_offset}\n  \
          %record.extent.native = load i16, ptr %record.extent.at, align 1\n  \
          %record.extent = zext i16 %record.extent.native to i64\n  \
-         %named.at = getelementptr inbounds i8, ptr %entry.record, i64 {name_length_offset}\n  \
-         %named.native = load i16, ptr %named.at, align 1\n  \
-         %named = zext i16 %named.native to i64\n  \
          %kind.at = getelementptr inbounds i8, ptr %entry.record, i64 {entry_type_offset}\n  \
          %kind.native = load i8, ptr %kind.at, align 1\n  \
-         %kind.value = zext i8 %kind.native to i64\n  \
+         %kind.value = zext i8 %kind.native to i64\n\
+         {measure}\
+         validate:\n  \
          %needed = add i64 {name_offset}, %named\n  \
          %sized = icmp uge i64 %record.extent, %needed\n  \
          %bounded = icmp ule i64 %record.extent, %remaining\n  \
@@ -2539,18 +2381,146 @@ fn emit_directory_next_completion_mapper(
          ret {llvm} %bytes.outcome\n\
          tcb.defect:\n  \
          call void @abort()\n  \
-         unreachable\n\
-         }}\n\n",
-        name_offset = enumeration.name_offset(),
-        record_length_offset = enumeration.record_length_offset(),
-        name_length_offset = enumeration.name_length_offset(),
-        entry_type_offset = enumeration.entry_type_offset(),
-        native_regular = enumeration.native_regular(),
-        native_directory = enumeration.native_directory(),
-        native_symlink = enumeration.native_symlink(),
-        native_unknown = enumeration.native_unknown(),
-        component_limit = target.component_limit(),
+         unreachable\n",
         root = target.root_prefix(),
+    )
+}
+
+/// Emits the approved implementation of `directory_next` [SYS-14].
+///
+/// The shape is [SYS-8]'s: enter the statically authorized range, obtain at
+/// most one progress-producing host transfer through the target-progress
+/// wrapper, then one outcome check and a cold mapper [QUAL-3]. Interruption and
+/// readiness refusal remain inside that wrapper. The one addition is
+/// normalization, which is [`emit_directory_record_normalizer`]'s one text.
+fn emit_directory_next(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ListOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let list = representation(SystemResourceType::DirectorySource);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let enumeration = target
+        .directory_enumeration()
+        .ok_or(BackendFailure::InvalidIr)?;
+    let ListOutcomeShape {
+        llvm,
+        bytes_tag,
+        bytes_index,
+        end_tag,
+        failed_tag,
+        failed_index,
+        failed_llvm,
+        ..
+    } = shape;
+    let entries_index = bytes_index + 1;
+    let entry = range_entry("  %position = alloca i64, align 8\n");
+    let (read_error, error) = native_error(target, "failure");
+    let normalizer = emit_directory_record_normalizer(shape, target, enumeration);
+    let mapper = emit_directory_next_completion_mapper(program, shape, target)?;
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
+         measure:\n  \
+         store i64 0, ptr %position, align 8\n  \
+         %empty.range = icmp eq i64 %extent, 0\n  \
+         br i1 %empty.range, label %empty, label %transfer\n\
+         empty:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %empty.endpoint = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.endpoint, i64 0, {entries_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         transfer:\n  \
+         %base = extractvalue {buffer} %destination, 0\n  \
+         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %filled = call i64 @wf__completion_directory_next_direct({list} %list, ptr %window, i64 %extent, \
+         ptr %position)\n  \
+         %progress = icmp sgt i64 %filled, 0\n  \
+         br i1 %progress, label %sanitize, label %quiet\n\
+         sanitize:\n  \
+         %bounded.batch = icmp ule i64 %filled, %extent\n  \
+         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
+         quiet:\n  \
+         %ended = icmp eq i64 %filled, 0\n  \
+         br i1 %ended, label %exhausted, label %failure\n\
+         exhausted:\n  \
+         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
+         ret {llvm} %exhausted.outcome\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_READ})\n  \
+         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
+         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
+         {failed_index}\n  \
+         ret {llvm} %failed.outcome\n\
+         {normalizer}\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    );
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_directory_next_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &ListOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let enumeration = target
+        .directory_enumeration()
+        .ok_or(BackendFailure::InvalidIr)?;
+    let ListOutcomeShape {
+        llvm,
+        end_tag,
+        failed_tag,
+        failed_index,
+        failed_llvm,
+        ..
+    } = shape;
+    let normalizer = emit_directory_record_normalizer(shape, target, enumeration);
+    Ok(format!(
+        "define private {llvm} @{DIRECTORY_NEXT_COMPLETION_MAPPER}(i64 %filled, i32 %error, \
+         {buffer} %destination, i64 %start, i64 %extent) alwaysinline {{\n\
+         entry:\n  \
+         %base = extractvalue {buffer} %destination, 0\n  \
+         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %progress = icmp sgt i64 %filled, 0\n  \
+         br i1 %progress, label %sanitize, label %quiet\n\
+         sanitize:\n  \
+         %bounded.batch = icmp ule i64 %filled, %extent\n  \
+         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
+         quiet:\n  \
+         %ended = icmp eq i64 %filled, 0\n  \
+         br i1 %ended, label %exhausted, label %failure\n\
+         exhausted:\n  \
+         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
+         ret {llvm} %exhausted.outcome\n\
+         failure:\n  \
+         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {ORIGIN_READ})\n  \
+         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
+         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
+         {failed_index}\n  \
+         ret {llvm} %failed.outcome\n\
+         {normalizer}\
+         }}\n\n"
     ))
 }
 

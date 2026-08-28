@@ -7301,7 +7301,7 @@ command fn main() -> status: own ExitStatus pure {
         validate_claim_ledger(&program.data);
         assert_eq!(program.data.claim_ledger.entries.len(), 1);
         let entry = &program.data.claim_ledger.entries[0];
-        assert_eq!(entry.source.logical_path, "test.wf");
+        assert_eq!(entry.source.display_path, "test.wf");
         assert_eq!(entry.source.coordinate.source().ordinal(), 0);
         assert_eq!(entry.name, "in_range");
         assert_eq!(entry.predicate, "inside");
@@ -7832,8 +7832,8 @@ command fn main() -> status: own ExitStatus traps {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].source.node_path, entries[1].source.node_path);
         assert_eq!(
-            entries[0].source.logical_path,
-            entries[1].source.logical_path
+            entries[0].source.display_path,
+            entries[1].source.display_path
         );
         assert_ne!(entries[0].source.function, entries[1].source.function);
         assert_ne!(
@@ -9811,8 +9811,16 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(detail.concrete_callee, "guarded");
         assert!(!detail.requires_clause.components().is_empty());
-        assert!(detail.instantiated_goal.contains("Boolean(And)"));
-        assert!(detail.instantiated_goal.contains("Integer(U64)"));
+        // The alpha-expanded requirement in the terms the caller wrote, with
+        // the caller's own binder in it. The structural dump this replaced
+        // opened `Boolean(And)<types=[], consts=[]>(Integer { operation:
+        // Greater, .. }(Place { root: BindingId(0), .. }))`, and four rounds of
+        // readers could not find any of that in their own program. [OP-4] and
+        // [SYS-8] already print their residual this way.
+        assert_eq!(
+            detail.instantiated_goal,
+            "band(igt(value, 0_u64), ilt(value, 10_u64))"
+        );
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(
             detail.mechanical_fix,

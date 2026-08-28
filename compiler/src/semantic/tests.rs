@@ -308,6 +308,26 @@ fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     });
 }
 
+/// Asserts a rejection's rule and which issue kind it cited, without pinning a
+/// payload the call site does not state.
+///
+/// These call sites predate the payloads batch 0100 gave `TypeMismatch`,
+/// `EffectMismatch`, `InvalidEffectRow`, and `InvalidBorrowLifetime`, and each
+/// asserts here exactly what it asserted when those kinds were unit variants:
+/// which rule rejected, and which kind it cited. Nothing was narrowed. The
+/// payload text those kinds carry is pinned by
+/// `driver::pinned_sentences`, one row per sentence, which is where a change
+/// to the wording has to be made deliberately.
+fn assert_rule_kind(source: &[u8], rule: SemanticRule, kind: fn(&SemanticIssueKind) -> bool) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected {rule:?} with a matching kind, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule);
+        assert!(kind(issue.kind()), "unexpected kind {:?}", issue.kind());
+    });
+}
+
 /// [`assert_rule`] under the reborrow extension [OWN-6, OWN-14].
 fn assert_rule_extension(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     with_semantics_extension(source, |outcome| {
@@ -450,15 +470,15 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticRule::Clm1,
         SemanticIssueKind::InvalidPredicateCondition,
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn helper() -> result: own unit pure {\n  claim bad: True() because \"premises: this negative fixture has no approved theorem premise\\nderivation: the effect-row check must reject before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the EFF-2 ordering under test\\nconsumers: no approved program consumes this negative fixture\";\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn helper() -> result: own unit traps {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -615,10 +635,10 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
 #[test]
 fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // Missing the arguments the callee's class mandates.
-    assert_rule(
+    assert_rule_kind(
         b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return exit_status(code: 0_u8);\n}\n",
@@ -627,10 +647,10 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     );
 
     // A wrong-count argument list, the same failure on both classes.
-    assert_rule(
+    assert_rule_kind(
         b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
         b"command fn main() -> status: own ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt<i32>(value);\n  return exit_status(code: 0_u8);\n}\n",
@@ -642,10 +662,10 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // written arguments, and it shares the argument-list reader with the
     // user-generic call, so it is the control that the rule is not simply
     // keyed on that reader.
-    assert_rule(
+    assert_rule_kind(
         b"struct Pair<T> {\n  v: T;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -738,10 +758,10 @@ fn enum_equality_exclusions_reach_the_intended_rule() {
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
-    assert_rule(
+    assert_rule_kind(
         b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let left = LeftFirst();\n  let right = RightFirst();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -790,15 +810,15 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 fn undeclared_system_effect_categories_reject_both_row_directions() {
     // Capability effects are checked in both directions [EFF-1, EFF-2].
     // First an unexhibited declaration, then an undeclared exhibited read.
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(args: own Args) -> result: own u64 pure {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -975,7 +995,7 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Err3,
         SemanticIssueKind::InvalidPropagation,
     );
-    assert_rule(
+    assert_rule_kind(
         br#"enum Flag {
   First();
   Second();
@@ -993,12 +1013,12 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         include_bytes!("../../../tests/conformance/cases/x-enum-result-payload-type-mismatch.wf"),
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -1059,10 +1079,84 @@ fn set_rejections_keep_their_exact_rule_owners() {
             mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
         },
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus pure {\n  let number = 1_i32;\n  set number = True();\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
+    );
+}
+
+/// [STOR-1] offers the restructuring its own right-hand side admits.
+///
+/// `replace` binds the previous owner out of the target's root, so it is the
+/// answer only while that root is still alive at the commit. When the value
+/// being committed consumed the root to compute itself, `replace` produces
+/// `[OWN-1] UseAfterMove` instead of an accepted program: a mechanical fix the
+/// next rule rejects is worse than no fix, because it spends an attempt. The
+/// third case here is the offered form, checked, so the pair cannot drift
+/// apart.
+#[test]
+fn an_affine_set_offers_the_restructuring_its_right_hand_side_admits() {
+    assert_rule(
+        b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Stor1,
+        SemanticIssueKind::AffineSetTarget {
+            target_type: "Cell".to_owned(),
+            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+        },
+    );
+    assert_rule(
+        br#"struct Counts {
+  lines: u64;
+  bytes: u64;
+}
+
+fn walk(running: own Counts) -> result: own Counts pure {
+  return move running;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let totals = Counts(lines: 0_u64, bytes: 0_u64);
+  set totals = walk(running: move totals);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Stor1,
+        SemanticIssueKind::AffineSetTarget {
+            target_type: "Counts".to_owned(),
+            mechanical_fix: "the right-hand side consumes the target root, so replace cannot \
+                             commit into it: bind the result under a new let, and combine it \
+                             with the old value field by field",
+        },
+    );
+    with_semantics(
+        br#"struct Counts {
+  lines: u64;
+  bytes: u64;
+}
+
+fn walk(running: own Counts) -> result: own Counts pure {
+  return move running;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let totals = Counts(lines: 0_u64, bytes: 0_u64);
+  let sub = walk(running: move totals);
+  let lines = sub.lines;
+  let bytes = sub.bytes;
+  let total = lines +wrap bytes;
+  let empty = ieq(total, 0_u64);
+  if empty {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("the offered restructuring must check: {outcome:?}");
+            };
+        },
     );
 }
 

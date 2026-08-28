@@ -822,6 +822,12 @@ pub enum ResolutionIssueKind {
         spelling: String,
         /// Ordered nonempty conflicts.
         conflicts: Vec<DeclarationConflict>,
+        /// The repair the colliding situation admits.
+        ///
+        /// The four situations differ in what a writer can do about them, and
+        /// the conflict list locates the other declaration without ever saying
+        /// which situation this is.
+        mechanical_fix: &'static str,
     },
     /// Admissible declarations exist in the candidate universe but are hidden.
     InvisibleUse {

@@ -33,7 +33,7 @@ carries the evidence and nothing here restates it.
 | F6 | Dynamically sized per-node allocation can never actualize | HIGH (design limit) | WORKS-AS-DESIGNED | Unchanged. |
 | F4 | Ledger reports pairs, never runs, never what was handed out | MEDIUM | GAP | Partly addressed — Dig 8 added `PAR chain` lines for runs — but no batch dispositioned it, so read it as open. |
 | F5 | Allocation-heavy lanes cost ~3x more per hand-out than compute lanes | MEDIUM | GAP | **Dissolved** per 0076 Dig 3/4. |
-| F7 | Ledger cites a filename that does not exist | LOW | BUG | **Open, untouched.** Re-verified at the branch tip on 2026-08-22: a bare relative path reports correctly, while `./p1b.wf` and any absolute path both report `input0.wf`. No commit in 0076 or 0077 touched `logical_path`. |
+| F7 | Ledger cites a filename that does not exist | LOW | BUG | **Closed**, 0099 (`docs/done/0099-writer-defaults.md` item 1): a source now carries two names, and every diagnostic and ledger line prints the host path the caller typed. `logical_path` survives only as the bundle key that orders the bundle and detects a duplicate; no emitted module ever carried a source name. |
 
 **Correctness never broke.** Across 12 probe programs and worker counts 1, 2, 4, 8, 64, 65 plus every malformed setting, output was byte-identical to the sequential build in every run. No deadlock, no livelock, no wrong bytes, no hang. Every finding is a resource, performance, or reporting defect.
 

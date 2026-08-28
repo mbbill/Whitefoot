@@ -38,6 +38,63 @@ pub(crate) struct DiagnosticSite<'tokens, 'source> {
 pub(crate) struct ProbeContext {
     pub(crate) production: Production,
     pub(crate) atom_only: bool,
+    /// Whether an open production frame is the `contract_block` of GRAM-2.
+    ///
+    /// The repair GRAM-9 admits is the same restructuring in both positions —
+    /// bind the inner call first and write the binder here — but the binding
+    /// statement is not: a body has `let_stmt` and a `contract_block` has only
+    /// `contract_define`. The grammar position decides which, so it is read
+    /// from the open frames and never from the text of the offending line.
+    pub(crate) in_contract: bool,
+}
+
+/// GRAM-9's repair in the two grammar positions that admit a binding.
+const GRAM9_BODY_FIX: &str = "a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`";
+const GRAM9_CONTRACT_FIX: &str = "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`";
+
+/// [FORM-3]'s lexical class for each name slot, with the repair a slot filled
+/// from another class admits.
+///
+/// A name slot's class is a grammar position: `const_decl` writes IDENT,
+/// `struct_decl` writes TYPEID, and no class is admitted in another's slot.
+/// The expectation list names the class and never says what the class is, so
+/// a writer who spelled a const `Limit` read only `expected: ["IDENT"]`.
+const FORM3_IDENT_FIX: &str = "an IDENT slot admits only [FORM-3]'s IDENT `[a-z][a-z0-9_]*`, so a `const`, `fn`, parameter, `let`, field, or binder name is lowercase and is never a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the IDENT shape";
+const FORM3_TYPEID_FIX: &str = "a TYPEID slot admits only [FORM-3]'s TYPEID `[A-Z][A-Za-z0-9]*`, so a struct, enum, contract, variant, or constructor name is capitalized and is never an IDENT `[a-z][a-z0-9_]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the TYPEID shape";
+const FORM3_REGIONID_FIX: &str = "a REGIONID slot admits only [FORM-3]'s REGIONID `'[a-z][a-z0-9_]*`, the one region spelling, so write the leading apostrophe; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a LABEL `@[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here";
+const FORM3_LABEL_FIX: &str = "a LABEL slot admits only [FORM-3]'s LABEL `@[a-z][a-z0-9_]*`, so write the leading `@`; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here";
+
+/// [GRAM-2] fixes the order of a `contract_block`: every `contract_define`,
+/// then every `requires_clause`, then every `ensures_clause`. A clause written
+/// out of that order leaves the frontier at a position whose expectation list
+/// names only the sections still open, which states what is admitted next
+/// without ever stating the order that was broken.
+const GRAM2_CONTRACT_ORDER_FIX: &str = "a `contract_block` is written in one fixed order: all `define` definitions first, then all `requires` requirements, then all `ensures` postconditions. A clause of an earlier section written after a later one is not admitted, so move it above the first clause of the later section";
+
+/// The repair the failing production admits, when the production itself fixes
+/// one. The decision is the grammar position, never the text of the line.
+const fn production_fix(production: Production) -> Option<&'static str> {
+    match production {
+        Production::ContractBlock => Some(GRAM2_CONTRACT_ORDER_FIX),
+        _ => None,
+    }
+}
+
+/// The repair a name slot admits, selected by the lexical class the slot's
+/// grammar position writes.
+///
+/// OPNAME is the one class no slot admits alone: the grammar's single OPNAME
+/// atom is `callee`'s second row, whose frontier also carries `callee`'s IDENT
+/// row, so the two transparent names disagree and this selection is never
+/// reached with OPNAME. It carries no sentence rather than an unreachable one.
+const fn name_class_fix(expected: NamePredicate) -> Option<&'static str> {
+    match expected {
+        NamePredicate::Identifier => Some(FORM3_IDENT_FIX),
+        NamePredicate::TypeIdentifier => Some(FORM3_TYPEID_FIX),
+        NamePredicate::RegionIdentifier => Some(FORM3_REGIONID_FIX),
+        NamePredicate::Label => Some(FORM3_LABEL_FIX),
+        NamePredicate::OperationName => None,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -170,6 +227,7 @@ fn dotted_override(
                     window[2].token().id().end(),
                 ),
                 expected,
+                mechanical_fix: None,
             }));
         }
     }
@@ -181,6 +239,7 @@ fn forbidden_atom_override(
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     atom_only: bool,
+    in_contract: bool,
     expected: super::ExpectedTerminals,
 ) -> Option<SyntaxIssue> {
     if !atom_only {
@@ -202,6 +261,11 @@ fn forbidden_atom_override(
                 second.token().id().end(),
             ),
             expected,
+            mechanical_fix: Some(if in_contract {
+                GRAM9_CONTRACT_FIX
+            } else {
+                GRAM9_BODY_FIX
+            }),
         });
     }
     None
@@ -249,14 +313,16 @@ fn actual_name(token: &ClassifiedToken<'_>) -> Option<NamePredicate> {
     .find(|predicate| has(token, predicate.terminal()))
 }
 
+/// The owning rule and the lexical class the slot admits, for a name slot
+/// filled from another class.
 fn name_slot_owner(
     token: &ClassifiedToken<'_>,
     transparent: Option<NamePredicate>,
     paths_agree: bool,
-) -> Option<SyntaxRule> {
+) -> Option<(SyntaxRule, NamePredicate)> {
     let actual = actual_name(token)?;
     let expected = transparent?;
-    (paths_agree && actual != expected).then_some(SyntaxRule::Form3)
+    (paths_agree && actual != expected).then_some((SyntaxRule::Form3, expected))
 }
 
 fn construct_override(
@@ -281,6 +347,7 @@ fn construct_override(
         rule: SyntaxRule::Form1,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
         expected,
+        mechanical_fix: None,
     })
 }
 
@@ -308,6 +375,7 @@ fn program_leftover(
         rule: SyntaxRule::Gram2,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
         expected: ExpectedBuilder::only_end().finish(),
+        mechanical_fix: None,
     })
 }
 
@@ -420,7 +488,7 @@ fn override_issue(
     decision: Decision,
     frontier: &Frontier,
     site: DiagnosticSite<'_, '_>,
-    atom_only: bool,
+    context: ProbeContext,
     work: &mut Work,
 ) -> Result<Option<SyntaxIssue>, DiagnosticResult> {
     let boundary = site
@@ -439,7 +507,8 @@ fn override_issue(
         site.source,
         site.tokens,
         site.cursor,
-        atom_only || frontier.atom_only,
+        context.atom_only || frontier.atom_only,
+        context.in_contract,
         frontier.expected,
     ) {
         return Ok(Some(issue));
@@ -457,9 +526,10 @@ fn override_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: frontier.expected,
+                mechanical_fix: None,
             }));
         }
-        if let Some(rule) = name_slot_owner(
+        if let Some((rule, admitted)) = name_slot_owner(
             token,
             frontier.transparent_name,
             !frontier.transparent_disagreement,
@@ -475,6 +545,7 @@ fn override_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: frontier.expected,
+                mechanical_fix: name_class_fix(admitted),
             }));
         }
     }
@@ -555,7 +626,7 @@ fn descend_or_issue(
     tasks: &mut Vec<ProbeTask>,
 ) -> Result<Option<SyntaxIssue>, DiagnosticResult> {
     let value = frontier(decision, site.tokens, site.cursor, work)?;
-    if let Some(issue) = override_issue(decision, &value, site, context.atom_only, work)? {
+    if let Some(issue) = override_issue(decision, &value, site, context, work)? {
         return Ok(Some(issue));
     }
     if value.best_arm_internal {
@@ -575,6 +646,7 @@ fn descend_or_issue(
                 )
                 .map_err(DiagnosticResult::Compiler)?,
                 expected: value.expected,
+                mechanical_fix: production_fix(decision.production()),
             }));
         };
         tasks.clear();
@@ -593,6 +665,7 @@ fn descend_or_issue(
         )
         .map_err(DiagnosticResult::Compiler)?,
         expected: value.expected,
+        mechanical_fix: production_fix(decision.production()),
     }))
 }
 
@@ -615,6 +688,7 @@ pub(crate) fn direct_mismatch(
         site.tokens,
         site.cursor,
         context.atom_only,
+        context.in_contract,
         expected,
     ) {
         return DiagnosticResult::Issue(issue);
@@ -629,6 +703,7 @@ pub(crate) fn direct_mismatch(
                     token.token().id().end(),
                 ),
                 expected,
+                mechanical_fix: None,
             });
         }
         let transparent = [
@@ -640,7 +715,7 @@ pub(crate) fn direct_mismatch(
         ]
         .into_iter()
         .find(|name| name.terminal() == expected_terminal);
-        if let Some(rule) = name_slot_owner(token, transparent, true) {
+        if let Some((rule, admitted)) = name_slot_owner(token, transparent, true) {
             return DiagnosticResult::Issue(SyntaxIssue {
                 rule,
                 coordinate: SyntaxCoordinate::new(
@@ -649,6 +724,7 @@ pub(crate) fn direct_mismatch(
                     token.token().id().end(),
                 ),
                 expected,
+                mechanical_fix: name_class_fix(admitted),
             });
         }
     }
@@ -657,6 +733,7 @@ pub(crate) fn direct_mismatch(
             rule: SyntaxRule::from(context.production.owner()),
             coordinate,
             expected,
+            mechanical_fix: production_fix(context.production),
         }),
         Err(failure) => DiagnosticResult::Compiler(failure),
     }
@@ -709,6 +786,8 @@ fn probe(
                         let nested = ProbeContext {
                             production,
                             atom_only: node.is_atom_only_reference(),
+                            in_contract: task_context.in_contract
+                                || production == Production::ContractBlock,
                         };
                         if let Err(failure) = push_probe(
                             &mut tasks,
@@ -891,7 +970,7 @@ pub(crate) fn diagnose_decision(
         Ok(value) => value,
         Err(result) => return result,
     };
-    match override_issue(decision, &value, site, context.atom_only, work) {
+    match override_issue(decision, &value, site, context, work) {
         Ok(Some(issue)) => return DiagnosticResult::Issue(issue),
         Ok(None) => {}
         Err(result) => return result,
@@ -925,5 +1004,6 @@ pub(crate) fn diagnose_decision(
         rule: SyntaxRule::from(decision.production().owner()),
         coordinate,
         expected: value.expected,
+        mechanical_fix: production_fix(decision.production()),
     })
 }

@@ -32,7 +32,7 @@ fn reserve_exact<T>(
 }
 
 fn fixed(set: &mut TerminalSet, terminal: FixedTerminal, spelling: &[u8]) -> bool {
-    if spelling != terminal.spelling() {
+    if spelling != terminal.spelling_bytes() {
         return false;
     }
     set.insert(TerminalPredicate::Fixed(terminal));

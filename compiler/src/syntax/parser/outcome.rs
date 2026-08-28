@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::syntax::grammar::{
     LookaheadPredicate, Production, RuleOwner, diagnostic_terminal_order,
 };
@@ -204,10 +206,29 @@ impl From<RuleOwner> for SyntaxRule {
 }
 
 /// Closed expected-terminal set in approved grammar-first order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ExpectedTerminals {
     terminals: TerminalSet,
     source_end: bool,
+}
+
+/// The set as the spellings a writer would have to write here.
+///
+/// The membership set is a bitfield, and printing the bitfield told a writer
+/// nothing they could act on: the number `38424498140022966840644862354` is
+/// the same fact as `["(", "IDENT", "literal", …]` and only one of the two can
+/// be read. The order is DIAG-1's, so it is the grammar's order and not the
+/// storage order.
+impl fmt::Debug for ExpectedTerminals {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_list()
+            .entries(self.iter().map(|predicate| match predicate {
+                LookaheadPredicate::Terminal(terminal) => terminal.spelling(),
+                LookaheadPredicate::SourceEnd => "end of source",
+            }))
+            .finish()
+    }
 }
 
 impl ExpectedTerminals {
@@ -278,11 +299,32 @@ impl ExpectedBuilder {
 }
 
 /// The first exact grammar-derivation rejection in stage order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct SyntaxIssue {
     pub(crate) rule: SyntaxRule,
     pub(crate) coordinate: SyntaxCoordinate,
     pub(crate) expected: ExpectedTerminals,
+    pub(crate) mechanical_fix: Option<&'static str>,
+}
+
+/// The expectation list, plus the repair when the owning rule has one.
+///
+/// A rule that admits exactly one restructuring can name it; a rule whose
+/// repair is "write one of these terminals instead" already said everything it
+/// knows in `expected`. Printing `mechanical_fix: None` on the second kind
+/// would be noise, so the field appears only when it carries a sentence.
+impl fmt::Debug for SyntaxIssue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut record = formatter.debug_struct("SyntaxIssue");
+        record
+            .field("rule", &self.rule)
+            .field("coordinate", &self.coordinate)
+            .field("expected", &self.expected);
+        if let Some(fix) = self.mechanical_fix {
+            record.field("mechanical_fix", &fix);
+        }
+        record.finish()
+    }
 }
 
 impl SyntaxIssue {
