@@ -1,10 +1,23 @@
 /* The io-completion-bench timing harness.
  *
- * Reads a plan of labelled commands, runs each one warmup times and then
- * `rounds` recorded times, and prints one row per label with the median and
- * the observed spread of wall time plus the median child user and system CPU.
- * Every recorded run's stdout is compared with the expected checksum line, so
- * a line that publishes different bytes cannot report a time at all.
+ * Reads a plan of labelled commands and runs the whole plan as a pass, over
+ * and over: `warmup` unrecorded passes and then `rounds` recorded ones,
+ * reversing the plan's order on every other pass. It then prints one row per
+ * label with the median across passes and the observed spread of wall time,
+ * plus the median child user and system CPU. Every recorded run's stdout is
+ * compared with the expected checksum line, so a line that publishes
+ * different bytes cannot report a time at all.
+ *
+ * Passes, rather than all of one line's runs and then all of the next's,
+ * because the hosts these tables are taken on drift. A shared runner's disk,
+ * its neighbours, and a laptop's thermal state all change over the minutes a
+ * table takes, and a grouped schedule turns that drift into a difference
+ * between lines: the line that ran first is measured against a different
+ * machine from the line that ran last. Interleaving spreads the drift across
+ * every line instead, and reversing alternate passes cancels the residue of
+ * position within a pass -- the line that runs last in a forward pass runs
+ * first in the next one, so a systematic first-in-pass or last-in-pass cost
+ * lands on every line equally.
  *
  * Plan lines are tab separated:
  *     label <TAB> KEY=VALUE,KEY=VALUE <TAB> command <TAB> arg <TAB> ...
@@ -24,6 +37,7 @@
 
 #define MAX_ARGUMENTS 32
 #define MAX_ROUNDS 128
+#define MAX_LINES 128
 #define MAX_OUTPUT 4096
 
 struct sample {
@@ -149,6 +163,44 @@ static int run_once(char **argument, char *environment, const char *expected,
     return 0;
 }
 
+/* One plan line, with the samples every recorded pass leaves in it. */
+struct plan_line {
+    char *storage;
+    char *label;
+    char *environment;
+    char *argument[MAX_ARGUMENTS];
+    size_t count;
+    double wall[MAX_ROUNDS];
+    double user[MAX_ROUNDS];
+    double system_time[MAX_ROUNDS];
+    size_t recorded;
+    int broken;
+};
+
+/* Splits one plan line in place. The caller owns `storage` until the run is
+ * over, because every pointer below points into it. */
+static int parse_plan_line(struct plan_line *line, char *storage) {
+    line->storage = storage;
+    line->count = 0;
+    line->recorded = 0;
+    line->broken = 0;
+    char *cursor = storage;
+    line->label = strsep(&cursor, "\t");
+    line->environment = strsep(&cursor, "\t");
+    while (cursor != NULL && line->count < MAX_ARGUMENTS - 1) {
+        char *piece = strsep(&cursor, "\t");
+        if (piece == NULL) {
+            break;
+        }
+        if (piece[0] == '\0') {
+            continue;
+        }
+        line->argument[line->count++] = piece;
+    }
+    line->argument[line->count] = NULL;
+    return line->label != NULL && line->count != 0;
+}
+
 int main(int argc, char **argv) {
     if (argc != 5) {
         fprintf(stderr, "usage: runner PLAN ROUNDS WARMUP EXPECTED\n");
@@ -167,86 +219,104 @@ int main(int argc, char **argv) {
         fclose(plan);
         return 2;
     }
-    printf("%-34s %10s %10s %10s %10s %10s\n", "line", "median_ms", "min_ms", "max_ms", "user_ms",
-           "sys_ms");
-    char line[4096];
+    struct plan_line *lines = calloc(MAX_LINES, sizeof *lines);
+    if (lines == NULL) {
+        fprintf(stderr, "runner: out of memory\n");
+        fclose(plan);
+        return 1;
+    }
+    size_t count = 0;
+    char text[4096];
     int failures = 0;
-    while (fgets(line, sizeof line, plan) != NULL) {
-        size_t length = strlen(line);
-        while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
-            line[--length] = '\0';
+    while (fgets(text, sizeof text, plan) != NULL) {
+        size_t length = strlen(text);
+        while (length > 0 && (text[length - 1] == '\n' || text[length - 1] == '\r')) {
+            text[--length] = '\0';
         }
-        if (length == 0 || line[0] == '#') {
+        if (length == 0 || text[0] == '#') {
             continue;
         }
-        char *cursor = line;
-        char *label = strsep(&cursor, "\t");
-        char *environment = strsep(&cursor, "\t");
-        char *argument[MAX_ARGUMENTS];
-        size_t count = 0;
-        while (cursor != NULL && count < MAX_ARGUMENTS - 1) {
-            char *piece = strsep(&cursor, "\t");
-            if (piece == NULL) {
-                break;
-            }
-            if (piece[0] == '\0') {
-                continue;
-            }
-            argument[count++] = piece;
+        if (count == MAX_LINES) {
+            fprintf(stderr, "runner: a plan may hold at most %d lines\n", MAX_LINES);
+            fclose(plan);
+            free(lines);
+            return 2;
         }
-        argument[count] = NULL;
-        if (label == NULL || count == 0) {
+        char *storage = strdup(text);
+        if (storage == NULL || !parse_plan_line(&lines[count], storage)) {
             fprintf(stderr, "runner: malformed plan line\n");
-            failures++;
-            continue;
+            free(storage);
+            fclose(plan);
+            free(lines);
+            return 2;
         }
-        struct sample sample;
-        int broken = 0;
-        for (unsigned long at = 0; at < warmup; at++) {
-            if (run_once(argument, environment, expected, &sample) != 0) {
-                broken = 1;
-                break;
-            }
-        }
-        if (broken) {
-            fprintf(stderr, "runner: %s failed during warmup\n", label);
-            failures++;
-            continue;
-        }
-        double wall[MAX_ROUNDS];
-        double user[MAX_ROUNDS];
-        double system_time[MAX_ROUNDS];
-        for (unsigned long at = 0; at < rounds; at++) {
-            if (run_once(argument, environment, expected, &sample) != 0) {
-                broken = 1;
-                break;
-            }
-            wall[at] = sample.wall_ms;
-            user[at] = sample.user_ms;
-            system_time[at] = sample.system_ms;
-        }
-        if (broken) {
-            fprintf(stderr, "runner: %s failed during measurement\n", label);
-            failures++;
-            continue;
-        }
-        double low = wall[0];
-        double high = wall[0];
-        for (unsigned long at = 1; at < rounds; at++) {
-            if (wall[at] < low) {
-                low = wall[at];
-            }
-            if (wall[at] > high) {
-                high = wall[at];
-            }
-        }
-        double middle = median_of(wall, rounds);
-        double user_middle = median_of(user, rounds);
-        double system_middle = median_of(system_time, rounds);
-        printf("%-34s %10.2f %10.2f %10.2f %10.2f %10.2f\n", label, middle, low, high,
-               user_middle, system_middle);
-        fflush(stdout);
+        count++;
     }
     fclose(plan);
+    if (count == 0) {
+        fprintf(stderr, "runner: the plan is empty\n");
+        free(lines);
+        return 2;
+    }
+
+    /* Passes, alternating direction. The pass index decides the direction, so
+     * the warm-up passes alternate too and the first recorded pass follows
+     * the last warm-up one rather than repeating it. */
+    unsigned long passes = warmup + rounds;
+    for (unsigned long pass = 0; pass < passes; pass++) {
+        int forward = pass % 2 == 0;
+        int recording = pass >= warmup;
+        fprintf(stderr, "runner: pass %lu of %lu (%s%s)\n", pass + 1, passes,
+                forward ? "plan order" : "reversed", recording ? "" : ", warm-up");
+        for (size_t step = 0; step < count; step++) {
+            struct plan_line *line = &lines[forward ? step : count - 1 - step];
+            if (line->broken) {
+                continue;
+            }
+            struct sample sample;
+            if (run_once(line->argument, line->environment, expected, &sample) != 0) {
+                fprintf(stderr, "runner: %s failed on pass %lu\n", line->label, pass + 1);
+                line->broken = 1;
+                failures++;
+                continue;
+            }
+            if (!recording) {
+                continue;
+            }
+            line->wall[line->recorded] = sample.wall_ms;
+            line->user[line->recorded] = sample.user_ms;
+            line->system_time[line->recorded] = sample.system_ms;
+            line->recorded++;
+        }
+    }
+
+    printf("%-34s %10s %10s %10s %10s %10s\n", "line", "median_ms", "min_ms", "max_ms", "user_ms",
+           "sys_ms");
+    for (size_t at = 0; at < count; at++) {
+        struct plan_line *line = &lines[at];
+        if (line->broken || line->recorded == 0) {
+            continue;
+        }
+        double low = line->wall[0];
+        double high = line->wall[0];
+        for (size_t pass = 1; pass < line->recorded; pass++) {
+            if (line->wall[pass] < low) {
+                low = line->wall[pass];
+            }
+            if (line->wall[pass] > high) {
+                high = line->wall[pass];
+            }
+        }
+        double middle = median_of(line->wall, line->recorded);
+        double user_middle = median_of(line->user, line->recorded);
+        double system_middle = median_of(line->system_time, line->recorded);
+        printf("%-34s %10.2f %10.2f %10.2f %10.2f %10.2f\n", line->label, middle, low, high,
+               user_middle, system_middle);
+    }
+    fflush(stdout);
+    for (size_t at = 0; at < count; at++) {
+        free(lines[at].storage);
+    }
+    free(lines);
     return failures == 0 ? 0 : 1;
 }

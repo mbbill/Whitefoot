@@ -567,8 +567,11 @@ hours later, after ordinary builds had evicted the tree, put the same line at
 ratio between cache hits.
 
 The bundle now refuses to print a table under a cache-state label it has not
-measured. `make read-uncache` regenerates the tree through a descriptor that
-does not populate the cache and flushes it, and `read_baseline probe-uncached`
+measured. Each cache state is created rather than inherited: `make
+read-uncache` regenerates the tree through a descriptor that does not populate
+the cache and flushes it, and `make read-warm` reads every block of every file
+back in through plain ones. The uncached tables run first, because they are
+the ones the design question turns on. `read_baseline probe-uncached` then
 times sixteen positioned reads in each of the eight files immediately before
 and immediately after every table, refusing the label unless all but ten per
 cent of them cost more than 40 us. The threshold sits in the gap between the
