@@ -1274,8 +1274,9 @@ C.wide8.h8       282.55  276.19  289.80    53.64   51.38    57.56
 
 **The cold half of this draw cannot be read.** `N.direct` at 64 KiB spans 2781
 to 7661 ms around a median of 6158, and `S.narrow` spans 2478 to 11054 — a
-4.5-fold range inside one line, where the batch-0092 Linux tables held every
-line within four per cent of its own median. A ranking taken from lines that
+4.5-fold range inside one line, where batch 0092's Linux 4 KiB table — the
+cleanest measurement in this document — held every line's minimum and maximum
+within four per cent of its own median. A ranking taken from lines that
 wide is a ranking of the runner. The interleaved schedule protects against
 monotonic drift, not against this.
 
