@@ -64,8 +64,9 @@ COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_DEFINES := \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 	-DWF_COMPLETION_POLL=wf_completion_test_poll
-COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-	$(COMPLETION_DEFINES)
+COMPLETION_BASE_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+	-pthread
+COMPLETION_CFLAGS := $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFINES)
 # The harness names the WF_IO_NOCACHE application so it can count it. The
 # named function performs the same host call the shipped policy performs, so
 # only the counting is added, and only this build has it.
@@ -91,6 +92,13 @@ COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/writer_scheduler.c \
 	$(COMPLETION_DIR)/native_contract.c \
 	$(COMPLETION_DIR)/harness.c
+# The same runtime the harness links, with the probe in place of the harness.
+# It is deliberately built without COMPLETION_DEFINES: the route this probe is
+# about is the shipped one, so it makes the shipped host calls and reads the
+# host's own clock.
+COMPLETION_DEFAULT_ROUTE_SOURCES := \
+	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
+	$(COMPLETION_DIR)/bridge_default_probe.c
 COMPLETION_CORE_READ_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -205,7 +213,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test
+completion-test: completion-core-read-test completion-default-route-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -246,6 +254,43 @@ completion-test: completion-core-read-test
 			-fsyntax-only $(COMPLETION_DIR)/linux_io_uring.c; \
 	fi
 
+# The bridge on the helper policy a delivered program actually gets.
+#
+# Every harness run names WF_IO_HELPERS -- the three arms above name 0, 1 and 4
+# and harness main pins 1 for any run that named nothing -- so the demand-driven
+# pool and the declined positioned read, both of which choose between two routes
+# for one writer-visible operation, were reachable from no test in the tree.
+# `unset` rather than a bare invocation because make inherits this shell's
+# environment, and the probe refuses an inherited value rather than quietly
+# testing the arm the harness already covers.
+completion-default-route-test:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFAULT_ROUTE_SOURCES) \
+		-o "$(COMPLETION_TMP)/bridge-default-probe"
+	unset WF_IO_HELPERS; \
+		"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"
+
+completion-default-route-sanitize:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		-fsanitize=address,undefined \
+		$(COMPLETION_DEFAULT_ROUTE_SOURCES) \
+		-o "$(COMPLETION_TMP)/bridge-default-probe-sanitize"
+	unset WF_IO_HELPERS; ASAN_OPTIONS=detect_leaks=0 \
+		"$(COMPLETION_TMP)/bridge-default-probe-sanitize" "$(COMPLETION_TMP)"
+
+# Thread sanitizer over the bridge rather than over the isolated core: the
+# helper pool, the queue wake and the join spin are all on this route, and the
+# core probe by construction links none of them.
+completion-default-route-tsan:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		-fsanitize=thread \
+		$(COMPLETION_DEFAULT_ROUTE_SOURCES) \
+		-o "$(COMPLETION_TMP)/bridge-default-probe-tsan"
+	unset WF_IO_HELPERS; TSAN_OPTIONS=halt_on_error=1 \
+		"$(COMPLETION_TMP)/bridge-default-probe-tsan" "$(COMPLETION_TMP)"
+
 completion-core-read-source-boundary:
 	@if [ -n "$(strip $(COMPLETION_CORE_READ_UNEXPECTED_SOURCES) \
 		$(COMPLETION_CORE_READ_FORBIDDEN_SOURCES))" ]; then \
@@ -269,7 +314,8 @@ completion-core-read-test: completion-core-read-source-boundary
 	fi
 	@echo "completion core/read bridge isolation: PASS"
 
-completion-sanitize: completion-core-read-sanitize
+completion-sanitize: completion-core-read-sanitize \
+		completion-default-route-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 		$(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES) \
@@ -349,4 +395,6 @@ completion-windows-cross:
 	test-partition docs spec completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
 	completion-core-read-stress completion-core-read-tsan completion-sanitize \
-	completion-core-read-sanitize completion-windows-cross
+	completion-core-read-sanitize completion-default-route-test \
+	completion-default-route-sanitize completion-default-route-tsan \
+	completion-windows-cross

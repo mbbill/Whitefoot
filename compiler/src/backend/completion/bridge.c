@@ -286,6 +286,9 @@ static size_t wf_bridge_drain(void) {
  * never becomes a pair of system calls. */
 #define WF_BRIDGE_JOIN_SPIN_NS 10000u
 
+/* Zero means the clock could not be read.  A monotonic clock that answers
+ * exactly zero is the same answer as a broken one for every use here, and both
+ * have to end a bounded wait rather than extend it. */
 static uint64_t wf_bridge_monotonic_ns(void) {
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
@@ -301,15 +304,28 @@ static uint64_t wf_bridge_monotonic_ns(void) {
  * it announces the epoch.  Taking a lock here would put this thread in the way
  * of the very publication it is waiting for. */
 static int wf_bridge_spin_for_completion(void) {
-    uint64_t deadline = wf_bridge_monotonic_ns() + WF_BRIDGE_JOIN_SPIN_NS;
+    uint64_t started = wf_bridge_monotonic_ns();
+    uint64_t deadline;
     unsigned turn = 0;
+    /* The bound on this wait is a clock reading, so a clock this thread cannot
+     * read leaves no bound at all: every later sample answers zero, the
+     * deadline is never reached, and the join spins forever instead of
+     * parking.  A failed clock therefore ends the spin, which costs at worst
+     * a park this thread was about to make anyway. */
+    if (started == 0) {
+        return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
+    }
+    deadline = started + WF_BRIDGE_JOIN_SPIN_NS;
     for (;;) {
         if (wf_completion_ready_event_count(&wf_bridge_runtime) != 0) {
             return 1;
         }
         turn += 1;
-        if ((turn & 0x3fu) == 0 && wf_bridge_monotonic_ns() >= deadline) {
-            return 0;
+        if ((turn & 0x3fu) == 0) {
+            uint64_t now = wf_bridge_monotonic_ns();
+            if (now == 0 || now >= deadline) {
+                return 0;
+            }
         }
     }
 }
