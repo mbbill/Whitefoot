@@ -134,6 +134,17 @@ through plain descriptors, so a warm table has the state it claims. A full
 sequential pass rather than a rerun of the workload, because 32,768
 pseudo-random reads would leave about two per cent of the blocks untouched.
 
+`make read-settle` then waits the host out. Writing half a gigabyte does not
+only put bytes on the device: something on this machine reads the new files
+back. A probe run every fifteen seconds on an otherwise idle machine watches
+residency walk from the first file towards the last over a minute or two and
+then vanish as the pages age out, with no benchmark line running and every
+line reading through the non-populating policy; `XprotectService` holds about
+a tenth of a core throughout. So a fresh tree is left alone until the same
+probe the table is gated on passes quietly, which is a wait for an outside
+reader to finish rather than a softer threshold. The gate probe below is
+unchanged and still refuses the table.
+
 `read_baseline probe-uncached` then checks the claim rather than trusting it.
 It times sixteen positioned reads in each of the eight files, through
 descriptors that do not populate the cache and at offsets that differ on every

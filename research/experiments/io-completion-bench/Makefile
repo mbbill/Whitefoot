@@ -94,7 +94,8 @@ READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
 .PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean \
-	read-build read-gen read-uncache read-warm read-verify expected-read bench-read linux-read
+	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
+	linux-read
 
 build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/pipe_producer $(BUILD)/pipe_harness \
@@ -372,18 +373,54 @@ read-uncache: $(BUILD)/gen
 	@$(BUILD)/gen $(BIGTREE) $(READ_FILES) $(READ_KIB) fixed
 	@sync
 
+# The wait that a generation needs before it may be measured.
+#
+# Writing the tree does not only put bytes on the device: it hands the host a
+# fresh half-gigabyte of files, and something on this host reads them. A probe
+# run every fifteen seconds on an otherwise idle machine watches residency
+# walk from f00000 towards f00007 over a minute or two and then disappear as
+# the pages age out -- three files resident at one probe, a different three at
+# the next, none a minute later. No benchmark line does it: the same walk
+# happens across idle gaps with nothing running, and every line reads through
+# the non-populating policy. The host's malware scanner is the obvious
+# candidate; `XprotectService` holds about ten per cent of a core throughout.
+#
+# So the tree is left to settle instead of being measured through the scan.
+# `read-settle` runs the same probe the table is gated on, quietly, until it
+# passes -- which is a wait for an outside reader to finish, not a softer
+# threshold. The gate probes below are unchanged and still fail the table.
+read-settle: $(BUILD)/read_baseline
+	@attempt=0; \
+	while :; do \
+		if $(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 \
+			$(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT) > /dev/null 2>&1; then \
+			echo "read-settle: the tree is not resident after $$attempt wait(s)"; \
+			exit 0; \
+		fi; \
+		attempt=$$((attempt + 1)); \
+		if [ $$attempt -ge $(READ_SETTLE_ATTEMPTS) ]; then \
+			echo "read-settle: still resident after $(READ_SETTLE_ATTEMPTS) waits" >&2; \
+			$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 \
+				$(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT); \
+			exit 1; \
+		fi; \
+		sleep $(READ_SETTLE_SECONDS); \
+	done
+
 read-warm: $(BUILD)/read_baseline
 	@$(BUILD)/read_baseline $(BIGTREE) warm 1 65536
 
 bench-read: read-verify $(WORK)/read-plan-64k.txt $(WORK)/read-plan-4k.txt
 	@echo "== read-heavy 64 KiB, uncached (WF_IO_NOCACHE=1) =="
 	$(MAKE) read-uncache
+	$(MAKE) read-settle
 	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
 	cd $(BIGTREE) && env WF_IO_NOCACHE=1 $(BUILD)/runner $(WORK)/read-plan-64k.txt \
 		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_64K)"
 	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
 	@echo "== read-heavy 4 KiB, uncached (WF_IO_NOCACHE=1) =="
 	$(MAKE) read-uncache
+	$(MAKE) read-settle
 	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
 	cd $(BIGTREE) && env WF_IO_NOCACHE=1 $(BUILD)/runner $(WORK)/read-plan-4k.txt \
 		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_4K)"
