@@ -155,8 +155,9 @@ struct ControlFrame {
 /// Boundary-dependent path conditions currently restricting execution.
 /// Lexical frames retain nested controls even when they name the same boundary
 /// call and reach a fixed point when a loop revisits the same selector.  A
-/// frame is never removed: every merge asks which frames its own edges
-/// acquired since the merge's entry state, so a frame the entry already
+/// frame is dropped exactly at the merge that joins every edge its construct
+/// produces (see `remove`); until then every merge asks which frames its own
+/// edges acquired since the merge's entry state, so a frame the entry already
 /// carries selects nothing at that merge.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ControlAuthority {

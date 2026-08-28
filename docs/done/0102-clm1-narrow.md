@@ -140,7 +140,8 @@ depends on the selector.
 The first attempt deleted discharge outright, on the reasoning that a frame the
 merge's entry state already carries is excluded by `acquired` anyway. That is
 true of merges downstream of the construct and false of an enclosing loop head:
-`tests/programs/wide_scan.wf` has an exhaustive match on an `arg_get` result
+the program embedded in `compiler/tests/programs/wide_scan.rs` has an
+exhaustive match on an `arg_get` result
 inside a counted loop, and with the frame retained the loop head attributed its
 own selection to that match and refused a claim v0.38 admitted. The canonical
 `make check` caught it, which is why this record's evidence is quoted from the
@@ -240,9 +241,13 @@ value even inside a boundary-selected arm.
   510 identical, 0 IR differences, 0 status differences, 0 diagnostic
   differences. The only byte that differs anywhere is the QUAL-1 banner's
   version token, which an activation is expected to move.
-- **Program corpus IR.** Every source under `tests/programs` and
-  `tests/codegen` (26 files, 20 emitting a module): byte-identical LLVM IR
-  apart from the same banner token.
+- **Program corpus IR.** The 25 sources under `tests/programs` plus
+  `tests/codegen/cases/requires-check-tautology.wf` (26 files, 21 emitting a
+  module when accepted by both compilers): byte-identical LLVM IR apart from
+  the same banner token. The 94 bounds fixtures under `tests/codegen/cases/`
+  were not compiled in this sweep; the gate verifier compiled all 120 sources
+  plus the raw_deflate bundle with both compilers and found no acceptance
+  difference and byte-identical IR modulo the banner token.
 - **Native conformance adapter.** `Pass=516 Skip=1` over the 517 declared
   cases, the skip being the one declared pending case.
 - **Canonical `make check`.** Green through `repository-invariants`,
@@ -280,7 +285,7 @@ numbers:
 | rejections by rule | CLM-1 × 5 | none |
 | agreed / diverged / unstable | 203 / 0 / 0 | 203 / 0 / 0 |
 | executions captured | 7917 | 7917 |
-| wall clock | 5.1 minutes | 3.9 minutes |
+| wall clock | 5.1 minutes | 3.0 minutes |
 
 0097 measured 63 rejections in 2067 attempts, 3.0%, all `NonLocalClaim`; this
 host's base run measures 5 in 208, 2.4%, all [CLM-1]. The generator still writes
@@ -362,11 +367,26 @@ admits lowers to the ordinary executed check and moves no published byte.
   That directory holds oracle divergences the campaign keeps; this was a
   rejection tally, and its evidence is the two conformance cases carrying the
   pair.
-- **No measurement of analysis time on a large function.** Frames are now never
-  removed, so a function with many boundary constructs carries a longer frame
-  vector, and `acquired` is linear in it. The library suite and the conformance
+- **No measurement of analysis time on a large function.** Frames are
+  discharged at the merge that joins every edge their selector produces, but
+  in the non-exhaustive cases they live longer than under v0.38, so a
+  function with many boundary constructs can carry a longer frame vector,
+  and `acquired` is linear in it. The library suite and the conformance
   adapter did not move measurably and no benchmark changed, but no dedicated
   measurement was taken.
+- **`DefinitionId.site` rests on unenforced preconditions.** The identity is a
+  checked-statement address, sound only because the analysis is per-function,
+  the checked AST outlives it, identities are compared solely between two
+  reaching definitions of one component, and site 0 is reserved. Nothing in
+  the type system or a test enforces those preconditions; a refactor that
+  cached or compared identities across allocations could silently equate two
+  distinct definitions and drop a selector's witness. Flagged by the skeptic;
+  a guard (a fresh-arena identity or a debug assertion) is follow-up work.
+- **The rendered carrier's tie-break is unpinned.** With the control-witness
+  seed gone, when two supports share the earliest boundary witness the
+  carrier is now the first in support-iteration order; deterministic and
+  diagnostic-only, but no test pins which carrier wins a tie, so a change to
+  support ordering would silently move diagnostic text.
 - **The three unreadable-path tests fail on this host** — the
   `programs::traversal` unreadable-subdirectory test and the two
   `programs::wfgrep` unreadable tests — because this session runs as uid 0 and
