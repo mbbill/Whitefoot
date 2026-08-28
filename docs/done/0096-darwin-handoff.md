@@ -319,7 +319,10 @@ which the section below states line by line rather than assuming either way.
 `research/investigations/io-model/RESULTS.md`. **After** is run
 [33155821397](https://github.com/mbbill/Whitefoot/actions/runs/33155821397),
 job `bench-macos-read`, at commit `266acf4f` — the final runtime of this
-branch, with the drain hint already removed. Both are `macos-14`, Apple M1
+branch, with the drain hint already removed. Every commit after `266acf4f` is
+this record and the RESULTS section, plus a two-line comment in `bridge.c`;
+`git diff 266acf4f..HEAD -- compiler/` is that comment and nothing else, so
+these numbers are the tip's runtime. Both draws are `macos-14`, Apple M1
 (Virtual), three CPUs, 7 GiB; medians of nine interleaved passes, milliseconds.
 
 ```text
