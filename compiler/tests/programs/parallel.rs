@@ -313,10 +313,12 @@ fn the_corpus_units_cover_every_program_file() {
 /// its search path is covered with real arguments in `wfgrep.rs`.
 ///
 /// What a host cannot build is read from the compiler rather than assumed: a
-/// target with no approved [SYS-14] directory-enumeration row reports one, the
-/// units it reports are recorded, and the case ends by requiring that they are
-/// only the two programs that walk a directory. Everything else that host can
-/// build is still linked and still compared.
+/// target qualification failure is recorded rather than panicked on, and the
+/// case ends by requiring that the recorded list is empty. Every triple this
+/// compiler recognizes now has an approved [SYS-14] directory-enumeration row,
+/// so every unit of this corpus builds on every gated host; the arm survives
+/// because reading the compiler's own report is what makes that a checked
+/// statement rather than an assumption.
 #[test]
 fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
     let mut beyond_this_target: Vec<String> = Vec::new();
@@ -324,11 +326,11 @@ fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
         let named = unit.join(" + ");
         let llvm = match try_compile_programs_with_overlap(unit) {
             Ok(llvm) => llvm,
-            // A target with no approved [SYS-14] directory-enumeration row does
-            // not compile the programs that walk a directory, and says so
+            // A target that qualifies for less than this corpus needs says so
             // itself. Reading that report keeps every other corpus program
             // covered on such a host instead of taking the whole case away
             // from it; every other kind of failure is still a failure here.
+            // The assertion at the end of the case is that the list is empty.
             Err(failure) if failure.kind() == CompilationFailureKind::TargetQualification => {
                 beyond_this_target.push(named);
                 continue;
@@ -365,15 +367,13 @@ fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
             );
         }
     }
-    // Naming them keeps the exemption from spreading: a target may be short a
-    // directory-enumeration row, and nothing else in this corpus may quietly
-    // stop being covered.
+    // No unit of this corpus is out of a gated host's reach. The list was
+    // last nonempty when Linux had no approved [SYS-14] enumeration row and
+    // the two directory-walking programs did not compile there; that row
+    // landed, so the exemption is gone rather than narrowed.
     assert!(
-        beyond_this_target
-            .iter()
-            .all(|unit| unit.contains("dir_walk.wf") || unit.contains("wfgrep.wf")),
-        "only the directory-walking programs may be out of a target's reach: \
-         {beyond_this_target:?}"
+        beyond_this_target.is_empty(),
+        "every corpus program must be within this target's reach: {beyond_this_target:?}"
     );
 }
 

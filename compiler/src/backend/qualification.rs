@@ -382,6 +382,31 @@ pub(crate) enum TargetGuarantee {
     DirectoryEnumeration,
 }
 
+/// How one target's native entry record states the byte length of its name.
+///
+/// The portable record [SYS-14] fixes carries an explicit `name_length`, so
+/// the shim needs that number for every entry. Where the number comes from is
+/// the one part of the record model that is genuinely different between the
+/// two qualified families, so it is asked of the target rather than assumed:
+/// Darwin's `struct dirent` states it in a field of its own, and Linux's
+/// `struct linux_dirent64` states no length at all and NUL-terminates the
+/// name inside the record's own extent. A model with a mandatory length field
+/// would have no way to describe the second, which is exactly why this
+/// compiler had no Linux enumeration row until the shape below existed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EntryNameLength {
+    /// The record states the name's byte length in a `u16` at this offset.
+    Field {
+        /// Byte offset of that `u16`.
+        offset: u64,
+    },
+    /// The record states no name length. The name begins at the record's name
+    /// offset and ends at the first NUL byte strictly inside the extent the
+    /// record's own length field reports, so the length is derived by one
+    /// bounded scan that never reads past that extent.
+    NulTerminated,
+}
+
 /// One target's directory-enumeration facility and the exact record layout it
 /// fills [SYS-14, QUAL-1].
 ///
@@ -400,8 +425,8 @@ pub(crate) struct DirectoryEnumeration {
     declaration: &'static str,
     /// Byte offset of the native record's own length, a `u16`.
     record_length_offset: u64,
-    /// Byte offset of the entry name's length, a `u16`.
-    name_length_offset: u64,
+    /// Where the entry name's byte length comes from.
+    name_length: EntryNameLength,
     /// Byte offset of the native entry-type discriminant, a `u8`.
     entry_type_offset: u64,
     /// Byte offset of the entry name's first byte.
@@ -433,9 +458,9 @@ impl DirectoryEnumeration {
         self.record_length_offset
     }
 
-    /// Byte offset of the entry name's length, a `u16`.
-    pub(crate) const fn name_length_offset(self) -> u64 {
-        self.name_length_offset
+    /// Where the entry name's byte length comes from.
+    pub(crate) const fn name_length(self) -> EntryNameLength {
+        self.name_length
     }
 
     /// Byte offset of the native entry-type discriminant, a `u8`.
@@ -482,10 +507,44 @@ const DARWIN_ENUMERATION: DirectoryEnumeration = DirectoryEnumeration {
     symbol: "__getdirentries64",
     declaration: "declare i64 @__getdirentries64(i32, ptr, i64, ptr)",
     record_length_offset: 16,
-    name_length_offset: 18,
+    name_length: EntryNameLength::Field { offset: 18 },
     entry_type_offset: 20,
     name_offset: 21,
     // `DT_REG`, `DT_DIR`, `DT_LNK`, `DT_UNKNOWN`.
+    native_regular: 8,
+    native_directory: 4,
+    native_symlink: 10,
+    native_unknown: 0,
+};
+
+/// The Linux-family enumeration facility.
+///
+/// `getdents64` is the one host call that reports a batch of the entries of an
+/// open directory and advances that descriptor's own position, which is
+/// exactly the [QUAL-2] guarantee. `readdir` is a library scan built out of
+/// other operations with an allocation and a per-entry call, which [QUAL-3]
+/// excludes, and the legacy `getdents` reports a record this family's
+/// 64-bit inodes and offsets do not fit.
+///
+/// The offsets are `struct linux_dirent64`'s layout, which is
+/// architecture-independent: `d_ino` 0, `d_off` 8, `d_reclen` 16, `d_type` 18,
+/// `d_name` 19. The record states no name length; `d_name` is NUL-terminated
+/// and `d_reclen` is padded to the record's own alignment, so a name's length
+/// is neither `d_reclen - 19` nor anything else derivable without reading the
+/// name. That is what `EntryNameLength::NulTerminated` says, and it is the
+/// whole reason this row could not be written against a record model with a
+/// mandatory length field.
+const LINUX_ENUMERATION: DirectoryEnumeration = DirectoryEnumeration {
+    symbol: "getdents64",
+    declaration: "declare i64 @getdents64(i32, ptr, i64)",
+    record_length_offset: 16,
+    name_length: EntryNameLength::NulTerminated,
+    entry_type_offset: 18,
+    name_offset: 19,
+    // `DT_REG`, `DT_DIR`, `DT_LNK`, `DT_UNKNOWN`. The two families share these
+    // four values; they are still stated per target, because sharing them is
+    // an observation about today's rows rather than a promise a third family
+    // would keep.
     native_regular: 8,
     native_directory: 4,
     native_symlink: 10,
@@ -888,7 +947,8 @@ impl SystemTarget {
             ),
             // Linux aarch64 uses the asm-generic O_DIRECTORY/O_NOFOLLOW
             // values; they differ from x86_64 and therefore retain their own
-            // target row.
+            // target row. The enumeration record is the same on both, because
+            // `struct linux_dirent64` is architecture-independent.
             "aarch64-unknown-linux-gnu" => (
                 255,
                 0x0000_4000,
@@ -901,13 +961,9 @@ impl SystemTarget {
                 "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
                 true,
-                None,
+                Some(LINUX_ENUMERATION),
             ),
             // Linux x86_64: O_DIRECTORY, O_NOFOLLOW, and O_NONBLOCK.
-            // Linux supplies `getdents64`, but this compiler intentionally has
-            // no approved ABI/record mapping for it yet. Qualification must
-            // therefore report MissingMapping rather than pretending the
-            // target lacks the semantic facility.
             "x86_64-unknown-linux-gnu" => (
                 255,
                 0x0001_0000,
@@ -920,7 +976,7 @@ impl SystemTarget {
                 "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
                 true,
-                None,
+                Some(LINUX_ENUMERATION),
             ),
             _ => return None,
         };
@@ -989,6 +1045,39 @@ impl SystemTarget {
         target.family = family;
         target.argument_backing = argument_backing;
         target.directory_relative = directory_relative;
+        target
+    }
+
+    /// A probe target with no directory-enumeration facility at all.
+    ///
+    /// This is [QUAL-2]'s fourth guarantee withheld: such a target fails
+    /// qualification for the enumeration semantic IDs rather than having a
+    /// scan built for it out of other operations. It is a separate builder
+    /// because it also drops the record, and a target that reported a record
+    /// while denying the facility would be describing something that does not
+    /// exist.
+    #[cfg(test)]
+    pub(crate) fn probe_without_enumeration() -> Self {
+        let mut target = Self::for_triple("aarch64-apple-darwin")
+            .expect("the probe base triple is a qualified target");
+        target.directory_enumeration_facility = false;
+        target.directory_enumeration = None;
+        target
+    }
+
+    /// A probe target whose family has a directory-enumeration facility but
+    /// for which this compiler holds no approved ABI record.
+    ///
+    /// The guarantee is met, so the refusal is the missing mapping rather than
+    /// an unmet guarantee: `operation_row` fails the enumeration semantic IDs
+    /// with `MissingMapping` instead of building a scan out of other
+    /// operations [QUAL-1]. This is the state the superseded Linux case
+    /// exercised while no Linux row existed.
+    #[cfg(test)]
+    pub(crate) fn probe_without_enumeration_record() -> Self {
+        let mut target = Self::for_triple("aarch64-apple-darwin")
+            .expect("the probe base triple is a qualified target");
+        target.directory_enumeration = None;
         target
     }
 }

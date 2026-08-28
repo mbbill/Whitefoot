@@ -26,6 +26,16 @@
 extern "C" {
 #endif
 
+/* Whether this build's family has the [QUAL-2] directory-enumeration
+ * facility: one host call that reports a bounded batch of an open directory's
+ * entries and advances that descriptor's own position.  Darwin and Linux both
+ * do, through different calls writing different records; a family that has
+ * neither compiles no enumeration request kind at all, which is the C side of
+ * the same refusal `backend/qualification.rs` makes for such a target. */
+#if defined(__APPLE__) || defined(__linux__)
+#define WF_FILE_HAS_DIRECTORY_NEXT 1
+#endif
+
 #define WF_FILE_STATUS_CAPACITY 192u
 
 /* The path bytes one submitted open resolves, held by the operation record.
@@ -85,8 +95,14 @@ enum wf_file_operation_kind {
     WF_FILE_PWRITE = 5,
     WF_FILE_STATUS = 6,
     WF_FILE_CLOSE = 7,
-#if defined(__APPLE__)
-    WF_FILE_GETDIRENTRIES64 = 8,
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+    /* One bounded batch of directory entries, advancing the descriptor's own
+     * enumeration position.  The host call behind it differs by family --
+     * `__getdirentries64` on Darwin, `getdents64` on Linux -- and so does the
+     * record it writes; the request record does not, because everything that
+     * differs is either the call itself or the emitted shim's decoding of the
+     * bytes it left behind. */
+    WF_FILE_DIRECTORY_NEXT = 8,
 #endif
 };
 
@@ -238,13 +254,19 @@ typedef struct wf_file_request {
         struct {
             int descriptor;
         } close;
-#if defined(__APPLE__)
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
         struct {
             int descriptor;
             void *buffer;
             size_t count;
+            /* Darwin's facility requires a base-position cell and writes the
+             * position of the batch it reported into it.  Linux's takes no
+             * such argument and keeps the whole cursor in the descriptor, so
+             * on that family this cell is left exactly as the caller gave it.
+             * Either way it is scratch storage of the emitted shim's, never a
+             * component of the `DirectorySource` value. */
             int64_t *position;
-        } getdirentries64;
+        } directory_next;
 #endif
     } operation;
 } wf_file_request;

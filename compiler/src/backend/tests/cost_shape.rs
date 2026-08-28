@@ -660,18 +660,55 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // failure arms reach.
     assert!(module.contains("@wf.sys.io.error(i32 %code, i8 %origin) noinline cold"));
 
+    // It is reached only from a failure arm, and that is read here — in the
+    // module the compiler emitted — rather than in the optimized one.
+    //
+    // The optimized module cannot carry this claim. Whether a cold call site
+    // stays in the program's own code or is outlined into a `.cold.` function
+    // is the host toolchain's choice: this machine's clang outlines every one
+    // of them, and the gate's Linux clang leaves them standing. Neither is a
+    // fact about the transfer path. What is a fact about it is where the
+    // compiler put the call, so every call site is required to stand in a
+    // block whose label names a failure arm.
+    let mut mapper_call_sites = 0usize;
+    let mut block = "";
+    for line in module.lines() {
+        if !line.starts_with(' ') && line.ends_with(':') {
+            block = line;
+        }
+        if line.contains("call ") && line.contains("@wf.sys.io.error(") {
+            mapper_call_sites += 1;
+            assert!(
+                block.ends_with("failure:"),
+                "the class mapper must be reached only from a failure arm, \
+                 not from {block}\n{line}"
+            );
+        }
+    }
+    assert!(
+        mapper_call_sites > 1,
+        "every failing row reaches the mapper from its own arm"
+    );
+
     let program = program();
     // No wrapper residue: qualification requires the compiler wrapper to be
-    // inlined [QUAL-3], and in the finished program not one survives.
+    // inlined [QUAL-3], and in the finished program not one survives. The
+    // cold class mapper is the one `@wf.sys.` symbol that may remain — it is
+    // emitted `noinline` on purpose, so a surviving call to it is the
+    // optimizer declining to outline a cold block, never an un-inlined
+    // wrapper.
+    let residue: Vec<&str> = program
+        .match_indices("@wf.sys.")
+        .map(|(at, _)| {
+            let rest = &program[at..];
+            &rest[..rest.find('(').unwrap_or(rest.len())]
+        })
+        .filter(|symbol| *symbol != "@wf.sys.io.error")
+        .collect();
     assert!(
-        !program.contains("@wf.sys."),
-        "every approved-implementation wrapper must be inlined into the program"
+        residue.is_empty(),
+        "every approved-implementation wrapper must be inlined into the program: {residue:?}"
     );
-    // The cold mapper is not merely marked cold: the optimizer moved every
-    // one of its call sites out of the program's own code into outlined cold
-    // functions, so the twenty-eight-class mapping is unreachable on a successful
-    // transfer.
-    assert!(!program.contains("@wf.sys.io.error("));
     assert!(
         optimized().matches("@wf.sys.io.error(").count() > 1,
         "the mapper must still exist for the failure paths"
@@ -895,8 +932,10 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "wf__completion_file_close_direct"
             | "wf__completion_file_pread_direct" | "wf__completion_file_write_direct"
             | "wf__completion_directory_next_direct"
-            // Darwin's native error-slot access on failed host operations.
-            | "__error"
+            // The selected family's native error-slot access on a failed host
+            // operation: `__error` on Darwin, `__errno_location` on Linux.
+            // Both names are listed because this census runs on both.
+            | "__error" | "__errno_location"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
@@ -935,6 +974,14 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // §9.1 count moves with it.
             | "wf__par_claim" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
             | "wf__par_pool_active"
+            // The compiler's own cold [SYS-7] class mapper, which reaches no
+            // host object at all: it turns one native error code into one
+            // portable class. It is a call target here on a host whose
+            // optimizer left its cold call sites in the program's own code
+            // instead of outlining them into the `.cold.` functions named
+            // below. Both spellings are the same one mapper, and neither
+            // moves a §9.1 count.
+            | "wf.sys.io.error"
         ) || target.starts_with("wf__par_thunk_")
             // The sequential clone of a function on a path to a hand-out: the
             // same body under a reserved symbol, so it calls exactly what its
@@ -942,8 +989,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             || target.starts_with("wf__par_seq_")
             || target.starts_with("llvm.")
             // The program's own declared functions, and the optimizer's cold
-            // outlining of their failure arms, which is where the [SYS-7]
-            // class mapper ended up.
+            // outlining of their failure arms, which is the other place the
+            // class mapper is reached from.
             || DECLARED_FUNCTIONS.iter().any(|name| {
                 target == format!("wf_{name}") || target.starts_with(&format!("wf_{name}.cold."))
             })

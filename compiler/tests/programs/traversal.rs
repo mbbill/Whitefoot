@@ -7,24 +7,10 @@
 //! host's own facilities, exactly as a shipped command would.
 
 use super::support::compile_rejection;
-#[cfg(target_os = "macos")]
 use super::support::{
     build_program, compile_program, compile_program_rejection_with, fixture_directory,
 };
-#[cfg(target_os = "macos")]
 use whitefoot::Inventory;
-
-// Why five of the eight cases below name a host.
-//
-// `dir_walk.wf` enumerates a directory, and a target with no approved
-// [SYS-14] enumeration row does not compile it: `backend/qualification.rs`
-// deliberately gives Linux none, because `getdents64` writes no per-entry
-// name length and the portable record the emitted shim fills needs one, so
-// qualification reports `MissingMapping(Operation(12))`. The three cases that
-// carry no `cfg` reject inline source at a numbered rule, which every stage
-// reaches before target qualification, so they say the same thing on every
-// host and run there. The limit is the target table's: the day a Linux
-// enumeration row lands, these attributes go.
 
 /// The traversal program itself: a recursive walk of the invocation
 /// directory that collects every entry's kind and relative path into the
@@ -36,7 +22,6 @@ use whitefoot::Inventory;
 /// `open_directory` opened each child ordinary directory value by name bytes with no path
 /// value ever formed.
 #[test]
-#[cfg(target_os = "macos")]
 fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
     let llvm = compile_program("dir_walk.wf");
     // The three approved implementations and the compiler-owned target
@@ -72,7 +57,6 @@ fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
 /// which is the whole reason the family contract states that they are
 /// delivered rather than filtered.
 #[test]
-#[cfg(target_os = "macos")]
 fn an_empty_tree_publishes_nothing_after_the_self_and_parent_entries_are_skipped() {
     let llvm = compile_program("dir_walk.wf");
     let program = build_program(&llvm);
@@ -86,7 +70,6 @@ fn an_empty_tree_publishes_nothing_after_the_self_and_parent_entries_are_skipped
 /// recorded from its enumeration record and the failed descent is an ordinary
 /// recoverable outcome, not a trap.
 #[test]
-#[cfg(target_os = "macos")]
 fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     let llvm = compile_program("dir_walk.wf");
     let program = build_program(&llvm);
@@ -119,7 +102,6 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
 /// not just the older traversal rows. This is an honest source dependency:
 /// its entry receives FileFactory and every open calls reserve_file.
 #[test]
-#[cfg(target_os = "macos")]
 fn the_traversal_source_requires_the_complete_file_permit_inventory() {
     let _ = compile_program("dir_walk.wf");
     let failure = compile_program_rejection_with("dir_walk.wf", Inventory::OpenByName);
@@ -245,7 +227,6 @@ fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
 /// call site is reachable only after the length and byte scan admitted the
 /// range. The target adapter below this emitted boundary owns `openat`.
 #[test]
-#[cfg(target_os = "macos")]
 fn the_component_validation_precedes_every_host_call() {
     let llvm = compile_program("dir_walk.wf");
     let start = llvm
@@ -255,7 +236,13 @@ fn the_component_validation_precedes_every_host_call() {
     let body_end = body_start + llvm[body_start..].find("\n}\n").expect("its closing brace");
     let shim = &llvm[body_start..body_end];
 
-    assert!(shim.contains("%oversize = icmp ugt i64 %extent, 1023"));
+    // The component limit is the selected target's own [SYS-14]: 1023 bytes
+    // on the Darwin family, 255 on the Linux family. The constant is asserted
+    // exactly on each host rather than matched loosely on both.
+    let component_limit = if cfg!(target_os = "macos") { 1023 } else { 255 };
+    assert!(shim.contains(&format!(
+        "%oversize = icmp ugt i64 %extent, {component_limit}"
+    )));
     assert!(shim.contains("%vacant = icmp eq i64 %extent, 0"));
     assert!(shim.contains("%separating = icmp eq i32 %byte.value, 47"));
     assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));

@@ -907,7 +907,15 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   depth the source can ask for. Measuring also found and fixed a join
   busy-wait, a default helper count pinned at the worst value, and an
   identifier collision that had made every Linux link of a completion program
-  fail to compile.
+  fail to compile. [SYS-14] directory enumeration is now qualified on both
+  families ([batch 0094](done/0094-linux-directory-row.md)): the Darwin row
+  reads the name length its `struct dirent` states, the Linux row derives it
+  by one scan bounded by the extent `d_reclen` reports, because
+  `struct linux_dirent64` states none — one normalizer text, one target-selected
+  block. That closed the one gap batch 0090 left open on the Linux gate: six
+  conformance cases now pass at their existing verdicts, both
+  directory-walking corpus programs compile and run there, and every host limit
+  0090 declared for the missing row is removed.
 - **Missing / next:** widen stackless lowering beyond single-instruction tail
   chains; execute and qualify Windows; add a clock reading, keyed directory
   places, namespace mutation, and network, timer, cancellation, deadline, and
@@ -921,6 +929,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 - **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
   [batch record 0084](done/0084-io-performance.md) ·
   [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
+  [batch record 0094](done/0094-linux-directory-row.md) ·
   [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·

@@ -815,7 +815,7 @@ int wf__completion_directory_next_submit(
     int64_t *position,
     void *token_storage
 ) {
-#if defined(__APPLE__)
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     wf_file_request request;
     if (token_storage == NULL || position == NULL
         || (buffer == NULL && count != 0)
@@ -823,11 +823,11 @@ int wf__completion_directory_next_submit(
         return 0;
     }
     memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_GETDIRENTRIES64;
-    request.operation.getdirentries64.descriptor = descriptor;
-    request.operation.getdirentries64.buffer = buffer;
-    request.operation.getdirentries64.count = (size_t)count;
-    request.operation.getdirentries64.position = position;
+    request.kind = WF_FILE_DIRECTORY_NEXT;
+    request.operation.directory_next.descriptor = descriptor;
+    request.operation.directory_next.buffer = buffer;
+    request.operation.directory_next.count = (size_t)count;
+    request.operation.directory_next.position = position;
     return wf_bridge_submit_file(
         &request,
         (wf_completion_token *)token_storage,
@@ -1056,7 +1056,7 @@ int64_t wf__completion_directory_next_direct(
     uint64_t count,
     int64_t *position
 ) {
-#if defined(__APPLE__)
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     wf_file_request request;
     if ((buffer == NULL && count != 0) || position == NULL
         || (uint64_t)(size_t)count != count) {
@@ -1064,11 +1064,11 @@ int64_t wf__completion_directory_next_direct(
         return -1;
     }
     memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_GETDIRENTRIES64;
-    request.operation.getdirentries64.descriptor = descriptor;
-    request.operation.getdirentries64.buffer = buffer;
-    request.operation.getdirentries64.count = (size_t)count;
-    request.operation.getdirentries64.position = position;
+    request.kind = WF_FILE_DIRECTORY_NEXT;
+    request.operation.directory_next.descriptor = descriptor;
+    request.operation.directory_next.buffer = buffer;
+    request.operation.directory_next.count = (size_t)count;
+    request.operation.directory_next.position = position;
     return wf_bridge_return_direct(wf_file_execute_direct(&request));
 #else
     (void)descriptor;

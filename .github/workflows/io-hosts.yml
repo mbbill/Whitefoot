@@ -56,6 +56,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/completion"
           /usr/bin/clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
             -DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
+            -DWF_COMPLETION_GETDENTS64=wf_completion_test_getdents64 \
             -DWF_COMPLETION_POLL=wf_completion_test_poll \
             compiler/src/backend/completion/runtime.c \
             compiler/src/backend/completion/linux_io_uring.c \

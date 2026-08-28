@@ -15,9 +15,7 @@ use whitefoot::{
     compile, compile_with_overlap, compile_with_permission_ledger,
     module_requires_completion_runtime, module_requires_parallel_runtime,
 };
-// Read by the superseded-inventory rejection, which carries the host limit of
-// the directory-walking case that calls it.
-#[cfg(target_os = "macos")]
+// Read by the superseded-inventory rejection in the directory-walking cases.
 use whitefoot::{Inventory, compile_with_inventory};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
@@ -225,9 +223,6 @@ pub fn program_permission_ledger(name: &str) -> Vec<String> {
 /// and returns its rejection. Current program execution always uses the
 /// complete active inventory.
 ///
-/// Its one caller walks a directory, so it carries that caller's host limit;
-/// `tests/programs.rs` states the limit once.
-#[cfg(target_os = "macos")]
 pub fn compile_program_rejection_with(name: &str, inventory: Inventory) -> String {
     let source = read_program(name);
     let inputs = [SourceInput::new(name, &source)];
@@ -534,11 +529,6 @@ impl FixtureDirectory {
 }
 
 /// The tree shapes only a directory-walking case builds.
-///
-/// They carry their callers' host limit, which `tests/programs.rs` states
-/// once: a target with no approved [SYS-14] enumeration row compiles no
-/// program that walks a directory, so nothing here has a caller on it.
-#[cfg(target_os = "macos")]
 impl FixtureDirectory {
     /// Creates one nested fixture directory and returns its path.
     ///

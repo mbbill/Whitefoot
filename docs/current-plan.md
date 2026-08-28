@@ -22,6 +22,18 @@ says so. That batch lands the judgment and its ledger only — no lowering and n
 runtime change — so it grants a verdict a later batch actualizes and moves no
 published byte today. Its record is `docs/done/0091-par3-judgment.md`.
 
+The remaining hole in the two-host gate is closed. Batch 0090 put canonical
+`make check` on a GitHub Linux runner and ended it red on one thing: the
+compiler had no approved [SYS-14] directory-enumeration row for Linux, because
+its record model required a per-entry name length and `struct linux_dirent64`
+states none. Batch 0094 replaced that model with one that asks the target where
+a name's length comes from — a field on Darwin, a scan bounded by `d_reclen` on
+Linux — and landed the row. The two directory-walking corpus programs now
+compile, run, and publish the same bytes on both hosts for the same tree; the
+Linux conformance adapter reports the macOS number, `Pass=509 Skip=1`; and the
+host limits 0090 had to declare are removed rather than narrowed. Its record is
+`docs/done/0094-linux-directory-row.md`.
+
 ## Objective
 
 Whitefoot exposes I/O as ordinary calls over ordinary values:

@@ -218,7 +218,6 @@ const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cw
 }
 "#;
 
-#[cfg(target_os = "macos")]
 const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'listing {
     let first_permit = reserve_file<'listing>(factory: &uniq 'listing files);
@@ -245,7 +244,6 @@ const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as
 }
 "#;
 
-#[cfg(target_os = "macos")]
 const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let first_bytes = buffer_new(4096_u64, 0_u8);
   let second_bytes = buffer_new(4096_u64, 0_u8);
@@ -998,10 +996,6 @@ fn component_directory_open_uses_the_same_typed_completion_route() {
     std::fs::remove_dir(directory).expect("remove component-open directory");
 }
 
-/// Host-limited like its enumeration siblings above: opening a directory
-/// source is a [SYS-14] operation, and Linux has no approved enumeration row
-/// in `backend/qualification.rs`, so this program does not lower there at all.
-#[cfg(target_os = "macos")]
 #[test]
 fn directory_source_open_uses_the_typed_completion_route() {
     let module = emit(INDEPENDENT_DIRECTORY_SOURCE_OPENS);
@@ -1070,7 +1064,6 @@ fn regular_file_open_maps_status_and_release_after_completion() {
     std::fs::remove_dir(directory).expect("remove regular-file directory");
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn directory_enumeration_completes_before_writer_normalization() {
     let module = emit(INDEPENDENT_DIRECTORY_READS);

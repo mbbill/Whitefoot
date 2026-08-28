@@ -96,7 +96,7 @@ __attribute__((destructor)) static void report_writer_resume(void) {
 "#;
     {
         let directory = test_directory();
-        let executable = build_linked_executable(&llvm, Some(host), &directory);
+        let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
         let output = Command::new(&executable)
             .env("WF_WORKERS", "0")
             .env("WF_IO_HELPERS", "1")
@@ -121,7 +121,7 @@ __attribute__((destructor)) static void report_writer_resume(void) {
     // the runs are cheap.
     let mut migrated = false;
     let directory = test_directory();
-    let executable = build_linked_executable(&llvm, Some(host), &directory);
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
     for _ in 0..MIGRATION_ATTEMPTS {
         let output = Command::new(&executable)
             .env("WF_WORKERS", "2")
@@ -164,7 +164,7 @@ __attribute__((destructor)) static void report_writer_resume(void) {
 }
 "#;
     let directory = test_directory();
-    let executable = build_linked_executable(&llvm, Some(host), &directory);
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
     let output = Command::new(&executable)
         .env("WF_WORKERS", "0")
         .env("WF_IO_HELPERS", "1")
