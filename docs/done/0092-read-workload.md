@@ -268,13 +268,24 @@ Batch 0090 reached this conclusion on Linux hardware; it now holds on macOS,
 and no table in the document still credits the overlap lowering with a win on
 the many-files workload.
 
-**Both readings were taken twice.** The workflow ran again at commit
-`e2e4535d`, run
-[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257),
-on separately provisioned hosts -- the Linux job on an AMD EPYC 7763 rather
-than an Intel Xeon 8370C. Every ordering above holds and every ratio lands
-within about half a step of its first reading; RESULTS.md tabulates the pair.
-The second run also refused the macOS uncached label *before* its tables ran
+**Every reading was taken three times.** The workflow ran again at commits
+`e2e4535d` and `031df30e` (runs
+[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257) and
+[33133182075](https://github.com/mbbill/Whitefoot/actions/runs/33133182075)),
+each on separately provisioned hosts -- the second Linux job on an AMD EPYC
+7763 rather than an Intel Xeon 8370C. Every ordering holds on all three.
+
+The three runs also say something one could not: **the completion build's cost
+is pinned to the native floor and the sequential build's is not.** Across the
+three Linux runners `C.wide8.default` uncached varies by 9.0 per cent at
+64 KiB and 1.3 at 4 KiB, and `N.pool8` by 1.0 and 0.6 -- while the same source
+built `--no-overlap` varies by 44.8 and 58.8. A program with one read
+outstanding pays 32,768 times whatever that host's per-read latency happens to
+be, and these hosts differ by more than half; a program with eight pays what
+the device delivers, which varies far less. That is the design's own claim,
+and it is the first time this repository has measured it.
+
+The later runs also refused the macOS uncached label *before* their tables ran
 rather than only after, printed that on the label line, and went on. That is
 the labelling behaviour these jobs were built for, and it is the reason to
 read the macOS cold rows as an ordering rather than as a device measurement.
