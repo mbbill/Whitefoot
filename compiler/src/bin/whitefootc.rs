@@ -11,7 +11,7 @@ use whitefoot::{
     CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES,
     HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
     PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
+    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
 };
 
@@ -67,8 +67,26 @@ fn run() -> Result<(), String> {
         }
         module
     } else {
-        compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
-            .map_err(|failure| failure.to_string())?
+        // The denied verdict of an I/O loop reaches the writer here, without a
+        // flag, because it is a missed optimization on the program they just
+        // compiled: a loop they wrote to read or write files lost its
+        // pipeline. The compilation succeeded, so the lines are notes on
+        // stderr, never a rejection, and a granted verdict says nothing at
+        // all. `--par-ledger` above already prints these lines inside the full
+        // report, so this branch is the only one that repeats them.
+        let (module, notices) =
+            compile_with_io_notices(&inputs, CompilerLimits::default(), overlap)
+                .map_err(|failure| failure.to_string())?;
+        for notice in &notices {
+            eprintln!("whitefootc: note: {notice}");
+        }
+        if !notices.is_empty() {
+            eprintln!(
+                "whitefootc: note: the compilation succeeded; run --par-ledger for the \
+                 complete permission report"
+            );
+        }
+        module
     };
     if options.stack_ledger {
         for line in print_stack_ledger(&module)? {
