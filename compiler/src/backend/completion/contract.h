@@ -374,6 +374,115 @@ wf_completion_statistics wf_completion_statistics_snapshot(
     const wf_completion_runtime *runtime
 );
 
+/* The process's one record of host descriptors coming back.
+ *
+ * An open the host refuses for want of a descriptor (`EMFILE`, `ENFILE`) is
+ * the one outcome a pipeline can invent.  A schedule that keeps several
+ * iterations of a loop in flight holds several descriptors where source order
+ * holds one, so a limit the sequential program never reaches turns a correct
+ * program's `Ok` into an `Err(ResourceExhausted)`.  [SYS-10] is explicit that
+ * a `FilePermit` promises no native descriptor, and [PAR-1]'s exhaustion
+ * clause excuses only the resources an implementation spends on overlapping —
+ * never the descriptors the program's own opens consume.
+ *
+ * Deciding that needs one fact no single engine has.  A refused open must ask
+ * "is this runtime still holding a descriptor it could give back", and the
+ * answer is about the whole process: a read running on a helper thread, a
+ * close the kernel ring has not posted yet, and a blocking direct call are all
+ * operations that end with a descriptor returned.  An engine that asks only
+ * about its own operations answers a different question and publishes an
+ * exhaustion that does not exist.  So there is one ledger here, and every
+ * target engine reports into it.
+ *
+ * The rule every refused open follows, whichever engine attempted it:
+ *   1. read `wf_completion_retirements` before the host attempt;
+ *   2. if the generation has moved when the refusal arrives, a descriptor came
+ *      back while the host was refusing — re-attempt once;
+ *   3. otherwise, while an operation is in flight anywhere else, wait for the
+ *      next retirement and then re-attempt once;
+ *   4. otherwise publish the refusal, which is the outcome source order
+ *      produces too.
+ * Exactly one re-attempt per refused open.  If the second attempt also fails,
+ * that is the program's own outcome and it is published unchanged.
+ *
+ * Waiting is safe because it terminates: a waiter counts itself out of "in
+ * flight anywhere else", so when every operation still in flight is a waiter
+ * the earliest of them publishes its refusal, and that publication is itself a
+ * retirement which releases the others.
+ *
+ * This lives with the completion core because the core is the one unit every
+ * target engine and the bridge link.  The bounded POSIX adapter and the Linux
+ * ring are qualified separately and deliberately share no other code.
+ */
+typedef struct wf_retirement_waiter {
+    struct wf_retirement_waiter *next;
+    /* The generation read before the host attempt this waiter is deciding.
+     * The question is not "is anything running now" — an operation that
+     * retired between the attempt and the wait has already given its
+     * descriptor back — but "has anything retired since the attempt". */
+    uint64_t seen;
+} wf_retirement_waiter;
+
+enum wf_retirement_state {
+    /* Something retired since the attempt: re-attempt once. */
+    WF_RETIREMENT_HAPPENED = 0,
+    /* An operation is in flight elsewhere: it can still give a descriptor
+     * back, so this refusal is not the program's outcome yet. */
+    WF_RETIREMENT_AWAITED = 1,
+    /* Nothing is left that could retire, and this is the earliest waiter:
+     * publish the refusal. */
+    WF_RETIREMENT_UNREACHABLE = 2
+};
+
+/* The generation.  It moves whenever any operation on any engine retires: a
+ * close completing, a refused open being published, any completion that ends
+ * an operation.  Read before a host attempt, compared after it. */
+uint64_t wf_completion_retirements(void);
+
+/* One operation an engine has accepted and will run.  Queued bounded-adapter
+ * work counts from submission, because a queue with an engine behind it is
+ * work that will retire; a ring operation counts from the moment the kernel
+ * has it; a blocking direct call counts while it executes. */
+void wf_completion_operation_accepted(void);
+
+/* One accepted operation has published its result and given back whatever the
+ * host lent it.  Called after the terminal publication, never before. */
+void wf_completion_operation_retired(void);
+
+/* Opens this runtime held rather than published, over every route.  A test
+ * standing at that moment reads this; nothing in the runtime decides on it. */
+uint64_t wf_completion_retirement_waits(void);
+
+/* Enters and leaves the process-wide waiter order.  Every refused open that
+ * does not publish immediately is registered, whether a thread is blocked on
+ * it (the bounded adapter, a direct call) or an entry is holding it (the
+ * ring), because the give-up decision is about all of them together. */
+void wf_completion_retirement_wait_begin(
+    wf_retirement_waiter *waiter,
+    uint64_t seen
+);
+void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
+
+/* Where this waiter stands, without blocking.
+ *
+ * `mine` is how many in-flight operations cannot retire while this waiter
+ * waits, because this waiter's own thread is the engine that would run them.
+ * That is what "in flight *elsewhere*" means, and it is the caller's fact, not
+ * the ledger's: a held ring entry blocks no thread and passes zero, a drained
+ * adapter sibling passes the queue its suspended caller still owes. */
+enum wf_retirement_state wf_completion_retirement_state(
+    const wf_retirement_waiter *waiter,
+    size_t mine
+);
+
+/* Sleeps until the ledger changes, rechecking the state under the same lock
+ * the retirement wake takes so no wake is lost.  Callers loop on
+ * `wf_completion_retirement_state`; this never spins. */
+void wf_completion_retirement_sleep(
+    const wf_retirement_waiter *waiter,
+    size_t mine
+);
+
 _Static_assert(sizeof(wf_completion_token) == 16u, "completion token ABI");
 _Static_assert(alignof(wf_completion_token) >= alignof(uint64_t), "completion token alignment");
 

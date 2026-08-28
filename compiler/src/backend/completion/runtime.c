@@ -1012,3 +1012,241 @@ wf_completion_statistics wf_completion_statistics_snapshot(
     );
     return statistics;
 }
+
+/* ------------------------------------------------------------------------
+ * The process's one retirement ledger (contract.h).
+ *
+ * Every target engine reports two things here and asks one question of them,
+ * which is what makes the exhaustion rule one rule rather than one per
+ * engine.  The counters are lock-free because they sit on the submission and
+ * publication path of every operation; the lock exists only so a waiter can
+ * sleep and a retirement can wake it.
+ * ---------------------------------------------------------------------- */
+
+/* A named point between the two reads a give-up decision makes.
+ *
+ * The decision reads the generation, then the in-flight and waiter counts.  A
+ * retirement whose generation increment and whose in-flight decrement both
+ * land between those reads is the one schedule that can make a waiter publish
+ * a refusal a descriptor had already answered, and the re-read below is what
+ * closes it.  Naming the point is what lets a test stand exactly there
+ * instead of racing for it, exactly as the adapter's `openat` is named; the
+ * default expansion is nothing at all. */
+#if !defined(WF_COMPLETION_RETIREMENT_POINT)
+#define WF_COMPLETION_RETIREMENT_POINT wf_completion_retirement_point_absent
+static void wf_completion_retirement_point_absent(void) {
+}
+#else
+extern void WF_COMPLETION_RETIREMENT_POINT(void);
+#endif
+
+static pthread_mutex_t wf_retirement_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wf_retirement_signal = PTHREAD_COND_INITIALIZER;
+static _Atomic uint64_t wf_retirement_generation;
+static _Atomic size_t wf_retirement_in_flight;
+static _Atomic size_t wf_retirement_waiter_count;
+static _Atomic uint64_t wf_retirement_wait_starts;
+/* The waiter order.  Mutated only under the lock; read without it by the
+ * give-up decision, which needs to know whether this waiter is the earliest
+ * one and nothing more. */
+static _Atomic(wf_retirement_waiter *) wf_retirement_first;
+static wf_retirement_waiter *wf_retirement_last;
+
+uint64_t wf_completion_retirements(void) {
+    return atomic_load_explicit(
+        &wf_retirement_generation,
+        memory_order_seq_cst
+    );
+}
+
+void wf_completion_operation_accepted(void) {
+    /* No wake is owed here.  More in flight can only make a waiter's answer
+     * "keep waiting", which is what a sleeping waiter is already doing, and a
+     * newly queued bounded-adapter request raises the queue a drained sibling
+     * counts as its own by exactly the same one. */
+    atomic_fetch_add_explicit(
+        &wf_retirement_in_flight,
+        1,
+        memory_order_seq_cst
+    );
+}
+
+void wf_completion_operation_retired(void) {
+    /* The generation moves first: a waiter reads it before the in-flight
+     * count, so this order is what lets the re-read below see a retirement
+     * whose two halves straddle the reads. */
+    atomic_fetch_add_explicit(
+        &wf_retirement_generation,
+        1,
+        memory_order_seq_cst
+    );
+    atomic_fetch_sub_explicit(
+        &wf_retirement_in_flight,
+        1,
+        memory_order_seq_cst
+    );
+    /* The announcement below and this load are sequentially consistent in
+     * both directions, which is what makes the pair race-free: in the single
+     * total order either the waiter's announcement precedes this load — so
+     * the wake is delivered — or this increment precedes the waiter's read of
+     * the generation, so the waiter sees the retirement and never sleeps. */
+    if (atomic_load_explicit(
+            &wf_retirement_waiter_count,
+            memory_order_seq_cst
+        ) == 0) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    (void)pthread_cond_broadcast(&wf_retirement_signal);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
+
+uint64_t wf_completion_retirement_waits(void) {
+    return atomic_load_explicit(
+        &wf_retirement_wait_starts,
+        memory_order_relaxed
+    );
+}
+
+void wf_completion_retirement_wait_begin(
+    wf_retirement_waiter *waiter,
+    uint64_t seen
+) {
+    if (waiter == NULL) {
+        return;
+    }
+    waiter->seen = seen;
+    waiter->next = NULL;
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    if (wf_retirement_last == NULL) {
+        atomic_store_explicit(
+            &wf_retirement_first,
+            waiter,
+            memory_order_seq_cst
+        );
+    } else {
+        wf_retirement_last->next = waiter;
+    }
+    wf_retirement_last = waiter;
+    atomic_fetch_add_explicit(
+        &wf_retirement_waiter_count,
+        1,
+        memory_order_seq_cst
+    );
+    atomic_fetch_add_explicit(
+        &wf_retirement_wait_starts,
+        1,
+        memory_order_relaxed
+    );
+    /* One more waiter is one fewer operation that can retire, so an earlier
+     * waiter may have just become the one that must publish. */
+    (void)pthread_cond_broadcast(&wf_retirement_signal);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
+
+void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter) {
+    wf_retirement_waiter *scan;
+    wf_retirement_waiter *previous = NULL;
+    if (waiter == NULL) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    scan = atomic_load_explicit(&wf_retirement_first, memory_order_relaxed);
+    while (scan != NULL && scan != waiter) {
+        previous = scan;
+        scan = scan->next;
+    }
+    if (scan != NULL) {
+        if (previous == NULL) {
+            atomic_store_explicit(
+                &wf_retirement_first,
+                waiter->next,
+                memory_order_seq_cst
+            );
+        } else {
+            previous->next = waiter->next;
+        }
+        if (wf_retirement_last == waiter) {
+            wf_retirement_last = previous;
+        }
+        waiter->next = NULL;
+        atomic_fetch_sub_explicit(
+            &wf_retirement_waiter_count,
+            1,
+            memory_order_seq_cst
+        );
+    }
+    /* Leaving hands the earliest place to somebody else, whose answer may
+     * change with it. */
+    (void)pthread_cond_broadcast(&wf_retirement_signal);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
+
+/* `at_the_point` is set only where the caller holds no lock, so a test
+ * standing at the schedule point may retire an operation from there. */
+static enum wf_retirement_state wf_retirement_state_now(
+    const wf_retirement_waiter *waiter,
+    size_t mine,
+    int at_the_point
+) {
+    size_t in_flight;
+    size_t waiters;
+    if (waiter == NULL) {
+        return WF_RETIREMENT_UNREACHABLE;
+    }
+    if (atomic_load_explicit(
+            &wf_retirement_generation,
+            memory_order_seq_cst
+        ) != waiter->seen) {
+        return WF_RETIREMENT_HAPPENED;
+    }
+    if (at_the_point != 0) {
+        WF_COMPLETION_RETIREMENT_POINT();
+    }
+    in_flight = atomic_load_explicit(
+        &wf_retirement_in_flight,
+        memory_order_seq_cst
+    );
+    waiters = atomic_load_explicit(
+        &wf_retirement_waiter_count,
+        memory_order_seq_cst
+    );
+    if (in_flight > waiters + mine) {
+        return WF_RETIREMENT_AWAITED;
+    }
+    if (atomic_load_explicit(&wf_retirement_first, memory_order_seq_cst)
+        != waiter) {
+        /* Every operation left is a waiter, and an earlier one answers first.
+         * Its publication is a retirement, which is what releases this one. */
+        return WF_RETIREMENT_AWAITED;
+    }
+    /* Read the generation once more.  A retirement whose increment landed
+     * after the first read and whose in-flight decrement landed before the
+     * read above is invisible to both of them, and publishing a refusal it
+     * had already answered would lose the program's `Ok`. */
+    if (atomic_load_explicit(
+            &wf_retirement_generation,
+            memory_order_seq_cst
+        ) != waiter->seen) {
+        return WF_RETIREMENT_HAPPENED;
+    }
+    return WF_RETIREMENT_UNREACHABLE;
+}
+
+enum wf_retirement_state wf_completion_retirement_state(
+    const wf_retirement_waiter *waiter,
+    size_t mine
+) {
+    return wf_retirement_state_now(waiter, mine, 1);
+}
+
+void wf_completion_retirement_sleep(
+    const wf_retirement_waiter *waiter,
+    size_t mine
+) {
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    if (wf_retirement_state_now(waiter, mine, 0) == WF_RETIREMENT_AWAITED) {
+        (void)pthread_cond_wait(&wf_retirement_signal, &wf_retirement_lock);
+    }
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
