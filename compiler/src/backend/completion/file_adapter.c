@@ -454,6 +454,21 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
     return present;
 }
 
+/* Whether this adapter's record has been published, read the way a thread
+ * that ran no initialization of its own has to read it.
+ *
+ * The direct execution route reaches `wf_file_execute_timed` straight from a
+ * generated call, with no once-control of its own, while another thread may
+ * be inside `wf_file_adapter_init`.  Pairing this acquire load with the
+ * release store init ends on is what makes the rest of the record safe to
+ * read for a thread that finds it set, and makes the read itself a
+ * synchronizing one rather than a race. */
+static int wf_file_adapter_initialized(const wf_file_adapter *adapter) {
+    return adapter != NULL
+        && atomic_load_explicit(&adapter->initialized, memory_order_acquire)
+            != 0;
+}
+
 static void wf_file_count_execution(wf_file_adapter *adapter, int helper) {
     atomic_fetch_add_explicit(
         helper != 0 ? &adapter->stat_helper_executions
@@ -470,7 +485,7 @@ wf_file_result wf_file_execute_timed(
     int timed;
     uint64_t started;
     wf_file_result result;
-    if (adapter == NULL || adapter->initialized == 0) {
+    if (!wf_file_adapter_initialized(adapter)) {
         return wf_file_execute_direct(request);
     }
     timed = wf_file_execution_should_be_timed(adapter);
@@ -486,7 +501,7 @@ enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
     const wf_file_adapter *adapter
 ) {
     uint64_t mean;
-    if (adapter == NULL || adapter->initialized == 0) {
+    if (!wf_file_adapter_initialized(adapter)) {
         return WF_FILE_WAIT_UNMEASURED;
     }
     mean = atomic_load_explicit(
@@ -577,24 +592,35 @@ int wf_file_adapter_init(
     wf_file_work *queue_storage,
     size_t queue_capacity,
     pthread_t *helper_storage,
+    size_t helper_capacity,
     size_t helper_count
 ) {
     size_t created = 0;
     int error;
 
     if (adapter == NULL || runtime == NULL || queue_storage == NULL
-        || queue_capacity == 0 || (helper_count != 0 && helper_storage == NULL)) {
+        || queue_capacity == 0 || helper_count > helper_capacity
+        || (helper_capacity != 0 && helper_storage == NULL)) {
         return EINVAL;
     }
-    memset(adapter, 0, sizeof(*adapter));
+    /* Field by field rather than one `memset`, because `initialized` is the
+     * one field a direct execution may be reading right now: a bulk write
+     * over it would be exactly the unsynchronized write the atomic exists to
+     * exclude.  It is left alone here — it is already clear, and the release
+     * store below is what sets it. */
     adapter->runtime = runtime;
     adapter->queue = queue_storage;
     adapter->queue_capacity = queue_capacity;
+    adapter->queue_head = 0;
+    adapter->queue_tail = 0;
+    adapter->queue_count = 0;
     adapter->helpers = helper_storage;
     atomic_init(&adapter->helper_count, 0);
     atomic_init(&adapter->mean_execute_ns, 0);
     atomic_init(&adapter->execute_ticks, 0);
     adapter->blocked_helpers = 0;
+    adapter->stopping = 0;
+    adapter->helper_capacity = helper_capacity;
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
@@ -611,7 +637,9 @@ int wf_file_adapter_init(
         (void)pthread_mutex_destroy(&adapter->queue_lock);
         return error;
     }
-    adapter->initialized = 1;
+    /* Every field above is published by this one store, and nothing reads the
+     * record without the acquire load that pairs with it. */
+    atomic_store_explicit(&adapter->initialized, 1, memory_order_release);
 
     for (created = 0; created < helper_count; ++created) {
         error = pthread_create(
@@ -631,7 +659,11 @@ int wf_file_adapter_init(
             }
             (void)pthread_cond_destroy(&adapter->queue_available);
             (void)pthread_mutex_destroy(&adapter->queue_lock);
-            adapter->initialized = 0;
+            atomic_store_explicit(
+                &adapter->initialized,
+                0,
+                memory_order_release
+            );
             return error;
         }
         atomic_store_explicit(
@@ -644,9 +676,15 @@ int wf_file_adapter_init(
 }
 
 int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap) {
-    if (adapter == NULL || adapter->initialized == 0
+    if (!wf_file_adapter_initialized(adapter)
         || (cap != 0 && adapter->helpers == NULL)) {
         return EINVAL;
+    }
+    /* The policy asks for a ceiling; the caller's storage decides how much of
+     * it exists.  `wf_file_grow_helpers_locked` writes `helpers[held]`, so a
+     * cap the array cannot hold is a write past its end. */
+    if (cap > adapter->helper_capacity) {
+        cap = adapter->helper_capacity;
     }
     (void)pthread_mutex_lock(&adapter->queue_lock);
     adapter->helper_cap = cap;
@@ -655,7 +693,7 @@ int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap) {
 }
 
 size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter) {
-    if (adapter == NULL || adapter->initialized == 0) {
+    if (!wf_file_adapter_initialized(adapter)) {
         return 0;
     }
     return atomic_load_explicit(&adapter->helper_count, memory_order_acquire);
@@ -788,7 +826,7 @@ enum wf_file_submit_result wf_file_adapter_submit(
     enum wf_completion_transition_result transition;
     int wake;
 
-    if (adapter == NULL || adapter->initialized == 0
+    if (!wf_file_adapter_initialized(adapter)
         || !wf_file_request_valid(request)) {
         return WF_FILE_SUBMIT_INVALID;
     }
@@ -842,7 +880,7 @@ enum wf_file_submit_result wf_file_adapter_submit(
 
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
     size_t executed = 0;
-    if (adapter == NULL || adapter->initialized == 0) {
+    if (!wf_file_adapter_initialized(adapter)) {
         return 0;
     }
     while (executed < budget) {
@@ -859,7 +897,7 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter) {
     size_t queued;
     wf_file_adapter *mutable_adapter = (wf_file_adapter *)adapter;
-    if (adapter == NULL || adapter->initialized == 0) {
+    if (!wf_file_adapter_initialized(adapter)) {
         return 0;
     }
     (void)pthread_mutex_lock(&mutable_adapter->queue_lock);
@@ -872,7 +910,7 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
     size_t helper;
     size_t held;
     int first_error = 0;
-    if (adapter == NULL || adapter->initialized == 0) {
+    if (!wf_file_adapter_initialized(adapter)) {
         return EINVAL;
     }
     (void)pthread_mutex_lock(&adapter->queue_lock);
@@ -906,7 +944,7 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
         }
     }
     if (first_error == 0) {
-        adapter->initialized = 0;
+        atomic_store_explicit(&adapter->initialized, 0, memory_order_release);
     }
     return first_error;
 }

@@ -956,7 +956,7 @@ static int test_single_thread_file_progress_and_backpressure(
 
     CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0
     );
     CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
     memset(&request, 0, sizeof(request));
@@ -1353,7 +1353,7 @@ static int test_submitted_open_owns_its_path_bytes(
     /* The bounded POSIX adapter, driven by this thread alone so the host call
      * demonstrably runs after the rewrite. */
     CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
     CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
     memcpy(requested, first, strlen(first) + 1u);
     memset(&request, 0, sizeof(request));
@@ -2460,7 +2460,7 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     CHECK(write(descriptor, "wf", 2) == 2);
 
     CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
     /* Nothing measured yet is not evidence of anything, and neither policy
@@ -2513,7 +2513,7 @@ static int test_pool_grows_when_operations_wait(const char *directory) {
     CHECK(write(descriptor, "wf", 2) == 2);
 
     CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
     /* A millisecond a call is a wait by any reading of the threshold. */
@@ -2532,6 +2532,74 @@ static int test_pool_grows_when_operations_wait(const char *directory) {
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     CHECK(close(descriptor) == 0);
     CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* The ceiling a policy asks for is a wish; the array the caller handed over is
+ * the fact.  The growth rule writes `helpers[held]`, so a cap above that
+ * array's length is a `pthread_create` past its end -- which is why the cap is
+ * clamped to the storage rather than trusted.  Storage of two against a cap of
+ * eight makes the clamp the only thing keeping the run inside the array. */
+static int test_helper_growth_stops_at_the_helper_storage(
+    const char *directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[8];
+    wf_file_adapter adapter;
+    wf_file_work queue[8];
+    pthread_t helpers[2];
+    char path[512];
+    int descriptor;
+    size_t held;
+
+    CHECK(directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-pool-storage-%ld",
+            directory,
+            (long)getpid()
+        ) > 0
+    );
+    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, "wf", 2) == 2);
+
+    CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 8, helpers, 2, 0) == 0);
+    /* Accepted, and silently reduced to the two helpers that exist. */
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 8) == 0);
+
+    wf_script_clock(1000000u);
+    CHECK(drive_reads_to_completion(&runtime, &adapter, descriptor, 64) == 0);
+    wf_script_clock(0);
+    held = wf_file_adapter_helper_count(&adapter);
+    CHECK(held >= 1);
+    CHECK(held <= 2);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptor) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* An initial count the storage cannot hold is refused outright: unlike the
+ * cap, it is not a ceiling to grow towards but threads to start right now. */
+static int test_helper_count_above_its_storage_is_refused(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[2];
+    wf_file_adapter adapter;
+    wf_file_work queue[2];
+    pthread_t helpers[1];
+
+    CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
+    CHECK(
+        wf_file_adapter_init(&adapter, &runtime, queue, 2, helpers, 1, 2)
+        == EINVAL
+    );
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
 
@@ -2555,7 +2623,7 @@ static int test_helper_completion_wakes_scheduler(void) {
     CHECK(pipe(pipe_descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 2, &helper, 1) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 2, &helper, 1, 1) == 0
     );
     CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
     memset(&request, 0, sizeof(request));
@@ -2631,7 +2699,7 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     CHECK(flags >= 0);
     CHECK(fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) == 0);
     CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
     CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_READ;
@@ -2712,7 +2780,7 @@ static int test_capacity_release_wakes_before_blocking_work(void) {
 
     CHECK(pipe(pipe_descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0);
     CHECK(wf_completion_claim(&runtime, &read_token) == WF_COMPLETION_CLAIMED);
     memset(&read_request, 0, sizeof(read_request));
     read_request.kind = WF_FILE_READ;
@@ -2994,6 +3062,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
     RUN_TEST(test_pool_grows_when_operations_wait(argv[1]));
+    RUN_TEST(test_helper_growth_stops_at_the_helper_storage(argv[1]));
+    RUN_TEST(test_helper_count_above_its_storage_is_refused());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());

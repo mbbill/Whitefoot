@@ -237,7 +237,7 @@ static int test_positioned_read_result_boundaries(
     CHECK(descriptor >= 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 2, NULL, 0) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 2, NULL, 0, 0) == 0
     );
 
     host_calls_before = atomic_load_explicit(
@@ -415,7 +415,7 @@ static int test_independent_reads_complete_in_reverse_order(
     CHECK(descriptor >= 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 2, NULL, 0) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 2, NULL, 0, 0) == 0
     );
 
     memset(&first_request, 0, sizeof(first_request));
@@ -496,7 +496,7 @@ static int test_capacity_wait_and_retry(const char *scratch_directory) {
     CHECK(descriptor >= 0);
     CHECK(wf_completion_runtime_init(&runtime, slots, 2) == 0);
     CHECK(
-        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0
+        wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0, 0) == 0
     );
 
     memset(&first_request, 0, sizeof(first_request));

@@ -322,7 +322,18 @@ typedef struct wf_file_adapter {
     _Atomic uint64_t mean_execute_ns;
     _Atomic uint64_t execute_ticks;
     unsigned stopping;
-    unsigned initialized;
+    /* How many helpers `helper_storage` can hold.  The growth rule writes
+     * `helpers[held]`, so this, and not the policy's wish, is what bounds the
+     * ceiling `wf_file_adapter_set_helper_cap` may install. */
+    size_t helper_capacity;
+    /* Whether every field above has been published.  It is atomic because the
+     * direct execution route reads it on a thread that has run no
+     * initialization of its own: `wf_file_execute_timed` is reached straight
+     * from a generated direct call, with no once-control between it and this
+     * adapter, while another thread may be inside `wf_file_adapter_init`.  A
+     * release store here, paired with the acquire loads, is what makes the
+     * rest of the record safe to read for a thread that finds it set. */
+    _Atomic unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
     _Atomic uint64_t stat_capacity_waits;
@@ -333,13 +344,19 @@ typedef struct wf_file_adapter {
 
 /* The caller owns queue_storage and helper_storage until shutdown completes.
  * helper_count is policy, not a fixed architecture constant; zero selects
- * scheduler-driven single-thread progress. */
+ * scheduler-driven single-thread progress.
+ *
+ * helper_capacity is how many helpers `helper_storage` holds, which is a fact
+ * about the caller's storage rather than a policy: the pool may later be told
+ * to grow, and the only thing that can say how far is the array it grows
+ * into.  It is refused below helper_count. */
 int wf_file_adapter_init(
     wf_file_adapter *adapter,
     wf_completion_runtime *runtime,
     wf_file_work *queue_storage,
     size_t queue_capacity,
     pthread_t *helper_storage,
+    size_t helper_capacity,
     size_t helper_count
 );
 
@@ -400,9 +417,14 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
 
 /* Raises the ceiling the helper pool may grow to when a program exposes more
- * independent queued work than there are helpers to take it. `helper_storage`
- * given to init must hold `cap` helpers. A cap at or below the initial count
- * disables growth, which is what a pinned helper policy asks for. */
+ * independent queued work than there are helpers to take it. A cap at or below
+ * the initial count disables growth, which is what a pinned helper policy asks
+ * for.
+ *
+ * A cap above the `helper_capacity` given to init is clamped to it rather than
+ * refused: the caller is stating a policy, and the storage it handed over is
+ * the fact that bounds it.  The clamp is the difference between a pool that
+ * stops growing and a `pthread_create` past the end of the caller's array. */
 int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap);
 
 /* Read without the queue lock. Zero means the calling scheduler is itself the

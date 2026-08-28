@@ -53,11 +53,24 @@ static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
 static pthread_once_t wf_bridge_file_once = PTHREAD_ONCE_INIT;
 static int wf_bridge_error;
 static int wf_bridge_file_error;
-/* Whether WF_IO_HELPERS named the pool, which pins the route as well as the
+/* The readiness flags below are atomic, and that is not decoration.
+ *
+ * Each is written by one of the once-initializers and read by entry points
+ * that run no once at all: `wf__completion_file_pread_submit` asks whether the
+ * pool is pinned and whether the adapter exists *before* it reaches
+ * `wf_bridge_submit_file`, and the statistics entries read them from wherever
+ * a program calls them.  A program with two threads therefore has an ordinary
+ * unsynchronized read of a flag another thread is writing, which is a data
+ * race whatever the values happen to be.  Declaring them `_Atomic` makes the
+ * plain reads and writes below sequentially consistent accesses -- a load-
+ * acquire on the hosts this runs on -- which is the whole cost, and it is
+ * paid on a path that is about to make a host call.
+ *
+ * Whether WF_IO_HELPERS named the pool, which pins the route as well as the
  * count: see wf_bridge_helper_policy. */
-static int wf_bridge_helpers_pinned;
-static unsigned wf_bridge_ready;
-static unsigned wf_bridge_file_ready;
+static _Atomic int wf_bridge_helpers_pinned;
+static _Atomic unsigned wf_bridge_ready;
+static _Atomic unsigned wf_bridge_file_ready;
 /* Opens the completion path refused because no operation record can hold the
  * name, each of which its caller then performs as a direct blocking open.
  * `open_read` resolves a caller path buffer of any admitted length [PATH-1],
@@ -68,7 +81,7 @@ static _Atomic uint64_t wf_bridge_demoted_opens;
 #if defined(__linux__)
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
-static unsigned wf_bridge_linux_ready;
+static _Atomic unsigned wf_bridge_linux_ready;
 #endif
 
 enum wf_bridge_route {
@@ -179,6 +192,7 @@ static void wf_bridge_initialize_file(void) {
         wf_bridge_queue,
         WF_BRIDGE_QUEUE_COUNT,
         wf_bridge_helpers,
+        WF_BRIDGE_MAX_HELPERS,
         requested
     );
     if (wf_bridge_file_error == 0
