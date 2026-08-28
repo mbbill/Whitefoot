@@ -68,6 +68,7 @@ int wf_completion_runtime_init(
     runtime->slot_count = slot_count;
     atomic_init(&runtime->claim_cursor, 0);
     atomic_init(&runtime->drain_cursor, 0);
+    atomic_init(&runtime->drain_hint, 0);
     atomic_init(&runtime->ready_events, 0);
     atomic_init(&runtime->wake_epoch, 0);
     atomic_init(&runtime->parked_schedulers, 0);
@@ -495,6 +496,16 @@ static enum wf_completion_publish_result wf_completion_publish(
     );
     atomic_store_explicit(&slot->event_pending, 1, memory_order_release);
     atomic_fetch_add_explicit(&runtime->ready_events, 1, memory_order_release);
+    /* Where the next drain should look first.  A scheduler harvesting on
+     * everybody's behalf cannot know where an event is and used to compare and
+     * exchange its way across a window of the slot array to find one; naming
+     * the slot that just published turns the common case — one event, taken by
+     * the next drain — into a single attempt. */
+    atomic_store_explicit(
+        &runtime->drain_hint,
+        token.slot + 1u,
+        memory_order_relaxed
+    );
     atomic_fetch_add_explicit(
         &runtime->stat_publications,
         1,
@@ -602,6 +613,7 @@ size_t wf_completion_drain(
     int wake_consumer = 0;
     size_t cursor;
     size_t index;
+    uint32_t hint;
     uint64_t traced = 0;
 
     if (runtime == NULL || runtime->slots == NULL || events == NULL
@@ -619,6 +631,31 @@ size_t wf_completion_drain(
     }
     if (wf_completion_trace_enabled()) {
         traced = wf_completion_trace_now();
+    }
+    /* The last publication named its own slot.  Taking it first costs one
+     * compare-exchange, and when it was the only event outstanding the sweep
+     * below does not run at all. */
+    hint = atomic_exchange_explicit(&runtime->drain_hint, 0, memory_order_relaxed);
+    if (hint != 0 && (size_t)(hint - 1u) < runtime->slot_count) {
+        wf_completion_token named;
+        named.slot = hint - 1u;
+        named.generation = atomic_load_explicit(
+            &runtime->slots[hint - 1u].generation,
+            memory_order_relaxed
+        );
+        produced += wf_completion_drain_token(runtime, named, &events[0]);
+        if (produced != 0
+            && atomic_load_explicit(&runtime->ready_events, memory_order_acquire)
+                == 0) {
+            if (traced != 0) {
+                wf_completion_trace_add(
+                    &wf__completion_trace.drain_ns,
+                    &wf__completion_trace.drain_calls,
+                    traced
+                );
+            }
+            return produced;
+        }
     }
     cursor = atomic_fetch_add_explicit(
         &runtime->drain_cursor,
