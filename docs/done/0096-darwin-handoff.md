@@ -863,16 +863,19 @@ by this batch.
   is the runner's cold tables, where `C.wide8.default` lands on its own pinned
   eight-helper line. A warm macOS page cache is exactly the case where the rule
   is meant not to fire, so this host cannot supply that observation.
-- **A corpus program that reaches submit and join.** Counted over
-  `whitefootc --emit-llvm` for all 22 programs in `tests/programs`, in the
-  default lowering and again under `--par` — 44 modules — not one emits a
-  completion `*_submit` or `*_join` call; every completion call the corpus
-  emits is a `*_direct` one. Five programs emit a completion call at all:
-  `wfgrep` and `raw_deflate_boundary` read files through
-  `wf__completion_file_pread_direct`, `wfgrep` and `dir_walk` enumerate
-  directories, and `byte_string` and `par_layout` reach only
-  `wf__completion_file_write_direct`. The other seventeen — 34 of the 44
-  modules — emit no completion call whatever. So the
+- **A corpus program that reaches submit and join.** Counted over `whitefootc
+  --emit-llvm` for the 22 units of `CORPUS_UNITS` in
+  `compiler/tests/programs/parallel.rs` — 25 `.wf` files, since each
+  `raw_deflate_*` unit compiles four — in the default lowering and again under
+  `--par`, 44 modules in all: not one emits a completion `*_submit` or
+  `*_join` call; every completion call the corpus emits is a `*_direct` one;
+  and the two lowerings emit the same set for every unit. Five units emit a
+  completion call at all. `byte_string` and `par_layout` emit
+  `wf__completion_file_write_direct` and nothing else; `dir_walk` emits `open_at_direct`, `close_direct`,
+  `directory_next_direct` and `write_direct`; `raw_deflate_boundary` emits
+  `open_at_direct`, `close_direct`, `pread_direct` and `write_direct`; and
+  `wfgrep` emits those four plus `directory_next_direct`. The other seventeen
+  units — 34 of the 44 modules — emit no completion call whatever. So the
   overlap-versus-`--no-overlap` differential over that corpus covers the new
   direct routing and not the submitted path, and nothing in
   `compiler/tests/programs` can observe a declined positioned read, because a

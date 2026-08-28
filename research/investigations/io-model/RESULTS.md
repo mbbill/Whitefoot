@@ -1571,19 +1571,25 @@ Four limits, stated here so a later reader does not have to rediscover them.
   own pinned eight-helper line. No test on the maintainer's machine watches a
   real program grow a pool, because a warm macOS page cache is exactly the
   case where the rule is meant not to fire.
-- **The corpus differential does not reach this path.** Counted over
-  `whitefootc --emit-llvm` for every program in `tests/programs`, in the
-  default lowering and again under `--par`, not one of them emits a completion
-  `*_submit` or `*_join` call: every completion call the corpus emits is a
-  `*_direct` one. `wfgrep` and `raw_deflate_boundary` emit
-  `wf__completion_file_pread_direct`; `wfgrep` and `dir_walk` also emit
-  `open_at_direct`, `close_direct` and `directory_next_direct`; the rest emit
-  only `write_direct`. So that differential covers the direct routing this
-  batch changed — which is worth having, since routing every `*_direct` entry
-  through `wf_file_execute_timed` is one of its changes — and not the
-  submitted path. The programs that do exercise submit and join are the bench
-  programs in `research/experiments/io-completion-bench/programs/`, which is
-  where the overlap-versus-`--no-overlap` differential has to be run.
+- **The corpus differential does not reach this path.** `whitefootc
+  --emit-llvm` was run over the 22 units of `CORPUS_UNITS` in
+  `compiler/tests/programs/parallel.rs` — 25 `.wf` files, since each
+  `raw_deflate_*` unit compiles four — in the default lowering and again under
+  `--par`, and every `wf__completion_` symbol of all 44 modules was listed.
+  Not one module names a `*_submit` or `*_join` entry; the two lowerings emit
+  the same set for every unit; and five units emit a completion call at all.
+  `byte_string` and `par_layout` emit `write_direct` alone. `dir_walk` emits
+  `open_at_direct`, `close_direct`, `directory_next_direct` and
+  `write_direct`. `raw_deflate_boundary` emits `open_at_direct`,
+  `close_direct`, `pread_direct` and `write_direct`. `wfgrep` emits those four
+  and `directory_next_direct`. The other seventeen units — 34 of the 44
+  modules — emit no completion call whatever. So that differential covers the
+  direct routing this batch changed — which is worth having, since routing
+  every `*_direct` entry through `wf_file_execute_timed` is one of its
+  changes — and not the submitted path. The programs that do exercise submit
+  and join are the bench programs in
+  `research/experiments/io-completion-bench/programs/`, which is where the
+  overlap-versus-`--no-overlap` differential has to be run.
 - **The decline check costs a queue lock.** `wf_file_adapter_transfer_runs_on_caller`
   asks whether anything is queued, and that term takes the adapter's queue
   lock, so every positioned read that reaches the question pays one
