@@ -2801,6 +2801,90 @@ static int test_helper_count_above_its_storage_is_refused(void) {
     return 0;
 }
 
+/* A shut-down record answers "not usable" to every entry, and it answers that
+ * before the lock behind the answer is destroyed.
+ *
+ * `wf_file_adapter_shutdown` destroys the condition variable and the mutex,
+ * and every entry of this adapter reads the `initialized` flag and then
+ * touches storage behind them.  The flag is therefore what stands between a
+ * later caller and destroyed storage, which makes two things testable without
+ * a race: after a shutdown every entry is refused at the guard, and a second
+ * shutdown is refused rather than joining threads that are gone and
+ * destroying a mutex twice.
+ *
+ * The pool is grown first on purpose.  A shutdown of an adapter that never
+ * started a helper joins nothing, so the interesting teardown -- helpers
+ * joined, then the objects they waited on destroyed -- would not run at all.
+ *
+ * What this does not test is the concurrent window the store's position
+ * closes: a reader that passes the guard while shutdown is between its
+ * destroys is a race, and a race is not what a single-threaded case decides.
+ * It does hold the ordering to its unconditional half, which is a real
+ * property -- a teardown that reported an error still leaves a record that
+ * says it is unusable. */
+static int test_shutdown_refuses_every_later_entry(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[WF_POOL_GROWTH_DEPTH + 1u];
+    wf_file_adapter adapter;
+    wf_file_work queue[WF_POOL_GROWTH_DEPTH + 1u];
+    pthread_t helpers[4];
+    int descriptors[2];
+    size_t held = 0;
+
+    CHECK(pipe(descriptors) == 0);
+    CHECK(
+        wf_completion_runtime_init(
+            &runtime,
+            slots,
+            WF_POOL_GROWTH_DEPTH + 1u
+        ) == 0
+    );
+    CHECK(
+        wf_file_adapter_init(
+            &adapter,
+            &runtime,
+            queue,
+            WF_POOL_GROWTH_DEPTH + 1u,
+            helpers,
+            4,
+            0
+        ) == 0
+    );
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
+    wf_script_clock(1000000u);
+    CHECK(
+        grow_pool_against_a_blocked_queue(
+            &runtime,
+            &adapter,
+            descriptors[0],
+            descriptors[1],
+            &held
+        ) == 0
+    );
+    wf_script_clock(0);
+    /* The record is live, and says so, before the shutdown below. */
+    CHECK(held == 4);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 4);
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_LONG);
+
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+
+    /* Every entry that would take `queue_lock` or read the record's measured
+     * state is turned away by the flag instead. */
+    CHECK(wf_file_adapter_queued(&adapter) == 0);
+    CHECK(wf_file_adapter_helper_count(&adapter) == 0);
+    CHECK(wf_file_adapter_transfer_runs_on_caller(&adapter) == 0);
+    CHECK(wf_file_adapter_wait_verdict(&adapter) == WF_FILE_WAIT_UNMEASURED);
+    CHECK(wf_file_adapter_set_helper_cap(&adapter, 2) == EINVAL);
+    /* And shutdown itself is one of those entries. */
+    CHECK(wf_file_adapter_shutdown(&adapter) == EINVAL);
+
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(descriptors[0]) == 0);
+    CHECK(close(descriptors[1]) == 0);
+    return 0;
+}
+
 static int test_helper_completion_wakes_scheduler(void) {
     wf_completion_runtime runtime;
     wf_completion_slot slots[2];
@@ -3281,6 +3365,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_pool_grows_when_operations_wait());
     RUN_TEST(test_helper_growth_stops_at_the_helper_storage());
     RUN_TEST(test_helper_count_above_its_storage_is_refused());
+    RUN_TEST(test_shutdown_refuses_every_later_entry());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());
