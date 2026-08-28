@@ -59,6 +59,16 @@ whatever the previous table left behind. It is a full sequential pass and not
 a rerun of the workload, because 32,768 pseudo-random reads leave about two
 per cent of the blocks untouched.
 
+**A fresh tree is left alone before it is measured.** `make read-settle` runs
+the same probe the table is gated on, quietly, until it passes. Writing half a
+gigabyte makes this host's malware scanner walk the new files: a probe every
+fifteen seconds on an otherwise idle machine watches residency move from the
+first file towards the last over a minute or two and then vanish as the pages
+age out, with no benchmark line running. Waiting that out is a wait for an
+outside reader to finish, not a softer threshold; the gate probe below is
+unchanged and still refuses the table. It applies to the local target only --
+the runners have no such reader.
+
 **The label is measured, not asserted.** `read_baseline probe-uncached` times
 sixteen positioned reads in each of the eight files, through descriptors that
 do not populate the cache and at offsets that differ on every invocation, and
