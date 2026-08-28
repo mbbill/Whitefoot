@@ -462,25 +462,36 @@ impl CompiledProgram {
         command.output().expect("run compiled program")
     }
 
-    /// Runs the program with standard output on a pipe whose read end this
-    /// process closes before consuming anything.
+    /// Runs the program with standard output on a pipe whose read end is
+    /// already closed when the program starts.
     ///
     /// The program therefore publishes into a destination with no reader,
     /// which is the portable way to observe what a write to a closed pipe
     /// reaches source as. Standard error is captured and returned.
+    ///
+    /// The read end is closed *before* the spawn, and that ordering is the
+    /// whole of what makes this deterministic. Spawning first and closing
+    /// afterwards leaves a race the program can win: a pipe holds 64 KiB on
+    /// Linux, so a program whose whole output fits in the buffer can publish
+    /// it and exit 0 before this process closes anything, and the case then
+    /// fails reporting a success status for a destination that was never
+    /// closed in time. Observed on the four-core Linux runner in batch 0093.
+    /// With no reader from before the program exists, its first write reaches
+    /// a closed destination on every run and on every host.
     pub fn run_with_closed_output(
         &self,
         working_directory: &Path,
         arguments: &[&[u8]],
     ) -> (ExitStatus, Vec<u8>) {
+        let (reader, writer) = std::io::pipe().expect("create the output pipe");
+        drop(reader);
         let mut child = Command::new(&self.executable)
             .current_dir(working_directory)
             .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
-            .stdout(Stdio::piped())
+            .stdout(Stdio::from(writer))
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn compiled program");
-        drop(child.stdout.take());
         let mut diagnostics = Vec::new();
         child
             .stderr

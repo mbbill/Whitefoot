@@ -204,6 +204,32 @@ While converting the call sites, one doc-comment defect from batch 0090 is
 fixed in place: the paragraph describing what `grants_over_runs` returns had
 come to sit above `a_steal_is_observable`, whose own first line followed it.
 
+### `run_with_closed_output`: a race the program could win
+
+The Linux `corpus` job found a second one, in the harness rather than in a
+case. `raw_deflate::each_boundary_and_decode_outcome_reaches_its_own_status`
+ends by publishing into a destination with no reader and requires the status
+[SYS-7] gives that, code 8. It reported code 0 on the four-core runner.
+
+The helper spawned the program with standard output on a pipe and closed the
+read end *afterwards*:
+
+```rust
+let mut child = Command::new(&self.executable)... .stdout(Stdio::piped()).spawn()...;
+drop(child.stdout.take());
+```
+
+A pipe holds 64 KiB on Linux, and this program's output fits. So the program
+could publish its whole result into the buffer and exit 0 before this process
+closed anything, and the case then reported a success status for a destination
+that had a reader for as long as it mattered. The property was never wrong; the
+harness sometimes failed to create the condition the property is about.
+
+The read end is now closed *before* the spawn, so there is no reader from
+before the program exists and its first write reaches a closed destination on
+every run and on every host. `std::io::pipe` is what makes that expressible
+without a race. Nothing about what the case asserts moves.
+
 ## The gate, split by stage
 
 `make check` was one target with nine prerequisites and no visibility into
@@ -289,36 +315,52 @@ it a flake generator wearing a budget's clothes.
 
 ### The gate, before and after, per host
 
-| | before, one `make check` | after, the slowest job | before, sum of jobs |
+| | before, one `make check` | after, the slowest job | after, sum of jobs |
 |---|---|---|---|
-| `ubuntu-24.04` | 21 min 34 s | **2 min 25 s** | 10 min 2 s |
-| `macos-14` | 5 min 35 s | **2 min 22 s** | 8 min 7 s |
-| maintainer's machine, warm | 3 min 14 s | **2 min 23 s** | — |
+| `ubuntu-24.04` | 21 min 34 s | **2 min 20 s** | 10 min 19 s |
+| `macos-14` | 5 min 35 s | **1 min 43 s** | 8 min 1 s |
+| maintainer's machine, warm | 3 min 14 s | **2 min 24 s** | — |
 
-The Linux "after" is the `sampling` job at 145 s; the macOS one is `unit` at
-142 s. Every job on both hosts is inside the five-minute target and no job
-comes within three minutes of the eight-minute ceiling.
+The Linux "after" is the `unit` job at 140 s; the macOS one is `unit` at 103 s.
+Every job on both hosts is inside the five-minute target and none comes within
+two and a half minutes of the eight-minute ceiling. The sum column is what the
+one-job-per-host shape would still cost, and is what the split converts into a
+maximum.
 
-### Per job, gate run [33145044923](https://github.com/mbbill/Whitefoot/actions/runs/33145044923)
+### Per job, gate run [33145583233](https://github.com/mbbill/Whitefoot/actions/runs/33145583233)
 
 | job | Linux | macOS |
 |---|---|---|
-| `static` | 67 s | 84 s |
-| `unit` | 123 s | 142 s |
-| `sampling` | 145 s | 86 s |
-| `corpus` | 120 s | 98 s |
-| `conformance` | 88 s (red, the six documented cases) | 86 s |
-| `research` | 59 s | 22 s |
+| `static` | 62 s | 79 s |
+| `unit` | 140 s | 103 s |
+| `sampling` | 138 s | 90 s |
+| `corpus` | 127 s | 101 s |
+| `conformance` | 91 s (red, the six documented cases) | 86 s |
+| `research` | 61 s | 22 s |
 
 ### Per stage, the same content
 
 | stage | Linux before | Linux after | macOS before | macOS after |
 |---|---|---|---|---|
 | library suite, fast half | (one suite, 1016 s) | 48.5 s | (one suite, 55 s) | 28.9 s |
-| library suite, sampling half | (in the same 1016 s) | **54.9 s** | (in the same 55 s) | 18.9 s |
-| integration targets | 54 s | 43 s | 65 s | 66 s |
+| library suite, sampling half | (in the same 1016 s) | **57 s** | (in the same 55 s) | 20.3 s |
+| integration targets | 54 s | 56 s | 65 s | 66 s |
 | `conformance-run` | 49.5 s | 23.6 s | 48.9 s | 28.5 s |
 | `research-tests` | 12.9 s | 12 s | 12.0 s | 10 s |
+
+The local gate ends `== WHITEFOOT ALL TESTS GREEN ==` with its own table:
+
+```text
+repository-invariants             1 s
+approval-history-integrity        0 s
+spec-append-only                  0 s
+spec-archive-integrity            1 s
+spec-digest-sync                  0 s
+conformance                       0 s
+compiler                        122 s
+research-tests                    6 s
+conformance-run                  50 s
+```
 
 ### The cases that were the problem
 
