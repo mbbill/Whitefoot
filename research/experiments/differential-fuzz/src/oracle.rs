@@ -255,6 +255,12 @@ pub enum Judgment {
     Unstable(String),
     /// The reference itself did not finish.
     ReferenceTimeout,
+    /// The sequential build itself was killed by a signal. An accepted
+    /// program has exactly one writer-reachable trap, a written claim, and the
+    /// generated claims are always true; so this is a defect of its own class
+    /// and never a reference. Comparing it against other builds would only
+    /// report whether they died the same way.
+    ReferenceCrash,
     /// Every run agreed with the source-order reference.
     Agreed,
     /// A run disagreed and the disagreement survived re-verification.
@@ -583,6 +589,14 @@ impl Oracle {
         if reference.timed_out {
             return Verdict {
                 judgment: Judgment::ReferenceTimeout,
+                ledger: Some(ledger),
+                runs,
+                fifo_runs,
+            };
+        }
+        if reference.status.is_none() {
+            return Verdict {
+                judgment: Judgment::ReferenceCrash,
                 ledger: Some(ledger),
                 runs,
                 fifo_runs,

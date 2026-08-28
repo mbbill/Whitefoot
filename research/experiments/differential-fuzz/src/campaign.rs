@@ -27,6 +27,7 @@ struct Tally {
     diverged: u64,
     unstable: u64,
     reference_timeouts: u64,
+    reference_crashes: u64,
     lowering_refusals: u64,
     rejected: u64,
     rejections: BTreeMap<String, u64>,
@@ -123,6 +124,9 @@ pub fn check_one(paths: &Paths, seed: u64) -> Result<(), String> {
         }
         Judgment::Unstable(reason) => println!("unstable: {reason}"),
         Judgment::ReferenceTimeout => println!("the reference run did not finish"),
+        Judgment::ReferenceCrash => {
+            println!("FINDING the sequential build of an accepted program was killed by a signal")
+        }
         Judgment::Agreed => println!("agreed across {} runs", verdict.runs + verdict.fifo_runs),
         Judgment::Diverged(divergence) => println!("DIVERGED: {}", divergence.describe()),
     }
@@ -227,6 +231,16 @@ fn judge_one(
         }
         Judgment::Unstable(_) => record.unstable += 1,
         Judgment::ReferenceTimeout => record.reference_timeouts += 1,
+        Judgment::ReferenceCrash => {
+            record.reference_crashes += 1;
+            let note = format!(
+                "seed {seed}: the sequential build of an accepted program was killed by a signal"
+            );
+            record.findings.push(note.clone());
+            drop(record);
+            println!("FINDING {note}");
+            save_finding(findings, seed, &program.source, &note, None);
+        }
         Judgment::Agreed => record.agreed += 1,
         Judgment::Diverged(divergence) => {
             record.diverged += 1;
@@ -320,6 +334,7 @@ pub fn run_probes(paths: &Paths, options: &Options) -> Result<(), String> {
             ),
             Judgment::Unstable(reason) => format!("unstable: {reason}"),
             Judgment::ReferenceTimeout => "the reference run did not finish".to_owned(),
+            Judgment::ReferenceCrash => "the sequential build was killed by a signal".to_owned(),
         };
         println!("{}: {outcome}", path.display());
     }
@@ -349,11 +364,12 @@ fn render(tally: &Tally, elapsed: Duration, options: &Options) -> String {
         tally.rejected
     ));
     text.push_str(&format!(
-        "agreed {}, diverged {}, unstable {}, reference timeouts {}, lowering refusals {}\n",
+        "agreed {}, diverged {}, unstable {}, reference timeouts {}, reference crashes {}, lowering refusals {}\n",
         tally.agreed,
         tally.diverged,
         tally.unstable,
         tally.reference_timeouts,
+        tally.reference_crashes,
         tally.lowering_refusals
     ));
     text.push_str(&format!(

@@ -321,6 +321,22 @@ Read that as coverage rather than as a green light:
   nothing in this corpus says otherwise.
 - **`diverged 0`.** No program published different bytes or a different exit
   status under any overlap setting.
+- **`reference crashes`, a count added in review, after this campaign.** The
+  oracle above took a sequential run that ended by a signal (no exit status,
+  no timeout) as the reference, so three builds dying the same way would have
+  counted as `agreed`. That is a defect of its own class rather than an
+  overlap divergence: an accepted program has one writer-reachable trap, a
+  written claim, and the generated claims are always true. The reference run
+  is now judged before it judges anything (`Judgment::ReferenceCrash`), the
+  program is saved as a finding, and the campaign line carries the count. The
+  40-minute campaign predates that count; the evidence at hand is a re-run
+  through the amended oracle on the same host, 4 jobs, 1 repetition, seed 1:
+
+  ```text
+  attempts 208, accepted 203 (97.6%), rejected 5
+  agreed 203, diverged 0, unstable 0, reference timeouts 0, reference crashes 0, lowering refusals 0
+  executions 4263 captured, 51 through a delayed fifo reader
+  ```
 
 The shape distribution over accepted programs, which is what "diverged 0" is
 worth:
