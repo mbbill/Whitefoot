@@ -1240,8 +1240,8 @@ regress.
 row                       before   after   bar          met         before is
 warm 64 KiB  C/S          1.27x    1.006x  <= 1.00x     0.6% over   0092 macOS
 warm  4 KiB  C/S          2.88x    1.028x  <= 1.00x     2.8% over   0092 macOS
-cold 64 KiB  C/N.pool8    1.58x    1.394x  <= 1.10x     not read    0092 macOS
-cold  4 KiB  C/N.pool8    2.07x    1.283x  <= 1.10x     not read    0092 macOS
+cold 64 KiB  C/N.pool8    1.58x    1.394x  <= 1.10x     no          0092 macOS
+cold  4 KiB  C/N.pool8    2.07x    1.283x  <= 1.10x     no          0092 macOS
 many-files   C/S          1.20x    1.022x  <= 1.00x     2.2% over   0092 macOS
 Linux warm 64 KiB C/S     0.98x    1.026x  no regress   unresolved  0092 Linux
 Linux warm  4 KiB C/S     0.94x    1.055x  no regress   unresolved  0092 Linux
@@ -1497,10 +1497,11 @@ run          commit    processor    C.wide8.default  S.wide8  N.pool8  N.uring32
 33153717709  96bb4778  EPYC 7763            1479.87  4227.07  1479.56    1469.81
 33155821397  266acf4f  Xeon 8573C           1514.79  8973.99  1435.03    1268.13
 33165141309  a06c53f9  EPYC 9V74            1216.03  4108.74  1482.48    1448.85
+33172323795  261070c8  Xeon 8370C           1465.26  3469.10  1481.78    1441.72
 ```
 
-All three report four CPUs; `96bb4778`'s ran on `sda1` and the other two on
-`nvme0n1p1`.
+All four report four CPUs; the 7763 and the 8370C ran on `sda1`, the 8573C and
+the 9V74 on `nvme0n1p1`.
 
 On this run's table, and on this run's alone, the eight-wide Whitefoot program
 is faster than every native line:

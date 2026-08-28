@@ -408,8 +408,8 @@ The bar is the owner's: on the macOS runner's read-heavy tables, warm
 row                       before   after   bar          met         before is
 warm 64 KiB  C/S          1.27x    1.006x  <= 1.00x     0.6% over   0092 macOS
 warm  4 KiB  C/S          2.88x    1.028x  <= 1.00x     2.8% over   0092 macOS
-cold 64 KiB  C/N.pool8    1.58x    1.394x  <= 1.10x     not read    0092 macOS
-cold  4 KiB  C/N.pool8    2.07x    1.283x  <= 1.10x     not read    0092 macOS
+cold 64 KiB  C/N.pool8    1.58x    1.394x  <= 1.10x     no          0092 macOS
+cold  4 KiB  C/N.pool8    2.07x    1.283x  <= 1.10x     no          0092 macOS
 many-files   C/S          1.20x    1.022x  <= 1.00x     2.2% over   0092 macOS
 Linux warm 64 KiB C/S     0.98x    1.026x  no regress   unresolved  0092 Linux
 Linux warm  4 KiB C/S     0.94x    1.055x  no regress   unresolved  0092 Linux
@@ -440,50 +440,76 @@ that is 7.92; with the policy free to decline it is 0.92, so 88 per cent of the
 charge is gone and what remains is the operations the policy does not decline —
 the opens and the closes, which keep the queue.
 
-**Neither cold row is read, and no draw on this branch reads it.** Three
-macOS draws exist and each fails a different quality test:
+**Both cold rows are graded `no`, and the draw that reads them arrived last.**
+For most of this batch neither row could be read at all: every macOS draw
+failed a quality test, and the section below tabulated which. The repair
+commit's own `io-bench` run then produced the draw the record kept saying was
+owed — a macOS table whose uncached label its probe confirms *before and
+after*, at both sizes — and on it the two rows read 1.477 and 1.557 against a
+bar of 1.10. That is a miss, not a pass, and it is a wider miss than the
+unlabelled mixture the `after` column above reports.
 
 ```text
 run          commit    cold 64 label        cold 64 C/N.pool8   N.pool8 spread
 33153717709  96bb4778  confirmed/confirmed  817.47/808.79=1.011 445.55..898.44
 33155821397  266acf4f  refused/confirmed    591.82/424.58=1.394 417.49..453.58
 33158144391  72e98cba  refused/refused      609.97/555.63=1.098 416.53..1075.57
+33165141309  a06c53f9  refused/refused      565.31/434.33=1.302 427.78..447.04
+33172323795  261070c8  confirmed/confirmed 1150.39/779.08=1.477 584.73..991.44
 
 run          commit    cold 4 label         cold 4 C/N.pool8    note
 33153717709  96bb4778  confirmed/refused    675.60/439.22=1.538
 33155821397  266acf4f  refused/confirmed    489.75/381.86=1.283
 33158144391  72e98cba  refused/refused      960.86/587.85=1.635 C max 26351.72
+33165141309  a06c53f9  refused/refused      490.57/399.02=1.229 C max  4996.77
+33172323795  261070c8  confirmed/confirmed 1058.71/679.86=1.557 C max  4332.72
 ```
 
-A fourth draw exists, run 33165141309 at `a06c53f9` — the commit that carries
-the follow-up's last runtime change. It refuses both cold labels at both ends
-as well, so it settles nothing here either, and it is reported under "What the
-follow-up cost" below because its subject is the follow-up rather than this
-measurement.
+`33172323795` is this record's own repair commit, `261070c8`: pushing the
+repair ran `io-bench`, and its `bench-macos-read` job is the first on this
+branch to confirm the uncached label at both ends of both cold tables. Its
+medians are the grade. Its spreads are also the worst of the five on the line
+the bar reads — `C.wide8.default` runs 1044.77 to 14961.31 cold at 64 KiB and
+560.66 to 4332.72 cold at 4 KiB, on a runner whose load average was 5.60 at
+the start — so the reading is a confirmed-cold one taken on a busy machine,
+and the honest thing is to say what survives that noise and what does not. At
+64 KiB it survives: `C.wide8.default`'s *minimum* over `N.pool8`'s median is
+still 1.34, outside the bar without needing the median at all. At 4 KiB it
+does not survive as cleanly: C's minimum over `N.pool8`'s median is 0.82, so
+the two lines' ranges overlap and only their medians separate them. Neither
+row is met on any statistic that puts C ahead, so both are graded `no`; the
+4 KiB row is the weaker of the two gradings and this says so.
 
-The third of these, run
+The earlier draws are kept above because a record that argues about which draw
+to read the bar from cannot leave a draw out. Of them, `96bb4778`'s 64 KiB
+table is the other one whose label its probe confirmed at both ends, and it
+reads 1.011 and would pass — on the noisiest baseline of the five: `N.pool8`
+runs 445.55 to 898.44 around a median of 808.79, and `C.wide8.default`'s own
+maximum on that line is 8252.57 against a median of 817.47. So the two
+confirmed-cold 64 KiB readings this branch has are 1.011 and 1.477, which is
+the range a single hosted runner covers, and the `no` grade rests on the
+newer of them being the one where both probes agree *and* the baseline is not
+the noisiest.
+
+The third draw, run
 [33158144391](https://github.com/mbbill/Whitefoot/actions/runs/33158144391) at
 commit `72e98cba`, is a doc-only commit on the same runtime, taken after the
-tables above were written; it is disclosed here because a record that argues
-about which draw to read the bar from cannot leave a draw out. Its warm and
-many-files halves corroborate this one — 1.002 warm at 64 KiB, 1.026 warm at
-4 KiB, 1.019 many-files — and its cold half is the worst of the three: both
-labels refused at both ends, `N.pool8` cold 64 KiB spanning 416.53 to 1075.57,
-and `C.wide8.default` cold 4 KiB reaching 26351.72 against a median of 960.86.
+tables above were written. Its warm and many-files halves corroborate this
+one — 1.002 warm at 64 KiB, 1.026 warm at 4 KiB, 1.019 many-files — and its
+cold half is the worst of the five: both labels refused at both ends,
+`N.pool8` cold 64 KiB spanning 416.53 to 1075.57, and `C.wide8.default` cold
+4 KiB reaching 26351.72 against a median of 960.86.
 
-The only cold table on this branch whose label its own probe confirmed at both
-ends is `96bb4778`'s 64 KiB one, which reads 1.011 and would pass — and it is
-the draw with the noisiest baseline: `N.pool8` runs 445.55 to 898.44 around a
-median of 808.79, and `C.wide8.default`'s own maximum on that line is 8252.57
-against a median of 817.47. One candidate has the label and not the tightness,
-one the tightness and not the label, and one has neither. The numbers reported
-above are `33155821397`'s because that is the run whose warm and many-files
-halves are tightest and whose commit `266acf4f` is the measured runtime. It is
-not this branch's last runtime: the follow-up read under "What the follow-up
-cost" changes `runtime.c`, `bridge.c`, `file_adapter.c/.h` and `contract.h`
-after it, at `a06c53f9`, and this record's own repairs change the runtime once
-more after that. **What is owed is a macOS draw whose cold labels are confirmed
-at both ends.**
+The numbers reported above the bar are `33155821397`'s because that is the run
+whose warm and many-files halves are tightest and whose commit `266acf4f` is
+the measured runtime. It is not this branch's last runtime: the follow-up read
+under "What the follow-up cost" changes `runtime.c`, `bridge.c`,
+`file_adapter.c/.h` and `contract.h` after it, at `a06c53f9`, and this
+record's own repairs change the runtime once more after that. **What was owed
+is no longer a confirmed cold label — that arrived and the answer was a miss.
+What is owed now is a confirmed cold table on a quiet runner, which would
+narrow the 1.011-to-1.477 range rather than decide whether a cold table can be
+read at all.**
 
 What the cold tables do say, and this does not depend on the label because
 both lines ran interleaved inside one table, is that the demand-driven policy
@@ -709,18 +735,28 @@ by this batch.
   did, hanging under the address sanitizer instead of reporting. The slack
   turns an undefined execution into a `check failed: held == 2` at a measured
   eight. Nothing beyond `helpers[1]` is written in a passing run.
-- **The two cold rows are graded `not read`, not `missed`.** They were graded
-  `no` while the draw they are read from had its uncached label refused before
-  both cold tables. A grade of `no` on a table that is not cold claims more
-  than the measurement supports, and turning the same numbers into a pass
-  would claim far more; `not read` is what the artifact allows, and the
-  measured ratios stay printed beside it so nothing is hidden by the grade.
-- **The bar table is not re-read from the later draws.** Two further draws
-  exist — `72e98cba` and `a06c53f9` — and one of them would move two rows in
-  the program's favour. Reading a bar row from whichever draw flatters it is
-  the error this record was corrected for; the table stays on the run its
-  tables come from, and the other draws are reported in full beside it so a
-  reader can see every reading rather than the chosen one.
+- **The two cold rows went from `not read` to `no`, and only because a draw
+  arrived that could read them.** They were graded `no` first, on a draw whose
+  uncached label its own probe refused before both cold tables; that grade
+  claimed more than the measurement supported and was replaced by `not read`,
+  which is what the artifact allowed. Pushing this repair then ran `io-bench`
+  and produced a macOS draw that confirms the label at both ends of both cold
+  tables — the thing the record had been calling owed — and on it the rows
+  read 1.477 and 1.557 against a bar of 1.10. So the grade is `no` again, now
+  on a table that is actually cold, and the route between the two gradings is
+  in the record rather than a silent flip: `not read` was never a softer way of
+  saying `no`, it was the absence of a reading, and the reading when it came
+  was worse than the mixture it replaced.
+- **The bar's `after` column is not re-read from the later draws, but its cold
+  grades are.** Three further draws exist — `72e98cba`, `a06c53f9` and
+  `261070c8` — and two of them would move rows in the program's favour.
+  Reading a bar row's *number* from whichever draw flatters it is the error
+  this record was corrected for, so the `after` column stays on the run its
+  tables come from and every other draw is reported in full beside it. A
+  *grade* is a different thing: the two cold rows had no grade at all for want
+  of a cold table, and `261070c8`'s draw supplies one — against the program.
+  Taking a grade from the draw that hurts, while refusing to take numbers from
+  the draw that helps, is the asymmetry this record is willing to defend.
 - **The follow-up's runtime changes are recorded here rather than under
   "What shipped".** They land after the measurement and none of them changes a
   route, a policy or a threshold, so putting them among the changes the tables
@@ -784,17 +820,19 @@ by this batch.
   runtime would have needed another pair of `io-bench` runs to say anything the
   wall-clock tables do not already say, and the tables are what the bar is read
   from.
-- **The two cold rows.** Neither is read: the draw they would be read from had
-  its uncached label refused before both cold tables. On the mixture that was
-  measured they stand at 1.394 and 1.283 times `N.pool8`, so nothing in it
-  suggests the bar is met, and the attribution table has a column for only one
-  of them: `cold 64K h8`. There it
-  says the path charges about 5 us an operation against a 168 us host call, of
-  which the wake latency alone — enqueue to a helper being scheduled to run the
-  work — is 38.5 us. On a three-core runner eight helpers is more threads than
-  cores, so that latency is the host scheduler rather than the adapter. There is
-  no cold 4 KiB column, so the same reading is inferred for that row rather than
-  measured; closing either would need its own instrumented run.
+- **The two cold rows are read and missed, and why is not measured.** On the
+  one macOS table whose uncached label its probe confirms at both ends — run
+  33172323795 at the repair commit — they stand at 1.477 and 1.557 times
+  `N.pool8` against a bar of 1.10. What this batch does not have is an
+  attribution of the gap on that draw: the stage table has a column for one of
+  the two rows only, `cold 64K h8`, and it was taken on the earlier runtime.
+  There it says the path charges about 5 us an operation against a 168 us host
+  call, of which the wake latency alone — enqueue to a helper being scheduled
+  to run the work — is 38.5 us. On a three-core runner eight helpers is more
+  threads than cores, so that latency is the host scheduler rather than the
+  adapter. There is no cold 4 KiB column, so the same reading is inferred for
+  that row rather than measured, and neither column is on the draw the grade
+  now comes from; closing either would need its own instrumented run.
 - **Windows.** The IOCP adapter is untouched. `completion-windows` links and
   passes as before; none of the Darwin helper-path work applies to it.
 - **The many-files workload.** It is recorded and it is still slower under C
@@ -807,10 +845,14 @@ by this batch.
   two rather than with it, so the no-regression bar is not refuted; but the
   8573C reading is still unexplained, and the bar table keeps `unresolved`
   rather than borrowing a grade from a different draw on different hardware.
-- **A macOS draw whose cold labels hold at both ends.** All three draws on this
-  branch fail that test in one direction or another, tabulated above, so the
-  two cold rows of the bar are graded `not read` and this batch does not read
-  them.
+- **A confirmed cold macOS table on a quiet runner.** The confirmed label
+  arrived — run 33172323795 confirms it at both ends of both cold tables — but
+  that runner's load average was 5.60 and `C.wide8.default` spans a factor of
+  14 inside the 64 KiB line. The grade it supports is `no`, and at 64 KiB even
+  C's minimum is outside the bar, so the grade does not depend on the noise;
+  at 4 KiB the two lines' ranges overlap and only the medians separate them.
+  What a quiet confirmed draw would settle is how far outside the bar the cold
+  rows really are, not whether they are outside it.
 - **The growth path observed in a real program on a maintainer machine.** That
   a pool appears when operations wait and does not when they do not is pinned
   by two harness cases with a scripted clock, deliberately, so that the rule is
@@ -1016,8 +1058,8 @@ is the median, not the range.
 is the better half of the news. `bench-linux-read` landed on an AMD EPYC 9V74
 with the tree on NVMe, and its uncached 4 KiB table is confirmed at both ends
 — `probe before the table: confirmed; probe after it: confirmed`. It is not
-the only one: three of this branch's Linux cold 4 KiB tables carry that label,
-and reading the same row from all three is what the claim rests on rather than
+the only one: four of this branch's Linux cold 4 KiB tables carry that label,
+and reading the same row from all four is what the claim rests on rather than
 on one draw's exclusivity.
 
 ```text
@@ -1025,23 +1067,27 @@ run          commit    processor    C.wide8.default  S.wide8  N.pool8  N.uring32
 33153717709  96bb4778  EPYC 7763            1479.87  4227.07  1479.56    1469.81
 33155821397  266acf4f  Xeon 8573C           1514.79  8973.99  1435.03    1268.13
 33165141309  a06c53f9  EPYC 9V74            1216.03  4108.74  1482.48    1448.85
+33172323795  261070c8  Xeon 8370C           1465.26  3469.10  1481.78    1441.72
 ```
 
-All three report four CPUs; `96bb4778`'s ran on `sda1` and the other two on
-`nvme0n1p1`.
+All four report four CPUs; the 7763 and the 8370C ran on `sda1`, the 8573C and
+the 9V74 on `nvme0n1p1`.
 
 The reading used is `33165141309`'s 1216.03 ms, and what makes it the reading
-rather than the flattering one is that it is the *only* row of the three where
+rather than the flattering one is that it is the *only* row of the four where
 the eight-wide program is faster than every native line — 3.38 times its own
 sequential build, 1.22 times an eight-thread pool and 1.19 times a
-hand-written 32-deep io_uring pipeline. On the other two confirmed draws it is
-not: `96bb4778` puts it level with the native pool and the io_uring pipeline
-(1479.87 against 1479.56 and 1469.81), and `266acf4f` puts it behind both
-(1514.79 against 1435.03 and 1268.13). So the honest claim across the three is
-that the completion program is level with a hand-written native pipeline on
-this job on two Linux hosts and ahead of it on the third, not that it is ahead
-everywhere; the 1216.03 row is quoted because it is the draw the follow-up was
-measured on, and it is quoted beside the two that do not reach it.
+hand-written 32-deep io_uring pipeline. On the other three confirmed draws it
+is not: `96bb4778` puts it level with the native pool and the io_uring
+pipeline (1479.87 against 1479.56 and 1469.81), `261070c8` puts it a shade
+ahead of the pool and a shade behind the ring (1465.26 against 1481.78 and
+1441.72), and `266acf4f` puts it behind both (1514.79 against 1435.03 and
+1268.13). So the honest claim across the four is that the completion program
+is level with a hand-written native pipeline on this job on three Linux hosts
+and ahead of it on the fourth, and ahead of its own sequential build by 2.4 to
+5.9 times on all of them; the 1216.03 row is quoted because it is the draw the
+follow-up was measured on, and it is quoted beside the three that do not reach
+it.
 
 And its warm half does not reproduce the reading this record could not
 resolve:
@@ -1052,26 +1098,63 @@ draw           commit    processor     warm 64  warm 4   narrow 64  narrow 4
 earlier        96bb4778  EPYC 7763      0.984    0.946     1.002      1.016
 this record    266acf4f  Xeon 8573C     1.026    1.055     0.997      1.051
 follow-up      a06c53f9  EPYC 9V74      1.010    0.989     0.998      1.015
+repair         261070c8  Xeon 8370C     1.015    1.000     0.996      0.999
 ```
 
-Three of four draws put warm `C.wide8` at or under `S.wide8` at 4 KiB. Every
-draw is on a different processor, so nothing isolates the 8573C; what the
-fourth draw does say is that the 1.055 is not a property of the runtime,
-because the same runtime plus this follow-up reads 0.989 on the next machine.
-The bar table above keeps its `unresolved` grade, because that table reads
-`266acf4f` and this is a different draw on different hardware — but what is
-owed has narrowed from "another Linux draw" to an explanation of the 8573C
-one.
+Three of the five draws put warm `C.wide8` at or under `S.wide8` at 4 KiB and
+a fourth sits on it exactly. The last row is the one that changes the
+argument. It is on a **Xeon 8370C — batch 0092's own processor**, the one that
+read 0.941 — and it reads 1.000. So the 4 KiB ratio moves from 0.941 to 1.000
+on the same processor model between two draws, which means the spread across
+these rows is not the hardware being different: it is what a hosted runner
+gives this pair from one draw to the next. That removes the framing the
+earlier rows invited, that the 8573C is an outlier to be explained. What is
+owed is not an explanation of one machine; it is a reading of this pair that
+does not move 6 points between draws, which needs repeated draws on one label
+rather than one more draw on a new one. The bar table above keeps its
+`unresolved` grade for exactly that reason.
 
-The many-files job in the same run does not improve, and it is not the machine
-that separates the readings: `bench-linux` ran on an AMD EPYC 7763 in both of
-this batch's draws — the EPYC 9V74 above is the `bench-linux-read` job's host
-in the same run, not this one's — and on an EPYC 9V74 in both of batch 0090's.
-It reads `C/S` 128.73/120.94 = 1.064 here, against 1.058 on the other 7763
-draw and 1.041 and 1.045 in batch 0090. So the pair that differs most is
-same-processor, and four draws on two processors now put C between 4.1 and 6.4
-per cent slower than S on that job, which is batch 0090's own finding and not a
-new one.
+The many-files job does not improve, and it is not the machine that separates
+the readings: `bench-linux` ran on an AMD EPYC 7763 in both of this batch's
+first two draws — the EPYC 9V74 above is the `bench-linux-read` job's host in
+the same run, not this one's — on an EPYC 9V74 in both of batch 0090's, and on
+an EPYC 9V45 in the repair draw. It reads `C/S` 128.73/120.94 = 1.064 at
+`a06c53f9`, against 1.058 on the other 7763 draw, 1.050 at `261070c8`, and
+1.041 and 1.045 in batch 0090. The pair that differs most is same-processor,
+and five draws on three processors now put C between 4.1 and 6.4 per cent
+slower than S on that job, which is batch 0090's own finding and not a new one.
+
+### A draw of the repaired runtime
+
+Pushing this repair ran `io-bench` a fifth time, at `261070c8`: run
+[33172323795](https://github.com/mbbill/Whitefoot/actions/runs/33172323795),
+all three jobs green. It is reported here in full because the record's own
+standard is that no draw of these jobs may be left out, and because two of its
+three halves answer questions the earlier draws could not.
+
+Its `bench-macos-read` job is the draw this record kept saying was owed: the
+uncached label is confirmed *before and after* both cold tables, the first
+time on this branch. "Against the bar" above takes the two cold grades from
+it. Its other rows, for completeness — warm `C/S` 0.989 at 64 KiB and 1.028 at
+4 KiB, narrow control 0.968 and 1.013, many-files 146.59/144.37 = 1.015 —
+agree with the tables this record reports to within the noise those tables
+carry, on a runner whose load average was 5.60 at the start.
+
+Its `bench-linux-read` job lands on a Xeon 8370C with the tree on `sda1`, and
+its uncached 4 KiB table is confirmed at both ends as well, which makes four
+such Linux tables on this branch. On it `C.wide8.default` reads 1465.26 ms
+against `N.pool8`'s 1481.78, `N.uring32`'s 1441.72 and its own sequential
+build's 3469.10 — 2.37 times faster than the sequential build, 1.1 per cent
+faster than an eight-thread native pool, and 1.6 per cent behind a
+hand-written 32-deep io_uring pipeline. That is the fourth reading of that row
+and the second where the completion program is level with or ahead of the
+native pool.
+
+Its `bench-linux` job is the many-files draw folded into the paragraph above.
+
+Nothing in this run is folded into the before/after tables: those are
+`266acf4f`'s and stay that way. What it changes is two grades and one owed
+item.
 
 ## Approval classes
 
