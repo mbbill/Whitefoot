@@ -361,17 +361,24 @@ impl Oracle {
                 };
             }
         };
-        let mut command = Command::new(binary);
-        command
-            .arg("alpha")
-            .arg("beta")
-            .current_dir(&self.fixture)
-            .env("WF_WORKERS", setting.workers)
-            .env("WF_IO_HELPERS", setting.helpers)
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(write_end))
-            .stderr(Stdio::piped());
-        let mut child = match command.spawn() {
+        // The `Command` owns the write end until it is dropped, and while the
+        // parent still holds a writer the reader never reaches end of file. So
+        // the command lives exactly as long as the spawn: dropping it here is
+        // what lets the drain below finish.
+        let spawned = {
+            let mut command = Command::new(binary);
+            command
+                .arg("alpha")
+                .arg("beta")
+                .current_dir(&self.fixture)
+                .env("WF_WORKERS", setting.workers)
+                .env("WF_IO_HELPERS", setting.helpers)
+                .stdin(Stdio::null())
+                .stdout(Stdio::from(write_end))
+                .stderr(Stdio::piped());
+            command.spawn()
+        };
+        let mut child = match spawned {
             Ok(child) => child,
             Err(error) => {
                 let _ = reader.join();
