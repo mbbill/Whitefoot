@@ -1085,9 +1085,26 @@ pub enum SemanticIssueKind {
     /// `give` is absent, misplaced, duplicated, or followed by a statement.
     InvalidGive,
     /// The effect row is not a valid exact EFF-1 row.
-    InvalidEffectRow,
+    InvalidEffectRow {
+        /// Which EFF-1 condition this row failed.
+        reason: &'static str,
+        /// Exact repair required by EFF-1 for that condition.
+        mechanical_fix: &'static str,
+    },
     /// The written effect row differs from syntactically exhibited effects.
-    EffectMismatch,
+    EffectMismatch {
+        /// The row the body exhibits, in EFF-1 canonical spelling. This is
+        /// exactly what the declaration must say.
+        expected_row: String,
+        /// The row the declaration writes, in the same spelling.
+        found_row: String,
+        /// Exhibited categories and paths the declaration does not carry.
+        missing: Vec<String>,
+        /// Declared categories and paths the body does not exhibit.
+        extra: Vec<String>,
+        /// Exact restructuring required by EFF-2.
+        mechanical_fix: &'static str,
+    },
     /// The written effect row omits a category contributed only by a
     /// compiler-derived release, which has no source occurrence [EFF-2].
     ReleaseEffectMismatch {

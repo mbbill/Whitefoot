@@ -8391,7 +8391,10 @@ impl Analyzer<'_, '_> {
                     ty = ty.and_then(|current| self.deref_type(current));
                 }
                 GoalProjection::Field(field) => {
-                    match ty.and_then(|current| self.field_name(current, *field)).unwrap_or(None) {
+                    match ty
+                        .and_then(|current| self.field_name(current, *field))
+                        .unwrap_or(None)
+                    {
                         Some((name, field_type)) => {
                             rendered.push('.');
                             rendered.push_str(&name);
@@ -8595,9 +8598,7 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
             numeric_type_name(*destination),
             arguments.join(", ")
         ),
-        GoalOperation::ArrayFill { .. } => {
-            render_operation_spelling("array_new", arguments)
-        }
+        GoalOperation::ArrayFill { .. } => render_operation_spelling("array_new", arguments),
         GoalOperation::ArrayLength { .. }
         | GoalOperation::BufferLength { .. }
         | GoalOperation::SliceLength { .. } => render_operation_spelling("len", arguments),

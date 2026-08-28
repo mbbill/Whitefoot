@@ -42,10 +42,10 @@ use super::goal::{
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
-    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedResultStateOrigin,
-    CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins, CheckedStatement, CheckedType,
-    CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId, ValueInitializerKind,
-    evaluate_const_operation,
+    CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
+    CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
+    CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
+    NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -578,6 +578,9 @@ impl TypedExpression {
     }
 }
 
+/// [EFF-2]'s only repair: the declaration must equal the exhibited row.
+const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions";
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct EffectSet {
     reads: Vec<super::model::CheckedStatePath>,
@@ -876,6 +879,161 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Instance-specific proofs may discharge static obligations, but they do
     /// not erase a written claim or a written call's declared effects. The
     /// release contribution is not syntactic and stays per instance [STOR-3].
+    /// One effect row in its exact [EFF-1] canonical spelling.
+    ///
+    /// The rejection compared two rows and published neither, so a writer was
+    /// told their row was wrong and left to derive both sides by hand. Both
+    /// are in hand here, and so is the exact difference.
+    fn render_effect_row(
+        &self,
+        effects: &EffectSet,
+        signature: &FunctionSignature,
+    ) -> Result<String, CheckStop> {
+        let mut categories = Vec::new();
+        if !effects.reads.is_empty() {
+            categories.push(format!(
+                "reads({})",
+                self.render_effect_paths(&effects.reads, signature)?
+                    .join(", ")
+            ));
+        }
+        if !effects.writes.is_empty() {
+            categories.push(format!(
+                "writes({})",
+                self.render_effect_paths(&effects.writes, signature)?
+                    .join(", ")
+            ));
+        }
+        let mut allocations = Vec::new();
+        if effects.allocates_heap {
+            allocations.push("heap".to_owned());
+        }
+        for region in &effects.allocates_arenas {
+            allocations.push(format!("arena {}", self.declaration_spelling(*region)?));
+        }
+        if !allocations.is_empty() {
+            categories.push(format!("allocates({})", allocations.join(" ")));
+        }
+        if effects.traps {
+            categories.push("traps".to_owned());
+        }
+        Ok(if categories.is_empty() {
+            "pure".to_owned()
+        } else {
+            categories.join(", ")
+        })
+    }
+
+    fn render_effect_paths(
+        &self,
+        paths: &[super::model::CheckedStatePath],
+        signature: &FunctionSignature,
+    ) -> Result<Vec<String>, CheckStop> {
+        paths
+            .iter()
+            .map(|path| self.render_effect_path(path, signature))
+            .collect()
+    }
+
+    /// One `effect_path`: the parameter's own spelling and its selected source
+    /// struct fields, exactly as [EFF-1] admits them.
+    fn render_effect_path(
+        &self,
+        path: &super::model::CheckedStatePath,
+        signature: &FunctionSignature,
+    ) -> Result<String, CheckStop> {
+        let parameter = signature
+            .parameters
+            .iter()
+            .find(|parameter| parameter.declaration == path.root);
+        let (mut rendered, mut ty) = match parameter {
+            Some(parameter) => (parameter.name.clone(), Some(parameter.ty)),
+            None => (self.declaration_spelling(path.root)?, None),
+        };
+        for field in &path.fields {
+            let name = match ty {
+                Some(CheckedType::Nominal(nominal)) => match &self.nominal(nominal)?.kind {
+                    CheckedNominalKind::Struct { fields } => fields
+                        .get(*field as usize)
+                        .map(|declared| (declared.name.clone(), declared.ty)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            match name {
+                Some((name, field_type)) => {
+                    rendered.push('.');
+                    rendered.push_str(&name);
+                    ty = Some(field_type);
+                }
+                None => {
+                    rendered.push_str(".?");
+                    ty = None;
+                }
+            }
+        }
+        Ok(rendered)
+    }
+
+    /// The exhibited categories the declaration is missing, and the declared
+    /// categories the body does not exhibit, each in the spelling the writer
+    /// would have to add or delete.
+    fn effect_row_difference(
+        &self,
+        exhibited: &EffectSet,
+        declared: &EffectSet,
+        signature: &FunctionSignature,
+    ) -> Result<(Vec<String>, Vec<String>), CheckStop> {
+        let mut missing = Vec::new();
+        let mut extra = Vec::new();
+        for (left, right, out) in [
+            (exhibited, declared, &mut missing),
+            (declared, exhibited, &mut extra),
+        ] {
+            for path in &left.reads {
+                if !right.reads.contains(path) {
+                    out.push(format!(
+                        "reads({})",
+                        self.render_effect_path(path, signature)?
+                    ));
+                }
+            }
+            for path in &left.writes {
+                if !right.writes.contains(path) {
+                    out.push(format!(
+                        "writes({})",
+                        self.render_effect_path(path, signature)?
+                    ));
+                }
+            }
+            if left.allocates_heap && !right.allocates_heap {
+                out.push("allocates(heap)".to_owned());
+            }
+            for region in &left.allocates_arenas {
+                if !right.allocates_arenas.contains(region) {
+                    out.push(format!(
+                        "allocates(arena {})",
+                        self.declaration_spelling(*region)?
+                    ));
+                }
+            }
+            if left.traps && !right.traps {
+                out.push("traps".to_owned());
+            }
+        }
+        Ok((missing, extra))
+    }
+
+    /// One declaration's exact source spelling, including any sigil.
+    fn declaration_spelling(&self, declaration: DeclarationId) -> Result<String, CheckStop> {
+        self.resolved
+            .declarations()
+            .iter()
+            .find(|record| record.id() == declaration)
+            .map(|record| record.spelling().to_owned())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
     fn written_body_effects(
         &self,
         signature: &FunctionSignature,
@@ -1834,10 +1992,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
+            let (missing, extra) =
+                self.effect_row_difference(&exhibited, &signature.declared_effects, signature)?;
             return self.issue_node(
                 SemanticRule::Eff2,
                 signature.effects_node,
-                SemanticIssueKind::EffectMismatch,
+                SemanticIssueKind::EffectMismatch {
+                    expected_row: self.render_effect_row(&exhibited, signature)?,
+                    found_row: self.render_effect_row(&signature.declared_effects, signature)?,
+                    missing,
+                    extra,
+                    mechanical_fix: EFF2_ROW_FIX,
+                },
             );
         }
         let postconditions = if signature.substitution.is_concrete() {

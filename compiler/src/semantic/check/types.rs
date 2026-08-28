@@ -20,6 +20,24 @@ use super::{
     CheckStop, Checker, EffectSet, LocalBinding, ParameterSignature, PreludeType, TypedExpression,
 };
 
+/// The six [EFF-1] row conditions, each with the repair it admits.
+///
+/// The rule text carries every one of these sentences; the diagnostic did not,
+/// and the blind-writer trial of 2026-08-28 recorded a writer meeting the
+/// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
+/// rule number to work from.
+const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
+const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
+const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps";
+const EFF1_CATEGORY_ONCE_FIX: &str = "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps";
+const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
+const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
+const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix selects one statically known field of a source struct, and this prefix is not a source struct";
+const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "name the parameter itself, which names the complete state it supplies; an enum payload, a subscript, and a `deref` spelling are outside the effect-path grammar";
+const EFF1_UNKNOWN_FIELD: &str = "an effect-path suffix names a field the struct does not declare";
+const EFF1_UNKNOWN_FIELD_FIX: &str =
+    "name a declared field of that struct, or the parameter itself";
+
 #[derive(Clone, Debug)]
 enum StateOriginResolution {
     Absent,
@@ -492,7 +510,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return self.issue_node(
                             SemanticRule::Eff1,
                             effect,
-                            SemanticIssueKind::InvalidEffectRow,
+                            SemanticIssueKind::InvalidEffectRow {
+                                reason: EFF1_SHARED_WRITE,
+                                mechanical_fix: EFF1_SHARED_WRITE_FIX,
+                            },
                         );
                     }
                     declared.add_write(path);
@@ -518,7 +539,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Eff1,
                     node,
-                    SemanticIssueKind::InvalidEffectRow,
+                    SemanticIssueKind::InvalidEffectRow {
+                        reason: EFF1_CATEGORY_ONCE,
+                        mechanical_fix: EFF1_CATEGORY_ONCE_FIX,
+                    },
                 );
             }
             previous = Some(ordinal);
@@ -582,7 +606,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Eff1,
                     node,
-                    SemanticIssueKind::InvalidEffectRow,
+                    SemanticIssueKind::InvalidEffectRow {
+                        reason: EFF1_NON_PARAMETER_ROOT,
+                        mechanical_fix: EFF1_NON_PARAMETER_ROOT_FIX,
+                    },
                 );
             };
             let mut ty = parameter.ty;
@@ -602,7 +629,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Eff1,
                         path_node,
-                        SemanticIssueKind::InvalidEffectRow,
+                        SemanticIssueKind::InvalidEffectRow {
+                            reason: EFF1_FIELD_OF_NON_STRUCT,
+                            mechanical_fix: EFF1_FIELD_OF_NON_STRUCT_FIX,
+                        },
                     );
                 };
                 let CheckedNominalKind::Struct {
@@ -612,7 +642,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Eff1,
                         path_node,
-                        SemanticIssueKind::InvalidEffectRow,
+                        SemanticIssueKind::InvalidEffectRow {
+                            reason: EFF1_FIELD_OF_NON_STRUCT,
+                            mechanical_fix: EFF1_FIELD_OF_NON_STRUCT_FIX,
+                        },
                     );
                 };
                 let Some((ordinal, field)) = declared_fields
@@ -623,7 +656,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Eff1,
                         path_node,
-                        SemanticIssueKind::InvalidEffectRow,
+                        SemanticIssueKind::InvalidEffectRow {
+                            reason: EFF1_UNKNOWN_FIELD,
+                            mechanical_fix: EFF1_UNKNOWN_FIELD_FIX,
+                        },
                     );
                 };
                 fields.push(
