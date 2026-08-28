@@ -341,17 +341,21 @@ static int wf_bridge_spin_for_completion(void) {
      * early return only skips those 64 reads of a counter the loop would have
      * read anyway.
      *
-     * The term it defers to is load-bearing rather than defensive, because on
-     * the native ring the loop's other exit is not one this thread can cause:
-     * a submitted read becomes a ready event only when `wf_bridge_progress`
-     * reaps the completion queue, and this spin never calls it.  Measured on
-     * Linux with `wf_bridge_monotonic_ns` forced to answer zero, on the
-     * four-lane default probe: the shipped spin, and the spin with only this
-     * early return removed, both finish in about 110 ms; with the `now == 0`
-     * term removed as well the run hangs on the ring in 9 of 12 attempts,
-     * the other 3 being lucky in which lane published last.  The same build
-     * forced onto the POSIX adapter finishes every time, because there a
-     * helper thread raises the count without this thread doing anything.
+     * The term it defers to is load-bearing rather than defensive, because
+     * neither route's other exit is one this thread can cause on its own: a
+     * submitted operation becomes a ready event only when an engine moves --
+     * `wf_bridge_progress` reaping the ring or running a queued adapter
+     * entry, a helper thread publishing -- and this spin never calls the
+     * former, while the demand-driven policy often runs with no helper at
+     * all, executing declined reads inline before anything is queued.
+     * Measured on Linux with `wf_bridge_monotonic_ns` forced to answer
+     * zero, on the four-lane default probe: the shipped spin, and the spin
+     * with only this early return removed, both finish in about 110 ms;
+     * with the `now == 0` term removed as well, runs hang on BOTH routes
+     * (most of one 12-run ring sample; 2 of 44 forced-adapter runs, one
+     * self-reporting STUCK at its 180 s watchdog).  A run that finishes
+     * without the term owes it to another lane's publication or an inline
+     * decline, not to any bound; the counts above are draws, not rates.
      *
      * Leaving the spin early costs at worst a park this thread was about to
      * make. */

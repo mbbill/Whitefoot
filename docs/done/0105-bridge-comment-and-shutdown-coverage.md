@@ -49,21 +49,29 @@ forced to answer zero — the failed clock the comment is about:
 ```text
 shipped (guard + `now == 0` term), ring       ~113 ms   PASS 6/6
 guard removed, `now == 0` term kept, ring     ~105 ms   PASS 6/6
-both removed, ring                                      PASS 3/12, hung 9/12
-both removed, WF_IO_NO_NATIVE_RING=1                    PASS 6/6
+both removed, ring                                      one 12-run sample: 3 PASS, 9 hung
+both removed, WF_IO_NO_NATIVE_RING=1                    samples disagree: 6/6 here; the
+                                                        gate verifier's 44 runs had 2
+                                                        hangs, one STUCK at the probe's
+                                                        own 180 s watchdog
 ```
 
-The last two rows say the comment's *route contrast* was right and its
-*attribution* was wrong. An unbounded spin really does fail to end on the
-native ring, for the reason the old comment gave — this spin never reaps the
-completion queue — and really does end on the POSIX adapter, where a helper
-raises the count. What the comment got wrong is which line provides the bound:
-it credited the `started == 0` guard, and the guard is worth 64 counter reads.
+The last two rows say the old comment's *attribution* was wrong and its route
+contrast does not survive either. An unbounded spin fails to end on the native
+ring for the reason the old comment gave — this spin never reaps the
+completion queue — and the forced-adapter route is not exempt: the gate
+verifier hung it too, and its counters show why the route usually finishes
+anyway (helpers=0 in most runs; the demand policy declines ~15 000 of 16 000
+reads and the caller executes them inline, so nothing needs a helper to
+publish). No route has a bound without the `now == 0` term. What the old
+comment got wrong beyond that is which line provides the bound: it credited
+the `started == 0` guard, and the guard is worth 64 counter reads.
 
-The batch brief predicted the third row would be a clean pass (117 ms), which
+The batch brief predicted the ring row would be a clean pass (117 ms), which
 is why it read the whole route contrast as refuted. On this host that outcome
-is 3 runs in 12; the other 9 hang to the probe's watchdog. The record and the
-rewritten comment follow the 12-run measurement, not the single run.
+is a minority draw. Every count in the table above is a draw from one host,
+not a rate; what is stable is the mechanism, and the rewritten comment states
+the mechanism and labels its counts as draws.
 
 The rewritten comment therefore says what the measurement supports: the
 `now == 0` term is the bound, the early return only skips the turns before it,
@@ -72,7 +80,7 @@ thread can cause. The unreproducible sentences are gone — the macOS one is not
 replaced by a guess, and its Linux analogue is now measured directly, on the
 adapter route that batch item 4 below makes reachable here.
 
-## 2. Coverage for the shutdown ordering (gap 1)
+## 2. A post-shutdown guard test (gap 1's neighbourhood; the ordering itself stays TSan-evidenced)
 
 The 92260349 fix — `wf_file_adapter_shutdown` clears `initialized` before
 destroying the condition variable and the mutex, and clears it whatever the
@@ -149,8 +157,9 @@ the ring answered anyway, the run fails rather than passing as a second copy
 of the native-ring arm.
 
 Measured here, shipped build, 8 runs of the forced arm: PASS every time, with
-`declined` between 12 791 and 15 999 of 16 000 positioned reads, so the arm is
-live rather than vacuous.
+`declined` between 12 791 and 15 999 of 16 000 positioned reads (the gate
+verifier's sample reached down to 3 692; the exact range is a draw), so the
+arm is live rather than vacuous.
 
 ```text
 default arm   submitted=16000 declined=0     helpers=0  ring=16000  route=native-ring
@@ -158,7 +167,9 @@ forced arm    submitted=158   declined=15842 helpers=0  ring=0      route=posix-
 ```
 
 Mutation, 20 runs of the forced arm with the decline removed
-(`wf_file_adapter_transfer_runs_on_caller` replaced by `0`): 12 FAIL, 8 PASS.
+(`wf_file_adapter_transfer_runs_on_caller` replaced by `0`): 12 FAIL, 8 PASS
+in this sample (the gate verifier's 20-run sample split 9/11; the split is a
+draw, the discrimination is not).
 The 8 passes are not a hole. The assertion is a disjunction on purpose — the
 policy's two branches are decided by the same measurement, and which one a run
 gets is a property of how fast this host's reads are — and in those runs the
