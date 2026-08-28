@@ -69,7 +69,13 @@ enum wf_linux_io_uring_entry_state {
     WF_LINUX_IO_URING_ENTRY_FREE = 0,
     WF_LINUX_IO_URING_ENTRY_RESERVED = 1,
     WF_LINUX_IO_URING_ENTRY_IN_FLIGHT = 2,
-    WF_LINUX_IO_URING_ENTRY_RETRY_PENDING = 3
+    WF_LINUX_IO_URING_ENTRY_RETRY_PENDING = 3,
+    /* An open the host refused for want of a descriptor, waiting for another
+     * operation's completion to be published before it is re-attempted.  It
+     * is deliberately not `RETRY_PENDING`: a pending entry is one any
+     * doorbell may stage, and this one may not be staged until the descriptor
+     * it needs has actually come back. */
+    WF_LINUX_IO_URING_ENTRY_RETRY_HELD = 4
 };
 
 typedef struct wf_linux_io_uring_entry {
@@ -86,6 +92,13 @@ typedef struct wf_linux_io_uring_entry {
      * descriptor and re-attempted.  It bounds the re-attempt at one, so the
      * second outcome is the one the program sees. */
     unsigned exhaustion_retried;
+    /* The refusal a held open is carrying, and the number of terminal
+     * publications this adapter had made when it was refused.  The re-attempt
+     * is staged only once that number has moved — that is, once some other
+     * operation has actually given its descriptor back — and the refusal
+     * itself is published from `retry_result` if none ever can. */
+    int32_t retry_result;
+    uint64_t retry_publications;
     /* An open's answer, decided when its completion is reaped. The descriptor
      * is named even where the kind check refused and disposed of it, which is
      * what the direct path reports too. */
@@ -122,6 +135,10 @@ typedef struct wf_linux_io_uring_adapter {
     size_t entry_capacity;
     _Atomic size_t entry_cursor;
     _Atomic size_t in_flight;
+    /* How many of `in_flight` are opens held for retire-and-retry.  When the
+     * two are equal no operation is left that could return a descriptor, so
+     * holding any longer would wait for a completion that cannot arrive. */
+    _Atomic size_t retry_held;
 
     int ring_descriptor;
     int wait_descriptor;
