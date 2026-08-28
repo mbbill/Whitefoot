@@ -659,8 +659,8 @@ static size_t wf_file_adapter_owed_work(void *context) {
  * moment the answer can no longer improve: a descriptor has come back, or
  * nothing is left in this runtime that could bring one.  The second reason is
  * an attempt too, because a descriptor can come back from outside this runtime
- * -- a thread of the program's own closing one while this runtime carries the
- * read that thread is answering -- and no ledger can see that.  If the attempt
+ * — a thread of the program's own closing one while this runtime carries the
+ * read that thread is answering — and no ledger can see that.  If the attempt
  * also fails, that is the outcome source-order execution produces and the
  * program is entitled to see it. */
 static wf_file_result wf_file_retire_and_retry(

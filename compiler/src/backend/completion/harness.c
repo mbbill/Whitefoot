@@ -4000,8 +4000,8 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
  *
  * A refused open has exactly one re-attempt, and the only thing that can make
  * a second host attempt answer differently from the first is a descriptor
- * coming back.  An operation that merely ends -- a read on a helper thread, a
- * write, a directory batch -- changes what is in flight and nothing else.  A
+ * coming back.  An operation that merely ends — a read on a helper thread, a
+ * write, a directory batch — changes what is in flight and nothing else.  A
  * ledger that counted it as a descriptor return would send the refused open to
  * the host once more for nothing and then publish the refusal, while the close
  * it was waiting for was still in flight: exactly the `Ok` this ledger exists
@@ -4011,8 +4011,8 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
  * The schedule is scripted rather than raced for, because it is the whole
  * point and it is one schedule for both engines: on Linux the read is on the
  * bounded adapter while the close and the open are on the kernel ring, and a
- * host whose ring makes that close asynchronous -- an `overlayfs` file, whose
- * `flush` sends `IORING_OP_CLOSE` to a worker -- produces this order by
+ * host whose ring makes that close asynchronous — an `overlayfs` file, whose
+ * `flush` sends `IORING_OP_CLOSE` to a worker — produces this order by
  * itself, 7 to 16 times in a thousand at every helper count. */
 static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
     wf_retirement_waiter waiter;
@@ -4029,7 +4029,7 @@ static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
     CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
 
     /* The read ends.  Something that can still give a descriptor back is in
-     * flight, so this open keeps waiting -- and has spent nothing. */
+     * flight, so this open keeps waiting — and has spent nothing. */
     wf_completion_operation_retired(0);
     CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
 
