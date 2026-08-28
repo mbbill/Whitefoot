@@ -122,6 +122,11 @@ records what the region handed out and seeds each exit from it, so no path
 leaves an accepted operation owned by nobody. A carrying set no exit leaves is
 refused outright as `BackendFailure::UnretiredCompletionOperation`.
 
+`emit_stackless_root` does not consult any of this, and does not need to:
+`StacklessPlan::build` admits only a single-block function ending in a return,
+and a staged loop has a loop. If Stage B ever widens either side, the two paths
+have to be reconciled rather than left to disagree quietly.
+
 What this does **not** yet carry is the per-slot storage index. One call site
 still owns one operation record, so a site inside a carrying region that
 submits again while its earlier operation is outstanding is refused rather than
