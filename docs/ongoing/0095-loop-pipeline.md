@@ -272,6 +272,12 @@ by exempting the carrying block from the rule.
   zero, one and four helpers, 0 failures; `completion-tsan` 20 runs each at
   zero, one and four helpers, 0 failures; 50 runs with
   `WF_REQUIRE_LINUX_IO_URING=1` at four helpers, 0 failures.
+- `make -C research/experiments/io-completion-bench verify` on macOS: every line
+  of every workload — the hand-written native shape, the `--no-overlap`
+  sequential reference, and the shipping overlapped build — publishes
+  `17098009301725298919 00000000000071024640`, `many_files_loop` among them.
+  The runtime changes here are on the exhausted path; this is the check that
+  they left the ordinary one publishing the same bytes.
 - IR identity: every `.wf` under `tests/programs`, `tests/codegen` and
   `tests/conformance/cases` compiled with `whitefootc --emit-llvm` at this
   revision and at `main`, under the default, `--par` and `--no-overlap` — 630
