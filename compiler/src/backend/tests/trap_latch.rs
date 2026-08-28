@@ -305,7 +305,11 @@ fn the_latch_is_what_keeps_the_record_single() {
     let executable = build_executable(&defeated, &directory);
 
     let mut caught = 0;
-    for run in 0..8 {
+    // MEASUREMENT ONLY, batch 0093: no early exit and a wide sample, so the
+    // gate log reports this host's detection rate. Replaced by the sized loop
+    // once the rate is read.
+    let attempts = 200;
+    for run in 0..attempts {
         let (_, stderr) = trap_run(&executable, "4");
         if sole_record(&stderr).is_ok() {
             continue;
@@ -334,9 +338,10 @@ fn the_latch_is_what_keeps_the_record_single() {
         }
         caught += 1;
     }
+    eprintln!("defeated-latch detection: {caught} of {attempts} runs");
     assert!(
         caught > 0,
-        "defeating the latch changed nothing observable in eight runs, so \
+        "defeating the latch changed nothing observable in {attempts} runs, so \
          these cases cannot see a second record"
     );
 

@@ -228,60 +228,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
 
-  # TEMPORARY, batch 0093. The discriminating measurement for where the Linux
-  # gate's time went. Two questions, in order:
-  #
-  #   1. is the cost the host's core-dump disposition, or something Whitefoot
-  #      emits? A three-line C program whose whole body is `abort()`, run
-  #      twenty times under each of the two patterns, answers that without any
-  #      compiler in the picture;
-  #   2. what does the case that dominated the Linux gate cost under the
-  #      pattern the gate now sets?
-  #
-  # Already answered by run 33143948885 on this same tree and not repeated
-  # here: the case costs 398 seconds with the runner's own `ulimit -c` of 0 and
-  # 398 seconds with `ulimit -c 0` set explicitly — the soft limit is a no-op,
-  # because the kernel ignores RLIMIT_CORE for a piped pattern. Delete this job
-  # once its numbers are in `docs/done/0093-gate-budget.md`.
-  core-dump-cost:
-    name: core-dump cost (ubuntu-24.04)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      CASE: backend::tests::trap_latch::a_racing_pair_of_false_claims_writes_exactly_one_record
-      PIPED: '|/usr/lib/systemd/systemd-coredump %P %u %g %s %t 9223372036854775808 %h %d'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install the host toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang
-          rustup default stable
-      - name: Record the host
-        run: |
-          nproc
-          echo "core_pattern: $(cat /proc/sys/kernel/core_pattern)"
-          echo "soft core limit: $(ulimit -c)"
-          echo "hard core limit: $(ulimit -H -c)"
-      - name: Twenty aborts, no Whitefoot involved
-        run: |
-          printf '#include <stdlib.h>\nint main(void) { abort(); }\n' > "$RUNNER_TEMP/abort_probe.c"
-          cc -o "$RUNNER_TEMP/abort_probe" "$RUNNER_TEMP/abort_probe.c"
-          echo "== the pattern the image ships: $(cat /proc/sys/kernel/core_pattern)"
-          time sh -c 'i=0; while [ $i -lt 20 ]; do "$0" || true; i=$((i+1)); done' "$RUNNER_TEMP/abort_probe"
-          sudo sysctl -w kernel.core_pattern=core
-          echo "== the pattern the gate sets: $(cat /proc/sys/kernel/core_pattern)"
-          time sh -c 'i=0; while [ $i -lt 20 ]; do "$0" || true; i=$((i+1)); done' "$RUNNER_TEMP/abort_probe"
-      - name: The racing-claim case under the pattern the gate sets
-        run: |
-          cat /proc/sys/kernel/core_pattern
-          ulimit -c 0
-          cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
-      - name: The racing-claim case under the pattern the image ships
-        run: |
-          sudo sysctl -w kernel.core_pattern="$PIPED"
-          cat /proc/sys/kernel/core_pattern
-          ulimit -c 0
-          cd compiler
-          time cargo test --profile gate --lib --locked --offline -- --exact "$CASE"
+  # TEMPORARY, batch 0093. The detection rate of the defeated-latch control on
+  # the three-core `macos-14` runner, which is the host that failed it. The
+  # sampling job runs the case with the loop widened to 200 and no early exit
+  # and prints `defeated-latch detection: N of 200`; that number sizes the
+  # bound the case ships with. Delete this note and restore the sized loop once
+  # the number is in `docs/done/0093-gate-budget.md`.
