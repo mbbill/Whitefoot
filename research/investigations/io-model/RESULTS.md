@@ -642,6 +642,34 @@ What it does *not* do is make a table uncached on its own. It cannot evict,
 so the tree has to arrive non-resident and be checked; that is what the
 regeneration and the probes above are for.
 
+### This machine, provisional
+
+Kept because it is the only table taken on hardware anyone here owns, and
+labelled provisional because three things about it fall short of the tables
+above. It was taken line by line rather than in alternating passes over the
+whole plan, so drift across the minutes it took is inside it. It was taken at
+a one-minute load average of 2.5 on a machine shared with everything else the
+maintainer was doing. And only the medians survive: the run's minima, maxima
+and CPU columns were not kept, apart from the two CPU readings noted below.
+Nine recorded runs per line, 64 KiB window.
+
+```text
+line                 uncached (ms)   warm (ms)
+N.direct                     4378         160
+N.pool2                      2439          88
+N.pool8                      1211          44
+S.narrow                     4450         136
+S.wide8                      4447         145
+C.narrow.default             4496         128
+C.wide8.default              1885         164
+C.wide8.h2                   2602         141
+C.wide8.h8                   1886         159
+```
+
+`C.wide8.default` uncached spent 67 ms of user CPU and 484 ms of system CPU
+against its 1885 ms of wall time, and warm it spent 455 ms of system CPU
+against 164 ms of wall.
+
 ## Historical C-core results
 
 Everything below measures the completion core and its adapters directly,
