@@ -1466,48 +1466,68 @@ mixture the probes described above, and a table whose own runner refused its
 uncached label before it ran cannot grade a bar about cold reads. On that
 mixture C is 1.394 and 1.283 times `N.pool8`, which is a statement about what
 was measured and not a grade. Pushing this batch's repair then ran `io-bench`
-at `261070c8`, and its `bench-macos-read` job is the first on this branch to
+at `261070c8`, whose `bench-macos-read` job is the only one on this branch to
 confirm the uncached label *before and after* both cold tables. On it the two
 rows read 1.477 and 1.557 against a bar of 1.10 — a miss, and a wider one than
 the unlabelled mixture.
 
-```text
-run          commit    cold 64 label      cold 64 C/N.pool8  N.pool8 cold64 spread
-33153717709  96bb4778  confirmed / confirmed   817.47/808.79 = 1.011   445.55..898.44
-33155821397  266acf4f  refused / confirmed     591.82/424.58 = 1.394   417.49..453.58
-33158144391  72e98cba  refused / refused       609.97/555.63 = 1.098   416.53..1075.57
-33165141309  a06c53f9  refused / refused       565.31/434.33 = 1.302   427.78..447.04
-33172323795  261070c8  confirmed / confirmed  1150.39/779.08 = 1.477   584.73..991.44
+Not five draws, nine. Every `bench-macos-read` cold table on this branch, in
+branch order, with its own probe verdicts, its own `C/N.pool8`, and the
+min..max of both lines that ratio is taken from; `*` marks a run cancelled
+later, as in the draw table above:
 
-run          commit    cold 4 label       cold 4 C/N.pool8   notes
-33153717709  96bb4778  confirmed / refused     675.60/439.22 = 1.538
-33155821397  266acf4f  refused / confirmed     489.75/381.86 = 1.283
-33158144391  72e98cba  refused / refused       960.86/587.85 = 1.635   C max 26351.72
-33165141309  a06c53f9  refused / refused       490.57/399.02 = 1.229   C max  4996.77
-33172323795  261070c8  confirmed / confirmed  1058.71/679.86 = 1.557   C max  4332.72
+```text
+-- uncached 64 KiB  (9 rows)
+run          commit   label      C.wide8  N.pool8  C/N8   N.pool8 min..max     C.wide8 min..max
+33149563172  caa66bad ref/conf    938.79   433.57 2.165   428.18..435.96     916.50..2968.47
+33150416900* 34ac1ae2 ref/conf   1099.83   752.66 1.461   430.94..1104.90    903.81..1721.45
+33151353052  4a748d6e conf/ref    897.95   523.24 1.716   495.10..1052.44    676.63..1749.48
+33153717709  96bb4778 conf/conf   817.47   808.79 1.011   445.55..898.44     644.26..8252.57
+33155045849* 135abdf2 ref/conf    581.13   429.81 1.352   425.23..487.68     576.47..665.93
+33155821397  266acf4f ref/conf    591.82   424.58 1.394   417.49..453.58     558.77..644.12
+33158144391  72e98cba ref/ref     609.97   555.63 1.098   416.53..1075.57    557.78..1176.62
+33165141309  a06c53f9 ref/ref     565.31   434.33 1.302   427.78..447.04     553.98..596.73
+33172323795  261070c8 conf/conf  1150.39   779.08 1.477   584.73..991.44    1044.77..14961.31
+
+-- uncached 4 KiB  (9 rows)
+run          commit   label      C.wide8  N.pool8  C/N8   N.pool8 min..max     C.wide8 min..max
+33149563172  caa66bad ref/ref     807.70   383.68 2.105   379.88..387.60     806.44..826.43
+33150416900* 34ac1ae2 ref/ref    1165.03   553.63 2.104   414.62..682.65     823.29..1450.92
+33151353052  4a748d6e conf/conf   690.79   486.70 1.419   419.97..705.92     552.35..1142.65
+33153717709  96bb4778 conf/ref    675.60   439.22 1.538   374.18..727.81     480.67..2181.79
+33155045849* 135abdf2 ref/ref     545.98   609.28 0.896   380.07..797.56     488.81..15724.38
+33155821397  266acf4f ref/conf    489.75   381.86 1.283   379.97..383.57     469.00..508.36
+33158144391  72e98cba ref/ref     960.86   587.85 1.635   380.15..764.48     494.70..26351.72
+33165141309  a06c53f9 ref/ref     490.57   399.02 1.229   379.22..413.11     487.42..4996.77
+33172323795  261070c8 conf/conf  1058.71   679.86 1.557   587.93..801.67     560.66..4332.72
 ```
 
-Two of the five confirm the label at both ends. `96bb4778`'s 64 KiB table is
-one, and it reads 1.011 and would pass — on the noisiest baseline of the five:
-`N.pool8` runs 445.55 to 898.44 around a median of 808.79, and
-`C.wide8.default`'s own maximum on that line is 8252.57 against a median of
-817.47. `261070c8`'s is the other, and it confirms both sizes rather than one,
-which is why the grade is taken from it. Its own spreads are the worst of the
-five on the line the bar reads — `C.wide8.default` spans 1044.77 to 14961.31
-cold at 64 KiB and 560.66 to 4332.72 cold at 4 KiB, on a runner whose load
-average was 5.60 at the start — so the reading is confirmed-cold and noisy at
-once. At 64 KiB the grade does not depend on the noise: C's *minimum* over
-`N.pool8`'s median is 1.34, outside the bar without the median. At 4 KiB it
-does: C's minimum over `N.pool8`'s median is 0.82, so the ranges overlap and
-only the medians separate them. Neither row is met on any statistic that puts
-C ahead, so both are `no`, and the 4 KiB grading is the weaker of the two.
+Two of the nine confirm the 64 KiB label at both ends and two confirm the
+4 KiB one, and `261070c8` is in both pairs — it is the only draw that confirms
+both tables at both ends, which is why the grade is taken from it. The other
+two confirmed tables are `96bb4778`'s 64 KiB one at 1.011, which would pass,
+and `4a748d6e`'s 4 KiB one at 1.419, which would not. Both confirmed 64 KiB
+readings sit on lines that move: `96bb4778`'s `N.pool8` runs 445.55 to 898.44
+around a median of 808.79 while its `C.wide8.default` reaches 8252.57 against
+a median of 817.47, and `261070c8`'s `C.wide8.default` spans 1044.77 to
+14961.31 cold at 64 KiB and 560.66 to 4332.72 cold at 4 KiB, on a runner whose
+load average was 5.60 at the start — so its reading is confirmed-cold and
+noisy at once. At 64 KiB the grade does not depend on that noise: C's
+*minimum* over `N.pool8`'s median is 1.34, outside the bar without the median.
+At 4 KiB it does: C's minimum over `N.pool8`'s median is 0.82, so the ranges
+overlap and only the medians separate them. Neither row is met on any
+statistic that puts C ahead, so both are `no`, and the 4 KiB grading is the
+weaker of the two — with `4a748d6e`'s confirmed 4 KiB table agreeing with it
+from the other side at 1.419.
 
-The row this section reports its numbers from is `33155821397`, because it is
-the run whose warm and many-files halves are the tightest and because its
-commit `266acf4f` is the measured runtime; the cold rows of any of the five
-are a reading of the runner's cache state as much as of the program.
-`266acf4f` is not this branch's last runtime: `git diff --stat 266acf4f
-a06c53f9` changes `runtime.c`, `bridge.c`, `file_adapter.c/.h` and
+The row this section reports its numbers from is `33155821397`, because its
+commit `266acf4f` is the runtime the before/after comparison is about — not
+because its halves are the tightest, which they are not: the draw table above
+puts `96bb4778` closer to 1 on macOS warm 4 KiB (1.0168 against 1.0282) and
+`a06c53f9` closer on macOS many files (1.0144 against 1.0222). The cold rows
+of any of the nine are a reading of the runner's cache state as much as of the
+program. `266acf4f` is not this branch's last runtime: `git diff --stat
+266acf4f a06c53f9` changes `runtime.c`, `bridge.c`, `file_adapter.c/.h` and
 `contract.h` alongside the harness, the probes, the `Makefile` and
 `io-hosts.yml`, and this record's own repairs change the runtime once more
 after `a06c53f9`. **What was owed — a macOS draw whose cold labels are
@@ -1732,7 +1752,8 @@ runners report four CPUs; the 8370C and 7763 draws ran on `sda1`, the 8573C,
 table completed and carries the draw table's `*`.
 
 Three of the eight put the eight-wide Whitefoot program ahead of every native
-line — 0.999, 0.858 and 0.839 — and this run's table is the furthest ahead of
+line — 0.999, 0.858 and 0.839 — and this run's table is the furthest ahead
+of
 the three:
 
 ```text
@@ -1764,8 +1785,9 @@ a wide margin: `S/C` in table order is 2.11, 2.55, 3.03, 2.86, 5.92, 4.07,
 is that the completion program is level with a hand-written native pipeline on
 this job and sometimes well ahead of it, and the 1216.03 reading is this
 section's because this run is the follow-up's draw — it is also, as the table
-shows, the lowest of the eight. The 64 KiB table on the same run is a cold-start table by its own
-probe (confirmed before, refused after) and reads the same way less sharply:
+shows, the lowest `C.wide8.default` of the eight. The 64 KiB table on the same
+run is a cold-start table by its own probe (confirmed before, refused after)
+and reads the same way less sharply:
 1213.14 against `N.pool8`'s 1275.99 and `S.wide8`'s 1587.44.
 
 **And its warm half does not reproduce the draw above.** Warm

@@ -871,8 +871,9 @@ by this batch.
   `*_join` call; every completion call the corpus emits is a `*_direct` one;
   and the two lowerings emit the same set for every unit. Five units emit a
   completion call at all. `byte_string` and `par_layout` emit
-  `wf__completion_file_write_direct` and nothing else; `dir_walk` emits `open_at_direct`, `close_direct`,
-  `directory_next_direct` and `write_direct`; `raw_deflate_boundary` emits
+  `wf__completion_file_write_direct` and nothing else; `dir_walk` emits
+  `open_at_direct`, `close_direct`, `directory_next_direct` and
+  `write_direct`; `raw_deflate_boundary` emits
   `open_at_direct`, `close_direct`, `pread_direct` and `write_direct`; and
   `wfgrep` emits those four plus `directory_next_direct`. The other seventeen
   units — 34 of the 44 modules — emit no completion call whatever. So the
