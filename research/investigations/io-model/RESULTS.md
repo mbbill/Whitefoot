@@ -1319,9 +1319,10 @@ the stage-level attribution that motivated each, and its "After the tables"
 section records the correctness follow-up that landed after this run: the
 tables here are read at commit `266acf4f`, and the tip adds a generation check
 on the named drain, an atomically published adapter readiness flag, a helper
-cap bounded by its storage, a clock guard on the join spin, and a gate arm
-that runs the bridge on the shipped default helper policy. None of those
-changes a route, a policy or a threshold, and a fourth macOS draw taken at
+cap bounded by its storage, a clock guard on the join spin, an adapter that
+stops reading as usable before its own lock is destroyed, and a gate arm that
+runs the bridge on the shipped default helper policy. None of those changes a
+route, a policy or a threshold, and a fourth macOS draw taken at
 `a06c53f9`, the last commit that changed the runtime before this record's own
 repairs (run
 [33165141309](https://github.com/mbbill/Whitefoot/actions/runs/33165141309),
