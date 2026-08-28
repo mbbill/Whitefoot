@@ -1265,43 +1265,61 @@ that is 7.92; with the policy free to decline it is 0.92, so 88 per cent of the
 charge is gone and what remains is the operations the policy does not decline,
 which are the opens and closes.
 
-**Neither cold row is read.** Not "missed": this draw's cold tables are the
+**Both cold rows are graded `no`, and the draw that reads them arrived last.**
+For most of this batch they had no grade: this draw's cold tables are the
 mixture the probes described above, and a table whose own runner refused its
-uncached label before it ran cannot grade a bar about cold reads. On the
-mixture that was measured C is 1.394 and 1.283 times `N.pool8`, so nothing
-here suggests the bar is met — but that is a statement about what was
-measured, not a grade.
-
-Three macOS draws exist on this branch and none of them settles it, each
-failing a different quality test:
+uncached label before it ran cannot grade a bar about cold reads. On that
+mixture C is 1.394 and 1.283 times `N.pool8`, which is a statement about what
+was measured and not a grade. Pushing this batch's repair then ran `io-bench`
+at `261070c8`, and its `bench-macos-read` job is the first on this branch to
+confirm the uncached label *before and after* both cold tables. On it the two
+rows read 1.477 and 1.557 against a bar of 1.10 — a miss, and a wider one than
+the unlabelled mixture.
 
 ```text
 run          commit    cold 64 label      cold 64 C/N.pool8  N.pool8 cold64 spread
 33153717709  96bb4778  confirmed / confirmed   817.47/808.79 = 1.011   445.55..898.44
 33155821397  266acf4f  refused / confirmed     591.82/424.58 = 1.394   417.49..453.58
 33158144391  72e98cba  refused / refused       609.97/555.63 = 1.098   416.53..1075.57
+33165141309  a06c53f9  refused / refused       565.31/434.33 = 1.302   427.78..447.04
+33172323795  261070c8  confirmed / confirmed  1150.39/779.08 = 1.477   584.73..991.44
 
 run          commit    cold 4 label       cold 4 C/N.pool8   notes
 33153717709  96bb4778  confirmed / refused     675.60/439.22 = 1.538
 33155821397  266acf4f  refused / confirmed     489.75/381.86 = 1.283
 33158144391  72e98cba  refused / refused       960.86/587.85 = 1.635   C max 26351.72
+33165141309  a06c53f9  refused / refused       490.57/399.02 = 1.229   C max  4996.77
+33172323795  261070c8  confirmed / confirmed  1058.71/679.86 = 1.557   C max  4332.72
 ```
 
-The only cold table on this branch whose label its probe confirmed at both
-ends is `96bb4778`'s 64 KiB one, and it is the draw whose baseline is
-noisiest: `N.pool8` runs 445.55 to 898.44 around a median of 808.79, and
+Two of the five confirm the label at both ends. `96bb4778`'s 64 KiB table is
+one, and it reads 1.011 and would pass — on the noisiest baseline of the five:
+`N.pool8` runs 445.55 to 898.44 around a median of 808.79, and
 `C.wide8.default`'s own maximum on that line is 8252.57 against a median of
-817.47. So one candidate has the label and not the tightness and the other has
-the tightness and not the label, and the third has neither. The row this
-section reports its numbers from is `33155821397`, because it is the run whose
-warm and many-files halves are the tightest and because its commit `266acf4f`
-is the measured runtime; the cold rows of any of the three are a reading of
-the runner's cache state as much as of the program. `266acf4f` is not this
-branch's last runtime: `git diff --stat 266acf4f a06c53f9` changes
-`runtime.c`, `bridge.c`, `file_adapter.c/.h` and `contract.h` alongside the
-harness, the probes, the `Makefile` and `io-hosts.yml`, and this record's own
-repairs change the runtime once more after `a06c53f9`. **What is owed is a
-macOS draw whose cold labels are confirmed at both ends.**
+817.47. `261070c8`'s is the other, and it confirms both sizes rather than one,
+which is why the grade is taken from it. Its own spreads are the worst of the
+five on the line the bar reads — `C.wide8.default` spans 1044.77 to 14961.31
+cold at 64 KiB and 560.66 to 4332.72 cold at 4 KiB, on a runner whose load
+average was 5.60 at the start — so the reading is confirmed-cold and noisy at
+once. At 64 KiB the grade does not depend on the noise: C's *minimum* over
+`N.pool8`'s median is 1.34, outside the bar without the median. At 4 KiB it
+does: C's minimum over `N.pool8`'s median is 0.82, so the ranges overlap and
+only the medians separate them. Neither row is met on any statistic that puts
+C ahead, so both are `no`, and the 4 KiB grading is the weaker of the two.
+
+The row this section reports its numbers from is `33155821397`, because it is
+the run whose warm and many-files halves are the tightest and because its
+commit `266acf4f` is the measured runtime; the cold rows of any of the five
+are a reading of the runner's cache state as much as of the program.
+`266acf4f` is not this branch's last runtime: `git diff --stat 266acf4f
+a06c53f9` changes `runtime.c`, `bridge.c`, `file_adapter.c/.h` and
+`contract.h` alongside the harness, the probes, the `Makefile` and
+`io-hosts.yml`, and this record's own repairs change the runtime once more
+after `a06c53f9`. **What was owed — a macOS draw whose cold labels are
+confirmed at both ends — arrived, and the answer was a miss. What is owed now
+is such a draw on a quiet runner, which would narrow the 1.011-to-1.477 range
+these two confirmed 64 KiB tables span rather than decide whether a cold table
+can be read at all.**
 
 What the cold rows do show, and this does not depend on the label because both
 lines ran interleaved inside the same table, is the demand-driven helper
@@ -1487,9 +1505,9 @@ make it worth more than a fourth number.
 **Its uncached 4 KiB table is confirmed at both ends** — `probe before the
 table: confirmed; probe after it: confirmed` — so it is a reading of a cold
 device rather than of a cache. It is not the only such table on this branch:
-three Linux cold 4 KiB tables carry that label, and the row this section
-quotes is worth quoting only beside the other two. `266acf4f`'s cold half is
-the one this section calls unreadable for its spreads, so its row below is a
+four Linux cold 4 KiB tables carry that label, and the row this section quotes
+is worth quoting only beside the other three. `266acf4f`'s cold half is the
+one this section calls unreadable for its spreads, so its row below is a
 confirmed label around a median, not a ranking.
 
 ```text
@@ -1521,18 +1539,19 @@ C.wide8.h8                 1490.76 1408.88  1742.53
 
 `C.wide8.default` at 1216.03 ms is 3.38 times faster than its own sequential
 build, 1.22 times faster than an eight-thread pool and 1.19 times faster than
-a hand-written 32-deep io_uring pipeline. On the other two confirmed tables it
-does not reach that: `96bb4778` puts it level with both native lines (1479.87
-against `N.pool8`'s 1479.56 and `N.uring32`'s 1469.81) and `266acf4f` puts it
-behind both (1514.79 against 1435.03 and 1268.13). All three beat the
-sequential build by a wide margin — 2.86, 5.92 and 3.38 times. So what three
-confirmed Linux cold tables support is that the completion program is between
-level with and clearly ahead of a hand-written native pipeline on this job,
-and the 1216.03 reading is this section's because this run is the follow-up's
-draw, not because it is the best of the three. The 64 KiB table on the same
-run is a cold-start table by its own probe (confirmed before, refused after)
-and reads the same way less sharply: 1213.14 against `N.pool8`'s 1275.99 and
-`S.wide8`'s 1587.44.
+a hand-written 32-deep io_uring pipeline. On the other three confirmed tables
+it does not reach that: `96bb4778` puts it level with both native lines
+(1479.87 against `N.pool8`'s 1479.56 and `N.uring32`'s 1469.81), `261070c8`
+puts it a shade ahead of the pool and a shade behind the ring (1465.26 against
+1481.78 and 1441.72), and `266acf4f` puts it behind both (1514.79 against
+1435.03 and 1268.13). All four beat the sequential build by a wide margin —
+2.86, 2.37, 5.92 and 3.38 times. So what four confirmed Linux cold tables
+support is that the completion program is between level with and clearly ahead
+of a hand-written native pipeline on this job, and the 1216.03 reading is this
+section's because this run is the follow-up's draw, not because it is the best
+of the four. The 64 KiB table on the same run is a cold-start table by its own
+probe (confirmed before, refused after) and reads the same way less sharply:
+1213.14 against `N.pool8`'s 1275.99 and `S.wide8`'s 1587.44.
 
 **And its warm half does not reproduce the draw above.** Warm
 `C.wide8/S.wide8` here is 1.010 at 64 KiB and 0.989 at 4 KiB, with the narrow
@@ -1544,47 +1563,53 @@ draw           commit    processor          warm 64  warm 4   narrow 64  narrow 
 earlier        96bb4778  EPYC 7763           0.984    0.946     1.002      1.016
 this section   266acf4f  Xeon 8573C          1.026    1.055     0.997      1.051
 follow-up      a06c53f9  EPYC 9V74           1.010    0.989     0.998      1.015
+repair         261070c8  Xeon 8370C          1.015    1.000     0.996      0.999
 ```
 
-Three of the four draws put the completion build at or under its own
-sequential build warm at 4 KiB, and the fourth is the 8573C one this section
-reads. Every draw is on a different processor, so nothing here isolates the
-8573C; what it does say is that the 4 KiB reading of 1.055 is not a property
-of the runtime, because the same runtime plus this batch's follow-up reads
-0.989 on the next machine. **Nothing across the four draws refutes the
-no-regression bar, and the bar table above keeps its `unresolved` grade all
-the same, because that table reads `266acf4f` and this is a different draw on
-different hardware.** What is owed has narrowed from "another Linux draw" to
-an explanation of the 8573C one.
+Three of the five draws put the completion build under its own sequential
+build warm at 4 KiB and a fourth sits on it exactly; the outlier is the 8573C
+one this section reads. The last row is what changes the argument, because it
+is on a **Xeon 8370C — batch 0092's own processor**, the one that read 0.941,
+and it reads 1.000. The 4 KiB ratio therefore moves from 0.941 to 1.000 on the
+same processor model between two draws, which says the spread across these
+rows is not the hardware being different; it is what a hosted runner gives
+this pair from one draw to the next. That retires the framing the earlier rows
+invited, that the 8573C is an outlier to be explained. **Nothing across the
+five draws refutes the no-regression bar, and the bar table above keeps its
+`unresolved` grade all the same, because that table reads `266acf4f` and every
+other draw is a different one.** What is owed is not an explanation of one
+machine but a reading of this pair that does not move six points between
+draws, which needs repeated draws on one label rather than one more draw on a
+new one.
 
-Every figure in the table above was recomputed from the four runs' own
+Every figure in the table above was recomputed from the five runs' own
 artifacts: 328.38/334.53 and 71.69/76.17 for 0092, 285.27/289.92 and
-78.78/83.28 for `96bb4778`, and the two tables printed in this section for the
-other two.
+78.78/83.28 for `96bb4778`, and the tables printed in this section and under
+"A draw of the repaired runtime" in the handoff for the other three.
 
 ### Linux hardware, many files
 
 `bench-linux` in the same run, for comparison with batch 0090's two draws of
-the same job:
+the same job and with the two later draws on this branch:
 
 ```text
-line                 0090 run 1   0090 run 2   this run (33155821397)
-S.wide8                  141.26       110.94                   122.49
-C.wide8.default          147.04       115.97                   129.55
-C/S                       1.041        1.045                    1.058
+line              0090 run 1  0090 run 2   266acf4f   a06c53f9   261070c8
+processor          EPYC 9V74   EPYC 9V74  EPYC 7763  EPYC 7763  EPYC 9V45
+S.wide8               141.26      110.94     122.49     120.94      96.04
+C.wide8.default       147.04      115.97     129.55     128.73     100.85
+C/S                    1.041       1.045      1.058      1.064      1.050
 ```
 
-The ordering reproduces — C is slower than S here as it was in both 0090
-draws, which is what batch 0090 recorded and this batch does not change — but
-the ratio is not inside the earlier pair and does not improve on it: 1.058 is
-worse than both 1.041 and 1.045, by 1.3 points on the worse of the two,
-against the within-run spread of about 2 per cent batch 0090 reports for this
-job. On two draws either side of the change, on a job whose 0090 pair
-themselves differed by 21 per cent in absolute speed, that is neither enough
-to call a regression nor enough to call the row met, which is why the bar
-table above grades it `unresolved` rather than `yes`. It is the third thing a
-second Linux draw owes an answer to.
-
+The ordering reproduces on every draw — C is slower than S here as it was in
+both 0090 draws, which is what batch 0090 recorded and this batch does not
+change — and the five ratios span 1.041 to 1.064, against the within-run
+spread of about 2 per cent batch 0090 reports for this job. The two that
+differ most, 1.058 and 1.064, are on the same processor, so the spread is not
+the hardware; and 1.050 at `261070c8` sits between the 0090 pair and this
+branch's own two. Five draws across a change that no one of them can resolve
+is neither enough to call a regression nor enough to call the row met, which
+is why the bar table above grades it `unresolved` rather than `yes`. What it
+would take is repeated draws on one label, not another host.
 
 
 ## Historical C-core results
