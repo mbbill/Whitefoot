@@ -107,8 +107,11 @@ The same `make check` runs on every push through
 Linux runner and a GitHub-hosted macOS runner.
 [`.github/workflows/io-hosts.yml`](.github/workflows/io-hosts.yml) carries the
 completion-I/O evidence that no machine here can produce: the Linux io_uring
-adapter and sanitizers on a real kernel, the program-level I/O bench on real
-hardware, and the Windows IOCP probes executed rather than only cross-linked.
+adapter and sanitizers on a real kernel, the program-level I/O benches on real
+hardware -- including the read-dominated tables on both a Linux and a macOS
+runner, the latter being the only macOS host available to this project without
+an endpoint-security stack in its I/O path -- and the Windows IOCP probes
+executed rather than only cross-linked.
 
 The gate builds and tests the compiler, exercises the native completion
 harness, validates conformance structure and rule coverage, runs every
