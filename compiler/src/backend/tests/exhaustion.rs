@@ -1712,3 +1712,142 @@ fn a_buffer_block_outlives_the_elements_the_traversal_takes_from_it() {
     );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+// ---------------------------------------------------------------------------
+// TEMPORARY DIAGNOSTIC — both cases below are deliberate failures whose panic
+// message carries the measurement, and both are deleted in the commit that
+// follows the run they exist to produce. They exist to name, from the x86-64
+// runner itself rather than from this project's Linux container, what lies
+// under the floor's entry stack and whether the offset row's target address
+// is inside it.
+// ---------------------------------------------------------------------------
+
+/// The body as it stood before the geometry fix, plus a report of where the
+/// target address falls in `/proc/self/maps`.
+const PRE_FIX_OFFSET_FAULT_BODY: &str = r#"#define _GNU_SOURCE
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+extern int wf__floor_run(int argc, char **argv);
+
+int wf__main_body(int argc, char **argv) {
+    char *low = NULL;
+    unsigned long below;
+    unsigned long target;
+    (void)argc;
+    (void)argv;
+#if defined(__APPLE__)
+    low = (char *)pthread_get_stackaddr_np(pthread_self())
+          - pthread_get_stacksize_np(pthread_self());
+#else
+    {
+        pthread_attr_t attributes;
+        void *base = NULL;
+        size_t size = 0;
+        pthread_getattr_np(pthread_self(), &attributes);
+        pthread_attr_getstack(&attributes, &base, &size);
+        low = (char *)base;
+        pthread_attr_destroy(&attributes);
+    }
+#endif
+    below = strtoul(getenv("WF_FAULT_BELOW"), NULL, 10);
+    target = (unsigned long)(size_t)(low - below);
+    fprintf(stderr, "low=%lx target=%lx\n", (unsigned long)(size_t)low, target);
+#if !defined(__APPLE__)
+    {
+        FILE *maps = fopen("/proc/self/maps", "r");
+        char line[512];
+        while (maps != NULL && fgets(line, sizeof line, maps) != NULL) {
+            unsigned long start = 0;
+            unsigned long end = 0;
+            if (sscanf(line, "%lx-%lx", &start, &end) != 2) {
+                continue;
+            }
+            if (end + (1UL << 21) < target || start > target + (1UL << 21)) {
+                continue;
+            }
+            fprintf(stderr, "%s %s",
+                    (target >= start && target < end) ? "HIT " : "near", line);
+        }
+        if (maps != NULL) {
+            fclose(maps);
+        }
+    }
+#endif
+    fflush(stderr);
+    *(volatile int *)(low - below) = 1;
+    return 0;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+
+/// What the four-page row met on this host, over enough runs to see both
+/// outcomes: the address it wrote to, and the mapping that held it when the
+/// write completed.
+#[test]
+fn temporary_diagnostic_pre_fix_geometry() {
+    let page = page_size();
+    let directory = test_directory();
+    let executable = build_floor_fixture(PRE_FIX_OFFSET_FAULT_BODY, &directory);
+    let below = 4 * page;
+    let mut faulted = 0usize;
+    let mut survived = 0usize;
+    let mut a_faulted_run = String::new();
+    let mut a_survived_run = String::new();
+    for _ in 0..200 {
+        let output = Command::new(&executable)
+            .env("WF_FAULT_BELOW", below.to_string())
+            .output()
+            .expect("run the offset fault");
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if signal_of(&output) == Some(libc_sigsegv()) {
+            faulted += 1;
+            if a_faulted_run.is_empty() {
+                a_faulted_run = stderr;
+            }
+        } else {
+            survived += 1;
+            if a_survived_run.is_empty() {
+                a_survived_run = format!("status={:?}\n{stderr}", output.status);
+            }
+        }
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    panic!(
+        "TEMPORARY DIAGNOSTIC pre-fix, {below} bytes below the entry stack, \
+         200 runs: faulted={faulted} survived={survived}\n\
+         === a run whose write completed ===\n{a_survived_run}\n\
+         === a run whose write faulted ===\n{a_faulted_run}"
+    );
+}
+
+/// The same measurement over the shipped body, on every row the case asserts.
+#[test]
+fn temporary_diagnostic_fixed_geometry() {
+    let page = page_size();
+    let directory = test_directory();
+    let executable = build_floor_fixture(OFFSET_FAULT_BODY, &directory);
+    let mut report = String::new();
+    for below in [page / 2, page, 4 * page, 64 * 1024, 16 * 1024 * 1024] {
+        let mut outcomes: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for _ in 0..40 {
+            let output = Command::new(&executable)
+                .env("WF_FAULT_BELOW", below.to_string())
+                .output()
+                .expect("run the offset fault");
+            let key = format!(
+                "signal={:?} code={:?} stderr={:?}",
+                signal_of(&output),
+                output.status.code(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            *outcomes.entry(key).or_default() += 1;
+        }
+        report.push_str(&format!("below={below}: {outcomes:?}\n"));
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    panic!("TEMPORARY DIAGNOSTIC fixed geometry, 40 runs per row:\n{report}");
+}
