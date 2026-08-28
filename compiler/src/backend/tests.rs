@@ -23,6 +23,7 @@ mod counted_ranges;
 mod deterministic_target;
 mod division_obligations;
 mod effect_attributes;
+mod enumeration_records;
 mod exhaustion;
 mod float_conversion;
 mod floating;
@@ -378,7 +379,7 @@ fn test_directory() -> PathBuf {
 
 /// Links one emitted module into an executable inside `directory`.
 fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
-    build_linked_executable(llvm, None, directory)
+    build_linked_executable(llvm, None, &[], directory)
 }
 
 /// Adds the compiler-owned completion units to one test link on the exact
@@ -436,14 +437,30 @@ pub(super) fn append_completion_runtime(
 /// facilities and passes no extra unit; a program emitted for the
 /// deterministic test target supplies the unit that answers its scripted
 /// facilities [QUAL-1].
-fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> PathBuf {
+///
+/// `defines` reaches the compiler-owned C units only, through the same
+/// facility-substitution macros `compiler/Makefile` uses for the completion
+/// harness. It changes which host call one adapter reaches, never the emitted
+/// module and never the adapter's own logic, so a case that scripts a
+/// facility still observes the shipped decoder over the bytes that facility
+/// left behind.
+fn build_linked_executable(
+    llvm: &str,
+    host: Option<&str>,
+    defines: &[String],
+    directory: &Path,
+) -> PathBuf {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write backend test module");
     let mut command = Command::new("/usr/bin/clang");
     // The dialect the driver names, for the same reason: a test link must not
     // compile the compiler-owned C units in a dialect the shipped one does not.
-    command.arg("-std=c11").arg("-x").arg("ir").arg(&module);
+    command.arg("-std=c11");
+    for define in defines {
+        command.arg(format!("-D{define}"));
+    }
+    command.arg("-x").arg("ir").arg(&module);
     let host_unit = host.map(|source| {
         let path = directory.join("host.c");
         std::fs::write(&path, source).expect("write deterministic host unit");
@@ -516,8 +533,19 @@ fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
 /// Runs one emitted module, optionally linked against one host translation
 /// unit.
 fn compile_link_and_run(llvm: &str, host: Option<&str>, arguments: &[&[u8]]) -> Output {
+    compile_link_and_run_with(llvm, host, &[], arguments)
+}
+
+/// Runs one emitted module linked against one host translation unit and one
+/// set of facility-substitution definitions.
+fn compile_link_and_run_with(
+    llvm: &str,
+    host: Option<&str>,
+    defines: &[String],
+    arguments: &[&[u8]],
+) -> Output {
     let directory = test_directory();
-    let executable = build_linked_executable(llvm, host, &directory);
+    let executable = build_linked_executable(llvm, host, defines, &directory);
     let output = Command::new(&executable)
         .args(
             arguments
