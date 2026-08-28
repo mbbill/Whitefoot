@@ -5,7 +5,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::{assert_rule, assert_rule_at, with_semantics};
+use super::{assert_rule, assert_rule_at, assert_rule_kind, with_semantics};
 use crate::semantic::model::{CheckedStatement, ValueInitializerKind};
 
 fn assert_checks(source: &[u8]) {
@@ -219,7 +219,7 @@ fn a_value_if_holds_its_deliveries_to_one_exact_type() {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(source, SemanticRule::Give1, SemanticIssueKind::TypeMismatch);
+    assert_rule_kind(source, SemanticRule::Give1, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
 }
 
 /// [GIVE-1] owns the undelivering `value_if`, not GRAM-6: a `value_if`'s

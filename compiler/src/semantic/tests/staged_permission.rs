@@ -371,7 +371,12 @@ fn a_break_after_the_submission_denies() {
 }
 "#;
     let denial = denied(source, "main", 2);
-    let StagedDenial::ExitInRemainder { edge, statement } = denial else {
+    let StagedDenial::ExitInRemainder {
+        edge,
+        statement,
+        selected_by_submission,
+    } = denial
+    else {
         panic!("expected an exit denial: {denial:?}");
     };
     // A `break_stmt` carries no node path, so the loop it names is the only
@@ -381,6 +386,10 @@ fn a_break_after_the_submission_denies() {
         statement.is_none(),
         "a break carries no node path to cite: {statement:?}"
     );
+    // The break is a statement of the remainder in its own right, not the cut
+    // statement's own edge, so the judgment does not claim the submission's
+    // outcome selects it.
+    assert!(!selected_by_submission);
 }
 
 /// A `give` delivering to an initializer written *outside* the loop leaves it,
@@ -1473,7 +1482,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 "#;
     let denial = denied(source, "scan_all", 2);
-    let StagedDenial::ExitInRemainder { edge, statement } = denial else {
+    let StagedDenial::ExitInRemainder {
+        edge,
+        statement,
+        selected_by_submission,
+    } = denial
+    else {
         panic!("expected an exit denial: {denial:?}");
     };
     assert_eq!(edge, "a propagate");
@@ -1481,6 +1495,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         statement.is_some(),
         "a propagate carries the node path of its own statement"
     );
+    // The propagated call *is* the cut, so its Err edge is selected by the
+    // submission's own outcome: no rewrite takes it before the submission, and
+    // the remedy has to say so rather than repeat the hoist advice.
+    assert!(selected_by_submission);
 }
 
 /// The granted half: a `propagate` written *before* the cut leaves from the

@@ -1,10 +1,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedExpression, CheckedMode, CheckedSetTarget, CheckedStatement};
-use super::{
-    assert_rule, assert_rule_extension, assert_unsupported, with_semantics,
-    with_semantics_extension,
-};
+use super::{assert_rule, assert_rule_extension, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_extension};
 
 pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
   left: buffer<u64>;
@@ -225,7 +222,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 
 #[test]
 fn own_storage_cannot_be_borrowed_into_a_caller_region() {
-    assert_rule(
+    assert_rule_kind(
         br#"fn invalid['caller](values: own buffer<u8>) -> result: own unit pure {
   let escaped = &'caller values;
   return unit;
@@ -236,7 +233,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
 }
 
@@ -309,10 +306,10 @@ command fn main() -> status: own ExitStatus pure {
         .expect("fixture contains the forwarding declaration");
     let replacement = b"fn forward['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.right)";
     wrong.splice(at..at + declaration.len(), replacement.iter().copied());
-    assert_rule(
+    assert_rule_kind(
         &wrong,
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -419,7 +416,7 @@ command fn main() -> status: own ExitStatus pure {
 /// row rejects the impossible shared write before body checking reaches it.
 #[test]
 fn shared_struct_borrows_cannot_write_copy_fields() {
-    assert_rule(
+    assert_rule_kind(
         br#"struct Counter {
   value: u64;
 }
@@ -434,7 +431,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Eff1,
-        SemanticIssueKind::InvalidEffectRow,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
 }
 
@@ -802,10 +799,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
         .expect("fixture declares the publish row");
     let mut narrowed = source.to_vec();
     narrowed.splice(at..at + declared.len(), b"reads(source)".iter().copied());
-    assert_rule(
+    assert_rule_kind(
         &narrowed,
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -896,20 +893,20 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     // [OWN-10]: a caller-supplied region outlives the frame that owns `x`.
-    assert_rule(
+    assert_rule_kind(
         b"fn dangle['r0](x: own i32) -> result: &'r0 i32 pure {\n  return &'r0 x;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
     // [OWN-4]: a borrow taken in an inner region cannot be returned as the
     // caller's region. The witness must be in return position. Writing it as
     // `let q = &'s deref(x); return q;` rejects OWN-14 instead, because
     // [OWN-6] admits a reborrow only as a call-argument atom — a plausible
     // simplification that would silently retarget this case.
-    assert_rule(
+    assert_rule_kind(
         b"fn leak['r0](x: &'r0 i32) -> result: &'r0 i32 pure {\n  region 's {\n    return &'s deref(x);\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own4,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
     // [TYPE-7]: no implicit read through a scalar holder.
     assert_rule(
@@ -992,20 +989,20 @@ fn outer_region_borrows_may_be_held_under_inner_regions() {
 /// parameter to that parameter's formal region, both ways.
 #[test]
 fn scalar_borrow_parameter_effect_rows_are_exact_in_both_directions() {
-    assert_rule(
+    assert_rule_kind(
         b"fn read_scalar['r](p: &'r i32) -> result: own i32 pure {\n  return deref(p);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn bump['r](p: &uniq 'r i32) -> result: own unit reads(p) {\n  set deref(p) = 9_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn quiet['r](p: &'r i32) -> result: own unit reads(p) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -1033,15 +1030,15 @@ fn returned_reborrows_follow_own14_admission_and_own4_regions() {
     );
     // [OWN-4]: the returned borrow's local region cannot reach the written
     // rtype region, in either mode.
-    assert_rule(
+    assert_rule_kind(
         b"fn leak['r0](x: &'r0 i32) -> result: &'r0 i32 pure {\n  region 's {\n    return &'s deref(x);\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own4,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn leak['r0](x: &uniq 'r0 i32) -> result: &uniq 'r0 i32 pure {\n  region 's {\n    return &uniq 's deref(x);\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own4,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
 }
 
@@ -1108,7 +1105,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 "#,
         UnsupportedSemanticFeature::RegionsAndBorrows,
     );
-    assert_rule(
+    assert_rule_kind(
         br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes(n) {
   set deref(n) = 1_i32;
   return unit;
@@ -1125,7 +1122,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
 }
 
@@ -1412,11 +1409,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
 ///
 /// Spelled out here rather than imported, like the [FN-1] fix above, so a
 /// change to the text a writer reads has to be made twice on purpose.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, \
-     and a value that statement binds dies at the region's end; either move the borrow holder \
-     into a helper that takes it as `&uniq`, `move`s it there, and returns the derived state \
-     (P4 linear threading), or bind the reborrowed result with `replace`: \
-     `let stale = replace target = call(...);`";
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
 
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
      value or unit, or in the one argument position a borrow-returning call takes its result \
@@ -1542,10 +1535,10 @@ fn declaration_provenance_keeps_the_established_boundary_judgment_order() {
             mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",
         },
     );
-    assert_rule(
+    assert_rule_kind(
         b"fn dangle['r0](x: own i32) -> result: &'r0 i32 pure {\n  return &'r0 x;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
 }
 

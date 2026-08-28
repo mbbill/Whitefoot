@@ -5,7 +5,7 @@ use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
-use super::{assert_rule, assert_unsupported, with_semantics, with_semantics_dark};
+use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark};
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
@@ -322,19 +322,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn buffer_effect_rows_are_checked_both_ways() {
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
         b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 
@@ -403,20 +403,20 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
         SemanticIssueKind::InvalidOperation,
     );
     // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
         b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // [TYPE-5]: the one operand is the own u64 length.
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let slots = buffer_vacant<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 

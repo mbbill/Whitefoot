@@ -7,7 +7,7 @@
 
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 /// Asserts the rule, premise, and the exact source bytes the location selects.
 fn assert_rule_at(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind, located: &[u8]) {
@@ -153,22 +153,22 @@ fn a_missing_command_marker_outranks_legacy_signature_details() {
 fn admitted_but_unexhibited_entry_effects_reach_eff2() {
     // Allocation and trap remain admitted entry categories. These bodies do
     // not exhibit them, so they pass FN-7 and reject later under EFF-2.
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     // A legal capability subject on a non-entry declaration is likewise an
     // ordinary declared-but-unexhibited mismatch.
-    assert_rule(
+    assert_rule_kind(
         b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
 }
 

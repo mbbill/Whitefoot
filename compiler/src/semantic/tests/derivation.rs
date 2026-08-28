@@ -4,7 +4,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::{assert_rule, assert_rule_at, with_semantics};
+use super::{assert_rule, assert_rule_at, assert_rule_kind, with_semantics};
 
 #[test]
 fn an_ordinary_let_takes_the_type_its_right_hand_side_produces() {
@@ -74,7 +74,7 @@ command fn main() -> status: own ExitStatus pure {
 /// join or a widening, and the citation lands on the *later* `give`.
 #[test]
 fn a_second_give_of_another_type_rejects_at_that_give() {
-    assert_rule(
+    assert_rule_kind(
         br#"fn choose(flag: own Option<i32>) -> result: own unit pure {
   let picked = match flag {
     Some(value: inner) => {
@@ -92,7 +92,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Give1,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -156,14 +156,14 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
 
 #[test]
 fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
-    assert_rule(
+    assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus pure {
   let absent = None();
   return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 

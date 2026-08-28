@@ -1,7 +1,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType};
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
 fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
@@ -78,7 +78,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(source, SemanticRule::Fn3, SemanticIssueKind::TypeMismatch);
+    assert_rule_kind(source, SemanticRule::Fn3, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
 }
 
 #[test]
@@ -91,7 +91,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(source, SemanticRule::Form5, SemanticIssueKind::TypeMismatch);
+    assert_rule_kind(source, SemanticRule::Form5, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
 }
 
 #[test]
@@ -139,7 +139,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(source, SemanticRule::Fn3, SemanticIssueKind::TypeMismatch);
+    assert_rule_kind(source, SemanticRule::Fn3, |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }));
 }
 
 /// The negative control for the three [FN-6] rejections below: a cycle whose
@@ -358,7 +358,7 @@ command fn main() -> status: own ExitStatus pure {
 /// third is CONST-1's own violation and is unaffected.
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
-    assert_rule(
+    assert_rule_kind(
         br#"fn marker<T>() -> result: own unit pure {
   return unit;
 }
@@ -369,9 +369,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Fn2,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         br#"fn sized<const n: u64>() -> result: own unit pure {
   return unit;
 }
@@ -382,7 +382,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Fn2,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
         br#"fn invalid<const n: Bool>() -> result: own unit pure {
@@ -533,7 +533,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn source_nominal_argument_arity_and_kinds_are_exact() {
-    assert_rule(
+    assert_rule_kind(
         br#"struct Pair<T> {
   value: T;
 }
@@ -544,9 +544,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
-    assert_rule(
+    assert_rule_kind(
         br#"struct Packet<const n: u64> {
   bytes: array<u8, n>;
 }
@@ -558,7 +558,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -580,7 +580,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unused_generic_nominal_members_are_checked_under_their_declared_bounds() {
-    assert_rule(
+    assert_rule_kind(
         br#"struct Invalid<T> {
   values: array<T, 2>;
 }
@@ -590,7 +590,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Type2,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 

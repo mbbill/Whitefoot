@@ -3,7 +3,7 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanti
 use super::super::model::{
     CheckedExpression, CheckedSliceOrigin, CheckedSliceSource, CheckedStatement, CheckedType,
 };
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
 fn slices_retain_type_source_and_access_operations() {
@@ -443,7 +443,7 @@ fn slice_views_are_not_set_targets() {
 
 #[test]
 fn slice_formation_enforces_storage_duration_and_explicit_boundaries() {
-    assert_rule(
+    assert_rule_kind(
         br#"fn invalid['caller]() -> result: own unit pure {
   let values = array_new<u8, 2>(0_u8);
   let window = slice_of(&'caller values);
@@ -455,7 +455,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
     assert_unsupported(
         br#"struct Item {
@@ -486,7 +486,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         UnsupportedSemanticFeature::RegionsAndBorrows,
     );
-    assert_rule(
+    assert_rule_kind(
         br#"fn invalid['r](values: own array<u8, 2>) -> result: own slice<'r, u8> pure {
   return slice_of(&'r values);
 }
@@ -496,7 +496,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Own10,
-        SemanticIssueKind::InvalidBorrowLifetime,
+        |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
 }
 

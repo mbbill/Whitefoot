@@ -4,7 +4,7 @@ use super::super::model::{
     CheckedArrayRoot, CheckedConst, CheckedExpression, CheckedFlatElement, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
 };
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn constants_fill_length_and_index_share_exact_array_types() {
@@ -118,10 +118,10 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticRule::Const2,
         SemanticIssueKind::ImmutableSetTarget,
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -162,10 +162,10 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
 
-    assert_rule(
+    assert_rule_kind(
         b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type2,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -219,10 +219,10 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
             );
         },
     );
-    assert_rule(
+    assert_rule_kind(
         b"command fn main() -> status: own ExitStatus traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
         b"fn consume(values: own array<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",

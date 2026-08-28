@@ -729,11 +729,14 @@ mod tests {
     fn a_denied_io_loop_is_reported_without_a_flag_and_a_granted_one_is_silent() {
         let notices = notices_of("hoisted.wf", DENIED_IO_LOOP);
         let ledger = ledger_of("hoisted.wf", DENIED_IO_LOOP);
-        // Both verdicts of the one loop, and nothing else. The counted rule
-        // and the staged rule refuse it for different reasons, so both are
-        // losses the writer can act on; the disposition table under them is
-        // the report's, not the notice channel's.
-        assert_eq!(notices.len(), 2, "{notices:?}");
+        // Both verdicts of the one loop, and every place that denied it. The
+        // counted rule and the staged rule refuse it for different reasons, so
+        // both are losses the writer can act on; and the `stage` line names
+        // only the condition the judgment stopped at, so the denied rows of
+        // its table come with it. A repaired first cause otherwise uncovers a
+        // second denial the writer was never told about, which is what the
+        // verification of 2026-08-28 met on its first loop.
+        assert_eq!(notices.len(), 3, "{notices:?}");
         assert!(
             notices[0].starts_with("PAR loop        hoisted.wf:5") && notices[0].contains("denied"),
             "{notices:?}"
@@ -742,6 +745,18 @@ mod tests {
             notices[1].starts_with("PAR stage       hoisted.wf:5")
                 && notices[1].contains("condition 3")
                 && notices[1].ends_with("&uniq 'd data"),
+            "{notices:?}"
+        );
+        assert!(
+            notices[2].starts_with("PAR place       hoisted.wf:5")
+                && notices[2].contains("denied")
+                && notices[2].contains("&uniq 'd data"),
+            "{notices:?}"
+        );
+        // A row that is not denied stays inside the full report: the notice
+        // channel states what cost the loop its pipeline, not the whole table.
+        assert!(
+            notices.iter().all(|notice| !notice.contains("read-only")),
             "{notices:?}"
         );
         // Every notice is a line of the full report, verbatim: one rendering,
@@ -832,15 +847,17 @@ mod tests {
     }
 
     /// The one rule the blind writer could not apply from the specification
-    /// text now says what it means and names both admitted routes.
+    /// text now says what it means and states the whole working idiom.
     ///
     /// This is the writer's own shape: reserve a permit from a borrowed
     /// factory and open through it, which is what every recursive directory
-    /// walker wants and what a one-statement region cannot hold. They received
-    /// `kind: InvalidChildReborrow` with no message and recovered the helper
-    /// form by reading an example program.
+    /// walker wants and what a one-statement region cannot hold. Batch 0099
+    /// gave the rejection two routes and the verification writer took neither
+    /// to a working walker — `replace` cannot commit where the call consumed
+    /// the target's root, which `move permit` does, and the helper alone is
+    /// one third of the idiom `tests/programs/dir_walk.wf` uses.
     #[test]
-    fn a_child_reborrow_rejection_states_the_scope_rule_and_both_routes() {
+    fn a_child_reborrow_rejection_states_the_scope_rule_and_the_whole_idiom() {
         let source = br#"fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
   region 'source {
     let permit = reserve_file<'source>(factory: &uniq 'source deref(factory));
@@ -878,14 +895,36 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
             ),
             "{detail}"
         );
-        // Both admitted routes, in the vocabulary `docs/patterns.md` uses.
+        // All three parts of the idiom, in the vocabulary `docs/patterns.md`
+        // uses, and the exact limit of the `replace` route.
         assert!(
-            detail.contains("move the borrow holder into a helper"),
+            detail.contains(
+                "move the reserve and the open into one helper that takes the holder as \
+                 `&uniq 'f` and returns the opened value"
+            ),
             "{detail}"
         );
-        assert!(detail.contains("P4 linear threading"), "{detail}");
         assert!(
-            detail.contains("bind the reborrowed result with `replace`"),
+            detail.contains(
+                "make the single statement of the region the `match` on that helper's call"
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                "write every statement that uses the opened value inside that `match` arm"
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.contains("P4 linear threading, P15 recursive walker"),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(
+                "applies only where the call leaves the target's root alive: a call that \
+                 consumes the target root — one taking `move permit` — rejects OWN-1 instead"
+            ),
             "{detail}"
         );
     }
