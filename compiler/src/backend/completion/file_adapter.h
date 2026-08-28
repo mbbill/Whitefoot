@@ -392,7 +392,14 @@ enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
  * True when this adapter has no helper, nothing queued, and has measured its
  * own operations as not waiting.  It is the adapter's half of the answer; the
  * caller decides whether the operation is one whose wait no part of the same
- * program has to satisfy. */
+ * program has to satisfy.
+ *
+ * Cost, stated because this is asked on a hot path: the `nothing queued` term
+ * takes the queue lock, so every positioned read that reaches this question
+ * pays one uncontended lock and unlock.  The question is asked once per
+ * positioned read on a program the bridge has not pinned, and only after the
+ * two cheaper terms have both held; what it saves when it answers yes is a
+ * queue crossing, a slot claim, four slot transitions and a drain. */
 int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter);
 
 /* Executes one typed request and records what the host call cost, from a
@@ -433,7 +440,23 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
 
 /* Stops admission and drains accepted queue entries before joining helpers.
  * With zero helpers, the calling thread performs the bounded typed work one
- * entry at a time until the accepted queue is empty. */
+ * entry at a time until the accepted queue is empty.
+ *
+ * Precondition: no thread is inside `wf_file_adapter_submit`, and none will
+ * enter it, when this is called.  That is not a caution, it is the design.  A
+ * submission announces its queue entry *after* releasing the queue lock, on
+ * purpose -- signalling under the lock wakes a helper whose next act is to
+ * block on the same lock, which is a system call spent to start a thread and
+ * immediately stall it -- so between that release and that signal the
+ * submitter holds no lock, and a shutdown running in the window destroys the
+ * condition variable the submitter is about to signal.
+ *
+ * Closing the window would mean either signalling under the lock, which is the
+ * cost this shape exists to remove, or a second lock on the submission path
+ * to serialize against a shutdown that happens once per process.  Neither is
+ * worth it for an overlap no caller has: the bridge's only shutdown is its
+ * `atexit` handler, and a program still submitting operations while the
+ * process exits has no defined completion for them anyway. */
 int wf_file_adapter_shutdown(wf_file_adapter *adapter);
 
 wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(
