@@ -497,18 +497,20 @@ three `u64`s in a struct need `move` at every use — and the assignment is a
 to compute the value: there is then no live owner to bind out, and [OWN-1]
 rejects the reuse.
 
-Pattern: the walk returns its own subtotal, and the caller binds it under a
-fresh `let` and combines field by field. `move` at each use of the record, and
-a new binding for the combined value.
+Pattern: the walk returns its own subtotal, the caller binds it under a fresh
+`let`, and the fold is one `set` per field. `move` stays for the places where
+the record is used as a value — passed, returned, or rebound.
 
 ```whitefoot
 let sub = walk<'recurse, 'c>(factory: &uniq 'recurse deref(factory), directory: dir);
-let carried = move totals;
-let added = move sub;
-let lines = carried.lines +wrap added.lines;
-let bytes = carried.bytes +wrap added.bytes;
-let next = Counts(lines: lines, bytes: bytes);
+set totals.lines = totals.lines +wrap sub.lines;
+set totals.bytes = totals.bytes +wrap sub.bytes;
 ```
+
+The fields are `u64`, and [OWN-1] copies primitives, so the fold is an ordinary
+`set` per field even though the record holding them is affine. That is the
+whole trick: the affinity is on the record, and the accumulation never touches
+the record as a value.
 
 `replace` is the right commit in the other case, and only in it: when the value
 being committed leaves the target's root alive, `replace` writes the new owner

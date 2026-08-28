@@ -247,10 +247,16 @@ that were already good, `OWN-1` keeps its `mechanical_fix`, and `GRAM-9`,
   mental model survived a whole program. The concrete text a writer can be
   shown is the rejection they get with no live length fact at all, so that is
   what the entry prints.
-- **`P17` states the `replace` case narrowly.** `replace` is right only where
-  the value being committed leaves the target's root alive; where the call
-  consumed the root, `replace` produces `[OWN-1]` and the fresh `let` is the
-  answer. Both cases were compiled before the entry was written.
+- **`P17` states the `replace` case narrowly, and its fold is one `set` per
+  field.** `replace` is right only where the value being committed leaves the
+  target's root alive; where the call consumed the root, `replace` produces
+  `[OWN-1]` and the fresh `let` is the answer. Both cases were compiled before
+  the entry was written. The fold the entry teaches — `set totals.lines =
+  totals.lines +wrap sub.lines;` — is the writer's own `p1` statement, admitted
+  because [OWN-1] copies the `u64` fields even though the record holding them
+  is affine, and classified `serialized-E` by the staged judgment. An earlier
+  draft taught a `move`-and-rebuild sequence instead; it compiles too, and it
+  is worse.
 - **The claim ledger's source name is now the host path.**
   `TreeView::source_identity` feeds both the permission ledger and
   `ClaimSourceIdentity`, and the field was renamed to `display_path` to say so.
