@@ -473,14 +473,20 @@ impl CompiledProgram {
         working_directory: &Path,
         arguments: &[&[u8]],
     ) -> (ExitStatus, Vec<u8>) {
+        // The destination must have no reader from the program's first write
+        // on: closing the read end after `spawn` races the child, and a child
+        // that publishes before the close succeeds and exits 0 (observed on a
+        // three-core CI runner). So the pipe is made here and its read end is
+        // closed before the child exists.
+        let (reader, writer) = std::io::pipe().expect("create the closed destination");
+        drop(reader);
         let mut child = Command::new(&self.executable)
             .current_dir(working_directory)
             .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
-            .stdout(Stdio::piped())
+            .stdout(Stdio::from(writer))
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn compiled program");
-        drop(child.stdout.take());
         let mut diagnostics = Vec::new();
         child
             .stderr
