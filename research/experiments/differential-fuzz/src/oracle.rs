@@ -530,9 +530,13 @@ impl Oracle {
     /// the program is its own stable oracle, then require every overlapping
     /// execution to publish exactly what the source-order one published.
     pub fn assess(&self, source: &Path, tag: &str, bulk: bool) -> Verdict {
-        let sequential = self.build.join(format!("{tag}-no-overlap"));
-        let completion = self.build.join(format!("{tag}-completion"));
-        let parallel = self.build.join(format!("{tag}-par"));
+        // The three file names are the same length on purpose. A program can
+        // read its own invocation, and the length of argument zero is the one
+        // thing about the run that the harness rather than the compiler
+        // decides; equal-length names keep even that out of the comparison.
+        let sequential = self.build.join(format!("{tag}-a"));
+        let completion = self.build.join(format!("{tag}-b"));
+        let parallel = self.build.join(format!("{tag}-c"));
         let mut runs = 0;
         let mut fifo_runs = 0;
 

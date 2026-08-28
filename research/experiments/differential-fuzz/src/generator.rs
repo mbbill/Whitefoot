@@ -1393,6 +1393,13 @@ impl Gen {
     }
 
     /// The invocation snapshot: a count, and one argument's byte length.
+    ///
+    /// Never position zero. The oracle runs the same program from three
+    /// different files -- one per lowering -- so argument zero is the one
+    /// invocation datum the harness cannot make identical across the runs it
+    /// compares. A program that reads it publishes the harness's file name and
+    /// reports a difference that is not the compiler's. Positions one and two
+    /// are the two literal arguments the oracle passes, identical everywhere.
     fn argument_block(&mut self) {
         self.used_args = true;
         let region = self.region();
@@ -1408,8 +1415,9 @@ impl Gen {
             let failed = self.name("argument_missing");
             let inner = self.region();
             let length = self.name("argument_length");
+            let position = self.rng.between(1, 2);
             self.body.open(&format!(
-                "match arg_get<{region}>(args: &{region} args, position: 0_u64) {{"
+                "match arg_get<{region}>(args: &{region} args, position: {position}_u64) {{"
             ));
             self.body.open(&format!("Ok(value: {value}) => {{"));
             self.body.open(&format!("region {inner} {{"));
