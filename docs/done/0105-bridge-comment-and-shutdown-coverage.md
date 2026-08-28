@@ -23,9 +23,9 @@ Held:
   restored, a reader racing a shutdown draws a ThreadSanitizer report at
   `wf_file_adapter_queued` naming the destroyed mutex.
 
-Refuted: the block comment in `wf_bridge_spin_for_completion` — though the
-re-measurement below narrows the refutation to the comment's attribution
-rather than to all of it.
+Refuted: the block comment in `wf_bridge_spin_for_completion` — both its
+attribution of the bound and, after this batch's own gate verification, its
+route contrast; section 1 carries the measurements for each.
 
 ## 1. The refuted comment (`compiler/src/backend/completion/bridge.c`)
 
