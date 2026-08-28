@@ -351,6 +351,17 @@ read the macOS cold rows as an ordering rather than as a device measurement.
    the same way on this branch. Nothing in this batch touches them. Canonical
    `make check` passes on the maintainer's machine, which is the merge
    requirement.
+7. **The local gate is load-sensitive too, and this batch saw it.**
+   `backend::tests::completion::independent_io_reaches_the_second_operation_before_the_first_unblocks`
+   gives a helper three seconds of wall time to write its marker while another
+   operation is blocked on a full pipe. One `make check` run during this batch
+   -- on a machine that was also polling continuous integration and had just
+   finished a benchmark -- exceeded that budget at `WF_IO_HELPERS=1`. Four
+   runs of the same tree, including one at this branch's tip with the machine
+   quiet, passed. The test is a real observation about the runtime and is left
+   exactly as it is; what the failure adds is that its three-second budget is
+   a property of the host as much as of the model, which is the same lesson
+   the CI failures above teach.
 
 ## Approval classes
 
