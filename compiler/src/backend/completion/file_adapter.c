@@ -421,6 +421,37 @@ static void wf_file_finish_execution(wf_file_adapter *adapter, int helper) {
     (void)pthread_mutex_unlock(&adapter->queue_lock);
 }
 
+/* This adapter's retirement generation: the pair of execution counters, which
+ * only ever grow.  A reader that sees the same pair twice has seen no
+ * operation of this adapter publish between the two reads. */
+typedef struct wf_file_retirements {
+    uint64_t helper;
+    uint64_t scheduler;
+} wf_file_retirements;
+
+static wf_file_retirements wf_file_retirements_now(
+    const wf_file_adapter *adapter
+) {
+    wf_file_retirements now;
+    now.helper = atomic_load_explicit(
+        &adapter->stat_helper_executions,
+        memory_order_seq_cst
+    );
+    now.scheduler = atomic_load_explicit(
+        &adapter->stat_scheduler_executions,
+        memory_order_seq_cst
+    );
+    return now;
+}
+
+static int wf_file_retired_since(
+    const wf_file_adapter *adapter,
+    wf_file_retirements seen
+) {
+    wf_file_retirements now = wf_file_retirements_now(adapter);
+    return now.helper != seen.helper || now.scheduler != seen.scheduler;
+}
+
 /* Waits until one operation running on another engine of this adapter has
  * published, and reports whether one did.
  *
@@ -432,15 +463,24 @@ static void wf_file_finish_execution(wf_file_adapter *adapter, int helper) {
  * execution reaches this open only after every operation now in flight has
  * finished, so waiting for one of them is source order, not a heuristic.
  *
+ * `seen` is read *before* the host attempt, and that is the whole of what
+ * makes the answer sound.  The question is not "is anything still running
+ * now" — an operation that retired between the refusal and this call has
+ * already given its descriptor back, and asking about the present would miss
+ * it and publish an exhaustion that no longer exists.  The question is
+ * "has anything retired since the attempt", which the generation answers
+ * whenever it was answered.
+ *
  * The wait ends without a retirement exactly when no engine is left that
  * could produce one — when every operation still executing is itself a thread
  * standing here.  That is what keeps several simultaneously refused opens
  * from waiting on each other: the last of them to arrive finds the difference
  * zero, publishes its refusal, and its publication is the retirement the
  * others were waiting for. */
-static int wf_file_await_a_retirement(wf_file_adapter *adapter) {
-    uint64_t helper_seen;
-    uint64_t scheduler_seen;
+static int wf_file_await_a_retirement(
+    wf_file_adapter *adapter,
+    wf_file_retirements seen
+) {
     int retired = 0;
     (void)pthread_mutex_lock(&adapter->queue_lock);
     atomic_fetch_add_explicit(
@@ -448,23 +488,8 @@ static int wf_file_await_a_retirement(wf_file_adapter *adapter) {
         1,
         memory_order_seq_cst
     );
-    helper_seen = atomic_load_explicit(
-        &adapter->stat_helper_executions,
-        memory_order_seq_cst
-    );
-    scheduler_seen = atomic_load_explicit(
-        &adapter->stat_scheduler_executions,
-        memory_order_seq_cst
-    );
     for (;;) {
-        if (atomic_load_explicit(
-                &adapter->stat_helper_executions,
-                memory_order_seq_cst
-            ) != helper_seen
-            || atomic_load_explicit(
-                   &adapter->stat_scheduler_executions,
-                   memory_order_seq_cst
-               ) != scheduler_seen) {
+        if (wf_file_retired_since(adapter, seen)) {
             retired = 1;
             break;
         }
@@ -538,7 +563,8 @@ static wf_file_result wf_file_retire_and_retry(
     wf_file_adapter *adapter,
     const wf_file_work *work,
     wf_file_result refused,
-    int helper
+    int helper,
+    wf_file_retirements before
 ) {
     size_t drained = 0;
     for (;;) {
@@ -550,7 +576,7 @@ static wf_file_result wf_file_retire_and_retry(
         wf_file_run_work(adapter, &queued, helper, 0);
         drained += 1;
     }
-    if (drained == 0 && !wf_file_await_a_retirement(adapter)) {
+    if (drained == 0 && !wf_file_await_a_retirement(adapter, before)) {
         /* Nothing this adapter owned could give a descriptor back, so the
          * refusal already is the outcome source order produces. */
         return refused;
@@ -569,10 +595,15 @@ static void wf_file_run_work(
     int helper,
     int retire_and_retry
 ) {
+    /* Read before the host attempt, because that is the moment the answer is
+     * about: an operation that retires while this one is inside `openat` has
+     * given its descriptor back, and a refusal decided by the state
+     * afterwards would miss it. */
+    wf_file_retirements before = wf_file_retirements_now(adapter);
     wf_file_result result = wf_file_execute_direct(&work->request);
     wf_completion_publication publication;
     if (retire_and_retry != 0 && wf_file_open_lacked_a_descriptor(&result)) {
-        result = wf_file_retire_and_retry(adapter, work, result, helper);
+        result = wf_file_retire_and_retry(adapter, work, result, helper, before);
     }
     publication = (wf_completion_publication) {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,

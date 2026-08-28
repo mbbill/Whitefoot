@@ -654,7 +654,13 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     entry->waiting_readiness = 0;
     entry->exhaustion_retried = 0;
     entry->retry_result = 0;
-    entry->retry_publications = 0;
+    /* Snapshot before the kernel can attempt this operation, so a completion
+     * published while it is in flight is visible as a descriptor that came
+     * back after the attempt began. */
+    entry->retry_publications = atomic_load_explicit(
+        &adapter->stat_completions,
+        memory_order_acquire
+    );
     entry->opened_descriptor = -1;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     entry->open_error = 0;
@@ -1048,8 +1054,15 @@ static int wf_linux_publish_completion(
     } else if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
         if (wf_linux_open_lacked_a_descriptor(completion->res)
             && entry->exhaustion_retried == 0
-            && atomic_load_explicit(&adapter->in_flight, memory_order_acquire)
-                > 1) {
+            && (entry->retry_publications
+                    != atomic_load_explicit(
+                           &adapter->stat_completions,
+                           memory_order_acquire
+                       )
+                || atomic_load_explicit(
+                       &adapter->in_flight,
+                       memory_order_acquire
+                   ) > 1)) {
             /* Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that
              * keeps several iterations in flight holds several descriptors
              * where source order holds one, so a host limit the sequential
@@ -1063,13 +1076,24 @@ static int wf_linux_publish_completion(
              * The entry is held instead, and the refusal it is carrying goes
              * with it.  What it is held for is a fact, not a moment: some
              * other operation this adapter owns must publish its completion
-             * before the re-attempt is staged, because only a published
+             * for the re-attempt to be worth making, because only a published
              * completion means the kernel has actually taken its descriptor
-             * back.  Re-staging inside this reap pass would not do — the pass
+             * back.
+             *
+             * Both halves of the test above are that one question asked at the
+             * right instant.  The snapshot was taken when this operation was
+             * submitted, so a publication since then is a descriptor that came
+             * back while the kernel was refusing this open, and the re-attempt
+             * is owed immediately — deciding from the ring's state at reap
+             * time instead would miss it, because a close reaped earlier in
+             * the same pass has already left `in_flight` at one.  Where
+             * nothing has been published yet, another operation still in
+             * flight is one that can publish, and the entry waits for it.
+             * Re-staging inside this reap pass would not do either: the pass
              * sees only the completions that existed when it read the ring's
              * tail, so a close submitted before this open, whose completion
-             * has not been posted yet, would lose the race to the very open
-             * it was going to make room for.
+             * has not been posted yet, would lose the race to the very open it
+             * was going to make room for.
              *
              * The language sees one `open_file` call with one outcome however
              * many host attempts formed it, exactly as it already does for a
@@ -1080,10 +1104,6 @@ static int wf_linux_publish_completion(
              * is entitled to see it. */
             entry->exhaustion_retried = 1;
             entry->retry_result = completion->res;
-            entry->retry_publications = atomic_load_explicit(
-                &adapter->stat_completions,
-                memory_order_acquire
-            );
             atomic_fetch_add_explicit(
                 &adapter->retry_held,
                 1,

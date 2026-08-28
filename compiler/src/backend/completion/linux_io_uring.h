@@ -93,10 +93,11 @@ typedef struct wf_linux_io_uring_entry {
      * second outcome is the one the program sees. */
     unsigned exhaustion_retried;
     /* The refusal a held open is carrying, and the number of terminal
-     * publications this adapter had made when it was refused.  The re-attempt
-     * is staged only once that number has moved — that is, once some other
-     * operation has actually given its descriptor back — and the refusal
-     * itself is published from `retry_result` if none ever can. */
+     * publications this adapter had made when the operation was submitted —
+     * before the kernel could run its `openat`, which is the moment the
+     * question is about.  The re-attempt is staged once that number has moved,
+     * because a completion published since then is a descriptor given back;
+     * the refusal itself is published from `retry_result` if none ever can. */
     int32_t retry_result;
     uint64_t retry_publications;
     /* An open's answer, decided when its completion is reaped. The descriptor
