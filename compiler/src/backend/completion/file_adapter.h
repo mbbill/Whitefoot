@@ -261,9 +261,6 @@ typedef struct wf_file_result {
 typedef struct wf_file_work {
     wf_completion_token token;
     wf_file_request request;
-    /* Batch 0096 attribution instrumentation — TEMPORARY; see contract.h.
-     * When the trace is off this field is never written or read. */
-    uint64_t queued_ns;
     /* An open's path bytes, owned by this record. */
     char path_storage[WF_FILE_PATH_CAPACITY];
 } wf_file_work;

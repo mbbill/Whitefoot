@@ -10,9 +10,6 @@
 #include <string.h>
 #include <time.h>
 
-/* Batch 0096 attribution instrumentation — TEMPORARY; see contract.h. */
-wf_completion_trace wf__completion_trace;
-
 /* Fixed scheduler injection. The completion core publishes only an opaque
  * frame. A link which registers no frame dependency needs no scheduler unit. */
 __attribute__((weak)) void wf__writer_scheduler_ready(void *frame) {
@@ -179,14 +176,10 @@ enum wf_completion_claim_result wf_completion_claim(
     size_t offset;
     size_t index;
     size_t start;
-    uint64_t traced = 0;
 
     if (runtime == NULL || token == NULL || runtime->slots == NULL
         || runtime->slot_count == 0) {
         return WF_COMPLETION_CLAIM_INVALID;
-    }
-    if (wf_completion_trace_enabled()) {
-        traced = wf_completion_trace_now();
     }
     start = atomic_fetch_add_explicit(
         &runtime->claim_cursor,
@@ -234,13 +227,6 @@ enum wf_completion_claim_result wf_completion_claim(
         token->slot = (uint32_t)index;
         token->generation = generation;
         atomic_fetch_add_explicit(&runtime->stat_claims, 1, memory_order_relaxed);
-        if (traced != 0) {
-            wf_completion_trace_add(
-                &wf__completion_trace.claim_ns,
-                &wf__completion_trace.claim_count,
-                traced
-            );
-        }
         return WF_COMPLETION_CLAIMED;
     }
 
@@ -422,7 +408,6 @@ static enum wf_completion_publish_result wf_completion_publish(
     wf_completion_slot *slot;
     uint64_t generation;
     unsigned phase;
-    uint64_t traced = 0;
 
     if (publication == NULL || publication->terminal_kind == 0
         || (publication->result_size != 0 && publication->result == NULL)) {
@@ -437,9 +422,6 @@ static enum wf_completion_publish_result wf_completion_publish(
     }
     if (!wf_completion_token_slot(runtime, token, &slot)) {
         return WF_COMPLETION_PUBLISH_STALE;
-    }
-    if (wf_completion_trace_enabled()) {
-        traced = wf_completion_trace_now();
     }
 
     (void)pthread_mutex_lock(&slot->publication_lock);
@@ -513,13 +495,6 @@ static enum wf_completion_publish_result wf_completion_publish(
     );
     (void)pthread_mutex_unlock(&slot->publication_lock);
     wf_completion_notify_scheduler(runtime);
-    if (traced != 0) {
-        wf_completion_trace_add(
-            &wf__completion_trace.publish_ns,
-            &wf__completion_trace.publish_count,
-            traced
-        );
-    }
     return WF_COMPLETION_PUBLISHED;
 }
 
@@ -614,7 +589,6 @@ size_t wf_completion_drain(
     size_t cursor;
     size_t index;
     uint32_t hint;
-    uint64_t traced = 0;
 
     if (runtime == NULL || runtime->slots == NULL || events == NULL
         || event_capacity == 0 || scan_budget == 0) {
@@ -628,9 +602,6 @@ size_t wf_completion_drain(
     if (atomic_load_explicit(&runtime->ready_events, memory_order_acquire)
         == 0) {
         return 0;
-    }
-    if (wf_completion_trace_enabled()) {
-        traced = wf_completion_trace_now();
     }
     /* The last publication named its own slot.  Taking it first costs one
      * compare-exchange, and when it was the only event outstanding the sweep
@@ -647,13 +618,6 @@ size_t wf_completion_drain(
         if (produced != 0
             && atomic_load_explicit(&runtime->ready_events, memory_order_acquire)
                 == 0) {
-            if (traced != 0) {
-                wf_completion_trace_add(
-                    &wf__completion_trace.drain_ns,
-                    &wf__completion_trace.drain_calls,
-                    traced
-                );
-            }
             return produced;
         }
     }
@@ -723,14 +687,6 @@ size_t wf_completion_drain(
          * handshake needs this second publication. Uncontended drain remains
          * a local state change. */
         wf_completion_notify_scheduler(runtime);
-    }
-    if (traced != 0) {
-        wf_completion_trace_add(
-            &wf__completion_trace.drain_ns,
-            &wf__completion_trace.drain_calls,
-            traced
-        );
-        wf_completion_trace_count(&wf__completion_trace.drain_scans, scanned);
     }
     return produced;
 }
@@ -890,14 +846,10 @@ enum wf_completion_consume_result wf_completion_consume(
     wf_completion_slot *slot;
     uint64_t generation;
     unsigned phase;
-    uint64_t traced = 0;
 
     if (outcome == NULL || (result_capacity != 0 && result == NULL)
         || !wf_completion_token_slot(runtime, token, &slot)) {
         return WF_COMPLETION_CONSUME_INVALID_ARGUMENT;
-    }
-    if (wf_completion_trace_enabled()) {
-        traced = wf_completion_trace_now();
     }
     (void)pthread_mutex_lock(&slot->publication_lock);
     generation = atomic_load_explicit(&slot->generation, memory_order_relaxed);
@@ -946,13 +898,6 @@ enum wf_completion_consume_result wf_completion_consume(
     );
     /* A slot-capacity waiter may live on another scheduler lane. */
     wf_completion_notify_capacity(runtime);
-    if (traced != 0) {
-        wf_completion_trace_add(
-            &wf__completion_trace.consume_ns,
-            &wf__completion_trace.consume_calls,
-            traced
-        );
-    }
     return WF_COMPLETION_CONSUMED;
 }
 
@@ -1047,13 +992,9 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
 ) {
     int error = 0;
     struct timespec deadline = {0, 0};
-    uint64_t traced = 0;
 
     if (runtime == NULL) {
         return WF_COMPLETION_PARK_FAILED;
-    }
-    if (wf_completion_trace_enabled()) {
-        traced = wf_completion_trace_now();
     }
     if (timeout_milliseconds != UINT32_MAX) {
         deadline = wf_completion_deadline(timeout_milliseconds);
@@ -1116,13 +1057,6 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
         memory_order_relaxed
     );
     (void)pthread_mutex_unlock(&runtime->wake_lock);
-    if (traced != 0) {
-        wf_completion_trace_add(
-            &wf__completion_trace.park_ns,
-            &wf__completion_trace.park_calls,
-            traced
-        );
-    }
 
     if (error == ETIMEDOUT) {
         return WF_COMPLETION_PARK_TIMED_OUT;

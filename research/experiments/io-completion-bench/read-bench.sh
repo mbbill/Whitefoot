@@ -118,15 +118,6 @@ emit_plan() {
     for h in 0 1 2 4 8; do
         printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t%s/wide8%s\n' "$h" "$h" "$OUT" "$suffix"
     done
-    # Batch 0096 attribution — TEMPORARY. These lines exist for the `wf-trace`
-    # stage table each prints on standard error, not for their own median: the
-    # trace reads a clock at every stage boundary, so a traced line's time is
-    # its own and is not comparable with the line above it.
-    printf 'C.wide8.default.trace\tWF_IO_TRACE=1\t%s/wide8%s\n' "$OUT" "$suffix"
-    for h in 0 2 8; do
-        printf 'C.wide8.h%s.trace\tWF_IO_HELPERS=%s,WF_IO_TRACE=1\t%s/wide8%s\n' \
-            "$h" "$h" "$OUT" "$suffix"
-    done
 }
 
 emit_plan "$READS_64K" 65536 "" > "$OUT/plan-64k.txt"
