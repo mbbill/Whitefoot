@@ -2,9 +2,9 @@
 
 Branch: `batch/0098-blind-writer`, from `main` at `b2e2e267`.
 Deliverables: the blind-writer corpus at
-`research/experiments/blind-writer/2026-08-28/` — seven writer programs, three
-judge probes, the writer's report, and the `--par-ledger` output for all ten;
-this record and its defect table.
+`research/experiments/blind-writer/2026-08-28/` — seven writer programs, five
+judge probes, the writer's report, and the `--par-ledger` output for all
+twelve; this record and its defect table.
 
 This batch changed no compiler code and no pattern. It is a measurement of the
 language as it stands.
@@ -123,16 +123,27 @@ Shape, `programs/p5_two_outputs.wf:131`:
         match emit_all<'report_emit, 'report_emit>(output: &uniq 'report_emit out, source: &'report_emit report, length: report_end) {
 ```
 
-Consequence. The writer's own probe pair isolates it: `probe_a` and `probe_b`
-differ by one `write_once` inside the loop, and only that.
+Consequence, isolated by three files. The writer's own pair is not a one-write
+pair: besides the `write_once` in the loop body, `programs/probe_b_staged_denied.wf`
+gives `main` a `command.stdout as out: own Output` parameter and the `reads`
+and `writes` rows that go with it, so `probe_b` against `probe_a` cannot by
+itself tell the write apart from the output. The judge's
+`probes/probe_b1_write_after_loop.wf` is the control: the same `Output`
+parameter, the same single `write_once`, moved below the loop.
 
 ```text
-probe_a  PAR stage  for  permitted  staged at open_file<'f, 'n>(…); 5 places classified
-probe_b  PAR stage  for  denied     condition 3: a may-suspend call retains a borrow past its own
-         submission on storage the body writes and the iteration does not introduce … at &uniq 'say out
-probe_b  PAR place  denied  &uniq 'say out  the body writes it through a retained borrow and its
-         type carries one position, so no iteration can be given its own
+probe_a   PAR stage  for  permitted  staged at open_file<'f, 'n>(…); 5 places classified
+          PAR place  serialized-P  &uniq 'f files  … prologues run in index order without overlapping
+probe_b   PAR stage  for  denied     condition 3: a may-suspend call retains a borrow past its own
+          submission on storage the body writes and the iteration does not introduce … at &uniq 'say out
+          PAR place  denied  &uniq 'say out  the body writes it through a retained borrow and its
+          type carries one position, so no iteration can be given its own
+probe_b1  PAR stage  for  permitted  staged at open_file<'f, 'n>(…); 5 places classified
+          PAR place  serialized-P  &uniq 'f files  … prologues run in index order without overlapping
 ```
+
+The write's position inside the loop, not the presence of an `Output`, is what
+the verdict turns on.
 
 The same denial appears in every real program, naming the writer's own output
 borrow: `&uniq 'recurse deref(output)` in p1 and p2, `&uniq 'flush
@@ -161,20 +172,29 @@ fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, directory: &'d Direct
 }
 ```
 
-Consequence, isolated by `probes/probe_c_helper_denied.wf`, which is
-`probe_a_staged_permitted.wf` with exactly this factoring and nothing else:
+Consequence, isolated by a pair the judge had to complete.
+`probes/probe_c_helper_denied.wf` is not `probe_a_staged_permitted.wf` plus the
+helper alone: it also adds the `let room_name = len(name); let name_fits =
+ile(2_u64, room_name);` guard the helper's `requires` obliges the caller to
+discharge, deletes the inner `region 'n`, and rebinds `name` at `'f`.
+`probes/probe_c_inline_same_regions.wf` carries all three of those changes with
+`reserve_file` and `open_file` still written inline, so it differs from
+`probe_c_helper_denied.wf` by the factoring and nothing else:
 
 ```text
-probe_a  PAR stage  for  permitted  staged at open_file<'f, 'n>(…); 5 places classified
-         PAR place  serialized-P  &uniq 'f files   … prologues run in index order without overlapping
+probe_c_inline  PAR stage  for  permitted  staged at open_file<'f, 'f>(…); 5 places classified
+                PAR place  serialized-P  &uniq 'f files   … prologues run in index order without overlapping
 
-probe_c  PAR stage  for  denied     condition 3: a may-suspend call retains a borrow past its own
-         submission … at &uniq 'f files
-         PAR place  denied  &uniq 'f files  the body writes it through a retained borrow and its
-         type carries one position, so no iteration can be given its own
+probe_c         PAR stage  for  denied     condition 3: a may-suspend call retains a borrow past its own
+                submission … at &uniq 'f files
+                PAR place  denied  &uniq 'f files  the body writes it through a retained borrow and its
+                type carries one position, so no iteration can be given its own
 ```
 
-Every other `PAR place` classification is identical between the two.
+Every other `PAR place` classification is identical between the two: `&'f cwd`
+read-only, `set digest` serialized-E, and both buffers replicated. The helper
+boundary alone flips the verdict; the guard, the region collapse and the
+rebinding do not.
 
 The writer did not choose the helper. `[OWN-6]` admits a child reborrow only
 when its region "is a locally-introduced region whose block does not extend
@@ -191,6 +211,93 @@ statement-scoped child reborrow must be able to bind a value that outlives its
 region, or the staged judgment must see through a callee whose only retained
 loan is the reserve it immediately consumes. A pattern entry cannot fix this,
 because the form the pattern would teach is the one `[OWN-6]` rejects.
+
+## What D1 and D2 would not buy on their own
+
+Neither fix, and not both together, would give any of the five programs a
+single overlapped operation. D1 and D2 are each necessary and neither is
+sufficient, and the record says so here so that no reader takes the two
+dispositions above as a route to overlap. Every ledger line below is from
+`whitefootc --par-ledger` at this branch's compiler, sources named by relative
+path because of D6, with the `programs/` prefix and the column padding trimmed
+and long reasons wrapped; `research/experiments/blind-writer/2026-08-28/ledger/`
+holds them untrimmed.
+
+In p1 and p2 the loop whose iterations are separate files — one directory
+record per iteration, opened by `open_regular_from` and counted, or by
+`open_child_from` and recursed into — is
+`for @records` at `p1_tree_wc.wf:335` and `p2_tree_grep.wf:307`. Neither of its
+two verdicts names an output loan or a factory loan, and neither is reached by
+D1 or D2:
+
+```text
+PAR loop   p1_tree_wc.wf:335  loop  denied  condition 2: the body contains a statement that forms a
+           borrow of storage the iteration does not introduce
+PAR stage  p1_tree_wc.wf:335  for   denied  condition 1: a statement of the body neither executes before
+           the submission on every path nor is reached only through it; instead, write the body so its
+           first I/O submission is reached on every path through it and everything else is reached only
+           through it, at set cursor = cursor +wrap record_size;
+```
+
+It is denied before any place is classified, so no `PAR place` line is emitted
+for it at all.
+
+Where D1's and D2's places do appear is the enclosing `loop @batches`
+(`p1_tree_wc.wf:304`, `p2_tree_grep.wf:277`), whose iterations are batches of
+directory entries and whose stage verdict is reported at its `directory_next`
+submission, `p1_tree_wc.wf:315` and `p2_tree_grep.wf:288`. There the stage
+denial names neither fix, and D1 and D2 account for one denied place each out
+of five:
+
+```text
+PAR stage  p1_tree_wc.wf:315  loop  denied  condition 7: the body contains a statement that forms a
+           borrow of storage the iteration does not introduce; instead, write the borrow as an argument
+           of the call that uses it, where its loan is stated, or borrow only storage the iteration introduces
+PAR place  p1_tree_wc.wf:315  denied  let room = len(entries);       the body writes it and a may-suspend
+           call retains a borrow of it past its own submission
+PAR place  p1_tree_wc.wf:315  denied  &uniq 'batch list              the body writes it through a retained
+           borrow and its type carries one position, so no iteration can be given its own
+PAR place  p1_tree_wc.wf:315  denied  &uniq 'descend deref(factory)  … carries one position …      ← D2
+PAR place  p1_tree_wc.wf:315  denied  &uniq 'recurse deref(output)   … carries one position …      ← D1
+PAR place  p1_tree_wc.wf:315  denied  &uniq 'recurse deref(chunk)    the body writes it and a may-suspend
+           call retains a borrow of it past its own submission
+```
+
+`p2_tree_grep.wf:288` carries the same condition-7 stage denial and the same
+five denied places. With D1 and D2 both fixed, this loop would additionally
+need: the condition-7 borrow form rewritten so every borrow is an argument of
+the call that uses it; the length fact `len(entries)` to survive the callee
+write that kills it; a per-iteration position for `&uniq 'batch list`, which is
+D1's one-position problem again, on the directory listing rather than on
+`Output`; and per-iteration scratch for `&uniq 'recurse deref(chunk)`.
+
+`p3_checksum.wf` steps one file per iteration in `for @each` at
+`p3_checksum.wf:189`, and both of its verdicts name reasons D1 and D2 do not
+touch:
+
+```text
+PAR loop   p3_checksum.wf:189  loop  denied  condition 1: the loop writes storage outliving the iteration
+           that no exactly associative operation reduces, at set status = outcome;
+PAR stage  p3_checksum.wf:189  for   denied  condition 1: a statement of the body neither executes before
+           the submission on every path nor is reached only through it; instead, write the body so its
+           first I/O submission is reached on every path through it and everything else is reached only
+           through it, at clean
+```
+
+It would additionally need its `status` fold made associative or lifted out of
+the loop, and its body reshaped so the first submission dominates. `p5`'s
+report loop at `p5_two_outputs.wf:114` is denied by that same path-shape
+condition, and would need the same reshaping. `p4_copy_count.wf` has no
+per-file loop; it copies one file.
+
+The loops D1 does name in all five programs are the shared `emit_all` retry
+loop — `p1:126`, `p2:62`, `p3:115`, `p4:99`, `p5:96` — and `p4:128`, which
+carries D1's `&uniq 'flush deref(output)` place. Each of the first five is also
+denied by condition 2, `a return leaves the loop from the remainder`, for the
+error propagation inside it, and `p4:128` by the `break` form of the same
+condition; removing D1's place would leave those standing. And each of these
+loops retries the remaining bytes of one write rather than stepping separate
+files, so overlapping it is not what the completion model is for.
 
 ## D3 — the [OWN-6] rejection tells the writer nothing
 
@@ -505,8 +612,11 @@ lowering is the project's declared open work, not a defect this trial found.
 No compiler change, no pattern change, no spec change. The dispositions above
 are findings; each names what would have to change and why, and none of them
 was made here. Seven of the fourteen are diagnostics or ledger surfacing, which
-are the cheapest, and two — D1 and D2 — are the ones that decide whether the
-completion model reaches the shape of an ordinary utility.
+are the cheapest. Two — D1 and D2 — are the ones the completion model's own
+vocabulary names in these programs, and they are where a reader will want to
+start; neither alone nor both together would give any of the five programs an
+overlapped operation, for the reasons and ledger lines set out under *What D1
+and D2 would not buy on their own*.
 
 ## Evidence
 

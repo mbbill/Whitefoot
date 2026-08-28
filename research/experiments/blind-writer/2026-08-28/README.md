@@ -36,12 +36,20 @@ trial adds one dated directory beside this one, and the batch record in
   assumes their tree; use the one below instead.
 - `programs/` — the five utilities (`p1`–`p5`) and the writer's two
   `--par-ledger` probes, byte-identical to what the writer submitted.
-- `probes/` — three programs the judge wrote to isolate a claim the report
-  makes. `probe_c_helper_denied.wf` is `probe_a_staged_permitted.wf` with
-  `reserve_file` and `open_file` factored into one helper and nothing else
-  changed. `probe_d_reborrow_two_statements.wf` is the smallest [OWN-6]
-  rejection. `probe_e_hoisted_length.wf` is `p5_two_outputs.wf` with both
-  `len` bindings hoisted above the loop and above every write.
+- `probes/` — five programs the judge wrote to isolate a claim the report
+  makes. `probe_b1_write_after_loop.wf` is `probe_b_staged_denied.wf` with its
+  one `write_once` moved below the loop, keeping the `Output` parameter, so the
+  write's position is the only difference from a permitted verdict.
+  `probe_c_helper_denied.wf` is `probe_a_staged_permitted.wf` with
+  `reserve_file` and `open_file` factored into one helper, plus the `len`/`ile`
+  guard that helper's `requires` obliges the caller to discharge, the inner
+  `region 'n` collapsed into `'f`, and `name` rebound at `'f`.
+  `probe_c_inline_same_regions.wf` carries those three incidental changes with
+  the reserve and open still inline, so it and `probe_c_helper_denied.wf`
+  differ by the factoring alone. `probe_d_reborrow_two_statements.wf` is the
+  smallest [OWN-6] rejection. `probe_e_hoisted_length.wf` is
+  `p5_two_outputs.wf` with both `len` bindings hoisted above the loop and above
+  every write.
 - `ledger/` — `whitefootc --par-ledger` output for every program above, taken
   with the gate build of the compiler at this branch's base.
 
