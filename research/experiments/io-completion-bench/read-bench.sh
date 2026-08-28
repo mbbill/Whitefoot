@@ -127,10 +127,19 @@ emit_plan "$READS_4K" 4096 _4k > "$OUT/plan-4k.txt"
 # each file and then, on Linux, drops its pages; a cache policy on a reading
 # descriptor cannot evict what a write or a warm table has already made
 # resident, so an uncached table has to be handed a tree that is not there.
+#
+# The two `cd`s are load-bearing: every Whitefoot line opens its eight files by
+# name under the process's working directory, and this function unlinks the
+# directory the shell is standing in. It steps out before the removal and into
+# the new tree after it. Without that, every C line would still work -- they
+# take an absolute root -- and every Whitefoot line would fail to open
+# anything.
 uncache_tree() {
+    cd "$OUT"
     rm -rf "$OUT/tree"
     "$OUT/gen" "$OUT/tree" "$READ_FILES" "$READ_KIB" fixed
     sync
+    cd "$OUT/tree"
 }
 
 # Reads the whole tree back in, so a warm table has the state it claims. A

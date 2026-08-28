@@ -83,6 +83,14 @@ READ_LINUX_ROUNDS ?= 9
 READ_PROBES ?= 16
 READ_THRESHOLD_US ?= 40
 READ_TOLERANCE_PERCENT ?= 10
+
+# How long a freshly generated tree is left alone before it may be measured.
+# Writing half a gigabyte makes the host's malware scanner walk the new files
+# once, which holds a few of them resident for a minute or two; `read-settle`
+# waits that out rather than measuring through it. See the comment above
+# `read-settle` for the observation.
+READ_SETTLE_ATTEMPTS ?= 24
+READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
 .PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean \
