@@ -1,10 +1,14 @@
 # Batch 0092 — a read-dominated workload, and reads that really wait
 
-Branch: `batch/0092-read-workload`, from `main` at `79b29665`.
-Deliverables: the `WF_IO_NOCACHE` target policy in `compiler/`, the read-heavy
-workload and its page-cache verification in
-`research/experiments/io-completion-bench/`, the read-dominated section of
-`research/investigations/io-model/RESULTS.md`, this record.
+Branch: `batch/0092-read-workload`, from `main` at `79b29665`, with
+`batch/0090-ci-real-hosts` merged in at its tip `7c644216` for the workflow the
+tables are taken through.
+Deliverables: the `WF_IO_NOCACHE` target policy in `compiler/`; the read-heavy
+workload, its page-cache verification, and the host-portable `read-bench.sh`
+in `research/experiments/io-completion-bench/`; the `bench-linux-read` and
+`bench-macos-read` jobs in `.github/workflows/io-hosts.yml`; the
+read-dominated section of `research/investigations/io-model/RESULTS.md`; this
+record.
 
 ## Charter
 
