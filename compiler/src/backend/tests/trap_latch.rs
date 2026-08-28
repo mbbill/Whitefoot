@@ -123,6 +123,15 @@ command fn main() -> status: own ExitStatus traps {
 /// confidence in a rate.
 const SAMPLES: usize = 40;
 
+/// How many runs of the latch-defeated control always happen, every caught one
+/// checked in full: the sample the control had before any host lost it.
+const CONTROL_RUNS_ALWAYS: usize = 8;
+
+/// How many runs the control may take in all before it gives up looking for
+/// a caught one, sized for the slowest host the gate has shown; see the
+/// control's own comment for the rate and the arithmetic.
+const CONTROL_RUNS_AT_MOST: usize = 512;
+
 /// The record channel of one run, split into its lines, with the exit status.
 fn trap_run(executable: &std::path::Path, workers: &str) -> (Option<i32>, Vec<u8>) {
     let output = Command::new(executable)
@@ -277,9 +286,18 @@ fn a_single_false_claim_reports_the_same_bytes_at_every_worker_count() {
 /// The injection is one token — the latch is still taken, and its answer is
 /// still computed, but every thread is sent down the writing edge — so what it
 /// removes is exactly the mechanism and nothing else. Detection was measured
-/// at 200 of 200 runs on this machine, both threads reaching the writer
-/// because `abort` on the winner is not instantaneous; eight runs here put a
-/// false green far below anything else that could go wrong in this file.
+/// at 200 of 200 runs on this machine, ten cores, both threads reaching the
+/// writer because `abort` on the winner is not instantaneous. On the
+/// three-core `macos-14` runner it is a race the second thread often loses:
+/// the gate of `25ac56ef` caught none in eight runs after twelve gates that
+/// had caught at least one, which puts that host's rate near one run in four.
+/// So the sample is sized for that host rather than this one. The first
+/// [`CONTROL_RUNS_ALWAYS`] runs always happen and every caught one is checked
+/// in full, as before; after them the loop stops at the first catch, or at
+/// [`CONTROL_RUNS_AT_MOST`] attempts. A host catching one run in four then
+/// misses about never, one catching one in fifty misses about once in thirty
+/// thousand gates, and a host that never catches spends about ten seconds —
+/// twenty milliseconds an attempt here — before saying so.
 ///
 /// A caught run must carry **two** well-formed records rather than merely not
 /// one, so an empty record channel cannot pass for a defeated latch.
@@ -305,7 +323,10 @@ fn the_latch_is_what_keeps_the_record_single() {
     let executable = build_executable(&defeated, &directory);
 
     let mut caught = 0;
-    for run in 0..8 {
+    for run in 0..CONTROL_RUNS_AT_MOST {
+        if caught > 0 && run >= CONTROL_RUNS_ALWAYS {
+            break;
+        }
         let (_, stderr) = trap_run(&executable, "4");
         if sole_record(&stderr).is_ok() {
             continue;
@@ -336,8 +357,8 @@ fn the_latch_is_what_keeps_the_record_single() {
     }
     assert!(
         caught > 0,
-        "defeating the latch changed nothing observable in eight runs, so \
-         these cases cannot see a second record"
+        "defeating the latch changed nothing observable in {CONTROL_RUNS_AT_MOST} \
+         runs, so these cases cannot see a second record"
     );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
