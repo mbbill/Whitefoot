@@ -1213,10 +1213,9 @@ void wf_completion_operation_retired(int returned_a_descriptor) {
      *
      * An operation that returned nothing moves only the in-flight count.  It
      * still ends, so a waiter for which it was the last operation in flight
-     * anywhere else answers — with "publish", which is what the program's own
-     * sequential execution produces once nothing is left holding a descriptor.
-     * What it must not do is grant a re-attempt: there is nothing new for a
-     * second host attempt to find, and a refused open has only one. */
+     * anywhere else stops waiting and answers, which is the rule's fourth step.
+     * What it must not do is answer the second step: a re-attempt spent here
+     * is spent on nothing this runtime gave back, and a refused open has one. */
     if (returned_a_descriptor != 0) {
         atomic_fetch_add_explicit(
             &wf_retirement_returns,
