@@ -310,7 +310,9 @@ borrowed factory, helper PAR stage  probes/walk_helper.wf:14   for  denied     c
 So: an owned entry factory takes the inline form and is granted; a `&uniq`
 factory takes the helper form and pays the pipeline, because there is no third
 form. The entry says the helper is only the first of three parts and names the
-other two.
+other two. This is the writer-facing resolution only: D2's own
+`compiler-change` proposal — making the helper boundary not cost the pipeline —
+is untouched and still open.
 
 Line ~412's overclaim is corrected in the same entry. It said an ordinary
 compile "prints the denied verdict of every I/O loop", which is not true and was
@@ -491,7 +493,12 @@ pins any of the diagnostic text this batch changed — `git grep -l` over
 `instantiated_goal`, and `mechanical_fix` returns nothing. Rule 4 therefore
 records nothing for this merge.
 
-`docs/done/0098-blind-writer.md` D2, open since 2026-08-28, is closed by item 9.
+`docs/done/0098-blind-writer.md` D2 keeps its `compiler-change` classification
+and stays open: nothing here makes the helper boundary cost less, and the
+`probe_c` pair still flips on that boundary alone. What item 9 closes is the
+writer-facing half — P15 stated the conflict and left a writer with no form to
+take, and it now names which form to write in each of the two positions and
+what each one costs.
 
 ## What this batch did not do
 

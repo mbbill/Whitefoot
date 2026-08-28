@@ -430,8 +430,10 @@ copy rather than a fact to rediscover:
   lives inside that `match` arm, because the opened value dies with the region.
   `tests/programs/dir_walk.wf` is that form written out, and [OWN-6]'s own
   rejection now states all three parts. The recorded finding is
-  `docs/done/0098-blind-writer.md` D2 and its resolution is
-  `docs/done/0100-writer-defaults-2.md`.
+  `docs/done/0098-blind-writer.md` D2; this is its writer-facing resolution,
+  recorded in `docs/done/0100-writer-defaults-2.md`. D2's own proposal — that
+  the helper boundary should not cost the pipeline — is a compiler change and
+  is still open, so the price above is today's price and not a fixed one.
 
 Read the verdict rather than guessing it. An ordinary `whitefootc` compile
 prints a denied staged verdict to stderr, prefixed `whitefootc: note:`, with
