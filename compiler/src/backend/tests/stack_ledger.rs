@@ -16,7 +16,7 @@
 
 use std::process::Command;
 
-use super::super::{FLOOR_STACK_BYTES, stack_ledger};
+use super::super::{Architecture, FLOOR_STACK_BYTES, stack_ledger};
 use super::exhaustion::spine_source;
 use super::{build_executable, compile, test_directory};
 
@@ -113,7 +113,7 @@ pub(super) fn ledger_lines(emitted: &str, directory: &std::path::Path) -> Vec<St
     let usage =
         std::fs::read_to_string(directory.join("ledger.su")).expect("read the stack-usage report");
     let text = std::fs::read_to_string(&assembly).expect("read the ledger assembly");
-    stack_ledger(&usage, &text, FLOOR_STACK_BYTES)
+    stack_ledger(&usage, &text, FLOOR_STACK_BYTES, Architecture::HOST)
 }
 
 /// What the ledger says one level of a named recursion costs, in bytes.
@@ -174,34 +174,15 @@ fn completes(source: Vec<u8>, directory: &std::path::Path) -> bool {
     false
 }
 
-/// What one activation costs beyond the frame `-fstack-usage` reports for it,
-/// per architecture.
-///
-/// Read from [`std::env::consts::ARCH`] rather than from a `cfg!` of its own,
-/// so this is an independent statement of the rule and not a copy of the
-/// ledger's predicate: a ledger that added the eight bytes on the wrong
-/// architecture would satisfy its own `cfg!` and fail this.
-fn call_return_address_bytes() -> u64 {
-    match std::env::consts::ARCH {
-        // The caller's `call` pushes the return address; the callee's own
-        // figure starts below it.
-        "x86_64" => 8,
-        // The return address arrives in the link register and the callee
-        // spills it inside the frame it reports.
-        "aarch64" => 0,
-        other => panic!("no qualified target runs on {other}, so no cost is recorded for it"),
-    }
-}
-
 /// A row is what one activation costs, not what the function allocated.
 ///
 /// [`the_reported_ceiling_is_the_measured_one`] is the whole truth about this
 /// arithmetic and it is also the expensive way to state it: it compiles four
 /// programs and runs them, and it can only ever speak about the machine it is
-/// running on. This states the same rule from a synthetic report, in one
-/// millisecond, and states it for both architectures — the eight bytes x86-64
-/// leaves out of every figure it reports are exactly what the ledger got wrong
-/// before batch 0090, and the two gate hosts between them run both arms.
+/// running on. This states the same rule from a synthetic report, in a
+/// millisecond, for both architectures at once — the eight bytes x86-64 leaves
+/// out of every figure it reports are exactly what the ledger got wrong before
+/// batch 0090, and an arm64 machine can now be the one that says so.
 ///
 /// The cycle row is checked with the frame row because the cost is what the
 /// division consumes: an activation count is the runtime's stack over what one
@@ -218,16 +199,37 @@ fn a_row_is_what_one_activation_costs() {
     // all the graph reader needs to see a function that reaches itself.
     let assembly = "wf_probe:\n\tcall wf_probe\n\tret\n";
 
-    let level = REPORTED + call_return_address_bytes();
-    let lines = stack_ledger(&usage, assembly, STACK);
-    assert!(
-        lines
-            .iter()
-            .any(|line| line.starts_with("STACK frame") && line.contains(&format!("{level} B"))),
-        "a frame row must cost one activation, which is {level} bytes here: {lines:#?}"
-    );
-    assert_eq!(reported_frame_bytes(&lines, "wf_probe"), level);
-    assert_eq!(reported_levels(&lines, "wf_probe"), STACK / level);
+    for (architecture, level) in [
+        (Architecture::X86_64, REPORTED + 8),
+        (Architecture::Arm64, REPORTED),
+    ] {
+        let lines = stack_ledger(&usage, assembly, STACK, architecture);
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("STACK frame")
+                    && line.contains(&format!("{level} B"))),
+            "on {architecture:?} one activation costs {level} bytes: {lines:#?}"
+        );
+        assert_eq!(reported_frame_bytes(&lines, "wf_probe"), level);
+        assert_eq!(reported_levels(&lines, "wf_probe"), STACK / level);
+    }
+}
+
+/// The architecture the ledger calls the host's is the machine's own.
+///
+/// Read from [`std::env::consts::ARCH`] rather than from a `cfg!` of its own,
+/// so this is an independent statement and not a copy of the ledger's
+/// predicate: a `HOST` that named the wrong architecture would satisfy its own
+/// `cfg!` and fail here.
+#[test]
+fn the_hosts_architecture_is_the_one_the_machine_reports() {
+    let expected = match std::env::consts::ARCH {
+        "x86_64" => Architecture::X86_64,
+        "aarch64" => Architecture::Arm64,
+        other => panic!("no qualified target runs on {other}, so the ledger has no rule for it"),
+    };
+    assert_eq!(Architecture::HOST, expected);
 }
 
 /// The reported ceiling and the measured one agree, at two frame widths.

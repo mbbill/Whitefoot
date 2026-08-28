@@ -27,8 +27,9 @@ batch demonstrates rather than predicts.
 It serves a current compiler capability: the Linux half of the compiler — the
 io_uring adapter, the `__linux__` arm of every compiler-owned C unit, the ELF
 link path, the stack ledger's assembly reader — had no host that exercised it
-except a container the maintainer started by hand, and this batch found three
-defects in that half within one run. No existing directory owns it: a GitHub
+except a container the maintainer started by hand, and this batch found five
+defects in that half, three of them in the first run and the last two only
+because the earlier fixes let a run reach them. No existing directory owns it: a GitHub
 workflow is addressed by path, `.github/workflows/*.yml`, and cannot live
 anywhere else. And it is removed when the project stops needing a host it does
 not own — which, while Linux and Windows are qualification targets, it will
@@ -54,9 +55,15 @@ the ring. A job whose entire purpose is native-adapter evidence is not, so the
 job runs the probe itself first and fails on 77 rather than letting the
 fallback path be reported as an io_uring result.
 
-## What the first run found
+## What the gate found on the new hosts
 
-Five distinct stops, in three classes. None of them was visible from one host.
+Sixteen distinct stops, in three classes, over the batch's runs — five
+defects, five tests that were measuring a host rather than the compiler, and
+six cases a host cannot reach. None of them was visible from one host, and the later ones were
+reachable only because the earlier fixes let a run get that far: a ledger with
+no call graph cannot be caught reporting the wrong depth, a job that stops in
+`cargo test` never links the program corpus, and one that stops in the program
+corpus never reaches the research tests.
 
 ### Defects, fixed
 
@@ -90,11 +97,65 @@ generated one did not. Eleven `deterministic_target` cases failed to build.
 runtime it links against sets that macro for the same call; the fixture did
 not, because the arm had never been compiled anywhere.
 
-That third one is the same shape as batch 0085's `bridge.c` finding — code
+**The stack ledger promised twice the recursion depth x86-64 has.** With the
+call graph readable, the ledger's own end-to-end case — build the recursion
+just inside the reported ceiling, build it just outside, run both — failed on
+the inside half: the ledger reported 134,217,728 levels of the tight spine on
+the one-gigabyte runtime stack and the program died at 134,083,510. The cause
+is that `-fstack-usage` reports what a function allocates for itself, and the
+two qualified architectures put the return address on opposite sides of that
+line. Emitting one module and compiling it for both targets shows it directly:
+`wf_spine` reports 8 bytes on x86-64 and its whole prologue is `pushq %rax`,
+with the return address the caller's `call` pushed sitting above the 8; it
+reports 16 on arm64, with a prologue of `stp x29, x30, [sp, #-16]!` that
+stores the return address inside the 16. One activation costs sixteen bytes on
+both machines and only the reporting differs, so on x86-64 the ledger was
+dividing the runtime's stack by half a level's cost.
+
+Every frame now carries the return address the report leaves out — eight bytes
+on x86-64, none on arm64 — so a row is what one activation costs and the level
+count divides by that. Over-promising depth is the dangerous direction for this
+artifact: a writer who believes it writes a recursion the machine cannot run.
+
+The rule arrived as a `cfg!` inside the ledger, and the next Linux run showed
+why that was the wrong shape: two cases in the ledger's own module read one
+synthetic arm64 report and assert the rows it produces, and on an x86-64 host
+the ledger was adding that host's eight bytes to that report's numbers. A pure
+text-processing function had a hidden input. `stack_ledger` now takes the
+`Architecture` its report describes: the fixture cases name `Arm64`, which is
+what their fixture is, and the driver and the compile-and-run cases name
+`Architecture::HOST`, which `backend/target.rs` already establishes is the only
+architecture this compiler emits for.
+
+The end-to-end case still runs, and beside it `a_row_is_what_one_activation_costs`
+states the arithmetic from a synthetic report without compiling anything —
+both architectures at once, from either machine — pinning the eight bytes in
+the frame row, the cycle row and the division alike. A second case pins
+`Architecture::HOST` against `std::env::consts::ARCH` rather than repeating the
+ledger's own `cfg!`, so a ledger that named the wrong architecture cannot
+satisfy itself.
+
+**No link named the math library.** With the compiler's own tests green, the
+run reached the program corpus, and five of its cases did not link, across
+three programs. A
+Whitefoot module reaches libm without asking for it: the backend lowers a
+rounding to `roundevenf` and a fused multiply-add to `fma`, and the host
+optimizer turns other float arithmetic into `ceil` and `floor`.
+`grayscale_pixels`, `feedback_controller` and `par_layout` each end with one of
+those undefined. Darwin serves them from the library every program already
+links, and says nothing; an ELF host keeps them in libm and the link fails.
+This is the shipped driver's own link path, not a test harness: `whitefootc`
+on that host would have failed the same way on the same programs.
+`HOST_LINK_LIBRARIES` now names the library once, beside
+`HOST_OPTIMIZATION_ARGUMENTS` and for the same one-definition reason, and the
+driver and both test link paths pass it. On Darwin it resolves to a stub that
+is already linked, so this stays one link path rather than two.
+
+The third of those is the same shape as batch 0085's `bridge.c` finding — code
 written for a platform, shipped, and never once put through a compiler for
 that platform. It is the standing argument for this batch.
 
-### Tests that read one optimizer's choices as the rule
+### Tests that were measuring the host
 
 **`system_io` rejected the wrong symbol.** The transfer-path case asserted
 that no `@wf.sys.` symbol survives a call in the optimized entry. What it means
@@ -104,6 +165,51 @@ on the failure arms and carries no transfer, and whether the optimizer leaves
 it as a call or outlines it into a `.cold.` region is that optimizer's choice:
 clang 21 on Darwin outlines it, clang 18 on Linux does not. The assertion now
 names it, so it is about the transfer path rather than about one clang.
+
+**The overlapped world was bounded by a multiple of one host's register
+allocator.** `the_shipped_default_keeps_a_deep_recursion` asked that one
+activation of the world an unconfigured `--par` binary runs in cost no more
+than twice one activation of the sequential clone beside it. The lowering
+costs the same on both architectures and the baseline does not: 48 bytes an
+overlapped level on each, against 32 a sequential level on arm64 and 16 on
+x86-64, so the identical lowering reads as a ratio of 1.5 on one host and 3 on
+the other. The bound of two was a fact about which values the arm64 allocator
+had to spill, not about the hand-out. It is now the overhead itself — six
+machine words, against a measured two on arm64 and four on x86-64 — which is a
+property of what the claim keeps live across `wf__par_claim`. The mechanism
+the case guards, that the claim's record belongs to the lane so a refused
+hand-out builds nothing, is held exactly and with no tolerance by
+`handing_a_call_out_adds_no_stack_slot`.
+
+**A grant observation was sampling the runner's schedule.** Two cases assert
+that the parallel runtime is granted at least one lane — the existential claim
+without which every other parallel case would pass just as well against a
+runtime that granted nothing. A grant is a steal, and a steal is a scheduling
+event: the offering thread can finish the work itself before any pool thread
+reaches the offer, and on a busy machine it often does. Five runs were enough
+on this machine and not on the runners: the three-core macOS runner totalled
+zero over the default pool's five runs in one gate run and was granted on the
+first run of the next, and the four-core Linux runner lost the four-worker one
+the same way. Both now sample `GRANT_OBSERVATION_RUNS` — thirty-two runs of one
+linked module, which costs a fraction of a second. A runtime that grants
+nothing still totals zero over all of them, so what the assertion refuses is
+unchanged.
+
+**The stackless migration observation was a rare race sampled as if it were
+not.** The migration half of that case asks a scheduler worker to claim a ready
+frame inside a window one call wide, before the writer thread resumes it
+itself. On this machine, with ten cores, it happens within a run or two, and
+the sample was sixteen runs; the batch raised it to ninety-six when a Linux
+runner reached zero. That was still the wrong order of magnitude. Measured
+across this batch's gate runs, both runners reached one migration in some runs
+and none across a whole ninety-six-run sample in others, which puts the rate
+near one attempt in a hundred and made ninety-six attempts a coin flip — every
+lost flip a red gate reporting a scheduler defect that was not there. The
+sample is now a thousand and twenty-four attempts, which miss a one-in-a-
+hundred event about once in a thousand gate runs. The loop stops at the first
+migration, so the cost is paid only where the event is rare: 16 milliseconds a
+run here, so a host that sees one immediately spends nothing and a host that
+never does spends about twenty seconds.
 
 **The wfgrep cost census had a hole, and the second macOS toolchain exposed
 it.** The `macos-14` runner ships Xcode 15.4; this machine has Apple clang 21.
@@ -128,8 +234,10 @@ host can reach the case, the assertion is exactly what it was.
 |---|---|---|
 | the whole §9.1 cost census | `#[cfg(target_os = "macos")] mod cost_shape;` in `backend/tests.rs` | every case compiles `wfgrep`, which walks directories. Linux has no approved [SYS-14] enumeration row: `getdents64` writes no per-entry name length and the portable record the emitted shim fills needs one, so `backend/qualification.rs` reports `MissingMapping(Operation(12))` rather than pretending the facility is there. There is no `wfgrep` module on Linux to take a census of. |
 | `directory_source_open_uses_the_typed_completion_route` | `backend/tests/completion.rs` | the same row, and the same `#[cfg]` its two enumeration siblings already carried |
-| the four-lane steal observations | `a_steal_is_observable` in `backend/tests/parallel.rs`, used by `parallel.rs` and `loop_split.rs` | a steal is observable only if a worker reaches the offer before the offering thread finishes the work itself, which needs a core that is not already carrying a lane. Measured: zero over the whole sample on the three-core `macos-14` runner, non-zero on every four-core host. A zero there is a fact about the host. |
+| the four- and eight-lane steal observations | `a_steal_is_observable` in `backend/tests/parallel.rs`, used by `parallel.rs` and by three sites in `loop_split.rs` | a steal is observable only if a worker reaches the offer before the offering thread finishes the work itself, which needs a core that is not already carrying a lane. Measured: zero over the whole sample on the three-core `macos-14` runner, non-zero on every four-core host. A zero there is a fact about the host. Two eight-lane sites in `loop_split.rs` were left without the guard their sibling in the same file carries, and the macOS runner failed one of them; they carry it now. |
 | the alias-versioning calibration | `research/experiments/frequency-study/alias-versioning/` | the recorded fingerprint counts LLVM's own runtime alias-check shape — 26 conflict predicates, 52 pointer comparisons — and the vectorizer decides that shape per target. Discriminated rather than assumed: rustc 1.96.0, 1.97.1 and 1.98.0 all reproduce it exactly on `aarch64-apple-darwin`, so the precondition recorded is the target, not the version. |
+| the directory-walking program cases | `mod wfgrep;` in `tests/programs.rs`, five of the eight cases in `tests/programs/traversal.rs`, and the three support helpers only they call | the same missing enumeration row: `dir_walk.wf` and `wfgrep.wf` do not compile on Linux, so seventeen cases — the twelve in `wfgrep` and the five in `traversal` that build `dir_walk.wf` — were reporting the target table's gap as a test failure. The three traversal cases that reject inline source at a numbered rule, `an_enumeration_handle_is_not_usable_after_it_is_moved`, `program_bytes_still_cannot_become_a_path_value` and `an_enumeration_match_that_omits_an_outcome_is_rejected`, run on both hosts, because every stage reaches a source rule before target qualification. `b58d724d` shipped this with a second `#[cfg]` on `mod traversal;` itself, which hid all eight: the Linux gate of `196525e7` ran 34 program cases against macOS's 54, twenty apart, and this record said seventeen. An independent reading of the run logs caught it; the module-level attribute is gone, the five per-case attributes stay, and the run under Results shows the Linux count with the three restored. The corpus-wide `--par` case keeps every other program covered on Linux instead of standing down: it reads the compiler's own `TargetQualification` report, records which units it could not compile, and asserts that they are only the two that walk a directory. |
+| the effect-attrs IR-validity probe | `test_multiline_probe_is_valid_llvm` in `research/experiments/frequency-study/effect-attrs/tests/` | every fixture there is written in the `memory(...)` attribute dialect, which is the attribute the experiment classifies and which LLVM 16 introduced. The `macos-14` runner's Apple clang 15 rejects them at the parser with "expected top-level entity", which says nothing about whether they are well formed. The probe asks the host compiler with a one-line `memory(none)` module and states the limit when the answer is no, so what it skips on is what the toolchain understands rather than a version string. |
 
 ### The gap that stays open
 
@@ -159,6 +267,23 @@ directory-enumeration row. That is a real gap in the compiler, honestly
 reported, and the job's value is everything it checks before reaching it.
 
 ## Results
+
+### The runs this record stands on
+
+Both workflows run on every push. These are the runs of `196525e7`, the last
+commit in this batch that changes code:
+
+| run | job | host | outcome |
+|---|---|---|---|
+| [gate 33133768976](https://github.com/mbbill/Whitefoot/actions/runs/33133768976) | `gate-linux` | ubuntu-24.04, x86-64, 4 CPUs, clang 18.1.3, stable 1.98.0 | red, and red only where this record says it is: `== WHITEFOOT COMPILER GATE GREEN ==`, 1320 library cases, 34 program cases and every research suite pass, and `conformance-run` then reports `Pass=497  Fail=5  Skip=1` on the five named cases |
+| | `gate-macos` | macos-14, arm64, 3 CPUs, Apple clang 15.0.0, stable 1.96.0 | green |
+| [io-hosts 33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `completion-linux` | ubuntu-24.04 | green |
+| | `bench-linux` | ubuntu-24.04, AMD EPYC 7763, `/dev/sda1` ext4 | green: N.direct 101.57, S.wide 123.15, C.wide.default 130.73 milliseconds, so C.wide 6 percent slower than S.wide. An earlier revision of this row put 119.31, 141.91 and 147.85 here; those are the numbers of [io-hosts 33131919667](https://github.com/mbbill/Whitefoot/actions/runs/33131919667) on `e7720a0a`, an EPYC 9V74 runner, and the table under *The Linux-hardware bench* now names every run beside its own numbers |
+| | `completion-windows` | windows-2025 | green |
+
+`make check` on the maintainer's machine — macOS on arm64, ten cores, Apple
+clang 21, stable 1.97.1 — is green on the same tree, which is the third host
+and the only one where the whole gate passes.
 
 ### Linux completion I/O, on a real kernel
 
@@ -212,20 +337,50 @@ S.wide              142.15    112.07    112.19
 C.wide.default      149.47    115.92    118.14
 ```
 
-Three findings, all reproduced on all three runners.
+`bench-linux` runs on every push, and each run draws its own runner, so the
+branch has eleven readings on three CPU models. Every one of them, beside the
+commit it ran on, the host and disk the job itself reported, and the three
+lines the finding turns on, medians in milliseconds:
+
+| run | commit | host, disk | N.direct | S.wide | C.wide.default | C.wide against S.wide |
+|---|---|---|---|---|---|---|
+| [33114336424](https://github.com/mbbill/Whitefoot/actions/runs/33114336424), run 1 above | `7a1c73a5` | EPYC 9V74, `sda1` | 119.69 | 142.15 | 149.47 | +5.1% |
+| [33115297530](https://github.com/mbbill/Whitefoot/actions/runs/33115297530), run 2 above | `804ed782` | EPYC 9V74, `nvme0n1p1` | 94.24 | 112.07 | 115.92 | +3.4% |
+| [33118248259](https://github.com/mbbill/Whitefoot/actions/runs/33118248259), run 3 above | `2c342009` | EPYC 9V74, `nvme0n1p1` | 94.68 | 112.19 | 118.14 | +5.3% |
+| [33121457101](https://github.com/mbbill/Whitefoot/actions/runs/33121457101) | `79aa36ea` | EPYC 9V74, `sda1` | 119.24 | 142.00 | 147.66 | +4.0% |
+| [33127604146](https://github.com/mbbill/Whitefoot/actions/runs/33127604146) | `9adf0067` | EPYC 7763, `sda1` | 103.37 | 122.49 | 128.22 | +4.7% |
+| [33128887536](https://github.com/mbbill/Whitefoot/actions/runs/33128887536) | `7c644216` | EPYC 7763, `sda1` | 103.51 | 124.76 | 128.72 | +3.2% |
+| [33131534867](https://github.com/mbbill/Whitefoot/actions/runs/33131534867) | `75ce03d4` | EPYC 9V74, `sda1` | 118.84 | 141.49 | 147.14 | +4.0% |
+| [33131919667](https://github.com/mbbill/Whitefoot/actions/runs/33131919667) | `e7720a0a` | EPYC 9V74, `sda1` | 119.31 | 141.91 | 147.85 | +4.2% |
+| [33133174447](https://github.com/mbbill/Whitefoot/actions/runs/33133174447) | `6fc4c71b` | EPYC 9V74, `sda1` | 119.41 | 141.73 | 147.00 | +3.7% |
+| [33133768971](https://github.com/mbbill/Whitefoot/actions/runs/33133768971) | `196525e7` | EPYC 7763, `sda1` | 101.57 | 123.15 | 130.73 | +6.2% |
+| [33135242838](https://github.com/mbbill/Whitefoot/actions/runs/33135242838) | `db7d997b` | Xeon Platinum 8573C, `nvme0n1p1` | 77.25 | 95.32 | 101.49 | +6.5% |
+
+The completion build loses to the sequential build on all eleven, by 3 to 7
+percent, on three CPU models and both disk kinds. The io_uring reading is not
+as portable, and the tabulated runners are the ones on which it holds: on the
+EPYC 9V74 the ring equals the loop at every depth; on the Xeon it is within 8
+percent of it (N.uring32 83.18 against N.direct 77.25); on all three EPYC 7763
+runs the ring at depth 4 and above sits at 125 to 128 ms against a 102 to 104
+ms loop, a quarter slower, while depth 2 is nearly equal (105 to 107). Why
+that CPU pays for a deeper ring is not settled here.
+
+Three findings, all reproduced on the three tabulated runners.
 
 **The hand-written io_uring baseline equals the blocking loop at every depth
 from 2 to 32.** The whole 68 MiB tree is in the page cache, so a `pread` never
 sleeps and there is no latency for a ring to hide.
 
-**C is slower than S.** By 3 percent in run 2 and 5 percent in runs 1 and 3,
-against a within-run spread of about 2 percent, at every helper count and on
-both the four-wide and the eight-wide program. This is the first host on which
-the completion lowering costs more than it returns, and it is the first host
-on which the standing bar's first half — C at least as fast as S — is missed.
+**On the real runner, C.wide is 3 to 5 percent slower than S.wide.** By 3
+percent in run 2 and 5 percent in runs 1 and 3, against a within-run spread of
+about 2 percent, at every helper count and on both the four-wide and the
+eight-wide program. The completion build loses to the sequential build here.
+This is the first host on which the completion lowering costs more than it
+returns, and the first on which the standing bar's first half — C at least as
+fast as S — is missed.
 
-**The container was measuring something else.** Wall time against child CPU
-time separates the two hosts cleanly:
+**The container's advantage was a wait the runner does not have.** Wall time
+against child CPU time separates the two hosts cleanly:
 
 ```text
                         wall     user+sys    CPU/wall
@@ -292,6 +447,35 @@ sentence, measured.
    and `CLANG` now come from the environment with the container's paths as
    defaults, so the container run and the native runner run execute the same
    bytes. A second native script would have been a second protocol.
+6. **The math library is named on both hosts, not on the one that needs it.**
+   A `cfg` would have made the link path a pair of paths differing by target,
+   for a flag Darwin resolves to a stub it already links. One link line is
+   worth more than the flag it saves.
+7. **The overlapped world's bound is bytes, not a multiple.** Raising the
+   multiple until x86-64 passed would have set the bar at the number the host
+   produces, which is how a case stops discriminating. What the hand-out keeps
+   live across the claim is a fixed, small set of values, so the overhead is
+   the quantity with a meaning, and it is the same quantity on both
+   architectures.
+8. **The corpus-wide `--par` case reads the compiler's report instead of
+   standing down.** The blunt move was `#[cfg(target_os = "macos")]` over the
+   whole case, which would have taken twenty-three programs' Linux link
+   coverage away to excuse two. Reading `TargetQualification` and then
+   asserting that the excused units are exactly the two that walk a directory
+   keeps the coverage and keeps the exemption from spreading.
+9. **The effect-attrs fixtures were not rewritten for the older clang.** The
+   pre-LLVM-16 spelling would have deleted the experiment's subject: it
+   classifies the `memory(...)` attribute. The probe declares what the host
+   toolchain cannot read instead, and the assertion is unchanged on every host
+   that can read it.
+10. **The temporary Linux diagnostic step is gone with the picture it was for.**
+    `make check` stops at the first failing target and cargo at the first
+    failing test binary, so one run would otherwise have revealed one layer of
+    Linux stops at a time; the step ran the whole suite again with
+    `--no-fail-fast`, which is what made four rounds enough. It doubled the
+    job — 35 minutes of `make check` and 17 more of diagnosis — and now that
+    the only red left is the conformance gap, `make check`'s own output names
+    it.
 
 ## What this batch did not do
 
@@ -305,3 +489,12 @@ sentence, measured.
   the experiment that would separate the two candidates.
 - It did not run the pipe workload or the macOS bench in CI. The local machine
   covers macOS, and the pipe workload discriminated nothing in batch 0084.
+- It did not make the scheduler observations deterministic. The grant and
+  migration cases still sample a race; what changed is that the samples are
+  now sized from the rate the runners actually show rather than from the rate
+  this machine shows. Two of the same class were left as they are because no
+  run of this batch lost them: the corpus case
+  `the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes`,
+  whose five attempts each pay for their own link, and the join-less
+  comparison in `backend/tests/parallel.rs`, which asks twelve runs to
+  disagree. A host slower than any measured here can still lose either.

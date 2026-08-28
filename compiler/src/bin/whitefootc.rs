@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
+    Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES,
@@ -129,7 +129,12 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
             .map_err(|error| format!("cannot read the stack-usage report: {error}"))?;
         let text = std::fs::read_to_string(&assembly)
             .map_err(|error| format!("cannot read the ledger assembly: {error}"))?;
-        Ok(stack_ledger(&usage, &text, FLOOR_STACK_BYTES))
+        Ok(stack_ledger(
+            &usage,
+            &text,
+            FLOOR_STACK_BYTES,
+            Architecture::HOST,
+        ))
     })();
     let _ = std::fs::remove_dir_all(&directory);
     result
