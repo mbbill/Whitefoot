@@ -76,8 +76,13 @@
 //!    class, never over its exact path: see below.
 //! 6. **Replicated storage has copy elements.** A place this judgment
 //!    replicates, and a construction whose storage an implementation reuses
-//!    across iterations, has a copy element type. An element type whose [OWN-1]
-//!    class this judgment does not resolve denies.
+//!    across iterations, has a copy element type. What an affine element costs
+//!    a construction is that reuse freedom and not the loop: [PAR-3] conditions
+//!    permission on the disposition of the places B reaches, and a construction
+//!    whose storage no implementation reuses is ordinary iteration-own storage,
+//!    allocated afresh by every iteration exactly as the source-order execution
+//!    allocates it. An element type whose [OWN-1] class this judgment does not
+//!    resolve denies, on the same one-sided reading as condition 7.
 //! 7. **Fail closed.** An unresolved footprint element, an unresolved loan, an
 //!    unresolved operand read, or a body statement form this judgment does not
 //!    classify denies permission rather than granting it. This is the same
@@ -315,8 +320,9 @@ pub(crate) enum StagedDenial {
         /// cut, when the denial is a pair rather than one path's own reach.
         overlapping: Option<NodePath>,
     },
-    /// Condition 6: storage an implementation would replicate whose element
-    /// type is not copy, or whose [OWN-1] class this judgment does not resolve.
+    /// Condition 6: a construction whose element type's [OWN-1] class this
+    /// judgment does not resolve. A resolved affine element denies nothing —
+    /// it only costs that construction the reuse freedom.
     NotReplicable { statement: NodePath },
     /// Condition 7, fail closed: a body statement form whose footprint this
     /// judgment does not compute.
@@ -396,7 +402,7 @@ impl StagedDenial {
                 "keep each place the body touches on one side of the cut: read it only, or reach it only before the submission, or give the iteration its own"
             }
             Self::NotReplicable { .. } => {
-                "give the per-iteration storage a copy element type; an affine or opaque element cannot be replicated"
+                "give the per-iteration storage an element type whose copy class this judgment resolves: a primitive, a tag-only enum, or a buffer or array of either"
             }
             Self::BodyForm { admits, .. } => admits,
             // The fail-closed resolution limit, not a hazard: the sibling test
@@ -1299,6 +1305,17 @@ impl<'check> StagedSurvey<'check, '_> {
 
     /// Condition 6's other half: one construction of B whose storage an
     /// implementation may reuse across iterations.
+    ///
+    /// What the class decides is that reuse freedom, not the loop's verdict.
+    /// [PAR-3] conditions permission on the disposition of the places B
+    /// reaches; the storage an implementation reuses across iterations for a
+    /// construction is one of the facts it states no condition in terms of. A
+    /// construction whose elements are affine is ordinary iteration-own
+    /// storage — every iteration allocates its own, exactly as the source-order
+    /// execution does — so it carries no row and costs the loop nothing. Only a
+    /// class this judgment cannot resolve at all denies, on condition 7's
+    /// one-sided reading: a fact it cannot state must not be reported as
+    /// either answer.
     fn construction(&mut self, value: &'check CheckedExpression, citation: &NodePath) {
         let copy_elements = match value {
             CheckedExpression::BufferFill { element, .. } => Some(is_copy_element(*element)),
@@ -1306,16 +1323,22 @@ impl<'check> StagedSurvey<'check, '_> {
                 CheckedType::Array { element, .. } => Some(is_copy_element(*element)),
                 _ => None,
             },
-            // `buffer_vacant` fills an interned `Option<T>` nominal whose
-            // [OWN-1] class this judgment does not resolve, so it fails closed.
-            CheckedExpression::BufferVacant { .. } => Some(false),
+            // `buffer_vacant` fills the interned `Option<T>` instance its own
+            // type record names, and that element is read through exactly the
+            // classification the other two use: a nominal element copies only
+            // when it is tag-only [OWN-1], and the prelude's `Option<T>` carries
+            // a field in `Some` at every T [PRE-1]. The class is resolved, and
+            // it resolves to affine.
+            CheckedExpression::BufferVacant { element, .. } => {
+                Some(is_copy_element(CheckedFlatElement::Nominal(*element)))
+            }
             _ => return,
         };
         self.replicated.push(Replicated {
             citation: citation.clone(),
             copy_elements,
         });
-        if copy_elements != Some(true) {
+        if copy_elements.is_none() {
             self.not_replicable.get_or_insert(citation.clone());
         }
     }
@@ -1404,19 +1427,26 @@ impl<'check> StagedSurvey<'check, '_> {
             });
         }
         for entry in &self.replicated {
-            let replicable = entry.copy_elements == Some(true);
+            // A construction earns a row for the one fact this rule records
+            // about it: whether an implementation may reuse its storage across
+            // iterations. Affine elements say only that it may not, which is
+            // what ordinary iteration-own storage already says by carrying no
+            // row at all, so no row is printed and the loop pays nothing.
+            let (disposition, reason) = match entry.copy_elements {
+                Some(true) => (
+                    Disposition::Replicated,
+                    "iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of",
+                ),
+                Some(false) => continue,
+                None => (
+                    Disposition::Denied,
+                    "iteration-own storage whose element type this judgment does not resolve, so whether it may be replicated is not a fact this rule can state",
+                ),
+            };
             self.dispositions.push(PlaceDisposition {
                 citation: entry.citation.clone(),
-                disposition: if replicable {
-                    Disposition::Replicated
-                } else {
-                    Disposition::Denied
-                },
-                reason: if replicable {
-                    "iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of"
-                } else {
-                    "iteration-own storage whose element type is not a resolved copy type, so it cannot be replicated"
-                },
+                disposition,
+                reason,
             });
         }
         let verdict = match self.denial(&classes) {

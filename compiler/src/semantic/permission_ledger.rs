@@ -445,7 +445,8 @@ fn staged_denied_detail<Source: LedgerSource>(
             overlapping.as_ref().map(|node| (OVERLAPS, node)),
         ),
         StagedDenial::NotReplicable { statement } => (
-            "per-iteration storage whose element type is not a resolved copy type".to_owned(),
+            "per-iteration storage whose element type has no copy class this judgment resolves"
+                .to_owned(),
             Some(statement),
             None,
         ),

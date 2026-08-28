@@ -691,11 +691,27 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 // Condition 6: replicable elements
 // ----------------------------------------------------------------------
 
-/// `buffer_vacant` fills an interned `Option<T>` nominal whose [OWN-1] class
-/// this judgment does not resolve, so a body constructing one fails closed.
-/// Condition 6 is the one place a construction of the body itself can deny.
+/// A construction whose elements are affine costs its own reuse freedom and
+/// nothing else.
+///
+/// `buffer_vacant` fills the interned `Option<T>` instance its type record
+/// names, and that class resolves: a nominal element copies only when it is
+/// tag-only [OWN-1], and the prelude's `Option<T>` carries a field in `Some` at
+/// every T [PRE-1]. So the answer is "affine", not "unknown" — and [PAR-3]
+/// conditions a loop's permission on the disposition of the places the body
+/// reaches, never on a construction of the body. Escalating one construction's
+/// affine element into a denial of the whole staged permission refused a
+/// pipeline the rule grants; the body's own buffer is iteration-own storage
+/// every iteration allocates for itself, exactly as the source-order execution
+/// does.
+///
+/// The sibling direction — a copy element earning the reuse freedom — is the
+/// `replicated` row of `buffer_new` in the granted table this test also reads.
+/// The third, a class the judgment cannot resolve at all, still denies on
+/// condition 6; no source program reaches it, because every construction this
+/// judgment sees carries its element in its own type record.
 #[test]
-fn a_construction_whose_element_class_is_unresolved_denies() {
+fn a_construction_whose_elements_are_affine_costs_the_loop_nothing() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
   for @scan index in 0_u64..4_u64 {
@@ -717,10 +733,26 @@ fn a_construction_whose_element_class_is_unresolved_denies() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let denial = denied(source, "main", 6);
-    let StagedDenial::NotReplicable { .. } = denial else {
-        panic!("expected a replication denial: {denial:?}");
-    };
+    let judged = permitted(source, "main");
+    let citations: Vec<&PlaceDisposition> = judged
+        .dispositions
+        .iter()
+        .filter(|place| place.disposition == Disposition::Replicated)
+        .collect();
+    assert_eq!(
+        citations.len(),
+        1,
+        "the copy-element buffer earns the reuse freedom and the affine one carries no row: {:?}",
+        judged.dispositions
+    );
+    assert!(
+        judged
+            .dispositions
+            .iter()
+            .all(|place| place.disposition != Disposition::Denied),
+        "no place of a permitted loop is denied: {:?}",
+        judged.dispositions
+    );
 }
 
 // ----------------------------------------------------------------------
