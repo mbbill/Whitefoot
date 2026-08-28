@@ -323,7 +323,15 @@ size_t wf_completion_drain(
  * once, the drained fact is published under the slot's publication lock, and
  * a frame whose requirement this event satisfies is made runnable — so an
  * event drained here is indistinguishable from one the sweep drained.
- * Returns 1 when this call took the event, 0 when there was none to take. */
+ *
+ * Naming a slot, however, is not naming an operation, and this entry is
+ * token-named: like every other token-named entry it refuses a token whose
+ * generation no longer matches the slot's, so an operation that has already
+ * ended cannot take the event of the operation that reused its slot.  The
+ * sweep needs no such check because it names no operation at all.
+ *
+ * Returns 1 when this call took the event, 0 when there was none of this
+ * operation's to take. */
 size_t wf_completion_drain_token(
     wf_completion_runtime *runtime,
     wf_completion_token token,

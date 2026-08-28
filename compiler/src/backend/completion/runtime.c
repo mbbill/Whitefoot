@@ -674,6 +674,29 @@ size_t wf_completion_drain_token(
     if (event == NULL || !wf_completion_token_slot(runtime, token, &slot)) {
         return 0;
     }
+    /* The cheap negative first: a join loop asks on every turn, and a slot
+     * with no pending event is the answer nearly every time.  A relaxed load
+     * is enough to decide there is nothing to take, because the taking itself
+     * is decided again below. */
+    if (atomic_load_explicit(&slot->event_pending, memory_order_relaxed) == 0) {
+        return 0;
+    }
+    /* Generation and the take are decided together, under the publication
+     * lock.  Naming a slot is not naming an operation: the slot outlives the
+     * operation that used it, so a token whose operation has already ended
+     * names whatever operation reused its slot.  `wf_completion_claim` and
+     * `wf_completion_publish` are the only other writers of both the
+     * generation and the pending flag, and both hold this lock, so checking
+     * the generation here excludes taking a live operation's event with a
+     * token that no longer stands for it.  Every other token-named entry
+     * makes the same check; this one is the sweep's transition, so it kept
+     * the sweep's generation-agnostic shape by mistake. */
+    (void)pthread_mutex_lock(&slot->publication_lock);
+    if (atomic_load_explicit(&slot->generation, memory_order_relaxed)
+        != token.generation) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return 0;
+    }
     if (!atomic_compare_exchange_strong_explicit(
             &slot->event_pending,
             &pending,
@@ -681,10 +704,10 @@ size_t wf_completion_drain_token(
             memory_order_acquire,
             memory_order_relaxed
         )) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
         return 0;
     }
 
-    (void)pthread_mutex_lock(&slot->publication_lock);
     event->token.slot = token.slot;
     event->token.generation = atomic_load_explicit(
         &slot->generation,

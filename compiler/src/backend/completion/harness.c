@@ -315,6 +315,74 @@ static int test_generation_and_duplicate_terminal(void) {
     return 0;
 }
 
+/* A slot outlives the operation that used it, and only the generation says
+ * which operation a token still stands for.  The named drain is the one
+ * token-named entry that *takes* an event rather than reading one, so a
+ * missing generation check there is not a stale read but a live operation's
+ * completion consumed by an owner with no claim on it — and the live owner
+ * then waits for an event that no longer exists. */
+static int test_named_drain_refuses_a_recycled_slot(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slot;
+    wf_completion_token retired_token;
+    wf_completion_token live_token;
+    wf_completion_event event;
+    wf_completion_outcome outcome;
+    wf_completion_publication publication;
+    int retired = 5;
+    int live = 9;
+    int taken = 0;
+
+    CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
+
+    /* One operation runs to completion, which frees the single slot. */
+    CHECK(wf_completion_claim(&runtime, &retired_token) == WF_COMPLETION_CLAIMED);
+    CHECK(accept_operation(&runtime, retired_token) == 0);
+    publication = integer_publication(&retired);
+    CHECK(
+        wf_completion_publish_terminal(&runtime, retired_token, &publication)
+        == WF_COMPLETION_PUBLISHED
+    );
+    CHECK(wf_completion_drain_token(&runtime, retired_token, &event) == 1);
+    CHECK(event.token.slot == retired_token.slot);
+    CHECK(event.token.generation == retired_token.generation);
+    CHECK(consume_integer(&runtime, retired_token, retired) == 0);
+
+    /* An unrelated operation reuses that slot and publishes its own result. */
+    CHECK(wf_completion_claim(&runtime, &live_token) == WF_COMPLETION_CLAIMED);
+    CHECK(live_token.slot == retired_token.slot);
+    CHECK(live_token.generation == retired_token.generation + 1);
+    CHECK(accept_operation(&runtime, live_token) == 0);
+    publication = integer_publication(&live);
+    CHECK(
+        wf_completion_publish_terminal(&runtime, live_token, &publication)
+        == WF_COMPLETION_PUBLISHED
+    );
+
+    /* The retired token names the slot but no longer names an operation, so
+     * it takes nothing and the event stays where it belongs. */
+    CHECK(wf_completion_drain_token(&runtime, retired_token, &event) == 0);
+    CHECK(wf_completion_ready_event_count(&runtime) == 1);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            retired_token,
+            &taken,
+            sizeof(taken),
+            &outcome
+        ) == WF_COMPLETION_CONSUME_STALE
+    );
+
+    /* The live owner still finds its own event, exactly once. */
+    CHECK(wf_completion_drain_token(&runtime, live_token, &event) == 1);
+    CHECK(event.token.generation == live_token.generation);
+    CHECK(wf_completion_drain_token(&runtime, live_token, &event) == 0);
+    CHECK(consume_integer(&runtime, live_token, live) == 0);
+    CHECK(wf_completion_ready_event_count(&runtime) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
 #define TERMINAL_RACERS 12
 
 typedef struct terminal_race_context {
@@ -2904,6 +2972,7 @@ int main(int argc, char **argv) {
     }
     RUN_TEST(test_capacity_and_product_state());
     RUN_TEST(test_generation_and_duplicate_terminal());
+    RUN_TEST(test_named_drain_refuses_a_recycled_slot());
     RUN_TEST(test_exactly_one_terminal_under_race());
     RUN_TEST(test_concurrent_single_claims_are_unique());
     RUN_TEST(test_unified_wake_epoch());
