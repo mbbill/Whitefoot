@@ -308,8 +308,11 @@ dir_walk               sha256 2c0d6aa845c12dd5…  1275 bytes, identical
 
 The Linux run is the aarch64 container, the macOS run is the host; the tree is
 one directory bind-mounted into both, so the bytes compared are the same tree's.
-`dir_walk` reports the two symbolic links as kind 3 on both and the 255-byte
-name on both.
+`dir_walk` reports the two symbolic links as kind 3 on both. The 255-byte
+name is carried by `wfgrep` on both hosts; `dir_walk` renders each line into a
+256-byte buffer, so a 255-byte component does not fit its line and is dropped
+identically on both hosts (the verification's own record dump carries it on
+both).
 
 ### CI
 

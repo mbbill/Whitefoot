@@ -825,6 +825,37 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
     });
 }
 
+/// The mapping refusal is distinct from the guarantee refusal: a family that
+/// has the facility, on a compiler holding no approved ABI record for it,
+/// fails the enumeration semantic IDs with `MissingMapping` [QUAL-1]. No
+/// recognized triple is in this state since the Linux row landed, so the
+/// arm is reached through a probe rather than left unexecuted.
+#[test]
+fn a_facility_without_an_approved_record_is_a_missing_mapping() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region 'c {
+    let permit = reserve_file<'c>(factory: &uniq 'c files);
+    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
+      Ok(value: list) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let unmapped = SystemTarget::probe_without_enumeration_record();
+        assert_eq!(
+            qualify_program(unmapped, program),
+            Err(crate::BackendFailure::TargetQualification(
+                QualificationFailure::MissingMapping(Facility::Operation(12))
+            ))
+        );
+    });
+}
+
 #[test]
 fn component_open_flags_and_status_abis_are_target_exact() {
     let cases = [

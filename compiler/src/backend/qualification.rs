@@ -1064,6 +1064,22 @@ impl SystemTarget {
         target.directory_enumeration = None;
         target
     }
+
+    /// A probe target whose family has a directory-enumeration facility but
+    /// for which this compiler holds no approved ABI record.
+    ///
+    /// The guarantee is met, so the refusal is the missing mapping rather than
+    /// an unmet guarantee: `operation_row` fails the enumeration semantic IDs
+    /// with `MissingMapping` instead of building a scan out of other
+    /// operations [QUAL-1]. This is the state the superseded Linux case
+    /// exercised while no Linux row existed.
+    #[cfg(test)]
+    pub(crate) fn probe_without_enumeration_record() -> Self {
+        let mut target = Self::for_triple("aarch64-apple-darwin")
+            .expect("the probe base triple is a qualified target");
+        target.directory_enumeration = None;
+        target
+    }
 }
 
 /// The complete qualification of one program against one selected target.

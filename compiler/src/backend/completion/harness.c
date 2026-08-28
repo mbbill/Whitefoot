@@ -2582,13 +2582,13 @@ static int test_native_contract_inventory(void) {
 
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
 /* The base-position cell after one progressing attempt: the value the Darwin
- * stub above writes, and the caller's own zero on a family whose facility
+ * stub above writes, and the caller's own sentinel on a family whose facility
  * takes no such cell. */
 static int64_t wf_expected_position(void) {
 #if defined(__APPLE__)
     return 17;
 #else
-    return 0;
+    return 4242;
 #endif
 }
 #endif
@@ -2605,7 +2605,7 @@ static int test_directory_progress_is_internal(void) {
     wf_completion_token token;
     unsigned char readiness = 'r';
     unsigned char byte = 0;
-    int64_t position = 0;
+    int64_t position = 4242;
     int64_t value = -1;
     int error_code = -1;
     wf_directory_host_calls = 0;
@@ -2634,7 +2634,7 @@ static int test_directory_progress_is_internal(void) {
     wf_directory_host_calls = 0;
     wf_directory_poll_calls = 0;
     byte = 0;
-    position = 0;
+    position = 4242;
     CHECK(
         wf__completion_directory_next_submit(
             descriptors[0],
