@@ -768,18 +768,21 @@ These are recorded, not decided.
 
 ## Gate results
 
-Local canonical `make check` on macOS at `7aa6819d`: green, 160 s wall.
+Local canonical `make check` on macOS, green in both rounds. The first round
+ran at `7aa6819d`, 160 s wall; the second ran at `a4087723`, 203 s wall, which
+is every item of this record including the pinning corpus. The only commit
+after it changes this file alone.
 
 ```text
-repository-invariants             1 s
-approval-history-integrity        0 s
+repository-invariants             0 s
+approval-history-integrity        1 s
 spec-append-only                  0 s
 spec-archive-integrity            1 s
 spec-digest-sync                  0 s
 conformance                       0 s
-compiler                        111 s
+compiler                        138 s
 research-tests                    6 s
-conformance-run                  41 s
+conformance-run                  57 s
 == WHITEFOOT ALL TESTS GREEN ==
 ```
 
@@ -798,9 +801,10 @@ condition-2 remedy assertions of item 4 extended existing
 said "1417 passing, up from 1401, with the fourteen new tests of this batch";
 both counts were wrong.
 
-CI on `7aa6819d`: `gate` green on `gate-macos (macos-14)` and `gate-linux
-(ubuntu-24.04)`, and `io-hosts` green on its completion hosts. The six
-`MissingMapping(Operation(12))` conformance failures 0099 recorded on
+CI on `7aa6819d` and on `917f79ee`: `gate` green on `gate-macos (macos-14)` and
+`gate-linux (ubuntu-24.04)`, and `io-hosts` green on its completion hosts. The
+second round's runs are `gate` 33175521298 and `io-hosts` 33175521284 on
+`a4087723`. The six `MissingMapping(Operation(12))` conformance failures 0099 recorded on
 `gate-linux` are gone from this base, which carries
 `batch/0094-linux-directory-row`; there is no pre-existing documented red here
 and none was introduced.
