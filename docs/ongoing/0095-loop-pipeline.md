@@ -179,15 +179,39 @@ for the same class of defect.
   and whose in-flight decrement landed before the second was invisible to both,
   so the decision could publish a refusal a descriptor had already answered. It
   re-reads the generation at that exit now, and the ledger's schedule point is
-  named so a test can stand exactly between the two reads.
+  named so a test can stand exactly between the two reads;
+- and the first version of *this* rule deadlocked, which is the failure mode a
+  rule about waiting has. A refused open running work its own adapter owed read
+  the size of that queue once, before it waited. The queue then grew — the
+  program was still submitting — so the count of operations nobody could retire
+  stopped matching the count in flight, and every helper waited forever for
+  work every helper was waiting instead of running. Two things follow from
+  that, and both are the rule rather than a patch on it: the queue is read
+  afresh on every pass, because it is a live fact; and a waiting open is still
+  one of its adapter's engines, so it leaves the waiter order, runs everything
+  queued, and only then waits again. A submission wakes a waiter for exactly
+  that reason.
+
+  It was found by the verifiers' probe rather than by the suite, and the reason
+  is worth keeping: the harness names the adapter's `openat` so a test can
+  stand at a refusal, and that named call took a global lock on *every*
+  refusal, which serialized the very schedule the rule is about. The
+  observation no longer perturbs it — the armed flag is read without the lock —
+  and with that changed the suite reproduces the deadlock too.
 
 Each of the three routes is covered by a test that fails without the fix, and
-so is the third exit above:
+so are the third exit and the deadlock:
 `test_bridge_open_waits_for_the_other_engine`,
 `test_bridge_one_of_two_opens_behind_a_close_succeeds`,
 `test_bridge_open_behind_a_submitted_close_succeeds`,
-`test_open_exhaustion_waits_for_another_engine` and
-`test_a_retirement_between_the_ledger_reads_is_not_missed`.
+`test_open_exhaustion_waits_for_another_engine`,
+`test_a_retirement_between_the_ledger_reads_is_not_missed` and
+`test_bridge_every_record_holding_a_refused_open_publishes`.
+
+A deadlock is now a failure mode of this suite, so the harness has a watchdog:
+three hundred seconds, three orders of magnitude above what the whole suite
+takes, and it names the test that stopped rather than leaving a build job to
+time out with an empty log.
 
 **What the runtime cannot do, and Stage B must.** §2.10 says the adapter
 "completes every older slot in index order (which runs their compiler-derived
@@ -308,6 +332,14 @@ by exempting the carrying block from the rule.
   `a_drain_retires_only_what_the_branches_that_reach_it_started`, with the
   sibling removal deleted, reports the first exit joining two operations where
   one branch reaches it.
+  `test_bridge_every_record_holding_a_refused_open_publishes`, with the owed
+  queue read once instead of on every pass, stops at four helpers on macOS in
+  three runs of four and the watchdog names it; the same control hangs the
+  verifiers' `attack_probe` in six runs of six. Two other controls separate the
+  cause from its neighbours: with a submission no longer waking a waiter, and
+  with the owed queue run once instead of on every pass, the probe passes six
+  of six — so the live read is the fix and the other two are the rule it needs
+  to stay one.
   `test_open_exhaustion_waits_for_another_engine`, with the adapter's old
   `drained == 0` give-up restored, fails 30 of 30 runs at zero, one and four
   helpers on macOS.
