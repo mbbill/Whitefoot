@@ -1675,6 +1675,218 @@ static int test_open_results_reach_every_independent_owner(
  * only because the growth rule compared queue depth against helper count and
  * so almost never fired. Asserting the range is what the policy actually
  * promises; asserting one would now pin the defect instead of the contract. */
+/* Counts every application of the WF_IO_NOCACHE target policy and then makes
+ * the same host call the shipped build makes.  The harness build names this
+ * function as WF_FILE_UNCACHED_APPLY, so the policy under test is the one in
+ * file_adapter.h and only the counting is added. */
+static _Atomic unsigned wf_uncached_applications;
+
+void wf_completion_test_uncached_apply(int descriptor) {
+    atomic_fetch_add_explicit(
+        &wf_uncached_applications,
+        1u,
+        memory_order_relaxed
+    );
+    wf_file_uncached_apply_host(descriptor);
+}
+
+static unsigned wf_uncached_applications_now(void) {
+    return atomic_load_explicit(
+        &wf_uncached_applications,
+        memory_order_relaxed
+    );
+}
+
+/* The open flags an open really carried, with the bits that are a property of
+ * the host rather than of the request masked away.  Both runs of this test
+ * assert the same values, which is what makes the pair a statement that the
+ * policy adds nothing to and removes nothing from an open. */
+static int wf_uncached_open_flags(int descriptor) {
+    int flags = fcntl(descriptor, F_GETFL);
+    if (flags < 0) {
+        return -1;
+    }
+    return flags & (O_ACCMODE | O_NONBLOCK | O_APPEND
+#if defined(O_DIRECT)
+                    | O_DIRECT
+#endif
+    );
+}
+
+/* WF_IO_NOCACHE is target policy, not a language surface: it changes how long
+ * a read takes and nothing else.
+ *
+ * The same test runs twice from the Makefile, once with the setting absent
+ * and once with it written.  Absent, the policy makes no host call at all and
+ * the count does not move; written, it is applied exactly once for each
+ * descriptor an open hands back and never for one a kind check refused.  Both
+ * runs assert the identical open flags, the identical typed outcomes, and the
+ * identical bytes, so what separates them is a cache hint and nothing else. */
+static int test_uncached_reads_are_target_policy_only(
+    const char *scratch_directory
+) {
+    const char *setting = getenv("WF_IO_NOCACHE");
+    int asked = setting != NULL && setting[0] == '1' && setting[1] == 0;
+    wf_completion_token token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    unsigned char content[8] = {'n', 'o', 'c', 'a', 'c', 'h', 'e', '!'};
+    unsigned char window[8];
+    char regular[256];
+    char missing[256];
+    unsigned before;
+    unsigned after;
+    int descriptor;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            regular,
+            sizeof(regular),
+            "%s/wf-completion-nocache-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    CHECK(
+        snprintf(
+            missing,
+            sizeof(missing),
+            "%s/wf-completion-nocache-absent-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(regular);
+    (void)unlink(missing);
+    descriptor = open(regular, O_CREAT | O_EXCL | O_RDWR, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(write(descriptor, content, sizeof(content)) == (ssize_t)sizeof(content));
+    CHECK(close(descriptor) == 0);
+
+    before = wf_uncached_applications_now();
+
+    /* One kind-checked open through the submitted path.  Its flags are the
+     * request's O_RDONLY plus the O_NONBLOCK a kind check needs, and nothing
+     * else; the bytes it reads are the bytes that were written. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            regular,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    CHECK(wf_uncached_open_flags((int)value) == (O_RDONLY | O_NONBLOCK));
+    memset(window, 0, sizeof(window));
+    CHECK(
+        wf__completion_file_pread_submit(
+            (int)value,
+            window,
+            (uint64_t)sizeof(window),
+            0u,
+            &token
+        ) == 1
+    );
+    {
+        int64_t moved = -1;
+        int read_error = -1;
+        wf__completion_file_join(&token, &moved, &read_error);
+        CHECK(moved == (int64_t)sizeof(window));
+        CHECK(read_error == 0);
+        CHECK(memcmp(window, content, sizeof(content)) == 0);
+    }
+    CHECK(close((int)value) == 0);
+
+    /* The same open through the direct path. */
+    value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    CHECK(wf_uncached_open_flags((int)value) == (O_RDONLY | O_NONBLOCK));
+    memset(window, 0, sizeof(window));
+    CHECK(
+        wf__completion_file_pread_direct(
+            (int)value,
+            window,
+            (uint64_t)sizeof(window),
+            0
+        ) == (int64_t)sizeof(window)
+    );
+    CHECK(memcmp(window, content, sizeof(content)) == 0);
+    CHECK(close((int)value) == 0);
+
+    /* An unchecked open carries exactly the request's own flags. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            regular,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_ANY,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    CHECK(wf_uncached_open_flags((int)value) == O_RDONLY);
+    CHECK(close((int)value) == 0);
+
+    /* A refused open hands back no descriptor, so the policy has nothing to
+     * apply to it. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            regular,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_DIRECTORY,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        missing,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value < 0);
+    CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+
+    after = wf_uncached_applications_now();
+    CHECK(after - before == (asked ? 3u : 0u));
+
+    CHECK(unlink(regular) == 0);
+    return 0;
+}
+
 static int test_process_wide_target_helper_budget(void) {
     const char *text = getenv("WF_IO_HELPERS");
     uint64_t held = wf__completion_target_helper_count();
@@ -2145,6 +2357,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));
     RUN_TEST(test_open_capacity_refuses_and_resubmits(argv[1]));
     RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
+    RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());

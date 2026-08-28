@@ -732,6 +732,10 @@ static void wf_linux_decide_open(
     entry->open_error = 0;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     if (entry->request.expected_kind == WF_FILE_EXPECT_ANY) {
+        /* WF_IO_NOCACHE, applied to the descriptor the ring produced,
+         * exactly where the bounded adapter applies it to the one openat
+         * produced, so both backends answer the same policy. */
+        wf_file_apply_uncached_reads(entry->opened_descriptor);
         return;
     }
     if (fstat(entry->opened_descriptor, &status) != 0) {
@@ -743,6 +747,7 @@ static void wf_linux_decide_open(
             (unsigned int)status.st_mode
         );
         if (entry->open_outcome == WF_FILE_OPEN_SUCCEEDED) {
+            wf_file_apply_uncached_reads(entry->opened_descriptor);
             return;
         }
     }

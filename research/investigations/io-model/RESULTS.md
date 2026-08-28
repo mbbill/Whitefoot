@@ -1,20 +1,24 @@
 # Completion I/O results
 
 Status: measured at the program level on 2026-08-27, on macOS and on Linux
-with io_uring, and re-measured the same day with the base commit and the
-branch interleaved in one plan on a quiet host. Read the batch-0086 section
-for absolute values and the batch-0084 one for the findings it established;
-everything before that date was a C-level measurement of the completion core
-alone and is retained below, labelled, because it still describes what it
-measured.
+with io_uring, re-measured the same day with the base commit and the branch
+interleaved in one plan, and measured again against a read-dominated workload
+whose files are opened once and whose reads can be taken past the page cache.
+Read the batch-0092 section for what the completion framework costs per read,
+the batch-0086 one for absolute values on the many-files workload, and the
+batch-0084 one for the findings it established; everything before that date
+was a C-level measurement of the completion core alone and is retained below,
+labelled, because it still describes what it measured.
 
 The program-level sections are the ones that answer the design's own question.
 Reproduce them with:
 
 ```sh
-make -C research/experiments/io-completion-bench bench       # macOS
+make -C research/experiments/io-completion-bench bench        # macOS
 make -C research/experiments/io-completion-bench bench-pipe
-make -C research/experiments/io-completion-bench linux       # Linux, io_uring
+make -C research/experiments/io-completion-bench linux        # Linux, io_uring
+make -C research/experiments/io-completion-bench bench-read   # macOS, read-heavy
+make -C research/experiments/io-completion-bench linux-read   # Linux, read-heavy
 ```
 
 ## Program-level results, batch 0084 (2026-08-27)
@@ -367,6 +371,94 @@ eight before the next round starts.
 Both remaining gaps are therefore the same shape the batch-0084 record already
 flagged: overlap groups are runs of consecutive calls in one basic block, so a
 program pipelines nothing across iterations and pays a barrier per round.
+
+
+## Read-dominated, open-once, uncached, batch 0092 (2026-08-27)
+
+The two program-level sections above measure one workload: open a small file,
+read it, close it, thousands of times. On the macOS host an `openat` costs
+116 us against a 1.9 us `pread`, so that table is very largely a measurement
+of the host's endpoint-security stack rather than of the completion
+framework — and both sections were measured with a warm page cache, where a
+read is a memory copy and a model built to overlap waits has almost nothing to
+overlap.
+
+This section measures the framework instead. Eight 64 MiB files are opened
+once, before any read; then the program performs 32,768 positioned reads of
+64 KiB, or the same number of 4 KiB, at offsets a deterministic mix decides
+from the read's own position. Reproduce with:
+
+```sh
+make -C research/experiments/io-completion-bench bench-read   # macOS
+make -C research/experiments/io-completion-bench linux-read   # Linux, io_uring
+```
+
+### The first version of this section was measured from the page cache
+
+It has to be said before the numbers, because it is the reason to trust them.
+The first run of this table set `WF_IO_NOCACHE=1`, generated the tree, and ran
+the uncached tables straight away — which is precisely the order that
+guarantees a warm cache, since the pages were still resident from the writes
+that had just made them. `F_NOCACHE` stops a read populating the cache; it
+does not evict a page that is already there.
+
+The published table said so and was not read. Its `N.direct` uncached line was
+294 ms for 32,768 reads of 64 KiB, which is 9 us a read — 7 GB/s for a 64 KiB
+transfer, memory bandwidth, not an NVMe round trip. An independent re-run
+hours later, after ordinary builds had evicted the tree, put the same line at
+4378 ms: 134 us a read, fifteen times slower. Every ratio in that table was a
+ratio between cache hits.
+
+The bundle now refuses to print a table under a cache-state label it has not
+measured. `make read-uncache` regenerates the tree through a descriptor that
+does not populate the cache and flushes it, and `read_baseline probe-uncached`
+times sixteen positioned reads in each of the eight files immediately before
+and immediately after every table, refusing the label unless all but ten per
+cent of them cost more than 40 us. The threshold sits in the gap between the
+two populations this host keeps far apart: 6 to 20 us from the unified buffer
+cache, about 134 us from the device. `probe-warm` is the same check inverted.
+`research/experiments/io-completion-bench/README.md` describes it, and the
+per-file medians are printed beside every table below.
+
+### Method
+
+Two warm-ups, then medians of fifteen on macOS, every line checked to publish
+the same bytes before it may report a time, with the runner's observed minimum
+and maximum shown beside each median and the median child user and system CPU
+beside those. The host's one-minute load average is stated with each table;
+the machine is shared, and a table taken under load is not a table.
+
+The opens stay inside the timed region — the runner times whole processes —
+but there are exactly eight of them in every line, N, S and C alike, so at
+116 us each they are 0.93 ms of a table whose fastest uncached line is over a
+second, and a constant every line pays identically cannot move a ratio. That
+is what opening once buys: the open cost stops scaling with the work.
+
+Each line folds the first sixty-fourth of every window into the
+position-weighted checksum and publishes the transferred byte count beside it.
+The digest is a serial multiply-add chain running at about 800 MB/s in both C
+and Whitefoot, so folding a whole 64 KiB window costs about 80 us of CPU
+against a 134 us uncached read and a 7 us warm one. Folding everything would
+make the warm table pure compute and would add, to the uncached table, CPU
+that the eight-wide program can spread across helpers and the sequential one
+cannot — flattering C for a reason that has nothing to do with I/O. So the
+fold stays at one sixty-fourth. The checksum still pins the file, the offset,
+the size and the position of every read.
+
+### What WF_IO_NOCACHE does
+
+`WF_IO_NOCACHE=1` applies `fcntl(fd, F_NOCACHE, 1)` on Darwin, and one
+`posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED)` on Linux, to each descriptor an
+open hands back. Darwin's is a mode of the descriptor, so every read of the
+run bypasses the unified buffer cache rather than only the first. It is target
+policy of the same class as `WF_IO_HELPERS`: no Whitefoot source names it, and
+`read-verify` checks that every line publishes identical bytes with it off and
+on before any line reports a time.
+
+What it does *not* do is make a table uncached on its own. It cannot evict,
+so the tree has to arrive non-resident and be checked; that is what the
+regeneration and the probes above are for.
+
 ## Historical C-core results
 
 Everything below measures the completion core and its adapters directly,

@@ -1,6 +1,11 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
+/* F_NOCACHE, the Darwin half of the WF_IO_NOCACHE target policy, is a BSD
+ * extension the POSIX macro above hides, exactly as in bridge.c. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
 
 #include "file_adapter.h"
 
@@ -192,6 +197,10 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 return result;
             }
         }
+        /* The descriptor is the one this open hands back: the kind check has
+         * either passed or was not asked for. WF_IO_NOCACHE is applied here,
+         * once, so a refused descriptor never receives it. */
+        wf_file_apply_uncached_reads((int)result.value);
         break;
     case WF_FILE_READ:
         result.value = read(

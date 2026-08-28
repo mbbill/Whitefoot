@@ -1,6 +1,11 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
+/* F_NOCACHE, the Darwin half of the WF_IO_NOCACHE target policy, is a BSD
+ * extension the POSIX macro above hides, exactly as in bridge.c. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
 
 #include "contract.h"
 #include "file_adapter.h"

@@ -9,6 +9,11 @@ COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 	-DWF_COMPLETION_POLL=wf_completion_test_poll
+# The harness names the WF_IO_NOCACHE application so it can count it. The
+# named function performs the same host call the shipped policy performs, so
+# only the counting is added, and only this build has it.
+COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) \
+	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply
 COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -58,7 +63,7 @@ spec:
 
 completion-test: completion-core-read-test
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
+	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
 		grep -Eq 'wf_completion_claim_many|wf__completion_file_batch_claim|wf__completion_file_.*_submit_reserved|wf__completion_output_batch'; then \
 		echo "completion runtime exports removed group/root machinery" >&2; \
@@ -67,6 +72,10 @@ completion-test: completion-core-read-test
 	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
 	WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
 	WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
+	@# WF_IO_NOCACHE is bench-only target policy: the three runs above leave it
+	@# absent and assert the policy makes no host call at all, and this one
+	@# writes it and asserts one application per descriptor an open hands back.
+	WF_IO_NOCACHE=1 WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		$(COMPLETION_DIR)/pure_compute_probe.c -o "$(COMPLETION_TMP)/pure-compute"
 	@if $(NM) "$(COMPLETION_TMP)/pure-compute" | grep -q 'wf_completion_'; then \
@@ -121,7 +130,9 @@ completion-sanitize: completion-core-read-sanitize
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 		-DWF_COMPLETION_POLL=wf_completion_test_poll \
-		-fsanitize=address,undefined $(COMPLETION_SOURCES) \
+		-fsanitize=address,undefined \
+		-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
+		$(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
 
