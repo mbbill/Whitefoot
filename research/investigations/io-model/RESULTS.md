@@ -1440,10 +1440,11 @@ and `266acf4f`, measured here, is the removal of the `WF_IO_TRACE` stage
 instrumentation that `96bb4778` still carried; `git diff 96bb4778..266acf4f --
 compiler/src/backend/completion/` is that removal and nothing else. No drain,
 submit, publish or policy code differs between the two commits, and removing
-instrumentation does not make a program slower. The host also differs, though not in the way first written
-here: all three Linux draws report 4 CPUs, so core count is not what separates
-them. The processor and the disk are — Xeon Platinum 8370C on `sda1` for 0092,
-EPYC 7763 on `sda1` for `96bb4778`, Xeon Platinum 8573C on `nvme0n1p1` here —
+instrumentation does not make a program slower. The host also differs, though
+not in the way first written here: all three Linux draws report 4 CPUs, so
+core count is not what separates them. The processor and the disk are — Xeon
+Platinum 8370C on `sda1` for 0092, EPYC 7763 on `sda1` for `96bb4778`, Xeon
+Platinum 8573C on `nvme0n1p1` here —
 and the 8573C's warm 4 KiB sequential line is 50.89 ms against the previous
 draw's 83.28, which is a different machine by any reading. The wide lowering
 has more scheduling surface than the narrow one, so a host that different can
