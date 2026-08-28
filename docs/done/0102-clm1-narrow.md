@@ -171,6 +171,19 @@ Reject, the selections the amended sentence retains:
 No pre-existing verdict changes. Every verdict this batch states is stated by
 the amended sentence quoted above, and no verdict moved for any other reason.
 
+Each added case was compiled with both compilers, so the corpus states the
+boundary rather than asserting it:
+
+| case | base `100b37cd` (v0.38) | this revision (v0.39) |
+| --- | --- | --- |
+| `accept-clm1-local-claim-after-boundary-exit` | [CLM-1] reject, carrier `offset` | accept |
+| `accept-clm1-local-claim-after-boundary-join` | accept | accept |
+| `accept-clm1-local-claim-inside-selected-arm` | [CLM-1] reject, carrier `position` | accept |
+| `reject-clm1-claim-on-selected-payload` | [CLM-1] reject | [CLM-1] reject |
+| `reject-clm1-claim-on-delivered-selection` | [CLM-1] reject | [CLM-1] reject |
+| `reject-clm1-claim-on-storage-written-under-selection` | [CLM-1] reject | [CLM-1] reject |
+| `reject-clm1-claim-on-loop-carried-update` | [CLM-1] reject | [CLM-1] reject |
+
 `docs/patterns.md` P14 gains one paragraph: standing after a call is not the
 same as reading one, so a function that takes a typed exit on an I/O failure may
 still claim a theorem about its own later arithmetic, while storage one arm
