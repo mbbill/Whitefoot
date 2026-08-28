@@ -22,12 +22,91 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <time.h>
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
 #define WF_COMPLETION_RESULT_CAPACITY 256u
+
+/* ---------------------------------------------------------------------------
+ * Batch 0096 attribution instrumentation — TEMPORARY.
+ *
+ * It exists to answer one question on the macOS runner: what a single file
+ * operation on the Darwin helper path is made of.  Every counter below is
+ * written only when WF_IO_TRACE is set to the exact text "1"; with the knob
+ * absent the added cost is one relaxed load of a cached decision and a
+ * predicted-not-taken branch per stage, and no clock is read at all.  Nothing
+ * here is a language surface and no accepted program changes meaning under it.
+ *
+ * It is removed in the same batch, once the stage table is in the record.
+ * ------------------------------------------------------------------------ */
+typedef struct wf_completion_trace {
+    _Atomic uint64_t submit_ns;
+    _Atomic uint64_t submit_count;
+    _Atomic uint64_t queue_latency_ns;
+    _Atomic uint64_t queue_latency_count;
+    _Atomic uint64_t execute_ns;
+    _Atomic uint64_t execute_count;
+    _Atomic uint64_t publish_ns;
+    _Atomic uint64_t publish_count;
+    _Atomic uint64_t drain_ns;
+    _Atomic uint64_t drain_calls;
+    _Atomic uint64_t drain_scans;
+    _Atomic uint64_t consume_ns;
+    _Atomic uint64_t consume_calls;
+    _Atomic uint64_t park_ns;
+    _Atomic uint64_t park_calls;
+    _Atomic uint64_t join_iterations;
+    _Atomic uint64_t helper_blocks;
+    _Atomic uint64_t helper_signals;
+    _Atomic uint64_t claim_ns;
+    _Atomic uint64_t claim_count;
+} wf_completion_trace;
+
+extern wf_completion_trace wf__completion_trace;
+
+static inline int wf_completion_trace_enabled(void) {
+    /* 0 not yet decided, 1 asked for, 2 not asked for. */
+    static _Atomic int decided;
+    int state = atomic_load_explicit(&decided, memory_order_relaxed);
+    if (state == 0) {
+        const char *text = getenv("WF_IO_TRACE");
+        state = (text != NULL && text[0] == '1' && text[1] == 0) ? 1 : 2;
+        atomic_store_explicit(&decided, state, memory_order_relaxed);
+    }
+    return state == 1;
+}
+
+static inline uint64_t wf_completion_trace_now(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+}
+
+static inline void wf_completion_trace_add(
+    _Atomic uint64_t *total,
+    _Atomic uint64_t *count,
+    uint64_t started
+) {
+    uint64_t now = wf_completion_trace_now();
+    atomic_fetch_add_explicit(
+        total,
+        now > started ? now - started : 0u,
+        memory_order_relaxed
+    );
+    if (count != NULL) {
+        atomic_fetch_add_explicit(count, 1, memory_order_relaxed);
+    }
+}
+
+static inline void wf_completion_trace_count(_Atomic uint64_t *counter, uint64_t by) {
+    atomic_fetch_add_explicit(counter, by, memory_order_relaxed);
+}
 
 /* These facts are independent even when a simple adapter publishes all four
  * in one terminal transition.  Future split-milestone operations must not turn

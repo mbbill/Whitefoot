@@ -191,6 +191,78 @@ static void wf_bridge_shutdown(void) {
     wf_bridge_ready = 0;
 }
 
+/* Batch 0096 attribution instrumentation — TEMPORARY; see contract.h.
+ *
+ * One line per stage, on standard error, at process exit.  It is registered
+ * only when WF_IO_TRACE names the trace, so a program that did not ask for it
+ * prints nothing and pays nothing. */
+static void wf_bridge_trace_report(void) {
+    wf_completion_statistics core =
+        wf_completion_statistics_snapshot(&wf_bridge_runtime);
+    wf_file_adapter_statistics file =
+        wf_file_adapter_statistics_snapshot(&wf_bridge_adapter);
+    wf_completion_trace *trace = &wf__completion_trace;
+    double executions = (double)(
+        file.helper_executions + file.scheduler_executions
+    );
+    if (executions <= 0.0) {
+        executions = 1.0;
+    }
+#define WF_TRACE_STAGE(name, total, count)                                     \
+    fprintf(                                                                   \
+        stderr,                                                                \
+        "wf-trace %-14s calls=%-10llu total_us=%-12.1f per_op_ns=%.1f\n",       \
+        (name),                                                                \
+        (unsigned long long)atomic_load_explicit(                              \
+            &(count), memory_order_relaxed                                     \
+        ),                                                                     \
+        (double)atomic_load_explicit(&(total), memory_order_relaxed) / 1000.0, \
+        (double)atomic_load_explicit(&(total), memory_order_relaxed)           \
+            / executions                                                       \
+    )
+    fprintf(
+        stderr,
+        "wf-trace helpers=%llu submissions=%llu helper_exec=%llu "
+        "scheduler_exec=%llu\n",
+        (unsigned long long)wf_file_adapter_helper_count(&wf_bridge_adapter),
+        (unsigned long long)file.submissions,
+        (unsigned long long)file.helper_executions,
+        (unsigned long long)file.scheduler_executions
+    );
+    WF_TRACE_STAGE("claim", trace->claim_ns, trace->claim_count);
+    WF_TRACE_STAGE("submit", trace->submit_ns, trace->submit_count);
+    WF_TRACE_STAGE(
+        "wake_latency", trace->queue_latency_ns, trace->queue_latency_count
+    );
+    WF_TRACE_STAGE("execute", trace->execute_ns, trace->execute_count);
+    WF_TRACE_STAGE("publish", trace->publish_ns, trace->publish_count);
+    WF_TRACE_STAGE("drain", trace->drain_ns, trace->drain_calls);
+    WF_TRACE_STAGE("consume", trace->consume_ns, trace->consume_calls);
+    WF_TRACE_STAGE("park", trace->park_ns, trace->park_calls);
+#undef WF_TRACE_STAGE
+    fprintf(
+        stderr,
+        "wf-trace drain_scans=%llu join_iterations=%llu helper_blocks=%llu "
+        "helper_signals=%llu parks=%llu wake_signals=%llu "
+        "capacity_waits=%llu\n",
+        (unsigned long long)atomic_load_explicit(
+            &trace->drain_scans, memory_order_relaxed
+        ),
+        (unsigned long long)atomic_load_explicit(
+            &trace->join_iterations, memory_order_relaxed
+        ),
+        (unsigned long long)atomic_load_explicit(
+            &trace->helper_blocks, memory_order_relaxed
+        ),
+        (unsigned long long)atomic_load_explicit(
+            &trace->helper_signals, memory_order_relaxed
+        ),
+        (unsigned long long)core.parks,
+        (unsigned long long)core.wake_signals,
+        (unsigned long long)file.capacity_waits
+    );
+}
+
 static void wf_bridge_initialize(void) {
     wf_bridge_error = wf_completion_runtime_init(
         &wf_bridge_runtime,
@@ -229,6 +301,11 @@ static void wf_bridge_initialize(void) {
     if (atexit(wf_bridge_shutdown) != 0) {
         /* Registration failure changes cleanup at process exit, not the
          * completion contract of any admitted operation. */
+    }
+    /* Registered last so it runs first: atexit is last-in-first-out, and the
+     * report reads pool state the shutdown above tears down. */
+    if (wf_completion_trace_enabled() && atexit(wf_bridge_trace_report) != 0) {
+        /* The stage table is diagnostic; losing it changes no contract. */
     }
 }
 
@@ -1233,6 +1310,12 @@ void wf__completion_file_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_completion_trace_enabled()) {
+            wf_completion_trace_count(
+                &wf__completion_trace.join_iterations,
+                1
+            );
+        }
         if (wf__completion_file_take(token_storage, value, error_code)) {
             return;
         }
@@ -1267,6 +1350,12 @@ void wf__completion_file_open_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_completion_trace_enabled()) {
+            wf_completion_trace_count(
+                &wf__completion_trace.join_iterations,
+                1
+            );
+        }
         if (wf_bridge_take_open(
                 token_storage,
                 value,
@@ -1308,6 +1397,12 @@ void wf__completion_file_status_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_completion_trace_enabled()) {
+            wf_completion_trace_count(
+                &wf__completion_trace.join_iterations,
+                1
+            );
+        }
         if (wf__completion_file_take_status(
                 token_storage,
                 value,

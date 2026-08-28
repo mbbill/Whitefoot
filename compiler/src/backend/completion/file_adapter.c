@@ -385,7 +385,31 @@ static void wf_file_run_work(
     const wf_file_work *work,
     int helper
 ) {
-    wf_file_result result = wf_file_execute_direct(&work->request);
+    wf_file_result result;
+    uint64_t traced = 0;
+    if (wf_completion_trace_enabled()) {
+        traced = wf_completion_trace_now();
+        if (work->queued_ns != 0) {
+            atomic_fetch_add_explicit(
+                &wf__completion_trace.queue_latency_ns,
+                traced > work->queued_ns ? traced - work->queued_ns : 0u,
+                memory_order_relaxed
+            );
+            atomic_fetch_add_explicit(
+                &wf__completion_trace.queue_latency_count,
+                1,
+                memory_order_relaxed
+            );
+        }
+    }
+    result = wf_file_execute_direct(&work->request);
+    if (traced != 0) {
+        wf_completion_trace_add(
+            &wf__completion_trace.execute_ns,
+            &wf__completion_trace.execute_count,
+            traced
+        );
+    }
     wf_completion_publication publication = {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
         .terminal_kind = result.error_code == 0
@@ -420,6 +444,12 @@ static void *wf_file_helper_main(void *context) {
         int released_capacity;
         (void)pthread_mutex_lock(&adapter->queue_lock);
         while (adapter->queue_count == 0 && adapter->stopping == 0) {
+            if (wf_completion_trace_enabled()) {
+                wf_completion_trace_count(
+                    &wf__completion_trace.helper_blocks,
+                    1
+                );
+            }
             (void)pthread_cond_wait(
                 &adapter->queue_available,
                 &adapter->queue_lock
@@ -579,6 +609,9 @@ static void wf_file_enqueue_locked(
     wf_file_work *entry = &adapter->queue[adapter->queue_tail];
     entry->token = token;
     entry->request = *request;
+    entry->queued_ns = wf_completion_trace_enabled()
+        ? wf_completion_trace_now()
+        : 0u;
     if (request->kind == WF_FILE_OPEN_AT) {
         /* The path becomes this record's own before any helper can see the
          * entry.  `wf_file_adapter_submit` refused a name that does not fit
@@ -619,6 +652,9 @@ static void wf_file_enqueue_locked(
      * herd rather than progress. */
     if (atomic_load_explicit(&adapter->helper_count, memory_order_relaxed)
         != 0) {
+        if (wf_completion_trace_enabled()) {
+            wf_completion_trace_count(&wf__completion_trace.helper_signals, 1);
+        }
         (void)pthread_cond_signal(&adapter->queue_available);
     }
     wf_file_grow_helpers_locked(adapter);
@@ -630,10 +666,14 @@ enum wf_file_submit_result wf_file_adapter_submit(
     const wf_file_request *request
 ) {
     enum wf_completion_transition_result transition;
+    uint64_t traced = 0;
 
     if (adapter == NULL || adapter->initialized == 0
         || !wf_file_request_valid(request)) {
         return WF_FILE_SUBMIT_INVALID;
+    }
+    if (wf_completion_trace_enabled()) {
+        traced = wf_completion_trace_now();
     }
     /* A submitted open's path must fit the operation record, because the
      * record is what resolves it.  The direct executor carries any length and
@@ -677,6 +717,13 @@ enum wf_file_submit_result wf_file_adapter_submit(
 
     wf_file_enqueue_locked(adapter, token, request);
     (void)pthread_mutex_unlock(&adapter->queue_lock);
+    if (traced != 0) {
+        wf_completion_trace_add(
+            &wf__completion_trace.submit_ns,
+            &wf__completion_trace.submit_count,
+            traced
+        );
+    }
     return WF_FILE_TARGET_OWNS;
 }
 
