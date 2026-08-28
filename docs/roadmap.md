@@ -5,7 +5,7 @@ Revision: 56 (v0.39 narrows [CLM-1]'s claim-authority control dependence to
 the definitions a boundary selector actually chooses)
 
 The active language authority is v0.39, SHA-256
-`4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`, carried by
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
 v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`,
 archived at [`spec/kernel-spec-v0.38.md`](../spec/kernel-spec-v0.38.md). The

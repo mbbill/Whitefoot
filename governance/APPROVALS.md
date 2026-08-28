@@ -1645,7 +1645,7 @@ ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedf
   2's approval and rule 4's approval of the content recorded here; this
   record creates no separate approval step.
 - SPECIFICATION: activate Whitefoot v0.39 at exact SHA-256
-  `4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`.
+  `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
   It supersedes active v0.38 at SHA-256
   `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`;
   those outgoing bytes are preserved byte-for-byte as
@@ -1665,9 +1665,9 @@ ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedf
   reaches, exactly those components whose reaching definition on one incoming
   edge is a different definition occurrence from their reaching definition on
   another. Standing on a boundary-selected edge is no longer itself a
-  selection: a binder, delivered value, or storage write whose own operands
-  are every one Local is Local, inside the selected arm and in post-join state
-  alike. The clause that a `value_if` or `value_match` delivery is selected in
+  selection: an ordinary binding, computed value, or storage write whose own
+  operands are every one Local is Local, inside the selected arm and in
+  post-join state alike. The clause that a `value_if` or `value_match` delivery is selected in
   every case is retained verbatim in effect, so selecting constants on the two
   arms or the same local value on both arms still does not declassify the
   delivered value. No other [CLM-1] clause changes, no [CLM-2] or [CLM-3]
@@ -1711,4 +1711,4 @@ ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedf
   IR apart from the QUAL-1 banner's version token, or byte-identical
   diagnostics. Outside `tests/conformance`, no conformance-evidence file
   changes: the adapter, the runners, and the collection wiring are untouched.
-ACTIVE-SPEC: v0.39 4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d
+ACTIVE-SPEC: v0.39 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d

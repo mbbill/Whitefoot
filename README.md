@@ -34,7 +34,7 @@ priorities and repository discipline.
 ## Current state
 
 Kernel specification v0.39 is the active language authority, SHA-256
-`4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`, carried by
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
 the stable [specification path](spec/kernel-spec.md). It narrows [CLM-1]'s
 claim-authority control dependence to the definitions a boundary selector
 actually chooses, and supersedes v0.38, whose outgoing bytes are

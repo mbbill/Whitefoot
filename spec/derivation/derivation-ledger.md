@@ -3,7 +3,7 @@
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active v0.39 authority at SHA-256
-`4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58`.
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
 v0.39 supersedes v0.38 at
 `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`; the v0.39
 amendment at the end of this file binds its changed derivations, while released
