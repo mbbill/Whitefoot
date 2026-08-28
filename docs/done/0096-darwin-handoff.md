@@ -757,12 +757,13 @@ land after the measurement and none of them is a performance change.
   construction cannot provide.
 
 **These were not re-measured on a runner, and the tables above are read at
-`266acf4f`.** What they cost per operation is one acquire load where there was
-a plain load on the direct route, two more on the submit route's policy
-question, and one *fewer* atomic read-modify-write on the named drain's common
-answer; no route, no policy and no threshold changes. That is an argument, not
-a measurement, and it is the reason the section states the measured commit
-rather than claiming the tip.
+`266acf4f`.** What they cost per operation is a handful of loads that became
+acquire loads where they were plain ones — one on the direct route, a few more
+on the submit route's policy question — against one *fewer* atomic
+read-modify-write on the named drain's common answer, which the join loop asks
+on every turn. No route, no policy and no threshold changes. That is an
+argument rather than a measurement, and it is why the section names the commit
+it measured instead of claiming the tip.
 
 ## Approval classes
 
