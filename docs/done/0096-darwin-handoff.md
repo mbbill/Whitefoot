@@ -537,8 +537,10 @@ by this batch.
 - **A written `WF_IO_HELPERS` declines nothing.** A written setting is an
   instruction about how to run, so the runtime stops choosing. That is also what
   makes a pinned line of a measurement a measurement of the completion path
-  rather than of the policy that may decline it — without it, `C.wide8.h0` and
-  `C.wide8.default` would not be measuring the same thing.
+  rather than of the policy that may decline it. Without it `C.wide8.h0` would
+  be measuring whatever the policy happened to choose, and the pair
+  `h0`-against-`default` that prices the machinery at 7.92 ms over `S.wide8`
+  would not exist.
 - **The helper ceiling is the bridge's operation bound, not the core count.** A
   helper inside a host call holds no CPU, so what bounds useful I/O concurrency
   is how many operations a program can have outstanding. Sizing by cores capped
