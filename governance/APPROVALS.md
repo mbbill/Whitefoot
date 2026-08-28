@@ -1683,4 +1683,32 @@ ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedf
   `docs/done/0097-differential-fuzz.md`, all 63 of whose rejections over 2004
   generated programs were that one shape, and whose minimized pair differs by
   a single `return` line.
+- CONFORMANCE BOUNDARY: relative to `main` tip
+  `10b76c66a02bfff21d9842fd9b1f35d0b9855ce4`, `tests/conformance` content
+  changes as follows. Added: seven case files under
+  `tests/conformance/cases/`, being
+  `accept-clm1-local-claim-after-boundary-exit.wf`,
+  `accept-clm1-local-claim-after-boundary-join.wf`,
+  `accept-clm1-local-claim-inside-selected-arm.wf`,
+  `reject-clm1-claim-on-selected-payload.wf`,
+  `reject-clm1-claim-on-delivered-selection.wf`,
+  `reject-clm1-claim-on-storage-written-under-selection.wf`, and
+  `reject-clm1-claim-on-loop-carried-update.wf`. Modified: one file,
+  `tests/conformance/manifest.jsonl`. Deleted: none. Renamed: none. Within
+  `tests/conformance/manifest.jsonl`, seven records are added and no record is
+  modified or removed, taking the case-record count from 510 to 517 and
+  leaving the rule-annotation count at 35. No pre-existing `expect` verdict
+  changes, and coverage stays at 138/138 rules. The three added `accept`
+  cases are the verdict the amended [CLM-1] sentence moves: the two members of
+  the differential-fuzz minimized pair, which v0.38 separated by one `return`
+  line, and a claim over a parameter-derived value inside a selected arm. The
+  four added `reject` cases are the selections the amended sentence retains:
+  the matching binder the arm introduces, a `value_if` delivery whose two arms
+  both give a literal below the bound, storage one arm wrote and the other did
+  not, and loop-carried state a boundary-selected counted loop updated. Every
+  pre-existing case was additionally compiled with both the base compiler at
+  `100b37cd` and this revision's compiler: all 510 produce byte-identical LLVM
+  IR apart from the QUAL-1 banner's version token, or byte-identical
+  diagnostics. Outside `tests/conformance`, no conformance-evidence file
+  changes: the adapter, the runners, and the collection wiring are untouched.
 ACTIVE-SPEC: v0.39 4be4830fa87a534879de17524599b0919aef4dfab072dad823bf2f9b54d32d58 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d

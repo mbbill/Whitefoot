@@ -58,7 +58,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.38]` `[current: safe-Rust compiler]`
+`[current: spec v0.39]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -69,7 +69,7 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.38 is the active
+belong in the [compiler README](../compiler/README.md). v0.39 is the active
 semantic authority. It rebuilds the system interface around formal state paths,
 ordinary ownership, and completion-only lowering, with no separate world
 region, capability class, blocking-call family, or `Ordered` relation.
@@ -442,7 +442,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-10 — Claim residual source canonicality
 
-`[current: active v0.38; introduced by v0.34]` `[terminal]`
+`[current: active v0.39; introduced by v0.34]` `[terminal]`
 
 - **Goal:** make every claim in a successful checker result one mechanically
   qualified, individually necessary runtime-residual candidate, and every
@@ -484,7 +484,7 @@ creating writer trust or weakening the checked safety envelope.
   irredundancy, not a unique proof basis or globally weakest proposition.
   Accepted-claim runtime execution is unchanged, and no optional solver
   participates in ordinary source acceptance.
-- **Current:** v0.34 introduced this direction, and active v0.38 preserves it.
+- **Current:** v0.34 introduced this direction, and active v0.39 preserves it.
   The exact activation identities and conformance boundaries remain in
   `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
   reconstruction, fixed eligible set, component/occurrence necessity, stable
@@ -538,7 +538,7 @@ facts-off evidence rather than trust in the compiler or writer.
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter installed]`
-`[next: publish an exact-revision report for the activated v0.38 revision]`
+`[next: publish an exact-revision report for the activated v0.39 revision]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
@@ -549,7 +549,7 @@ facts-off evidence rather than trust in the compiler or writer.
   ordinary test runs. Historical exact-revision results remain in their batch
   and activation records; this outline carries no floating count of its own.
 - **Missing / next:** publish the next independent pass/fail/skip report for
-  the exact activated v0.38 revision. Any
+  the exact activated v0.39 revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -875,14 +875,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: v0.38 active; unified-state model implemented and validated]`
+`[current: v0.39 active; unified-state model implemented and validated]`
 `[next: wider APIs and target measurements]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** v0.38 is active and carries this model. It uses
+- **Current:** v0.39 is active and carries this model. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration

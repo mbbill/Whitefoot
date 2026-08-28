@@ -12,7 +12,19 @@ archived at `spec/kernel-spec-v0.38.md` and the merge-time record is in
 passes on that revision. The batch record is
 `docs/done/0082-unified-state-completion-io.md`.
 
-v0.38 rides on `batch/0091-par3-judgment` and adds one rule, [PAR-3], the
+v0.39 rides on `batch/0102-clm1-narrow` and adds no rule. It narrows one
+paragraph of [CLM-1]'s claim authority: a boundary selector's witness now joins
+a matching binder its arm introduces, a value `value_if` or `value_match`
+delivers, and, at a reconvergence, loop head, or loop exit, exactly those
+components whose incoming reaching definitions are different definition
+occurrences. Standing on a boundary-selected edge is no longer itself a
+selection, so a definition built from literals, named consts, parameters, and
+other local values is local in post-join state and inside the selected arm
+alike. The ground is batch 0097's differential-fuzz campaign, all 63 of whose
+rejections over 2004 programs were that one shape. Its record is
+`docs/done/0102-clm1-narrow.md`.
+
+v0.38 rode on `batch/0091-par3-judgment` and added one rule, [PAR-3], the
 staged loop permission: it cuts the body of any `for_stmt` or `loop_stmt` at
 its first `may-suspend` submission and admits executing the remainder of one
 iteration against the prologue of a later one. It also amends [SYS-2] in one
