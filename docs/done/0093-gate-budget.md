@@ -444,8 +444,9 @@ same two things by different routes.
 
 25ac56ef read its account from this project's aarch64 Linux container, whose
 64 KiB guard never loses the row. A temporary diagnostic ran the pre-fix body
-200 times on the runner itself, printing the address written, the thread's own
-`sigaltstack`, and `/proc/self/maps`. Gate runs
+200 times on the runner itself: the first run printed the address written and
+the `/proc/self/maps` lines around it, the second added the thread's own
+`sigaltstack` so the mapping could be named rather than inferred. Gate runs
 [33148142621](https://github.com/mbbill/Whitefoot/actions/runs/33148142621) and
 [33148390275](https://github.com/mbbill/Whitefoot/actions/runs/33148390275),
 `sampling (ubuntu-24.04)`: 14 of 200 and 11 of 200 runs completed the write —
@@ -645,7 +646,12 @@ Under the four rules in `AGENTS.md`:
   this branch has not been brought forward, so its untouched
   `governance/APPROVALS.md` is shorter than main's. Bringing the branch
   forward is what closes that stage, and it is the same merge that reconciles
-  `trap_latch.rs` and `tests/programs/support.rs`.
+  `trap_latch.rs` and `tests/programs/support.rs`. The gate's `static` job runs
+  the same stage against `origin/main`, so it turned red on both hosts the
+  moment that merge landed and stays red until the branch is brought forward:
+  green on both in run
+  [33148679525](https://github.com/mbbill/Whitefoot/actions/runs/33148679525),
+  red on both in the next run, whose commit touches only this record.
 - **No specification change.** `spec/kernel-spec.md` is untouched and no
   archive moves.
 - **No conformance verdict change.** No case, manifest, adapter or runner under
