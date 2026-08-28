@@ -12,7 +12,8 @@ This document carries active v0.38 guidance, including the unified-state
 completion-I/O forms activated by v0.37, the per-iteration scratch form
 [PAR-3] admits (P15), and the three forms the 2026-08-28 blind-writer trial
 found a writer lacking: the inline factory reserve inside P15, the hoisted
-length fact (P16), and the subtotal-returning walk (P17).
+length fact (P16), and the subtotal-returning walk (P17). P18 is the explicit
+buffer a loop holds in place of the output resource it may not hold.
 
 Implementation boundary: the current backend emits no effect-derived
 attributes or alias metadata, performs no proof-driven check elision, has no
@@ -447,14 +448,18 @@ granted says nothing at all — including when its counted [PAR-2] verdict is
 denied, which is the ordinary case for the form above: the counted rule refuses
 the short factory loan the staged rule exists to admit, and that denial is
 deliberately withheld from the default channel rather than telling a writer
-their granted loop was denied. It is in the full report.
+their granted loop was denied. It is in the full report. A `--no-overlap`
+build prints none of these notes: that flag has already said this build takes
+no overlap at all, so a denied loop is the build the writer asked for rather
+than news about the program they wrote.
 
 `whitefootc --par-ledger` is that full report: one `PAR stage` line per loop
 that performs I/O, and one `PAR place` line for every place the judgment
 classified, with its disposition and the reason, plus the `PAR pair`, `PAR
 chain`, and `PAR loop` lines of the other judgments. A denial names the
-offending place, the numbered condition, and the admitted form. Every notice is
-one of those lines, byte for byte.
+offending place, the numbered condition, and the admitted form, and the flag
+prints it under every lowering. Every notice is one of those lines, byte for
+byte.
 
 One remedy the report can print is not one a writer can take, and it says so:
 where a loop's exit is selected by the may-suspend call's own outcome — the
@@ -595,6 +600,67 @@ value field by field" } } at counts.wf:14:7 in line
 
 Replaces: a mutable accumulator parameter threaded by reference, and `+=` into
 a caller's struct.
+
+## P18. The loop's own buffer, published once
+
+Problem: a loop reads a file per iteration and writes one line to an output —
+`command.stdout`, or another positioned write target — from inside the body.
+[PAR-3] denies it: the resource carries one position, so no iteration can be
+given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
+
+```whitefoot
+for @scan index in 0_u64..8_u64 {
+  /* P15's reserve, open, and read; then */
+  region 'say {
+    let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
+  }
+}
+```
+
+```text
+PAR stage  ‹loop›  for  denied  condition 3: a may-suspend call retains a borrow past its own submission
+           on storage the body writes and the iteration does not introduce; instead, give each iteration
+           its own resource; or, where the body only publishes to that storage — an output stream is the
+           pointed case — hoist the per-iteration write out of the loop, folding a total in the body and
+           writing it once after the loop; or leave this loop sequential, because storage that carries
+           one position cannot be held by two iterations at once, at &uniq 'say out
+```
+
+Pattern: **hold no `&uniq` resource inside a loop body; hold a buffer instead,
+and publish it once after the loop.** Each iteration folds its line into the
+loop's own buffer with an element `set` under one length fact above the loop
+(P16); that element is `serialized-E`, the remainder's writes to storage
+outside the loop being taken in index order.
+
+```whitefoot
+let page = buffer_new(8_u64, 0_u8);
+let room = len(page);
+for @scan index in 0_u64..8_u64 {
+  /* reserve, open, and read into the iteration's own data buffer */
+  let writable = ilt(index, room);
+  if writable {
+    set page[index] = data[0_u64];
+  }
+}
+region 'say {
+  let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
+}
+```
+
+```text
+PAR stage  ‹loop›  for  permitted  staged at open_file<'f, 'n>(permit: move permit, root: &'f cwd,
+           name: &'n name, start: 0_u64, end: 2_u64); 6 places classified
+```
+
+Write into the page by element. A helper taking `&uniq` of it costs the loop
+its pipeline under condition 4 instead: `denied  &uniq 'page page  a call of
+the remainder holds an exclusive loan on it, and two remainders coexist`.
+
+Current value: this is the explicit form and today the only one; the implicit
+form — a per-iteration write to a final stage the runtime commits in order — is
+planned, not landed. Output interleaved as produced appears at the end instead.
+
+Replaces: writing each line where it is produced, as every other language does.
 
 ## Known gaps (findings, not yet patterns)
 

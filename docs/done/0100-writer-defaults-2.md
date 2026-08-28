@@ -769,7 +769,8 @@ These are recorded, not decided.
   output ordering guarantees from "interleaved as produced" to "all at the end".
   Whether the language should instead admit a per-iteration publish to a stream
   whose order the runtime restores is D1, and this batch only makes the working
-  rewrite discoverable.
+  rewrite discoverable. That rewrite is now `docs/patterns.md` P18; D1 itself
+  is unchanged and still open.
 - **A successful build has no quiet form (B5).** The third blind writer's first
   program compiled and ran correctly, and every rebuild printed nine
   `whitefootc: note: PAR …` lines. `--par` and `--no-overlap` change the
@@ -783,7 +784,9 @@ These are recorded, not decided.
   flag that silences a correctness-adjacent report is a flag people set once and
   forget — so this batch adds none and records the observation. Whether the
   answer is a flag, a per-loop written acknowledgement in the source, or a
-  narrower default channel is the owner's call.
+  narrower default channel is the owner's call. Answered in
+  `docs/done/0103-quiet-no-overlap.md`: a `--no-overlap` build prints none of
+  these notes, and `--par-ledger` still prints the full report.
 - **No operation turns read bytes or an enumerated name into a path (B6).**
   A "list of names" utility reads names out of a file and cannot open them: the
   only `RelativePath` constructor is `relative_path(value: own HostString)`, the

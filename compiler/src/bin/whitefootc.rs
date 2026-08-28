@@ -42,13 +42,7 @@ fn run() -> Result<(), String> {
         .zip(&bytes)
         .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
-    let overlap = if options.no_overlap {
-        OverlapLowering::Off
-    } else if options.par {
-        OverlapLowering::On
-    } else {
-        OverlapLowering::Completion
-    };
+    let overlap = options.overlap();
     let module = if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
@@ -75,14 +69,8 @@ fn run() -> Result<(), String> {
         let (module, notices) =
             compile_with_io_notices(&inputs, CompilerLimits::default(), overlap)
                 .map_err(|failure| failure.to_string())?;
-        for notice in &notices {
-            eprintln!("whitefootc: note: {notice}");
-        }
-        if !notices.is_empty() {
-            eprintln!(
-                "whitefootc: note: the compilation succeeded; run --par-ledger for the \
-                 complete permission report"
-            );
+        for line in io_notice_report(options.no_overlap, &notices) {
+            eprintln!("{line}");
         }
         module
     };
@@ -104,6 +92,36 @@ fn run() -> Result<(), String> {
         &module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
     )
+}
+
+/// The stderr lines an ordinary compilation reports for the denied I/O loops
+/// it found: every notice prefixed `whitefootc: note:`, then one line saying
+/// the compilation succeeded and where the full report is.
+///
+/// A build that asked for no overlap lowering reports none of them. The flag
+/// is the writer stating that this build is the sequential reference one, so a
+/// loop that lost its pipeline is not news about the program in front of them
+/// — it is the build they asked for, and repeating the whole verdict on every
+/// such compile is noise they cannot act on without contradicting the flag
+/// they just wrote. Nothing else moves: the judgment still runs and reaches
+/// the same verdicts, `--par-ledger` still prints the complete report under
+/// the same flag, and the emitted module is the one `--no-overlap` always
+/// emitted. This is a channel decision and the only one taken by the flag
+/// rather than by what a line says.
+fn io_notice_report(no_overlap: bool, notices: &[String]) -> Vec<String> {
+    if no_overlap || notices.is_empty() {
+        return Vec::new();
+    }
+    let mut report: Vec<String> = notices
+        .iter()
+        .map(|notice| format!("whitefootc: note: {notice}"))
+        .collect();
+    report.push(
+        "whitefootc: note: the compilation succeeded; run --par-ledger for the \
+         complete permission report"
+            .to_owned(),
+    );
+    report
 }
 
 /// Compiles the module once more, to assembly, purely to read the two things
@@ -463,13 +481,31 @@ impl Options {
             sources,
         })
     }
+
+    /// The lowering this invocation compiles: the shipped completion build
+    /// unless one of the two switches named another.
+    ///
+    /// The judgment is pure, so this selects an emitted lowering and nothing
+    /// about what the compiler decided.
+    fn overlap(&self) -> OverlapLowering {
+        if self.no_overlap {
+            OverlapLowering::Off
+        } else if self.par {
+            OverlapLowering::On
+        } else {
+            OverlapLowering::Completion
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use super::{Options, source_names};
+    use super::{
+        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
+        compile_with_permission_ledger, io_notice_report, source_names,
+    };
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
@@ -625,5 +661,105 @@ mod tests {
             .err()
             .expect("a misspelled option must be refused");
         assert!(message.contains("unknown option"), "{message}");
+    }
+
+    /// One loop that publishes to standard output per iteration. The [PAR-3]
+    /// staged judgment denies it on `&uniq 'say out`, which is storage
+    /// carrying one position, and the denial is the same under every lowering
+    /// because the judgment is pure.
+    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  doc "Writes one line per iteration to standard output.";
+  let page = buffer_new(8_u64, 0_u8);
+  for @scan index in 0_u64..4_u64 {
+    region 'say {
+      let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    /// A denied I/O loop is news by default and under `--par`, and it is not
+    /// news under `--no-overlap`.
+    ///
+    /// The third blind writer's program compiled, ran correctly, and printed
+    /// the same `PAR` notes on every rebuild, including the builds that had
+    /// already said they wanted no overlap at all. A writer who wrote
+    /// `--no-overlap` has stated that this build is the sequential reference
+    /// one, so a loop without a pipeline is the build they asked for rather
+    /// than a missed optimization on it.
+    ///
+    /// Three things this pins beyond the flag. The judgment is pure, so all
+    /// three ways reach the same verdicts and it is only the channel that
+    /// closes. The three ways emit one module here, byte for byte, because a
+    /// denied loop reaches the host through ordinary direct calls under every
+    /// lowering — so the quiet costs the writer no information about the
+    /// program they built. And `--par-ledger` still carries every line the
+    /// quiet build withheld.
+    #[test]
+    fn a_no_overlap_build_reports_no_denied_io_loop() {
+        let mut modules = Vec::new();
+        let mut verdicts = Vec::new();
+        for (arguments, reported) in [
+            (vec!["value.wf"], true),
+            (vec!["--par", "value.wf"], true),
+            (vec!["--no-overlap", "value.wf"], false),
+        ] {
+            let options = parse(&arguments).expect("every invocation is complete");
+            let (module, notices) = compile_with_io_notices(
+                &[SourceInput::new("value.wf", DENIED_OUTPUT_LOOP)],
+                CompilerLimits::default(),
+                options.overlap(),
+            )
+            .expect("a denied loop is a note, never a rejection");
+            assert!(
+                notices.iter().any(|notice| notice.contains("denied")),
+                "the judgment denies this loop under every lowering: {notices:?}"
+            );
+            let report = io_notice_report(options.no_overlap, &notices);
+            if reported {
+                assert_eq!(report.len(), notices.len() + 1, "{report:?}");
+                assert!(
+                    report
+                        .iter()
+                        .all(|line| line.starts_with("whitefootc: note: ")),
+                    "{report:?}"
+                );
+                assert!(
+                    report[0].contains("PAR ") && report[0].contains("denied"),
+                    "{report:?}"
+                );
+                assert!(
+                    report[report.len() - 1].contains("--par-ledger"),
+                    "the closing line names the full report: {report:?}"
+                );
+            } else {
+                assert!(report.is_empty(), "{report:?}");
+            }
+            modules.push(module);
+            verdicts.push(notices);
+        }
+        assert!(
+            verdicts.iter().all(|notices| *notices == verdicts[0]),
+            "the judgment is pure, so the flag closes a channel and reaches no verdict"
+        );
+        assert!(
+            modules.iter().all(|module| *module == modules[0]),
+            "a denied loop compiles to one module under all three lowerings"
+        );
+
+        // The report itself is not the quiet channel: under the same
+        // `--no-overlap` lowering `--par-ledger` still prints every line,
+        // including the denials the quiet build withheld.
+        let (_, ledger) = compile_with_permission_ledger(
+            &[SourceInput::new("value.wf", DENIED_OUTPUT_LOOP)],
+            CompilerLimits::default(),
+            OverlapLowering::Off,
+        )
+        .expect("a denied loop is a note, never a rejection");
+        assert!(
+            verdicts[2].iter().all(|notice| ledger.contains(notice)),
+            "the full report keeps what the quiet build did not print: {ledger:?}"
+        );
     }
 }
