@@ -998,11 +998,14 @@ and reading the same row from all three is what the claim rests on rather than
 on one draw's exclusivity.
 
 ```text
-run          commit    processor    disk    C.wide8.default  S.wide8  N.pool8  N.uring32
-33153717709  96bb4778  EPYC 7763    sda1            1479.87  4227.07  1479.56    1469.81
-33155821397  266acf4f  Xeon 8573C   nvme0n1p1       1514.79  8973.99  1435.03    1268.13
-33165141309  a06c53f9  EPYC 9V74    nvme0n1p1       1216.03  4108.74  1482.48    1448.85
+run          commit    processor    C.wide8.default  S.wide8  N.pool8  N.uring32
+33153717709  96bb4778  EPYC 7763            1479.87  4227.07  1479.56    1469.81
+33155821397  266acf4f  Xeon 8573C           1514.79  8973.99  1435.03    1268.13
+33165141309  a06c53f9  EPYC 9V74            1216.03  4108.74  1482.48    1448.85
 ```
+
+All three report four CPUs; `96bb4778`'s ran on `sda1` and the other two on
+`nvme0n1p1`.
 
 The reading used is `33165141309`'s 1216.03 ms, and what makes it the reading
 rather than the flattering one is that it is the *only* row of the three where

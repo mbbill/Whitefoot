@@ -1485,11 +1485,14 @@ the one this section calls unreadable for its spreads, so its row below is a
 confirmed label around a median, not a ranking.
 
 ```text
-run          commit    processor    disk       C.wide8.default  S.wide8  N.pool8  N.uring32
-33153717709  96bb4778  EPYC 7763    sda1               1479.87  4227.07  1479.56    1469.81
-33155821397  266acf4f  Xeon 8573C   nvme0n1p1          1514.79  8973.99  1435.03    1268.13
-33165141309  a06c53f9  EPYC 9V74    nvme0n1p1          1216.03  4108.74  1482.48    1448.85
+run          commit    processor    C.wide8.default  S.wide8  N.pool8  N.uring32
+33153717709  96bb4778  EPYC 7763            1479.87  4227.07  1479.56    1469.81
+33155821397  266acf4f  Xeon 8573C           1514.79  8973.99  1435.03    1268.13
+33165141309  a06c53f9  EPYC 9V74            1216.03  4108.74  1482.48    1448.85
 ```
+
+All three report four CPUs; `96bb4778`'s ran on `sda1` and the other two on
+`nvme0n1p1`.
 
 On this run's table, and on this run's alone, the eight-wide Whitefoot program
 is faster than every native line:
