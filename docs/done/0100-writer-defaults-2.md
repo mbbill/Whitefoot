@@ -418,10 +418,10 @@ The two rejections in the corpus are the two the re-writer met. `a1.wf` is the
 GRAM-9 contract-block case of item 1 and now carries the `define` fix; `a2.wf`
 and `probe_d` are the OWN-6 case of item 2 and now carry the whole idiom.
 
-The repository's own corpus was compared the same way, once for each round,
-over every `.wf` under `tests/programs`, `tests/codegen`, and
-`tests/conformance/cases`, each compiled from inside its own worktree by
-identical relative path:
+The repository's own corpus was compared the same way in each of three rounds,
+the last of them at the branch tip, over every `.wf` under `tests/programs`,
+`tests/codegen`, and `tests/conformance/cases`, each compiled by identical
+relative path from the same directory. All three runs agree to the number:
 
 ```text
 files=630 exit-status-differences=0 ir-differences=0 stderr-differences=141
@@ -806,7 +806,7 @@ Local canonical `make check` on macOS, green in all three rounds. The first ran
 at `7aa6819d`, 160 s wall; the second at `a4087723`, 203 s wall, which is every
 item of this record including the pinning corpus; the third at `efdf130f` — the
 branch tip, and every byte of this batch — 260 s wall, with the stage times
-below. The only commit after that run is the one that adds this paragraph, and
+below. The only commits after that run change this record and nothing else, and
 CI runs the same entry point on the branch tip.
 
 ```text
