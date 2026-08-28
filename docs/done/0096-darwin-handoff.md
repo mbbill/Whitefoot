@@ -812,18 +812,18 @@ cost the path anything measurable would not reproduce the warm rows to three
 decimal places. The tables above stay at `266acf4f` because that is where they
 were measured; this is the shipped runtime's own reading beside them.
 
-Its cache labels are the branch's fourth in a row that cannot carry a cold
-bar: `probe before the table: refused; probe after it: refused` on both cold
+Its cache labels leave it unable to carry a cold bar like the rest:
+`probe before the table: refused; probe after it: refused` on both cold
 tables. Its spreads, however, are the tightest of the four — `N.pool8` cold
 64 KiB runs 427.78 to 447.04 around 434.33, and cold 4 KiB 379.22 to 413.11
 around 399.02 — so what it is short of is the label and not the tightness.
 
 Linux in the same run reproduces its own unresolved reading rather than
 settling it: the many-files job on an EPYC 7763 reads `C/S` 128.73/120.94 =
-1.064, against 1.058 on the 8573C draw and 1.041 and 1.045 in batch 0090. Four
-draws now put C between four and six per cent slower than S on that job, on
-three different processors, which is batch 0090's own finding and not a new
-one.
+1.064, against 1.058 on the 8573C draw and 1.041 and 1.045 in batch 0090 on an
+EPYC 9V74. Four draws on three processors now put C between 4.1 and 6.4 per
+cent slower than S on that job, which is batch 0090's own finding and not a
+new one.
 
 ## Approval classes
 
