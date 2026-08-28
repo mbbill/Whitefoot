@@ -368,9 +368,9 @@ by exempting the carrying block from the rule.
   it evidence rather than decoration. Each control is the shipped harness with
   one hunk removed, built into a scratch copy so no other agent's tree moves.
   `test_bridge_open_waits_for_the_other_engine`, with the ring restored to
-  deciding from its own in-flight count, fails at zero, one and four helpers in
-  the Linux container, on the check that says the runtime held the refused open
-  rather than publishing it.
+  deciding from its own in-flight and held counts, fails at zero, one and four
+  helpers in the Linux container on `value >= 0` — the open publishes
+  `Err(EMFILE)` where source order produces the descriptor.
   `test_bridge_one_of_two_opens_behind_a_close_succeeds`, with owed work
   restored to running with no re-attempt of its own, fails at two and four
   helpers on macOS on `successes == 1` — both opens refused where source order
