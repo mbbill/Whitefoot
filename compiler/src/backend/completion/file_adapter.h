@@ -479,10 +479,9 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * immediately stall it -- so between that release and that signal the
  * submitter holds no lock, and a shutdown running in the window destroys the
  * condition variable the submitter is about to signal.  The decline check is
- * named beside it because it is the other entry a delivered program reaches
- * without holding anything: it asks `wf_file_adapter_queued`, which takes the
- * queue lock, so a shutdown running in its window destroys the mutex it is
- * about to take.  Shutdown clears the record's `initialized` flag before
+ * described beside it because its window is the other shape: it asks
+ * `wf_file_adapter_queued`, which takes the queue lock, so a shutdown
+ * running in its window destroys the mutex it is about to take.  Shutdown clears the record's `initialized` flag before
  * destroying either object, which is what bounds both windows to a caller
  * that had already passed the flag.
  *
