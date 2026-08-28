@@ -313,7 +313,38 @@ name on both.
 
 ### CI
 
-CI-EVIDENCE-PLACEHOLDER
+Commit `6a55e333`, pushed to `origin/batch/0094-linux-directory-row`.
+
+`gate` — <https://github.com/mbbill/Whitefoot/actions/runs/33150662206> — green
+on both jobs. Canonical `make check` on the same commit reports the same counts
+on both hosts, which is the whole point of the batch:
+
+| | gate-linux (ubuntu-24.04) | gate-macos (macos-14) |
+|---|---|---|
+| library suite | 1395 passed, 0 failed | 1395 passed, 0 failed |
+| `tests/programs.rs` | 54 passed, 0 failed | 54 passed, 0 failed |
+| conformance adapter | `Pass=509  Skip=1` | `Pass=509  Skip=1` |
+| completion harness | PASS at 0, 1, 4 helpers and under `WF_IO_NOCACHE` | PASS, same four |
+
+Before this batch the Linux job ended red at `conformance-run`, and its
+`tests/programs.rs` count was seventeen short of macOS's: the twelve `wfgrep`
+cases and the five `traversal` cases that build `dir_walk.wf` were compiled out
+by the attributes 0090 declared. That number is arithmetic over those
+attributes rather than a run: the last `gate` run on `main`,
+<https://github.com/mbbill/Whitefoot/actions/runs/33148907925>, stopped in its
+checkout step before reaching `make check`. The measured before-and-after that
+this record stands on is the conformance pair above, both taken through the
+ordinary compiler path on Linux.
+
+`io-hosts` — <https://github.com/mbbill/Whitefoot/actions/runs/33150662215> —
+green on all five jobs: `completion-linux`, `completion-windows`,
+`bench-linux`, `bench-linux-read`, `bench-macos-read`. `completion-linux`
+builds the harness with the new `WF_COMPLETION_GETDENTS64` substitution, runs
+it with io_uring required, and runs `completion-sanitize` (address and
+undefined) and `completion-core-read-tsan` over the same units.
+
+Locally: one canonical `make check` on the macOS host, green; `cargo clippy
+--all-targets --profile gate -- -D warnings` and `cargo fmt` clean.
 
 ## Judgment calls
 
