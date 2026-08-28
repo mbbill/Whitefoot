@@ -116,9 +116,14 @@ int wf__completion_file_status_direct(
 
 int wf__completion_file_close_direct(int descriptor);
 
-/* Darwin's qualified directory facility through the same target-progress
- * normalization as typed file operations. EINTR and readiness refusal never
- * cross this ABI as writer-visible errors. */
+/* The selected family's qualified directory-enumeration facility through the
+ * same target-progress normalization as typed file operations --
+ * `__getdirentries64` on Darwin, `getdents64` on Linux.  EINTR and readiness
+ * refusal never cross this ABI as writer-visible errors.  `position` is the
+ * base-position cell Darwin's facility requires; Linux keeps the whole cursor
+ * in the descriptor and leaves the cell untouched.  The native record the
+ * batch holds differs by family and is decoded by the emitted shim, not
+ * here. */
 int64_t wf__completion_directory_next_direct(
     int descriptor,
     void *buffer,

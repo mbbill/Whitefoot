@@ -42,6 +42,17 @@ extern ssize_t WF_COMPLETION_GETDIRENTRIES64(
     size_t,
     int64_t *
 );
+#elif defined(__linux__)
+/* glibc exports the exact facility used by the qualified Linux target.  It is
+ * declared here rather than reached through <dirent.h> for the same reason
+ * the Darwin entry above is: the declaration is behind _GNU_SOURCE, which
+ * this unit does not ask for, and the prototype is fixed by the ABI.  It is
+ * intentionally not replaced with an opendir/readdir loop, which is a scan
+ * built out of other operations [QUAL-2, QUAL-3]. */
+#if !defined(WF_COMPLETION_GETDENTS64)
+#define WF_COMPLETION_GETDENTS64 getdents64
+#endif
+extern ssize_t WF_COMPLETION_GETDENTS64(int, void *, size_t);
 #endif
 
 _Static_assert(
@@ -77,11 +88,14 @@ static int wf_file_request_valid(const wf_file_request *request) {
     case WF_FILE_STATUS:
     case WF_FILE_CLOSE:
         return 1;
-#if defined(__APPLE__)
-    case WF_FILE_GETDIRENTRIES64:
-        return (request->operation.getdirentries64.buffer != NULL
-                || request->operation.getdirentries64.count == 0)
-            && request->operation.getdirentries64.position != NULL;
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+    case WF_FILE_DIRECTORY_NEXT:
+        /* The position cell is required on both families even though only
+         * Darwin's facility writes it: one validity rule keeps a request
+         * record that is well formed on one host well formed on the other. */
+        return (request->operation.directory_next.buffer != NULL
+                || request->operation.directory_next.count == 0)
+            && request->operation.directory_next.position != NULL;
 #endif
     default:
         return 0;
@@ -131,9 +145,9 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
             return result;
         }
         break;
-#if defined(__APPLE__)
-    case WF_FILE_GETDIRENTRIES64:
-        if (request->operation.getdirentries64.count > (size_t)SSIZE_MAX) {
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+    case WF_FILE_DIRECTORY_NEXT:
+        if (request->operation.directory_next.count > (size_t)SSIZE_MAX) {
             result.error_code = EINVAL;
             return result;
         }
@@ -244,14 +258,25 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
     case WF_FILE_CLOSE:
         result.value = close(request->operation.close.descriptor);
         break;
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+    case WF_FILE_DIRECTORY_NEXT:
 #if defined(__APPLE__)
-    case WF_FILE_GETDIRENTRIES64:
         result.value = WF_COMPLETION_GETDIRENTRIES64(
-            request->operation.getdirentries64.descriptor,
-            request->operation.getdirentries64.buffer,
-            request->operation.getdirentries64.count,
-            request->operation.getdirentries64.position
+            request->operation.directory_next.descriptor,
+            request->operation.directory_next.buffer,
+            request->operation.directory_next.count,
+            request->operation.directory_next.position
         );
+#else
+        /* Linux keeps the whole enumeration cursor in the descriptor, so the
+         * facility takes no base-position argument and this cell is left as
+         * the caller gave it. */
+        result.value = WF_COMPLETION_GETDENTS64(
+            request->operation.directory_next.descriptor,
+            request->operation.directory_next.buffer,
+            request->operation.directory_next.count
+        );
+#endif
         break;
 #endif
     default:
@@ -277,9 +302,9 @@ static int wf_file_wait_ready(const wf_file_request *request) {
         descriptor.fd = request->operation.pread.descriptor;
         descriptor.events = POLLIN;
         break;
-#if defined(__APPLE__)
-    case WF_FILE_GETDIRENTRIES64:
-        descriptor.fd = request->operation.getdirentries64.descriptor;
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+    case WF_FILE_DIRECTORY_NEXT:
+        descriptor.fd = request->operation.directory_next.descriptor;
         descriptor.events = POLLIN;
         break;
 #endif
@@ -320,8 +345,8 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
         case WF_FILE_WRITE:
         case WF_FILE_PREAD:
         case WF_FILE_PWRITE:
-#if defined(__APPLE__)
-        case WF_FILE_GETDIRENTRIES64:
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+        case WF_FILE_DIRECTORY_NEXT:
 #endif
             break;
         default:
