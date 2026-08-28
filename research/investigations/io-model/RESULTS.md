@@ -705,9 +705,11 @@ underneath its own page cache there is a host cache it cannot address.
 
 The 4 KiB table is the cleanest measurement in this document. Its probe
 confirmed the uncached label immediately before *and* immediately after the
-table, no line's minimum or maximum is more than four per cent from its own
-median across seven interleaved passes, and every read in it reached the
-device.
+table, no line's minimum or maximum is more than six per cent from its own
+median across seven interleaved passes — seventeen of the twenty lines are
+inside four per cent, and the three that are not are `N.pool1` at +4.96,
+`N.pool2` at -4.97 and +5.31, and `C.narrow.h1` at +5.96 — and every read in
+it reached the device.
 
 ```text
 == read-heavy 4 KiB, uncached (WF_IO_NOCACHE=1) ==
@@ -1128,9 +1130,14 @@ for every number here.
 - **hosts**: `bench-macos-read` on `macos-14` — Darwin 23.6.0, macOS 14.8.7,
   Apple M1 (Virtual), 3 CPUs, 7516192768 B, load 5.29 at start;
   `bench-linux-read` on `ubuntu-24.04`.
-- **passes**: nine interleaved passes per table, order reversed every other
-  pass, medians reported. Every table's cache label is probed immediately
-  before and after it and the verdict is printed beside it.
+- **passes**: two unrecorded warm-up passes and then seven recorded ones per
+  table, interleaved, order reversed every other pass, medians of the seven
+  reported. (`io-bench.yml` sets `ROUNDS: "7"`, `WARMUP: "2"` for both
+  read-bench jobs. The stage-attribution table in
+  `docs/done/0096-darwin-handoff.md` says nine, and that is a different count
+  and correct for it: the trace prints on the warm-up passes too.) Every
+  table's cache label is probed immediately before and after it and the
+  verdict is printed beside it.
 
 The two draws are separate draws of the `macos-14` label, so **ratios within a
 run are the evidence and absolute milliseconds across runs are not.** They
@@ -1154,16 +1161,46 @@ C.narrow.default   1952.50 1889.77 153.01 31.34 1516.75 1382.75 160.51 31.64
 C.wide8.default    1220.68 1100.57 211.58 94.72  591.82  489.75 173.97 33.57
 C.wide8.h0         1681.74 1611.22 175.21 41.84 1452.09 1432.86 180.33 40.57
 C.wide8.h2         1252.02 1160.21 241.57 98.04 1054.36  971.97 246.49 75.37
-C.wide8.h4         1048.26  962.59      -     - 746.67  658.61 219.11  71.25
+C.wide8.h4         1048.26  962.59 211.97 98.50  746.67  658.61 219.11  71.25
 C.wide8.h8          940.47  793.93 205.61 118.48 585.05  478.59 224.20 83.33
 ```
 
-Cache labels on the after run: every cold table's probe confirmed uncached
-before and after it (3.1, 2.3, 2.3 per cent of sampled reads at or below
-40 us, within the stated 10 per cent bound; per-file medians 45.0 to 51.0 us),
-and every warm table's probe confirmed warm (0.0 per cent at or above 40 us,
-per-file medians 4.0 to 6.0 us). The after run's cold tables are therefore
-uncached rather than cold-start, which the 0092 macOS tables were not.
+**Cache labels on the after run: each cold table's probe refused the uncached
+label before the table ran and confirmed it after.** Both warm tables were
+confirmed warm at both ends (0.0 per cent of sampled reads at or above 40 us,
+per-file medians 4.0 to 5.0 us). The job's own words for the 64 KiB cold
+table:
+
+```text
+read_baseline: refusing the uncached label -- 93 of 128 sampled reads (72.7%)
+  were at or below 40.0 us, past the stated 10.0% bound; per-file medians
+  36.5..44.0 us
+probe: uncached confirmed -- 4 of 128 sampled reads (3.1%) were at or below
+  40.0 us, within the stated 10.0% bound; per-file medians 47.5..51.0 us
+table: 64 KiB uncached -- probe before the table: refused; probe after it:
+  confirmed
+table: 64 KiB uncached -- the label above is NOT confirmed: the probe refused
+  it before the table ran, so read the per-file medians printed above and
+  treat the label as a claim about what was asked for, not about what was
+  measured
+```
+
+and for the 4 KiB one, the same four lines with 120 of 128 (93.8 per cent)
+refused before and 3 of 128 (2.3 per cent) confirmed after.
+
+That is the **opposite** direction from the 0092 macOS tables, whose probes
+confirmed the label before each cold table and refused it after
+(`probe before the table: confirmed; probe after it: refused`) — there the
+tree started non-resident and each line warmed the cache as it read, here it
+started resident and ended non-resident. So the cold tables of this draw are
+neither uncached nor cold-start: each line is a mixture whose composition
+depends on where in the table it ran, and the interleaved schedule does not
+cancel that, because it reverses order between passes rather than restoring
+the cache between them.
+
+What that costs is stated with the bar below rather than hidden here: it does
+not touch the warm or many-files halves, and it means the cold rows are not a
+reading of a cold bar.
 
 ### macOS runner, many files
 
@@ -1187,15 +1224,22 @@ per cent of `N.pool8`; many-files `C` not slower than `S`; Linux must not
 regress.
 
 ```text
-row                        before      after     bar          met
-warm 64 KiB  C/S           1.27x       1.006x    <= 1.00x     0.6% over
-warm  4 KiB  C/S           2.88x       1.028x    <= 1.00x     2.8% over
-cold 64 KiB  C/N.pool8     1.58x       1.394x    <= 1.10x     no
-cold  4 KiB  C/N.pool8     2.07x       1.283x    <= 1.10x     no
-many-files   C/S           1.20x       1.022x    <= 1.00x     2.2% over
-Linux warm 4 KiB C/S      0.94x       1.055x    no regress   see below
-Linux warm 64 KiB C/S     0.98x       1.026x    no regress   see below
+row                       before   after   bar          met         before is
+warm 64 KiB  C/S          1.27x    1.006x  <= 1.00x     0.6% over   0092 macOS
+warm  4 KiB  C/S          2.88x    1.028x  <= 1.00x     2.8% over   0092 macOS
+cold 64 KiB  C/N.pool8    1.58x    1.394x  <= 1.10x     not read    0092 macOS
+cold  4 KiB  C/N.pool8    2.07x    1.283x  <= 1.10x     not read    0092 macOS
+many-files   C/S          1.20x    1.022x  <= 1.00x     2.2% over   0092 macOS
+Linux warm 64 KiB C/S     0.98x    1.026x  no regress   unresolved  0092 Linux
+Linux warm  4 KiB C/S     0.94x    1.055x  no regress   unresolved  0092 Linux
+Linux many   C/S          1.041x   1.058x  no regress   unresolved  0090 Linux
+                          1.045x
 ```
+
+The `before is` column is there because the four macOS rows and the three
+Linux rows do not share a baseline. The Linux read rows are against the
+batch-0092 Linux-runner section; the Linux many-files row has no 0092 reading
+at all and is against batch 0090's **two** draws of that job, 1.041 and 1.045.
 
 The two warm rows and the many-files row land within three per cent of a bar
 they missed by 27, 188 and 20 per cent, and none is met on a strict reading.
@@ -1208,26 +1252,59 @@ that is 7.92; with the policy free to decline it is 0.92, so 88 per cent of the
 charge is gone and what remains is the operations the policy does not decline,
 which are the opens and closes.
 
-Neither cold row is met. An earlier run on the same branch
-([33153717709](https://github.com/mbbill/Whitefoot/actions/runs/33153717709),
-commit `96bb4778`) read the cold 64 KiB row at 817.47 against 808.79 — within
-one per cent, which would have passed. That run is not the one to read it
-from: its `N.pool8` cold 64 KiB line has a median of 808.79 against a minimum
-of 445.55, an 1.8-fold spread inside one line, where the run recorded here
-spans 417.49 to 453.58 on the same line. The bar is read from the tighter
-draw.
+**Neither cold row is read.** Not "missed": this draw's cold tables are the
+mixture the probes described above, and a table whose own runner refused its
+uncached label before it ran cannot grade a bar about cold reads. On the
+mixture that was measured C is 1.394 and 1.283 times `N.pool8`, so nothing
+here suggests the bar is met — but that is a statement about what was
+measured, not a grade.
 
-What the cold rows do show is the demand-driven helper policy working:
-`C.wide8.default` is within two per cent of its own pinned eight-helper line
-on both cold tables (591.82 against 585.05, 489.75 against 478.59), where in
-0092 the default trailed `C.wide8.h8` by 1.30 and 1.39 times. Against its own
-sequential build the completion program is 2.51 and 2.84 times faster cold,
-where in 0092 it was 1.73 and 1.58.
+Three macOS draws exist on this branch and none of them settles it, each
+failing a different quality test:
+
+```text
+run          commit    cold 64 label      cold 64 C/N.pool8  N.pool8 cold64 spread
+33153717709  96bb4778  confirmed / confirmed   817.47/808.79 = 1.011   445.55..898.44
+33155821397  266acf4f  refused / confirmed     591.82/424.58 = 1.394   417.49..453.58
+33158144391  72e98cba  refused / refused       609.97/555.63 = 1.098   416.53..1075.57
+
+run          commit    cold 4 label       cold 4 C/N.pool8   notes
+33153717709  96bb4778  confirmed / refused     675.60/439.22 = 1.538
+33155821397  266acf4f  refused / confirmed     489.75/381.86 = 1.283
+33158144391  72e98cba  refused / refused       960.86/587.85 = 1.635   C max 26351.72
+```
+
+The only cold table on this branch whose label its probe confirmed at both
+ends is `96bb4778`'s 64 KiB one, and it is the draw whose baseline is
+noisiest: `N.pool8` runs 445.55 to 898.44 around a median of 808.79, and
+`C.wide8.default`'s own maximum on that line is 8252.57 against a median of
+817.47. So one candidate has the label and not the tightness and the other has
+the tightness and not the label, and the third has neither. The row this
+section reports its numbers from is `33155821397`, because it is the run whose
+warm and many-files halves are the tightest and because its commit `266acf4f`
+is this branch's final runtime; the cold rows of any of the three are a
+reading of the runner's cache state as much as of the program. **What is owed
+is a macOS draw whose cold labels are confirmed at both ends.**
+
+What the cold rows do show, and this does not depend on the label because both
+lines ran interleaved inside the same table, is the demand-driven helper
+policy working: `C.wide8.default` is within 1.2 per cent of its own pinned
+eight-helper line at 64 KiB (591.82 against 585.05) and 2.3 per cent at 4 KiB
+(489.75 against 478.59), where in 0092 the default trailed `C.wide8.h8` by
+1.30 and 1.39 times. Against its own sequential build the completion program
+is 2.51 and 2.84 times faster on those tables, where in 0092 it was 1.73 and
+1.58.
 
 ### What changed in the runtime
 
 Batch 0096's changes are recorded in `docs/done/0096-darwin-handoff.md` with
-the stage-level attribution that motivated each. In short: the process-wide
+the stage-level attribution that motivated each, and its "After the tables"
+section records the correctness follow-up that landed after this run: the
+tables here are read at commit `266acf4f`, and the tip adds a generation check
+on the named drain, an atomically published adapter readiness flag, a helper
+cap bounded by its storage, a clock guard on the join spin, and a gate arm
+that runs the bridge on the shipped default helper policy. None of those
+changes a route, a policy or a threshold. In short: the process-wide
 wake lock is taken only when there is a sleeper; a drain returns immediately
 when the durable ready-event count is zero and a token owner may drain its own
 event by name; a queue entry no longer copies a kilobyte of path storage for a
@@ -1238,6 +1315,36 @@ grows on a measured wait rather than on queue depth, bounded by the bridge's
 operation count rather than the core count; and a positioned read is executed
 where it was stated when the adapter holds no helper, has nothing queued and
 has measured its operations as not waiting.
+
+### What this reading does not cover
+
+Four limits, stated here so a later reader does not have to rediscover them.
+
+- **The cold tables' cache state**, above: refused before, confirmed after, on
+  both of them, in the draw these numbers come from.
+- **The growth path is asserted, not observed on this host.** That a pool
+  appears when operations wait, and does not when they do not, is pinned by
+  two harness cases with a *scripted* clock
+  (`test_pool_stays_empty_when_operations_do_not_wait`,
+  `test_pool_grows_when_operations_wait`) — deliberately, so the rule is
+  tested rather than the machine. The evidence that it also fires on a real
+  program is the runner's cold tables, where `C.wide8.default` lands on its
+  own pinned eight-helper line. No test on the maintainer's machine watches a
+  real program grow a pool, because a warm macOS page cache is exactly the
+  case where the rule is meant not to fire.
+- **The corpus differential does not reach this path.** No program under
+  `compiler/tests/programs` emits `wf__completion_file_pread_submit` or
+  `wf__completion_file_join` in any lowering; `wfgrep` is the only one that
+  reaches the completion runtime at all, and it does so through
+  `wf__completion_file_pread_direct`. The programs that do exercise submit and
+  join are the bench programs in
+  `research/experiments/io-completion-bench/programs/`, which is where the
+  overlap-versus-`--no-overlap` differential has to be run.
+- **The decline check costs a queue lock.** `wf_file_adapter_transfer_runs_on_caller`
+  asks whether anything is queued, and that term takes the adapter's queue
+  lock, so every positioned read that reaches the question pays one
+  uncontended lock and unlock — against the queue crossing, claim, four slot
+  transitions and drain it saves when the answer is yes.
 
 ### Linux runner, read-heavy — a draw that does not reproduce
 
@@ -1273,12 +1380,15 @@ C.wide8.h8       282.55  276.19  289.80    53.64   51.38    57.56
 ```
 
 **The cold half of this draw cannot be read.** `N.direct` at 64 KiB spans 2781
-to 7661 ms around a median of 6158, and `S.narrow` spans 2478 to 11054 — a
-4.5-fold range inside one line, where batch 0092's Linux 4 KiB table — the
-cleanest measurement in this document — held every line's minimum and maximum
-within four per cent of its own median. A ranking taken from lines that
-wide is a ranking of the runner. The interleaved schedule protects against
-monotonic drift, not against this.
+to 7661 ms around a median of 6158 — a 2.75-fold range inside one line — and
+`S.narrow` spans 2478 to 11054, a 4.46-fold one. Across all forty cold lines
+of the two tables the maximum-over-minimum ratio runs from 1.26 (`N.pool8` at
+4 KiB) to 4.98 (`C.wide8.h2` at 4 KiB), and nineteen of the forty exceed 2.5.
+Batch 0092's Linux 4 KiB table — the cleanest measurement in this document —
+held seventeen of its twenty lines' minima and maxima inside four per cent of
+their own medians, the three exceptions reaching 4.96, 5.31 and 5.96. A
+ranking taken from lines as wide as this draw's is a ranking of the runner.
+The interleaved schedule protects against monotonic drift, not against this.
 
 **The warm half is tight, and it does not reproduce the two earlier Linux
 readings.** Warm `C.wide8.default` over `S.wide8` is 1.026 at 64 KiB and 1.055
@@ -1313,20 +1423,26 @@ and `266acf4f`, measured here, is the removal of the `WF_IO_TRACE` stage
 instrumentation that `96bb4778` still carried; `git diff 96bb4778..266acf4f --
 compiler/src/backend/completion/` is that removal and nothing else. No drain,
 submit, publish or policy code differs between the two commits, and removing
-instrumentation does not make a program slower. The host also differs: a 4-core
-Xeon 8573C whose warm 4 KiB sequential line is 50.89 ms against the previous
-draw's 83.28, and the wide lowering has more scheduling surface than the narrow
-one, so a host with a different core count can move the wide pair further
-without any code being at fault.
+instrumentation does not make a program slower. The host also differs, though not in the way first written
+here: all three Linux draws report 4 CPUs, so core count is not what separates
+them. The processor and the disk are — Xeon Platinum 8370C on `sda1` for 0092,
+EPYC 7763 on `sda1` for `96bb4778`, Xeon Platinum 8573C on `nvme0n1p1` here —
+and the 8573C's warm 4 KiB sequential line is 50.89 ms against the previous
+draw's 83.28, which is a different machine by any reading. The wide lowering
+has more scheduling surface than the narrow one, so a host that different can
+move the wide pair further without any code being at fault.
 
 **So this section does not claim Linux is unregressed, and it does not claim it
 is regressed.** One draw on different hardware, whose cold half is unusable and
 whose warm half disagrees with two prior draws that agreed with each other, is
 not a reading of the bar — but the narrow control makes it a draw worth
-resolving rather than one worth dismissing. The correctness evidence is separate and is not in
-doubt: `io-hosts` `completion-linux` is green on this commit, including the
-required native io_uring adapter probe and the harness under the address,
-undefined and thread sanitizers. What is owed here is another Linux draw.
+resolving rather than one worth dismissing. The correctness evidence is
+separate and is not in doubt: `io-hosts` `completion-linux` is green on this
+commit, including the required native io_uring adapter probe and the harness
+under the address and undefined sanitizers. Thread sanitizer is a separate
+step and runs the probes rather than the harness — the isolated core/read
+probe, and now the default-route bridge probe. What is owed here is another
+Linux draw.
 
 ### Linux hardware, many files
 
@@ -1340,8 +1456,16 @@ C.wide8.default          147.04       115.97                   129.55
 C/S                       1.041        1.045                    1.058
 ```
 
-This one does reproduce: 1.058 against 1.041 and 1.045, on a job whose two
-0090 draws themselves differed by 21 per cent in absolute speed.
+The ordering reproduces — C is slower than S here as it was in both 0090
+draws, which is what batch 0090 recorded and this batch does not change — but
+the ratio is not inside the earlier pair and does not improve on it: 1.058 is
+worse than both 1.041 and 1.045, by 1.3 points on the worse of the two,
+against the within-run spread of about 2 per cent batch 0090 reports for this
+job. On two draws either side of the change, on a job whose 0090 pair
+themselves differed by 21 per cent in absolute speed, that is neither enough
+to call a regression nor enough to call the row met, which is why the bar
+table above grades it `unresolved` rather than `yes`. It is the third thing a
+second Linux draw owes an answer to.
 
 
 
