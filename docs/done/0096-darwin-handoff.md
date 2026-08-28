@@ -418,7 +418,7 @@ Linux many   C/S          1.041x   1.058x  no regress   unresolved  0090 Linux
 ```
 
 This is the same table as the one in the RESULTS section, row for row. The
-`before is` column is there because the rows do not share a baseline: the four
+`before is` column is there because the rows do not share a baseline: the five
 macOS rows are against the batch-0092 macOS-runner section, the two Linux read
 rows against its Linux-runner section, and the Linux many-files row has no
 0092 reading at all — it is against batch 0090's **two** draws of that job,
