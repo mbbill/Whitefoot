@@ -40,9 +40,7 @@ fn run() -> Result<(), String> {
     let inputs: Vec<_> = paths
         .iter()
         .zip(&bytes)
-        .map(|((logical, display), bytes)| {
-            SourceInput::from_host_path(logical, display, bytes)
-        })
+        .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
     let overlap = if options.no_overlap {
         OverlapLowering::Off

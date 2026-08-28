@@ -557,12 +557,12 @@ impl SourceBundle {
             let display_len = u64::try_from(input.display_path.len())
                 .map_err(|_| SourceBundleError::ArithmeticOverflow)?;
             let mut display_path = String::new();
-            display_path.try_reserve_exact(input.display_path.len()).map_err(|_| {
-                SourceBundleError::StorageUnavailable {
+            display_path
+                .try_reserve_exact(input.display_path.len())
+                .map_err(|_| SourceBundleError::StorageUnavailable {
                     limit: SourceLimit::DisplayPathBytes,
                     requested: display_len,
-                }
-            })?;
+                })?;
             display_path.push_str(input.display_path);
             let source_len = u64::try_from(input.bytes.len())
                 .map_err(|_| SourceBundleError::ArithmeticOverflow)?;

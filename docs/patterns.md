@@ -380,15 +380,45 @@ copy rather than a fact to rediscover:
   rooted outside the body in iteration order. This is strictly more general
   than [PAR-2]'s admitted operation set: a non-associative fold, a float fold,
   and a `Result` route are all admitted here.
-- **Reserve the file factory in the prologue.** `reserve_file` takes and
-  returns a short unique `&uniq FileFactory` loan inline [SYS-10], and
+- **Reserve the file factory in the prologue, inline.** `reserve_file` takes
+  and returns a short unique `&uniq FileFactory` loan inline [SYS-10], and
   prologues run in index order without overlapping, so one enclosing factory
-  serves every iteration with no replication and no [OWN-5] relaxation.
+  serves every iteration with no replication and no [OWN-5] relaxation. Write
+  the reserve and the open in the loop body itself. Factoring the pair into a
+  helper — `fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, …)` —
+  costs the loop its pipeline, because the callee's own retained loan is what
+  the staged judgment then sees. Two programs identical except for that
+  factoring:
 
-Read the verdict rather than guessing it: `whitefootc --par-ledger` prints one
+  ```text
+  inline  PAR stage  probes/inline.wf:17  for  permitted  staged at open_file<'f, 'f>(…); 5 places classified
+  helper  PAR stage  probes/helper.wf:26  for  denied     condition 3: a may-suspend call retains a borrow
+                     past its own submission on storage the body writes and the iteration does not
+                     introduce; instead, give each iteration its own resource, or leave this loop
+                     sequential: storage that carries one position cannot be held by two iterations at
+                     once, at &uniq 'f files
+  ```
+
+  When the factory is itself a borrow — which it is in any recursive walker —
+  [OWN-6] pushes the other way and admits no inline `region 'source { let
+  permit = …; match open_… }`, because that region holds two statements. The
+  two rules genuinely conflict there and no writer discipline satisfies both;
+  the recorded finding is `docs/done/0098-blind-writer.md` D2. In a loop whose
+  factory is an owned entry parameter, which is every top-level I/O loop, write
+  it inline.
+
+Read the verdict rather than guessing it. An ordinary `whitefootc` compile
+already prints the denied verdict of every I/O loop to stderr, prefixed
+`whitefootc: note:`; the compilation succeeded and the note is not a rejection.
+A granted loop says nothing. `whitefootc --par-ledger` is the full report: one
 `PAR stage` line per loop that performs I/O, and one `PAR place` line for every
 place the judgment classified, with its disposition and the reason. A denial
 names the offending place, the numbered condition, and the admitted form.
+
+No worked example in `tests/programs/` currently holds this permission.
+`dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` all compile to the module a
+compiler with no overlap lowering at all emits, so a writer copying one of them
+is copying the denied shape. Copy the form above instead, and read the note.
 
 Current value: the judgment is landed and reported; the lowering that turns a
 granted verdict into overlapped execution is not, so today this form costs a

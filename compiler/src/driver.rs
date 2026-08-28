@@ -13,9 +13,9 @@ use rejection::Located;
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits,
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, emit_llvm, finalize,
-    lex, lower_checked, parse, resolve_with_inventory,
+    ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
+    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
+    emit_llvm, finalize, lex, lower_checked, parse, resolve_with_inventory,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -508,10 +508,11 @@ fn compile_reporting(
     let resolved = match resolve_with_inventory(canonical, inventory) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
+            let coordinate = issue.origin().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         ResolutionOutcome::CompilerFailure { failure, .. } => {
@@ -525,17 +526,31 @@ fn compile_reporting(
     let checked = match check_semantics(resolved) {
         SemanticOutcome::Complete(complete) => *complete,
         SemanticOutcome::SourceIssue { issue, .. } => {
-            return Err(CompilationFailure::source(
-                CompilationStage::Semantics,
-                issue.rule_id(),
-                issue,
-            ));
+            // A semantic rejection carries the richest payload in the
+            // toolchain and, until now, the poorest location: `SourceId(0)`
+            // and a byte offset. The coordinate the rule already selected
+            // names a line of the file the caller named, so it is printed the
+            // same way a syntax rejection's is.
+            let rule_id = issue.rule_id();
+            let coordinate = match issue.location() {
+                SemanticLocation::SourceNode(_, coordinate) => Some(*coordinate),
+                SemanticLocation::BundleRoot(_) => None,
+            };
+            return Err(match coordinate {
+                Some(coordinate) => CompilationFailure::source(
+                    CompilationStage::Semantics,
+                    rule_id,
+                    Located::new(issue, classified.source_bundle(), coordinate),
+                ),
+                None => CompilationFailure::source(CompilationStage::Semantics, rule_id, issue),
+            });
         }
         SemanticOutcome::ResolutionIssue { issue, .. } => {
+            let coordinate = issue.origin().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         SemanticOutcome::Unsupported { unsupported, .. } => {
@@ -778,7 +793,10 @@ mod tests {
         assert_eq!(failure.rule_id(), Some("GRAM-9"));
         let detail = failure.detail();
         // The set as spellings, in the grammar's own order.
-        assert!(detail.contains(r#"expected: ["{", ";", ")", ",", "["#), "{detail}");
+        assert!(
+            detail.contains(r#"expected: ["{", ";", ")", ",", "["#),
+            "{detail}"
+        );
         // The line the writer wrote, and where in it the parser stopped.
         assert!(
             detail.contains(r#"at /absolute/path/wc.wf:5:26 in line "  let skip = bor(dotted, bnot(addressable));""#),
@@ -858,7 +876,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
             "{detail}"
         );
         // Both admitted routes, in the vocabulary `docs/patterns.md` uses.
-        assert!(detail.contains("move the borrow holder into a helper"), "{detail}");
+        assert!(
+            detail.contains("move the borrow holder into a helper"),
+            "{detail}"
+        );
         assert!(detail.contains("P4 linear threading"), "{detail}");
         assert!(
             detail.contains("bind the reborrowed result with `replace`"),

@@ -73,8 +73,7 @@ pub(super) const STOR1_REPLACE: &str =
 /// exactly that pair -- `[STOR-1]` offering `replace`, then `[OWN-1]`
 /// rejecting the result as a use after move -- so this offers the fresh `let`
 /// that `[OWN-1]` accepts.
-pub(super) const STOR1_FRESH_LET: &str =
-    "the right-hand side consumes the target root, so replace cannot commit into it: \
+pub(super) const STOR1_FRESH_LET: &str = "the right-hand side consumes the target root, so replace cannot commit into it: \
      bind the result under a new let, and combine it with the old value field by field";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -206,13 +205,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_indexed_set_target(
-                function,
-                node,
-                &suffixes,
-                subscript,
-                bindings,
-                loop_depth,
-                form,
+                function, node, &suffixes, subscript, bindings, loop_depth, form,
             );
         }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {

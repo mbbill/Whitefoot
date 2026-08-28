@@ -15,8 +15,8 @@
 
 use core::fmt;
 
-use crate::source::SourceBundle;
 use crate::SyntaxCoordinate;
+use crate::source::SourceBundle;
 
 /// One stage rejection, its location in host terms, and its source line.
 pub(super) struct Located<Issue> {

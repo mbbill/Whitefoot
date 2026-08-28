@@ -1154,8 +1154,10 @@ impl SemanticIssue {
     }
 
     /// Returns the exact DIAG-1 semantic location.
+    ///
+    /// The driver reads it to quote the offending source line, so a semantic
+    /// rejection names a file and a line rather than a `SourceId` and a byte.
     #[must_use]
-    #[cfg(test)]
     pub const fn location(&self) -> &SemanticLocation {
         &self.location
     }
