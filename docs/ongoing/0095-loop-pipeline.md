@@ -106,10 +106,12 @@ which every operation either engine accepts joins, blocking direct calls
 included for as long as they execute, and which is what "still holding a
 descriptor it could give back" is read from. An operation that ends without
 returning anything — a read, a write, a status, a directory batch — moves the
-second and not the first. It
-lives with the completion core (`contract.h`, `runtime.c`) because the core is
-the one unit both target engines and the bridge link; the bounded POSIX adapter
-and the Linux ring are qualified separately and share no other code.
+second and not the first.
+
+The ledger lives with the completion core (`contract.h`, `runtime.c`) because
+the core is the one unit both target engines and the bridge link; the bounded
+POSIX adapter and the Linux ring are qualified separately and share no other
+code.
 
 Every refused open, whichever engine attempted it, then follows four steps:
 
