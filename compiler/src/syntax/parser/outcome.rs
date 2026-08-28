@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::syntax::grammar::{
     LookaheadPredicate, Production, RuleOwner, diagnostic_terminal_order,
 };
@@ -204,10 +206,29 @@ impl From<RuleOwner> for SyntaxRule {
 }
 
 /// Closed expected-terminal set in approved grammar-first order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ExpectedTerminals {
     terminals: TerminalSet,
     source_end: bool,
+}
+
+/// The set as the spellings a writer would have to write here.
+///
+/// The membership set is a bitfield, and printing the bitfield told a writer
+/// nothing they could act on: the number `38424498140022966840644862354` is
+/// the same fact as `["(", "IDENT", "literal", …]` and only one of the two can
+/// be read. The order is DIAG-1's, so it is the grammar's order and not the
+/// storage order.
+impl fmt::Debug for ExpectedTerminals {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_list()
+            .entries(self.iter().map(|predicate| match predicate {
+                LookaheadPredicate::Terminal(terminal) => terminal.spelling(),
+                LookaheadPredicate::SourceEnd => "end of source",
+            }))
+            .finish()
+    }
 }
 
 impl ExpectedTerminals {

@@ -222,6 +222,16 @@ pub enum CanonicalLocation {
     SourceNode(NodePath, SyntaxCoordinate),
 }
 
+impl CanonicalLocation {
+    /// Returns the exact source-byte extent both forms carry.
+    #[must_use]
+    pub const fn coordinate(&self) -> SyntaxCoordinate {
+        match self {
+            Self::SourceBytes(coordinate) | Self::SourceNode(_, coordinate) => *coordinate,
+        }
+    }
+}
+
 /// The first exact FORM-2 source-forest mismatch in stage order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalIssue {

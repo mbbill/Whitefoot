@@ -6,6 +6,10 @@
 
 use core::fmt;
 
+mod rejection;
+
+use rejection::Located;
+
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits,
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
@@ -394,10 +398,11 @@ fn compile_reporting(
     let parsed = match parse(&classified, limits.parser) {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
+            let coordinate = issue.coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::Parsing,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         ParseOutcome::ResourceFailure(failure) => {
@@ -442,10 +447,11 @@ fn compile_reporting(
     let canonical = match audit_canonical(finalized, limits.canonical) {
         CanonicalOutcome::Complete(complete) => complete,
         CanonicalOutcome::SourceIssue(issue) => {
+            let coordinate = issue.location().coordinate();
             return Err(CompilationFailure::source(
                 CompilationStage::CanonicalSource,
                 issue.rule().id(),
-                issue,
+                Located::new(issue, classified.source_bundle(), coordinate),
             ));
         }
         CanonicalOutcome::ResourceFailure(failure) => {
@@ -567,6 +573,45 @@ mod tests {
         )
         .expect("a permission-ledger fixture must compile");
         ledger
+    }
+
+    /// A syntax rejection prints the spellings it expected and the line it
+    /// stopped in.
+    ///
+    /// Flat three-address form is the largest departure from every other
+    /// systems language, so this is the rule an unguided writer hits first.
+    /// They hit it as `TerminalSet(38424498140022966840644862354)` and a byte
+    /// offset, and ran `head -c` on their own program to find out what it
+    /// meant. The compiler holds the expected set and the source bytes; both
+    /// are printed here.
+    #[test]
+    fn a_syntax_rejection_prints_the_expected_spellings_and_the_offending_line() {
+        let source = br#"command fn main() -> status: own ExitStatus pure {
+  doc "Writes a nested call where the grammar admits an atom.";
+  let dotted = 1_u8;
+  let addressable = 2_u8;
+  let skip = bor(dotted, bnot(addressable));
+  return exit_status(code: skip);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::from_host_path(
+                "input0.wf",
+                "/absolute/path/wc.wf",
+                source,
+            )],
+            CompilerLimits::default(),
+        )
+        .expect_err("a nested call is not an atom");
+        assert_eq!(failure.rule_id(), Some("GRAM-9"));
+        let detail = failure.detail();
+        // The set as spellings, in the grammar's own order.
+        assert!(detail.contains(r#"expected: ["{", ";", ")", ",", "["#), "{detail}");
+        // The line the writer wrote, and where in it the parser stopped.
+        assert!(
+            detail.contains(r#"at /absolute/path/wc.wf:5:26 in line "  let skip = bor(dotted, bnot(addressable));""#),
+            "{detail}"
+        );
     }
 
     /// A source read from a host path the closed logical spelling cannot hold

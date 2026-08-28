@@ -92,7 +92,7 @@ where
     'source: 'a,
 {
     match predicate {
-        TerminalPredicate::Fixed(fixed) => fixed.spelling(),
+        TerminalPredicate::Fixed(fixed) => fixed.spelling_bytes(),
         _ => token.span().bytes(),
     }
 }
