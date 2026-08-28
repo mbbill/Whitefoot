@@ -3,6 +3,61 @@ CC ?= cc
 NM ?= nm
 WINDOWS_CC ?= zig cc
 WINDOWS_OBJDUMP ?= objdump
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
+
+# Every gate target that executes a compiled program runs it with the core
+# file limit at zero.
+#
+# Cases here are deliberately about programs that die: a false claim aborts
+# [DIAG-3], an exhausted stack faults [PROG-3], a lowering with its joins
+# removed is expected to crash. One gate run therefore kills a few hundred
+# processes on purpose, and on a host that writes or analyses a core for each
+# one the gate pays for evidence nothing reads. Measured in batch 0093, that is
+# where the Linux gate's time went: the same library suite took 1016 seconds on
+# the four-core `ubuntu-24.04` runner and 55 on the three-core `macos-14`
+# runner beside it, and the whole difference sat in the five cases that spawn
+# dying programs.
+#
+# This limit is the portable half of declining that, and it is deliberately not
+# the whole of it. A Linux `kernel.core_pattern` that begins with a pipe —
+# which `ubuntu-24.04` has, naming `systemd-coredump` — makes the kernel ignore
+# RLIMIT_CORE entirely, because the limit bounds the size of a file and a pipe
+# writes none. Measured: forty aborting runs left forty stored core dumps at a
+# soft limit of 0 and forty more at a soft limit of 1, and none once the
+# pattern named a file. A host in that state has to change the pattern, which
+# needs root; `.github/workflows/gate.yml` does exactly that in one step and
+# says so there. What this line covers is every host whose pattern names a
+# file, where a limit of zero declines the dump the ordinary way.
+#
+# Nothing a case asserts depends on a core file existing: the signal that kills
+# the process, its exit status and its record channel are all unchanged.
+NO_CORE_DUMPS := ulimit -c 0;
+
+# The library suite, split by cost class rather than by subject. The modules
+# named here are the ones whose cases link a program and then run it tens or
+# hundreds of times to sample a schedule; everything else analyses or emits and
+# is over in milliseconds. The split exists so the two halves can be scheduled
+# side by side — by a CI job, or by a maintainer who wants the fast half back
+# quickly — and `test` below still runs both, with `test-partition` proving
+# that between them they run the whole suite.
+SAMPLING_MODULES := \
+	backend::tests::exhaustion:: \
+	backend::tests::loop_split:: \
+	backend::tests::parallel:: \
+	backend::tests::stackless:: \
+	backend::tests::trap_latch::
+SAMPLING_SKIPS := $(patsubst %,--skip %,$(SAMPLING_MODULES))
+
+# The integration targets cargo discovers in `tests/`. `test-corpus` names them
+# one by one so a job runs exactly the ones it means to; `test-partition`
+# checks this list against the directory, so a new `tests/*.rs` cannot fall out
+# of the gate by being no one's business.
+INTEGRATION_TARGETS := canonical_corpus conformance programs
+
+# The stages `check` runs, in order, and the same targets the CI jobs run.
+COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpus \
+	docs spec completion-test
 
 COMPLETION_DIR := src/backend/completion
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
@@ -37,8 +92,24 @@ COMPLETION_CORE_READ_FORBIDDEN_SOURCES := $(filter \
 COMPLETION_CORE_READ_DEFINES := \
 	-DWF_COMPLETION_PREAD=wf_completion_test_pread
 
-check: format lint test docs spec completion-test
+check:
+	@mkdir -p "$(STAGE_DIR)"
+	@: > "$(STAGE_DIR)/compiler-summary"
+	@for stage in $(COMPILER_STAGES); do \
+		started=$$(date +%s); \
+		$(MAKE) --no-print-directory "$$stage" || exit 1; \
+		printf '  compiler/%-18s %6d s\n' "$$stage" \
+			"$$(( $$(date +%s) - started ))" >> "$(STAGE_DIR)/compiler-summary"; \
+	done
+	@echo ""
+	@echo "compiler stage wall, this run:"
+	@cat "$(STAGE_DIR)/compiler-summary"
 	@echo "== WHITEFOOT COMPILER GATE GREEN =="
+
+# Everything that reads the tree without running a compiled program. One CI job
+# runs exactly this while the test jobs run beside it.
+static: format lint docs spec completion-test
+	@echo "== WHITEFOOT COMPILER STATIC GATE GREEN =="
 
 format:
 	$(CARGO) fmt --all -- --check
@@ -48,12 +119,71 @@ lint:
 
 # The gate profile (Cargo.toml [profile.gate]) is release codegen with debug
 # assertions and overflow checks retained: the suite's owning tests analyze
-# real programs, ~16x faster there than at the unoptimized default, so the
-# whole suite runs in one gate with no fast/heavy split. A bare
+# real programs, ~16x faster there than at the unoptimized default. A bare
 # `cargo test <filter>` during development still uses the default profile
 # and keeps incremental builds cheap.
-test:
-	$(CARGO) test --profile gate --all-targets --locked --offline
+#
+# `test` is the whole suite, exactly as `--all-targets` was: the four targets
+# below partition it and `test-partition` is what proves they do.
+test: test-partition test-unit test-sampling test-corpus
+
+# The fast half of the library suite: everything the sampling modules above
+# are not.
+test-unit:
+	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_SKIPS)
+
+# The sampling half: the cases that link a program and run it many times.
+test-sampling:
+	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES)
+
+# Everything outside the library: the integration targets, which compile and
+# link real programs, and the binaries' own unit tests. The binaries are here
+# rather than beside the library half because linking their four test harnesses
+# costs more than running their cases does, and this is the job with the slack
+# for it.
+test-corpus:
+	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --bins $(patsubst %,--test %,$(INTEGRATION_TARGETS)) --locked --offline
+
+# The split above is a scheduling decision, and a scheduling decision that
+# quietly drops cases is the worst kind of green. This proves it does not:
+# the two library halves partition the suite exactly — every case is in one of
+# them and none is in both — and the integration targets `test-corpus` names
+# are exactly the ones cargo discovers in `tests/`. The arithmetic alone cannot
+# notice a sampling module that was renamed or deleted, because `--skip M` and
+# the filter `M` are exact complements whatever M names; so every name in
+# SAMPLING_MODULES must also match at least one case on its own. Listing costs
+# a `--no-run` build and no test time.
+test-partition:
+	@whole=$$($(CARGO) test --profile gate --lib --locked --offline -- --list \
+		| grep -c ': test$$'); \
+	fast=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $(SAMPLING_SKIPS) \
+		| grep -c ': test$$'); \
+	sampled=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $(SAMPLING_MODULES) \
+		| grep -c ': test$$'); \
+	if [ "$$whole" -ne "$$(( fast + sampled ))" ]; then \
+		echo "library split is not a partition: $$whole cases, $$fast fast + $$sampled sampled" >&2; \
+		exit 1; \
+	fi; \
+	if [ "$$sampled" -eq 0 ]; then \
+		echo "library split names no sampling case: SAMPLING_MODULES matches nothing" >&2; \
+		exit 1; \
+	fi; \
+	for module in $(SAMPLING_MODULES); do \
+		count=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $$module \
+			| grep -c ': test$$'); \
+		if [ "$$count" -eq 0 ]; then \
+			echo "library split names a sampling module with no case: $$module" >&2; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "library split: $$whole cases = $$fast fast + $$sampled sampled"
+	@declared="$$(printf '%s\n' $(INTEGRATION_TARGETS) | sort | tr '\n' ' ')"; \
+	present="$$(ls tests/*.rs | sed -e 's|tests/||' -e 's|\.rs$$||' | sort | tr '\n' ' ')"; \
+	if [ "$$declared" != "$$present" ]; then \
+		echo "integration targets declared [$$declared] but tests/ holds [$$present]" >&2; \
+		exit 1; \
+	fi; \
+	echo "integration targets: $$present"
 
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline
@@ -203,7 +333,8 @@ completion-windows-cross:
 	done
 	@echo "completion Windows x86-64 cross-link: PASS (not runtime-qualified)"
 
-.PHONY: check format lint test docs spec completion-test \
+.PHONY: check static format lint test test-unit test-sampling test-corpus \
+	test-partition docs spec completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
 	completion-core-read-stress completion-core-read-tsan completion-sanitize \
 	completion-core-read-sanitize completion-windows-cross

@@ -4,10 +4,19 @@
 # workflow existed it had only ever run on the maintainer's macOS machine. The
 # Linux half of the compiler — the io_uring adapter, the `__linux__` bodies of
 # every compiler-owned C unit, the ELF link path — was covered by a container
-# on that same machine or by nothing at all. These two jobs run the identical
+# on that same machine or by nothing at all. These jobs run the identical
 # entry point on a GitHub-hosted Linux runner and on a GitHub-hosted macOS
 # runner, so a Linux result is a real x86-64 Linux kernel rather than a
 # virtualized aarch64 guest.
+#
+# The gate is split by stage rather than run as one `make check` per host,
+# because a gate people wait half a day for is a gate people stop running. One
+# host's `make check` is a sum; six jobs on that host are a maximum. Every job
+# runs the *same* make targets `check` runs — `Makefile`'s `CHECK_STAGES` and
+# `compiler/Makefile`'s `COMPILER_STAGES` are the authority for what belongs to
+# the gate, and the `run` lines below name those targets and nothing else — so
+# nothing is checked here that a maintainer's single local `make check` does
+# not also check, and nothing is skipped here that it runs.
 name: gate
 
 on:
@@ -22,19 +31,53 @@ env:
   CARGO_TERM_COLOR: never
 
 jobs:
-  gate-linux:
-    name: gate-linux (ubuntu-24.04)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
+  gate:
+    name: ${{ matrix.stage }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The budget, enforced where it cannot flake. Eight minutes is the ceiling,
+    # not the target: the target is five, and a job that reaches eight has a
+    # defect worth failing over rather than waiting out. No test asserts a wall
+    # time — a wall-clock assertion inside a test is a flake generator — so this
+    # is the only place a time is a pass/fail condition.
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+        stage: [static, unit, sampling, corpus, conformance, research]
+        include:
+          # Everything that reads the tree without running a compiled program.
+          - stage: static
+            run: >-
+              make repository-invariants approval-history-integrity
+              spec-append-only spec-archive-integrity spec-digest-sync
+              && make -C compiler static
+          # The fast half of the library suite, plus the partition proof that
+          # the two halves between them are the whole suite.
+          - stage: unit
+            run: make -C compiler test-partition test-unit
+          # The half whose cases link a program and run it many times.
+          - stage: sampling
+            run: make -C compiler test-sampling
+          # The integration targets: real programs, compiled and linked.
+          - stage: corpus
+            run: make -C compiler test-corpus
+          # The conformance corpus, through its own runner and then through the
+          # native adapter.
+          - stage: conformance
+            run: make conformance && make conformance-run
+          # The maintained executable tests under `research/`.
+          - stage: research
+            run: make research-tests
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Three `make check` steps read `main` as a local ref: the approval
-      # history must be an exact prefix of main's, and no released
-      # specification archive may differ from main's. A CI checkout has the
-      # remote-tracking ref only, so name it locally here.
+      # `approval-history-integrity` and `spec-append-only` read `main` as a
+      # local ref: the approval history must be an exact prefix of main's, and
+      # no released specification archive may differ from main's. A CI checkout
+      # has the remote-tracking ref only, so name it locally here.
       - name: Name main as a local ref
         run: |
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
@@ -43,28 +86,43 @@ jobs:
 
       - name: Install the host toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends clang
+          fi
           test -x /usr/bin/clang
           /usr/bin/clang --version
           python3 --version
-          shasum --version
           rustup default stable
           rustup component add clippy rustfmt
           cargo --version
-          cargo clippy --version
 
+      # What is worth caching is what a run can actually reuse. The compiler
+      # crate has no dependencies at all — `compiler/Cargo.lock` names one
+      # package, itself — so a cached `compiler/target` can only be reused by a
+      # commit that changed no compiler source, which on a work branch is
+      # almost none of them. It was in the cache anyway, under a key ending in
+      # `github.sha`: the exact key therefore missed on every commit, so every
+      # job uploaded a fresh several-hundred-megabyte cache that the next
+      # commit could not use and that pushed older entries out of the
+      # repository's ten-gigabyte budget. Seventeen seconds of restore and
+      # fifteen of save, per job, to warm nothing.
+      #
+      # What does get reused is the crate registry and the research
+      # experiments' own build directory: those crates have real dependencies
+      # and their sources change perhaps twice a year. Keyed on the lock files
+      # alone, the exact key hits on every run of an unchanged lock file, so
+      # the cache is written once per dependency change instead of once per
+      # commit.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            compiler/target
             ~/do_not_scan/whitefoot-research-tests-target
-          key: gate-linux-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-${{ github.sha }}
+          key: gate-${{ matrix.os }}-deps-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}
           restore-keys: |
-            gate-linux-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-
-            gate-linux-
+            gate-${{ matrix.os }}-deps-
 
       # `make check` builds every crate `--locked --offline`, which is what
       # makes its result a property of the recorded lock files. Offline needs a
@@ -81,69 +139,91 @@ jobs:
             cargo fetch --locked --manifest-path "$manifest"
           done
 
-      - name: Record the host
+      # A gate that proves programs die is a gate that makes the kernel run
+      # `kernel.core_pattern` a few hundred times. On `ubuntu-24.04` that
+      # pattern pipes every crash to `systemd-coredump`, which reads the dying
+      # process, compresses a core and journals it, and the crashing task waits
+      # for it. Measured in batch 0093 on this runner: one case that runs an
+      # aborting program forty times took 403.7 seconds with the pattern as the
+      # image ships it and 0.45 with the pattern set here, and `coredumpctl`
+      # counted exactly forty stored dumps for the first and none for the
+      # second. That single line was nine tenths of the Linux gate.
+      #
+      # RLIMIT_CORE cannot decline a piped dump: the kernel ignores it for
+      # pipes, because the limit bounds a file and a pipe writes none. Measured
+      # on the same runner, a soft limit of 0 and the value 1 that
+      # `fs/coredump.c` documents as skip-this-dump both left all forty dumps
+      # in place. So the disposition is set here, where root is available: an
+      # ordinary file pattern, which the soft limit of zero the runner already
+      # has — and which `Makefile` sets anyway — then declines in the ordinary
+      # way. No case asserts anything about a core file; what each asserts is
+      # the signal, the exit status and the record channel, none of which
+      # moves.
+      - name: Decline core dumps
+        if: runner.os == 'Linux'
         run: |
-          uname -a
-          nproc
-          df -h .
-
-      - name: make check
-        run: make check
-
-  gate-macos:
-    name: gate-macos (macos-14)
-    runs-on: macos-14
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Name main as a local ref
-        run: |
-          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
-          git branch -f main origin/main
-          git log --oneline -1 main
-
-      - name: Install the host toolchain
-        run: |
-          test -x /usr/bin/clang
-          /usr/bin/clang --version
-          python3 --version
-          rustup default stable
-          rustup component add clippy rustfmt
-          cargo --version
-          cargo clippy --version
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            compiler/target
-            ~/do_not_scan/whitefoot-research-tests-target
-          key: gate-macos-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            gate-macos-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-
-            gate-macos-
-
-      - name: Fetch the recorded crate dependencies
-        run: |
-          for manifest in \
-            compiler/Cargo.toml \
-            research/experiments/frequency-study/reassociation/Cargo.toml \
-            research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml \
-            research/experiments/default-floor/utf8parse/harness/Cargo.toml \
-            research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml \
-            research/experiments/default-floor/percent-decode/harness/Cargo.toml; do
-            cargo fetch --locked --manifest-path "$manifest"
-          done
+          sudo sysctl -w kernel.core_pattern=core
+          cat /proc/sys/kernel/core_pattern
 
       - name: Record the host
         run: |
           uname -a
-          sysctl -n hw.ncpu
+          if [ "$RUNNER_OS" = Linux ]; then
+            nproc
+            echo "core_pattern: $(cat /proc/sys/kernel/core_pattern)"
+          else
+            sysctl -n hw.ncpu
+          fi
+          echo "core file limit: $(ulimit -c)"
           df -h .
 
-      - name: make check
-        run: make check
+      # Every line the stage prints, copied to a file with the moment it
+      # arrived and passed through to the log unchanged. The report step below
+      # turns the file into the ranking; nothing here changes what runs.
+      #
+      # One process rather than a `tee` into a `cut`: `cut` block-buffers when
+      # its output is not a terminal, which arrives at the runner as the whole
+      # stage completing in one instant and destroys the timestamps the raw log
+      # is read for.
+      - name: ${{ matrix.stage }}
+        env:
+          STAGE_LOG: ${{ runner.temp }}/stage.log
+        run: |
+          set -o pipefail
+          ( ${{ matrix.run }} ) 2>&1 | perl -MTime::HiRes=time -e '
+            open(my $stamped, ">", $ENV{STAGE_LOG}) or die "$ENV{STAGE_LOG}: $!";
+            $| = 1;
+            while (my $line = <STDIN>) {
+              printf $stamped "%.3f %s", time, $line;
+              print $line;
+            }'
+
+      # A budget holds only while somebody can see it slipping. This prints the
+      # ten largest gaps between one case reporting and the next, so the case
+      # that grew is named in the run that grew it.
+      #
+      # It is a ranking of gaps, not a table of durations: cargo runs the cases
+      # of one target on as many threads as the host has cores, so a gap is a
+      # lower bound on the wall of the case that closed it, and a case that ran
+      # entirely beside a slower one can be invisible. That is enough for the
+      # job it has — a case that goes from milliseconds to minutes closes a
+      # minutes-long gap on any host — and it costs no test time, which a real
+      # per-case measurement on stable Rust would.
+      - name: Ten largest gaps in ${{ matrix.stage }}
+        if: always()
+        run: |
+          test -s "$RUNNER_TEMP/stage.log" || exit 0
+          {
+            echo "### ${{ matrix.stage }} (${{ matrix.os }}) — ten largest completion gaps"
+            echo
+            echo 'Seconds between one case reporting and the previous one, so a lower'
+            echo 'bound on the wall of the case that closed the gap.'
+            echo
+            echo '```text'
+            awk '{ moment = $1; $1 = ""; if (previous != "") printf "%8.1f%s\n", moment - previous, $0; previous = moment }' \
+              "$RUNNER_TEMP/stage.log" \
+              | grep -E '\.\.\. (ok|FAILED|ignored)$' \
+              | sort -rn | head -10
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"

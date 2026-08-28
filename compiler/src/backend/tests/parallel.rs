@@ -1054,7 +1054,8 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
     // Linked with the runtime: the strong definitions win. The count is the
     // runtime's own, reported at process exit by the observer unit, so a
     // link that kept the weak refusal reports zero here and fails.
-    let (granted, parallel) = run_counting_grants(&module, &directory, Some("4"));
+    let counted = CountedProgram::link(&module, &directory);
+    let (granted, parallel) = counted.run(Some("4"));
     assert_eq!(parallel.status.code(), Some(0));
     assert_eq!(
         parallel.stdout, sequential.stdout,
@@ -1062,7 +1063,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
     );
     if a_steal_is_observable(4) {
         let observed_grants = if granted == 0 {
-            grants_over_runs(&module, &directory, Some("4"), GRANT_OBSERVATION_RUNS)
+            counted.grants_over_runs(Some("4"), GRANT_OBSERVATION_RUNS)
         } else {
             granted
         };
@@ -1074,7 +1075,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 
     // And the explicit opt-out: one lane of execution is the calling thread
     // alone, so the pool never starts and every offer is refused.
-    let (opted_out, quiet) = run_counting_grants(&module, &directory, Some("1"));
+    let (opted_out, quiet) = counted.run(Some("1"));
     assert_eq!(quiet.stdout, sequential.stdout);
     assert_eq!(opted_out, 0, "WF_WORKERS=1 must never start the pool");
 
@@ -1109,10 +1110,11 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // be granted lanes) is re-observed over [`GRANT_OBSERVATION_RUNS`] runs,
     // exactly as the WF_WORKERS=4 case above does. A pool that never grants
     // fails every one of them; the opt-out runs below stay exact.
-    let (defaulted, published) = run_counting_grants(&module, &directory, None);
+    let counted = CountedProgram::link(&module, &directory);
+    let (defaulted, published) = counted.run(None);
     assert_eq!(published.status.code(), Some(0));
     let observed_grants = if defaulted == 0 {
-        grants_over_runs(&module, &directory, None, GRANT_OBSERVATION_RUNS)
+        counted.grants_over_runs(None, GRANT_OBSERVATION_RUNS)
     } else {
         defaulted
     };
@@ -1124,7 +1126,7 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
     for setting in ["0", "1", "abc"] {
-        let (granted, output) = run_counting_grants(&module, &directory, Some(setting));
+        let (granted, output) = counted.run(Some(setting));
         assert_eq!(output.status.code(), Some(0), "WF_WORKERS={setting}");
         assert_eq!(
             granted, 0,
@@ -1287,10 +1289,18 @@ fn the_repeat_comparison_reports_an_injected_difference() {
 /// different bytes or dies.
 ///
 /// Detection is per-run and not certain — a granted lane sometimes finishes
-/// before the read anyway — so the control runs the injected build twelve
+/// before the read anyway — so the control runs the injected build up to twelve
 /// times and requires that at least one run disagree with the reference. The
 /// measured per-run detection rate is about four in five, which puts a false
 /// green here below one in a hundred million.
+///
+/// The requirement is existential, so the loop stops at the first disagreement
+/// and the twelve are the bound the *undetected* direction pays: a lowering
+/// whose missing joins this comparison cannot see makes all twelve runs and
+/// fails, exactly as before. What that bound removes is eleven runs of a
+/// program that is expected to die — measured in batch 0093 at 30 seconds a
+/// run on the four-core Linux runner, where a run that dies under a core-dump
+/// handler is three orders of magnitude dearer than the same run here.
 #[test]
 fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
@@ -1321,6 +1331,7 @@ fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
             .expect("run the join-less program");
         if output.status.code() != Some(0) || output.stdout != reference.stdout {
             disagreements += 1;
+            break;
         }
     }
     assert!(
@@ -1375,36 +1386,6 @@ pub(super) fn build_executable_without_parallel_runtime(
     executable
 }
 
-/// Links one module against the runtime plus an observer that reports the
-/// runtime's own grant count at process exit, then runs it at `workers`.
-///
-/// `workers` is `None` for the shipped default — the variable removed from the
-/// child's environment, which is how a `--par` binary is actually handed to
-/// somebody — and `Some(count)` for a run that names a count.
-///
-/// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
-/// it exists exactly so a pool that never grants a lane cannot pass for one
-/// that does.
-pub(super) fn run_counting_grants(
-    module: &str,
-    directory: &Path,
-    workers: Option<&str>,
-) -> (u64, std::process::Output) {
-    let executable = link_counting_grants(module, directory);
-    let run = counted_run(&executable, workers);
-    std::fs::remove_file(&executable).expect("remove a counted-run artifact");
-    run
-}
-
-/// What the runtime granted in total over `runs` runs of one linked module.
-///
-/// A steal is a race, so one run's count samples the schedule rather than
-/// stating a property of the lowering. A fixture whose whole range is worth
-/// only a few dozen offers can lose nearly all of them to the offering thread
-/// on a saturated machine — measured down to three grants at `WF_WORKERS=4` —
-/// which would fail a per-run `granted > 0` for a reason that has nothing to do
-/// with the code under test. A total keeps exactly what those assertions are
-/// for: a runtime that grants nothing totals zero and still fails.
 /// Whether this host can tell "the runtime granted no lane" apart from "no
 /// worker was scheduled inside the window".
 ///
@@ -1429,8 +1410,8 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
     true
 }
 
-/// How many runs an existential grant observation samples before it reports
-/// that the runtime granted nothing.
+/// The upper bound on the runs an existential grant observation makes before
+/// it reports that the runtime granted nothing.
 ///
 /// A steal is a scheduling event, so one run samples the host's schedule
 /// rather than the lowering: the offering thread can finish the work itself
@@ -1441,28 +1422,86 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
 /// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
 /// cost one link and a fraction of a second, and a runtime that grants nothing
 /// still totals zero over all of them.
+///
+/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
+/// this is what the *negative* direction pays and not what a healthy host
+/// pays: the claim these runs support is existential — some run was granted a
+/// lane — and one grant settles it. A runtime that grants nothing still makes
+/// every one of the thirty-two runs and still totals zero.
 pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 
-pub(super) fn grants_over_runs(
-    module: &str,
-    directory: &Path,
-    workers: Option<&str>,
-    runs: usize,
-) -> u64 {
-    let executable = link_counting_grants(module, directory);
-    let mut total = 0;
-    for run in 0..runs {
-        let (granted, output) = counted_run(&executable, workers);
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "run {run} of the counted program must succeed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        total += granted;
+/// One linked build of a module against the parallel runtime and the grant
+/// observer, so a case that wants several runs of one module pays for the link
+/// once.
+///
+/// Linking is the expensive half — clang compiles the whole runtime, the
+/// exhaustion floor and the observer beside the emitted module, and a run of
+/// these fixtures is milliseconds. The cases below ask one program several
+/// questions: what it grants at four lanes, what it grants with the variable
+/// absent, and that each named opt-out grants nothing. Through the
+/// link-and-run helper this replaces, each of those questions linked the same
+/// executable again — five links of one module in one case.
+///
+/// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
+/// it exists exactly so a pool that never grants a lane cannot pass for one
+/// that does.
+pub(super) struct CountedProgram {
+    executable: std::path::PathBuf,
+}
+
+impl CountedProgram {
+    /// Links `module` inside `directory`, which the caller removes when it is
+    /// done with the fixture.
+    pub(super) fn link(module: &str, directory: &Path) -> Self {
+        Self {
+            executable: link_counting_grants(module, directory),
+        }
     }
-    std::fs::remove_file(&executable).expect("remove a counted-run artifact");
-    total
+
+    /// One run, with the grant count the observer reported at process exit.
+    ///
+    /// `workers` is `None` for the shipped default — the variable removed from
+    /// the child's environment, which is how a `--par` binary is actually
+    /// handed to somebody — and `Some(count)` for a run that names a count.
+    pub(super) fn run(&self, workers: Option<&str>) -> (u64, std::process::Output) {
+        counted_run(&self.executable, workers)
+    }
+
+    /// What the runtime granted over at most `runs` runs, stopping at the
+    /// first run that was granted a lane.
+    ///
+    /// A steal is a race, so one run's count samples the schedule rather than
+    /// stating a property of the lowering. A fixture whose whole range is
+    /// worth only a few dozen offers can lose nearly all of them to the
+    /// offering thread on a saturated machine — measured down to three grants
+    /// at `WF_WORKERS=4` — which would fail a per-run `granted > 0` for a
+    /// reason that has nothing to do with the code under test. A total keeps
+    /// exactly what those assertions are for: a runtime that grants nothing
+    /// totals zero and still fails.
+    ///
+    /// Every caller asserts `> 0`, which is an existential claim: the first
+    /// grant is the whole observation, and the runs after it re-observe
+    /// something already seen. Stopping there changes neither direction of the
+    /// result — the total is positive exactly when some run of the sample was
+    /// granted a lane, and a runtime that grants nothing still makes all
+    /// `runs` runs and still returns zero.
+    pub(super) fn grants_over_runs(&self, workers: Option<&str>, runs: usize) -> u64 {
+        let mut total = 0;
+        for run in 0..runs {
+            let (granted, output) = self.run(workers);
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "run {run} of the counted program must succeed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            total += granted;
+            if total > 0 {
+                break;
+            }
+        }
+        total
+    }
 }
 
 /// Links one module against the runtime and the observer, and returns the
