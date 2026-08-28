@@ -1559,7 +1559,7 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   2's approval and rule 4's approval of the content recorded here; this
   record creates no separate approval step.
 - SPECIFICATION: activate Whitefoot v0.38 at exact SHA-256
-  `7d30a62566e96b659fe7be6fb6d5775f25fb576374396bff5d1f42542b8a4e4c`.
+  `3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`.
   It supersedes active v0.37 at SHA-256
   `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`;
   those outgoing bytes are preserved byte-for-byte as
@@ -1577,9 +1577,12 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   combination tree, identity element, or index range. Its conditions are formed
   entirely from [PAR-1]'s existing footprint and loan machinery; it admits
   replicating a copy-element place under a byte-coverage condition; it states
-  that prologue executions do not overlap one another and that every write the
-  remainder performs to storage rooted outside the body occurs in iteration
-  order; it distinguishes the host resources a system operation of the loop
+  that prologue executions do not overlap one another and that the remainder's
+  writes to storage rooted outside the body, together with its reads of such
+  storage the body writes, occur in iteration order; it places the edge the
+  submitting statement takes on that submission's own outcome in the remainder
+  rather than the prologue, so a `propagate` at the cut leaves from the
+  remainder; it distinguishes the host resources a system operation of the loop
   creates from the execution resources an implementation spends on overlapping;
   and it carries [PAR-1]'s erroneous-execution clauses, including that no
   correct path reads a trap latch. [PAR-1] and [PAR-2] each gain one
@@ -1610,4 +1613,4 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
   refuses nothing can carry; each case's `rules` list names [PAR-3] beside the
   rules its source genuinely exercises. No pre-existing `expect` verdict
   changes. Coverage moves from 137/137 to 138/138 rules.
-ACTIVE-SPEC: v0.38 7d30a62566e96b659fe7be6fb6d5775f25fb576374396bff5d1f42542b8a4e4c ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619
+ACTIVE-SPEC: v0.38 3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619

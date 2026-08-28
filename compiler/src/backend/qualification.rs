@@ -117,12 +117,13 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // the iterations of a loop and names no target facility. It adds no system
 // operation, no opaque resource type, no release action, no outcome
 // constructor, and no entry form, and it changes no signature, borrow mode,
-// or effect row this table maps. Its one target-visible sentence — that the
-// host resources a system operation of the loop creates are not execution
-// resources an implementation spends on overlapping — constrains a schedule
-// an implementation may take, not a facility this qualification approves,
-// and nothing in this version emits that schedule. Every v0.37 mapping
-// therefore stands unchanged.
+// or effect row this table maps. Its target-visible sentences — that the host
+// resources a system operation of the loop creates are not execution resources
+// an implementation spends on overlapping, and that the remainder's accesses to
+// storage rooted outside the body are taken in iteration order — constrain a
+// schedule an implementation may take, not a facility this qualification
+// approves, and nothing in this version emits that schedule. Every v0.37
+// mapping therefore stands unchanged.
 const REVIEWED_FOR: &str = "v0.38";
 
 /// The number of [SYS-2] opaque resource types, including the

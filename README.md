@@ -34,7 +34,7 @@ priorities and repository discipline.
 ## Current state
 
 Kernel specification v0.38 is the active language authority, SHA-256
-`7d30a62566e96b659fe7be6fb6d5775f25fb576374396bff5d1f42542b8a4e4c`, carried by
+`3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`, carried by
 the stable [specification path](spec/kernel-spec.md). It adds [PAR-3], the
 staged loop permission that cuts a loop body at its first `may-suspend`
 submission, and supersedes v0.37, whose outgoing bytes are

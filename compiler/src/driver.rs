@@ -1133,27 +1133,29 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                 // iteration does not introduce. The staged rule admits exactly
                 // that loan, because prologues run in index order and never
                 // overlap. Both lines are printed, and neither judgment reads
-                // the other's verdict.
+                // the other's verdict. Both anchor on the loop head, so a
+                // reader matching the two lines up does not have to know that
+                // one judgment cites the loop and the other its submission.
                 "PAR loop        staged.wf:3  loop  denied      condition 2: an iteration holds \
                  an exclusive loan on storage the iteration does not introduce, at \
                  &uniq 'f files"
                     .to_owned(),
-                "PAR stage       staged.wf:8  for   permitted   staged at \
+                "PAR stage       staged.wf:3  for   permitted   staged at \
                  open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, \
                  start: 0_u64, end: 4_u64); 4 places classified"
                     .to_owned(),
-                "PAR place       staged.wf:8  serialized-P  &uniq 'f files  every footprint \
+                "PAR place       staged.wf:3  serialized-P  &uniq 'f files  every footprint \
                  element and loan touching it belongs to the prologue, and prologues run in \
                  index order without overlapping"
                     .to_owned(),
-                "PAR place       staged.wf:8  read-only     &'f cwd  no footprint of the body \
-                 writes it and every loan on it is shared"
+                "PAR place       staged.wf:3  read-only     &'f cwd  no footprint of the body \
+                 writes it or any place overlapping it, and every loan on it is shared"
                     .to_owned(),
-                "PAR place       staged.wf:8  serialized-E  set total = total +wrap 1_u64;  \
+                "PAR place       staged.wf:3  serialized-E  set total = total +wrap 1_u64;  \
                  every footprint element and loan touching it belongs to the remainder, whose \
-                 writes to storage rooted outside the loop commit in index order"
+                 accesses to storage rooted outside the loop are taken in index order"
                     .to_owned(),
-                "PAR place       staged.wf:8  replicated    let name = buffer_new(16_u64, \
+                "PAR place       staged.wf:3  replicated    let name = buffer_new(16_u64, \
                  97_u8);  iteration-own storage with copy elements, which an implementation may \
                  give each in-flight iteration its own of"
                     .to_owned(),
@@ -1206,7 +1208,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         let ledger = ledger_of("hoisted.wf", source);
         assert_eq!(
             ledger[1],
-            "PAR stage       hoisted.wf:9  for   denied      condition 3: a may-suspend call \
+            "PAR stage       hoisted.wf:5  for   denied      condition 3: a may-suspend call \
              retains a borrow past its own submission on storage the body writes and the \
              iteration does not introduce; instead, allocate the scratch storage inside the \
              loop body, so each iteration owns the buffer it reads and writes, at \
@@ -1220,6 +1222,51 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                  a borrow of it past its own submission"
             )),
             "the denied place is in the table: {ledger:?}"
+        );
+    }
+
+    /// Two nested loops whose only submission is the inner one's print at
+    /// their own heads, not both at the shared cut.
+    ///
+    /// The inner loop holds the body's first `may-suspend` call, so that call
+    /// is the outer loop's first submission too and both judgments cite it.
+    /// Anchoring the line on the cut printed two verdicts at one source
+    /// position and a reader could not tell which loop either belonged to.
+    #[test]
+    fn nested_loops_sharing_one_cut_print_at_their_own_heads() {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  for @outer step in 0_u64..2_u64 {
+    let shared = buffer_new(16_u64, 97_u8);
+    for @scan index in 0_u64..4_u64 {
+      region 'f {
+        let permit = reserve_file<'f>(factory: &uniq 'f files);
+        region 'n {
+          match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n shared, start: 0_u64, end: 4_u64) {
+            Ok(value: handle) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let ledger = ledger_of("nested.wf", source);
+        let stages: Vec<&String> = ledger
+            .iter()
+            .filter(|line| line.starts_with("PAR stage"))
+            .collect();
+        assert_eq!(stages.len(), 2, "one line per loop: {ledger:?}");
+        assert!(
+            stages[0].starts_with("PAR stage       nested.wf:2  for   denied      condition 1"),
+            "the outer loop is anchored on its own head: {stages:?}"
+        );
+        assert!(
+            stages[1].starts_with("PAR stage       nested.wf:4  for   permitted"),
+            "the inner loop is anchored on its own head: {stages:?}"
         );
     }
 

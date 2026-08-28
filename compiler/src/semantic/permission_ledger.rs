@@ -170,7 +170,11 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             ));
         }
         for judged in &permissions.staged {
-            let (logical_path, line) = source.location(&judged.cut)?;
+            // The loop head when the checked tree carries one, so two nested
+            // loops that share a cut do not print two lines at one anchor; a
+            // `loop_stmt` carries none and falls back to the cut.
+            let anchor = judged.head.as_ref().unwrap_or(&judged.cut);
+            let (logical_path, line) = source.location(anchor)?;
             let verdict = if judged.verdict.is_permitted() {
                 "permitted"
             } else {
@@ -388,40 +392,60 @@ fn staged_denied_detail<Source: LedgerSource>(
     // cited node comes last, because a statement's canonical spelling carries
     // its own terminator and anything appended after one reads as a typo.
     let condition = denial.condition();
-    let exit = |edge: &str| match edge {
-        "a return" => "a return leaves the loop from the remainder",
-        "a give" => "a give leaves the loop from the remainder",
-        "a break" => "a break leaves the loop from the remainder",
-        _ => "a propagate leaves the loop from the remainder",
-    };
-    let (reason, node) = match denial {
-        StagedDenial::NoCut { reason, statement } => (*reason, statement.as_ref()),
-        StagedDenial::ExitInRemainder { edge, statement } => (exit(edge), statement.as_ref()),
-        StagedDenial::RetainedBorrow { argument, .. } => (
-            "a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce",
+    // The edge already names which loop a `break_stmt` leaves, which is the
+    // only identity a break has in the checked tree.
+    let exit = |edge: &str| format!("{edge} leaves the loop from the remainder");
+    let (reason, node, overlapping) = match denial {
+        StagedDenial::NoCut { reason, statement } => {
+            ((*reason).to_owned(), statement.as_ref(), None)
+        }
+        StagedDenial::ExitInRemainder { edge, statement } => {
+            (exit(edge), statement.as_ref(), None)
+        }
+        StagedDenial::RetainedBorrow {
+            argument,
+            overlapping,
+            ..
+        } => (
+            "a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce"
+                .to_owned(),
             Some(argument),
+            overlapping.as_ref(),
         ),
-        StagedDenial::RemainderExclusiveLoan { argument, .. } => (
-            "a call of the remainder holds an exclusive loan on storage the iteration does not introduce",
+        StagedDenial::RemainderExclusiveLoan {
+            argument,
+            overlapping,
+            ..
+        } => (
+            "a call of the remainder holds an exclusive loan on storage the iteration does not introduce"
+                .to_owned(),
             Some(argument),
+            overlapping.as_ref(),
         ),
-        StagedDenial::NoDisposition { argument } => (
-            "the body reaches storage rooted outside the loop that no disposition of this rule covers",
+        StagedDenial::NoDisposition {
+            argument,
+            overlapping,
+        } => (
+            "the body reaches storage rooted outside the loop that no disposition of this rule covers"
+                .to_owned(),
             Some(argument),
+            overlapping.as_ref(),
         ),
         StagedDenial::NotReplicable { statement } => (
-            "per-iteration storage whose element type is not a resolved copy type",
+            "per-iteration storage whose element type is not a resolved copy type".to_owned(),
             Some(statement),
+            None,
         ),
-        StagedDenial::BodyForm { form } => {
+        StagedDenial::BodyForm { form, .. } => {
             return Ok(format!(
                 "condition {condition}: the body contains {form}; instead, {}",
                 denial.writer_form()
             ));
         }
         StagedDenial::Unresolved { argument } => (
-            "a footprint element this judgment does not resolve",
+            "a footprint element this judgment does not resolve".to_owned(),
             Some(argument),
+            None,
         ),
     };
     // A `break_stmt`, a `loop_stmt`, and a `region_stmt` carry no node path of
@@ -431,8 +455,15 @@ fn staged_denied_detail<Source: LedgerSource>(
         Some(node) => format!(", at {}", source.spelling(node)?),
         None => String::new(),
     };
+    // [OWN-7] makes a place and its prefix one storage, so a denial the overlap
+    // decided names both halves: one statement alone never shows the reader why
+    // the loop refused.
+    let paired = match overlapping {
+        Some(node) => format!(", which overlaps {}", source.spelling(node)?),
+        None => String::new(),
+    };
     Ok(format!(
-        "condition {condition}: {reason}; instead, {}{cited}",
+        "condition {condition}: {reason}; instead, {}{cited}{paired}",
         denial.writer_form()
     ))
 }

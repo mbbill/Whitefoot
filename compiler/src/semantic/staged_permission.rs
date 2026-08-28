@@ -17,12 +17,21 @@
 //! iteration**, which the statement graph already gives, so it asks nothing
 //! about indices and admits `loop_stmt` on the same terms.
 //!
-//! Write S for the first `may-suspend` call of B in program order, c for the
-//! statement that performs S's argument evaluation and submission, P for the
-//! statements up to and including c (the *prologue*) and E for the rest (the
-//! *remainder*). The judgment applies exactly when B holds a `may-suspend`
-//! call; a loop that performs no I/O gets no staged verdict at all, and the
-//! [PAR-2] counted permission next door is the only judgment of it.
+//! Write S for the first `may-suspend` call of B in program order, c for S's
+//! argument evaluation and submission, P for the statements up to and including
+//! c (the *prologue*) and E for the rest (the *remainder*). The judgment
+//! applies exactly when B holds a `may-suspend` call; a loop that performs no
+//! I/O gets no staged verdict at all, and the [PAR-2] counted permission next
+//! door is the only judgment of it.
+//!
+//! c is a program point inside the statement that performs it, not the whole of
+//! that statement. The statement's argument evaluation and submission are the
+//! end of P, and the *outcome* of that submission — which only E joins — is
+//! after c. So an edge the cut statement takes on that outcome, which is what a
+//! `let_stmt` selecting `propagate_let_rhs` at the cut takes on `Err`, is an
+//! edge of E and condition 2 refuses it. Anything else would let iteration i
+//! decide to leave the loop after P(i+1..i+K) already submitted operations the
+//! source-order execution never performs.
 //!
 //! # The seven conditions
 //!
@@ -39,27 +48,32 @@
 //!    refuses outright: the submission would then run several times per
 //!    iteration and the single-entry single-exit shape this condition asks for
 //!    does not hold.
-//! 2. **Every edge that leaves B leaves from P.** No `return_stmt`, no
-//!    `give_stmt` delivering outside B, no `break_stmt` naming L or a loop
-//!    enclosing L, and no `let_stmt` selecting `propagate_let_rhs` occurs in E.
-//!    With K iterations in flight, an iteration's decision to leave is taken
+//! 2. **Every edge that leaves B leaves from P, and leaves before c.** No
+//!    `return_stmt`, no `give_stmt` delivering outside B, no `break_stmt`
+//!    naming L or a loop enclosing L, and no `let_stmt` selecting
+//!    `propagate_let_rhs` occurs in E — and the cut statement's own leaving
+//!    edge, which the submission's outcome selects, is an edge of E. With K
+//!    iterations in flight, an iteration's decision to leave is otherwise taken
 //!    after later iterations have already submitted operations that the
-//!    source-order execution never performs, and an submitted target operation
+//!    source-order execution never performs, and a submitted target operation
 //!    is an externally observable transition that is not rolled back.
 //! 3. **Retained borrows are safe.** Every borrow a `may-suspend` call of B
 //!    retains past its own submission is on a place rooted in a binding B
 //!    itself introduces, on a place this judgment replicates, or on a place no
-//!    footprint of B writes. Every retained borrow is read as retained to its
-//!    `terminal` milestone, which is what [SYS-2] publishes today; a borrow
-//!    released at submission is a milestone this judgment does not yet have and
-//!    reading one early would be the unsound direction.
+//!    footprint of B writes — where "writes" is the [OWN-7] relation, so a
+//!    footprint that writes `w` writes every field path under `w` and a borrow
+//!    into `w.f` is a borrow into `w`. Every retained borrow is read as
+//!    retained to its `terminal` milestone, which is what [SYS-2] publishes
+//!    today; a borrow released at submission is a milestone this judgment does
+//!    not yet have and reading one early would be the unsound direction.
 //! 4. **Exclusive loans in E are safe.** Every exclusive loan a call of E holds
 //!    is on a place rooted in a binding B itself introduces or on a place this
 //!    judgment replicates. Two remainders coexist, so an exclusive loan on
 //!    enclosing storage would put two usable `&uniq` borrows on one place.
 //! 5. **Every place rooted outside L that B touches carries a disposition**,
 //!    and there are exactly four (see [`Disposition`]). A place with none
-//!    denies.
+//!    denies. The disposition is read over the place's whole [OWN-7] overlap
+//!    class, never over its exact path: see below.
 //! 6. **Replicated storage has copy elements.** A place this judgment
 //!    replicates, and a construction whose storage an implementation reuses
 //!    across iterations, has a copy element type. An element type whose [OWN-1]
@@ -71,16 +85,40 @@
 //!    contribute an empty footprint and *widen* permission, which is the one
 //!    direction it must never fail in.
 //!
+//! # Places are judged by their [OWN-7] class, not by their path
+//!
+//! [OWN-7] is the relation the rule is stated in: two resolved places overlap
+//! when one's field path is a prefix of the other's, and a footprint that
+//! reaches one reaches the bytes of the other. A judgment keyed by exact path
+//! equality would make `work` and `work.seen` two independent rows and hand
+//! each a safe disposition on its own — `work.seen` read-only because nothing
+//! writes *that path*, `work` serialized-E because nothing else touches *that
+//! path* — while the body carries a recurrence through the one storage they
+//! share. Every flag conditions 3, 4 and 5 read is therefore accumulated over
+//! the overlap class ([`Class`]) before any disposition is taken, and a denial
+//! names both halves of the overlapping pair so the reader sees why two
+//! statements that mention different paths are one hazard.
+//!
+//! The rows themselves stay keyed by path, because the ledger's teaching value
+//! is that it names the place the writer wrote. Only the *flags* are unioned.
+//!
 //! # Why exactly these
 //!
 //! The schedule the conditions admit is: P(0), P(1), … in index order, never
 //! two at once; E(i)'s stages executed after P(i+1..i+K) may already have run;
-//! E(i)'s writes to places rooted outside L committed in the order of i. So the
-//! only pairs that ever coexist are E(i) against P(j) for j > i, and E(i)
-//! against E(j) for j != i. Conditions 3 and 5 make the first non-interfering,
+//! E(i)'s accesses to a place rooted outside L that some footprint of B writes
+//! — its reads as well as its writes — taken in the order of i. So the only
+//! pairs that ever coexist are E(i) against P(j) for j > i, and E(i) against
+//! E(j) for j != i. Conditions 3 and 5 make the first non-interfering,
 //! conditions 4 and 5 the second, and condition 2 means no iteration ever
 //! leaves the loop from a segment that could coexist with a later iteration's
 //! work.
+//!
+//! The read half of that ordering is what makes `serialized-E` safe and is
+//! stated in the rule for exactly that reason: a place E alone reaches but the
+//! body writes would otherwise let E(i) read what E(j) has not yet written, and
+//! the disposition's own words — *either segment therefore serializes the
+//! place* — would be an assumption the schedule did not owe.
 //!
 //! **Prologues never overlap one another.** That is a restriction on the
 //! schedule and not a derived fact, and it is what admits `reserve_file`'s
@@ -121,10 +159,14 @@ use crate::NodePath;
 /// The staged verdict of one loop whose body performs I/O.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StagedPermission {
-    /// The loop's spelling: `for` or `loop`. A `loop_stmt` carries no node path
-    /// of its own in the checked tree, so the line the ledger prints is anchored
-    /// at the cut instead of at the loop head.
+    /// The loop's spelling: `for` or `loop`.
     pub(crate) form: &'static str,
+    /// The loop head, when the checked tree carries one. A `for_stmt` does; a
+    /// `loop_stmt` does not, and the ledger falls back to the cut for it. Two
+    /// loops one nested in the other share a cut whenever the inner one holds
+    /// the body's first submission, so anchoring on the head is what lets a
+    /// reader tell their two lines apart.
+    pub(crate) head: Option<NodePath>,
     /// The submission this judgment cut the body at: the source call node of
     /// the first `may-suspend` action of B in program order.
     pub(crate) cut: NodePath,
@@ -213,8 +255,11 @@ pub(crate) enum StagedDenial {
         /// citing a node the writer did not write there.
         statement: Option<NodePath>,
     },
-    /// Condition 2: an edge leaves the loop from the remainder.
+    /// Condition 2: an edge leaves the loop from the remainder. The cut
+    /// statement's own leaving edge is one of these: the submission's outcome
+    /// selects it, and only E joins that outcome.
     ExitInRemainder {
+        /// The edge, already naming which loop a `break_stmt` leaves.
         edge: &'static str,
         /// Absent for a `break_stmt`, which carries no node path.
         statement: Option<NodePath>,
@@ -223,6 +268,9 @@ pub(crate) enum StagedDenial {
     /// the body writes.
     RetainedBorrow {
         argument: NodePath,
+        /// The other half of the [OWN-7] pair, when the write that denies is on
+        /// an overlapping place rather than on the borrowed one itself.
+        overlapping: Option<NodePath>,
         /// Whether storage of that place's type could be replicated at all.
         /// A buffer of copy elements could, once the coverage proof exists; an
         /// opaque system nominal never can, and telling its writer to allocate
@@ -233,16 +281,29 @@ pub(crate) enum StagedDenial {
     /// enclosing storage.
     RemainderExclusiveLoan {
         argument: NodePath,
+        overlapping: Option<NodePath>,
         replicable_shape: bool,
     },
     /// Condition 5: a place rooted outside the loop that no disposition covers.
-    NoDisposition { argument: NodePath },
+    NoDisposition {
+        argument: NodePath,
+        /// The overlapping place that put this one on the other side of the
+        /// cut, when the denial is a pair rather than one path's own reach.
+        overlapping: Option<NodePath>,
+    },
     /// Condition 6: storage an implementation would replicate whose element
     /// type is not copy, or whose [OWN-1] class this judgment does not resolve.
     NotReplicable { statement: NodePath },
     /// Condition 7, fail closed: a body statement form whose footprint this
     /// judgment does not compute.
-    BodyForm { form: &'static str },
+    BodyForm {
+        form: &'static str,
+        /// The form this judgment admits in its place. Carried beside the
+        /// refused form because the three refusals this variant reports have
+        /// three different repairs, and one sentence covering all of them
+        /// would tell the writer of any single one of them nothing.
+        admits: &'static str,
+    },
     /// Condition 7, fail closed: a footprint element, loan, or operand read
     /// whose caller place this judgment does not resolve.
     Unresolved { argument: NodePath },
@@ -275,6 +336,21 @@ impl StagedDenial {
             Self::ExitInRemainder { .. } => {
                 "take every early return, break, or propagate in the prologue, before the body's first I/O submission"
             }
+            // A denial the [OWN-7] class decided is not about one path. The
+            // writer sees two statements naming different paths, so the advice
+            // has to say they are one storage before any of the advice below
+            // reads as advice — and the replication advice below would be a
+            // claim about a field type this judgment does not resolve.
+            Self::RetainedBorrow {
+                overlapping: Some(_),
+                ..
+            }
+            | Self::RemainderExclusiveLoan {
+                overlapping: Some(_),
+                ..
+            } => {
+                "give the iteration its own copy of the storage the call borrows, or stop rewriting the record that storage is a field of: a write of a record writes every field path under it"
+            }
             Self::RetainedBorrow {
                 replicable_shape: true,
                 ..
@@ -291,14 +367,25 @@ impl StagedDenial {
             Self::RetainedBorrow { .. } | Self::RemainderExclusiveLoan { .. } => {
                 "give each iteration its own resource, or leave this loop sequential: storage that carries one position cannot be held by two iterations at once"
             }
+            Self::NoDisposition {
+                overlapping: Some(_),
+                ..
+            } => {
+                "keep each storage the body touches on one side of the cut, counting a record and every field path under it as one storage: a write of the record is a write of the field"
+            }
             Self::NoDisposition { .. } => {
                 "keep each place the body touches on one side of the cut: read it only, or reach it only before the submission, or give the iteration its own"
             }
             Self::NotReplicable { .. } => {
                 "give the per-iteration storage a copy element type; an affine or opaque element cannot be replicated"
             }
-            Self::BodyForm { .. } | Self::Unresolved { .. } => {
-                "write the body out of statement forms whose footprint the judgment resolves: calls, `set`, `replace`, `match`, `region`, and value initializers"
+            Self::BodyForm { admits, .. } => admits,
+            // The fail-closed resolution limit, not a hazard: the sibling test
+            // proves the same length read taken from the buffer itself is
+            // granted, so the admitted form is to name the storage rather than
+            // a binding standing in front of it.
+            Self::Unresolved { .. } => {
+                "name the storage the call reaches directly rather than through a binding whose extent this judgment does not resolve: `len(&'v table)` resolves where the same length taken through a `slice_of` binding does not"
             }
         }
     }
@@ -327,13 +414,17 @@ fn collect<'check>(
         // iteration the statement graph gives, never an index subrange.
         let loop_body = match statement {
             CheckedStatement::CountedRange {
-                id, binder, body, ..
-            } => Some(("for", *id, vec![*binder], body)),
-            CheckedStatement::Loop { id, body, .. } => Some(("loop", *id, Vec::new(), body)),
+                id,
+                node_path,
+                binder,
+                body,
+                ..
+            } => Some(("for", Some(node_path.clone()), *id, vec![*binder], body)),
+            CheckedStatement::Loop { id, body, .. } => Some(("loop", None, *id, Vec::new(), body)),
             _ => None,
         };
-        if let Some((form, id, seed, body)) = loop_body
-            && let Some(judgement) = judge(program, places, form, id, seed, body)
+        if let Some((form, head, id, seed, body)) = loop_body
+            && let Some(judgement) = judge(program, places, form, head, id, seed, body)
         {
             judged.push(judgement);
         }
@@ -347,6 +438,7 @@ fn judge<'check>(
     program: &Program<'check>,
     places: &PlaceMap,
     form: &'static str,
+    head: Option<NodePath>,
     id: CheckedLoopId,
     seed: Vec<BindingId>,
     body: &'check [CheckedStatement],
@@ -362,6 +454,7 @@ fn judge<'check>(
         places,
         introduced,
         cut: cut.call.clone(),
+        cut_node: None,
         segments: Vec::new(),
         dispositions: Vec::new(),
         touched: Vec::new(),
@@ -375,13 +468,14 @@ fn judge<'check>(
     if let Some(denial) = cut_denial {
         return Some(StagedPermission {
             form,
+            head: head.clone(),
             cut: cut.call.clone(),
             verdict: StagedVerdict::Denied(denial),
             dispositions: Vec::new(),
         });
     }
     survey.walk(&flow);
-    Some(survey.finish(form, cut.call.clone()))
+    Some(survey.finish(form, head, cut.call.clone()))
 }
 
 /// The first `may-suspend` call of one body in program order, with the
@@ -647,9 +741,18 @@ impl<'check> FlowBuilder<'check> {
                             .map(|(_, exit)| *exit)
                     })
                     .flatten();
+                // A `break_stmt` carries no node path of its own, so the loop it
+                // names is the only thing a condition-2 denial can say about
+                // *which* break it refused, and the checked tree does carry
+                // that: naming it costs no invented node.
+                let leaves = if target.0 == self.outer_loop.0 {
+                    "a break naming this loop"
+                } else {
+                    "a break naming a loop that encloses it"
+                };
                 match inner {
                     Some(exit) => self.set(node, vec![exit], None),
-                    None => self.set(node, vec![LEAVES], Some("a break")),
+                    None => self.set(node, vec![LEAVES], Some(leaves)),
                 }
                 node
             }
@@ -779,6 +882,31 @@ struct Touched {
     exclusive_loan: bool,
 }
 
+/// One place's flags, unioned over its [OWN-7] overlap class.
+///
+/// This is the object every disposition and every place-stated denial is read
+/// from. [OWN-7] makes a place and any prefix or extension of it one storage,
+/// so a write of `w` is a write of `w.f`, a retained borrow into `w.f` is a
+/// retained borrow into `w`, and a body that reaches `w.f` before the cut and
+/// `w` after it has reached one storage on both sides.
+#[derive(Default)]
+struct Class {
+    written: bool,
+    in_prologue: bool,
+    in_remainder: bool,
+    exclusive_loan: bool,
+    retained_borrow: Option<NodePath>,
+    remainder_exclusive_loan: Option<NodePath>,
+    /// Whether every place of the class could be replicated at all. A class
+    /// holding one place that cannot is a class no per-iteration copy repairs,
+    /// so the advice a denial gives must not be "allocate it in the body".
+    replicable_shape: bool,
+    /// The first overlapping place that widened this one's class: the other
+    /// half of the pair a denial names. Absent when the place's own touches
+    /// already carried every flag.
+    overlapping: Option<NodePath>,
+}
+
 /// One construction of B whose storage an implementation may reuse across
 /// iterations.
 struct Replicated {
@@ -795,12 +923,17 @@ struct StagedSurvey<'check, 'run> {
     /// iteration and dies with it; everything else outlives the iteration.
     introduced: Vec<BindingId>,
     cut: NodePath,
+    /// The flow node of the statement that performs the cut, once condition 1
+    /// has found it. Its footprint is the prologue's, and its leaving edge is
+    /// the remainder's.
+    cut_node: Option<NodeId>,
     /// Which segment each flow node belongs to, dense by node id.
     segments: Vec<Option<Segment>>,
     dispositions: Vec<PlaceDisposition>,
     touched: Vec<Touched>,
     replicated: Vec<Replicated>,
-    form_refusal: Option<&'static str>,
+    /// The refused form and the form admitted in its place.
+    form_refusal: Option<(&'static str, &'static str)>,
     unresolved: Option<NodePath>,
     not_replicable: Option<NodePath>,
     /// The first edge that leaves the loop from the remainder, which is
@@ -835,6 +968,7 @@ impl<'check> StagedSurvey<'check, '_> {
                 statement: Some(self.cut.clone()),
             });
         }
+        self.cut_node = Some(cut);
         let dom = dominators(flow);
         let pdom = post_dominators(flow);
         self.segments = vec![None; flow.len()];
@@ -887,13 +1021,21 @@ impl<'check> StagedSurvey<'check, '_> {
             let Some(segment) = self.segments[id] else {
                 continue;
             };
-            self.statement(node, segment);
+            self.statement(node, segment, self.cut_node == Some(id));
         }
     }
 
-    fn statement(&mut self, node: &FlowNode<'check>, segment: Segment) {
-        // Condition 2 reads the edge the flow builder already classified.
-        if let (Segment::Remainder, Some(edge)) = (segment, node.leaves)
+    fn statement(&mut self, node: &FlowNode<'check>, segment: Segment, is_cut: bool) {
+        // Condition 2 reads the edge the flow builder already classified. The
+        // cut statement's footprint is the prologue's, because P is what
+        // evaluates the arguments and submits; but an edge that same statement
+        // takes on the *outcome* of the submission is taken after c, which only
+        // E joins, so it is an edge of E. `let x = propagate open_file(...)` is
+        // that shape, and admitting it would let iteration i leave the loop
+        // after P(i+1..i+K) already submitted operations the source-order
+        // execution never performs.
+        let edge_segment = if is_cut { Segment::Remainder } else { segment };
+        if let (Segment::Remainder, Some(edge)) = (edge_segment, node.leaves)
             && self.exit_in_remainder.is_none()
         {
             self.exit_in_remainder = Some((edge, statement_citation(node.statement)));
@@ -934,9 +1076,15 @@ impl<'check> StagedSurvey<'check, '_> {
             // projects onto an actual, and a discarded one carries its own
             // [STOR-3] release; admitting either needs that release classified
             // first, so both deny here exactly as they do in a window.
-            CheckedStatement::Evaluate(_) => self.refuse_form("an expression statement"),
+            CheckedStatement::Evaluate(_) => self.refuse_form(
+                "an expression statement",
+                "bind the call's result with `let`, so its footprint is read through a value initializer this judgment resolves",
+            ),
             CheckedStatement::DropExpression { .. } => {
-                self.refuse_form("a discarded expression statement");
+                self.refuse_form(
+                    "a discarded expression statement",
+                    "bind the value with `let` and let the binding's own release carry it, so its footprint is read through a value initializer this judgment resolves",
+                );
             }
         }
     }
@@ -960,6 +1108,7 @@ impl<'check> StagedSurvey<'check, '_> {
             if !admitted {
                 self.refuse_form(
                     "a statement that forms a borrow of storage the iteration does not introduce",
+                    "write the borrow as an argument of the call that uses it, where its loan is stated, or borrow only storage the iteration introduces",
                 );
                 return;
             }
@@ -1043,6 +1192,10 @@ impl<'check> StagedSurvey<'check, '_> {
 
     /// Records one touch of a place rooted outside the loop, returning its
     /// entry. Iteration-own storage carries no disposition and returns `None`.
+    ///
+    /// Rows are keyed by the exact resolved path, so the ledger names the place
+    /// the writer wrote. Every condition that reads these flags reads them
+    /// through [`Class`] instead, over the row's whole [OWN-7] overlap class.
     fn touch(
         &mut self,
         place: &ResolvedPlace,
@@ -1132,8 +1285,59 @@ impl<'check> StagedSurvey<'check, '_> {
         }
     }
 
-    fn refuse_form(&mut self, form: &'static str) {
-        self.form_refusal.get_or_insert(form);
+    fn refuse_form(&mut self, form: &'static str, admits: &'static str) {
+        self.form_refusal.get_or_insert((form, admits));
+    }
+
+    /// One row's flags unioned over every row its place [OWN-7]-overlaps.
+    ///
+    /// The union is one-sided by construction: it only ever adds flags, so a
+    /// class can turn a grant into a denial and never the other way round,
+    /// which is the direction condition 7 requires of every step of this
+    /// judgment.
+    fn class_of(&self, index: usize) -> Class {
+        let subject = &self.touched[index];
+        let mut class = Class {
+            written: subject.written,
+            in_prologue: subject.in_prologue,
+            in_remainder: subject.in_remainder,
+            exclusive_loan: subject.exclusive_loan,
+            retained_borrow: subject.retained_borrow.clone(),
+            remainder_exclusive_loan: subject.remainder_exclusive_loan.clone(),
+            replicable_shape: subject.replicable_shape,
+            overlapping: None,
+        };
+        for (other, entry) in self.touched.iter().enumerate() {
+            if other == index || !entry.place.overlaps(&subject.place) {
+                continue;
+            }
+            let widens = (entry.written && !class.written)
+                || (entry.in_prologue && !class.in_prologue)
+                || (entry.in_remainder && !class.in_remainder)
+                || (entry.exclusive_loan && !class.exclusive_loan)
+                || (entry.retained_borrow.is_some() && class.retained_borrow.is_none())
+                || (entry.remainder_exclusive_loan.is_some()
+                    && class.remainder_exclusive_loan.is_none());
+            if widens {
+                class.overlapping.get_or_insert(entry.citation.clone());
+            }
+            class.written |= entry.written;
+            class.in_prologue |= entry.in_prologue;
+            class.in_remainder |= entry.in_remainder;
+            class.exclusive_loan |= entry.exclusive_loan;
+            // A class holding one place no implementation can replicate is a
+            // class replication does not repair, whatever the other paths are.
+            class.replicable_shape &= entry.replicable_shape;
+            if let Some(argument) = &entry.retained_borrow {
+                class.retained_borrow.get_or_insert(argument.clone());
+            }
+            if let Some(argument) = &entry.remainder_exclusive_loan {
+                class
+                    .remainder_exclusive_loan
+                    .get_or_insert(argument.clone());
+            }
+        }
+        class
     }
 
     /// The conditions in their numbered order, with the fail-closed form
@@ -1143,13 +1347,21 @@ impl<'check> StagedSurvey<'check, '_> {
     /// condition-3, condition-4, or condition-5 answer to give, so a body with
     /// several defects reports the unclassified form first, which is the honest
     /// report.
-    fn finish(mut self, form: &'static str, cut: NodePath) -> StagedPermission {
-        for entry in &self.touched {
-            let disposition = disposition_of(entry);
+    fn finish(
+        mut self,
+        form: &'static str,
+        head: Option<NodePath>,
+        cut: NodePath,
+    ) -> StagedPermission {
+        let classes: Vec<Class> = (0..self.touched.len())
+            .map(|index| self.class_of(index))
+            .collect();
+        for (entry, class) in self.touched.iter().zip(&classes) {
+            let disposition = disposition_of(class);
             self.dispositions.push(PlaceDisposition {
                 citation: entry.citation.clone(),
                 disposition,
-                reason: disposition_reason(entry, disposition),
+                reason: disposition_reason(class, disposition),
             });
         }
         for entry in &self.replicated {
@@ -1168,21 +1380,22 @@ impl<'check> StagedSurvey<'check, '_> {
                 },
             });
         }
-        let verdict = match self.denial() {
+        let verdict = match self.denial(&classes) {
             Some(denial) => StagedVerdict::Denied(denial),
             None => StagedVerdict::Permitted,
         };
         StagedPermission {
             form,
+            head,
             cut,
             verdict,
             dispositions: self.dispositions,
         }
     }
 
-    fn denial(&self) -> Option<StagedDenial> {
-        if let Some(form) = self.form_refusal {
-            return Some(StagedDenial::BodyForm { form });
+    fn denial(&self, classes: &[Class]) -> Option<StagedDenial> {
+        if let Some((form, admits)) = self.form_refusal {
+            return Some(StagedDenial::BodyForm { form, admits });
         }
         if let Some((edge, statement)) = &self.exit_in_remainder {
             return Some(StagedDenial::ExitInRemainder {
@@ -1190,28 +1403,31 @@ impl<'check> StagedSurvey<'check, '_> {
                 statement: statement.clone(),
             });
         }
-        for entry in &self.touched {
-            if entry.written
-                && let Some(argument) = &entry.retained_borrow
+        for class in classes {
+            if class.written
+                && let Some(argument) = &class.retained_borrow
             {
                 return Some(StagedDenial::RetainedBorrow {
                     argument: argument.clone(),
-                    replicable_shape: entry.replicable_shape,
+                    overlapping: class.overlapping.clone(),
+                    replicable_shape: class.replicable_shape,
                 });
             }
         }
-        for entry in &self.touched {
-            if let Some(argument) = &entry.remainder_exclusive_loan {
+        for class in classes {
+            if let Some(argument) = &class.remainder_exclusive_loan {
                 return Some(StagedDenial::RemainderExclusiveLoan {
                     argument: argument.clone(),
-                    replicable_shape: entry.replicable_shape,
+                    overlapping: class.overlapping.clone(),
+                    replicable_shape: class.replicable_shape,
                 });
             }
         }
-        for entry in &self.touched {
-            if disposition_of(entry) == Disposition::Denied {
+        for (entry, class) in self.touched.iter().zip(classes) {
+            if disposition_of(class) == Disposition::Denied {
                 return Some(StagedDenial::NoDisposition {
                     argument: entry.citation.clone(),
+                    overlapping: class.overlapping.clone(),
                 });
             }
         }
@@ -1228,58 +1444,60 @@ impl<'check> StagedSurvey<'check, '_> {
     }
 }
 
-/// Condition 5's table, over one place rooted outside the loop.
-fn disposition_of(entry: &Touched) -> Disposition {
+/// Condition 5's table, over one place's whole [OWN-7] overlap class.
+fn disposition_of(class: &Class) -> Disposition {
     // Conditions 3 and 4 are stated over places, so their failures are the
     // fourth disposition rather than a separate column: a place a `may-suspend`
     // call retains a borrow on and the body writes, or one a call of the
     // remainder holds an exclusive loan on, has no safe disposition in this
     // version.
-    if entry.written && entry.retained_borrow.is_some() {
+    if class.written && class.retained_borrow.is_some() {
         return Disposition::Denied;
     }
-    if entry.remainder_exclusive_loan.is_some() {
+    if class.remainder_exclusive_loan.is_some() {
         return Disposition::Denied;
     }
-    if !entry.written && !entry.exclusive_loan {
+    if !class.written && !class.exclusive_loan {
         return Disposition::ReadOnly;
     }
     // A loan a `may-suspend` call holds outlives the submission, so a place
     // carrying one is not confined to the prologue however its footprint reads.
-    let retained_past_cut = entry.retained_borrow.is_some();
-    if entry.in_prologue && !entry.in_remainder && !retained_past_cut {
+    let retained_past_cut = class.retained_borrow.is_some();
+    if class.in_prologue && !class.in_remainder && !retained_past_cut {
         return Disposition::Serialized(Segment::Prologue);
     }
-    if entry.in_remainder && !entry.in_prologue {
+    if class.in_remainder && !class.in_prologue {
         return Disposition::Serialized(Segment::Remainder);
     }
     Disposition::Denied
 }
 
-fn disposition_reason(entry: &Touched, disposition: Disposition) -> &'static str {
+fn disposition_reason(class: &Class, disposition: Disposition) -> &'static str {
     match disposition {
         Disposition::ReadOnly => {
-            "no footprint of the body writes it and every loan on it is shared"
+            "no footprint of the body writes it or any place overlapping it, and every loan on it is shared"
         }
         Disposition::Serialized(Segment::Prologue) => {
             "every footprint element and loan touching it belongs to the prologue, and prologues run in index order without overlapping"
         }
         Disposition::Serialized(Segment::Remainder) => {
-            "every footprint element and loan touching it belongs to the remainder, whose writes to storage rooted outside the loop commit in index order"
+            "every footprint element and loan touching it belongs to the remainder, whose accesses to storage rooted outside the loop are taken in index order"
         }
         Disposition::Replicated => {
             "iteration-own storage with copy elements, which an implementation may give each in-flight iteration its own of"
         }
         Disposition::Denied => {
-            if entry.written && entry.retained_borrow.is_some() {
-                if entry.replicable_shape {
+            if class.written && class.retained_borrow.is_some() {
+                if class.overlapping.is_some() {
+                    "a may-suspend call retains a borrow into it past its own submission and a footprint of the body writes storage that overlaps it"
+                } else if class.replicable_shape {
                     "the body writes it and a may-suspend call retains a borrow of it past its own submission"
                 } else {
                     "the body writes it through a retained borrow and its type carries one position, so no iteration can be given its own"
                 }
-            } else if entry.remainder_exclusive_loan.is_some() {
+            } else if class.remainder_exclusive_loan.is_some() {
                 "a call of the remainder holds an exclusive loan on it, and two remainders coexist"
-            } else if entry.in_prologue && entry.in_remainder {
+            } else if class.in_prologue && class.in_remainder {
                 "the body reaches it on both sides of the cut, so no single segment serializes it"
             } else {
                 "the body writes it and no disposition of this rule covers it"

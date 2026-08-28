@@ -5,7 +5,7 @@ Revision: 54 (v0.38 adds [PAR-3], the staged loop permission, to the
 language authority)
 
 The active language authority is v0.38, SHA-256
-`7d30a62566e96b659fe7be6fb6d5775f25fb576374396bff5d1f42542b8a4e4c`, carried by
+`3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
 v0.37 at `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`,
 archived at [`spec/kernel-spec-v0.37.md`](../spec/kernel-spec-v0.37.md). The

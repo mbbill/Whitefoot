@@ -374,7 +374,9 @@ fn a_break_after_the_submission_denies() {
     let StagedDenial::ExitInRemainder { edge, statement } = denial else {
         panic!("expected an exit denial: {denial:?}");
     };
-    assert_eq!(edge, "a break");
+    // A `break_stmt` carries no node path, so the loop it names is the only
+    // identity the denial can print, and the edge carries it.
+    assert_eq!(edge, "a break naming this loop");
     assert!(
         statement.is_none(),
         "a break carries no node path to cite: {statement:?}"
@@ -643,8 +645,8 @@ fn storage_reached_on_both_sides_of_the_cut_has_no_disposition() {
 }
 
 /// Storage the body reaches only after the cut is serialized by the remainder,
-/// whose writes to storage rooted outside the loop commit in index order. That
-/// is what admits an ordinary source-order accumulator write with no
+/// whose accesses to storage rooted outside the loop are taken in index order.
+/// That is what admits an ordinary source-order accumulator write with no
 /// associativity, no identity element, and no combination tree — a fold
 /// [PAR-2]'s admitted operation set can never reach.
 #[test]
@@ -765,6 +767,13 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
     let StagedDenial::BodyForm { .. } = denial else {
         panic!("expected a form denial: {denial:?}");
     };
+    assert!(
+        denial
+            .writer_form()
+            .contains("write the borrow as an argument"),
+        "the advice must name the form that carries a stateable loan: {}",
+        denial.writer_form()
+    );
 }
 
 /// The other direction of the same guard, which is the wrong denial the loan
@@ -803,6 +812,143 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
 }
 "#;
     permitted(source, "main");
+}
+
+/// Condition 7's other half, which the form refusal above does not reach: a
+/// footprint *element* whose caller place the judgment does not resolve.
+///
+/// A slice reads through an origin this judgment holds no place for, so the
+/// projection produces an unresolved element rather than a place with a
+/// disposition. It must deny as [`StagedDenial::Unresolved`] rather than as
+/// [`StagedDenial::BodyForm`]: the two carry different writer advice and the
+/// same condition number, so a test that only checked the number would not
+/// tell them apart. This is the fail-closed direction — the element is on
+/// storage the body never writes, so a resolving judgment would grant it.
+#[test]
+fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let table = buffer_new(16_u64, 97_u8);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'v {
+      let view = slice_of(&'v table);
+      let seen = len(view);
+      set total = total +wrap seen;
+    }
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 7);
+    let StagedDenial::Unresolved { .. } = denial else {
+        panic!("expected an unresolved-element denial: {denial:?}");
+    };
+    assert!(
+        denial.writer_form().contains("slice_of"),
+        "the advice must name the binding that stands in front of the storage: {}",
+        denial.writer_form()
+    );
+}
+
+/// The admitted direction of the same variant: the identical length read taken
+/// from the buffer itself resolves, so the loop is granted.
+///
+/// The two programs read the same length of the same enclosing buffer and
+/// differ only in whether a slice stands between the read and the storage.
+/// That is what makes the denial above a resolution limit of this judgment and
+/// not a hazard of the program — and what makes it worth removing later.
+#[test]
+fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let table = buffer_new(16_u64, 97_u8);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    let seen = len(table);
+    set total = total +wrap seen;
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    permitted(source, "main");
+}
+
+/// The third condition-7 refusal, and the second sanctioned over-denial: an
+/// expression statement anywhere in the body.
+///
+/// Its reach projects onto no actual, so the judgment cannot form the call's
+/// footprint and refuses the loop rather than reading it as empty. The denial
+/// is unrelated to overlap — the helper here writes only iteration-own storage
+/// — so the advice must name the form that carries the same call with a
+/// footprint the judgment does read, which is a `let` binding of its result.
+#[test]
+fn an_expression_statement_refuses_as_a_form_and_names_the_let_binding() {
+    let source = br#"fn stamp['b](slot: &uniq 'b buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
+  let room = len(deref(slot));
+  let wide = ilt(0_u64, room);
+  if wide {
+    set deref(slot)[0_u64] = 7_u8;
+  }
+  return unit;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    let scratch = buffer_new(8_u64, 0_u8);
+    region 's {
+      stamp<'s>(slot: &uniq 's scratch, index: index);
+    }
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 7);
+    let StagedDenial::BodyForm { form, .. } = denial else {
+        panic!("expected a form denial: {denial:?}");
+    };
+    assert_eq!(form, "an expression statement");
+    assert!(
+        denial
+            .writer_form()
+            .contains("bind the call's result with `let`"),
+        "the advice must name the binding form: {}",
+        denial.writer_form()
+    );
 }
 
 // ----------------------------------------------------------------------
@@ -931,6 +1077,304 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 
 // ----------------------------------------------------------------------
+// The [OWN-7] overlap class
+// ----------------------------------------------------------------------
+
+/// A recurrence carried through a struct field denies, and the denial names
+/// both halves of the overlapping pair.
+///
+/// This is the widening an adversarial review found on 2026-08-27. The body
+/// reads `work.seen` before the cut and replaces `work` after it. Keyed by the
+/// exact resolved path those are two rows and each is safe alone — no
+/// footprint writes *`work.seen`*, and nothing else touches *`work`* — while
+/// the storage the two share carries a value from one iteration into the next:
+/// sequentially `work.seen` ends at four, and with four prologues in flight it
+/// ends at one. Keyed by the [OWN-7] class they are one place the body reaches
+/// on both sides of the cut, which is condition 5's denial.
+///
+/// The denial has to name the pair. One statement alone does not show a reader
+/// why a loop mentioning two different paths was refused.
+#[test]
+fn a_recurrence_carried_through_a_struct_field_denies_and_names_the_pair() {
+    let table = permission_of(FIELD_RECURRENCE);
+    let judged = only_staged(&table, "main");
+    let StagedVerdict::Denied(StagedDenial::NoDisposition {
+        argument,
+        overlapping,
+    }) = &judged.verdict
+    else {
+        panic!("expected a condition 5 denial: {:?}", judged.verdict);
+    };
+    let overlapping = overlapping
+        .as_ref()
+        .expect("a denial the overlap decided names the other half of the pair");
+    assert_ne!(
+        argument, overlapping,
+        "the pair is two statements, not one cited twice"
+    );
+    // The first row is the field read the exact-path judgment called
+    // read-only, and it now carries its class's disposition.
+    assert_eq!(
+        dispositions(judged)[0],
+        Disposition::Denied,
+        "the field read carries the class's disposition: {:?}",
+        judged.dispositions
+    );
+}
+
+/// The granted half of the same pair: two *disjoint* field paths of one record
+/// stay two places.
+///
+/// [OWN-7] is a prefix test, not a root test, so widening the judgment to the
+/// class must not collapse a record into one indivisible place. The prologue
+/// reads `pair.a` and the remainder writes `pair.b`; neither path is a prefix
+/// of the other, so the read is read-only and the write is serialized in the
+/// remainder, and the loop is granted.
+#[test]
+fn two_disjoint_fields_of_one_record_are_judged_independently() {
+    let source = br#"struct Pair {
+  a: u64;
+  b: u64;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let pair = Pair(a: 1_u64, b: 0_u64);
+  for @scan index in 0_u64..4_u64 {
+    let carried = pair.a;
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set pair.b = pair.b +wrap carried;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let judged = permitted(source, "main");
+    assert_eq!(
+        dispositions(&judged),
+        vec![
+            Disposition::ReadOnly,
+            Disposition::Serialized(Segment::Prologue),
+            Disposition::ReadOnly,
+            Disposition::Serialized(Segment::Remainder),
+            Disposition::Replicated,
+        ]
+    );
+}
+
+/// The mirror of the recurrence denies too, which is why the repair is stated
+/// over the class rather than over one disposition.
+///
+/// Here the prologue replaces the whole record and the remainder reads one of
+/// its fields, so the exact-path judgment called the write `serialized-P` and
+/// the read `read-only` — two different safe answers, both wrong for the same
+/// reason. A repair that only taught `read-only` about writes would have left
+/// this open.
+#[test]
+fn the_mirror_of_the_field_recurrence_denies_as_well() {
+    let source = br#"struct Carrier {
+  tag: u64;
+  spare: u64;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let carrier = Carrier(tag: 0_u64, spare: 0_u64);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let previous = replace carrier = Carrier(tag: index, spare: 0_u64);
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            let seen = carrier.tag;
+            set total = total +wrap seen;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 5);
+    let StagedDenial::NoDisposition { overlapping, .. } = denial else {
+        panic!("expected a condition 5 denial: {denial:?}");
+    };
+    assert!(
+        overlapping.is_some(),
+        "the prologue write and the remainder read are the pair"
+    );
+}
+
+/// The severe form: the submission borrows a field of storage the remainder
+/// replaces.
+///
+/// `open_file(name: &'n held.name, …)` retains that borrow to its `terminal`
+/// milestone, and the remainder runs `replace held = Holder(…)`, dropping the
+/// buffer the borrow names while a later iteration's open is still outstanding
+/// on it. That is the precise hazard condition 3 exists to prevent, and the
+/// exact-path judgment called the borrowed place read-only because no
+/// footprint writes *`held.name`*.
+///
+/// The replace is written after the match rather than inside one arm, so both
+/// arms agree on what they own at the join and the hazard is unconditional:
+/// every iteration's remainder installs a new buffer under the borrow the next
+/// iteration's prologue is about to take.
+#[test]
+fn a_borrow_into_storage_the_remainder_replaces_denies_by_the_retained_borrow() {
+    let source = br#"struct Holder {
+  name: buffer<u8>;
+  seen: u64;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let first = buffer_new(16_u64, 97_u8);
+  let held = Holder(name: move first, seen: 0_u64);
+  for @scan index in 0_u64..4_u64 {
+    let fresh = buffer_new(16_u64, 98_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+        let previous = replace held = Holder(name: move fresh, seen: 1_u64);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 3);
+    let StagedDenial::RetainedBorrow { overlapping, .. } = denial else {
+        panic!("expected a condition 3 denial: {denial:?}");
+    };
+    assert!(
+        overlapping.is_some(),
+        "the borrowed field and the replaced record are the pair"
+    );
+}
+
+// ----------------------------------------------------------------------
+// Condition 2: the cut statement's own leaving edge
+// ----------------------------------------------------------------------
+
+/// A `propagate` whose right-hand side *is* the cut leaves from the remainder.
+///
+/// The second widening the review of 2026-08-27 found. The statement performs
+/// the submission, so its footprint is the prologue's; but the `Err` edge is
+/// selected by that submission's own outcome, which only the remainder joins.
+/// With K iterations in flight the decision to leave is therefore taken after
+/// P(i+1..i+K) already submitted opens the source-order execution never
+/// performs. Admitting it would also decide a language capability by source
+/// shape: the same exit written as a `match` arm was denied all along.
+#[test]
+fn a_propagate_whose_right_hand_side_is_the_cut_leaves_from_the_remainder() {
+    let source = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'p {
+      let permit = reserve_file<'p>(factory: &uniq 'p files);
+      region 'n {
+        let handle = propagate open_file<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64);
+        set total = total +wrap 1_u64;
+      }
+    }
+  }
+  return Ok<u64, IoError>(value: total);
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  region 'c {
+    match scan_all<'c>(cwd: &'c cwd, files: move files) {
+      Ok(value: counted) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "scan_all", 2);
+    let StagedDenial::ExitInRemainder { edge, statement } = denial else {
+        panic!("expected an exit denial: {denial:?}");
+    };
+    assert_eq!(edge, "a propagate");
+    assert!(
+        statement.is_some(),
+        "a propagate carries the node path of its own statement"
+    );
+}
+
+/// The granted half: a `propagate` written *before* the cut leaves from the
+/// prologue and is admitted.
+///
+/// The two programs differ in one thing — whether the propagated call is the
+/// body's first `may-suspend` action — and that is exactly the fact the
+/// condition turns on. At this edge no prologue of a later iteration has begun,
+/// because prologues run in index order and P(i) has not completed, so no
+/// operation the source-order execution never performs has been submitted.
+#[test]
+fn a_propagate_written_before_the_cut_leaves_from_the_prologue_and_is_admitted() {
+    let source = br#"fn classify(index: own u64) -> result: own Result<u64, IoError> pure {
+  return Ok<u64, IoError>(value: index);
+}
+
+fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let kept = propagate classify(index: index);
+    let name = buffer_new(16_u64, 97_u8);
+    region 'p {
+      let permit = reserve_file<'p>(factory: &uniq 'p files);
+      region 'n {
+        match open_file<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return Ok<u64, IoError>(value: total);
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  region 'c {
+    match scan_all<'c>(cwd: &'c cwd, files: move files) {
+      Ok(value: counted) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    permitted(source, "scan_all");
+}
+
+// ----------------------------------------------------------------------
 // The fact-state invariant
 // ----------------------------------------------------------------------
 
@@ -1038,6 +1482,36 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
 // ----------------------------------------------------------------------
 // Shared fixtures
 // ----------------------------------------------------------------------
+
+/// The field recurrence: `work.seen` read before the cut and `work` replaced
+/// after it, which is one storage under [OWN-7] and two rows without it.
+const FIELD_RECURRENCE: &[u8] = br#"struct Work {
+  seen: u64;
+  code: u64;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let work = Work(seen: 0_u64, code: 0_u64);
+  for @scan index in 0_u64..4_u64 {
+    let carried = work.seen;
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            let bumped = carried +wrap 1_u64;
+            let previous = replace work = Work(seen: bumped, code: 0_u64);
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
 
 /// The granted shape, named once because four tests read it.
 const ITERATION_OWN_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {

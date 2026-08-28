@@ -370,7 +370,10 @@ copy rather than a fact to rediscover:
   written after the submission denies the loop: with later iterations already
   in flight, the decision to leave would be taken after opens the source-order
   execution never performs. Write the guard and its `break` at the top of the
-  body, before any I/O.
+  body, before any I/O. `let handle = propagate open_file(…);` is such an exit
+  and not an exception to it: the `Err` edge is selected by the submission's own
+  outcome, so it leaves from the remainder however early the statement is
+  written. Match on the result instead and handle the error inside the body.
 - **Write the accumulator as an ordinary source-order `set`.** `set sum = sum
   +wrap digest;` needs no associativity, no identity element, and no
   combination tree, because [PAR-3] commits the remainder's writes to storage
