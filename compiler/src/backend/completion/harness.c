@@ -19,6 +19,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <stdarg.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -97,7 +98,13 @@ ssize_t wf_completion_test_getdirentries64(
  * acts strictly after the refusal rather than racing it with a delay. */
 static pthread_mutex_t wf_open_gate_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wf_open_gate_signal = PTHREAD_COND_INITIALIZER;
-static unsigned wf_open_gate_armed;
+/* Read without the lock by every refusal, so a build that is only observing
+ * does not serialize the refusals it is observing.  A refused open decides
+ * what it does next against a ledger several threads are moving, and a global
+ * lock taken on the way out of every `openat` narrows that to one thread at a
+ * time — which is exactly the schedule a test of the rule needs to leave
+ * alone. */
+static _Atomic unsigned wf_open_gate_armed;
 static unsigned wf_open_gate_refusals;
 
 int wf_completion_test_openat(
@@ -117,10 +124,13 @@ int wf_completion_test_openat(
     } else {
         descriptor = openat(directory, path, flags);
     }
-    if (descriptor < 0 && (errno == EMFILE || errno == ENFILE)) {
+    if (descriptor < 0 && (errno == EMFILE || errno == ENFILE)
+        && atomic_load_explicit(&wf_open_gate_armed, memory_order_acquire)
+            != 0) {
         int refusal = errno;
         (void)pthread_mutex_lock(&wf_open_gate_lock);
-        if (wf_open_gate_armed != 0) {
+        if (atomic_load_explicit(&wf_open_gate_armed, memory_order_relaxed)
+            != 0) {
             wf_open_gate_refusals += 1;
             (void)pthread_cond_broadcast(&wf_open_gate_signal);
         }
@@ -3203,8 +3213,8 @@ static int test_open_exhaustion_waits_for_another_engine(
     CHECK(open(path, O_RDONLY) < 0);
 
     (void)pthread_mutex_lock(&wf_open_gate_lock);
-    wf_open_gate_armed = 1;
     wf_open_gate_refusals = 0;
+    atomic_store_explicit(&wf_open_gate_armed, 1, memory_order_release);
     (void)pthread_mutex_unlock(&wf_open_gate_lock);
     release.held = held;
     release.pipe_writer = pipe_pair[1];
@@ -3229,7 +3239,7 @@ static int test_open_exhaustion_waits_for_another_engine(
     CHECK(pthread_join(releaser, NULL) == 0);
     CHECK(release.released == 1);
     (void)pthread_mutex_lock(&wf_open_gate_lock);
-    wf_open_gate_armed = 0;
+    atomic_store_explicit(&wf_open_gate_armed, 0, memory_order_release);
     (void)pthread_mutex_unlock(&wf_open_gate_lock);
     CHECK(
         wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
@@ -3786,6 +3796,112 @@ static int test_bridge_one_of_two_opens_behind_a_close_succeeds(
     return 0;
 }
 
+/* Every operation record this runtime has, all holding a refused open at once.
+ *
+ * The rule holds an open the host refused while something in flight could
+ * still give a descriptor back, so a program that fills the whole operation
+ * capacity with opens against a full descriptor table makes every record a
+ * held one, and the thread that submits the next is waiting for a record to
+ * come free. Nothing can retire, so every one of them is the program's own
+ * outcome and must be published — the answer source order gives too, since a
+ * sequential execution reaches each of these opens with the table still full.
+ *
+ * What this catches is the shape where waiting does not end. A refused open
+ * that runs the work its own adapter owes is not, meanwhile, an engine for the
+ * work queued behind it, and one that decided that once and then slept is
+ * waiting for an operation only it could have run. This test is the pressure
+ * that makes that difference: it queues far more work than there are threads
+ * to take it, while every thread is inside the rule.
+ */
+static int test_bridge_every_record_holding_a_refused_open_publishes(
+    const char *scratch_directory
+) {
+    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
+    wf_completion_token token;
+    struct rlimit saved;
+    char path[256];
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    size_t submitted = 0;
+    size_t index;
+    int writer;
+    int held;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-every-record-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit
+     * narrows. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    CHECK(open(path, O_RDONLY) < 0);
+
+    while (submitted < WF_HARNESS_OPERATION_CAPACITY) {
+        if (wf__completion_file_open_at_submit(
+                AT_FDCWD,
+                path,
+                O_RDONLY,
+                0u,
+                0u,
+                WF_FILE_EXPECT_REGULAR,
+                &tokens[submitted]
+            ) != 1) {
+            break;
+        }
+        submitted += 1;
+    }
+    CHECK(submitted > 0);
+    for (index = 0; index < submitted; ++index) {
+        value = -1;
+        error_code = -1;
+        open_outcome = 99u;
+        wf__completion_file_open_join(
+            &tokens[index],
+            &value,
+            &error_code,
+            &open_outcome
+        );
+        CHECK(value < 0);
+        CHECK(error_code == EMFILE || error_code == ENFILE);
+        CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+    }
+
+    CHECK(close(held) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
 static int test_native_contract_inventory(void) {
     wf_completion_target_contract darwin = wf_completion_target_contract_for(
         WF_TARGET_DARWIN_FILE_FALLBACK
@@ -3923,11 +4039,45 @@ static int benchmark_core_roundtrip(uint64_t *nanoseconds_per_operation) {
     return 0;
 }
 
+/* The name of the test now running, for the watchdog below.  Written by the
+ * main thread and read by a signal handler, which is why it is a plain
+ * pointer to a string literal: the store is a single aligned word and the
+ * handler only prints it. */
+static const char *volatile wf_harness_running = "startup";
+
+/* A deadlock is now a failure mode of this suite, so it gets a name.
+ *
+ * The rule a refused open follows makes threads wait for each other on
+ * purpose, and a mistake in it does not produce a wrong answer — it produces
+ * no answer, which without this would surface as a build job that never ends
+ * and a log with nothing in it. The bound is three orders of magnitude above
+ * what the whole suite takes, so it can only fire on a schedule that has
+ * genuinely stopped. */
+static void wf_harness_watchdog(int signal_number) {
+    static const char message[] = "completion harness: no progress in test: ";
+    ssize_t ignored;
+    (void)signal_number;
+    ignored = write(2, message, sizeof(message) - 1u);
+    ignored = write(2, wf_harness_running, strlen(wf_harness_running));
+    ignored = write(2, "\n", 1);
+    (void)ignored;
+    _exit(9);
+}
+
 int main(int argc, char **argv) {
     uint64_t roundtrip_ns = 0;
     int trace = getenv("WF_COMPLETION_TRACE") != NULL;
+    struct sigaction watchdog;
+    memset(&watchdog, 0, sizeof(watchdog));
+    watchdog.sa_handler = wf_harness_watchdog;
+    if (sigaction(SIGALRM, &watchdog, NULL) != 0) {
+        fprintf(stderr, "completion harness: no watchdog\n");
+        return 2;
+    }
+    (void)alarm(300u);
 #define RUN_TEST(...)                                                         \
     do {                                                                      \
+        wf_harness_running = #__VA_ARGS__;                                    \
         if (trace) {                                                          \
             fprintf(stderr, "completion harness: begin %s\n", #__VA_ARGS__); \
         }                                                                     \
@@ -3975,6 +4125,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
     RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
     RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
+    RUN_TEST(test_bridge_every_record_holding_a_refused_open_publishes(argv[1]));
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_darwin_directory_progress_is_internal());
     RUN_TEST(benchmark_core_roundtrip(&roundtrip_ns));

@@ -1061,15 +1061,25 @@ uint64_t wf_completion_retirements(void) {
 }
 
 void wf_completion_operation_accepted(void) {
-    /* No wake is owed here.  More in flight can only make a waiter's answer
-     * "keep waiting", which is what a sleeping waiter is already doing, and a
-     * newly queued bounded-adapter request raises the queue a drained sibling
-     * counts as its own by exactly the same one. */
     atomic_fetch_add_explicit(
         &wf_retirement_in_flight,
         1,
         memory_order_seq_cst
     );
+    /* A waiter has to be told, and this is the only place that can tell it: a
+     * request queued behind a refused open is one that engine must run before
+     * anything can retire, and a waiter asleep on the ledger is not running
+     * it.  Where no open is refused — which is every ordinary submission —
+     * this is one relaxed-cost load and nothing else. */
+    if (atomic_load_explicit(
+            &wf_retirement_waiter_count,
+            memory_order_seq_cst
+        ) == 0) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    (void)pthread_cond_broadcast(&wf_retirement_signal);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
 }
 
 void wf_completion_operation_retired(void) {

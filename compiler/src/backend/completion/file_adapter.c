@@ -471,28 +471,38 @@ static wf_file_result wf_file_retire_and_retry(
 ) {
     wf_retirement_waiter waiter;
     enum wf_retirement_state state;
-    size_t mine = 0;
-    if (may_run_owed_work != 0) {
-        wf_file_work owed;
-        size_t owed_run = 0;
-        /* This open cannot retire while its own thread runs the queue, and
-         * the ledger is told so: an open refused on another thread must not
-         * wait for an operation whose thread is waiting for it. */
-        wf_completion_retirement_defer_begin();
-        while (owed_run < adapter->queue_capacity
-               && wf_file_take_work(adapter, &owed, 1)) {
-            wf_file_run_work(adapter, &owed, helper, 0);
-            owed_run += 1;
-        }
-        wf_completion_retirement_defer_end();
-    } else {
-        /* Owed work itself: the caller suspended inside this call is the
-         * thread that would run the rest of the queue, so none of it can
-         * retire while this one waits. */
-        mine = wf_file_adapter_queued(adapter);
-    }
-    wf_completion_retirement_wait_begin(&waiter, seen);
+    int registered = 0;
     for (;;) {
+        size_t mine = 0;
+        if (may_run_owed_work != 0) {
+            wf_file_work owed;
+            /* Run the queue before every decision and after every wake, not
+             * once: this thread is one of this adapter's engines, and work
+             * queued while it waits is work only an engine can retire.  It
+             * leaves the waiter order while it runs, and the ledger is told
+             * the operation it is deciding cannot retire meanwhile, so an
+             * open refused on another thread neither waits for it nor waits
+             * behind it. */
+            if (registered != 0) {
+                wf_completion_retirement_wait_end(&waiter);
+                registered = 0;
+            }
+            wf_completion_retirement_defer_begin();
+            while (wf_file_take_work(adapter, &owed, 1)) {
+                wf_file_run_work(adapter, &owed, helper, 0);
+            }
+            wf_completion_retirement_defer_end();
+        } else {
+            /* Owed work itself: the caller suspended inside this call is the
+             * thread that would run the rest of the queue, so none of it can
+             * retire while this one waits.  Read afresh each time round,
+             * because the queue this thread is answering for grows. */
+            mine = wf_file_adapter_queued(adapter);
+        }
+        if (registered == 0) {
+            wf_completion_retirement_wait_begin(&waiter, seen);
+            registered = 1;
+        }
         state = wf_completion_retirement_state(&waiter, mine);
         if (state != WF_RETIREMENT_AWAITED) {
             break;
