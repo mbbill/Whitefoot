@@ -904,10 +904,27 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
     let entry = optimized_main(&optimized);
     // The compiler wrapper is inlined, which is the condition of
     // qualification [QUAL-3].
-    assert!(
-        !entry.contains("call") || !entry.contains("@wf.sys."),
-        "no approved-implementation wrapper survives on the transfer path:\n{entry}"
-    );
+    //
+    // The subject is the approved implementations named above, `@wf.sys.<id>`
+    // — not every compiler-owned symbol whose name starts the same way. The
+    // [SYS-7] error-class mapper `@wf.sys.io.error` is a pure function on the
+    // failure arms and carries no transfer; whether the host optimizer leaves
+    // it as a call here or outlines it into a `.cold.` region is that
+    // optimizer's choice, and the two hosts this gate runs on disagree. Naming
+    // it keeps the assertion about the transfer path instead of about one
+    // clang's outlining.
+    for line in entry.lines().filter(|line| line.contains("call ")) {
+        let Some((_, after)) = line.split_once("@wf.sys.") else {
+            continue;
+        };
+        let symbol = after
+            .split_once(['(', ' ', ','])
+            .map_or(after, |(name, _)| name);
+        assert_eq!(
+            symbol, "io.error",
+            "an approved implementation survives on the transfer path:\n{entry}"
+        );
+    }
     // One source transfer is one call into the compiler-owned progress
     // adapter. EINTR/readiness retries remain inside that call and only its
     // first progress-producing or terminal answer reaches this path.

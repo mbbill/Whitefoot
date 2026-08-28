@@ -23,6 +23,7 @@ WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build
 TREE := $(WORK)/tree
+BIGTREE := $(WORK)/bigtree
 CARGO_TARGET := $(WORK)/cargo-target
 LINUX_TARGET := $(WORK)/linux-target
 CLANG := /usr/bin/clang
@@ -47,9 +48,54 @@ PIPE_ROUNDS ?= 64
 PIPE_DELAY_US ?= 1000
 PIPE_BYTES ?= 16777216
 
+
+# The read-heavy workload's shape: READ_FILES files of READ_KIB KiB each,
+# opened once and then read at READS_* positioned offsets. Its tree is
+# separate from the many-files tree above because the two answer different
+# questions and neither should perturb the other's page-cache state.
+READ_FILES ?= 8
+READ_KIB ?= 65536
+# Both windows do the same number of reads, so the only thing that differs
+# between the two tables is the size of one transfer. An uncached read costs
+# about the same at either window on this host -- it is a device round trip,
+# not a bandwidth question -- so equal read counts also keep the two tables
+# roughly equal in wall time.
+READS_64K ?= 32768
+READS_4K ?= 32768
+EXPECTED_READ_64K ?= 09425560703784339892 00000000002147483648
+EXPECTED_READ_4K ?= 18028327385673861873 00000000000134217728
+
+# The read table is measured to medians of fifteen on macOS, because the host
+# is shared with an endpoint-security stack whose interference is bursty, and
+# to medians of nine on Linux.
+READ_ROUNDS ?= 15
+READ_LINUX_ROUNDS ?= 9
+
+# The residency check that gives the words "uncached" and "warm" their
+# meaning. Immediately before and immediately after each table, READ_PROBES
+# positioned reads are timed in every file through a descriptor that does not
+# populate the cache, and the table is refused unless all but
+# READ_TOLERANCE_PERCENT of those reads fell on the side of the threshold the
+# label claims. On this host a cached 64 KiB read costs 6 to 20 us and one the
+# device answers costs about 134 us, so 40 us separates the two populations
+# with room on both sides. read_baseline.c explains why the rule bounds a
+# share rather than testing every file.
+READ_PROBES ?= 16
+READ_THRESHOLD_US ?= 40
+READ_TOLERANCE_PERCENT ?= 10
+
+# How long a freshly generated tree is left alone before it may be measured.
+# Writing half a gigabyte makes the host's malware scanner walk the new files
+# once, which holds a few of them resident for a minute or two; `read-settle`
+# waits that out rather than measuring through it. See the comment above
+# `read-settle` for the observation.
+READ_SETTLE_ATTEMPTS ?= 24
+READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
-.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean
+.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean \
+	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
+	linux-read
 
 build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/pipe_producer $(BUILD)/pipe_harness \
@@ -57,6 +103,12 @@ build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/many_files_wide8 $(BUILD)/many_files_wide8_seq \
 	$(BUILD)/many_files_narrow $(BUILD)/many_files_narrow_seq \
 	$(BUILD)/pipe_relay $(BUILD)/pipe_relay_seq
+
+read-build: prepare compiler $(BUILD)/gen $(BUILD)/read_baseline $(BUILD)/runner \
+	$(BUILD)/read_heavy_narrow $(BUILD)/read_heavy_narrow_seq \
+	$(BUILD)/read_heavy_wide8 $(BUILD)/read_heavy_wide8_seq \
+	$(BUILD)/read_heavy_narrow_4k $(BUILD)/read_heavy_narrow_4k_seq \
+	$(BUILD)/read_heavy_wide8_4k $(BUILD)/read_heavy_wide8_4k_seq
 
 prepare:
 	@mkdir -p $(BUILD) $(CARGO_TARGET)
@@ -96,6 +148,22 @@ $(BUILD)/many_files_narrow_seq: programs/many_files_narrow.wf compiler | prepare
 	$(WFC) --no-overlap -o $@ $<
 
 $(BUILD)/pipe_relay_seq: programs/pipe_relay.wf compiler | prepare
+	$(WFC) --no-overlap -o $@ $<
+
+
+$(BUILD)/read_baseline: read_baseline.c workload.h uring_baseline.h | prepare
+	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+$(BUILD)/read_heavy_narrow_seq: programs/read_heavy_narrow.wf compiler | prepare
+	$(WFC) --no-overlap -o $@ $<
+
+$(BUILD)/read_heavy_wide8_seq: programs/read_heavy_wide8.wf compiler | prepare
+	$(WFC) --no-overlap -o $@ $<
+
+$(BUILD)/read_heavy_narrow_4k_seq: programs/read_heavy_narrow_4k.wf compiler | prepare
+	$(WFC) --no-overlap -o $@ $<
+
+$(BUILD)/read_heavy_wide8_4k_seq: programs/read_heavy_wide8_4k.wf compiler | prepare
 	$(WFC) --no-overlap -o $@ $<
 
 gen: $(BUILD)/gen
@@ -184,6 +252,214 @@ linux: linux-image
 		-e EXPECTED="$(EXPECTED)" \
 		$(DOCKER_IMAGE) \
 		sh /work/research/experiments/io-completion-bench/linux-bench.sh
+
+
+# --- the read-heavy workload --------------------------------------------
+#
+# The many-files table above is dominated by openat, which on the macOS host
+# costs 116 us because of an endpoint-security stack: it measures the host's
+# open path far more than it measures the completion framework. This table
+# opens eight large files once, outside any loop, and then does tens of
+# thousands of positioned reads into them, so what the time is made of is
+# reads.
+#
+# The opens are inside the timed region — the runner times whole processes —
+# but there are exactly eight of them in every line, N, S, and C alike, and at
+# 116 us each that is 0.93 ms against a table whose fastest line is over a
+# hundred. A constant that every line pays identically cannot move a ratio.
+
+read-gen: $(BUILD)/gen
+	@rm -rf $(BIGTREE)
+	$(BUILD)/gen $(BIGTREE) $(READ_FILES) $(READ_KIB) fixed
+	@echo "generated $(READ_FILES) x $(READ_KIB) KiB in $(BIGTREE)"
+
+# Every line must publish the same bytes before any of them reports a time,
+# and must publish them with the cache policy off and on, because a policy
+# that changed a byte would not be a policy.
+read-verify: read-build read-gen
+	@cd $(BIGTREE) && for nocache in 0 1; do \
+		for line in \
+			"$(BUILD)/read_baseline $(BIGTREE) direct $(READS_64K) 65536:$(EXPECTED_READ_64K)" \
+			"$(BUILD)/read_heavy_narrow:$(EXPECTED_READ_64K)" \
+			"$(BUILD)/read_heavy_narrow_seq:$(EXPECTED_READ_64K)" \
+			"$(BUILD)/read_heavy_wide8:$(EXPECTED_READ_64K)" \
+			"$(BUILD)/read_heavy_wide8_seq:$(EXPECTED_READ_64K)" \
+			"$(BUILD)/read_baseline $(BIGTREE) direct $(READS_4K) 4096:$(EXPECTED_READ_4K)" \
+			"$(BUILD)/read_heavy_narrow_4k:$(EXPECTED_READ_4K)" \
+			"$(BUILD)/read_heavy_narrow_4k_seq:$(EXPECTED_READ_4K)" \
+			"$(BUILD)/read_heavy_wide8_4k:$(EXPECTED_READ_4K)" \
+			"$(BUILD)/read_heavy_wide8_4k_seq:$(EXPECTED_READ_4K)"; do \
+			command=$${line%%:*}; want=$${line#*:}; \
+			if [ "$$nocache" = 1 ]; then got=$$(WF_IO_NOCACHE=1 $$command); \
+			else got=$$($$command); fi; \
+			if [ "$$got" != "$$want" ]; then \
+				echo "MISMATCH (WF_IO_NOCACHE=$$nocache): $$command published [$$got], expected [$$want]"; \
+				exit 1; \
+			fi; \
+		done; \
+	done
+	@echo "every read-heavy line publishes the same bytes with the cache policy off and on"
+
+# Prints the checksums the current tree actually folds, for when the shape
+# constants above move.
+expected-read: $(BUILD)/read_baseline read-gen
+	@$(BUILD)/read_baseline $(BIGTREE) direct $(READS_64K) 65536
+	@$(BUILD)/read_baseline $(BIGTREE) direct $(READS_4K) 4096
+
+$(WORK)/read-plan-64k.txt: Makefile | prepare
+	@{ \
+	printf 'N.direct\t\t$(BUILD)/read_baseline\t$(BIGTREE)\tdirect\t$(READS_64K)\t65536\n'; \
+	for t in 2 4 6 8; do \
+		printf 'N.pool%s\t\t$(BUILD)/read_baseline\t$(BIGTREE)\tpool\t$(READS_64K)\t65536\t%s\n' $$t $$t; \
+	done; \
+	printf 'S.narrow\t\t$(BUILD)/read_heavy_narrow_seq\n'; \
+	printf 'S.wide8\t\t$(BUILD)/read_heavy_wide8_seq\n'; \
+	printf 'C.narrow.default\t\t$(BUILD)/read_heavy_narrow\n'; \
+	printf 'C.wide8.default\t\t$(BUILD)/read_heavy_wide8\n'; \
+	for h in 0 1 4; do \
+		printf 'C.narrow.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_narrow\n' $$h $$h; \
+	done; \
+	for h in 0 1 2 4 8; do \
+		printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_wide8\n' $$h $$h; \
+	done; \
+	} > $@
+
+$(WORK)/read-plan-4k.txt: Makefile | prepare
+	@{ \
+	printf 'N.direct\t\t$(BUILD)/read_baseline\t$(BIGTREE)\tdirect\t$(READS_4K)\t4096\n'; \
+	for t in 2 4 6 8; do \
+		printf 'N.pool%s\t\t$(BUILD)/read_baseline\t$(BIGTREE)\tpool\t$(READS_4K)\t4096\t%s\n' $$t $$t; \
+	done; \
+	printf 'S.narrow\t\t$(BUILD)/read_heavy_narrow_4k_seq\n'; \
+	printf 'S.wide8\t\t$(BUILD)/read_heavy_wide8_4k_seq\n'; \
+	printf 'C.narrow.default\t\t$(BUILD)/read_heavy_narrow_4k\n'; \
+	printf 'C.wide8.default\t\t$(BUILD)/read_heavy_wide8_4k\n'; \
+	for h in 0 1 4; do \
+		printf 'C.narrow.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_narrow_4k\n' $$h $$h; \
+	done; \
+	for h in 0 1 2 4 8; do \
+		printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_wide8_4k\n' $$h $$h; \
+	done; \
+	} > $@
+
+# Ordering, and the check that makes the word "uncached" mean something.
+#
+# F_NOCACHE stops a read populating the page cache; it does not evict a page
+# that is already resident. A table therefore cannot make itself uncached by
+# asking for the policy: it has to be handed a tree that is not resident.
+# `read-uncache` produces one — the generator writes through a non-populating
+# descriptor and flushes each file, so nothing it wrote is left in the cache.
+#
+# That is checked rather than assumed. `read_baseline probe-uncached` times
+# READ_PROBES positioned reads in every file immediately before the table and
+# again immediately after it, and make stops unless all but
+# READ_TOLERANCE_PERCENT of them cost more than READ_THRESHOLD_US; the warm
+# tables are checked the same way in the other direction. The pair of probes
+# is what rules out both mistakes: the tree being resident when the table
+# starts, and something making it resident while the table runs.
+#
+# Batch 0092's first attempt had no such check. It took its "uncached" numbers
+# straight after generating the tree, when every page was still resident from
+# the writes, and published a page-cache table under the uncached label;
+# docs/done/0092-read-workload.md records what that cost.
+#
+# The uncached tables run first, because they are the ones the design question
+# turns on and the ones a shared host can spoil; the warm tables follow, after
+# `read-warm` reads the whole tree back in. A full sequential pass, not a rerun
+# of the workload: 32,768 pseudo-random reads would leave about two per cent of
+# the blocks untouched.
+read-uncache: $(BUILD)/gen
+	@rm -rf $(BIGTREE)
+	@$(BUILD)/gen $(BIGTREE) $(READ_FILES) $(READ_KIB) fixed
+	@sync
+
+# The wait that a generation needs before it may be measured.
+#
+# Writing the tree does not only put bytes on the device: it hands the host a
+# fresh half-gigabyte of files, and something on this host reads them. A probe
+# run every fifteen seconds on an otherwise idle machine watches residency
+# walk from f00000 towards f00007 over a minute or two and then disappear as
+# the pages age out -- three files resident at one probe, a different three at
+# the next, none a minute later. No benchmark line does it: the same walk
+# happens across idle gaps with nothing running, and every line reads through
+# the non-populating policy. The host's malware scanner is the obvious
+# candidate; `XprotectService` holds about ten per cent of a core throughout.
+#
+# So the tree is left to settle instead of being measured through the scan.
+# `read-settle` runs the same probe the table is gated on, quietly, until it
+# passes -- which is a wait for an outside reader to finish, not a softer
+# threshold. The gate probes below are unchanged and still fail the table.
+read-settle: $(BUILD)/read_baseline
+	@attempt=0; \
+	while :; do \
+		if $(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 \
+			$(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT) > /dev/null 2>&1; then \
+			echo "read-settle: the tree is not resident after $$attempt wait(s)"; \
+			exit 0; \
+		fi; \
+		attempt=$$((attempt + 1)); \
+		if [ $$attempt -ge $(READ_SETTLE_ATTEMPTS) ]; then \
+			echo "read-settle: still resident after $(READ_SETTLE_ATTEMPTS) waits" >&2; \
+			$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 \
+				$(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT); \
+			exit 1; \
+		fi; \
+		sleep $(READ_SETTLE_SECONDS); \
+	done
+
+read-warm: $(BUILD)/read_baseline
+	@$(BUILD)/read_baseline $(BIGTREE) warm 1 65536
+
+bench-read: read-verify $(WORK)/read-plan-64k.txt $(WORK)/read-plan-4k.txt
+	@echo "== read-heavy 64 KiB, uncached (WF_IO_NOCACHE=1) =="
+	$(MAKE) read-uncache
+	$(MAKE) read-settle
+	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	cd $(BIGTREE) && env WF_IO_NOCACHE=1 $(BUILD)/runner $(WORK)/read-plan-64k.txt \
+		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_64K)"
+	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	@echo "== read-heavy 4 KiB, uncached (WF_IO_NOCACHE=1) =="
+	$(MAKE) read-uncache
+	$(MAKE) read-settle
+	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	cd $(BIGTREE) && env WF_IO_NOCACHE=1 $(BUILD)/runner $(WORK)/read-plan-4k.txt \
+		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_4K)"
+	$(BUILD)/read_baseline $(BIGTREE) probe-uncached $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	@echo "== read-heavy 64 KiB, page cache warm =="
+	$(MAKE) read-warm
+	$(BUILD)/read_baseline $(BIGTREE) probe-warm $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	cd $(BIGTREE) && $(BUILD)/runner $(WORK)/read-plan-64k.txt \
+		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_64K)"
+	$(BUILD)/read_baseline $(BIGTREE) probe-warm $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	@echo "== read-heavy 4 KiB, page cache warm =="
+	$(BUILD)/read_baseline $(BIGTREE) probe-warm $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+	cd $(BIGTREE) && $(BUILD)/runner $(WORK)/read-plan-4k.txt \
+		$(READ_ROUNDS) $(WARMUP) "$(EXPECTED_READ_4K)"
+	$(BUILD)/read_baseline $(BIGTREE) probe-warm $(READ_PROBES) 65536 $(READ_THRESHOLD_US) $(READ_TOLERANCE_PERCENT)
+
+# The Linux read tables, in the same container the many-files `linux` target
+# uses and for the same reason: the tree must sit on a container-local
+# filesystem, and io_uring needs the unconfined seccomp profile.
+#
+# `read-bench.sh` is one protocol for every host that can run it -- this
+# container, a hosted Linux runner, a hosted macOS runner -- and differs from
+# `bench-read` above in one deliberate way: it labels a table by what the
+# residency probe measured instead of refusing to print one the probe did not
+# confirm. Its header says why. `bench-read` keeps the refusal, because on
+# this machine the two populations the threshold separates are known.
+linux-read: linux-image
+	@mkdir -p $(LINUX_TARGET)
+	docker run --rm --security-opt seccomp=unconfined \
+		-v $(ROOT):/work \
+		-v $(LINUX_TARGET):/target \
+		-e CARGO_TARGET_DIR=/target \
+		-e READ_FILES=$(READ_FILES) -e READ_KIB=$(READ_KIB) \
+		-e READS_64K=$(READS_64K) -e READS_4K=$(READS_4K) \
+		-e ROUNDS=$(READ_LINUX_ROUNDS) -e WARMUP=$(WARMUP) \
+		-e EXPECTED_READ_64K="$(EXPECTED_READ_64K)" \
+		-e EXPECTED_READ_4K="$(EXPECTED_READ_4K)" \
+		$(DOCKER_IMAGE) \
+		sh /work/research/experiments/io-completion-bench/read-bench.sh
 
 clean:
 	rm -rf $(WORK)

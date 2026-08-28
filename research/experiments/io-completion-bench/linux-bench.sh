@@ -1,9 +1,14 @@
 #!/bin/sh
-# The Linux half of io-completion-bench, run inside the container the
-# experiment's `linux` target starts. It builds the compiler and the C tools
-# from the bind-mounted worktree, generates the tree on a container-local
-# filesystem, and prints the same three-line table the macOS `bench` target
-# prints, with io_uring baselines added.
+# The Linux half of io-completion-bench. It builds the compiler and the C
+# tools from one worktree, generates the tree on a local filesystem, and
+# prints the same three-line table the macOS `bench` target prints, with
+# io_uring baselines added.
+#
+# Two hosts run it and neither is privileged over the other. The experiment's
+# `linux` target starts a container and leaves every path at its default; a
+# real Linux machine — the project's continuous-integration runner — exports
+# ROOT, OUT, and CARGO_TARGET_DIR and runs the same bytes with no container in
+# the way. Only the paths differ; the protocol below is one protocol.
 set -e
 
 FILES=${FILES:-8192}
@@ -12,19 +17,21 @@ ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
 EXPECTED=${EXPECTED:-"17098009301725298919 00000000000071024640"}
 
-BUNDLE=/work/research/experiments/io-completion-bench
-OUT=/scratch/io-completion-bench
+ROOT=${ROOT:-/work}
+BUNDLE=$ROOT/research/experiments/io-completion-bench
+OUT=${OUT:-/scratch/io-completion-bench}
+CLANG=${CLANG:-/usr/bin/clang}
 
-cd /work/compiler
+cd "$ROOT/compiler"
 cargo build --profile gate --bin whitefootc --locked --offline 2>&1 | tail -1
-WFC=${CARGO_TARGET_DIR:-/target}/gate/whitefootc
+WFC=${CARGO_TARGET_DIR:-$ROOT/compiler/target}/gate/whitefootc
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cd "$BUNDLE"
-/usr/bin/clang -std=c11 -O2 -Wall -Wextra -Werror gen.c -o "$OUT/gen"
-/usr/bin/clang -std=c11 -O2 -Wall -Wextra -Werror -pthread baseline.c -o "$OUT/baseline"
-/usr/bin/clang -std=c11 -O2 -Wall -Wextra -Werror runner.c -o "$OUT/runner"
+"$CLANG" -std=c11 -O2 -Wall -Wextra -Werror gen.c -o "$OUT/gen"
+"$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread baseline.c -o "$OUT/baseline"
+"$CLANG" -std=c11 -O2 -Wall -Wextra -Werror runner.c -o "$OUT/runner"
 "$OUT/gen" "$OUT/tree" "$FILES" "$MAX_KIB"
 
 cd "$BUNDLE/programs"

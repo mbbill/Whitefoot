@@ -18,6 +18,7 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -121,6 +122,72 @@ static inline enum wf_file_open_outcome wf_file_kind_outcome(
  * facility such as a FIFO cannot block before the kind is known. */
 static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
     return expected == WF_FILE_EXPECT_REGULAR ? O_NONBLOCK : 0;
+}
+
+/* WF_IO_NOCACHE: a target policy that makes a program's reads genuinely wait.
+ *
+ * This is runtime policy of the same class as WF_IO_HELPERS and WF_WORKERS,
+ * not a language surface. No Whitefoot source names it, no accepted program
+ * changes meaning under it, and no byte any read produces differs with it
+ * set: it asks the host to keep this file's pages out of its cache, which
+ * changes only how long a read takes. Absent — and any value other than the
+ * exact text "1" — is today's behaviour exactly, with no host call made at
+ * all.
+ *
+ * It exists because every file measurement in docs/done/0084 and 0086 ran
+ * against a warm page cache, where a read is a memory copy and a completion
+ * model that overlaps waits has nothing to overlap. Measuring the completion
+ * framework needs reads that wait on a device.
+ *
+ * Darwin gets F_NOCACHE, which is a mode of the descriptor: every read
+ * through it bypasses the unified buffer cache for the whole life of the
+ * open. Linux has no such per-descriptor mode, so it gets one
+ * POSIX_FADV_DONTNEED of the whole file, which evicts what is cached at the
+ * moment of the open. O_DIRECT is deliberately not used: it constrains
+ * buffer address, offset, and length alignment, which would change the
+ * program's own buffers and so change what is being measured.
+ *
+ * The setting is read once per process and cached. Two threads that race here
+ * compute the same answer from the same environment, so the race is benign. */
+static inline int wf_file_uncached_reads_requested(void) {
+    /* 0 not yet decided, 1 asked for, 2 not asked for. */
+    static _Atomic int decided;
+    int state = atomic_load_explicit(&decided, memory_order_relaxed);
+    if (state == 0) {
+        const char *text = getenv("WF_IO_NOCACHE");
+        state = (text != NULL && text[0] == '1' && text[1] == 0) ? 1 : 2;
+        atomic_store_explicit(&decided, state, memory_order_relaxed);
+    }
+    return state == 1;
+}
+
+/* The one host call the policy makes, in one place so both adapters make the
+ * same one. A build may name a different function here to observe it; the
+ * observing build is expected to perform the same host call. */
+#if !defined(WF_FILE_UNCACHED_APPLY)
+#define WF_FILE_UNCACHED_APPLY wf_file_uncached_apply_host
+#else
+extern void WF_FILE_UNCACHED_APPLY(int);
+#endif
+
+static inline void wf_file_uncached_apply_host(int descriptor) {
+#if defined(__APPLE__)
+    (void)fcntl(descriptor, F_NOCACHE, 1);
+#elif defined(__linux__)
+    (void)posix_fadvise(descriptor, 0, 0, POSIX_FADV_DONTNEED);
+#else
+    (void)descriptor;
+#endif
+}
+
+/* Applied exactly once to each descriptor an open hands back, by whichever
+ * adapter produced it. A descriptor the kind check refuses never reaches
+ * here, so the count of applications equals the count of successful opens. */
+static inline void wf_file_apply_uncached_reads(int descriptor) {
+    if (descriptor < 0 || !wf_file_uncached_reads_requested()) {
+        return;
+    }
+    WF_FILE_UNCACHED_APPLY(descriptor);
 }
 
 typedef struct wf_file_request {

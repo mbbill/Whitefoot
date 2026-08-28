@@ -1,21 +1,47 @@
 # Completion I/O results
 
 Status: measured at the program level on 2026-08-27, on macOS and on Linux
-with io_uring, and re-measured the same day with the base commit and the
-branch interleaved in one plan on a quiet host. Read the batch-0086 section
-for absolute values and the batch-0084 one for the findings it established;
-everything before that date was a C-level measurement of the completion core
-alone and is retained below, labelled, because it still describes what it
-measured.
+with io_uring, re-measured the same day with the base commit and the branch
+interleaved in one plan on a quiet host, then measured on real Linux hardware
+and on a clean macOS host through the repository's own continuous integration,
+and finally against a read-dominated workload whose files are opened once and
+whose reads are taken past the page cache.
+
+Read the batch-0092 section first: it is the only workload here whose
+operations genuinely wait, and it is where the design's own question is
+answered. Read the batch-0090 section for the Linux-hardware result that the
+container's headline ratio does not reproduce, the batch-0086 one for absolute
+values on the many-files workload, and the batch-0084 one for the findings it
+established; everything before that date was a C-level measurement of the
+completion core alone and is retained below, labelled, because it still
+describes what it measured.
 
 The program-level sections are the ones that answer the design's own question.
 Reproduce them with:
 
 ```sh
-make -C research/experiments/io-completion-bench bench       # macOS
+make -C research/experiments/io-completion-bench bench        # macOS
 make -C research/experiments/io-completion-bench bench-pipe
-make -C research/experiments/io-completion-bench linux       # Linux, io_uring
+make -C research/experiments/io-completion-bench linux        # Linux, container
+make -C research/experiments/io-completion-bench bench-read   # macOS, read-heavy
+make -C research/experiments/io-completion-bench linux-read   # Linux, read-heavy
 ```
+
+The runner tables come from `.github/workflows/io-hosts.yml`: `bench-linux`
+runs `linux-bench.sh` on Linux hardware with no container in the way, and
+`bench-linux-read` and `bench-macos-read` run `read-bench.sh` on both hosts.
+Every one of them uploads its table as a job artifact and prints it to the job
+summary.
+
+Two claims in the dated sections below have since been retired by a later
+measurement, and each section says so where it stands. Batch 0084's "a thread
+pool beats io_uring only where opens dominate" was retired by batch 0090.
+Batch 0084's and 0086's "overlap is worth about two times on a program that
+exposes width" was a macOS reading taken on a machine whose endpoint-security
+stack charges 116 us for an `openat`; batch 0092 re-ran that workload on an
+ordinary macOS system and found the completion build 1.20 times *slower* than
+its own sequential build. Neither retirement touches what those sections
+measured; both change what may be concluded from it.
 
 ## Program-level results, batch 0084 (2026-08-27)
 
@@ -67,7 +93,11 @@ C.wide  WF_IO_HELPERS=4      479.3 ms    67.0     378.7
 C.narrow (default policy)   1069.1 ms    48.9     304.0
 ```
 
-Linux 6.8.0 aarch64, 2 CPUs, 1.9 GiB, in a container with io_uring permitted:
+Linux 6.8.0 aarch64, 2 CPUs, 1.9 GiB, in a Docker container on the macOS
+machine above — a virtual guest, not Linux hardware — with io_uring
+permitted. The batch-0090 section below re-measures this workload on a real
+Linux kernel on real hardware and does not reproduce the C-against-S ratio
+here:
 
 ```text
 line                          median      user      sys
@@ -128,6 +158,15 @@ times on a program that exposes width. The 10 percent bar is met against the
 native completion path **at the concurrency the Whitefoot source can
 actually ask for**, and missed against every native shape that asks for
 more.
+
+That "roughly two times" did not survive being taken off this pair of hosts.
+Batch 0090 re-ran the Linux half on hardware instead of in a container and
+found C 3 per cent *slower* than S; batch 0092 re-ran the macOS half on a
+system without this machine's endpoint-security stack and found it 1.20 times
+slower. Both rows above were measured on hosts that charge far more for a file
+operation than an ordinary one does, and the ratio was reading that charge.
+What overlap is worth where the operations genuinely wait is in the batch-0092
+read-dominated section.
 
 ### Where the remaining distance is
 
@@ -276,9 +315,9 @@ Nothing on the macOS path changed in this batch beyond the collapsed helper
 pool, and the paired lines say so: every before/after pair above agrees within
 the control's own spread.
 
-Linux 6.8.0 aarch64, 2 CPUs, in a container with io_uring permitted, tree on
-the container-local filesystem. Medians of nine recorded runs after two
-warm-ups:
+Linux 6.8.0 aarch64, 2 CPUs, in a Docker container on the macOS machine above
+— a virtual guest, not Linux hardware — with io_uring permitted, tree on the
+container-local filesystem. Medians of nine recorded runs after two warm-ups:
 
 ```text
 line                          median      min      user      sys
@@ -329,7 +368,10 @@ Linux  C.wide8 against N.pool2               2.97x slower     missed
 ```
 
 C beats its own sequential build everywhere, by about two times on macOS and
-2.8 times on Linux. The depth-matched Linux comparison batch 0084 reported —
+2.8 times on Linux. Both halves of that sentence were later retired: batch
+0090 for Linux, on hardware rather than in a container, and batch 0092 for
+macOS, on a host without this machine's endpoint-security stack. What is
+measured here stands; what may be concluded from it is in those sections. The depth-matched Linux comparison batch 0084 reported —
 the four-wide program against a hand-written ring at queue depth four — still
 holds, at 6 percent. It opens to 26 percent when both are widened to eight,
 and that widening is the finding about where the distance lives.
@@ -367,6 +409,669 @@ eight before the next round starts.
 Both remaining gaps are therefore the same shape the batch-0084 record already
 flagged: overlap groups are runs of consecutive calls in one basic block, so a
 program pipelines nothing across iterations and pays a barrier per round.
+
+## Program-level results on Linux hardware, batch 0090 (2026-08-27)
+
+Every Linux number above this line was taken inside a Docker container on this
+project's macOS machine: an aarch64 guest with two virtual CPUs, its tree on
+the container's own overlay filesystem. That is a Linux kernel, but it is not
+Linux hardware, and the section below shows the difference is not a rounding
+error. These numbers come from GitHub-hosted `ubuntu-24.04` runners through
+`.github/workflows/io-hosts.yml`, which builds the bundle natively — no
+container, no bind mount — and runs `linux-bench.sh` with the same protocol,
+the same `workload.h`, and the same published checksum.
+
+Host, reported by the job itself: kernel `6.17.0-1022-azure`, `x86_64`, 4
+CPUs, AMD EPYC 9V74, `kernel.io_uring_disabled=0`, tree on the runner's own
+local disk (`ext4`). Nine recorded runs after two warm-ups, medians with the
+observed spread, because a shared runner is noisy and the reading has to carry
+its own error bars.
+
+Two runs on two separately provisioned runners, printed side by side below.
+They differ in absolute speed by about 21 percent — the second landed on an
+NVMe-backed disk, the first on a SATA one — and agree on every ordering and
+every ratio. A third runner, also NVMe-backed, reproduces the second within
+two percent on every line and is not tabulated: `N.direct` 94.68, `N.pool4`
+27.14, `N.uring32` 94.75, `S.wide` 112.19, `C.wide.default` 118.14.
+
+```text
+                       run 1: sda1                 run 2: nvme0n1p1
+line                median   min    max         median   min    max
+N.direct            119.69 119.33 120.61         94.24  94.17  94.63
+N.pool1             120.35 119.71 125.55         94.84  94.71  95.87
+N.pool2              60.80  60.64  62.50         47.71  47.55  48.22
+N.pool4              34.04  33.81  34.52         26.61  26.30  33.10   best N
+N.pool8              38.49  36.77  41.61         31.11  28.18  33.17
+N.uring2            123.89 123.72 125.14         97.14  96.93  97.88
+N.uring4            121.95 121.44 122.49         95.81  95.36  96.02
+N.uring8            120.06 119.82 120.38         94.67  94.15  95.07
+N.uring16           119.00 118.82 119.39         94.25  94.13  94.51
+N.uring32           118.69 118.15 118.93         94.45  94.25  94.62
+S.narrow            145.26 144.87 147.22        114.30 113.85 114.66
+S.wide              142.15 141.66 144.20        112.07 111.22 113.52
+S.wide8             141.26 140.64 143.44        110.94 110.63 112.45   best S
+C.narrow.default    147.39 145.30 147.68        114.49 113.71 116.18
+C.wide.default      149.47 147.17 150.57        115.92 115.38 117.83
+C.wide8.default     147.04 146.57 149.51        115.97 115.53 117.79
+C.wide.w0.h0        148.88 146.82 155.20        117.19 115.78 117.72
+C.wide.w0.h1        148.03 147.52 153.46        115.75 115.50 117.67
+C.wide.w0.h2        149.80 147.87 150.72        117.33 115.79 118.08
+C.wide.w0.h4        148.33 147.45 153.23        116.17 115.73 117.54
+C.wide8.w0.h0       147.80 146.65 149.40        115.96 115.56 119.25
+C.wide8.w0.h1       147.58 146.65 149.31        116.04 115.82 117.64
+C.wide8.w0.h2       148.43 146.57 152.95        115.93 115.62 117.07
+C.wide8.w0.h4       147.49 146.79 150.07        115.96 115.53 117.93
+C.wide.w1.hdefault  148.23 147.10 150.59        116.12 115.91 117.72
+C.wide.w2.hdefault  148.29 147.45 149.96        116.88 115.79 117.67
+```
+
+### Against the standing bar
+
+The bar this investigation has carried since batch 0084: C at least as fast as
+S on every workload, and within 10 percent of N wherever N is a native
+completion path or a fairly sized thread pool.
+
+```text
+workload / platform          C vs S             C vs N best        bar
+many files / Linux hardware  1.03x slower       4.36x slower       missed, both halves
+```
+
+This is the first host on which **C is slower than S**. Not by much — 3 percent
+in run 2, 5 percent in runs 1 and 3, against a within-run spread of about 2
+percent — but consistently, on all three runners, at every helper count, and on
+both the four-wide and the eight-wide program. The container said C was 2.3 times
+faster than S. That reading was about the container.
+
+### Why nothing that reorders I/O moves this workload here
+
+Two facts from the table settle it without a further experiment.
+
+The hand-written io_uring baseline lands on `N.direct` at every depth from 2 to
+32 — 94.45 against 94.24 ms in run 2, a fifth of a percent. A ring that submits
+32 reads at once and a loop that blocks on one at a time finish together. There
+is no read latency on this host to hide, because the whole 68 MiB tree is in
+the page cache and a cached `pread` returns without ever sleeping.
+
+The one native line that does move is the thread pool, and the CPU columns say
+what it moves. In run 2 `N.pool4` spends 103.6 ms of CPU to reach 26.6 ms of
+wall time — 3.9 cores busy at once — while `N.direct` spends 94.1 ms of CPU for
+94.2 ms of wall. The pool is not hiding I/O; it is folding four checksums at
+once. Batch 0084 already named that as part of the pool's advantage. On real
+hardware with a warm cache it is the whole of it.
+
+So a lowering whose only power is to start an operation before waiting on the
+previous one has nothing to recover here, and what remains of it is its own
+cost: the submission, the token, the join. Three percent.
+
+### The measurement that separates this host from the container
+
+Wall time against child CPU time, for the same lines:
+
+```text
+                          wall      user+sys     CPU/wall
+runner run 2  N.direct    94.24       94.08        1.00
+              S.wide     112.07      111.61        1.00
+              C.wide     115.92      115.82        1.00
+container     N.direct    72.04       72.28        1.00
+              S.wide     337.29      221.98        0.66
+              C.wide     146.73      132.67        0.90
+```
+
+On the runner every line is CPU-saturated: the process runs for its whole wall
+time. In the container the C baseline is too, but Whitefoot's own sequential
+build is not — 115 ms of its 337 ms is time the process was not running at all,
+and the completion build recovers most of that. Overlap was repaying a wait
+that exists in the container and does not exist on the runner.
+
+What produced that wait is not settled here. Two candidates, both consistent
+with the numbers and neither established: the container's block and filesystem
+path can make an operation genuinely sleep where the runner's page cache
+answers inline; and a two-vCPU guest running a lane pool plus a writer is
+oversubscribed in a way a four-CPU host is not. Discriminating them wants a
+run with the pool disabled on both hosts, which this batch did not do.
+
+### What this changes and what it does not
+
+It does not touch the macOS results, the pipe workload, the C-level core
+measurements, or anything about correctness. It does not show overlap is
+worthless: a workload whose operations really wait is exactly the case the
+design is for, and this workload, on this host, is not one. The batch-0084
+section already listed "any workload whose operations genuinely wait" among
+what its numbers do not cover.
+
+What it does change is the standing of one claim. "Overlap is worth about two
+times on a program that exposes width" was measured on macOS, where the
+endpoint-security stack makes an open cost 116 us, and in a container where a
+third of the sequential build's wall time was spent not running. Neither is a
+statement about Linux hardware, and on Linux hardware the same programs, the
+same tree, and the same checksum say the lowering costs three percent. The
+honest summary is that the value of the completion lowering is a property of
+the host's I/O latency, and this repository has now measured one host where
+that latency is zero.
+
+It also retires the batch-0084 note that "a thread pool beats io_uring on this
+workload" needs opens to dominate. On this host opens do not dominate and the
+pool still wins, because it is winning at compute.
+
+
+## Read-dominated, open-once, uncached, batch 0092 (2026-08-27)
+
+The two program-level sections above measure one workload: open a small file,
+read it, close it, thousands of times. On the macOS host an `openat` costs
+116 us against a 1.9 us `pread`, so that table is very largely a measurement
+of the host's endpoint-security stack rather than of the completion
+framework — and both sections were measured with a warm page cache, where a
+read is a memory copy and a model built to overlap waits has almost nothing to
+overlap.
+
+This section measures the framework instead. Eight 64 MiB files are opened
+once, before any read; then the program performs 32,768 positioned reads of
+64 KiB, or the same number of 4 KiB, at offsets a deterministic mix decides
+from the read's own position. Reproduce with:
+
+```sh
+make -C research/experiments/io-completion-bench bench-read   # macOS, local
+make -C research/experiments/io-completion-bench linux-read   # Linux container
+```
+
+The recorded tables below come from GitHub-hosted runners, not from the
+maintainer's machine, and both runner jobs execute the same
+`research/experiments/io-completion-bench/read-bench.sh`. The reason is in the
+two sections above: the maintainer's macOS machine runs a corporate
+endpoint-security stack that charges 116 us for an `openat` and reads the
+benchmark tree behind the benchmark's back, and it is shared with whatever
+else the maintainer is doing. A hosted runner has neither problem, and a
+hosted macOS runner gives this project its first macOS numbers taken on an
+ordinary system. The local table is kept below all the same, labelled
+provisional, because it is the only table taken on hardware anyone here owns.
+
+### The first version of this section was measured from the page cache
+
+It has to be said before the numbers, because it is the reason to trust them.
+The first run of this table set `WF_IO_NOCACHE=1`, generated the tree, and ran
+the uncached tables straight away — which is precisely the order that
+guarantees a warm cache, since the pages were still resident from the writes
+that had just made them. `F_NOCACHE` stops a read populating the cache; it
+does not evict a page that is already there.
+
+The published table said so and was not read. Its `N.direct` uncached line was
+294 ms for 32,768 reads of 64 KiB, which is 9 us a read — 7 GB/s for a 64 KiB
+transfer, memory bandwidth, not an NVMe round trip. An independent re-run
+hours later, after ordinary builds had evicted the tree, put the same line at
+4378 ms: 134 us a read, fifteen times slower. Every ratio in that table was a
+ratio between cache hits.
+
+No table in this section now carries a cache-state label that was not
+measured. Each state is created rather than inherited: the tree is regenerated
+through a descriptor that does not populate the cache and flushed, so an
+uncached table starts from nothing resident, and a warm table is warmed by a
+full sequential pass over every block rather than by whatever the previous
+table left behind. The uncached tables run first, because they are the ones
+the design question turns on.
+
+`read_baseline probe-uncached` then measures the claim. It times sixteen
+positioned reads in each of the eight files immediately before and immediately
+after every table and reports what share of them cost more than 40 us — a
+threshold that sits in the gap between the two populations the maintainer's
+machine keeps far apart, 6 to 20 us from the unified buffer cache and about
+134 us from the device. `probe-warm` is the same check inverted.
+
+What follows from a verdict differs by caller, deliberately. `make bench-read`
+refuses to print a table the probe did not confirm, which is right on a machine
+whose two populations are known. `read-bench.sh`, which produced every runner
+table below, prints the verdict on the table's own label line instead, because
+a hosted runner's storage is not known in advance and a labelled table teaches
+more than an absent one. Three of the tables below were refused their label at
+one end, and each says so where it stands.
+`research/experiments/io-completion-bench/README.md` describes the machinery,
+and the per-file medians are printed beside every table.
+
+### Method
+
+Every line is checked to publish the same bytes before it may report a time.
+Timing is by whole pass, not by line: the runner runs the entire plan, then
+runs it again, reversing the plan's order on every other pass, for two
+unrecorded passes and then seven recorded ones, and reports each line's median
+across passes with the observed minimum and maximum beside it and the median
+child user and system CPU beside those.
+
+Passes rather than all of one line's runs and then all of the next's, because
+these hosts drift. A shared runner's disk, its neighbours, and a laptop's
+thermal state all change over the minutes a table takes, and a grouped
+schedule turns that drift into a difference between lines: the line that ran
+first is measured against a different machine from the line that ran last.
+Interleaving spreads the drift across every line, and reversing alternate
+passes cancels the residue of position within a pass, so a systematic
+first-in-pass or last-in-pass cost lands on every line equally. The local
+provisional table below predates that change and was taken line by line; that
+is one of the reasons it is labelled provisional.
+
+The opens stay inside the timed region — the runner times whole processes —
+but there are exactly eight of them in every line, N, S and C alike, so at
+116 us each they are 0.93 ms of a table whose fastest uncached line is over a
+second, and a constant every line pays identically cannot move a ratio. That
+is what opening once buys: the open cost stops scaling with the work.
+
+Each line folds the first sixty-fourth of every window into the
+position-weighted checksum and publishes the transferred byte count beside it.
+The digest is a serial multiply-add chain running at about 800 MB/s in both C
+and Whitefoot, so folding a whole 64 KiB window costs about 80 us of CPU
+against a 134 us uncached read and a 7 us warm one. Folding everything would
+make the warm table pure compute and would add, to the uncached table, CPU
+that the eight-wide program can spread across helpers and the sequential one
+cannot — flattering C for a reason that has nothing to do with I/O. So the
+fold stays at one sixty-fourth. The checksum still pins the file, the offset,
+the size and the position of every read.
+
+### The two runners
+
+Both tables come from one run of `io-hosts`,
+[33130875022](https://github.com/mbbill/Whitefoot/actions/runs/33130875022), at
+commit `6ac36126`; each job prints its table to the job summary and uploads it
+as an artifact.
+
+```text
+Linux runner (io-hosts / bench-linux-read)
+  kernel   Linux 6.17.0-1022-azure #22-Ubuntu SMP x86_64
+  cpus     4 x Intel Xeon Platinum 8370C @ 2.80GHz
+  memory   16372440 kB
+  storage  ext4 on /dev/sda1, 87G free, io_uring enabled
+  load     0.41 at the start of the job
+
+macOS runner (io-hosts / bench-macos-read)
+  kernel   Darwin 23.6.0 RELEASE_ARM64_VMAPPLE, macOS 14.8.7
+  cpus     3 x Apple M1 (virtual)
+  memory   7516192768 B
+  storage  APFS on /dev/disk3s5, 39Gi free
+```
+
+Two facts about these hosts decide how the tables below read. The Linux runner
+has four cores and 16 GB of RAM, so its page cache holds the whole 512 MiB
+tree; the macOS runner has three cores, 7 GB, and is a virtual machine, so
+underneath its own page cache there is a host cache it cannot address.
+
+### Linux runner
+
+The 4 KiB table is the cleanest measurement in this document. Its probe
+confirmed the uncached label immediately before *and* immediately after the
+table, no line's minimum or maximum is more than four per cent from its own
+median across seven interleaved passes, and every read in it reached the
+device.
+
+```text
+== read-heavy 4 KiB, uncached (WF_IO_NOCACHE=1) ==
+probe before: 1 of 128 sampled reads at or below 40 us; per-file medians 160.7..205.6 us
+probe after:  2 of 128 sampled reads at or below 40 us; per-file medians 183.3..226.6 us
+line                                median_ms     min_ms     max_ms    user_ms     sys_ms
+N.direct                              2993.34    2873.66    3107.02       6.06     290.92
+N.pool1                               2961.06    2920.30    3107.88       7.04     284.33
+N.pool2                               1637.26    1555.87    1724.28      11.52     323.06
+N.pool4                               1478.38    1458.56    1502.02      13.89     370.97
+N.pool8                               1487.68    1451.40    1492.35      17.31     349.34
+N.uring4                              1472.85    1465.07    1493.92       5.74     212.64
+N.uring8                              1495.06    1464.92    1512.50       5.71     192.06
+N.uring32                             1459.84    1436.19    1496.39       3.10     169.06
+S.narrow                              3133.06    3016.24    3196.67      87.40     358.14
+S.wide8                               3071.27    3038.07    3158.54      86.35     349.46
+C.narrow.default                      3058.12    2994.33    3166.44      84.23     332.49
+C.wide8.default                       1463.43    1449.46    1487.15      51.03     202.49
+C.narrow.h0                           3091.61    2991.24    3213.13      85.80     356.62
+C.narrow.h1                           3045.64    2992.26    3227.07      84.49     346.98
+C.narrow.h4                           3076.18    3007.10    3161.55      84.03     353.51
+C.wide8.h0                            1478.72    1460.47    1494.94      45.67     211.17
+C.wide8.h1                            1479.94    1463.21    1497.83      54.16     193.79
+C.wide8.h2                            1472.13    1467.43    1494.96      48.96     199.77
+C.wide8.h4                            1490.88    1486.04    1494.20      46.30     207.10
+C.wide8.h8                            1479.01    1456.57    1497.86      50.01     200.90
+```
+
+**The eight-wide Whitefoot program lands on the hand-written 32-deep io_uring
+pipeline**: 1463.43 against 1459.84 ms, a quarter of a per cent apart, with
+the ring's own minimum and maximum straddling C's median. It is 2.10 times
+faster than the same source built `--no-overlap`, and it beats every thread
+pool at every size. This is the first table in this investigation where a
+Whitefoot program reaches a native completion path rather than approaching
+one, and the reason is visible in the two lines above it: `N.direct` at
+2993.34 ms is what this work costs with one read outstanding, and `N.uring32`
+at 1459.84 ms is what it costs with thirty-two. The whole distance between
+those two numbers is device wait, and eight reads stated consecutively in
+Whitefoot source recover all of it.
+
+The 64 KiB table is a *cold-start* table rather than an uncached one, and the
+probes say so. "Cold start" is this document's word for it; the job log calls
+every `WF_IO_NOCACHE=1` table uncached, because that is what the run asked
+for, and prints the probe verdict beside it so a reader can tell which of the
+two it got. The verdicts here: the tree was not resident when the table began
+(per-file medians 158.9..201.6 us) and was resident when it ended (8.7 to
+9.7 us). At
+64 KiB the plan reads 2 GiB over a 512 MiB tree on a host with 16 GB of RAM,
+so each line warms the cache as it goes. Every line starts cold all the same,
+because `POSIX_FADV_DONTNEED` runs on each of the eight opens and evicts what
+the previous line left, and every line covers the identical read schedule; the
+self-warming is therefore the same constant in all of them.
+
+```text
+== read-heavy 64 KiB, WF_IO_NOCACHE=1, cold start ==
+probe before: 1 of 128 sampled reads at or below 40 us; per-file medians 158.9..201.6 us
+probe after:  127 of 128 at or below 40 us; per-file medians 8.7..9.7 us  (label refused)
+line                                median_ms     min_ms     max_ms    user_ms     sys_ms
+N.direct                              1663.80    1583.81    1719.63      39.52     458.77
+N.pool1                               1632.37    1594.96    1787.15      36.52     463.14
+N.pool2                               1112.12    1085.11    1316.44      34.38     480.58
+N.pool4                               1257.55    1241.68    1296.34      36.66     553.96
+N.pool8                               1278.13    1201.83    1285.35      44.86     597.45
+N.uring4                              1343.45    1280.84    1366.35      35.51     467.43
+N.uring8                              1274.99    1271.51    1300.51      29.93     463.80
+N.uring32                             1294.89    1108.55    1305.25      33.75     483.03
+S.narrow                              1680.88    1627.11    1784.59      86.60     466.68
+S.wide8                               1751.03    1717.21    1851.10      83.52     518.37
+C.narrow.default                      1664.13    1597.66    1769.51      82.09     454.74
+C.wide8.default                       1228.53    1215.99    1262.12      76.19     506.00
+C.narrow.h0                           1652.34    1611.55    1775.53      86.65     451.24
+C.narrow.h1                           1635.68    1578.10    1882.25      75.07     444.67
+C.narrow.h4                           1643.15    1614.12    1782.87      84.07     443.37
+C.wide8.h0                            1258.58    1222.52    1300.79      77.14     513.57
+C.wide8.h1                            1285.70    1275.10    1302.49      75.66     494.17
+C.wide8.h2                            1280.44    1269.72    1297.00      82.13     484.69
+C.wide8.h4                            1282.37    1252.44    1292.18      75.22     502.41
+C.wide8.h8                            1296.50    1262.90    1333.53      77.18     527.25
+```
+
+C at eight wide is 1.43 times faster than S at eight wide, 1.04 times faster
+than an eight-thread pool, 1.04 times faster than an eight-deep io_uring
+pipeline, and 1.10 times slower than the best native line in the table, which
+is the two-thread pool. The pool curve is the explanation: on four cores, two
+threads is this workload's optimum and more threads cost more than they buy.
+C's eight-wide shape asks for eight in flight, so it is compared honestly
+against the pool at eight and against the ring at eight, and it beats both.
+
+Warm, both windows, on the same runner:
+
+```text
+== read-heavy 64 KiB, page cache warm ==       == read-heavy 4 KiB, page cache warm ==
+line                     median_ms  sys_ms     line                     median_ms  sys_ms
+N.direct                    275.02  240.78     N.direct                     29.74   26.12
+N.pool2                     141.13  241.95     N.pool2                      16.27   25.54
+N.pool4                      96.42  338.91     N.pool4                      11.06   35.76
+N.pool8                      99.00  330.33     N.pool8                      12.95   32.95
+N.uring8                    289.00  254.77     N.uring8                     30.21   26.80
+N.uring32                   324.71  292.12     N.uring32                    29.98   27.98
+S.narrow                    294.03  218.37     S.narrow                     74.05   37.06
+S.wide8                     334.53  264.99     S.wide8                      76.17   39.27
+C.narrow.default            295.05  217.93     C.narrow.default             74.88   38.44
+C.wide8.default             328.38  265.20     C.wide8.default              71.69   34.15
+C.wide8.h0                  327.88  258.04     C.wide8.h0                   74.01   38.67
+C.wide8.h8                  331.17  261.92     C.wide8.h8                   71.43   37.06
+```
+
+With the tree in memory there is no wait to overlap and the ring proves it:
+`N.uring32` is no faster than `N.direct` at 4 KiB and 18 per cent slower at
+64 KiB. C stays level with S — 1.02 and 1.06 times faster — which is the
+correct behaviour for a lowering that has nothing to hide, and every line is
+three to six times slower than the best pool because a pool still has four
+cores to copy memory with.
+
+The warm 4 KiB column also prices the framework itself. `N.direct` folds
+32,768 cached 4 KiB reads in 29.74 ms; `S.narrow`, doing exactly the same
+reads in Whitefoot with no overlap lowering at all, takes 74.05 ms. That is
+about 1.4 us per read of Whitefoot per-read path, and it is the floor both S
+and C stand on.
+
+### macOS runner
+
+The first macOS reading this project has that is not also a reading of an
+endpoint-security stack.
+
+```text
+== read-heavy 64 KiB, cold start ==            == read-heavy 4 KiB, cold start ==
+line                     median_ms  sys_ms     line                     median_ms  sys_ms
+N.direct                   2345.41  478.17     N.direct                   1971.16  489.92
+N.pool2                    1120.59  507.67     N.pool2                    1100.27  509.47
+N.pool4                     853.27  562.11     N.pool4                     808.40  508.87
+N.pool8                     772.34  639.97     N.pool8                     532.07  592.59
+S.narrow                   2045.43  435.44     S.narrow                   1663.83  437.36
+S.wide8                    2108.61  473.90     S.wide8                    1736.79  450.31
+C.narrow.default           1952.50  456.61     C.narrow.default           1889.77  442.69
+C.wide8.default            1220.68  755.87     C.wide8.default            1100.57  698.82
+C.wide8.h0                 1681.74  423.80     C.wide8.h0                 1611.22  447.46
+C.wide8.h2                 1252.02  654.21     C.wide8.h2                 1160.21  684.76
+C.wide8.h4                 1048.26  709.79     C.wide8.h4                  962.59  664.09
+C.wide8.h8                  940.47  975.94     C.wide8.h8                  793.93  903.04
+
+== read-heavy 64 KiB, page cache warm ==       == read-heavy 4 KiB, page cache warm ==
+line                     median_ms  sys_ms     line                     median_ms  sys_ms
+N.direct                    169.00  131.35     N.direct                     33.10   25.88
+N.pool2                      97.04  153.23     N.pool2                      20.18   31.00
+N.pool4                      73.05  169.41     N.pool4                      15.36   33.02
+N.pool8                      71.08  165.87     N.pool8                      15.18   32.60
+S.narrow                    152.57  115.21     S.narrow                     31.20   23.67
+S.wide8                     166.31  129.30     S.wide8                      32.88   25.89
+C.narrow.default            153.01  115.65     C.narrow.default             31.34   23.83
+C.wide8.default             211.58  301.48     C.wide8.default              94.72  129.39
+C.wide8.h0                  175.21  129.14     C.wide8.h0                   41.84   26.28
+C.wide8.h2                  241.57  310.70     C.wide8.h2                   98.04  109.67
+C.wide8.h8                  205.61  299.55     C.wide8.h8                  118.48  202.19
+```
+
+Cold, C behaves as it does on Linux: 1.73 and 1.58 times faster than S at
+eight wide, and faster still with helpers named explicitly (`C.wide8.h8` is
+2.24 and 2.19 times faster than S). It does not reach the native pool here —
+1.58 and 2.07 times slower than `N.pool8` at the default helper count, 1.22
+and 1.49 times slower at `h8`.
+
+Warm, **C is slower than S on this host**, by 1.27 times at 64 KiB and 2.88
+times at 4 KiB, and the system-time column says where it goes: 301.48 against
+129.30 ms, and 129.39 against 25.89. `C.wide8.h0` — the same program with the
+helper pool switched off — costs 41.84 ms against C's default 94.72 and S's
+32.88, so the overhead is the helper handoff, not the completion state
+machine. On Linux the same comparison costs nothing: warm 4 KiB `C.wide8`
+system time is 34.15 ms against S's 39.27. Whatever this is, it is Darwin's
+half of the runtime and not the model.
+
+The macOS spreads are wide where the Linux ones are tight — `C.wide8.h4` cold
+at 4 KiB has a maximum of 12395 ms against a median of 962 — and the reason is
+the next section.
+
+### What the probes said, and what a label means on each host
+
+```text
+table                        probe before          probe after
+Linux  64 KiB uncached       confirmed  159..202us refused   8.7..9.7 us
+Linux   4 KiB uncached       confirmed  161..206us confirmed  183..227 us
+Linux  64 KiB warm           confirmed  7.6..8.2us confirmed  7.4..8.0 us
+Linux   4 KiB warm           confirmed  7.3..8.3us confirmed  7.3..8.0 us
+macOS  64 KiB uncached       confirmed  76..316 us refused   37.0..55.5 us
+macOS   4 KiB uncached       confirmed  43..275 us refused   38..203 us
+macOS  64 KiB warm           confirmed  5.5..6.0us confirmed  4.0..5.0 us
+macOS   4 KiB warm           confirmed  4.0..5.0us confirmed  4.0..5.0 us
+```
+
+Every table began in the state it claims. Three ended somewhere else, and the
+two reasons are different.
+
+On Linux the cause is known and bounded: `POSIX_FADV_DONTNEED` evicts at open
+and cannot stop a later read populating, so a 2 GiB read schedule over a
+512 MiB tree ends with the tree resident. The 4 KiB schedule moves 128 MiB and
+does not.
+
+On macOS the cause is outside the guest. `F_NOCACHE` is a mode of the
+descriptor, so no read in those tables entered this kernel's unified buffer
+cache — and the after-probe still found 37 to 55 us reads where the
+before-probe found 76 to 316 and the warm probe finds 4 to 6. Forty
+microseconds is neither a memory copy nor an SSD round trip; it is a cache
+below the guest, in the hypervisor or the host, which no flag available to a
+process inside the virtual machine can bypass. So the macOS cold tables warm
+as they run and there is no host call that would stop them.
+
+This is exactly the drift the interleaved schedule was built for. The runner
+runs the whole plan as a pass and reverses the order every other pass, so a
+tree that gets cheaper over the minutes a table takes gets cheaper for every
+line by the same amount instead of rewarding whichever line ran last. It does
+not remove the drift; it stops the drift from becoming a ranking.
+
+### The local machine, provisional
+
+The maintainer's macOS laptop, taken before the interleaved schedule existed,
+line by line, at a one-minute load average of 2.5, medians of nine. Only the
+medians were kept. It is recorded because it is the only reading here from
+hardware anyone on this project owns, and it is labelled provisional because
+its method is the older one and its host reads the benchmark tree behind the
+benchmark's back.
+
+```text
+                          64 KiB uncached      64 KiB warm
+N.direct                          4378 ms            160 ms
+N.pool2                           2439                88
+N.pool8                           1211                44
+S.narrow                          4450               136
+S.wide8                           4447               145
+C.narrow.default                  4496               128
+C.wide8.default                   1885 (sys 484)     164 (sys 455)
+C.wide8.h2                        2602               141
+C.wide8.h8                        1886               159
+```
+
+It agrees with the runners on the shape of the result — C at eight wide is
+2.36 times faster than S at eight wide when the reads reach the device, and
+1.13 times slower than it when they do not — and disagrees with them on the
+absolute cost of a read: 134 us here against 160 to 200 us on the Linux runner
+and 76 to 316 on the macOS one.
+
+### Against the standing bar
+
+The bar this investigation has carried since batch 0084: C at least as fast as
+S on every workload, and within 10 per cent of N wherever N is a native
+completion path or a fairly sized thread pool.
+
+```text
+workload / host                cache      C vs S         C vs N best      C vs N at width 8   bar
+read 4 KiB / Linux runner      uncached   2.10x faster   1.00x of uring32 1.02x faster        met, both halves
+read 64 KiB / Linux runner     cold       1.43x faster   1.10x slower     1.04x faster        met on S, missed N by 0.5
+read 4 KiB / Linux runner      warm       1.06x faster   6.48x slower     --                  met on S, missed N
+read 64 KiB / Linux runner     warm       1.02x faster   3.41x slower     --                  met on S, missed N
+read 4 KiB / macOS runner      cold       1.58x faster   2.07x slower     2.07x slower        met on S, missed N
+read 64 KiB / macOS runner     cold       1.73x faster   1.58x slower     1.58x slower        met on S, missed N
+read 4 KiB / macOS runner      warm       2.88x slower   6.24x slower     --                  missed, both halves
+read 64 KiB / macOS runner     warm       1.27x slower   2.98x slower     --                  missed, both halves
+many files / macOS runner      warm       1.20x slower   2.99x slower     --                  missed, both halves
+```
+
+Read the table by its cache column and it says one thing twice.
+
+**Where there are waits, the model works.** Every cold or uncached row has C
+faster than S by 1.4 to 2.1 times, and the single row where the reads are
+device reads from beginning to end has C level with a hand-written 32-deep
+io_uring pipeline. The bar's second half is met there too, and on Linux it is
+met at the width the source actually asks for: against a pool of eight and a
+ring of eight, C at eight wide is the faster line.
+
+**Where there are no waits, the model costs.** Every warm row has C at best
+level with S and at worst 2.88 times slower, and the cost is system time in
+the Darwin helper handoff: 5.0 times S's system time on the macOS warm 4 KiB
+row, against 0.87 times S's on the Linux one. The same program with helpers
+switched off is 2.3 times faster than the default on that row.
+
+The system-time ratio is the cleanest single statement of where the model
+stands. On Linux, C at eight wide spends **0.58 times** the system time of S
+at eight wide on the uncached 4 KiB table and **0.98 times** on the 64 KiB
+one: the overlap does not cost kernel work, it saves it, because eight reads
+outstanding is fewer round trips than eight reads in sequence. On macOS the
+same ratios are **1.55** and **1.60** cold, and **5.00** warm. Nothing about
+the model changes between those two hosts; the adapter does.
+
+### The many-files workload without an endpoint-security stack
+
+The macOS runner also ran the workload batches 0084 and 0086 measured, whose
+every previous macOS reading came from a machine that charges 116 us for an
+`openat`. Here one open, read, close and fold of a small file costs 17.2 us
+end to end (`N.direct`, 141.06 ms for 8192 files).
+
+```text
+line                                median_ms     min_ms     max_ms    user_ms     sys_ms
+N.direct                               141.06     140.69     150.29      71.12      69.46
+N.pool2                                 80.32      79.22      80.78      74.57      83.28
+N.pool4                                 58.21      57.56      59.45      77.41      89.58
+N.pool8                                 57.95      57.01      58.40      77.49      90.25
+S.narrow                               143.75     143.52     146.89      71.86      71.50
+S.wide                                 144.10     143.85     144.79      71.73      71.92
+S.wide8                                144.28     143.89     145.05      71.70      72.06
+C.narrow.default                       144.31     143.61     152.25      71.89      71.89
+C.wide.default                         216.89     214.23     218.83     103.22     165.00
+C.wide8.default                        173.16     172.17     174.04      93.03     140.50
+C.wide.w0.h0                           148.61     148.40     151.67      75.63      72.50
+C.wide.w0.h1                           211.99     209.51     226.69      96.40     125.73
+C.wide.w0.h2                           222.35     221.60     244.37     101.56     158.69
+C.wide.w0.h4                           217.29     215.53     235.04     103.31     167.68
+C.wide8.h0                             149.36     148.74     150.58      76.06      72.70
+C.wide8.h1                             199.79     198.89     201.63      92.72     129.22
+C.wide8.h2                             178.66     177.43     179.51      93.32     136.72
+C.wide8.h4                             174.27     173.51     178.10      94.02     143.89
+```
+
+Batch 0084 recorded this workload on macOS with C 2.05 times **faster** than
+S. On a macOS host without the endpoint-security stack, C is 1.20 times
+**slower** at eight wide and 1.51 times slower at four, and 2.99 times slower
+than the best pool. The 2.05x was the 116 us `openat`: a wait that large is
+worth overlapping whatever the handoff costs, and once it drops to 17 us the
+handoff is all that is left. This is the same conclusion batch 0090 reached on
+Linux hardware, now reached on macOS, and it retires the last table in this
+document that credited the overlap lowering with a win on the many-files
+workload.
+
+### Reproduced on a second pair of runners
+
+The same workflow ran again at commit `e2e4535d`, run
+[33131934257](https://github.com/mbbill/Whitefoot/actions/runs/33131934257),
+on separately provisioned hosts: the Linux job landed on an AMD EPYC 7763
+rather than the Intel Xeon 8370C above, and the macOS job on another virtual
+M1. Different silicon, and every ordering holds.
+
+```text
+                                  run 1        run 2
+Linux 64 KiB cold   C vs S      1.43x faster  1.58x faster
+                    C vs pool8  1.04x faster  1.00x of it
+Linux  4 KiB unc.   C vs S      2.10x faster  2.61x faster
+                    C vs uring32 1.00x of it  1.01x slower
+Linux 64 KiB warm   C vs S      1.02x faster  1.04x faster
+Linux  4 KiB warm   C vs S      1.06x faster  1.08x faster
+macOS 64 KiB cold   C vs S      1.73x faster  1.65x faster
+macOS  4 KiB cold   C vs S      1.58x faster  1.81x faster
+macOS 64 KiB warm   C vs S      1.27x slower  1.24x slower
+macOS  4 KiB warm   C vs S      2.88x slower  2.73x slower
+many files / macOS  C vs S      1.20x slower  1.17x slower
+                    N.direct    17.2 us/file  17.9 us/file
+```
+
+Two things in the second run are worth more than the agreement.
+
+Its macOS uncached probes refused the label **before** the tables ran, not
+only after, and the script printed the refusal on the label line and went on:
+"treat the label as a claim about what was asked for, not about what was
+measured". That is the behaviour the runner jobs were built for, and it means
+the macOS cold rows above should be read as what the second run says they
+are — a device that was already partly answering from somewhere other than
+itself. The macOS ordering holds anyway, on both runs, at every window.
+
+And the Linux `N.uring32` warm line moved from 324.71 ms to 942.12 with 913 ms
+of system time. A 32-deep ring over a warm page cache is doing nothing but
+paying for submissions on that host, and the second runner charged three times
+as much for them. It is the one line in either table whose two readings do not
+agree, and it is a native baseline rather than a Whitefoot line.
+
+### What WF_IO_NOCACHE does
+
+`WF_IO_NOCACHE=1` applies `fcntl(fd, F_NOCACHE, 1)` on Darwin, and one
+`posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED)` on Linux, to each descriptor an
+open hands back. Darwin's is a mode of the descriptor, so every read of the
+run bypasses the unified buffer cache rather than only the first. It is target
+policy of the same class as `WF_IO_HELPERS`: no Whitefoot source names it, and
+`read-verify` checks that every line publishes identical bytes with it off and
+on before any line reports a time.
+
+What it does *not* do is make a table uncached on its own. It cannot evict,
+so the tree has to arrive non-resident and be checked; that is what the
+regeneration and the probes above are for.
+
 ## Historical C-core results
 
 Everything below measures the completion core and its adapters directly,
@@ -604,6 +1309,15 @@ not evidence about this core.
 The first native adapter probes were added after the timing run above, so they
 establish correctness and target shape rather than comparative performance.
 
+Batch 0090 re-ran the io_uring half on a real Linux kernel on real hardware —
+kernel `6.17.0-1022-azure`, `x86_64`, `kernel.io_uring_disabled=0` — through
+the `completion-linux` job, which treats an unavailable ring as a job failure
+rather than letting the fallback path report a pass. The native adapter probe
+returns `target=linux-io-uring status=pass`, and the full completion harness
+passes under `WF_REQUIRE_LINUX_IO_URING=1` at zero, one and four helpers,
+alongside ASan/UBSan and the thread-sanitizer target. The description below
+still holds; it was taken in the container.
+
 On Linux 6.8.0 aarch64, the raw io_uring probe executed two positioned reads
 simultaneously, observed bounded-capacity refusal of a third operation,
 resubmitted after capacity release, executed one positioned write, and checked
@@ -626,16 +1340,42 @@ an I/O operation and does not count as a published terminal. The cross-linked
 probe covers bounded adapter capacity, real packet/wake interleaving, stale
 generations, duplicate terminal rejection, product milestones, adapter tags,
 batch claim atomicity, and scheduler-frame injection. These are compiled test
-paths, not execution evidence. Production Windows qualification remains
-fail-closed for two independent reasons: no Windows runner was available, and
-the current IOCP wake packet is neither coalesced nor persistent for every
-already-announced waiter. Both must close before `implemented` can change.
+paths, not execution evidence.
+
+**Batch 0090 executed both Windows probes for the first time.** The
+`completion-windows` job in `.github/workflows/io-hosts.yml` builds them with
+LLVM clang 20.1.8 targeting `x86_64-pc-windows-msvc` and runs them on
+`windows-latest` — Windows Server 2025 Datacenter, build 10.0.26100, x64:
+
+```text
+windows-native-completion-probe status=pass
+native-adapter-probe target=windows-iocp status=pass
+```
+
+The first drives the Win32-native completion core and a real completion port
+end to end: an overlapped `ReadFile` against a real file, an overlapped
+`WriteFile`, the `ERROR_HANDLE_EOF` that Windows reports for an overlapped
+read past the end and that the file-read contract observes as successful
+progress of zero bytes, a malformed reserved-key packet that is consumed and
+reported without publishing a terminal, and the adapter and core statistics
+that must agree afterwards. The second is the shared native-adapter probe over
+`windows_iocp.c`.
+
+Exactly one of the two reasons Windows qualification was fail-closed has
+closed. A Windows host now exists and both probes pass on it. The other reason
+stands unchanged: the current IOCP wake packet is neither coalesced nor
+persistent for every already-announced waiter. Production Windows
+qualification therefore remains fail-closed, and `implemented` does not move
+on this evidence.
 
 The reproducible local cross-link and import check is:
 
 ```sh
 make -C compiler completion-windows-cross
 ```
+
+It is still the right local check: a cross-link needs no Windows host, and the
+execution evidence above needs one, which is why it lives in CI.
 
 macOS continues to use the bounded typed helper fallback for regular files.
 Both zero-helper scheduler progress and one-helper execution pass the shared

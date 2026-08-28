@@ -92,6 +92,7 @@ live next to what they check.
 | [governance/](governance/) | The protected approval ledger, specification-evolution evidence, and the tracked archive-protection hooks |
 | [research/](research/) | Active language and compiler experiments |
 | [mcts_mem/](mcts_mem/) | The live design tree, consulted and maintained only through the `mcts-mem-use` skill |
+| [.github/](.github/workflows/) | Continuous integration on hosts this project does not own: the canonical `make check` and the completion-I/O evidence jobs that need a real Linux kernel or Windows |
 | [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md), Python reference model, and democ-era codegen harness; inert — no active source, build, test, or tool depends on it. Its live disposition map is the [archive promotion audit](research/archive-promotion-audit.md) |
 
 ## Verification
@@ -100,6 +101,17 @@ live next to what they check.
 make install-hooks   # once: enable immutable-archive pre-commit protection
 make check           # compiler, conformance, and specification identity gate
 ```
+
+The same `make check` runs on every push through
+[`.github/workflows/gate.yml`](.github/workflows/gate.yml), on a GitHub-hosted
+Linux runner and a GitHub-hosted macOS runner.
+[`.github/workflows/io-hosts.yml`](.github/workflows/io-hosts.yml) carries the
+completion-I/O evidence that no machine here can produce: the Linux io_uring
+adapter and sanitizers on a real kernel, the program-level I/O benches on real
+hardware -- including the read-dominated tables on both a Linux and a macOS
+runner, the latter being the only macOS host available to this project without
+an endpoint-security stack in its I/O path -- and the Windows IOCP probes
+executed rather than only cross-linked.
 
 The gate builds and tests the compiler, exercises the native completion
 harness, validates conformance structure and rule coverage, runs every

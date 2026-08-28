@@ -550,6 +550,10 @@ fn a_split_loop_publishes_one_byte_sequence_at_every_worker_count() {
     // asked whether they did — over [`GRANT_RUNS`] runs, because one steal is
     // a race rather than a property of the lowering.
     for workers in ["4", "8"] {
+        let lanes: usize = workers.parse().expect("the worker setting is a number");
+        if !super::parallel::a_steal_is_observable(lanes) {
+            continue;
+        }
         let granted = grants_over_runs(&module, &directory, Some(workers), GRANT_RUNS);
         assert!(
             granted > 0,

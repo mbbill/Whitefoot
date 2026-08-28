@@ -1,0 +1,166 @@
+# The canonical gate on hosts the project does not own.
+#
+# `make check` is the repository's one all-tests entry point, and until this
+# workflow existed it had only ever run on the maintainer's macOS machine. The
+# Linux half of the compiler — the io_uring adapter, the `__linux__` bodies of
+# every compiler-owned C unit, the ELF link path — was covered by a container
+# on that same machine or by nothing at all. These two jobs run the identical
+# entry point on a GitHub-hosted Linux runner and on a GitHub-hosted macOS
+# runner, so a Linux result is a real x86-64 Linux kernel rather than a
+# virtualized aarch64 guest.
+name: gate
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  gate-linux:
+    name: gate-linux (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Three `make check` steps read `main` as a local ref: the approval
+      # history must be an exact prefix of main's, and no released
+      # specification archive may differ from main's. A CI checkout has the
+      # remote-tracking ref only, so name it locally here.
+      - name: Name main as a local ref
+        run: |
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          git branch -f main origin/main
+          git log --oneline -1 main
+
+      - name: Install the host toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang
+          test -x /usr/bin/clang
+          /usr/bin/clang --version
+          python3 --version
+          shasum --version
+          rustup default stable
+          rustup component add clippy rustfmt
+          cargo --version
+          cargo clippy --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+            ~/do_not_scan/whitefoot-research-tests-target
+          key: gate-linux-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            gate-linux-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-
+            gate-linux-
+
+      # `make check` builds every crate `--locked --offline`, which is what
+      # makes its result a property of the recorded lock files. Offline needs a
+      # populated registry, so the one network step is here, explicitly.
+      - name: Fetch the recorded crate dependencies
+        run: |
+          for manifest in \
+            compiler/Cargo.toml \
+            research/experiments/frequency-study/reassociation/Cargo.toml \
+            research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml \
+            research/experiments/default-floor/utf8parse/harness/Cargo.toml \
+            research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml \
+            research/experiments/default-floor/percent-decode/harness/Cargo.toml; do
+            cargo fetch --locked --manifest-path "$manifest"
+          done
+
+      - name: Record the host
+        run: |
+          uname -a
+          nproc
+          df -h .
+
+      - name: make check
+        run: make check
+
+      # Temporary diagnostic for batch 0090: `make check` stops at the first
+      # failing target and cargo stops at the first failing test binary, so one
+      # run would otherwise reveal one layer of Linux host limits at a time.
+      # Removed once the Linux picture is complete.
+      - name: Diagnose the remaining Linux stops
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "== every test target, no fail fast =="
+          (cd compiler && cargo test --profile gate --all-targets --locked --offline \
+            --no-fail-fast 2>&1 | grep -E -A 4 '^test result|^---- .* stdout ----$' \
+            | head -400) || true
+          echo "== research-tests =="
+          make research-tests 2>&1 | grep -E 'FAIL|ok$|Error' | tail -30 || true
+          echo "== conformance-run =="
+          make conformance-run 2>&1 | grep -E '^  Fail|adapter:' | head -30 || true
+
+  gate-macos:
+    name: gate-macos (macos-14)
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Name main as a local ref
+        run: |
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          git branch -f main origin/main
+          git log --oneline -1 main
+
+      - name: Install the host toolchain
+        run: |
+          test -x /usr/bin/clang
+          /usr/bin/clang --version
+          python3 --version
+          rustup default stable
+          rustup component add clippy rustfmt
+          cargo --version
+          cargo clippy --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+            ~/do_not_scan/whitefoot-research-tests-target
+          key: gate-macos-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            gate-macos-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}-
+            gate-macos-
+
+      - name: Fetch the recorded crate dependencies
+        run: |
+          for manifest in \
+            compiler/Cargo.toml \
+            research/experiments/frequency-study/reassociation/Cargo.toml \
+            research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml \
+            research/experiments/default-floor/utf8parse/harness/Cargo.toml \
+            research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml \
+            research/experiments/default-floor/percent-decode/harness/Cargo.toml; do
+            cargo fetch --locked --manifest-path "$manifest"
+          done
+
+      - name: Record the host
+        run: |
+          uname -a
+          sysctl -n hw.ncpu
+          df -h .
+
+      - name: make check
+        run: make check

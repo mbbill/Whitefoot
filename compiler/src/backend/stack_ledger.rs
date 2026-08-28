@@ -136,8 +136,38 @@ pub fn stack_ledger(stack_usage: &str, assembly: &str, stack_bytes: u64) -> Vec<
     lines
 }
 
+/// What reaching one activation costs on this target beyond the frame
+/// `-fstack-usage` reports for it.
+///
+/// `-fstack-usage` reports the bytes a function allocates for itself, and the
+/// two qualified architectures put the return address on opposite sides of
+/// that line. On x86-64 the caller's `call` pushes an eight-byte return
+/// address that the callee's own figure does not include. On arm64 the return
+/// address arrives in the link register and the callee spills it inside the
+/// frame it reports, so the reported figure is already the whole cost.
+///
+/// Measured on the tight spine the ledger's own case builds, compiled from one
+/// module for both targets. x86-64 reports 8 bytes for `wf_spine` and its
+/// whole prologue is `pushq %rax`; the return address the caller's `call`
+/// pushed sits above that and is not in the 8. arm64 reports 16 and its
+/// prologue is `stp x29, x30, [sp, #-16]!`, which stores the return address
+/// inside the 16. One activation costs sixteen bytes on both machines — only
+/// the reporting differs, and this is what puts the two reports on the same
+/// scale.
+///
+/// Found by running the gate on an x86-64 Linux host in batch 0090: the ledger
+/// promised 134,217,728 levels of that recursion on the one-gigabyte runtime
+/// stack, and the program died at 134,083,510 — the true ceiling is half the
+/// promise. Over-promising depth is the dangerous direction for this artifact,
+/// because a writer who believes it writes a recursion the machine cannot run,
+/// so the cost belongs in every frame rather than in a note beside the table.
+const CALL_RETURN_ADDRESS_BYTES: u64 = if cfg!(target_arch = "x86_64") { 8 } else { 0 };
+
 /// `-fstack-usage`'s report: one line per surviving machine function, as
 /// `locator\tbytes\tqualifier`, where the locator ends in the function name.
+///
+/// Each frame carries [`CALL_RETURN_ADDRESS_BYTES`], so a row is what one
+/// activation costs rather than what the function allocates.
 fn parse_frames(stack_usage: &str) -> Vec<Frame> {
     let mut frames: Vec<Frame> = Vec::new();
     for line in stack_usage.lines() {
@@ -153,7 +183,7 @@ fn parse_frames(stack_usage: &str) -> Vec<Frame> {
         };
         frames.push(Frame {
             name: name.to_owned(),
-            bytes,
+            bytes: bytes.saturating_add(CALL_RETURN_ADDRESS_BYTES),
             qualifier: qualifier.trim().to_owned(),
             world: World::Both,
         });
@@ -217,13 +247,7 @@ fn parse_call_graph(assembly: &str, index: &HashMap<&str, usize>) -> Vec<Vec<usi
     let mut edges = vec![Vec::new(); index.len()];
     let mut current: Option<usize> = None;
     for line in assembly.lines() {
-        let code = line
-            .split(';')
-            .next()
-            .unwrap_or(line)
-            .split("##")
-            .next()
-            .unwrap_or(line);
+        let code = strip_comment(line);
         if !code.starts_with([' ', '\t']) {
             // A label at column zero. A function's own label names it; every
             // other label belongs to whatever function is already open.
@@ -255,6 +279,29 @@ fn parse_call_graph(assembly: &str, index: &HashMap<&str, usize>) -> Vec<Vec<usi
         }
     }
     edges
+}
+
+/// One assembly line with its trailing comment removed.
+///
+/// The marker is the assembler's, not the architecture's, and the targets this
+/// compiler emits for do not agree on it: Darwin's arm64 assembler comments
+/// with `;`, its x86-64 assembler with `##`, and the ELF assemblers with `//`
+/// on arm64 and `#` on x86-64. Reading only the Darwin markers cost the whole
+/// call graph on x86-64 Linux, where every function label is written
+/// `wf_spine:                # @wf_spine`: the line does not end at the colon,
+/// so no label resolved, no instruction had an open caller, and the ledger
+/// reported a recursion as a chain with no cycle. Found by running the gate on
+/// a Linux runner in batch 0090.
+///
+/// Truncating at `#` is safe on an arm64 ELF operand that spells an immediate
+/// `#48`, because the only instructions read past the mnemonic here are calls
+/// and branches, whose operand is a symbol.
+fn strip_comment(line: &str) -> &str {
+    line.find([';', '#'])
+        .into_iter()
+        .chain(line.find("//"))
+        .min()
+        .map_or(line, |at| &line[..at])
 }
 
 /// The function one assembler symbol names, if it is one of this module's.

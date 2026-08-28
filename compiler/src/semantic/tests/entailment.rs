@@ -6129,7 +6129,7 @@ command fn main() -> status: own ExitStatus pure {
     let summary = entailment(source, "repeated");
     validate_derivations(&summary);
     assert_eq!(summary.s7_derivations.len(), 6);
-    for (pair, view) in summary.s7_derivations.chunks_exact(2).zip([
+    for (pair, view) in summary.s7_derivations.as_chunks::<2>().0.iter().zip([
         ProofView::Complete,
         ProofView::Unasserted,
         ProofView::S4Blinded,
@@ -8797,7 +8797,7 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         21,
         "the separator and six following reason appends use bounded_length",
     );
-    for route in bounded_routes.chunks_exact(3) {
+    for route in bounded_routes.as_chunks::<3>().0 {
         assert_eq!(route[0].0, route[1].0);
         assert_eq!(route[1].0, route[2].0);
         assert_eq!(

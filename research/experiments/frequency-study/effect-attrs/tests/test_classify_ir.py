@@ -17,6 +17,48 @@ sys.path.insert(0, str(ROOT))
 import classify_ir  # noqa: E402
 
 
+def host_clang_reads_the_fixture_dialect() -> str | None:
+    """The reason the host clang cannot validate these fixtures, or `None`.
+
+    Every fixture here is written in the `memory(...)` attribute dialect,
+    because that attribute is what this experiment classifies. LLVM 16
+    introduced it; a clang older than that rejects the fixtures at the parser
+    with "expected top-level entity" and says nothing about whether they are
+    well formed. Asking the compiler with a one-line probe rather than reading
+    its version string keeps this a statement about what the toolchain
+    understands.
+
+    Found on the macOS gate runner in batch 0090, whose Xcode 15.4 ships Apple
+    clang 15.
+    """
+    clang = shutil.which("clang")
+    if clang is None:
+        return "clang validates the LLVM fixture"
+    with tempfile.TemporaryDirectory() as directory:
+        probe = Path(directory) / "memory-attribute.ll"
+        probe.write_text("declare void @probe() memory(none)\n")
+        completed = subprocess.run(
+            [
+                clang,
+                "-x",
+                "ir",
+                "-S",
+                "-emit-llvm",
+                str(probe),
+                "-o",
+                str(Path(directory) / "probe.out.ll"),
+            ],
+            check=False,
+            capture_output=True,
+        )
+    if completed.returncode == 0:
+        return None
+    return f"{clang} predates the memory(...) attribute every fixture uses"
+
+
+FIXTURE_DIALECT_LIMIT = host_clang_reads_the_fixture_dialect()
+
+
 class FixtureMixin:
     def report(self) -> dict[str, object]:
         paths = [
@@ -234,7 +276,7 @@ class BlockerRegressionTests(unittest.TestCase):
         self.assertEqual(report["summary"]["ir_call_instructions"], 3)
         self.assertEqual(report["summary"]["unsupported_ir_call_instructions"], 1)
 
-    @unittest.skipUnless(shutil.which("clang"), "clang validates the LLVM fixture")
+    @unittest.skipIf(FIXTURE_DIALECT_LIMIT, FIXTURE_DIALECT_LIMIT or "")
     def test_multiline_probe_is_valid_llvm(self) -> None:
         # Parse and re-emit (-S -emit-llvm) rather than compile (-c): validity
         # of a fixture is a parse/verify property, and full code generation
@@ -251,9 +293,10 @@ class BlockerRegressionTests(unittest.TestCase):
                 "adversarial-caller.ll",
                 "adversarial-definitions.ll",
             ):
-                subprocess.run(
+                clang = shutil.which("clang")
+                completed = subprocess.run(
                     [
-                        shutil.which("clang"),
+                        clang,
                         "-Wno-override-module",
                         "-x",
                         "ir",
@@ -263,8 +306,18 @@ class BlockerRegressionTests(unittest.TestCase):
                         "-o",
                         str(Path(directory) / f"{name}.reemitted.ll"),
                     ],
-                    check=True,
+                    check=False,
                     capture_output=True,
+                    text=True,
+                )
+                # The compiler's own message is the whole diagnostic value of
+                # this case: "returned non-zero exit status 1" says a fixture
+                # is invalid without saying which line of it, and a reader on
+                # another host cannot rerun the command.
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    f"{name} did not parse under {clang}:\n{completed.stderr}",
                 )
 
     def test_metadata_operand_bundle_and_inline_asm_fail_closed(self) -> None:
