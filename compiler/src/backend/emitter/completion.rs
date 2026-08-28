@@ -151,8 +151,19 @@ impl FunctionEmitter<'_, '_> {
         self.emit_completion_dependencies(&dependencies)
     }
 
+    /// Whether an operation of this call site is still outstanding here.
+    ///
+    /// `handed_out` holds exactly the hand-outs emitted and not yet joined, so
+    /// this reads, at emission, the question the storage reservation depends
+    /// on: does a live operation already own this site's storage?
+    fn completion_operation_is_outstanding(&self, site: IrValueId) -> bool {
+        self.handed_out.iter().any(
+            |pending| matches!(pending, HandedOut::Completion(pending) if pending.result == site),
+        )
+    }
+
     /// How many operations one handed-out call site can have outstanding at
-    /// once.
+    /// once, and which element of that storage this hand-out owns.
     ///
     /// Every completion storage element — the token, the result slot, the raw
     /// value and error, an open's outcome, a directory cursor's position, an
@@ -162,24 +173,21 @@ impl FunctionEmitter<'_, '_> {
     /// outstanding together need one element each; sharing would let the newer
     /// hand-out overwrite storage the older one is still being read from.
     ///
-    /// Every site the current lowering produces answers one.  A completion
-    /// schedule is submitted and joined inside the block that formed it, so a
-    /// site never holds a second hand-out, which is why one shared element has
-    /// never been wrong — and exactly why it would become wrong, silently and
-    /// without a compile error, the first time a schedule outlives its block.
-    /// The storage is therefore indexed rather than shared: the count and the
-    /// index are the whole of what a deeper schedule changes.
-    fn outstanding_completion_operations(&self, _site: IrValueId) -> u64 {
-        1
-    }
-
-    /// Which element of this site's storage the hand-out being emitted owns.
-    ///
-    /// One hand-out per site, so element zero.  A site with several
-    /// outstanding operations answers with the index of the one it is
-    /// emitting.
-    fn completion_storage_index(&self, _site: IrValueId) -> u64 {
-        0
+    /// Every site the current lowering produces answers one and zero, and that
+    /// is an enforced precondition rather than a written assumption.  A
+    /// completion schedule is submitted and joined inside the block that
+    /// formed it — `emit_terminator` joins everything still outstanding before
+    /// it writes any terminator — so control cannot reach a site again while
+    /// its operation is in flight, and a site never holds a second hand-out.
+    /// A lowering that broke that is refused here rather than handed the first
+    /// operation's element: the count and the index are the whole of what a
+    /// deeper schedule changes, and until it changes them the shared element
+    /// cannot be reached silently.
+    fn completion_storage_element(&self, site: IrValueId) -> Result<(u64, u64), BackendFailure> {
+        if self.completion_operation_is_outstanding(site) {
+            return Err(BackendFailure::SecondOutstandingCompletionOperation);
+        }
+        Ok((1, 0))
     }
 
     /// Reserves one completion storage element for the hand-out being emitted.
@@ -188,8 +196,7 @@ impl FunctionEmitter<'_, '_> {
         site: IrValueId,
         ty: &str,
     ) -> Result<String, BackendFailure> {
-        let outstanding = self.outstanding_completion_operations(site);
-        let index = self.completion_storage_index(site);
+        let (outstanding, index) = self.completion_storage_element(site)?;
         self.indexed_entry_slot(ty, outstanding, index)
     }
 

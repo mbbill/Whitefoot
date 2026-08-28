@@ -10,7 +10,10 @@ appended, this record.
 `research/investigations/io-model/LOOP-PIPELINE.md` §7 defines five batches.
 This is batch 0, and it is the one the design says must not be cut: "every
 later batch is silently wrong without it". Three things, none of which changes
-a published byte or a permission verdict on any program in the bench corpus:
+a published byte on any program, or a permission verdict on any program in the
+bench corpus. Verdicts do move elsewhere in the repository, all of them toward
+denial and none changing an emitted byte; "Where this fix reaches, outside the
+bench corpus" below names every one:
 
 1. **The match-scrutinee gap** (§3.10). A may-suspend call written as a `match`
    scrutinee is the same call as one written as a `let` right-hand side, and
@@ -91,6 +94,57 @@ defined in one block, and a scrutinee's dispatch terminates its block.
 - `backend::tests::completion::a_scrutinee_call_before_an_independent_call_stays_sequential`
   — the scrutinee-first program emits no submission and no join, and still
   publishes the same bytes in all three helper configurations.
+- `backend::tests::completion::a_value_match_scrutinee_call_is_handed_out_exactly_as_a_bound_call_is`
+  — the same two writes with the second call written as a *value* match's
+  scrutinee (`let written = match write_once(...) { ... }`), which is the
+  second statement form this fix opened and the one where a binding exists and
+  is the wrong identity for the site. Same submit/join/direct counts as the
+  bound form, and the emitted program byte-checked under `WF_IO_HELPERS` 0, 1
+  and 4. The base compiler at `79b29665` emits **zero** submissions for it.
+- `backend::tests::parallel::a_call_written_as_an_if_condition_joins_a_compute_overlap_group`
+  — the compute half, described under "Where this fix reaches" below.
+
+### Where this fix reaches, outside the bench corpus
+
+The charter's "no permission verdict moves" is scoped to the bench corpus and
+is true there. It is not true of the repository as a whole, and both of the
+places it is not are worth naming, because a reader who takes the charter
+sentence at face value would be surprised by them. Neither moves a verdict
+toward eligibility and neither changes an emitted byte.
+
+**`tests/programs/wfgrep.wf` gains two `PAR denied` lines.** Diffing the
+`--par --par-ledger` output of the base and branch compilers over that program:
+
+```text
+> PAR denied  tests/programs/wfgrep.wf:1343  pair(reserve_file, open_directory)  condition 1: the operands of s2 read what s1 defines
+> PAR denied  tests/programs/wfgrep.wf:1373  pair(reserve_file, open_read)  condition 1: the operands of s2 read what s1 defines
+```
+
+Pure addition — nothing is removed or modified — and both are correct denials
+of genuinely dependent pairs: each is a `match open_*(permit: move permit, ...)`
+after a `let permit = reserve_file(...)`, so the operands of the second call
+read what the first defines. They appear now only because the scrutinee call
+they name was invisible to the judgment before. The program's emitted module is
+byte-identical between the two compilers.
+
+**An `if` condition is a candidate position too.** A writer cannot spell a
+`Bool` `match` — [GRAM-6] makes that a hard error and demands `if` — but the
+checker turns the `if` into exactly that statement:
+`compiler/src/semantic/check/control.rs` checks `Production::IfStmt` into a
+`CheckedStatement::Match` over the prelude `Bool` enum, with the comment "the
+Bool conditional checks into the same two-armed Bool match the `match` spelling
+produced, so everything below the checker sees one statement kind for both". A
+call written as an `if` condition is therefore a call in scrutinee position,
+and it becomes an ordinary [PAR-1] candidate — including for *compute* overlap,
+on programs with no target operation anywhere in them. That is real reach for a
+change whose motivation was completion I/O, and it is covered by
+`a_call_written_as_an_if_condition_joins_a_compute_overlap_group`: two pure
+calls, the second written as an `if` condition, which forms a claim / publish /
+inline-condition / join / phi group under `--par` that the base compiler does
+not form at all (`wf__par_claim` count 0 against 1). The program publishes the
+handed-out value's low byte and a marker its selected arm writes, so a lost
+hand-out and a wrongly decided condition are each visible, and it is byte-checked
+at `WF_WORKERS` 0, 1 and 4.
 
 ### What `many_files_narrow.wf` does after the fix
 
@@ -170,10 +224,37 @@ resolves its own buffer inside its own call and needs no copy. That is a
 throughput fallback of the same class as a full queue, never a changed
 outcome, and no generated open can reach it.
 
-Two backends stage a path, and they are all of them. The Windows IOCP adapter
-carries transfers only: `windows_completion.{c,h}` contains no open request
-shape, and `bridge.c` has no `_WIN32` path at all, so an open on Windows goes
-through the same bounded POSIX adapter this batch fixed.
+Two backends stage a path, and they are all of them.
+
+**What Windows actually is today**, stated precisely, because commit
+`903a5b6d`'s message put it imprecisely — it says an open on Windows "goes
+through the same bounded POSIX adapter", and that is not true as written.
+`file_adapter.c` is POSIX-only: it includes `poll.h` and `unistd.h`, and
+neither it nor its header contains a single `_WIN32` occurrence, so it is not
+compiled for that target at all. `windows_completion.{c,h}` — the `_WIN32`
+completion core — carries no open request shape and names no file-open
+facility (`CreateFile` appears in neither), and `bridge.c` has no `_WIN32` path
+either. The honest statement is that **Windows has no submitted-open route at
+all today**: the target is not runtime-qualified, `completion-windows-cross` is
+an explicit development target outside `make check` (whose prerequisites are
+`format lint test docs spec completion-test`) that cross-links the core, the
+IOCP adapter and their probes and never links `file_adapter.c`, and there is
+therefore no staged path on that target to get wrong. When Windows is qualified, whatever adapter carries an open there
+must stage its own path bytes exactly as these two do; nothing in this batch
+does that for it.
+
+One thing did have to follow the core there. `contract.h` declares
+`wf_completion_publish_milestone` unconditionally, and `windows_completion.c`
+is the `_WIN32` implementation of that whole contract, so leaving the new route
+undefined on that target would have made the core contract non-uniform and
+would have failed the link the first time an adapter there published a
+milestone. It is implemented rather than stubbed, on the same terms as the
+POSIX core in `runtime.c` — same argument checks, same refusal of
+`WF_COMPLETION_TERMINAL`, the accumulation done under the slot's
+`SRWLOCK publication_lock` instead of its pthread mutex. No adapter on that
+target calls it yet. `make -C compiler completion-windows-cross` passes with it:
+`completion Windows x86-64 cross-link: PASS (not runtime-qualified)`, under
+`-Wall -Wextra -Werror -Wpedantic`.
 
 ### `loan-released(path)` while the operation is outstanding
 
@@ -242,21 +323,65 @@ of one site that are outstanding together need one element each.
 entry block and returns element `index`; both the storage and the element
 pointer are entry-block definitions, so the name dominates every block exactly
 as a plain `entry_slot` name did. `completion_entry_slot` wraps it with the
-site's outstanding-operation count and the index of the hand-out being
-emitted. Both answer one and zero today, and the doc comments say why: a
-completion schedule is submitted and joined inside the block that formed it, so
-a site never holds a second hand-out — which is why one shared element has
-never been wrong, and exactly why it would become wrong, silently and without a
-compile error, the first time a schedule outlives its block. The count and the
-index are now the whole of what a deeper schedule changes.
+site's outstanding-operation count and the index of the hand-out being emitted,
+which `completion_storage_element` answers one and zero for.
+
+### The count of one is a precondition, and it is enforced
+
+One element per site is sound only while a site holds one outstanding operation
+at a time, so that is checked rather than assumed. `completion_storage_element`
+reads `FunctionEmitter::handed_out` — which holds exactly the hand-outs emitted
+and not yet joined — and refuses with
+`BackendFailure::SecondOutstandingCompletionOperation` if an operation of the
+site being emitted is already in flight. Sharing element zero instead would let
+the second operation overwrite a result or a staged path the first is still
+being read from, with no compile error and no crash: the same class of defect
+as fix 2's, and the one the shape change exists to stop.
+
+**Why nothing can reach that refusal today.** `emit_terminator` calls
+`emit_all_completion_joins` before it writes any terminator, so a completion
+hand-out never leaves the block that made it, and control cannot reach a site
+again while its operation is outstanding. This is the assumption the count of
+one rests on, it is stated in `completion_storage_element`'s doc comment where
+the number is chosen, and it is what a deeper schedule ends. When a schedule
+does outlive its block, the count and the index are the whole of what has to
+change — and until they do, the emitter stops instead of quietly sharing.
+
+`SecondOutstandingCompletionOperation` is an emitter capability limit, not a
+source-language rejection: the driver maps it to `CompilationStage::Backend`
+like a target-layout stop, and it cites no language rule [DIAG-1].
+
+### One storage element §3.6 named was not converted
+
+The design's §3.6 item 2 names `compiler/src/backend/emitter/system.rs`'s
+`%component = alloca [{slot} x i8]` alongside the completion slots. It is still
+a bare per-wrapper buffer and was judged rather than missed. That buffer belongs
+to `@wf.sys.open_file.v1`, whose only host call is the synchronous
+`wf__completion_file_open_at_direct`: it resolves the name inside the call and
+leaves no operation outstanding when it returns, and fix 2 makes the adapter
+copy the bytes besides. There is no outstanding operation for a per-operation
+element to belong to, so indexing it would buy nothing today. It is carried as
+a residual for batch 2, where a wrapper that submits would need it, and the
+reason is written at the `alloca` itself so the next reader does not have to
+rediscover this paragraph.
 
 ### Tests
 
-- `backend::tests::completion::every_completion_storage_element_is_indexed_by_its_hand_out`
+- `backend::tests::completion::completion_storage_is_reserved_as_an_indexed_element_not_a_bare_slot`
   — every `alloca` in the handed-out probe function is `[1 x T]` and is reached
   through `getelementptr inbounds [1 x T], ptr %storage, i64 0, i64 0`. Before
   the change they are bare `alloca i64`, `alloca i32`, `alloca [2 x i64]`, so
-  the assertion is a real one.
+  the assertion is a real one. It was renamed from
+  `every_completion_storage_element_is_indexed_by_its_hand_out`, which claimed
+  more than it observed: it pins the reserved shape and the reserved count, not
+  that two hand-outs of one site would get two elements.
+- `backend::tests::completion::a_second_operation_of_one_completion_site_is_refused`
+  — that claim, made by the case that can carry it. No schedule this lowering
+  forms can hand a site a second operation while its first is in flight, so the
+  shape is injected: `duplicate_outstanding_completion_call_for_test` emits one
+  submitted, unfinished completion call twice in place, and the emitter must
+  answer `Err(SecondOutstandingCompletionOperation)`. The same program without
+  the mutation is asserted to emit, so the refusal is the mutation's doing.
 - `many_files_wide8.wf` byte check: the emitted binary publishes
   `17098009301725298919 00000000000071024640`, the same line every other line
   of the bench corpus publishes.
@@ -338,7 +463,7 @@ in the only sense this host can support: each line's pass medians lie inside
 the other's range, and the aggregate difference is a small fraction of the
 spread.
 
-### One flake, recorded rather than hidden
+### The flake, and the timeout that caused it
 
 The first `make check` run on this revision failed one test:
 `backend::tests::completion::independent_io_reaches_the_second_operation_before_the_first_unblocks`,
@@ -357,6 +482,29 @@ machine code. What the batch does add to *every* file operation is a larger
 milliseconds across an eight-thousand-file program; it cannot produce a
 three-second stall. The test spawns a child and waits three seconds for a
 thread to be scheduled, on a machine that was running two full gates at once.
+
+It then happened again, under gate load every time and in isolation never: on
+one of this batch's two independent verifiers' first `make check` — run
+concurrently with a 1,246-invocation oracle, after which that verifier passed
+it 5/5 in isolation — and twice more on the owner's own gate runs. That is not
+a one-off, and the test is pre-existing and untouched by this batch: `ea40acd1`
+introduced it, it is present at `79b29665`, and
+`git diff 79b29665 c34a2d48 -- compiler/src/backend/tests/completion.rs`
+mentions it nowhere. The defect is in the test's bound, not in this branch's
+code.
+
+**The bound is now sixty seconds, and nothing else changed.** What that test
+proves is an *order*, not a latency: the parent reads nothing from the child's
+stdout until the marker has arrived, so the child's one-megabyte write to that
+pipe is blocked for the whole wait, and a marker byte at any point in it is
+proof that the second operation ran while the first was outstanding. The
+assertion is untouched — the marker must still arrive, and must still be `'M'` —
+and the timeout is only the cut-off for the case where it never arrives at all.
+Three seconds sat inside the scheduling delay a loaded host produces, so it
+converted a scheduling delay into a false report of a lost overlap; sixty is far
+outside any such delay and still bounded, so a genuine regression fails the run
+rather than hanging it. The reasoning is written at the constant
+(`MARKER_ARRIVAL_LIMIT`) so nobody tightens it back without reading it.
 
 ### Bytes
 
@@ -413,6 +561,40 @@ whether the Linux ring should carry this workload at all, and whether the
 direct depth-one path should bypass the ring — wait for the real-Linux CI
 numbers. Nothing in this batch depends on either answer.
 
+## Verification, and what it changed
+
+Two independent verifiers attacked this batch from separate worktrees with
+separately built compilers, and both returned CONFIRMED: no widening of any
+permission verdict anywhere in the 623-source corpus (every added ledger line
+is a denial), byte-identical arm64 assembly for every bench program, both of
+fix 2's falsifiers reproduced at the lines this record cites, and the completion
+harness, sanitizer and Linux-container legs green. Neither found a defect in
+the code.
+
+Both left notes, and closing them is what the last commit on this branch does.
+Each is written into the section it belongs to rather than listed here, so the
+record reads as one document:
+
+- fix 3's count of one is now an enforced precondition with its own refusal and
+  its own test, and the shape test is renamed to the claim it actually makes
+  ("The count of one is a precondition, and it is enforced");
+- the one storage element §3.6 named and this batch did not convert is judged
+  in writing, at the `alloca` and in this record, and carried to batch 2 ("One
+  storage element §3.6 named was not converted");
+- the permission verdicts that move outside the bench corpus, and the compute
+  overlap an `if` condition now reaches, are named and pinned by two new tests
+  ("Where this fix reaches, outside the bench corpus");
+- the Windows sentence in commit `903a5b6d` is corrected, and the completion
+  core's contract is made uniform on that target ("What Windows actually is
+  today");
+- the pre-existing test whose three-second bound failed under gate load for
+  three separate people keeps its assertion and gets a bound a loaded host
+  cannot trip ("The flake, and the timeout that caused it").
+
+That commit changes no emitted byte: over the 22 corpus programs that compile
+standalone plus the two new probes, the `--par --par-ledger --emit-llvm` module
+and the ledger are byte-identical to `c34a2d48`'s for every one.
+
 ## Judgment calls
 
 - **The call occurrence, not the binding, is a site's identity.** A scrutinee
@@ -461,6 +643,27 @@ numbers. Nothing in this batch depends on either answer.
   the shape costs nothing and the test pins the invariant as a number rather
   than as an unwritten assumption. The alternative — leaving the bare allocas
   and a comment — is the shape that made fix 2 necessary.
+- **The count of one is refused rather than widened.** A count of one is a
+  precondition on the schedule, and the two ways to hold it are to make the
+  count follow the site's real depth or to stop when the precondition breaks.
+  The first is batch 2's work and cannot be written honestly now: the depth of
+  a schedule that outlives its block is decided by the pipeline design, and a
+  number invented ahead of it would be a guess wearing an invariant's clothes.
+  The second is exact, costs one comparison over a list that is empty or nearly
+  so, and is what turns "no schedule can do this today" from a comment into a
+  thing the compiler checks. The refusal is a distinct `BackendFailure` rather
+  than `InvalidIr`, because the IR is not malformed — it asks for a shape this
+  emitter has not been taught to reserve storage for, which is a capability
+  limit and must not be reported as invalid source.
+- **The flaky test's bound was raised, not its assertion.** The alternative
+  considered was bounded re-observation, the way
+  `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`
+  re-observes a steal. It is the right shape when the property is statistical.
+  This property is not: the marker either arrives while the bulk write is
+  blocked or it does not, and re-running would only average over the same
+  scheduling noise the longer bound removes outright. Raising the bound
+  weakens nothing, because the parent holds the pipe blocked for the whole
+  wait.
 - **Parity is claimed from the assembly, not from the stopwatch.** The host was
   too loaded for a wall-clock table to resolve a fraction of a percent. Rather
   than run until a favourable pair appeared, the assembly identity is reported
@@ -504,6 +707,14 @@ numbers. Nothing in this batch depends on either answer.
   What was measurable — the emitted assembly, the published bytes, the
   arithmetic bound on the runtime's added work — is above; the wall-clock table
   is reported with its spread and is not load-bearing.
+- **`system.rs`'s `%component` buffer is not indexed.** Carried to batch 2 with
+  the reason written at the `alloca`; see "One storage element §3.6 named was
+  not converted" above. Nothing submits through that wrapper today, so there is
+  no outstanding operation for a per-operation element to belong to.
+- **Windows still has no submitted-open route.** The core contract is now
+  uniform there — `windows_completion.c` implements the milestone route — but
+  no adapter on that target opens by name, and qualifying one means giving it
+  its own staged path bytes. See the Windows paragraph under fix 2.
 
 ## Approval classes
 

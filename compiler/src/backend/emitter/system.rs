@@ -1949,6 +1949,13 @@ fn emit_open_by_name(
         ..
     } = shape;
     let slot = target.component_limit() + 1;
+    // One shared buffer per wrapper, and deliberately not the per-outstanding-
+    // operation storage the handed-out completion sites use. This wrapper's
+    // only host call is the synchronous direct open, which resolves the name
+    // inside the call and leaves no operation outstanding when it returns; the
+    // submitting path stages its own copy in the operation record besides. A
+    // wrapper that ever submits instead would have to index this the way
+    // `FunctionEmitter::completion_entry_slot` indexes a hand-out's storage.
     let mut prologue = format!("  %component = alloca [{slot} x i8], align 1\n");
     if require_regular {
         writeln!(

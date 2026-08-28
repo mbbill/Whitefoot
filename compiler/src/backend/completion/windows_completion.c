@@ -399,6 +399,61 @@ static enum wf_completion_publish_result wf_windows_publish(
     return WF_COMPLETION_PUBLISHED;
 }
 
+/* The non-terminal milestone route, on the same terms as the POSIX core in
+ * runtime.c: one fact of an operation the target is submitting or already
+ * holds, accumulated into the slot's product under the same exclusive lock the
+ * terminal routes take.  It writes no result byte, does not move the phase and
+ * raises no completion event.
+ *
+ * This target has no adapter that calls it today — the Windows IOCP adapter
+ * carries transfers only, and no open on this target is submitted through a
+ * path-staging adapter — so it is the core contract being complete on every
+ * target it is compiled for rather than a live route.  The contract in
+ * contract.h declares it unconditionally, and a core that declared it and did
+ * not define it would fail to link the first time an adapter here published a
+ * milestone. */
+enum wf_completion_publish_result wf_completion_publish_milestone(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t milestones
+) {
+    wf_completion_slot *slot;
+
+    /* Only facts of this operation, and never the terminal one: a terminal
+     * fact without the result bytes it stands for would let a consumer read a
+     * slot that has nothing in it. */
+    if (milestones == 0
+        || (milestones & ~(uint32_t)WF_COMPLETION_OWNERSHIP_COMPLETE) != 0
+        || (milestones & (uint32_t)WF_COMPLETION_TERMINAL) != 0) {
+        return WF_COMPLETION_PUBLISH_INVALID_ARGUMENT;
+    }
+    if (!wf_windows_token_slot(runtime, token, &slot)) {
+        return WF_COMPLETION_PUBLISH_STALE;
+    }
+
+    AcquireSRWLockExclusive(&slot->publication_lock);
+    if (slot->generation != token.generation) {
+        InterlockedIncrement64(&runtime->stat_stale_publications);
+        ReleaseSRWLockExclusive(&slot->publication_lock);
+        return WF_COMPLETION_PUBLISH_STALE;
+    }
+    if (slot->phase == WF_COMPLETION_TERMINAL_PHASE) {
+        ReleaseSRWLockExclusive(&slot->publication_lock);
+        return WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL;
+    }
+    if (slot->phase != WF_COMPLETION_SUBMITTING
+        && slot->phase != WF_COMPLETION_IN_FLIGHT) {
+        ReleaseSRWLockExclusive(&slot->publication_lock);
+        return WF_COMPLETION_PUBLISH_INVALID_STATE;
+    }
+    /* Accumulated, not stored: this route publishes one fact of a product the
+     * terminal route later completes, and the terminal product is a superset
+     * of everything published here. */
+    slot->milestones |= milestones;
+    ReleaseSRWLockExclusive(&slot->publication_lock);
+    return WF_COMPLETION_PUBLISHED;
+}
+
 enum wf_completion_publish_result wf_completion_publish_terminal(
     wf_completion_runtime *runtime,
     wf_completion_token token,

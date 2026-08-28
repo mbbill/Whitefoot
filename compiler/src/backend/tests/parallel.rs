@@ -146,6 +146,67 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 }
 "#;
 
+/// A pure call handed out while a second pure call, written as an `if`
+/// condition, runs on this thread.
+///
+/// A writer may not spell a `Bool` match — [GRAM-6] demands `if` — but the
+/// checker turns the `if` into one, so a call in condition position is a call
+/// in scrutinee position and reaches the judgment exactly as a `let`
+/// right-hand side does. That makes it an ordinary [PAR-1] candidate for
+/// *compute* overlap, with no target operation anywhere in the pair — the
+/// reach of a change whose motivation was completion I/O.
+///
+/// Both halves of the result are observable: the low byte of the handed-out
+/// call's value, so a lost or unjoined hand-out shows, and a marker the
+/// selected arm writes, so a condition decided wrongly shows too.
+const IF_CONDITION_SIBLING: &[u8] = br#"fn mixdown(a: own u64, b: own u64) -> result: own u64 pure {
+  let spun = irotl(a, 13_u32);
+  let scattered = imulhi(b, 2654435761_u64);
+  let blended = ixor(spun, b);
+  return ixor(blended, scattered);
+}
+
+fn odd(v: own u64) -> result: own Bool pure {
+  let low = iand(v, 1_u64);
+  return ieq(low, 1_u64);
+}
+
+fn last_byte(v: own u64) -> result: own u8 pure {
+  let low = iand(v, 255_u64);
+  match cvt<u64, u8>(low) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: problem) => {
+      return 0_u8;
+    }
+  }
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  doc "A pure call handed out while a pure call written as an if condition runs.";
+  let report = buffer_new(2_u64, 0_u8);
+  let value = mixdown(a: 11_u64, b: 22_u64);
+  if odd(v: 33_u64) {
+    set report[1_u64] = 89_u8;
+  }
+  let byte = last_byte(v: value);
+  set report[0_u64] = byte;
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 2_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
 /// Two sibling calls the judgment refuses: the second reads the first's
 /// binding, so condition 1 denies the pair and nothing may be handed out.
 const DEPENDENT_SIBLINGS: &[u8] = br#"fn twice(v: own u64) -> result: own u64 pure {
@@ -336,6 +397,73 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         body[read..].contains(" = phi i64 [ "),
         "the joined value must be the phi of the two edges:\n{body}"
     );
+}
+
+/// A call written as an `if` condition is a compute-overlap join site, and the
+/// program it joins publishes the same bytes at every worker count.
+///
+/// This is the compute half of the same change that let a `match` scrutinee be
+/// judged: an `if` checks into a `Bool` match, so the call in its condition is
+/// reached by exactly the machinery a `let` right-hand side is reached by, with
+/// no rule of its own. Nothing in the program performs a target operation, so
+/// the group here is the ordinary [PAR-1] compute lowering — claim, publish,
+/// the condition call inline on this thread, join, phi — and it is worth
+/// pinning because the batch that opened this position was about I/O and would
+/// not otherwise have covered it.
+///
+/// `WF_WORKERS` is the knob that matters: it decides whether a lane is granted,
+/// which is what separates the published edge of the join from the refused one.
+/// `0` and `1` are both the opt-out — fewer than two lanes of execution is the
+/// sequential world either way — and `4` starts a pool that grants, so the loop
+/// runs both edges.
+#[test]
+fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
+    let module = emit_with_overlap(IF_CONDITION_SIBLING);
+    let body = function_body(&module, "@wf_main");
+    let claim = body
+        .find("= call ptr @wf__par_claim(i64 ptrtoint")
+        .expect("the first call must claim a lane");
+    let publish = body
+        .find("call void @wf__par_publish(ptr")
+        .expect("the claimed lane must be given the outlined call");
+    let condition = body
+        .find("call i1 @wf_odd(")
+        .expect("the condition call must run on this thread");
+    let join = body
+        .find("call void @wf__par_join(ptr")
+        .expect("the handed-out call must be joined");
+    assert!(
+        claim < publish && publish < condition && condition < join,
+        "the condition call is the overlap window and the join follows it:\n{body}"
+    );
+    let done = body
+        .find("\npar.done.")
+        .expect("the joined value must be defined in the join's own block");
+    assert!(
+        join < done && body[done..].contains(" = phi i64 [ "),
+        "the joined value must be the phi of the two edges:\n{body}"
+    );
+
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    let mut runs = Vec::new();
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the if-condition overlap probe");
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+        // The handed-out value's low byte and the marker the selected arm
+        // writes, in that order.
+        assert_eq!(
+            output.stdout, b"\x16Y",
+            "WF_WORKERS={workers} published the wrong bytes"
+        );
+        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+    }
+    identical(&runs).expect("an if-condition join must not move one byte of the result");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// A recursion that hands one of its two calls out at every level, spelled at

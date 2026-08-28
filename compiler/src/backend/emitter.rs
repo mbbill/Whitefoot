@@ -65,6 +65,16 @@ pub enum BackendFailure {
     /// target-layout failure this is not a source-language rejection and cites
     /// no language rule [DIAG-1].
     TargetQualification(QualificationFailure),
+    /// A lowering handed one call site a second operation while its first was
+    /// still outstanding. Completion storage is reserved per outstanding
+    /// operation and this emitter reserves one element per site, so a second
+    /// live operation of one site has nowhere of its own to write. It is
+    /// refused rather than given the first operation's element: sharing would
+    /// let the newer operation overwrite a result or a staged path the older
+    /// one is still being read from, with no compile error and no crash. Like
+    /// a target-layout stop this is an emitter capability limit and not a
+    /// source-language rejection; it cites no language rule [DIAG-1].
+    SecondOutstandingCompletionOperation,
     InvalidIr,
     CounterOverflow,
     TextEmission,
