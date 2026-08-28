@@ -1978,21 +1978,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     };
                     if !satisfies_bound {
+                        // `Unbounded` admits every type and never reaches here;
+                        // it is named so the match stays exhaustive by rule
+                        // rather than by a wildcard.
+                        let required = match bound {
+                            GenericBound::Unbounded => "any type",
+                            GenericBound::Int => {
+                                "an integer type, which the parameter's `Int` bound requires"
+                            }
+                            GenericBound::Float => {
+                                "a float type, which the parameter's `Float` bound requires"
+                            }
+                        };
                         return self.issue_node(
                             SemanticRule::Fn3,
                             argument,
-                            SemanticIssueKind::type_mismatch(
-                            match bound {
-                                GenericBound::Unbounded => "any type",
-                                GenericBound::Int => {
-                                    "an integer type, which the parameter's `Int` bound requires"
-                                }
-                                GenericBound::Float => {
-                                    "a float type, which the parameter's `Float` bound requires"
-                                }
-                            },
-                            self.checked_type_name(ty)?,
-                        ),
+                            SemanticIssueKind::type_mismatch(required, self.checked_type_name(ty)?),
                         );
                     }
                     GenericArgument::Type(ty)
