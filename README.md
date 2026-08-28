@@ -33,11 +33,12 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.37 is the active language authority, SHA-256
-`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`, carried by
-the stable [specification path](spec/kernel-spec.md). It activates
-unified-state completion I/O and supersedes v0.36, whose outgoing bytes are
-preserved as [`spec/kernel-spec-v0.36.md`](spec/kernel-spec-v0.36.md). The
+Kernel specification v0.38 is the active language authority, SHA-256
+`3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`, carried by
+the stable [specification path](spec/kernel-spec.md). It adds [PAR-3], the
+staged loop permission that cuts a loop body at its first `may-suspend`
+submission, and supersedes v0.37, whose outgoing bytes are
+preserved as [`spec/kernel-spec-v0.37.md`](spec/kernel-spec-v0.37.md). The
 merge-time record for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.

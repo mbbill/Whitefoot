@@ -129,6 +129,7 @@ use super::model::{
     CheckedSliceSource, CheckedStatePath, CheckedStatement, FunctionId, expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
+use super::staged_permission::StagedPermission;
 use crate::{
     DeclarationId, NodePath, SYSTEM_OPERATIONS, SystemParameterMode, TargetAction,
     operation_state_effects,
@@ -476,6 +477,12 @@ pub(crate) struct FunctionPermissions {
     /// order. The pair judgment above is computed exactly as it was before
     /// these existed, and nothing here is lowered by this version.
     pub(crate) loops: Vec<LoopPermission>,
+    /// The [PAR-3] staged verdict of every loop of this function whose body
+    /// performs I/O, in source order. It is a second judgment of the same
+    /// bodies and shares none of the counted permission's apparatus: no
+    /// accumulator, no combination tree, no index range. A loop with no
+    /// `may-suspend` action has no entry.
+    pub(crate) staged: Vec<StagedPermission>,
 }
 
 /// The whole-program permission table, dense by [`FunctionId`].
@@ -663,6 +670,7 @@ impl<'check> Program<'check> {
             runs: Vec::new(),
             completion_steps: Vec::new(),
             loops: Vec::new(),
+            staged: Vec::new(),
         };
         let mut blocks = vec![function.body.as_slice()];
         while let Some(block) = blocks.pop() {
@@ -700,6 +708,10 @@ impl<'check> Program<'check> {
             .map(|pair| pair.first.statement.clone())
             .collect::<Vec<_>>();
         permissions.loops = super::loop_permission::judge_loops(self, &places, function, &eligible);
+        // The staged judgment is its own rule over the same bodies. It reads
+        // no [PAR-2] verdict and no pair verdict, so nothing here can move an
+        // existing line of the table.
+        permissions.staged = super::staged_permission::judge_staged(self, &places, function);
         permissions
     }
 
@@ -1835,7 +1847,7 @@ pub(crate) fn visit_read_bindings(
 /// The match is exhaustive on purpose. A future expression form that reads
 /// caller storage must be classified here rather than silently contributing
 /// nothing, because a missing operand read widens permission.
-fn collect_operand_reads(
+pub(super) fn collect_operand_reads(
     places: &PlaceMap,
     expression: &CheckedExpression,
     node: &NodePath,

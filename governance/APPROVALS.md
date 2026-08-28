@@ -1552,3 +1552,65 @@ ACTIVE-SPEC: v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995
   operations, and the five-row command standard-input table; no `expect`
   verdict changes in any of them. Coverage remains 137/137 rules.
 ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62
+
+## 2026-08-27 — merge-time approval content: v0.38 staged loop permission ([PAR-3])
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.38 at exact SHA-256
+  `3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50`.
+  It supersedes active v0.37 at SHA-256
+  `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.37.md`. Per the specification's own META-5 delta
+  declaration: numbered rules are +1/-0, from 137 to 138, the added rule being
+  [PAR-3]. Grammar productions are unchanged at 75, and unique fixed lowercase
+  grammar atoms, writer operation spellings, opaque system nominal spellings,
+  runtime-trap families, entry forms, contract block forms, exception clauses,
+  and the 203 system operations and declaration records are all unchanged.
+  [PAR-3] is a second permission over the iterations of a loop, distinct from
+  [PAR-2]'s counted permission and sharing none of its apparatus: it cuts the
+  body of any `for_stmt` or `loop_stmt` at the first `may-suspend` submission
+  and admits executing the remainder of one iteration with overlapping
+  execution against the prologue of a later one, requiring no accumulator,
+  combination tree, identity element, or index range. Its conditions are formed
+  entirely from [PAR-1]'s existing footprint and loan machinery; it admits
+  replicating a copy-element place under a byte-coverage condition; it states
+  that prologue executions do not overlap one another and that the remainder's
+  writes to storage rooted outside the body, together with its reads of such
+  storage the body writes, occur in iteration order; it places the edge the
+  submitting statement takes on that submission's own outcome in the remainder
+  rather than the prologue, so a `propagate` at the cut leaves from the
+  remainder; it distinguishes the host resources a system operation of the loop
+  creates from the execution resources an implementation spends on overlapping;
+  and it carries [PAR-1]'s erroneous-execution clauses, including that no
+  correct path reads a trap latch. [PAR-1] and [PAR-2] each gain one
+  cross-reference sentence and no condition. No writer-visible depth, window,
+  queue, batch operation, task, future, callback, cancellation handle, or
+  scheduling marker is added, and no ownership, effect, release, or trap rule
+  changes. No accepted program becomes rejected: the permitted-overlap set only
+  widens, so no conformance verdict moves. The selection ground is the staged
+  loop-pipeline design derived against the completion model and the
+  io-completion benchmark's own measurements.
+- CONFORMANCE BOUNDARY: relative to the v0.37 activation boundary at `main`
+  tip `79b2966562e1da8de541feedfd5855d0ef4a3c30`, `tests/conformance` content
+  changes as follows. Added: seven case files under
+  `tests/conformance/cases/`, being
+  `accept-par3-staged-iteration-own-scratch.wf`,
+  `accept-par3-staged-loop-with-prologue-break.wf`,
+  `accept-par3-staged-denied-hoisted-scratch.wf`,
+  `accept-par3-staged-denied-read-before-write.wf`,
+  `accept-par3-staged-denied-carried-scratch-byte.wf`,
+  `accept-par3-staged-denied-opaque-cursor.wf`, and
+  `accept-par3-staged-denied-exit-in-remainder.wf`. Modified: one file,
+  `tests/conformance/manifest.jsonl`. Deleted: none. Renamed: none. Within
+  `tests/conformance/manifest.jsonl`, eight records are added and no record is
+  modified or removed: one [PAR-3] rule-annotation record, and seven case
+  records for the seven added cases, taking the case-record count from 503 to
+  510 and the rule-annotation count from 34 to 35. Every added case declares
+  the `accept` verdict, which is the only verdict a permission rule that
+  refuses nothing can carry; each case's `rules` list names [PAR-3] beside the
+  rules its source genuinely exercises. No pre-existing `expect` verdict
+  changes. Coverage moves from 137/137 to 138/138 rules.
+ACTIVE-SPEC: v0.38 3dd5878bbfe77a938fb7a9af53db97d0ba35a8e86234c3b2814b94780228ce50 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619

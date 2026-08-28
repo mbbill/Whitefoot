@@ -43,8 +43,17 @@ the lowering can overlap them. `programs/many_files_wide8.wf` is the same
 shape hand-widened to eight, so the comparison against an eight-thread pool
 and a deep io_uring baseline is made at a matched width.
 `programs/many_files_narrow.wf` is the same work written as the natural
-one-file-at-a-time loop; it exists to measure what a writer gets who does not
-hand-widen, and the answer is no overlap at all.
+one-file-at-a-time loop, with its name and destination buffers hoisted above
+the loop; it exists to measure what a writer gets who does not hand-widen, and
+the answer is no overlap at all.
+`programs/many_files_loop.wf` is that same one-file-at-a-time loop with the
+name and destination buffers constructed inside the body, which is the form
+[PAR-3]'s staged permission grants — `whitefootc --par-ledger` prints a granted
+`PAR stage` verdict for its `@scan` loop and a denial naming `&'n name` for the
+narrow program's. Its helper functions are byte-identical to the other
+programs', so the pair isolates exactly the hoisting. Until the staged lowering
+lands it runs sequentially and pays a per-iteration allocation, and it must
+publish the same checksum as every other line.
 `programs/pipe_relay.wf` pushes two independent byte streams at two
 independent consumers through `command.stdout` and `command.stderr`.
 

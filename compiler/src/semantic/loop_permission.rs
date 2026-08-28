@@ -390,37 +390,11 @@ struct Survey<'check, 'run> {
 }
 
 impl<'check> Survey<'check, '_> {
-    /// Records every binding the body introduces, before anything is judged
-    /// against that set.
+    /// Records every binding the body introduces, and every loop it opens,
+    /// before anything is judged against those sets.
     fn introduce(&mut self, statements: &'check [CheckedStatement]) {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Let { binding, .. }
-                | CheckedStatement::PropagateLet { binding, .. }
-                | CheckedStatement::Replace { binding, .. }
-                | CheckedStatement::ValueMatchLet { binding, .. } => {
-                    self.introduced.push(*binding);
-                }
-                CheckedStatement::CountedRange { id, binder, .. } => {
-                    self.introduced.push(*binder);
-                    self.inner_loops.push(id.0);
-                }
-                CheckedStatement::Loop { id, .. } => self.inner_loops.push(id.0),
-                _ => {}
-            }
-            if let CheckedStatement::Match { arms, .. }
-            | CheckedStatement::ValueMatchLet { arms, .. } = statement
-            {
-                for arm in arms {
-                    for arm_binder in &arm.binders {
-                        self.introduced.push(arm_binder.binding);
-                    }
-                }
-            }
-            for nested in nested_bodies(statement) {
-                self.introduce(nested);
-            }
-        }
+        collect_introduced(statements, &mut self.introduced);
+        collect_inner_loops(statements, &mut self.inner_loops);
     }
 
     /// Walks one block, carrying how many value initializers the *body* opens
@@ -624,33 +598,11 @@ impl<'check> Survey<'check, '_> {
     /// rooted in a binding the body opens is created and released inside the
     /// iteration, so no two iterations reach one of them.
     /// Whether every borrow formed inside this expression is a borrow of
-    /// iteration-own storage.
-    ///
-    /// A written borrow's shared-or-uniq mode is erased from the checked
-    /// tree, so the [OWN-5] loan such a borrow would hold cannot be stated.
-    /// A borrow of iteration-own storage needs none: each iteration borrows
-    /// its own instance, and nothing that instance reaches outlives the
-    /// iteration. Every other borrow — outer storage, or a place this walk
-    /// cannot resolve — is inadmissible, and the caller refuses the body,
-    /// which is the fail-closed direction.
+    /// iteration-own storage, by the shared walk below.
     fn admits_borrow_forms(&self, expression: &CheckedExpression) -> bool {
-        let is_borrow_form = matches!(
-            expression,
-            CheckedExpression::BorrowBuffer { .. }
-                | CheckedExpression::BorrowAddressed { .. }
-                | CheckedExpression::BorrowBox { .. }
-                | CheckedExpression::BorrowSystemResource { .. }
-                | CheckedExpression::ReborrowAddressed { .. }
-        );
-        if is_borrow_form {
-            match self.places.argument_referent(expression) {
-                Some((place, _, _)) if self.is_iteration_own(&place) => {}
-                _ => return false,
-            }
-        }
-        expression_children(expression)
-            .into_iter()
-            .all(|child| self.admits_borrow_forms(child))
+        borrows_only_iteration_own(self.places, expression, &|place| {
+            self.is_iteration_own(place)
+        })
     }
 
     fn is_iteration_own(&self, place: &ResolvedPlace) -> bool {
@@ -946,8 +898,89 @@ const fn boolean_combine(operation: CheckedBooleanOperation) -> Option<LoopCombi
     })
 }
 
+/// Every binding one block and its nested blocks introduce, appended in source
+/// order.
+///
+/// Storage rooted in one of these is created fresh by every iteration of the
+/// loop that owns the block and dies with it; everything else outlives the
+/// iteration. The staged judgment next door asks the same question of the same
+/// body, so both read this one walk rather than growing two drifting copies.
+pub(super) fn collect_introduced(statements: &[CheckedStatement], out: &mut Vec<BindingId>) {
+    for statement in statements {
+        match statement {
+            CheckedStatement::Let { binding, .. }
+            | CheckedStatement::PropagateLet { binding, .. }
+            | CheckedStatement::Replace { binding, .. }
+            | CheckedStatement::ValueMatchLet { binding, .. } => out.push(*binding),
+            CheckedStatement::CountedRange { binder, .. } => out.push(*binder),
+            _ => {}
+        }
+        if let CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } =
+            statement
+        {
+            for arm in arms {
+                for arm_binder in &arm.binders {
+                    out.push(arm_binder.binding);
+                }
+            }
+        }
+        for nested in nested_bodies(statement) {
+            collect_introduced(nested, out);
+        }
+    }
+}
+
+/// Every loop one block opens inside itself, by loop identity.
+fn collect_inner_loops(statements: &[CheckedStatement], out: &mut Vec<u32>) {
+    for statement in statements {
+        if let CheckedStatement::CountedRange { id, .. } | CheckedStatement::Loop { id, .. } =
+            statement
+        {
+            out.push(id.0);
+        }
+        for nested in nested_bodies(statement) {
+            collect_inner_loops(nested, out);
+        }
+    }
+}
+
+/// Whether every borrow formed inside one expression is a borrow of storage the
+/// caller's predicate accepts as iteration-own.
+///
+/// A written borrow's shared-or-uniq mode is erased from the checked tree, so
+/// the [OWN-5] loan such a borrow would hold cannot be stated. A borrow of
+/// iteration-own storage needs none: each iteration borrows its own instance,
+/// and nothing that instance reaches outlives the iteration. Every other
+/// borrow — outer storage, or a place this walk cannot resolve — is
+/// inadmissible, and the caller refuses the body, which is the fail-closed
+/// direction. Both loop judgments ask exactly this, so both read this one
+/// implementation.
+pub(super) fn borrows_only_iteration_own(
+    places: &PlaceMap,
+    expression: &CheckedExpression,
+    is_iteration_own: &impl Fn(&ResolvedPlace) -> bool,
+) -> bool {
+    let is_borrow_form = matches!(
+        expression,
+        CheckedExpression::BorrowBuffer { .. }
+            | CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::ReborrowAddressed { .. }
+    );
+    if is_borrow_form {
+        match places.argument_referent(expression) {
+            Some((place, _, _)) if is_iteration_own(&place) => {}
+            _ => return false,
+        }
+    }
+    expression_children(expression)
+        .into_iter()
+        .all(|child| borrows_only_iteration_own(places, child, is_iteration_own))
+}
+
 /// Every block a statement owns.
-fn nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
+pub(super) fn nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
     match statement {
         CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
             arms.iter().map(|arm| arm.body.as_slice()).collect()
