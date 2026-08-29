@@ -225,8 +225,12 @@ ledger's own condition variable and on the runtime endpoint. Which transitions
 those are is derived in `contract.h` from the inputs the answer is made of, and
 the derivation is worth reading rather than the list: a rule narrated from one
 schedule got standing aside wrong, and the bullet on the direct route's spin
-records how. Coming back from an aside is the one movement of those inputs that
-can only make another waiter's answer *less* final, so it is silent, and a
+records how. Coming back from an aside can only make another waiter's answer
+*less* final, so it is silent; it is not the only movement of those inputs that
+is answer-weakening — accepting an operation and taking an item off the owed
+queue are too, and the derivation says so where it names them, one announcing
+for a different reason and the other with no sleeping waiter to tell — it is
+the only one of the announcing candidates left silent for that reason. And a
 thread never needs to wake itself. The ledger is given that
 endpoint by the unit that owns the runtime, which is the bridge, and clears it
 before the runtime is destroyed. A transition announced in one place only is a
@@ -721,8 +725,11 @@ by exempting the carrying block from the rule.
   engines, and that announcement moved the very epoch it was about to park on,
   so every park returned at once. Instrumented at the park call over four cells
   of the interleave and cross-route shapes, the revision before this one reached
-  a park with a live epoch **not once**: 0 fresh in every run, and every turn of
-  the loop stale. How many turns is a draw and varies by an order of magnitude
+  a park with a live epoch **not once**: 0 fresh in every run, and every park it
+  reached stale. Turns are not parks — a turn can make progress and never reach
+  one; the same base build turned 88,684 times on one of these cells for 87,735
+  stale parks and 473 turns that went on without parking. How many turns is a
+  draw and varies by an order of magnitude
   between runs — 21,255, 44,005, 91,900 and 186,692 on the same four cells, and
   17,987 on the smaller sweep quoted below — so no count here is a fixed
   quantity; the fixed thing is the zero. Nothing stalled and nothing was lost;
@@ -758,8 +765,14 @@ by exempting the carrying block from the rule.
   two threads standing aside in turn would trade wakes instead of sleeping,
   which is the spin this bullet is about, in a second form.
 
-  The safety this leaves is that every announcement belongs to a waiter about to
-  publish and leave the order — as many wakes as there are answers. Two
+  An announcement is edge-triggered by its transition, so an aside that reverses
+  can wake a waiter that then finds nothing to do: the promotion is real when
+  the wake is made and gone by the time the woken waiter asks. So the safety
+  this leaves is not one wake per answer — a scripted 1,000 aside cycles against
+  a registered waiter produce 1,000 endpoint wakes and 0 answers, one sample of
+  the shape — but that no route spins: each reads the wake epoch after its own
+  announcements, so a wake with no answer behind it costs one re-evaluation and
+  one park, bounded by the transitions that happened. Two
   deterministic tests hold it, one for each transition that can promote a
   parked waiter: `test_a_registration_wakes_a_waiter_parked_on_the_endpoint`
   and `test_standing_aside_wakes_a_waiter_parked_on_the_endpoint`. Both are
@@ -942,3 +955,15 @@ empty then and is empty now — and it went away when the row landed:
 `batch/0094-linux-directory-row` is in `main` at `10b76c66`, which this branch
 is merged up to. Canonical `make check` on this Linux host reports
 `conformance adapter: Pass=509  Skip=1` and `== WHITEFOOT ALL TESTS GREEN ==`.
+
+## For the integrator
+
+- This branch makes `queue_count` `_Atomic` and `wf_file_adapter_queued` a bare
+  atomic load, because the retirement ledger asks for the count while holding
+  its own lock and may not reach for the queue lock there. The shutdown
+  precondition paragraph in `file_adapter.h` is rewritten to match. `main`'s
+  integration branch carries batch 0105's rewrite of that same paragraph,
+  written against `main`'s locking `wf_file_adapter_queued`; expect a textual
+  conflict there, and resolve it toward this branch's code, because the
+  decline-check lock window 0105 describes does not exist once the read is
+  lock-free.

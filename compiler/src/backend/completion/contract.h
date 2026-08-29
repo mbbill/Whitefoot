@@ -557,10 +557,18 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * direct route stands aside, drives the engines and comes back before it reads
  * the epoch it parks on, so everything it says is behind that read.  At a
  * revision that announced between the two, that route never once reached a park
- * that slept, over tens of thousands of turns of its loop; here it sleeps.  And
- * because an announcement is owed only where an answer becomes terminal, each
- * one belongs to a waiter that is about to publish and leave the order — as
- * many wakes as there are answers, never a standing exchange of them.
+ * that slept, over tens of thousands of turns of its loop; here it sleeps.
+ *
+ * An announcement is edge-triggered by the transition that makes it, not by the
+ * state that outlives it, so a wake can arrive with nothing left to do: an
+ * aside promotes a waiter, announces, and coming back demotes it again before
+ * it asks.  The accounting is therefore not one wake per answer — a thousand
+ * aside cycles against a registered waiter announce a thousand times and hand
+ * out no answer at all, one measured sample of the shape.  What holds instead
+ * is that no route spins: each reads the wake epoch after everything it
+ * announces and before it parks, so a wake with no answer behind it costs the
+ * waiter one re-evaluation and one park, bounded by the transitions that
+ * actually happened, and never a standing exchange between two threads.
  *
  * This lives with the completion core because the core is the one unit every
  * target engine and the bridge link.  The bounded POSIX adapter and the Linux

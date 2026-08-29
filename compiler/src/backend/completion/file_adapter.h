@@ -455,9 +455,10 @@ enum wf_file_wait_verdict wf_file_adapter_wait_verdict(
  * caller decides whether the operation is one whose wait no part of the same
  * program has to satisfy.
  *
- * Cost, stated because this is asked on a hot path: the `nothing queued` term
- * takes the queue lock, so every positioned read that reaches this question
- * pays one uncontended lock and unlock.  The question is asked once per
+ * Cost, stated because this is asked on a hot path: every term of it is an
+ * atomic load of this record and none of them takes a lock, so a positioned
+ * read that reaches this question pays a handful of loads and no lock at all.
+ * The question is asked once per
  * positioned read on a program the bridge has not pinned, and only after the
  * two cheaper terms have both held; what it saves when it answers yes is a
  * queue crossing, a slot claim, four slot transitions and a drain. */
@@ -514,11 +515,15 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * submitter holds no lock, and a shutdown running in the window destroys the
  * condition variable the submitter is about to signal.  The decline check is
  * named beside it because it is the other entry a delivered program reaches
- * without holding anything: it asks `wf_file_adapter_queued`, which takes the
- * queue lock, so a shutdown running in its window destroys the mutex it is
- * about to take.  Shutdown clears the record's `initialized` flag before
- * destroying either object, which is what bounds both windows to a caller
- * that had already passed the flag.
+ * without holding anything, and it holds nothing at any point: it asks
+ * `wf_file_adapter_queued`, which is a plain atomic load of `queue_count` and
+ * takes no lock — the retirement ledger requires exactly that of the same
+ * read, because it asks for the count while holding its own lock — so a
+ * shutdown in its window destroys nothing it touches, and the most it can do
+ * to it is leave it a count nothing maintains any more.  Shutdown clears the
+ * record's `initialized` flag before destroying the condition variable and the
+ * mutex, which is what bounds the submission window to a caller that had
+ * already passed the flag.
  *
  * Closing them completely would mean either signalling under the lock, which
  * is the cost this shape exists to remove, or a second lock on the submission

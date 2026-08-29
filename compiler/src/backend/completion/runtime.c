@@ -1608,9 +1608,14 @@ static enum wf_retirement_state wf_retirement_state_locked(
  * Announced there and nowhere else: this waiter held the earliest deciding
  * place, and the waiter it hands that place to now answers `UNREACHABLE`.  A
  * wake made anywhere else would be a wake for its own sake — two threads
- * standing aside in turn would trade them instead of sleeping — while every
- * wake made here belongs to a waiter that is about to publish and leave the
- * order, so there are as many of them as there are answers. */
+ * standing aside in turn would trade them instead of sleeping — while a wake
+ * made here is owed to a waiter that answers `UNREACHABLE` at the moment it is
+ * made.  It need not still answer that when the wake arrives: coming back
+ * demotes it again, and an aside that reverses quickly wakes a waiter that
+ * finds nothing to do.  A thousand cycles here announce a thousand times and
+ * hand out no answer, so the bound is not one wake per answer; it is that such
+ * a wake costs one re-evaluation and one park, because every route reads the
+ * epoch it parks on after its own announcements (contract.h). */
 void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter) {
     wf_retirement_waiter *promoted;
     int announce = 0;
