@@ -1748,6 +1748,10 @@ checker must do more than this design asks. If they catch them with the list and
 miss them without it, the case list is not optional. **This is the measurement
 the whole design's weakest premise rests on** and it is the only proposed
 experiment in the batch that measures reviewers instead of asserting about them.
+*Status: the AI-assisted half has been run; `F2-REVIEW-TRIAL.md` reports 0 false
+approvals of 16 with the case list and 0 of 16 without, on a 24-item set. The
+human half has not been run, and the trial's three coverage limits are stated
+there.*
 
 **F3 — the image-uniqueness audit.** Walk every operation-table row and write its
 image. Refutes §3.2 if any row's exact image is expressible but not unique in
@@ -2157,6 +2161,18 @@ approve false laundering claims at a material rate even with the case list, this
 design's central concession is wrong and the area needs a fourth idea nobody in
 this batch had.** That is the observation that would separate the two hypotheses,
 and it is worth running before B2 ships rather than after.
+
+**F2 has now run on AI reviewers and the concession survives it**
+(`F2-REVIEW-TRIAL.md`): 0 false approvals of 16 with the case list, 0 of 16
+without, and 0 of 32 true claims rejected in each condition, on a 24-item set
+carrying eight false laundering claims. U1 stays in red ink anyway, for three
+reasons the trial states: the reviewers were four runs of one model family and no
+human arm was run; every false record in that set lied by misdescribing a literal
+in the reviewed function rather than by citing an unpublished premise about the
+selector, which is the shape §1.5 anticipates and the shape a competent liar
+would write; and every item sits at the easy end of the family. The follow-up
+that would actually close U1 is a second set whose false derivations state every
+arm's value correctly and are false only about which arm can run.
 
 ### RED INK — U2 — the image column is total by test and strong only by review
 
