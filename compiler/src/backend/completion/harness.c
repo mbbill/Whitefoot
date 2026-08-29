@@ -3710,6 +3710,36 @@ static void *wf_open_release_main(void *context) {
     return NULL;
 }
 
+/* The one question the retirement ledger asks an operation is answered from
+ * the record, and only a host action that actually put a descriptor back may
+ * answer yes: a close the host refused freed nothing, and counting it would
+ * spend a refused open's single re-attempt on a return that never happened. */
+static int test_descriptor_return_follows_the_outcome(void) {
+    wf_file_result result;
+    memset(&result, 0, sizeof(result));
+    result.kind = WF_FILE_CLOSE;
+    result.error_code = 0;
+    CHECK(wf_file_returned_a_descriptor(&result) == 1);
+    result.error_code = EBADF;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    memset(&result, 0, sizeof(result));
+    result.kind = WF_FILE_OPEN_AT;
+    result.value = 7;
+    result.open_outcome = WF_FILE_OPEN_OTHER_KIND;
+    CHECK(wf_file_returned_a_descriptor(&result) == 1);
+    result.open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    result.value = -1;
+    result.open_outcome = WF_FILE_OPEN_FAILED;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    memset(&result, 0, sizeof(result));
+    result.kind = WF_FILE_PREAD;
+    result.value = 4096;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    CHECK(wf_file_returned_a_descriptor(NULL) == 0);
+    return 0;
+}
+
 static int test_open_exhaustion_waits_for_another_engine(
     const char *scratch_directory
 ) {
@@ -4842,6 +4872,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
+    RUN_TEST(test_descriptor_return_follows_the_outcome());
     RUN_TEST(test_open_exhaustion_retires_owned_work_and_retries(argv[1]));
     RUN_TEST(test_open_exhaustion_waits_for_another_engine(argv[1]));
     RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));

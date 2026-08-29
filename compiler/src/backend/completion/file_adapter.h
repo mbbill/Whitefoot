@@ -299,7 +299,10 @@ static inline int wf_file_returned_a_descriptor(const wf_file_result *result) {
         return 0;
     }
     if (result->kind == WF_FILE_CLOSE) {
-        return 1;
+        /* Only a close the host performed put a descriptor back; a refused
+         * close (EBADF) freed nothing, and counting it spends a refused
+         * open's one re-attempt on a return that never happened. */
+        return result->error_code == 0;
     }
     return result->kind == WF_FILE_OPEN_AT && result->value >= 0
         && result->open_outcome != WF_FILE_OPEN_SUCCEEDED;

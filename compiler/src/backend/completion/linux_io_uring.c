@@ -862,7 +862,7 @@ static int wf_linux_publish_entry_locked(
      * back to the free pool, after which a submitting thread may already be
      * writing the next operation into it. */
     int returned_a_descriptor =
-        entry->request.kind == WF_LINUX_FILE_CLOSE
+        (entry->request.kind == WF_LINUX_FILE_CLOSE && completion_result >= 0)
         || (entry->request.kind == WF_LINUX_FILE_OPEN_AT
             && entry->opened_descriptor >= 0
             && entry->open_outcome != WF_FILE_OPEN_SUCCEEDED);
