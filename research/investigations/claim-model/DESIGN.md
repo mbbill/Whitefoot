@@ -14,6 +14,27 @@ were rejected, and by which counterexample.
 Nothing here is implemented. Every verdict change in §7 is a proposal, and the
 specification text in §3 is draft text for a work branch, not an amendment.
 
+**Census headlines.** `CENSUS.md`, beside this file, is batch 0106's B0
+measurement of the corpus this design reasons about, and three of its numbers
+should be read before §5 and §7. (1) Of the 114 gap-stating claims in the tree,
+**108 are forward publisher gaps, 4 are backward transfers over a `±wrap` row,
+and 2 are true residue** (§2.3 there). (2) **No claim anywhere in 682 source
+files has selector width m ≥ 2**, and only three have m = 1 (§3.3 there). (3)
+**All 18 real-program claims discharge SubscriptBounds**, and there is **not one
+`claim` statement anywhere in the blind-writer corpus** (§1.4, §2.1 there). The
+first and third strengthen the principle — a claim in this tree names a missing
+publisher, not a missing fact language — and the second and third strengthen
+§11's U1: the laundering family needs a boundary-derived selector, and in real
+code that family is empty, because every function holding a real-program claim
+contains no call at all, so review is being asked to fence a shape nobody has
+yet written. Two things narrow. The refuter §10.2 rejected on correctness
+grounds (A2–A4) is also moot on evidence: nothing anyone has written would
+exercise it, and a feasibility study would have to construct its programs rather
+than find them. And of the families this design still argues about, the
+loop/`flow` family is the one live syntax-versus-prover choice left — the true
+residue is two claims, and the backward-transfer gap is one row rule in the
+existing vocabulary (§5.3's erratum).
+
 ## Contents
 
 1. [The principle](#1-the-principle)
@@ -1230,7 +1251,33 @@ The magnitude of the image column is 60–100 rows by the shape of [OP-6]'s `cvt
 pairs, [OP-7]'s domain prefixes and [OP-8]'s bit, shift, rotate, saturating and
 min/max rows. Most are one line; many are the explicit empty image. **This was
 not enumerated row by row by any of the three designs, and enumerating it is
-batch B1's first task and its own falsifier** (§8, F3).
+batch B1's first task and its own falsifier** (§8, F3) — an enumeration that
+must decide each row's *direction* as well as its image, per the erratum below.
+
+> **Erratum (B0 census).** The list above, and §5.1's shape argument, take the
+> image column to be **forward**: operand facts in, result facts out. Every
+> example here is forward, and §3.2's draft [ENT-3.S5] is worded that way too
+> ("entailed by that row's exact semantics from the closed state's facts over its
+> operand terms"). `CENSUS.md` §2.3 and §2.4 measure what that reaches. It
+> reaches 108 of the tree's 114 gap-stating claims — and **four real-program
+> claims it closes none of**: `percent_decode.wf:28`, `percent_decode.wf:31`,
+> `wfgrep.wf:434` and `wfgrep.wf:553` (rows T1–T4 of `CENSUS.md` §2.4). Their
+> missing fact runs **backward across a `±wrap` row**: from a fact the state
+> already carries about the row's *result* to a fact about its *operands*, across
+> `r = a ± b` with `r`, `a` and `b` distinct. Neither a DBM nor an octagon can
+> hold that equality — but nothing has to hold it. Given the no-wrap side
+> condition the state already carries (`b <= a` for a subtraction), **one backward
+> row rule, entirely inside the existing [ENT-2] vocabulary, closes all four**:
+> publish `a - b >= k` when the state carries `r >= k`, and `a != b` when it
+> carries `r != 0`. Two corrections follow, and both are applied below. First,
+> whether a row's image may run backwards is not a detail of B1's enumeration but
+> a decision it must take, so it is added to B1's scope (§8). Second, **F3 audits
+> the column for uniqueness and does not ask about direction at all** (§8.1),
+> which is amended there. What does not change: these four are a *publisher* gap,
+> not a vocabulary gap, so the ceiling argument of §5.1–§5.2 stands and the true
+> residue remains the two claims `CENSUS.md` §2.4 names. This backward rule is
+> the only fact-language work the whole corpus asks for, and three real programs
+> ask for it.
 
 ### 5.4 What the ceiling deliberately does *not* gain, and why
 
@@ -1500,14 +1547,36 @@ Tallied mechanically at `b1367c82` over `tests/conformance/cases/*.wf` and
 | "ENT does not publish a nominal payload value through borrow-mode match" and the constructor-field variant | 3 | — | **retired**: construction is a row and its image is `field = operand` |
 | "ENT does not derive the strict loop range from the equality exit and loop recurrence" and its four rewordings | 12 | `flow` | **kept** until B6 |
 | "ENT does not derive this ordinary-loop induction invariant / across the backedge" | 5 | `flow` | **kept** until B6 |
-| "ENT does not correlate the two borrowed column lengths / the two nominal field lengths" | 8 | `vocabulary` | **kept**: a relation between two independent lengths is not two-term |
+| "ENT does not correlate the two borrowed column lengths / the two nominal field lengths" | 8 | `flow` | **kept** until B6: the loop range blocks them; the length correlation itself is two-term and needs only a publisher (S6, or a `requires`) — see the erratum below |
 | "ENT does not publish the borrowed buffer length through the child call" | 2 | `flow` | **kept** |
 | "ENT does not normalize the remaining-length guard into this offset bound" | 2 | `vocabulary` | **kept**, pending review of the token |
 | "ENT does not publish an uncontracted user-call argument value into apply" | 2 | `boundary` | **verdict unchanged**: deliberate-refusal fixtures |
 | "there is no checker gap for a direct False() predicate" and siblings | 6 | — | unchanged negative fixtures |
 
-Roughly **54 of 135 claims retire**; 39 survive on `flow` until B6; the rest are
-`vocabulary`, `content` or deliberate refusals.
+Roughly **54 of 135 claims retire**; 39 mention a loop and survive on `flow`
+until B6 — the eight two-length claims among them, per the erratum below, which
+is where `CENSUS.md` §2.2 independently places them; the rest are deliberate
+`boundary` refusals, one `content` claim, and a `vocabulary` residue the census
+counts as three claims tree-wide.
+
+> **Erratum (B0 census).** The eight "two borrowed column lengths / two nominal
+> field lengths" claims were tagged `vocabulary` in the table above, with the
+> reason "a relation between two independent lengths is not two-term". **That
+> reason is false**, and `CENSUS.md` §6.3 shows why: [ENT-2] 2870(b) makes
+> `len(P)` a term and 2901 makes `t1 - t2 <= c` an atomic fact, so
+> `len(a) - len(b) <= 0` is a well-formed [ENT-2] fact, and conjoined with
+> `len(b) - len(a) <= 0` it is exactly the equality those claims want — in the
+> vocabulary the language already has. What is missing is a **publisher**: in
+> `x-struct-of-buffers-checksum-run.wf` both lengths come from
+> `buffer_new(6_u64, …)` and S6 could publish both, and in
+> `x-buffer-borrowed-columns-run.wf` the equality is a caller fact a `requires`
+> clause would publish. All eight are publisher gaps (`CENSUS.md`'s bucket P),
+> and their token is `flow` — the loop range is what actually blocks them, and
+> each gap text says so first. The row is corrected accordingly. Their fate is
+> unchanged (kept until B6), but the reason for keeping them is a missing
+> transfer, not a missing fact language, and they must not be counted toward
+> §5.2's `vocabulary` ceiling clause — which, on the census's count, holds three
+> claims in the whole tree rather than the ten this table assigned it.
 
 ### 7.5 Other derived material
 
@@ -1518,9 +1587,35 @@ Roughly **54 of 135 claims retire**; 39 survive on `flow` until B6; the rest are
   claim-free programs are unaffected, and their IR must stay byte-identical modulo
   the version banner — that is a falsifier, not a hope (§8, F7).
 - **`tests/codegen/cases/bounds/`**: 15 claims in 13 fixtures, of which 12 are
-  one-line `ieq(value, N)` drift oracles. Under the image closure most become
-  duplicates and must be re-cut to a predicate above the new ceiling, or replaced
-  by a non-claim oracle. This is real work and is easy to under-estimate.
+  one-line `ieq(value, N)` drift oracles. **All thirteen fixtures are rejected by
+  the current compiler**, so this item is not an adjustment to a working fixture
+  set: it is a rewrite of thirteen files that do not compile, each needing a
+  claim with a legal subject before any question about the new ceiling arises, or
+  replacement by a non-claim oracle. This is real work and is easy to
+  under-estimate.
+
+  > **Erratum (B0 census).** This bullet previously read "Under the image closure
+  > most become duplicates and must be re-cut to a predicate above the new
+  > ceiling", which assumes the thirteen fixtures compile at `b1367c82`. They do
+  > not. `CENSUS.md` §6.1 compiled every one: all thirteen are rejected, **all
+  > thirteen citing [CLM-1]** — the twelve masked-index drift oracles claim
+  > `ieq(value, N)` over a *direct user-call result*, publisher 2's subject
+  > matter, refused by [CLM-1] since long before v0.39, and
+  > `output-capacity-lockstep/p08` claims `False()`, which fails CLM-1 fact-free
+  > formation. Two things change. **Size**: the work is a rewrite rather than a
+  > re-cut. Each fixture's claim must first be given a subject the fixture's own
+  > text produced — under v0.39's gate and under this design's alike, since a
+  > direct call result stays `boundary` subject matter — and only then can the
+  > image closure make it a duplicate. Nothing in B1's ceiling raise moves these
+  > verdicts on its own, because [CLM-1] is judged before [CLM-2] and refuses them
+  > first. **Verification**: they cannot serve as before/after oracles for the
+  > verdict moves of §7.1, nor for F7's IR identity, because there is no compiling
+  > "before" to differ from; a rewritten fixture's first accepted compile is its
+  > own new baseline, and its drift-oracle role has to be re-established rather
+  > than preserved. B5's line "re-cut the drift oracles" should be read with
+  > that. The count is otherwise inert: `CENSUS.md` §1.2 D and §5 limitation 6
+  > exclude these 15 claims from every discharge population, so no number in §7.4
+  > or §5.3 rests on them.
 
 - **Compiler tests.** `compiler/src/semantic/tests/claim_locality.rs` holds ~130
   tests. Every test naming `DefinitionId`, `ControlAuthority`, `acquired` or a
@@ -1570,7 +1665,12 @@ the same pass, and stand up the review-trial harness (F2). Deliverable: a
 reconstruction, §3.4's write seed is unnecessary and this design changes at Q3.**
 
 **B1 — the ceiling. Large (the biggest batch; ~2 weeks).**
-Enumerate the operation table's image column row by row (§5.3, §5.5); write
+Enumerate the operation table's image column row by row **and decide each row's
+direction** (§5.3 and its erratum, §5.5) — per `CENSUS.md` §2.4 the enumeration
+must settle whether a row may publish a *backward* rule from result facts to
+operand facts, and specifically must decide the `±wrap` backward rule, which is
+the corpus's only fact-language request and closes four claims in three real
+programs; write
 [ENT-3.S5], the generalised S10, [ENT-1]'s ceiling and direction guarantee, and
 [ENT-5]'s value-commit/merge text; delete the delivery block, [GIVE-1]'s carrier
 judgment and 3009. Compiler: new `semantic/entailment/image.rs` (~700 lines,
@@ -1653,7 +1753,16 @@ image. Refutes §3.2 if any row's exact image is expressible but not unique in
 [ENT-2] and the non-uniqueness is *not* already covered by 2739's
 `bxor`/signed-normalization exclusions or 3146's two-non-constant-operand
 exclusion — i.e. if `image` turns out to be an open-ended list rather than a small
-closed one.
+closed one. **Direction (erratum, B0 census).** The audit as first written asked
+only about uniqueness. It also asks, per row, whether the row publishes a
+*backward* rule — a fact about the result establishing a fact about the operands
+across `r = a ± b` — and in particular whether `+wrap`/`-wrap` do, under the
+no-wrap side condition the state already carries. A forward-only column closes
+none of `CENSUS.md` §2.4's T1–T4, so a forward-only answer here is not a neutral
+outcome but a decision to leave four real-program claims standing. The direction
+half of F3 is refuted if the backward rule cannot be stated per row from side
+conditions already in the state — that is, if publishing it would require holding
+the three-term equality itself, which [ENT-2] cannot.
 
 **F4 — a write the kill relation misses.** Exhibit a program in which a callee's
 write reaches caller storage that [ENT-5] kill (b) does not kill. It refutes the
