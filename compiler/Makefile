@@ -108,6 +108,12 @@ COMPLETION_SOURCES := \
 COMPLETION_DEFAULT_ROUTE_SOURCES := \
 	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
 	$(COMPLETION_DIR)/bridge_default_probe.c
+# The same runtime again, with the probe that puts a refused open on every
+# route at once. Built without COMPLETION_DEFINES for the same reason as the
+# default-route probe: the schedule it is about is the shipped one.
+COMPLETION_INTERLEAVE_SOURCES := \
+	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
+	$(COMPLETION_DIR)/retirement_interleave_probe.c
 COMPLETION_CORE_READ_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -222,7 +228,8 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test
+completion-test: completion-core-read-test completion-default-route-test \
+		completion-retirement-interleave-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -278,6 +285,23 @@ completion-default-route-test:
 		-o "$(COMPLETION_TMP)/bridge-default-probe"
 	unset WF_IO_HELPERS; \
 		"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"
+
+# A refused open on every route at once, which is the one shape where a ledger
+# transition on one thread has to reach a waiter asleep somewhere else. It runs
+# at the two helper counts either side of the demand-driven pool's own decision
+# and reports its own skip where the host cannot hold the schedule still: a
+# status of 77 is that skip, and the reason is on stdout beside it.
+completion-retirement-interleave-test:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) $(COMPLETION_INTERLEAVE_SOURCES) \
+		-o "$(COMPLETION_TMP)/retirement-interleave-probe"
+	@for helpers in 1 4; do \
+		WF_IO_HELPERS=$$helpers \
+			"$(COMPLETION_TMP)/retirement-interleave-probe" \
+			"$(COMPLETION_TMP)"; \
+		status=$$?; \
+		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
+	done
 
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -429,5 +453,6 @@ completion-windows-cross:
 	completion-core-read-stress completion-core-read-tsan completion-tsan \
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
+	completion-retirement-interleave-test \
 	completion-default-route-sanitize completion-default-route-tsan \
 	completion-windows-cross
