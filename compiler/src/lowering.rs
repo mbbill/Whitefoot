@@ -1215,11 +1215,17 @@ pub struct IrCompletionPipeline {
     entry: IrBlockId,
     carrying: Vec<IrBlockId>,
     window: IrCompletionWindow,
+    slots: u64,
+    slot_index: Vec<(IrBlockId, IrValueId)>,
 }
 
 impl IrCompletionPipeline {
     /// Built by the loop judgment, which does not exist yet, and by the tests
     /// that exercise everything downstream of it.
+    ///
+    /// One slot is the descriptor a region with no ring carries: every site
+    /// owns one operation record and the storage is addressed exactly as a
+    /// function with no pipeline addresses it.
     #[cfg(test)]
     pub(crate) fn new(
         entry: IrBlockId,
@@ -1230,7 +1236,56 @@ impl IrCompletionPipeline {
             entry,
             carrying,
             window,
+            slots: 1,
+            slot_index: Vec::new(),
         }
+    }
+
+    /// The same descriptor with a ring of `slots` operation records per site,
+    /// and the parameter each block addresses its slot through.
+    #[cfg(test)]
+    pub(crate) fn with_slots(
+        entry: IrBlockId,
+        carrying: Vec<IrBlockId>,
+        window: IrCompletionWindow,
+        slots: u64,
+        slot_index: Vec<(IrBlockId, IrValueId)>,
+    ) -> Self {
+        Self {
+            entry,
+            carrying,
+            window,
+            slots,
+            slot_index,
+        }
+    }
+
+    /// How many operations of one call site the region may have in flight.
+    ///
+    /// The completion storage of each site — its token, its result slot, its
+    /// raw value and error, an open's outcome, a directory cursor's position,
+    /// an open's staged component — is this many elements rather than one, and
+    /// the element an operation owns is chosen at run time by
+    /// [`Self::slot_index`]. It is a static count because the storage is an
+    /// entry-block reservation; the runtime's window is what decides how many
+    /// of them are ever occupied, and it never exceeds this.
+    pub(crate) const fn slots(&self) -> u64 {
+        self.slots
+    }
+
+    /// The value naming the slot the completion storage addressed in this
+    /// block belongs to.
+    ///
+    /// It is one of that block's own parameters, which is what makes the
+    /// element pointer materialized inside the block dominate every use of it
+    /// without a dominance query: a parameter is the block's own phi. A block
+    /// with no entry addresses element zero, which is every block of a
+    /// one-slot region.
+    pub(crate) fn slot_index(&self, block: IrBlockId) -> Option<IrValueId> {
+        self.slot_index
+            .iter()
+            .find(|(named, _)| *named == block)
+            .map(|(_, value)| *value)
     }
 
     /// The block the window is asked in, once per loop entry.
