@@ -510,6 +510,16 @@ by exempting the carrying block from the rule.
   It is a probe rather than a harness case because it narrows its own
   `RLIMIT_NOFILE`, which the harness process cannot do without changing every
   case that runs after it.
+
+  What that skip costs is worth saying plainly: mounting an `overlayfs` needs a
+  privilege, so on a host or a job that lacks it the probe reports the skip and
+  the schedule goes untested there. On the host these counts come from it
+  passes 25 runs of 250 repetitions at one helper and 25 at four when run
+  directly, and skipped inside canonical `make check`, which is run here under
+  a wrapper that drops exactly the capabilities the mount needs. A process can
+  also mount one unprivileged inside a user namespace of its own, which this
+  kernel allows and some hardened ones refuse; that is machinery the probe does
+  not have, and adding it would trade a certain skip for an uncertain one.
 - Backend (`compiler/src/backend/tests/completion.rs`):
   `a_staged_loop_carries_completion_across_its_back_edge`,
   `the_window_fallback_is_emitted_only_where_a_module_asks_for_one`,
