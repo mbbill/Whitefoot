@@ -139,7 +139,8 @@ counted only its awards would still be offering a refused open the descriptor
 another open had already carried off. The mark that rations returns is
 therefore moved by both — an award to a waiter and a take by a satisfied open —
 never moves backwards, and never passes the count of what has actually come
-back. The Evidence section's account of the shortfall this repaired is where the schedules are.
+back. The Evidence section's account of the shortfall this repaired is
+where the schedules are.
 
 Source order gives the `Ok` to the
 first open that asks for it, so an unordered award publishes the program's one

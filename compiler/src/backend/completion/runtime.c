@@ -1545,8 +1545,10 @@ static int wf_retirement_award_locked(
  * an award, so without this the mark still offers the return that open
  * consumed to a refused one, which spends its single re-attempt on a
  * descriptor that is already gone and publishes a refusal the next close makes
- * untrue.  Measured before this: 25 lost `Ok`s in 280,000 repetitions of the
- * interleave shape, every one of them with a descriptor left over at the end.
+ * untrue.  This and the forward-only mark in `wait_begin` above are the two
+ * ways one returned descriptor could be promised twice, and both were in the
+ * one traced loss.  Together they are worth 25 lost `Ok`s in 280,000
+ * repetitions of the interleave shape before, and none in 1,920,000 after.
  *
  * `on_an_award` is the attempt a waiter makes with an award already granted to
  * it.  The mark moved when the award was granted, and moving it again here
