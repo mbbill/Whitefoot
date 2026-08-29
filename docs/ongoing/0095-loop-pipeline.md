@@ -803,9 +803,13 @@ by exempting the carrying block from the rule.
   the two revisions before the outcome-gated predicate; the failing-close shape
   at 2,000 repetitions at one and four helpers, 0 lost; the award shape — three
   refused opens racing one returned descriptor — at 1,000 repetitions at one
-  and four helpers, 1,000 owed `Ok`s of 1,000 in both with 2,994 re-attempts
-  for the 2,994 opens the host refused, against 37 and 44 `Ok`s before the
-  award was ordered; the interleave shape at 50 runs of 50 repetitions at one
+  and four helpers, 1,000 owed `Ok`s of 1,000 in both with 2,987 and 2,994
+  re-attempts for the opens the host refused, against 37 and 44 `Ok`s before the
+  award was ordered; the two scripted registration-order shapes at 200
+  repetitions at one and four helpers, the earliest-registered open the
+  publisher in all four cells; the single-thread submission-order shape at
+  1,000 repetitions at one helper, the first-submitted open the publisher in
+  all of them; the interleave shape at 50 runs of 50 repetitions at one
   and four helpers, 0 stalls and 0 losses, against 5 stalls in 20 runs at one
   helper and 19 in 20 at four at the revision before the ledger announced on
   both endpoints; and `retirement_interleave_probe` 25 runs at one and four
