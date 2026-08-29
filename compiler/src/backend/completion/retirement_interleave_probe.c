@@ -32,6 +32,20 @@
  * close is punted to a worker and the window is real.  So the probe mounts one
  * where it can, and says plainly when it cannot rather than passing quietly.
  *
+ * Two refusals are not the same question, and the probe separates them rather
+ * than counting both as a lost `Ok`.  `EMFILE` is the refusal this repetition
+ * arranged, out of the three descriptors it holds and frees; anything else —
+ * `ENFILE`, the machine's own file table, or `ENOMEM` — refuses an open that
+ * those three descriptors would have satisfied, so the repetition never asked
+ * the question and is reported as not asked and not counted.  A shortfall
+ * whose every refusal is `EMFILE` stays a hard failure, because that is the
+ * schedule this probe exists to catch.  The failure line carries what a reader
+ * needs to act on it: each open's errno, how many descriptors this runtime
+ * gave back during the repetition, how many re-attempts the ledger granted,
+ * and whether the host would still hand out a descriptor once every open had
+ * published — a shortfall with one left over is a return that this runtime
+ * awarded and no open took.
+ *
  * It carries its own watchdog: a stall here is a process that never returns,
  * and a gate that hangs reports nothing.  The watchdog prints what the ledger
  * held and leaves with a status of its own. */
@@ -75,6 +89,33 @@ static _Atomic unsigned wf_interleave_progress;
 static _Atomic int wf_interleave_finished;
 static _Atomic int wf_interleave_gate;
 static _Atomic int wf_interleave_direct_value;
+static _Atomic int wf_interleave_direct_error;
+
+/* What the repetition just run asked of the host and what it got.  A shortfall
+ * here is a defect report, and a report that says only how many opens
+ * published is not enough to act on: the reader has to be able to tell a
+ * schedule that lost a return from a host that never offered three.  Written
+ * and read on the loop's own thread, between repetitions. */
+static int wf_interleave_open_error[WF_INTERLEAVE_OPENS];
+/* The errno of a refusal the narrowed table did not cause, or zero. */
+static int wf_interleave_outside_error;
+/* Whether the host would still hand this process a descriptor once every open
+ * of the repetition had published.  A shortfall with a descriptor left over is
+ * a return this runtime awarded and no open took. */
+static int wf_interleave_left_over;
+static uint64_t wf_interleave_returns_made;
+static uint64_t wf_interleave_retries_made;
+
+/* One repetition asked the question only if every open the host refused was
+ * refused by this process's own narrowed table.  `ENFILE` is the machine's
+ * file table and `ENOMEM` is the machine's memory: both refuse an open that
+ * the three descriptors this repetition frees would otherwise have satisfied,
+ * so a repetition that meets one is a repetition whose premise did not hold,
+ * not a schedule that lost a return.  `EMFILE` is the refusal the probe
+ * arranges and the one the runtime's rule is about. */
+static int wf_interleave_outside_the_narrowed_table(int error_code) {
+    return error_code != 0 && error_code != EMFILE;
+}
 
 /* Prints where the ledger stood and leaves.  Nothing here takes a lock the
  * stalled threads could be holding. */
@@ -133,6 +174,7 @@ static void *wf_interleave_direct_open(void *context) {
         &error_code,
         &outcome
     );
+    atomic_store(&wf_interleave_direct_error, error_code);
     atomic_store(
         &wf_interleave_direct_value,
         (value >= 0 && error_code == 0 && outcome == WF_FILE_OPEN_SUCCEEDED)
@@ -190,7 +232,8 @@ static int wf_interleave_hold_the_table(
 }
 
 /* One repetition.  Returns the number of opens that succeeded, or -1 where the
- * host would not hold the shape still long enough to ask the question. */
+ * host would not hold the shape still long enough to ask the question, or -2
+ * where it refused an open for a reason this repetition did not arrange. */
 static int wf_interleave_once(void) {
     struct rlimit saved;
     int held[WF_INTERLEAVE_HELD];
@@ -204,6 +247,14 @@ static int wf_interleave_once(void) {
     unsigned outcome;
     int index;
     int succeeded = 0;
+    uint64_t returns_before = wf_completion_descriptor_returns();
+    uint64_t retries_before = wf__completion_open_exhaustion_retries();
+    wf_interleave_outside_error = 0;
+    wf_interleave_left_over = 0;
+    atomic_store(&wf_interleave_direct_error, 0);
+    for (index = 0; index < WF_INTERLEAVE_OPENS; ++index) {
+        wf_interleave_open_error[index] = 0;
+    }
     if (wf_interleave_hold_the_table(&saved, held, WF_INTERLEAVE_HELD) != 0) {
         return -1;
     }
@@ -241,6 +292,7 @@ static int wf_interleave_once(void) {
         wf__completion_file_open_join(&opens[index], &value, &error_code,
                                       &outcome);
         opened[index] = (int)value;
+        wf_interleave_open_error[index] = error_code;
         if (value >= 0 && error_code == 0
             && outcome == WF_FILE_OPEN_SUCCEEDED) {
             succeeded += 1;
@@ -258,6 +310,36 @@ static int wf_interleave_once(void) {
     value = atomic_load(&wf_interleave_direct_value);
     if (value >= 0) {
         succeeded += 1;
+    }
+    for (index = 0; index < WF_INTERLEAVE_OPENS; ++index) {
+        if (wf_interleave_outside_the_narrowed_table(
+                wf_interleave_open_error[index]
+            ) != 0) {
+            wf_interleave_outside_error = wf_interleave_open_error[index];
+        }
+    }
+    if (wf_interleave_outside_the_narrowed_table(
+            atomic_load(&wf_interleave_direct_error)
+        ) != 0) {
+        wf_interleave_outside_error = atomic_load(&wf_interleave_direct_error);
+    }
+    wf_interleave_returns_made =
+        wf_completion_descriptor_returns() - returns_before;
+    wf_interleave_retries_made =
+        wf__completion_open_exhaustion_retries() - retries_before;
+    if (succeeded < WF_INTERLEAVE_HELD && wf_interleave_outside_error == 0) {
+        /* Asked while the table is still narrow, so the answer is about the
+         * three descriptors this repetition freed and not about the host's
+         * table at large: is one of them still there for the taking after
+         * every open of this repetition has published?  If it is, a return
+         * this runtime made went to no open at all. */
+        int spare = open(wf_interleave_path, O_RDONLY);
+        if (spare >= 0) {
+            wf_interleave_left_over = 1;
+            (void)close(spare);
+        }
+    }
+    if (value >= 0) {
         (void)close((int)value);
     }
     for (index = 0; index < WF_INTERLEAVE_OPENS; ++index) {
@@ -266,7 +348,7 @@ static int wf_interleave_once(void) {
         }
     }
     (void)setrlimit(RLIMIT_NOFILE, &saved);
-    return succeeded;
+    return wf_interleave_outside_error != 0 ? -2 : succeeded;
 }
 
 /* One open and one close through the bridge, so every descriptor this runtime
@@ -371,6 +453,7 @@ int main(int argc, char **argv) {
     int repetition;
     int attempted = 0;
     int lost = 0;
+    int skipped = 0;
     int created;
 #if !defined(__linux__)
     (void)argc;
@@ -416,6 +499,19 @@ int main(int argc, char **argv) {
          ++repetition) {
         int succeeded = wf_interleave_once();
         atomic_store(&wf_interleave_progress, (unsigned)repetition + 1u);
+        if (succeeded == -2) {
+            /* The premise did not hold: an open was refused by something
+             * other than the three descriptors this repetition governs, so
+             * this repetition never asked the question.  Said out loud, and
+             * not counted either way — a host that refuses every repetition
+             * this way reaches the skip below rather than a quiet pass. */
+            skipped += 1;
+            printf("completion-retirement-interleave: repetition %d not asked:"
+                   " an open was refused with errno=%d, which is not this"
+                   " process's narrowed descriptor table\n",
+                   repetition, wf_interleave_outside_error);
+            continue;
+        }
         if (succeeded < 0) {
             continue;
         }
@@ -423,8 +519,15 @@ int main(int argc, char **argv) {
         if (succeeded < WF_INTERLEAVE_HELD) {
             lost += 1;
             printf("completion-retirement-interleave: repetition %d published"
-                   " %d of %d owed opens\n", repetition, succeeded,
-                   WF_INTERLEAVE_HELD);
+                   " %d of %d owed opens; errno=%d,%d,%d,%d direct=%d"
+                   " returned=%llu re-attempts=%llu descriptor-left-over=%d\n",
+                   repetition, succeeded, WF_INTERLEAVE_HELD,
+                   wf_interleave_open_error[0], wf_interleave_open_error[1],
+                   wf_interleave_open_error[2], wf_interleave_open_error[3],
+                   (int)atomic_load(&wf_interleave_direct_error),
+                   (unsigned long long)wf_interleave_returns_made,
+                   (unsigned long long)wf_interleave_retries_made,
+                   wf_interleave_left_over);
         }
     }
     atomic_store(&wf_interleave_finished, 1);
@@ -438,7 +541,8 @@ int main(int argc, char **argv) {
         return WF_INTERLEAVE_SKIP;
     }
     printf("completion-retirement-interleave: %s repetitions=%d lost=%d"
-           " helpers=%llu\n", lost == 0 ? "PASS" : "FAIL", attempted, lost,
+           " not-asked=%d helpers=%llu\n", lost == 0 ? "PASS" : "FAIL",
+           attempted, lost, skipped,
            (unsigned long long)wf__completion_target_helper_count());
     return lost == 0 ? 0 : 1;
 #endif
