@@ -139,13 +139,14 @@ depends on the selector.
 
 The first attempt deleted discharge outright, on the reasoning that a frame the
 merge's entry state already carries is excluded by `acquired` anyway. That is
-true of merges downstream of the construct and false of an enclosing loop head:
-the program embedded in `compiler/tests/programs/wide_scan.rs` holds exhaustive
-matches on `publish_all` boundary results with no escaping edge inside the
-ordinary loop `@hostile_walk`, and with those frames retained the loop head
-attributed their selection to itself and refused a claim v0.38 admitted. The
-canonical `make check` caught it, which is why this record's evidence is quoted
-from the run after the repair.
+true of merges downstream of the construct and false of an enclosing loop
+head: a construct inside a loop body adds a frame the loop's entry state does
+not carry, so `acquired` at the head reads it as the head's own selection and
+refuses a claim v0.38 admitted. The implementer's first `make check` run
+caught such a refusal and the repair followed; no artifact of that first
+failure survives, so the mechanism above, verifiable from the code, is the
+citation, and this record's evidence is quoted from the run after the
+repair.
 
 `entailment/flow.rs`'s `claim_locality_failure` loses its control-witness
 fallback and the `control_fallback` tie-break bit that existed only to let a
@@ -372,17 +373,18 @@ admits lowers to the ordinary executed check and moves no published byte.
   in the non-exhaustive cases they live longer than under v0.38, so a
   function with many boundary constructs can carry a longer frame vector,
   and `acquired` scans the held frame vector once per frame an edge
-  acquired, so its cost grows with the product of the two. The library suite and the conformance
-  adapter did not move measurably and no benchmark changed, but no dedicated
-  measurement was taken.
+  carries, so its cost grows with the product of the two. The library
+  suite and the conformance adapter did not move measurably and no
+  benchmark changed, but no dedicated measurement was taken.
 - **`DefinitionId.site` rests on unenforced preconditions.** The identity is a
   checked-statement address, sound only because the analysis is per-function,
   the checked AST outlives it, identities are compared solely between two
   reaching definitions of one component, and site 0 is reserved. Nothing in
   the type system or a test enforces those preconditions; a refactor that
   cached or compared identities across allocations could silently equate two
-  distinct definitions and drop a selector's witness. Flagged in the skeptic's report;
-  a guard (a fresh-arena identity or a debug assertion) is follow-up work.
+  distinct definitions and drop a selector's witness. Flagged in the
+  skeptic's report; a guard (a fresh-arena identity or a debug assertion)
+  is follow-up work.
 - **The rendered carrier's tie-break is unpinned.** With the control-witness
   seed gone, when two supports share the earliest boundary witness the
   carrier is now the first in support-iteration order; deterministic and
