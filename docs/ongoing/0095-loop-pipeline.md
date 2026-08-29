@@ -135,10 +135,23 @@ first open that asks for it, so an unordered award publishes the program's one
 `Ok` at the wrong call. "Earliest" is registration order into the one ledger,
 whichever route the open took: a ring entry registers where its refusal is
 reaped, an adapter open and a direct call where their own attempt was refused.
-For one program thread those are the opens in submission order, since a route
-does not reorder the refusals it reaps; a schedule that reordered them would
-award by registration order and not by source order, and this record says so
-rather than claiming an identity the ledger does not enforce.
+A waiter keeps that place for as long as it waits — running the work it owes is
+standing aside, not leaving.
+
+That is the whole of the promise, and it is written out here because the
+stronger reading of it is false and a program leaning on the stronger one would
+be leaning on nothing. Registration order is the order the host refused the
+opens, and the order the host is *asked* in is not this ledger's to decide: a
+helper pool refuses one thread's queued opens in whatever order its helpers
+reach them, and a scheduler visit deliberately takes the newest queued request
+rather than the oldest, so at zero helpers a thread draining its own queue
+attempts the last open it submitted first. Where one thread's opens are
+attempted in the order it wrote them — one helper draining the queue from the
+head, or the work a refused open runs as owed, which takes the head whichever
+thread runs it — registration order is submission order and the first open the
+thread wrote is the one that publishes the `Ok`. Across threads nothing is
+promised and nothing can be; order between threads rests on the in-order commit
+of outside-rooted writes the lowering performs, not on this ledger.
 
 Step 4 attempts rather than publishes because a descriptor can come back from
 outside this runtime: a thread of the program's own closing one while this
@@ -392,10 +405,18 @@ calls the shared inline answer, which is the bounded adapter's half, and a ring
 that counted every close it completed passes it — and the whole suite — while
 mis-accounting a return on every refused close. The second stands where only
 the ring can answer, reading the process-wide return count across a close the
-kernel performs and one it refuses. The fourth deadlock has no test of that
-kind, because the schedule needs a process that narrows its own descriptor
-table and a filesystem whose close the ring cannot run inline; it has
-`retirement_interleave_probe.c` instead, which the gate runs.
+kernel performs and one it refuses. The fourth deadlock has
+`test_a_registration_wakes_a_waiter_parked_on_the_endpoint`, which is the same
+kind and needs nothing asynchronous from the host: it narrows the descriptor
+table so the host refuses an open outright, holds one operation in the ledger
+by hand so the refused direct call parks rather than publishes, and then
+registers the second waiter from the test's own thread — the transition that
+turns the first waiter's answer into "publish" and reaches it only on the
+runtime endpoint. With `wait_begin`'s endpoint announcement removed the direct
+call never returns and the test's bound fails the run at one and four helpers;
+the shipped runtime publishes the refusal at both. `retirement_interleave_probe`
+stays beside it as the racing shape, which the gate runs where an overlay can
+be mounted.
 
 A deadlock is now a failure mode of this suite, so the harness has a watchdog:
 three hundred seconds, three orders of magnitude above what the whole suite
@@ -590,17 +611,18 @@ by exempting the carrying block from the rule.
   removed from the ring's own answer — `completion_result >= 0` deleted, which
   is byte-identical to the revision before the repair there — fails under
   `WF_REQUIRE_LINUX_IO_URING=1` on the refused close's return count, where the
-  shipped harness exits 0. That control is what the test exists for: with only
-  the ring's half removed, the harness passes 25 of 25 runs at each of zero,
-  one, two and four helpers and passes the `WF_REQUIRE_LINUX_IO_URING=1` run,
-  while mis-accounting one return per repetition of the shape that submits
-  both. The other test calls the shared inline answer directly, so it cannot
-  see the ring's.
+  shipped harness exits 0. That control is what the test exists for: before it
+  was written, a harness with only the ring's half removed passed 25 of 25 runs
+  at each of zero, one, two and four helpers and passed the
+  `WF_REQUIRE_LINUX_IO_URING=1` run, while mis-accounting one return per
+  repetition of the shape that submits both. The other test calls the shared
+  inline answer directly, so it cannot see the ring's.
   `retirement_interleave_probe`, built against the revision before the ledger
   announced on both endpoints, publishes fewer opens than source order owes in
-  1 of 12 runs at one helper and 7 of 30 at four, where the shipped runtime
-  loses none in 24 of 24; the same shape under the verifiers' own probe stops
-  the process outright, which is the failure the watchdog is for.
+  10 of 30 runs at one helper and 10 of 30 at four, where the shipped runtime
+  loses none in 25 of 25 at either count; the same shape under the verifiers'
+  own probe stops the process outright, which is the failure the watchdog is
+  for.
   `a_drain_emitted_before_the_hand_out_it_retires_is_refused` emits a module
   with the ordering check removed, and the loop's `break` exit in that module
   carries a bare `ret` with no `wf__completion_file_join` while the
@@ -650,6 +672,75 @@ by exempting the carrying block from the rule.
   refused open — and the property it was reaching for is carried by the two
   deterministic tests above. Its own comment says so.
 
+- The direct route's wait was a spin, and it was the waiting thread's own
+  announcement that made it one. A blocking direct call refused an open waits by
+  driving the engines and parking on the runtime's endpoint: it reads the wake
+  epoch, asks the ledger, and parks on that epoch while the answer is still
+  "keep waiting". Between the two reads it told the ledger it was going into the
+  engines, and that announcement moved the very epoch it was about to park on,
+  so every park returned at once. Instrumented at the park call, the revision
+  before this one turned that loop 21,255 times over four cells of the
+  interleave and cross-route shapes and reached a park with a live epoch **not
+  once** — 21,127 stale, 0 fresh. Nothing stalled and nothing was lost; it burnt
+  a core to do it, and a spin is not a wait.
+
+  What the repair is derived from rather than patched around is the
+  announcement rule, now stated in `contract.h` and at the announcement itself:
+  a transition announces where it can leave *another* waiter asleep on an answer
+  that is no longer the best one available to it, and then on both places a
+  waiter can sleep. A thread never needs to wake itself. And a transition
+  nothing sleeps through owes nothing — standing aside is one, because the
+  thread that stands aside is running rather than sleeping and comes back to the
+  ledger to answer, so every answer its absence creates is still reachable when
+  it does; the waiter its absence exists for is registered by the operation it
+  is running, after it, and reads the ledger where it registers. A waiter left
+  asleep by a silent transition is one whose answer is "something else is still
+  in flight", and that something announces when it retires.
+
+  So both halves of standing aside are silent, the epoch is read after
+  everything this thread does to the ledger and before the state it parks on,
+  and the same instrumentation at this revision counts 745 parks that slept and
+  11 that returned at once because another thread had moved the epoch, over
+  1,406 turns of the loop — fifteen times fewer turns for the same work, with 0
+  stalls and 0 losses in 50 runs of 50 repetitions at one and four helpers.
+
+- A waiter that runs the work it owes keeps its place. The bounded adapter's
+  refused open ran its queue between decisions by leaving the waiter order and
+  registering again on the way back, which put it behind every open refused
+  meanwhile — and the ledger then handed the returned descriptor to the later
+  open, exactly the defect the award order exists to prevent. On a scripted
+  shape where an adapter open registers first and a direct-route open second,
+  the later one took the descriptor in 200 runs of 200 at one helper and 195 of
+  200 at four; with the place kept it is the earlier one in 200 of 200 at both,
+  and the same shape with the registrations the other way round holds at 0 of
+  200 wrong where it was 9 and 4 wrong before.
+
+- Standing aside is now a fact about the waiter, not a count beside it, and that
+  removed a double count. A deferred operation used to be a separate tally that
+  a decision subtracted from what is in flight; a blocking direct call was both
+  a registered waiter and a deferred operation at once, so every other waiter
+  subtracted it twice and could conclude that nothing else was running while
+  something was. A waiter standing aside is now counted once, where every
+  waiter is counted, and what it gives up is the duty to publish — because the
+  operation it is running may be an open refused in its turn and registered
+  behind it, which must be able to answer rather than wait for the thread that
+  is waiting for it. What it does not give up is its claim on a returned
+  descriptor: that claim is registration order, and standing aside is not
+  leaving.
+
+- Two shapes the fifth and sixth verifications recorded as shortfalls are not
+  promises, and the record says which. `regrace` holds several descriptors,
+  submits that many opens, then submits the closes, and asks for an `Ok` from
+  every open; sequential execution runs the opens before the closes and refuses
+  every one of them, so the shape asks for more than source order produces and
+  its "shortfall" at both revisions measures nothing. `srcorder` asks a
+  different and real question — given that one of several refused opens gets the
+  descriptor, which one — and the answer is the promise stated above: at one
+  helper, where a single thread's queued opens are refused in the order it wrote
+  them, it is the first of them. Where they are not refused in that order — four
+  helpers racing, or a scheduler visit taking the newest queued request first —
+  no order is promised and none is measured.
+
 - Repetition counts. These were measured on an x86-64 Linux host (kernel 6.18,
   real io_uring, GCC 14) at **this** revision, every racy shape with its file on
   an `overlayfs` so that `IORING_OP_CLOSE` is genuinely asynchronous:
@@ -688,7 +779,8 @@ by exempting the carrying block from the rule.
   at 74 in 200 and the shipped suites do not run it; one helper matters because
   that is where three of the four missed wakes showed — one twice in four
   hundred, one once in twenty under TSan, and the fourth five times in twenty
-  runs of its own shape, where four helpers showed it nineteen times in twenty. The earlier counts in this record were measured on
+  runs of its own shape, where four helpers showed it nineteen times in
+  twenty. The earlier counts in this record were measured on
   macOS and in an aarch64 Linux container at earlier revisions; they are what
   those revisions did, and the macOS half of this revision is `io-hosts`' to
   re-measure, because the host that produced the numbers above has no macOS.
