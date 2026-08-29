@@ -4202,6 +4202,150 @@ static int test_a_returned_descriptor_is_awarded_in_waiter_order(void) {
     return 0;
 }
 
+/* A descriptor this runtime returned is promised to one open, and an open that
+ * has taken one is charged for it whether or not it ever waited.
+ *
+ * The award mark is what stops two refused opens spending their one re-attempt
+ * each on the same return.  An open whose *first* host attempt succeeds is
+ * outside that accounting entirely: it never registers as a waiter and takes no
+ * award, so the return it consumed is still on offer, and the refused open the
+ * ledger then hands it to spends its single re-attempt on a descriptor that is
+ * already gone.  Measured on the interleave shape before the charge below: 25
+ * lost `Ok`s in 280,000 repetitions, each with a descriptor left over at the
+ * end and a re-attempt count one short of every open having been refused.
+ *
+ * The schedule is scripted rather than raced for, because it is one moment
+ * between two threads — a close landing, an open taking what it returned, and a
+ * waiter asking — and no host reaches it on demand. */
+static int test_an_open_that_took_a_return_is_charged_for_it(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+
+    /* Three operations in flight: the refused open this waiter is deciding, a
+     * close that will return a descriptor, and an open on another thread whose
+     * first host attempt will take it. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The close ends, returning one — and the other open's first attempt takes
+     * it before this waiter next asks.  That open is charged for it, so what
+     * came back is spent and this waiter is not told it may have it. */
+    wf_completion_operation_retired(1);
+    wf_completion_retirement_open_took_a_descriptor(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The open that took it ends holding its descriptor, so it returns
+     * nothing.  Now nothing is left that could bring one back, and this
+     * waiter's one attempt is made here — the moment source order makes it —
+     * rather than earlier against a descriptor another open already held. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_UNREACHABLE);
+
+    wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A free that came from outside this runtime, charged to the open that took it,
+ * refuses no waiter.
+ *
+ * No ledger can see a descriptor a thread of the program's own gave back, so an
+ * open the host satisfies from one looks exactly like an open that took a
+ * return of this runtime's, and the charge falls on it either way.  That can
+ * deprive a waiter of an award it was owed, which is the adversarial schedule
+ * this stands for — and what it costs that waiter is nothing it is entitled to:
+ * being deprived is not being refused.  It keeps waiting while anything is in
+ * flight, and its one attempt is then made at the moment nothing is left that
+ * could bring a descriptor back, with the return it was deprived of still in
+ * the host's table for it to take.  Charging is bounded by the unspent returns
+ * for the same reason: past them there is nothing to deprive anyone of. */
+static int test_an_outside_free_charged_to_an_open_refuses_no_waiter(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+
+    /* Four operations in flight: the refused open this waiter is deciding, a
+     * close that returns a descriptor, an open the host satisfies from a
+     * descriptor a thread of the program's own gave back, and a read. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The close returns one, and the other open takes the outside descriptor.
+     * The ledger charges it against the return it can see, so this waiter is
+     * deprived — and kept waiting, which is the whole of what happens to it. */
+    wf_completion_operation_retired(1);
+    wf_completion_retirement_open_took_a_descriptor(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* That open ends holding its descriptor.  The read is still running and
+     * could still give one back, so this is not the moment to answer either. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The read ends returning nothing.  Nothing is left, so the deprived
+     * waiter attempts here, with the runtime's own return still unclaimed. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_UNREACHABLE);
+
+    wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* An attempt made on an award is not charged again for what the award already
+ * spent.
+ *
+ * The mark moves once per descriptor, and there are two places it can move: the
+ * decision that grants an award, and the open that takes a descriptor.  The
+ * re-attempt a waiter makes with an award in hand is both of those at once, so
+ * it says which it is; charging it twice would take a second return out of the
+ * ledger's account and refuse the next waiter the one it is owed. */
+static int test_an_awarded_attempt_is_charged_once(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Four in flight: two refused opens, and two closes that each return a
+     * descriptor — one for each of them. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+
+    /* The first close returns one, awarded to the earliest waiter, which
+     * leaves the order to spend it. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    CHECK(first.awarded != 0);
+    wf_completion_retirement_wait_end(&first);
+
+    /* The second close returns the other one while that re-attempt is being
+     * made, so there is an unspent return for a charge to take. */
+    wf_completion_operation_retired(1);
+
+    /* The re-attempt takes the descriptor it was awarded.  The mark moved when
+     * the award was granted, so this says so and moves nothing — and the
+     * return the second close made is still the second waiter's. */
+    wf_completion_retirement_open_took_a_descriptor(first.awarded);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&second);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
 /* The work a waiter owes is read where the decision is made, never handed to
  * the ledger as a reading taken before it.
  *
@@ -5388,6 +5532,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
     RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
     RUN_TEST(test_a_returned_descriptor_is_awarded_in_waiter_order());
+    RUN_TEST(test_an_open_that_took_a_return_is_charged_for_it());
+    RUN_TEST(test_an_outside_free_charged_to_an_open_refuses_no_waiter());
+    RUN_TEST(test_an_awarded_attempt_is_charged_once());
     RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
     RUN_TEST(test_a_waiter_that_stands_aside_keeps_its_claim());
     RUN_TEST(test_a_waiter_behind_one_that_stands_aside_can_answer());
