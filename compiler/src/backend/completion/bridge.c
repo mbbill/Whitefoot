@@ -1260,14 +1260,16 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
         wf_completion_retirement_defer_begin(&waiter);
         progressed = wf_bridge_progress();
         wf_completion_retirement_defer_end(&waiter);
-        /* The epoch after everything this thread does, and before the state it
-         * would park on.  A transition that lands after this read moves the
-         * epoch and the park returns at once; one that landed before it is in
-         * the state read below.  What this order rules out is the thread
-         * cancelling its own park: an announcement of its own between the two
-         * reads makes every park return immediately, which is not a wait but a
-         * spin — 21,255 turns of this loop and not one sleep, measured at the
-         * revision that announced there. */
+        /* The epoch after everything this thread does — the aside above
+         * included, which announces — and before the state it would park on.  A
+         * transition that lands after this read moves the epoch and the park
+         * returns at once; one that landed before it is in the state read
+         * below.  What this order rules out is the thread cancelling its own
+         * park: an announcement of its own between the two reads makes every
+         * park return immediately, which is not a wait but a spin.  Measured at
+         * the revision that read the epoch first, this loop never once reached
+         * a park that slept — tens of thousands of turns across runs, and zero
+         * sleeps in every one of them; here it sleeps. */
         epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
         if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
             break;

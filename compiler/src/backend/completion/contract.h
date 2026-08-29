@@ -505,22 +505,59 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * stops the process: a second waiter registering turns the first waiter's
  * answer from "keep waiting" into "publish", and a first waiter asleep on the
  * other endpoint is never told.  `wf_completion_retirement_announces_on` is how
- * the ledger is given that endpoint.  Accepting an operation, retiring one, and
- * a waiter entering or leaving the order all qualify.
+ * the ledger is given that endpoint.
  *
- * The rule is about *another* waiter, and both halves of that matter.  A thread
- * never needs to wake itself: an announcement made between the moment a thread
+ * Which transitions owe one is derived from the inputs the answer is made of,
+ * not from whichever schedule is in mind.  `AWAITED` is the only answer that
+ * sleeps, so a transition owes an announcement exactly where it can turn some
+ * *other* waiter's `AWAITED` into `HAPPENED` or `UNREACHABLE`.  Every input,
+ * what moves it, and what that movement can do:
+ *
+ *   - the return count: an operation retiring that gave a descriptor back.  It
+ *     can hand a waiter `HAPPENED`.  Announces.
+ *   - the in-flight count: accepting an operation raises it, retiring one
+ *     lowers it.  Lowering it can leave nothing in flight anywhere else and
+ *     hand a waiter `UNREACHABLE`.  Raising it only makes another waiter more
+ *     awaited and owes nothing on that account, but it announces anyway: a
+ *     request queued behind a refused open is work an engine must run before
+ *     anything can retire, and a waiter asleep on this ledger is not running
+ *     it.
+ *   - the waiter order and its count: entering and leaving.  One more waiter
+ *     is one fewer operation that can retire, and leaving hands the earliest
+ *     place, and any return that place was owed, to somebody else.  Both
+ *     announce.
+ *   - the queue a waiter owes: queueing an item raises the in-flight count in
+ *     the same step, which announces; running one lowers the queue, which only
+ *     makes that same waiter more awaited.
+ *   - the award mark and a waiter's `awarded`: moved by an award, inside a
+ *     decision.  An award only makes another waiter less awardable, and the
+ *     mark is reset only where the order was empty, so no other waiter exists
+ *     to hear it.  Silent, and owes nothing.
+ *   - a waiter's `seen`: written before that waiter enters the order, so it is
+ *     nobody else's input yet.
+ *   - a waiter's `aside`: standing aside and coming back.  The flag is read in
+ *     one place — which waiter is the earliest *deciding* one — so what it
+ *     moves is that, for the one waiter it promotes.  Standing aside can turn
+ *     that waiter's `AWAITED` into `UNREACHABLE`, and that waiter may have
+ *     registered long before the aside began and be asleep already, so
+ *     standing aside announces: where it gives up the earliest deciding place
+ *     and the waiter it hands that place to now answers `UNREACHABLE`, and
+ *     nowhere else.  Coming back only demotes that waiter again, from
+ *     "publish" to "keep waiting", which is what a waiter asleep on that
+ *     answer is already doing; it is silent and owes nothing.
+ *
+ * The rule is about *another* waiter, and that half matters too: a thread never
+ * needs to wake itself, and an announcement made between the moment a thread
  * reads the wake epoch and the moment it parks on that epoch cancels its own
- * park, so a route that announces there does not wait, it spins — measured on
- * the direct route, 21,255 turns of its loop and not one park that slept.  And
- * a transition nothing sleeps through owes nothing: standing aside and coming
- * back are silent, because the thread that stands aside is running rather than
- * sleeping and comes back to this ledger to answer, so every answer its absence
- * creates is still reachable when it does; the waiter its absence exists for is
- * one the operation it is running registers afterwards, which reads the ledger
- * where it registers.  A waiter left asleep by a silent transition is one whose
- * answer is "something else is still in flight", and that something announces
- * when it retires.
+ * park, so a route that announces there does not wait, it spins.  Which is a
+ * property of where a route announces, not of which transitions announce: the
+ * direct route stands aside, drives the engines and comes back before it reads
+ * the epoch it parks on, so everything it says is behind that read.  At a
+ * revision that announced between the two, that route never once reached a park
+ * that slept, over tens of thousands of turns of its loop; here it sleeps.  And
+ * because an announcement is owed only where an answer becomes terminal, each
+ * one belongs to a waiter that is about to publish and leave the order — as
+ * many wakes as there are answers, never a standing exchange of them.
  *
  * This lives with the completion core because the core is the one unit every
  * target engine and the bridge link.  The bounded POSIX adapter and the Linux
@@ -655,7 +692,14 @@ void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
  * descriptor is not given up, because that claim is registration order and
  * standing aside is not leaving: the later open publishes the refusal source
  * order gives it, and the earlier one takes the descriptor when it comes back
- * to ask.  Neither call announces (`wf_completion_retirement_announces_on`). */
+ * to ask.
+ *
+ * Handing over that place is a transition another waiter can be asleep through,
+ * so standing aside announces where the waiter it promotes now answers
+ * `UNREACHABLE`, and coming back is silent — the derivation is with the rule
+ * above.  A caller that stands aside while it drives something must therefore
+ * come back before it reads the wake epoch it parks on, or it announces into
+ * its own park and spins. */
 void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter);
 void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter);
 

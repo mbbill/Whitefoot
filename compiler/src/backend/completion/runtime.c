@@ -1209,12 +1209,15 @@ void wf_completion_retirement_announces_on(wf_completion_runtime *runtime) {
  *
  * Both, and exactly where the rule in contract.h asks for it: a transition
  * announces where it can leave *another* waiter asleep on an answer that is no
- * longer the best one available to it.  A thread never needs to wake itself,
- * and this is the call that would do it — announcing between a thread's own
- * read of the wake epoch and its park on that epoch cancels the park, which
- * turns a wait into a spin.  Every caller below is therefore a transition
- * another waiter can be sleeping through, and the two that are not — standing
- * aside and coming back — do not call it.
+ * longer the best one available to it.  Which transitions those are is derived
+ * there from the inputs the answer is made of; every caller of this and of
+ * `wf_retirement_announce_on_the_endpoint` below is one of them.
+ *
+ * A thread never needs to wake itself, and this is the call that would do it —
+ * announcing between a thread's own read of the wake epoch and its park on that
+ * epoch cancels the park, which turns a wait into a spin.  That is a property
+ * of where a route announces rather than of this call, and the direct route in
+ * bridge.c is written to keep everything it says behind its own epoch read.
  *
  * The endpoint is notified after the lock is released, which is also the order
  * the park protocol needs: the ledger change is complete before the epoch that
@@ -1235,11 +1238,12 @@ static void wf_retirement_announce(void) {
     }
 }
 
-/* The endpoint half of the announcement, for the two transitions that make
- * their change and broadcast under the lock they already hold.  They are
- * transitions the rule above owes an announcement: a waiter entering or leaving
- * the order changes what every other waiter is waiting for, and one of those
- * others may be parked on the endpoint. */
+/* The endpoint half of the announcement, for the transitions that make their
+ * change and broadcast under the lock they already hold.  Each of them owes the
+ * announcement the rule above asks for: a waiter entering or leaving the order
+ * changes what every other waiter is waiting for, and a waiter standing aside
+ * hands the earliest deciding place to the next one — and any of those others
+ * may be parked on the endpoint rather than on the condition variable. */
 static void wf_retirement_announce_on_the_endpoint(void) {
     wf_completion_runtime *endpoint = atomic_load_explicit(
         &wf_retirement_endpoint,
@@ -1306,32 +1310,6 @@ void wf_completion_operation_retired(int returned_a_descriptor) {
         return;
     }
     wf_retirement_announce();
-}
-
-/* This waiter's thread has gone into another operation, and is not asking until
- * it comes back (contract.h).  Under the lock, because the decision that reads
- * the flag is made under it; silent, because nothing sleeps through it — the
- * thread that stands aside is running, and the waiter its absence exists for is
- * registered by the operation it is running, after this. */
-void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter) {
-    if (waiter == NULL) {
-        return;
-    }
-    (void)pthread_mutex_lock(&wf_retirement_lock);
-    waiter->aside = 1;
-    (void)pthread_mutex_unlock(&wf_retirement_lock);
-}
-
-void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter) {
-    /* Coming back can only turn a later waiter's answer from "publish" to
-     * "keep waiting", which is what a sleeping waiter is already doing, so no
-     * wake is owed here either. */
-    if (waiter == NULL) {
-        return;
-    }
-    (void)pthread_mutex_lock(&wf_retirement_lock);
-    waiter->aside = 0;
-    (void)pthread_mutex_unlock(&wf_retirement_lock);
 }
 
 size_t wf_completion_retirement_waiters(void) {
@@ -1614,6 +1592,66 @@ static enum wf_retirement_state wf_retirement_state_locked(
         return WF_RETIREMENT_HAPPENED;
     }
     return WF_RETIREMENT_UNREACHABLE;
+}
+
+/* This waiter's thread has gone into another operation, and is not asking until
+ * it comes back (contract.h).  Under the lock, because the decision that reads
+ * the flag is made under it.
+ *
+ * The flag is read in exactly one place — which waiter is the earliest
+ * *deciding* one — so all standing aside can move is that, and only for the one
+ * waiter it promotes.  That waiter may have registered long before this aside
+ * began and be asleep already, so this is a transition another waiter can sleep
+ * through, and it owes an announcement wherever the promotion turns that
+ * waiter's "keep waiting" into "publish".
+ *
+ * Announced there and nowhere else: this waiter held the earliest deciding
+ * place, and the waiter it hands that place to now answers `UNREACHABLE`.  A
+ * wake made anywhere else would be a wake for its own sake — two threads
+ * standing aside in turn would trade them instead of sleeping — while every
+ * wake made here belongs to a waiter that is about to publish and leave the
+ * order, so there are as many of them as there are answers. */
+void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter) {
+    wf_retirement_waiter *promoted;
+    int announce = 0;
+    if (waiter == NULL) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    promoted = (wf_retirement_earliest_deciding() == waiter) ? waiter : NULL;
+    waiter->aside = 1;
+    if (promoted != NULL) {
+        promoted = wf_retirement_earliest_deciding();
+    }
+    if (promoted != NULL
+        && wf_retirement_state_locked(
+               promoted,
+               atomic_load_explicit(
+                   &wf_retirement_returns,
+                   memory_order_seq_cst
+               ),
+               0
+           ) == WF_RETIREMENT_UNREACHABLE) {
+        announce = 1;
+        (void)pthread_cond_broadcast(&wf_retirement_signal);
+    }
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+    if (announce != 0) {
+        wf_retirement_announce_on_the_endpoint();
+    }
+}
+
+/* And back.  All this can do to the waiter the aside promoted is demote it
+ * again, from "publish" to "keep waiting" — which is what a waiter asleep on
+ * that answer is already doing.  No other waiter's answer becomes terminal
+ * here, so nothing is owed and nothing is said. */
+void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter) {
+    if (waiter == NULL) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    waiter->aside = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
 }
 
 enum wf_retirement_state wf_completion_retirement_state(
