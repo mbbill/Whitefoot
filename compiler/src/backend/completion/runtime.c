@@ -1204,10 +1204,10 @@ void wf_completion_retirement_announces_on(wf_completion_runtime *runtime) {
  *
  * The condition variable is where a waiter on the bounded adapter or the ring
  * sleeps; the endpoint above is where a waiter inside a blocking direct call
- * parks.  Both, always, because a transition that changes one waiter's answer
- * changes another's, and the two sleep in different places.
+ * parks.  Both, because a transition that changes one waiter's answer changes
+ * another's, and the two sleep in different places.
  *
- * Both, and only where the rule in contract.h asks for it: a transition
+ * Both, and exactly where the rule in contract.h asks for it: a transition
  * announces where it can leave *another* waiter asleep on an answer that is no
  * longer the best one available to it.  A thread never needs to wake itself,
  * and this is the call that would do it — announcing between a thread's own

@@ -1266,7 +1266,8 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
          * the state read below.  What this order rules out is the thread
          * cancelling its own park: an announcement of its own between the two
          * reads makes every park return immediately, which is not a wait but a
-         * spin — 44,555 turns of this loop and not one sleep, measured. */
+         * spin — 21,255 turns of this loop and not one sleep, measured at the
+         * revision that announced there. */
         epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
         if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
             break;
