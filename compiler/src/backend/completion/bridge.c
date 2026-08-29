@@ -225,6 +225,31 @@ static void wf_bridge_shutdown(void) {
     wf_bridge_ready = 0;
 }
 
+#if defined(__linux__)
+/* WF_IO_NO_NATIVE_RING: run this Linux process on the POSIX adapter route.
+ *
+ * Runtime policy of the same class as WF_IO_NOCACHE and WF_IO_HELPERS, and
+ * test-only within that class: no Whitefoot source names it, no accepted
+ * program changes meaning under it, and no byte any operation produces
+ * differs with it set.  Absent -- and any value other than the exact text "1"
+ * -- is today's behaviour exactly.
+ *
+ * It exists because the route a Linux host takes is not a choice a test can
+ * otherwise make.  A kernel with io_uring available takes every positioned
+ * read into the ring, so the adapter branch of `bridge_default_probe`'s route
+ * assertion -- the demand-driven policy declined a read, or grew a helper --
+ * cannot fire there at all, and the negative control it provides was carried
+ * by the Darwin CI host alone.  Skipping the ring init reaches the same state
+ * a kernel without io_uring reaches, which is a path the runtime already has
+ * rather than one this setting adds.
+ *
+ * It is read once, here, before the only call that starts the ring. */
+static int wf_bridge_native_ring_refused(void) {
+    const char *text = getenv("WF_IO_NO_NATIVE_RING");
+    return text != NULL && text[0] == '1' && text[1] == 0;
+}
+#endif
+
 static void wf_bridge_initialize(void) {
     wf_bridge_error = wf_completion_runtime_init(
         &wf_bridge_runtime,
@@ -235,7 +260,8 @@ static void wf_bridge_initialize(void) {
         return;
     }
 #if defined(__linux__)
-    if (wf_linux_io_uring_init(
+    if (!wf_bridge_native_ring_refused()
+        && wf_linux_io_uring_init(
             &wf_bridge_linux_adapter,
             &wf_bridge_runtime,
             wf_bridge_linux_entries,
@@ -308,27 +334,31 @@ static int wf_bridge_spin_for_completion(void) {
     uint64_t started = wf_bridge_monotonic_ns();
     uint64_t deadline;
     unsigned turn = 0;
-    /* The bound on this wait is a clock reading, so a clock this thread cannot
-     * read leaves no bound at all: every later sample answers zero and the
-     * deadline is never reached.  What an unbounded spin then costs is a
-     * property of the route the completion is coming from, and the two routes
-     * differ.
+    /* A clock this thread cannot read is bounded by the `now == 0` term of
+     * the periodic sample below, not by this early return.  That sample
+     * treats a zero reading exactly as it treats a passed deadline, so a
+     * failed clock ends the spin within 64 turns whatever happens here; this
+     * early return only skips those 64 reads of a counter the loop would have
+     * read anyway.
      *
-     * On the native ring it is the whole run.  A submitted read becomes a
-     * ready event only when `wf_bridge_progress` reaps the completion queue,
-     * and this spin never calls it, so the loop's other exit cannot fire on
-     * its own and the join never ends.  Measured with `clock_gettime` forced
-     * to fail: the Linux io_uring route makes no progress at all, while the
-     * guarded build finishes the same work in milliseconds.
+     * The term it defers to is load-bearing rather than defensive, because
+     * neither route's other exit is one this thread can cause on its own: a
+     * submitted operation becomes a ready event only when an engine moves --
+     * `wf_bridge_progress` reaping the ring or running a queued adapter
+     * entry, a helper thread publishing -- and this spin never calls the
+     * former, while the demand-driven policy often runs with no helper at
+     * all, executing declined reads inline before anything is queued.
+     * Measured on Linux with `wf_bridge_monotonic_ns` forced to answer
+     * zero, on the four-lane default probe: the shipped spin, and the spin
+     * with only this early return removed, both finish in about 110 ms;
+     * with the `now == 0` term removed as well, runs hang on BOTH routes
+     * (most of one 12-run ring sample; 2 of 44 forced-adapter runs, one
+     * self-reporting STUCK at its 180 s watchdog).  A run that finishes
+     * without the term owes it to another lane's publication or an inline
+     * decline, not to any bound; the counts above are draws, not rates.
      *
-     * On the POSIX adapter the guard is defence rather than rescue.  A helper
-     * thread publishes the completion, so the ready-event count becomes
-     * nonzero without this thread doing anything and the loop leaves by its
-     * other exit.  Measured the same way on macOS: the unguarded build
-     * finishes, at the same wall time as the guarded one.
-     *
-     * A failed clock therefore ends the spin, which costs at worst a park this
-     * thread was about to make anyway. */
+     * Leaving the spin early costs at worst a park this thread was about to
+     * make. */
     if (started == 0) {
         return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
     }

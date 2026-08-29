@@ -464,9 +464,14 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * With zero helpers, the calling thread performs the bounded typed work one
  * entry at a time until the accepted queue is empty.
  *
- * Precondition: no thread is inside `wf_file_adapter_submit` or
- * `wf_file_adapter_transfer_runs_on_caller`, and none will enter either, when
- * this is called.  That is not a caution, it is the design.
+ * Precondition: no thread is inside any entry point of this adapter, and none
+ * will enter one, when this is called.  That is not a caution, it is the
+ * design.  The entry points that take `queue_lock` behind the record's
+ * `initialized` flag -- submission, the queue readers, the cap setter, the
+ * decline check -- touch storage this call tears down.  The two described
+ * below are the two whose windows are worth spelling out -- a signal issued
+ * after the lock is released, and a lock taken after the flag was passed --
+ * not the only two a program can be inside.
  *
  * A submission announces its queue entry *after* releasing the queue lock, on
  * purpose -- signalling under the lock wakes a helper whose next act is to
@@ -474,12 +479,12 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * immediately stall it -- so between that release and that signal the
  * submitter holds no lock, and a shutdown running in the window destroys the
  * condition variable the submitter is about to signal.  The decline check is
- * named beside it because it is the other entry a delivered program reaches
- * without holding anything: it asks `wf_file_adapter_queued`, which takes the
- * queue lock, so a shutdown running in its window destroys the mutex it is
- * about to take.  Shutdown clears the record's `initialized` flag before
- * destroying either object, which is what bounds both windows to a caller
- * that had already passed the flag.
+ * described beside it because its window is the other shape: it asks
+ * `wf_file_adapter_queued`, which takes the queue lock, so a shutdown
+ * running in its window destroys the mutex it is about to take.  Shutdown
+ * clears the record's `initialized` flag before destroying either object,
+ * which is what bounds both windows to a caller that had already passed the
+ * flag.
  *
  * Closing them completely would mean either signalling under the lock, which
  * is the cost this shape exists to remove, or a second lock on the submission
