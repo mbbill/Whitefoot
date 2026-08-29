@@ -2670,8 +2670,9 @@ fn a_staged_region_reserves_one_operation_record_per_slot() {
     let staged = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
     let staged = emitted_function(&staged, "probe");
 
-    // Two sites, each with its token, its result slot, its raw value and its
-    // raw error: eight rings, and every one of them four elements wide.
+    // The body's first read is the hand-out — the second is independent work
+    // after it, and has none of its own — so one site reserves four rings,
+    // each four elements wide.
     let rings = reserved_types(staged)
         .into_iter()
         .filter(|reserved| reserved.starts_with("[4 x "))
