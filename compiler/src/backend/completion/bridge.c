@@ -230,6 +230,8 @@ static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
     }
+    /* Nothing may announce on this runtime once it is being taken down. */
+    wf_completion_retirement_announces_on(NULL);
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
         wf_bridge_file_ready = 0;
@@ -258,6 +260,13 @@ static void wf_bridge_initialize(void) {
     if (wf_bridge_error != 0) {
         return;
     }
+    /* The ledger's second endpoint.  A refused open inside a blocking direct
+     * call parks on this runtime rather than sleeping on the ledger, because
+     * it may be the only thread that can reap the completion it is waiting
+     * for; a ledger transition that never reached this endpoint would leave it
+     * parked on an answer that has already changed.  This bridge owns the
+     * runtime, so this is where the ledger is told about it. */
+    wf_completion_retirement_announces_on(&wf_bridge_runtime);
 #if defined(__linux__)
     if (wf_linux_io_uring_init(
             &wf_bridge_linux_adapter,

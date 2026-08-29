@@ -462,6 +462,32 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * the earliest of them publishes its refusal, and leaving the waiter order
  * hands that place, and the same answer, to the next one.
  *
+ * A returned descriptor is awarded in that same order.  Step 2 is what spends
+ * a refused open's one re-attempt, so two refused opens must not spend theirs
+ * on the same returned descriptor: while a waiter registered earlier is owed a
+ * re-attempt, a later one's step 2 does not fire for that return.  The
+ * earliest waiter takes it and re-attempts first, and only what it does not
+ * consume falls to the next — its re-attempt fails, or the descriptor it takes
+ * is one the kind check refuses, which disposes of it and is a return again.
+ * Source order gives the `Ok` to the first open that asks for it, so awarding
+ * a return to a later-registered open publishes the program's one `Ok` at the
+ * wrong call: on a shape whose three refused opens race one returned
+ * descriptor, an unordered award put it at the wrong one in 963 of 1000 runs.
+ * "Earliest" is registration order into this one ledger, whichever route the
+ * open took: a ring entry registers where its refusal is reaped, a bounded
+ * adapter open and a blocking direct call where their own attempt was refused.
+ * For one program thread that is the order the opens were submitted in.
+ *
+ * Every transition of this ledger that can change a waiter's answer has to
+ * reach every place a waiter can sleep, and there are two: this ledger's own
+ * condition variable, and the runtime's park endpoint, where a direct call
+ * waits because it may be the only thread that can reap the completion it is
+ * waiting for.  A transition announced on one of them only stops the process:
+ * a second waiter registering turns the first waiter's answer from "keep
+ * waiting" into "publish", and a first waiter asleep on the other endpoint is
+ * never told.  `wf_completion_retirement_announces_on` is how the ledger is
+ * given that endpoint.
+ *
  * This lives with the completion core because the core is the one unit every
  * target engine and the bridge link.  The bounded POSIX adapter and the Linux
  * ring are qualified separately and deliberately share no other code.
@@ -490,16 +516,22 @@ typedef struct wf_retirement_waiter {
      * and run it rather than sleep, and one whose caller is suspended inside
      * that work cannot run any of it, so nothing may wait for it either. */
     int runs_owed;
+    /* Whether a returned descriptor has been awarded to this waiter.  Set by
+     * the ledger when it hands one over, so the award is spent once however
+     * many times this waiter asks where it stands. */
+    int awarded;
 } wf_retirement_waiter;
 
 /* Where a refused open stands.  `AWAITED` is the only answer that means "keep
  * waiting"; the other two both end the wait with the one re-attempt, and name
  * which fact ended it. */
 enum wf_retirement_state {
-    /* A descriptor came back since the attempt: attempt again, it may take it. */
+    /* A descriptor came back since the attempt and this waiter is the one it
+     * is awarded to: attempt again, it may take it. */
     WF_RETIREMENT_HAPPENED = 0,
-    /* An operation is in flight elsewhere: it can still give a descriptor
-     * back, so this refusal is not the program's outcome yet. */
+    /* An operation is in flight elsewhere and can still give a descriptor
+     * back, so this refusal is not the program's outcome yet — or one has come
+     * back and an earlier waiter is the one it is awarded to. */
     WF_RETIREMENT_AWAITED = 1,
     /* Nothing is left that could give one back, and this is the earliest
      * waiter: no later attempt can see more than one made here. */
@@ -569,16 +601,23 @@ void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
 void wf_completion_retirement_defer_begin(void);
 void wf_completion_retirement_defer_end(void);
 
-/* Where this waiter stands, without blocking.
+/* Where this waiter stands.  It takes the ledger's lock and never sleeps
+ * under it; every caller of it is a refused open, which is the path this
+ * ledger exists for and never the ordinary one.
  *
  * "In flight *elsewhere*" is what the answer turns on, and its local half is
  * the waiter's own `owed` above: a held ring entry blocks no thread and owes
  * nothing, an adapter open that runs its own queue owes that queue and must
  * run it before it decides, and one running as owed work owes the queue its
  * suspended caller cannot reach.  The global half — every operation deferred
- * above — the ledger subtracts itself. */
+ * above — the ledger subtracts itself.
+ *
+ * This is also where a returned descriptor is awarded, which is why the
+ * waiter is not `const`: answering `HAPPENED` hands this waiter the return it
+ * is about to spend its one re-attempt on, and no other waiter may spend a
+ * re-attempt on the same one. */
 enum wf_retirement_state wf_completion_retirement_state(
-    const wf_retirement_waiter *waiter
+    wf_retirement_waiter *waiter
 );
 
 /* Sleeps until the ledger changes, rechecking the state under the same lock
@@ -587,8 +626,20 @@ enum wf_retirement_state wf_completion_retirement_state(
  * unmissable rather than merely unlikely to be missed.  Callers loop on
  * `wf_completion_retirement_state`; this never spins. */
 void wf_completion_retirement_sleep(
-    const wf_retirement_waiter *waiter
+    wf_retirement_waiter *waiter
 );
+
+/* The runtime endpoint this ledger announces its transitions on, beside its
+ * own condition variable.
+ *
+ * A waiter on the bounded adapter or the ring sleeps on the ledger; a waiter
+ * inside a blocking direct call parks on the runtime the bridge owns, because
+ * it may be the only thread that can reap the completion it is waiting for.
+ * The ledger cannot reach the second one without being told which runtime it
+ * is, and a transition that reaches only the first stops the process.  Set
+ * once, by the unit that owns that runtime, before any operation is accepted;
+ * cleared with `NULL` before the runtime is destroyed. */
+void wf_completion_retirement_announces_on(wf_completion_runtime *runtime);
 
 _Static_assert(sizeof(wf_completion_token) == 16u, "completion token ABI");
 _Static_assert(alignof(wf_completion_token) >= alignof(uint64_t), "completion token alignment");

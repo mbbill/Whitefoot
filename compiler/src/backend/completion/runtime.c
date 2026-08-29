@@ -1171,17 +1171,72 @@ static _Atomic size_t wf_retirement_in_flight;
 static _Atomic size_t wf_retirement_waiter_count;
 static _Atomic size_t wf_retirement_deferred;
 static _Atomic uint64_t wf_retirement_wait_starts;
-/* The waiter order.  Mutated only under the lock; read without it by the
- * give-up decision, which needs to know whether this waiter is the earliest
- * one and nothing more. */
+/* The waiter order.  Mutated and read under the lock, which is also where a
+ * give-up decision is made: the decision asks both whether this waiter is the
+ * earliest one and whether an earlier one is owed the descriptor that has
+ * come back, and the second question reads the order rather than its head. */
 static _Atomic(wf_retirement_waiter *) wf_retirement_first;
 static wf_retirement_waiter *wf_retirement_last;
+/* The return count as of the last descriptor awarded to a waiter.  Returns
+ * past it are unspent, and each award moves it by one, so two refused opens
+ * never spend their one re-attempt each on the same returned descriptor.
+ * Under the lock. */
+static uint64_t wf_retirement_awarded;
+/* The runtime endpoint a waiter inside a blocking direct call parks on, told
+ * to the ledger by the unit that owns it (contract.h). */
+static _Atomic(wf_completion_runtime *) wf_retirement_endpoint;
 
 uint64_t wf_completion_descriptor_returns(void) {
     return atomic_load_explicit(
         &wf_retirement_returns,
         memory_order_seq_cst
     );
+}
+
+void wf_completion_retirement_announces_on(wf_completion_runtime *runtime) {
+    atomic_store_explicit(
+        &wf_retirement_endpoint,
+        runtime,
+        memory_order_seq_cst
+    );
+}
+
+/* Tells every place a waiter can sleep that this ledger has changed.
+ *
+ * The condition variable is where a waiter on the bounded adapter or the ring
+ * sleeps; the endpoint above is where a waiter inside a blocking direct call
+ * parks.  Both, always, because a transition that changes one waiter's answer
+ * changes another's, and the two sleep in different places.
+ *
+ * The endpoint is notified after the lock is released, which is also the order
+ * the park protocol needs: the ledger change is complete before the epoch that
+ * a parking thread compares against moves, so a waiter that reads the epoch
+ * and then asks the ledger either sees this change or is woken from the park
+ * it takes. */
+static void wf_retirement_announce(void) {
+    wf_completion_runtime *endpoint;
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    (void)pthread_cond_broadcast(&wf_retirement_signal);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+    endpoint = atomic_load_explicit(
+        &wf_retirement_endpoint,
+        memory_order_seq_cst
+    );
+    if (endpoint != NULL) {
+        wf_completion_notify_capacity(endpoint);
+    }
+}
+
+/* The endpoint half of the announcement, for the two transitions that make
+ * their change and broadcast under the lock they already hold. */
+static void wf_retirement_announce_on_the_endpoint(void) {
+    wf_completion_runtime *endpoint = atomic_load_explicit(
+        &wf_retirement_endpoint,
+        memory_order_seq_cst
+    );
+    if (endpoint != NULL) {
+        wf_completion_notify_capacity(endpoint);
+    }
 }
 
 void wf_completion_operation_accepted(void) {
@@ -1201,9 +1256,7 @@ void wf_completion_operation_accepted(void) {
         ) == 0) {
         return;
     }
-    (void)pthread_mutex_lock(&wf_retirement_lock);
-    (void)pthread_cond_broadcast(&wf_retirement_signal);
-    (void)pthread_mutex_unlock(&wf_retirement_lock);
+    wf_retirement_announce();
 }
 
 void wf_completion_operation_retired(int returned_a_descriptor) {
@@ -1241,9 +1294,7 @@ void wf_completion_operation_retired(int returned_a_descriptor) {
         ) == 0) {
         return;
     }
-    (void)pthread_mutex_lock(&wf_retirement_lock);
-    (void)pthread_cond_broadcast(&wf_retirement_signal);
-    (void)pthread_mutex_unlock(&wf_retirement_lock);
+    wf_retirement_announce();
 }
 
 void wf_completion_retirement_defer_begin(void) {
@@ -1260,9 +1311,7 @@ void wf_completion_retirement_defer_begin(void) {
         ) == 0) {
         return;
     }
-    (void)pthread_mutex_lock(&wf_retirement_lock);
-    (void)pthread_cond_broadcast(&wf_retirement_signal);
-    (void)pthread_mutex_unlock(&wf_retirement_lock);
+    wf_retirement_announce();
 }
 
 void wf_completion_retirement_defer_end(void) {
@@ -1304,9 +1353,16 @@ void wf_completion_retirement_wait_begin(
     waiter->owed = owed;
     waiter->owed_context = owed_context;
     waiter->runs_owed = runs_owed;
+    waiter->awarded = 0;
     waiter->next = NULL;
     (void)pthread_mutex_lock(&wf_retirement_lock);
     if (wf_retirement_last == NULL) {
+        /* The order was empty, so this waiter opens the awarding: descriptors
+         * that came back before its own host attempt are owed to nobody, and
+         * every one that has come back since is unspent.  The mark is what
+         * rations them, never what grants one — a waiter still has to have
+         * seen the count move since its own attempt. */
+        wf_retirement_awarded = seen;
         atomic_store_explicit(
             &wf_retirement_first,
             waiter,
@@ -1327,9 +1383,12 @@ void wf_completion_retirement_wait_begin(
         memory_order_relaxed
     );
     /* One more waiter is one fewer operation that can retire, so an earlier
-     * waiter may have just become the one that must publish. */
+     * waiter may have just become the one that must publish — and an earlier
+     * waiter parked on the runtime endpoint hears nothing said here, which is
+     * why the announcement below is owed to it too. */
     (void)pthread_cond_broadcast(&wf_retirement_signal);
     (void)pthread_mutex_unlock(&wf_retirement_lock);
+    wf_retirement_announce_on_the_endpoint();
 }
 
 void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter) {
@@ -1364,10 +1423,11 @@ void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter) {
             memory_order_seq_cst
         );
     }
-    /* Leaving hands the earliest place to somebody else, whose answer may
-     * change with it. */
+    /* Leaving hands the earliest place, and any return this waiter did not
+     * take, to somebody else, whose answer may change with it. */
     (void)pthread_cond_broadcast(&wf_retirement_signal);
     (void)pthread_mutex_unlock(&wf_retirement_lock);
+    wf_retirement_announce_on_the_endpoint();
 }
 
 /* The work this waiter's own thread is answerable for, read here rather than
@@ -1390,11 +1450,67 @@ static int wf_retirement_must_run_its_own_work(
         && wf_retirement_owed(waiter) != 0;
 }
 
-/* `at_the_point` is set only where the caller holds no lock, so a test
- * standing at the schedule point may retire an operation from there. */
-static enum wf_retirement_state wf_retirement_state_now(
+/* True when a waiter registered before this one is owed a re-attempt: the
+ * return count has moved since that waiter's own host attempt.  Read under the
+ * lock, which is what makes walking the order safe — a waiter's record lives on
+ * the stack of the thread it belongs to and leaves the order when that thread
+ * answers. */
+static int wf_retirement_an_earlier_waiter_is_owed(
     const wf_retirement_waiter *waiter,
-    int at_the_point
+    uint64_t returns
+) {
+    const wf_retirement_waiter *scan = atomic_load_explicit(
+        &wf_retirement_first,
+        memory_order_seq_cst
+    );
+    while (scan != NULL && scan != waiter) {
+        if (scan->seen != returns) {
+            return 1;
+        }
+        scan = scan->next;
+    }
+    return 0;
+}
+
+/* Whether this waiter is the one a returned descriptor is awarded to, and,
+ * where `award` is set, awarding it.
+ *
+ * Three things have to hold: the count has moved since this waiter's own host
+ * attempt, so a second attempt could answer differently; a return is unspent,
+ * so this re-attempt is not the second one aimed at the same descriptor; and
+ * no waiter registered earlier is owed one, because the ledger hands a return
+ * to the earliest waiter exactly as it hands publication to the earliest.  An
+ * award already made to this waiter stands, however many times it asks. */
+static int wf_retirement_award_locked(
+    wf_retirement_waiter *waiter,
+    uint64_t returns,
+    int award
+) {
+    if (waiter->awarded != 0) {
+        return 1;
+    }
+    if (returns == waiter->seen || returns <= wf_retirement_awarded
+        || wf_retirement_an_earlier_waiter_is_owed(waiter, returns) != 0) {
+        return 0;
+    }
+    if (award != 0) {
+        wf_retirement_awarded += 1;
+        waiter->awarded = 1;
+    }
+    return 1;
+}
+
+/* Where this waiter stands, decided under the retirement lock.
+ *
+ * `returns_before` is the decision's first read of the return count.  The
+ * caller takes it before the schedule point and hands it in, so a retirement
+ * whose two halves straddle the point is still one this decision can miss with
+ * its first read and catch with its second — which is the interleaving the
+ * second read below exists for. */
+static enum wf_retirement_state wf_retirement_state_locked(
+    wf_retirement_waiter *waiter,
+    uint64_t returns_before,
+    int award
 ) {
     size_t in_flight;
     size_t idle;
@@ -1402,14 +1518,8 @@ static enum wf_retirement_state wf_retirement_state_now(
     if (waiter == NULL) {
         return WF_RETIREMENT_UNREACHABLE;
     }
-    if (atomic_load_explicit(
-            &wf_retirement_returns,
-            memory_order_seq_cst
-        ) != waiter->seen) {
+    if (wf_retirement_award_locked(waiter, returns_before, award) != 0) {
         return WF_RETIREMENT_HAPPENED;
-    }
-    if (at_the_point != 0) {
-        WF_COMPLETION_RETIREMENT_POINT();
     }
     owed = wf_retirement_owed(waiter);
     if (waiter->runs_owed != 0 && owed != 0) {
@@ -1452,29 +1562,64 @@ static enum wf_retirement_state wf_retirement_state_now(
     /* Read the return count once more.  A returning retirement whose increment
      * landed after the first read and whose in-flight decrement landed before
      * the read above is invisible to both of them, and publishing a refusal it
-     * had already answered would lose the program's `Ok`. */
-    if (atomic_load_explicit(
-            &wf_retirement_returns,
-            memory_order_seq_cst
-        ) != waiter->seen) {
+     * had already answered would lose the program's `Ok`.  This waiter is the
+     * earliest one, so no earlier waiter can be owed what it finds; a return
+     * already awarded to a waiter that has left the order to spend it is one
+     * this waiter may not take, and the operation that waiter is spending it on
+     * is in flight, so the in-flight test above is what keeps this one here. */
+    if (wf_retirement_award_locked(
+            waiter,
+            atomic_load_explicit(
+                &wf_retirement_returns,
+                memory_order_seq_cst
+            ),
+            award
+        ) != 0) {
         return WF_RETIREMENT_HAPPENED;
     }
     return WF_RETIREMENT_UNREACHABLE;
 }
 
 enum wf_retirement_state wf_completion_retirement_state(
-    const wf_retirement_waiter *waiter
+    wf_retirement_waiter *waiter
 ) {
-    return wf_retirement_state_now(waiter, 1);
+    enum wf_retirement_state state;
+    uint64_t returns_before;
+    if (waiter == NULL) {
+        return WF_RETIREMENT_UNREACHABLE;
+    }
+    /* The first of the decision's two reads of the return count, and the named
+     * point between them, are taken here rather than inside: a test standing
+     * at the point retires an operation from there, and retiring one takes the
+     * lock the rest of this decision is made under. */
+    returns_before = atomic_load_explicit(
+        &wf_retirement_returns,
+        memory_order_seq_cst
+    );
+    WF_COMPLETION_RETIREMENT_POINT();
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    state = wf_retirement_state_locked(waiter, returns_before, 1);
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+    return state;
 }
 
-void wf_completion_retirement_sleep(const wf_retirement_waiter *waiter) {
+void wf_completion_retirement_sleep(wf_retirement_waiter *waiter) {
     (void)pthread_mutex_lock(&wf_retirement_lock);
-    /* A waiter that owes work it can run itself never sleeps: the work is the
-     * answer, and the queue is read here, inside the lock a wake has to take,
-     * so an item that arrives while this thread is deciding either is seen or
-     * arrives with a wake this thread is already positioned to receive. */
-    if (wf_retirement_state_now(waiter, 0) == WF_RETIREMENT_AWAITED
+    /* The same decision the caller's loop makes, made again under the lock
+     * every wake takes, and awarding nothing: this asks only whether to sleep,
+     * and the caller's next question is the one that spends anything.  A waiter
+     * that owes work it can run itself never sleeps — the work is the answer,
+     * and the queue is read here, so an item that arrives while this thread is
+     * deciding either is seen or arrives with a wake this thread is already
+     * positioned to receive. */
+    if (wf_retirement_state_locked(
+            waiter,
+            atomic_load_explicit(
+                &wf_retirement_returns,
+                memory_order_seq_cst
+            ),
+            0
+        ) == WF_RETIREMENT_AWAITED
         && !wf_retirement_must_run_its_own_work(waiter)) {
         (void)pthread_cond_wait(&wf_retirement_signal, &wf_retirement_lock);
     }
