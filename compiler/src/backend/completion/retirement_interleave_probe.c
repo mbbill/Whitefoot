@@ -10,9 +10,12 @@
  * the runtime endpoint, because it may be the only thread that can reap the
  * completion it is waiting for.  A transition announced on one of them only
  * stops the process: measured before the ledger announced on both, this shape
- * stopped four runs in twenty at one helper, with a direct-route waiter parked
- * on an answer a second waiter had already changed, at zero CPU, for as long
- * as it was left alive.
+ * stopped five runs in twenty at one helper and nineteen in twenty at four,
+ * with a direct-route waiter parked on an answer a second waiter had already
+ * changed, at zero CPU, for as long as it was left alive.  Built against that
+ * revision this probe publishes fewer opens than source order owes as well —
+ * one run in twelve at one helper, seven in thirty at four — so it answers
+ * either way, and the watchdog is for the way that never returns.
  *
  * The shape is the smallest one that puts a waiter in both places with a
  * return to argue over: three held descriptors, three closes the host refuses
