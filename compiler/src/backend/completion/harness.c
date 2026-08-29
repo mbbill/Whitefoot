@@ -4268,6 +4268,234 @@ static int test_the_work_a_waiter_owes_is_read_where_it_decides(void) {
     return 0;
 }
 
+/* A waiter that runs the work it owes keeps its place, and with it the return
+ * that place is owed.
+ *
+ * A refused open on the bounded adapter runs its own queue before it decides,
+ * and an open among that work is one sequential execution runs after it.  A
+ * waiter that left the order to run it and registered again on the way back
+ * would return behind every open refused meanwhile, and the ledger would hand
+ * the descriptor — and with it the program's one `Ok` — to the later call: on a
+ * scripted two-waiter shape, to the later one in 200 runs of 200.
+ *
+ * So running that work costs a waiter its turn to publish and nothing else.
+ * The later open takes the refusal sequential execution gives it, which is what
+ * the second answer below is, and the descriptor stays where registration order
+ * put it. */
+static int test_a_waiter_that_stands_aside_keeps_its_claim(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Three operations in flight: the two refused opens these waiters are
+     * deciding, and one that can still give a descriptor back. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+
+    /* The earlier waiter's thread goes into another operation, and the
+     * descriptor comes back while it is there. */
+    wf_completion_retirement_defer_begin(&first);
+    wf_completion_operation_retired(1);
+    CHECK(
+        wf_completion_retirement_state(&second) == WF_RETIREMENT_UNREACHABLE
+    );
+    wf_completion_retirement_wait_end(&second);
+
+    /* It comes back to the ledger and the return is still its own. */
+    wf_completion_retirement_defer_end(&first);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    wf_completion_retirement_wait_end(&first);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A waiter parked on the runtime's endpoint is woken by a second waiter
+ * registering.
+ *
+ * The two places a refused open can sleep are this ledger's condition variable
+ * and the runtime's park endpoint, and a transition that reaches one of them
+ * stops the process at the other.  This is that transition: one more waiter is
+ * one fewer operation that can retire, so it turns the first waiter's answer
+ * from "keep waiting" into "publish" — and the first waiter is inside a
+ * blocking direct call, parked on the endpoint, where a broadcast on the
+ * condition variable is never heard.
+ *
+ * The schedule is scripted and needs nothing asynchronous from the host, which
+ * is what lets it run everywhere the harness runs rather than only where an
+ * overlay can be mounted.  The table is narrowed until the host refuses an open
+ * outright, one operation is entered in the ledger by hand so that the refused
+ * open waits instead of publishing, and the second waiter is registered from
+ * this thread once the first is in the order.  A runtime that leaves the
+ * endpoint out of that announcement parks the direct call forever; the bound
+ * below makes that a failed check rather than a hang. */
+struct wf_harness_parked_direct_open {
+    const char *path;
+    int value;
+    int error_code;
+    unsigned outcome;
+    _Atomic unsigned finished;
+};
+
+static void *wf_harness_parked_direct_open_main(void *context) {
+    struct wf_harness_parked_direct_open *call = context;
+    call->value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        call->path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &call->error_code,
+        &call->outcome
+    );
+    atomic_store_explicit(&call->finished, 1u, memory_order_seq_cst);
+    return NULL;
+}
+
+static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
+    const char *scratch_directory
+) {
+    struct wf_harness_parked_direct_open call;
+    wf_retirement_waiter second;
+    pthread_t opener;
+    struct rlimit saved;
+    char path[256];
+    int held;
+    int writer;
+    int attempt;
+    int finished = 0;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-endpoint-wake-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    /* The operation that keeps the refused open waiting.  Entered in the
+     * ledger by hand, so it belongs to no engine and blocks no thread. */
+    wf_completion_operation_accepted();
+    call.path = path;
+    call.value = 0;
+    call.error_code = 0;
+    call.outcome = WF_FILE_OPEN_SUCCEEDED;
+    atomic_store_explicit(&call.finished, 0u, memory_order_seq_cst);
+    if (pthread_create(
+            &opener,
+            NULL,
+            wf_harness_parked_direct_open_main,
+            &call
+        ) != 0) {
+        wf_completion_operation_retired(0);
+        (void)close(held);
+        (void)setrlimit(RLIMIT_NOFILE, &saved);
+        CHECK(0);
+    }
+
+    /* The first waiter is in the order and has nothing to drive, so it is
+     * parked on the endpoint. */
+    for (attempt = 0;
+         attempt < 4000 && wf_completion_retirement_waiters() == 0;
+         ++attempt) {
+        struct timespec pause;
+        pause.tv_sec = 0;
+        pause.tv_nsec = 1000L * 1000L;
+        (void)nanosleep(&pause, NULL);
+    }
+    if (wf_completion_retirement_waiters() != 0) {
+        struct timespec settle;
+        settle.tv_sec = 0;
+        settle.tv_nsec = 50L * 1000L * 1000L;
+        (void)nanosleep(&settle, NULL);
+        /* The transition.  Now every operation in flight is a waiter, so the
+         * earliest of them publishes — if it is told. */
+        wf_completion_retirement_wait_begin(
+            &second,
+            wf_completion_descriptor_returns(),
+            NULL,
+            NULL,
+            0
+        );
+        for (attempt = 0; attempt < 8000 && finished == 0; ++attempt) {
+            struct timespec pause;
+            finished = atomic_load_explicit(
+                &call.finished,
+                memory_order_seq_cst
+            ) != 0u;
+            pause.tv_sec = 0;
+            pause.tv_nsec = 1000L * 1000L;
+            (void)nanosleep(&pause, NULL);
+        }
+        wf_completion_retirement_wait_end(&second);
+    }
+    if (finished != 0) {
+        (void)pthread_join(opener, NULL);
+    }
+    wf_completion_operation_retired(0);
+    (void)close(held);
+    (void)setrlimit(RLIMIT_NOFILE, &saved);
+    (void)unlink(path);
+    CHECK(finished != 0);
+    /* And what it published is the refusal, not a descriptor it never had. */
+    CHECK(call.value < 0);
+    CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
+    return 0;
+}
+
+/* An open registered behind a waiter that stands aside can still answer.
+ *
+ * This is why standing aside gives up publishing: the operation that waiter is
+ * running can be an open that is refused in its turn and registers behind it.
+ * A ledger that made that one wait for the earliest waiter in the order would
+ * have it waiting for the thread that is waiting for it, and neither ever
+ * answers. */
+static int test_a_waiter_behind_one_that_stands_aside_can_answer(void) {
+    wf_retirement_waiter running;
+    wf_retirement_waiter behind;
+    uint64_t seen;
+
+    /* Two operations in flight, both of them refused opens: the one whose
+     * thread went on to run the other, and the other. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&running, seen, NULL, NULL, 0);
+    wf_completion_retirement_defer_begin(&running);
+    wf_completion_retirement_wait_begin(&behind, seen, NULL, NULL, 0);
+
+    CHECK(
+        wf_completion_retirement_state(&behind) == WF_RETIREMENT_UNREACHABLE
+    );
+    wf_completion_retirement_wait_end(&behind);
+    wf_completion_operation_retired(0);
+
+    wf_completion_retirement_defer_end(&running);
+    CHECK(
+        wf_completion_retirement_state(&running) == WF_RETIREMENT_UNREACHABLE
+    );
+    wf_completion_retirement_wait_end(&running);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
 /* A refused open must see an operation in flight on the *other* engine.
  *
  * This is the shape a program reaches without writing anything unusual: a read
@@ -5010,6 +5238,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
     RUN_TEST(test_a_returned_descriptor_is_awarded_in_waiter_order());
     RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
+    RUN_TEST(test_a_waiter_that_stands_aside_keeps_its_claim());
+    RUN_TEST(test_a_waiter_behind_one_that_stands_aside_can_answer());
+    RUN_TEST(
+        test_a_registration_wakes_a_waiter_parked_on_the_endpoint(argv[1])
+    );
     RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
     RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
     RUN_TEST(test_bridge_every_record_holding_a_refused_open_publishes(argv[1]));
