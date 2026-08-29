@@ -674,25 +674,32 @@ section.
 
 ## What the Stage B verifiers established beyond the range
 
-Artifact paths below are relative to this host's scratch root
-`/tmp/claude-0/-home-user-Whitefoot/6a4209eb-2cad-5504-9f06-67307ee32037/scratchpad/`,
-written as `.../`; they are off-repository working evidence, so a reader
-without this host has the reproduction recipe rather than the files.
+The artifacts named below are off-repository working evidence, written to a
+scratch directory on the host that ran the verification and cited here by bare
+filename. A reader elsewhere has the reproduction recipe rather than the files.
 
 The branch's adversarial verifier went over `b750a435` after it was written,
 against the branch's own pre-ring compiler at `cf60e5e3` and against `main` at
 `10b76c66`. It confirmed the range's central claim — 2,520 compilations of 630
-sources in four modes, 1,076 emitted modules, `differ=0`, and 234 executions
-across `WF_WORKERS` × `WF_IO_HELPERS` with identical output per program
-(`.../wf-0095-verify/B-skeptic/NOTES.md`, `run/oracle-C.log`, `run/matrix.log`,
-`run/matrix2.log`). It also established four things the record above did not
-say, and the driver work inherits every one of them.
+sources in four modes, 1,076 emitted modules, `differ=0`, and 270 recorded
+executions across `WF_WORKERS` × `WF_IO_HELPERS`. The 270 are what the logs
+hold: 30 rows of nine md5 cells each, `matrix.log` 22 × 9 and `matrix2.log`
+8 × 9. The distinct-row count is 26 — 13 programs × {overlap,
+`--no-overlap`}, the 234 the verifier's own NOTES quote — and the four extra
+rows are `p06` and its `--no-overlap` twin re-run under two descriptor limits,
+one of them the limit `matrix.log` had already used. Identity is *within* a
+row: all nine cells of every row agree, while the two `p06` rows taken at the
+same descriptor limit in the two logs do not agree with each other, so what the
+matrix establishes is invariance across the environment within a run, not a
+fixed output for `p06` across runs (the verifier's `NOTES.md`,
+`oracle-C.log`, `matrix.log`, `matrix2.log`). It also established four things the record above did not say,
+and the driver work inherits every one of them.
 
 **a. Every staged module the test helper emits fails LLVM verification.** Not
 the ring's doing and not a regression: reproduced here at `b750a435` by dumping
 what the shipped `emit_a_ring` produces and running `llvm-as` over it
-(`.../wf-0095-scratch/r12/r12-staged-4.ll`, `r12-staged-1.ll`, and the
-`*.llvm-as.log` beside each). Both fail with the same ten errors — nine
+(`r12-staged-4.ll`, `r12-staged-1.ll`, and the `*.llvm-as.log` beside each).
+Both fail with the same ten errors — nine
 `instruction does not dominate all uses`, six of them for the completion join's
 result phi `%v24` and three for per-operation facts held as SSA names, plus one
 `PHI node entries do not match predecessors` — because the carrying block
@@ -704,7 +711,7 @@ unstaged probe from the same source verifies cleanly (`llvm-as` exit 0 over
 `r12-unstaged.ll`),
 and the one-slot staged module is byte-identical to the pre-ring compiler's
 (`md5 7c12419bc658f97f17461eb7b43eb03d`, the same bytes as the verifier's
-`B-skeptic/run/dump/prering-staged.ll` built at `cf60e5e3`). So this is a
+`prering-staged.ll` built at `cf60e5e3`). So this is a
 section-4 staged-join defect that the ring probe is the first to expose, and
 nothing in the compiler checks that a descriptor it accepts emits a module that
 verifies. The driver cannot be run until the deferred join is placed where its
@@ -724,12 +731,17 @@ proof that the index it threads never reaches K.
 **c. Per-operation facts held as SSA names are not ringed.** The ring covers
 the storage a target writes through — token, result slot, raw value and error,
 open outcome, directory position, the open's staged component. It does not
-cover the facts the emitter keeps as SSA values across the same span: the
-submitted `i1`, and the `Transfer` and `DirectoryNext` start and extent. Under
-a driver that retires in a block other than the one that submitted, those names
-cannot dominate their uses; three of the ten verifier errors above are exactly
-that shape — the submitted phi `%t38`, and `%v22` and `%t29` reaching
-`@wf.sys.read.completion` — against six for the join's own result phi.
+cover the facts the emitter keeps as SSA values across the same span, and that
+list is exhaustive: the submitted `i1`
+(`compiler/src/backend/emitter/completion.rs:84`), the `Transfer` start and
+extent, and the `DirectoryNext` destination, start and extent (`:118-131`, the
+destination at `:126-130`). Under a driver that retires in a block other than
+the one that submitted, those names cannot dominate their uses; three of the
+ten verifier errors above are exactly that shape — in the four-slot module
+`r12-staged-4.ll` the submitted phi `%t38`, and `%v22` and `%t29` reaching
+`@wf.sys.read.completion`, which in the one-slot `r12-staged-1.ll` are the same
+three errors naming `%t40`, `%v22` and `%t31`; the shape is identical in
+both — against six for the join's own result phi.
 
 **d. The submitted open's staged-component ring has no test.** Section 5 above
 asserts that the component buffer is a ring because the adapter's copy happens

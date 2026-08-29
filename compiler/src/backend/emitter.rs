@@ -88,13 +88,17 @@ pub enum BackendFailure {
     /// A staged loop pipeline's ring cannot be addressed by the blocks that
     /// reach it. Exactly three descriptors raise this: a ring with no slots at
     /// all; a slot a block names that is not a `u64` *value of the function*;
-    /// and a block that reaches completion storage — reserving a ring or
-    /// addressing an element — while naming no slot, which is refused rather
-    /// than handed element zero, since that is the silent sharing the ring
-    /// exists to prevent. Nothing else is checked. In particular the value's
-    /// *dominance* over the block naming it, and its *range* against the ring
-    /// width, are trusted exactly as every other operand this emitter renders
-    /// is trusted: a driver threads the slot along the edges into its region
+    /// and, with a ring in force — a descriptor of more than one slot — a
+    /// block that reaches completion storage while naming no slot: the
+    /// reservation refuses the *carrying* block that starts an operation, and
+    /// the element pointer refuses whichever block addresses that ring, rather
+    /// than handing back element zero, since that is the silent sharing the
+    /// ring exists to prevent. With a one-slot descriptor there is no ring
+    /// element at all and a missing slot is refused nowhere. Nothing else is
+    /// checked. In particular the value's *dominance* over the block naming
+    /// it, and its *range* against the ring width, are trusted exactly as
+    /// every other operand this emitter renders is trusted: a driver threads
+    /// the slot along the edges into its region
     /// and owes the range a static refusal or a proof of its own. Like the two
     /// refusals above this is an emitter capability limit rather than a
     /// source-language rejection; it cites no language rule [DIAG-1].
@@ -977,8 +981,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     /// Refuses a ring whose slots cannot be addressed where they are used.
     ///
-    /// Two things have to hold, and between them they are the whole of what
-    /// makes a run-time-chosen element safe.
+    /// Two things have to hold here. They are not between them the whole of
+    /// what makes a run-time-chosen element safe: the slot's *range* against
+    /// the ring width is a third thing, and it is trusted rather than checked.
     ///
     /// A ring has at least one element. A descriptor claiming none would
     /// reserve a zero-length array and index into it.
@@ -988,10 +993,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// `getelementptr` the block emits, so a name of the wrong width, or of no
     /// value at all, is a module that does not verify; that is refused here
     /// rather than left to a linker. Whether the value *dominates* the block
-    /// naming it is trusted exactly as every other operand this emitter
-    /// renders is trusted — a driver threads the slot along the edges into its
-    /// region, so the value reaching a carrying block is the loop-carried
-    /// parameter that dominates it.
+    /// naming it, and whether it is *in range* of the ring, are trusted
+    /// exactly as every other operand this emitter renders is trusted — a
+    /// driver threads the slot along the edges into its region, so the value
+    /// reaching a carrying block is the loop-carried parameter that dominates
+    /// it, and the driver owes the range a static refusal or a proof of its
+    /// own. An out-of-range slot is an out-of-range `getelementptr inbounds`
+    /// whose pointer is handed to the runtime as an address it writes through.
     ///
     /// What is deliberately *not* checked here is which blocks must name a
     /// slot. A carrying block that starts no operation and retires none needs

@@ -2527,11 +2527,14 @@ fn the_block_that_submits(module: &str) -> crate::IrBlockId {
 /// block that dominates it, which is where a driver's loop-carried slot would
 /// live.
 ///
-/// Be exact about what that resolves to here. The only such parameter this
-/// probe has is the loop header's carried copy of the caller's `rounds`
-/// argument, which the loop threads around its back edge unchanged. The slot
-/// these tests hand the emitter is therefore a caller-supplied, loop-invariant
-/// `u64`, not an index that advances with the iteration; it exercises the
+/// Be exact about what that resolves to here. The probe's loop header is the
+/// first dominator that is not the entry, and it carries six parameters, five
+/// of them `u64`: the carried copy of the caller's `rounds` argument, the
+/// running total, and the loop's index and its bounds. This helper takes the
+/// first `u64` parameter of that header, which is the carried copy of
+/// `rounds`, threaded around the back edge unchanged. The slot these tests
+/// hand the emitter is therefore a caller-supplied, loop-invariant `u64`,
+/// not an index that advances with the iteration; it exercises the
 /// addressing such an index would take, and nothing more.
 fn a_slot_index_for(function: &crate::IrFunction, block: crate::IrBlockId) -> crate::IrValueId {
     let u64_type = crate::IrType::Integer {
