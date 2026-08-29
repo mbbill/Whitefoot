@@ -381,6 +381,7 @@ so are the third exit, the deadlocks and the moment the queue is read:
 `test_a_retirement_between_the_ledger_reads_is_not_missed`,
 `test_the_work_a_waiter_owes_is_read_where_it_decides`,
 `test_an_ending_that_returns_nothing_grants_no_reattempt`,
+`test_a_returned_descriptor_is_awarded_in_waiter_order`,
 `test_descriptor_return_follows_the_outcome`,
 `test_a_ring_close_counts_a_return_only_when_it_ran` and
 `test_bridge_every_record_holding_a_refused_open_publishes`.
@@ -566,6 +567,11 @@ by exempting the carrying block from the rule.
   because the kernel is free to run the submitted close before the open, in
   which case the open is never refused and the old code has nothing to get
   wrong.
+  `test_a_returned_descriptor_is_awarded_in_waiter_order`, with the award's
+  order and its ration removed so that a return that has come back answers
+  every waiter, fails on the first thing it asks of the second waiter: that
+  waiter answers `HAPPENED` for a descriptor owed to the one registered before
+  it, which is the state that sends both to the host for the same descriptor.
   `test_descriptor_return_follows_the_outcome`, with the close's outcome
   removed from the shared predicate so that every close answers yes, fails on
   its second assertion: a close the host refused with `EBADF` answers that a

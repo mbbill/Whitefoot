@@ -4147,6 +4147,61 @@ static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
     return 0;
 }
 
+/* A returned descriptor goes to the waiter that registered first, and only to
+ * that one.
+ *
+ * Two refused opens waiting, one descriptor coming back, and one re-attempt
+ * each: if both are told a descriptor came back, both spend their re-attempt on
+ * it, one of them takes it and the other publishes a refusal it had a claim on.
+ * Which one takes it is then whichever reaches the host first, and source order
+ * says it is the first open that asked. Measured on the racing shape, the
+ * unordered award published the `Ok` at the wrong call in 963 of 1,000 runs.
+ *
+ * The schedule is scripted rather than raced for, because the rule is about
+ * which waiter is told, not about who wins a race: the second waiter keeps
+ * waiting while the first is owed, and what the first does not consume — here,
+ * a descriptor its re-attempt takes and the kind check disposes of, which is a
+ * return again — falls to the next. */
+static int test_a_returned_descriptor_is_awarded_in_waiter_order(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Four operations in flight: the two refused opens these waiters are
+     * deciding, and two others that can still give a descriptor back. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_AWAITED);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+
+    /* One descriptor comes back.  It is owed to the waiter that registered
+     * first, and the later one may not spend its one re-attempt on it. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    /* Asking again awards nothing a second time. */
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+
+    /* The first waiter leaves to spend it, and its re-attempt takes the
+     * descriptor and gives it straight back — the kind check refused it — so
+     * a return falls to the next waiter, which is now the earliest. */
+    wf_completion_retirement_wait_end(&first);
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&second);
+    /* The second waiter's own refused open, and the operation that never
+     * returned anything: neither of them returns one. */
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
 /* The work a waiter owes is read where the decision is made, never handed to
  * the ledger as a reading taken before it.
  *
@@ -4953,6 +5008,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_bridge_open_behind_a_submitted_close_succeeds(argv[1]));
     RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
     RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
+    RUN_TEST(test_a_returned_descriptor_is_awarded_in_waiter_order());
     RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
     RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
     RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
