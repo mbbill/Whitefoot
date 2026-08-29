@@ -773,11 +773,17 @@ by exempting the carrying block from the rule.
   every one of them, so the shape asks for more than source order produces and
   its "shortfall" at both revisions measures nothing. `srcorder` asks a
   different and real question — given that one of several refused opens gets the
-  descriptor, which one — and the answer is the promise stated above: at one
-  helper, where a single thread's queued opens are refused in the order it wrote
-  them, it is the first of them. Where they are not refused in that order — four
-  helpers racing, or a scheduler visit taking the newest queued request first —
-  no order is promised and none is measured.
+  descriptor, which one — and the answer is the promise stated above. At one
+  helper, where a single thread's queued opens are refused from the head in the
+  order it wrote them, it is the first of them in 1,000 runs of 1,000, with both
+  waiters in the order together every time; at the revision before this one the
+  two never coexisted at all in those 1,000 runs, because the first left the
+  order before the second could register, so the shape had nothing to measure.
+  Where the opens are not refused in the order they were written — four helpers
+  racing for the queue, or a scheduler visit taking the newest queued request
+  first — no order is promised, and none holds: at four helpers the publisher is
+  a later-submitted open in 198 runs of 200, because the ledger honours the
+  order the host refused them in and that is what the helpers decided.
 
 - Repetition counts. These were measured on an x86-64 Linux host (kernel 6.18,
   real io_uring, GCC 14) at **this** revision, every racy shape with its file on

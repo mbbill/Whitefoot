@@ -459,8 +459,8 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  *
  * Waiting is safe because it terminates: a waiter counts itself out of "in
  * flight anywhere else", so when every operation still in flight is a waiter
- * the earliest of them publishes its refusal, and leaving the waiter order
- * hands that place, and the same answer, to the next one.
+ * the earliest of them that is asking publishes its refusal, and leaving the
+ * waiter order hands that place, and the same answer, to the next one.
  *
  * A returned descriptor is awarded in that same order.  Step 2 is what spends
  * a refused open's one re-attempt, so two refused opens must not spend theirs
@@ -481,14 +481,18 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * refusal is reaped, a bounded adapter open and a blocking direct call where
  * their own attempt was refused.  A waiter keeps that place for as long as it
  * waits — running the work it owes does not surrender it, which is why standing
- * aside is not leaving.  So for a thread that performs its own attempts, the
- * opens it wrote are refused in source order, registered in that order and
- * awarded in that order: the first open it wrote is the one that publishes the
- * `Ok`, and a refused open it runs as owed work behind that one takes the
- * refusal that sequential execution gives it.  Across threads nothing is
- * promised and nothing can be — two threads' opens register in whatever order
- * the host refuses them, and a helper pool refuses one thread's queued opens in
- * whatever order its helpers reach them.  Order between threads is not this
+ * aside is not leaving.  What is *not* promised is the order the host is asked
+ * in, which belongs to the queue rather than to this ledger: a helper pool
+ * refuses one thread's queued opens in whatever order its helpers reach them,
+ * and a scheduler visit deliberately takes the newest queued request rather
+ * than the oldest.  Where one thread's opens are attempted in the order it
+ * wrote them — a helper draining the queue from the head, or the work a refused
+ * open runs as owed, which takes the head whichever thread runs it —
+ * registration order is submission order, and the first open the thread wrote
+ * is the one that publishes the `Ok` while a refused open it runs behind that
+ * one takes the refusal sequential execution gives it.  Across threads nothing
+ * is promised and nothing can be — two threads' opens register in whatever
+ * order the host refuses them.  Order between threads is not this
  * ledger's to keep: it rests on the in-order commit of outside-rooted writes
  * the lowering performs, and a program that needs one open before another needs
  * them ordered there.
@@ -508,7 +512,7 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * never needs to wake itself: an announcement made between the moment a thread
  * reads the wake epoch and the moment it parks on that epoch cancels its own
  * park, so a route that announces there does not wait, it spins — measured on
- * the direct route, 44,555 turns of its loop and not one park that slept.  And
+ * the direct route, 21,255 turns of its loop and not one park that slept.  And
  * a transition nothing sleeps through owes nothing: standing aside and coming
  * back are silent, because the thread that stands aside is running rather than
  * sleeping and comes back to this ledger to answer, so every answer its absence
