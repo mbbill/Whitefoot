@@ -572,8 +572,9 @@ by exempting the carrying block from the rule.
   over 220,000 repetitions at this revision, loaded beside a looping
   thread-sanitizer harness and unloaded, 24 repetitions lost an owed `Ok`, and
   every one of them has the same shape. All three closes ran and the ledger
-  counted exactly three descriptors back (0 repetitions in 180,000 counted
-  anything else). Every refusal was `EMFILE`, from this process's own narrowed
+  counted exactly three descriptors back (0 repetitions in the 120,000 that
+  counted the delta saw anything else). Every refusal was `EMFILE`, from this
+  process's own narrowed
   table, never `ENFILE`. The machine's file table stood between 97 and 153 open
   files of 1,644,353 at each loss. And an open made with the table still
   narrowed, the instant every publication was in, succeeded in every one of
@@ -592,10 +593,10 @@ by exempting the carrying block from the rule.
   descriptor is left with no open to claim it. The measurement says the same
   thing from outside: in the repetitions where every one of the five opens is
   refused before any close lands — five re-attempts, so no open outside the
-  award system — not one loss has ever been recorded, though those are about a
-  quarter of all repetitions under load; all 18 losses whose re-attempt count
-  was recorded had four or fewer, which is exactly the shape in which an open
-  took a descriptor without becoming a waiter.
+  award system — not one loss has ever been recorded, though under load those
+  are about half of all repetitions; all 18 losses whose re-attempt count was
+  recorded had four or fewer, which is exactly the shape in which an open took
+  a descriptor without becoming a waiter.
 
   It is older than the aside work in this batch: the revision before the aside
   announced loses it too (2 runs in 800 at round 8), a build of this revision
