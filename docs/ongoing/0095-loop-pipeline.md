@@ -608,6 +608,16 @@ renders: a driver threads the slot along the edges into its region, so the
 value reaching a carrying block is the loop-carried parameter that dominates
 it.
 
+One consequence is worth stating before Stage B trips over it. A block
+retires with the one index it names, so a drain retires *one* element of each
+site's ring, not all K. That is exact for every descriptor reachable today —
+the straight-line walk admits at most one live hand-out per site, so a drain
+holds at most one operation per site — and it is not what §3.7's exit does,
+which retires slots j < i in index order. The driver therefore owes the exit an
+explicit per-slot retirement, whether unrolled or as a loop that carries the
+index it is retiring; it cannot get there by handing a single drain block a
+window of K and expecting one index to address them all.
+
 And one slot is not a special case that has to be written twice. A site outside
 a carrying region, and every site of a one-slot region, reserves one record and
 names it directly, which is what this emitter has always done — so a module
