@@ -1129,10 +1129,11 @@ int wf_linux_io_uring_progress(
 
     first_error = wf_linux_kick(adapter);
     (void)pthread_mutex_lock(&adapter->completion_lock);
-    /* Settle held opens before this pass can sleep.  One whose gate has
-     * opened is re-attempted now, so its SQE reaches the kernel before the
-     * wait below; one that nothing can release is answered now, so no thread
-     * waits for a completion that cannot arrive. */
+    /* Settle held opens before this pass can sleep.  One whose gate has opened
+     * is re-attempted now, and so is one that nothing is left to release —
+     * that is the rule's fourth step — so either way its SQE reaches the
+     * kernel before the wait below and no thread waits for a completion the
+     * kernel has not been asked to produce. */
     wf_linux_resolve_retry_held_locked(adapter, &first_error, &restaged);
     head = wf_linux_load_relaxed(adapter->completion_head);
     tail = wf_linux_load_acquire(adapter->completion_tail);
