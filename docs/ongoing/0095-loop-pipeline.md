@@ -181,17 +181,19 @@ counts were taken on; the runners are what measure it.
 Waiting terminates because a waiter counts itself out of "in flight anywhere
 else": when every operation still in flight is a waiter, the earliest of them
 answers, and leaving the waiter order hands that place, and the same answer, to
-the next one. Two more things are counted out alongside the waiters, and
-both are the same fact — an operation nobody may wait for, because waiting for
-it would be waiting for the waiter. One is local: the operations this waiter's
+the next one. One more thing is counted out alongside the waiters, and it is
+the same fact — an operation nobody may wait for, because waiting for it would
+be waiting for the waiter. It is local: the operations this waiter's
 own thread would have to run itself, which is the queue a drained sibling's
 suspended caller still owes and is nothing at all for a held ring entry, since
 that blocks no thread. The ledger asks the engine for that queue where it
 decides, inside the lock every wake takes, instead of being handed a reading of
 it taken earlier; the queue is a live fact, and a decision made on a stale
-reading of it is the third deadlock recorded below. The other is about the
-waiter itself: one whose thread has gone into another operation *stands aside*
-for as long as it is there. It stays a registered waiter, because its operation
+reading of it is the third deadlock recorded below. A second fact about a
+waiter is *not* counted out, and the bullet below records why it once was and
+what the double count cost: one whose thread has gone into another
+operation *stands aside* for as long as it is there. It stays a registered
+waiter, because its operation
 still cannot retire and that is what a registered waiter says; what it gives up
 is the duty to publish, because the operation it is running may be an open
 refused in its turn and registered behind it, which must be able to answer
@@ -217,12 +219,15 @@ Waiters therefore sleep in two different places, and that is a fact about the
 ledger rather than about a route: a transition announces where it can leave
 *another* waiter asleep on an answer that is no longer the best one available
 to it — an operation accepted, an operation retired, a waiter registering, a
-waiter leaving — and then in both places, on the ledger's own condition
-variable and on the runtime endpoint. A thread never needs to wake itself, and
-standing aside and coming back are silent: the thread that stands aside is
-running rather than sleeping and comes back here to answer, and the waiter its
-absence exists for registers afterwards and reads the ledger where it
-registers. The ledger is given that
+waiter leaving, and a waiter standing aside where the place it gives up leaves
+the next waiter with a terminal answer — and then in both places, on the
+ledger's own condition variable and on the runtime endpoint. Which transitions
+those are is derived in `contract.h` from the inputs the answer is made of, and
+the derivation is worth reading rather than the list: a rule narrated from one
+schedule got standing aside wrong, and the bullet on the direct route's spin
+records how. Coming back from an aside is the one movement of those inputs that
+can only make another waiter's answer *less* final, so it is silent, and a
+thread never needs to wake itself. The ledger is given that
 endpoint by the unit that owns the runtime, which is the bridge, and clears it
 before the runtime is destroyed. A transition announced in one place only is a
 stopped process, not a slow one, and it is recorded below as the fourth
@@ -397,7 +402,8 @@ host.
   now; the shape is a probe of its own where an overlay can be mounted, and
   `test_a_registration_wakes_a_waiter_parked_on_the_endpoint` is the same
   schedule scripted, with nothing asynchronous in it, which the gate runs
-  everywhere.
+  everywhere. Standing aside is a fifth transition of the same kind and was
+  found silent a round later; it is scripted the same way, beside that one.
 
 Each of the three routes is covered by a test that fails without the fix, and
 so are the third exit, the deadlocks and the moment the queue is read:
@@ -431,9 +437,15 @@ registers the second waiter from the test's own thread — the transition that
 turns the first waiter's answer into "publish" and reaches it only on the
 runtime endpoint. With `wait_begin`'s endpoint announcement removed the direct
 call never returns and the test's bound fails the run at one and four helpers;
-the shipped runtime publishes the refusal at both. `retirement_interleave_probe`
-stays beside it as the racing shape, which the gate runs where an overlay can
-be mounted.
+the shipped runtime publishes the refusal at both.
+`test_standing_aside_wakes_a_waiter_parked_on_the_endpoint` is the same
+schedule with the other transition: the waiter that stands aside registers
+*first*, the direct call parks behind it, and the aside is what hands the
+parked call the earliest deciding place. With the aside's announcement removed
+the direct call never returns and that test's bound fails the run, while the
+registration test beside it still passes — which is how the two separate.
+`retirement_interleave_probe` stays beside them as the racing shape, which the
+gate runs where an overlay can be mounted.
 
 A deadlock is now a failure mode of this suite, so the harness has a watchdog:
 three hundred seconds, three orders of magnitude above what the whole suite
@@ -707,31 +719,60 @@ by exempting the carrying block from the rule.
   epoch, asks the ledger, and parks on that epoch while the answer is still
   "keep waiting". Between the two reads it told the ledger it was going into the
   engines, and that announcement moved the very epoch it was about to park on,
-  so every park returned at once. Instrumented at the park call, the revision
-  before this one turned that loop 21,255 times over four cells of the
-  interleave and cross-route shapes and reached a park with a live epoch **not
-  once** — 21,127 stale, 0 fresh. Nothing stalled and nothing was lost; it burnt
-  a core to do it, and a spin is not a wait.
+  so every park returned at once. Instrumented at the park call over four cells
+  of the interleave and cross-route shapes, the revision before this one reached
+  a park with a live epoch **not once**: 0 fresh in every run, and every turn of
+  the loop stale. How many turns is a draw and varies by an order of magnitude
+  between runs — 21,255, 44,005, 91,900 and 186,692 on the same four cells, and
+  17,987 on the smaller sweep quoted below — so no count here is a fixed
+  quantity; the fixed thing is the zero. Nothing stalled and nothing was lost;
+  it burnt a core to do it, and a spin is not a wait.
 
   What the repair is derived from rather than patched around is the
   announcement rule, now stated in `contract.h` and at the announcement itself:
   a transition announces where it can leave *another* waiter asleep on an answer
   that is no longer the best one available to it, and then on both places a
-  waiter can sleep. A thread never needs to wake itself. And a transition
-  nothing sleeps through owes nothing — standing aside is one, because the
-  thread that stands aside is running rather than sleeping and comes back to the
-  ledger to answer, so every answer its absence creates is still reachable when
-  it does; the waiter its absence exists for is registered by the operation it
-  is running, after it, and reads the ledger where it registers. A waiter left
-  asleep by a silent transition is one whose answer is "something else is still
-  in flight", and that something announces when it retires.
+  waiter can sleep. A thread never needs to wake itself.
 
-  So both halves of standing aside are silent, the epoch is read after
-  everything this thread does to the ledger and before the state it parks on,
-  and the same instrumentation at this revision counts 745 parks that slept and
-  11 that returned at once because another thread had moved the epoch, over
-  1,406 turns of the loop — fifteen times fewer turns for the same work, with 0
-  stalls and 0 losses in 50 runs of 50 repetitions at one and four helpers.
+  Which transitions those are is derived in `contract.h` from the inputs the
+  answer is made of, one by one, rather than from the schedule that prompted the
+  repair — because a rule narrated from one schedule was wrong here twice over.
+  The first version of it said standing aside was silent, on the ground that the
+  waiter an aside exists for is the one the operation it is running registers
+  *afterwards*. That premise covers the waiter the aside thread creates and not
+  the waiters that already exist, and standing aside changes an already
+  registered waiter's answer too: it hands the earliest deciding place to the
+  next waiter in the order, whose answer turns from "keep waiting" into
+  "publish". A scripted two-waiter schedule reads that change in 200 of 200
+  repetitions, and a real refused open parked on the runtime endpoint behind an
+  aside sits through the whole of it, silently, in 20 of 20. So standing aside
+  announces, on both endpoints, and it announces exactly where the promotion is
+  real and terminal: the waiter standing aside held the earliest deciding place,
+  and the waiter it hands that place to now answers `UNREACHABLE`. Coming back
+  only demotes that waiter again, from "publish" to "keep waiting", which is
+  what a waiter asleep on that answer is already doing, so coming back is silent
+  and owes nothing. Announcing anywhere wider would be a wake for its own sake:
+  two threads standing aside in turn would trade wakes instead of sleeping,
+  which is the spin this bullet is about, in a second form.
+
+  The safety this leaves is that every announcement belongs to a waiter about to
+  publish and leave the order — as many wakes as there are answers. Two
+  deterministic tests hold it, one for each transition that can promote a
+  parked waiter: `test_a_registration_wakes_a_waiter_parked_on_the_endpoint`
+  and `test_standing_aside_wakes_a_waiter_parked_on_the_endpoint`. Both are
+  scripted, and both require the parked call to be still parked the moment
+  before the transition. A build whose aside is silent fails the second at the
+  wake and passes the first.
+
+  And the spin is still gone, because the epoch is read after everything this
+  thread does to the ledger — the aside and its announcement included — and
+  before the state it parks on. The same instrumentation at this revision, on
+  the four cells whose base figures are quoted above, counts 503 parks that
+  slept and 20 that returned at once because another thread had moved the epoch,
+  over 1,089 turns of the loop, against 17,987 turns and **0** sleeps at the
+  base — one sample of each, and the property is the one that reproduces: the
+  base never sleeps, this revision does. 0 stalls and 0 losses in 50 runs of 50
+  repetitions at one and four helpers.
 
 - A waiter that runs the work it owes keeps its place. The bounded adapter's
   refused open ran its queue between decisions by leaving the waiter order and
