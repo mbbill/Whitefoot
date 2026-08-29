@@ -527,8 +527,11 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  *     place, and any return that place was owed, to somebody else.  Both
  *     announce.
  *   - the queue a waiter owes: queueing an item raises the in-flight count in
- *     the same step, which announces; running one lowers the queue, which only
- *     makes that same waiter more awaited.
+ *     the same step, which announces.  Taking one off lowers the queue, which
+ *     lowers what a waiter that cannot run it subtracts and so leaves that one
+ *     more awaited, not less; for the waiter whose own thread runs it, the
+ *     item's retirement announces when it ends, and until then that waiter is
+ *     never asleep — the answer to owing work you can run is to go and run it.
  *   - the award mark and a waiter's `awarded`: moved by an award, inside a
  *     decision.  An award only makes another waiter less awardable, and the
  *     mark is reset only where the order was empty, so no other waiter exists
