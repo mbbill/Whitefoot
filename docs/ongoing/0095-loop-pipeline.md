@@ -226,12 +226,13 @@ those are is derived in `contract.h` from the inputs the answer is made of, and
 the derivation is worth reading rather than the list: a rule narrated from one
 schedule got standing aside wrong, and the bullet on the direct route's spin
 records how. Coming back from an aside can only make another waiter's answer
-*less* final, so it is silent; it is not the only movement of those inputs that
-is answer-weakening — accepting an operation and taking an item off the owed
-queue are too, and the derivation says so where it names them, one announcing
-for a different reason and the other with no sleeping waiter to tell — it is
-the only one of the announcing candidates left silent for that reason. And a
-thread never needs to wake itself. The ledger is given that
+*less* final, so it is silent. It is not the only movement of those inputs that
+is answer-weakening, and the derivation says so where it names them: accepting
+an operation is one too and announces anyway, because a request queued behind a
+refused open is work an engine must run before anything can retire; taking an
+item off the owed queue is another and is silent as well. Coming back is the
+only one of the transitions that were candidates to announce that is left
+silent for that reason. And a thread never needs to wake itself. The ledger is given that
 endpoint by the unit that owns the runtime, which is the bridge, and clears it
 before the runtime is destroyed. A transition announced in one place only is a
 stopped process, not a slow one, and it is recorded below as the fourth
