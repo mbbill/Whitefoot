@@ -3905,7 +3905,7 @@ because the arm-write test is syntactic and needs no delta at all to refuse `c01
 Fifty-eight files across four directories, all compiled against the
 `batch/0106-claim-model-design` worktree compiler, unmodified, and living beside
 the run records under
-`wf-0111-guarded-facts/{probes,audit/probes,audit2/probes,audit3/probes}/`. Each
+`research/investigations/claim-model/guarded-facts/{probes,audit,audit2,audit3}/` (committed copies of the session's `wf-0111-guarded-facts` scratch layout). Each
 directory's `run.sh` reproduces its verdicts; all four were re-run for the final
 round and every round-1 and round-2 verdict stands. Probe names in this section are
 this tree's; where a bare name collides with a probe of 12.3 (`c01`, `c03`), the
@@ -7597,7 +7597,6 @@ disequalities, and signed goals; cost is measured against that.
 | V4 | mod-k congruence `t = r (mod k)` | nothing in this audit | small: one residue per term | small | **not bought - no customer.** The two-byte fold dissolves with `+checked` (`s17`, compiled), `by k` is withdrawn, and the ipv4 congruence dissolves with a pair guard (`t8`, compiled). Recorded as priced and unbought so it is not re-proposed |
 | V5 | quantified element facts, `for all e in P: e < K` | I5, I6 | instantiation is a search unless the instantiation set is spec-fixed | very large: every mutation needs re-instantiation | **not bought**, and both audit sides plus the owner asked that no iteration notation swallow I6 |
 | V6 | one conservative value interval per indexable place | *part* of I5 | small: one interval per place, interval join at merges | moderate | **not bought**, and the ceiling text must say **which half of I5 it is**: `[ENT-3.S9]` 2981 **already** publishes the declared element range of a named const array, which is why `p_constarr.wf` compiles and `p_content.wf` does not. V6 generalises S9 to runtime-built tables and still does not close I5, because the fill loop's element write is a continuing kill and the component is top at the head - so V6 needs I4's machinery to be worth anything, and buying it alone buys a program nobody writes |
-
 | **V8** | **a guarded fact - one atomic fact attached to a signed goal the branch itself decides, admitted only where that goal is derivable again** (3.7) | **two idioms, not one**: the let-bound comparison flag re-tested in the same function (flagship A, nine sites) and the flag computed as a comparison, **stored in a record** and re-tested from the record (flagship B, four sites). Beyond them: `par_layout.wf`'s banded measure, the style-flag shape in `wfgrep.wf`'s line scan, and every audit scenario whose route menu previously read "factor into a function whose `requires` states the correlation" | **none in the ambient L0 domain** - no new term kind, no new relation shape, no change to `[ENT-4]`. One new state component; one monotone fixed-point step per edge, bounded by the live entry count; and a doubled 3.15 step 2 (DG6, DG7) | **small, and argued rather than asserted.** Four laws, one six-paragraph proof with each paragraph naming its law; the delta facts are the arm's own `[ENT-3]` output, the key is a signed goal `[ENT-3]` already publishes, transport and kills are `[ENT-5]`'s unchanged rules. Three rounds, two memory-safety refutations found and closed, third round CONFIRMED | **bought**, with **P-S5B** carried as a prerequisite row and DG1-DG8 flagged |
 | V9 | **goal identity that follows `[ENT-2]` 2886's resolution on the publication side** - so that `if deref(p).flag` and a requirement over `h.flag` are one goal | the borrow-aliasing shape: a correlation established through a borrow of a struct and used directly, or the reverse (`s01` REJECT against `s01c` ACCEPT) | none in the L0 domain; the cost is in `[ENT-3.S1]`, which would publish a resolved rather than a written tree | **real and not this rule's**: it changes what a branch establishes, which is publisher 3's subject, and needs its own argument about reborrows and shadowed holders | **not bought.** The asymmetry exists **today**, before `[ENT-5.G]`: 2886 resolves a call actual to its referent while S1 keeps the written tree. `[ENT-5.G]` inherits it as a precision row and reports it with the *same place, different goal* string; QG8 reports it as an `[ENT-2]`/`[ENT-3]` defect and 11.6 keeps it in red ink |
 
@@ -8289,7 +8288,6 @@ blanket weakening, and one for the `[ENT-3.S5]` prerequisite they all rest on.
 | 47 | `ind-neg-dropped-condition-shape-degree` | reject IND-3 | **F-I1e's `N5`**: a branch condition rewritten by three clause (a) commits into `x^8 - t + 1 <= 0`, over a `-wrap` commit whose side condition a stronger checker derives and a weaker one does not. The limit is measured **when the shape is produced**, so the case rejects identically whether the condition is later dropped or kept - the executable check on L1, and the one case in the corpus that would have caught `N5` |
 | 48 | `ind-neg-substitution-intermediate-degree` | reject IND-3 | **F-I1e's `N6`**: a chain of `*checked` `Ok`-arm bindings whose substituted obligation cancels to `0 <= 0` but whose intermediate passes degree 4 at the third step. Rejects at the step that produces the degree, before anything large is materialized. The executable check on L3's per-step limits and the only case that pins the pass's own figure |
 | 49 | `ind-pos-branch-condition-outside-fragment` | accept | **F-I1e's L4 case**: a loop carrying a `bound_stmt` whose body branches on a boolean returned by a call, and a second whose branch names an element of an indexable place. Neither condition yields an `[IND-3]` polynomial; each contributes one always-empty slot and the statement verifies. Pins that `[IND-3]`'s *Typing* and *Vocabulary fence* are admission rules on the statement and do not travel to branch conditions |
-
 | 50 | `ent5-pos-guarded-release-value-if` | accept | **`g03`/`g04`'s shape**: the fact one arm derives and the join discards is released at a later test of the same goal. The `value_if` delivery clause of `[ENT-5.G2]` gets its own case rather than riding on the `if_stmt` cases, because it is the one place `[ENT-5.G]` reads a rule outside the ordinary state (QG5) |
 | 51 | `ent5-neg-guarded-arm-writes-flag` | reject OP-4 | **`c01`'s shape**: the `else` arm assigns the branch's own flag, so `[ENT-5.G2]`(a)/(b) form nothing and (a') finds the same sign on both edges. The round-2 refutation, and the one case that turns an admitted out-of-bounds read back into a rejection |
 | 52 | `ent5-neg-guarded-carry-out-interior-write` | reject OP-4 | **`b01`/`r09`'s shape**: the flag write sits in the middle of the other arm, and L-G4(ii) is over *every kill event on every path through the arm*. The case exists to pin the reading, so a conforming implementation that reads "the reaching edge's kill events" fails it |
@@ -9306,7 +9304,7 @@ spec **v0.39 ACTIVE**. Sources live under
 `wf-0108-design/{trap-free-core-probes,loop-system-probes,contract-system-probes,judge1,judge2-probes,synth-probes}/`
 and the audit's own probes under `wf-0107-audit/synth/probe/`. **All 232
 reproduce.** The guarded-facts component adds **58 more** under
-`wf-0111-guarded-facts/`, run against the `batch/0106-claim-model-design` worktree
+`research/investigations/claim-model/guarded-facts/` (committed from the session's `wf-0111-guarded-facts` scratch), run against the `batch/0106-claim-model-design` worktree
 compiler unmodified and ledgered by group in 3.7.11; **290 in all**. Only the rows
 that decide something in this file are listed individually; the rest are ledgered
 in the files beside this one. Where a guarded-facts probe's bare name collides
@@ -9424,7 +9422,7 @@ shipped an out-of-bounds read, and a third hole from round 1 was found by the
 round-2 audit** - so the file's own pattern held here too: each repair was correct
 about the break in front of it and left the argument one step behind the text,
 until round 3 stated the four laws first. Probes and run records live under
-`wf-0111-guarded-facts/{probes,audit/probes,audit2/probes,audit3/probes}/`; all
+`research/investigations/claim-model/guarded-facts/{probes,audit,audit2,audit3}/` (committed copies of the session's `wf-0111-guarded-facts` scratch layout); all
 fifty-eight reproduce.
 
 | round | what it drafted | what the audit did to it | the hole, and its witness |

@@ -1,3 +1,9 @@
+> **STATUS: superseded evidence.** The normative content of this round-3
+> draft was integrated into `../DESIGN.md` section 3.7 (commit 19440621) and
+> that section is the authority for `[ENT-5.G]`. This file is kept as the
+> evidence record for the three design rounds: the full hand-execution walks,
+> the probe ledger, and the per-clause derivations DESIGN.md compresses.
+
 # `[ENT-5.G]` — guarded facts: the flag-correlation rule (round 3)
 
 Draft specification text plus its argument, its price and its falsifiers, for
