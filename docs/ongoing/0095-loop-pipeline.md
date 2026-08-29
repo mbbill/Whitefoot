@@ -578,9 +578,13 @@ by exempting the carrying block from the rule.
   table, never `ENFILE`. The machine's file table stood between 97 and 153 open
   files of 1,644,353 at each loss. And an open made with the table still
   narrowed, the instant every publication was in, succeeded in every one of
-  them: a descriptor this runtime returned went to no open at all. Load makes
-  it commoner — about 1 repetition in 7,000 under the tsan loop against 1 in
-  60,000 unloaded — but it is not a load artefact, and it is not the machine's.
+  them: a descriptor this runtime returned went to no open at all. Contention
+  makes it commoner — about 1 repetition in 7,000 with three probe processes
+  and a thread-sanitizer harness loop sharing four cores, against 1 in 60,000
+  with the machine to itself — but it is not a load artefact, and it is not the
+  machine's. Run the way the gate runs it, one process at a time, it is rare
+  enough to hide: 250 runs of 250 repetitions across five load regimes here
+  reported none.
 
   Where it comes from is the one place the award rule can promise more than the
   host has. A return is awarded to a waiter, and a waiter spends exactly one
