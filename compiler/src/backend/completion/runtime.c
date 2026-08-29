@@ -1149,10 +1149,10 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * The decision reads the descriptor-return count, then the in-flight and
  * waiter counts.  A retirement whose return increment and whose in-flight
  * decrement both land between those reads is the one schedule that can make a
- * waiter publish a refusal a descriptor had already answered, and the re-read
- * below is what closes it.  Naming the point is what lets a test stand exactly there
- * instead of racing for it, exactly as the adapter's `openat` is named; the
- * default expansion is nothing at all. */
+ * waiter answer from a world where nothing came back when something did, and
+ * the re-read below is what closes it.  Naming the point is what lets a test
+ * stand exactly there instead of racing for it, exactly as the adapter's
+ * `openat` is named; the default expansion is nothing at all. */
 #if !defined(WF_COMPLETION_RETIREMENT_POINT)
 #define WF_COMPLETION_RETIREMENT_POINT wf_completion_retirement_point_absent
 static void wf_completion_retirement_point_absent(void) {
@@ -1445,7 +1445,8 @@ static enum wf_retirement_state wf_retirement_state_now(
     if (atomic_load_explicit(&wf_retirement_first, memory_order_seq_cst)
         != waiter) {
         /* Every operation left is a waiter, and an earlier one answers first.
-         * Its publication is a retirement, which is what releases this one. */
+         * Leaving the waiter order is what hands this one the same answer;
+         * its publication returns no descriptor and grants nothing. */
         return WF_RETIREMENT_AWAITED;
     }
     /* Read the return count once more.  A returning retirement whose increment
