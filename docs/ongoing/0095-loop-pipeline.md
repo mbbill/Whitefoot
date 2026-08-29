@@ -570,13 +570,13 @@ by exempting the carrying block from the rule.
   verification saw it lose an owed `Ok` under heavy concurrent load — 5 runs in
   1,050 — and guessed the machine's own file table, not this process's narrowed
   one, was refusing the open. That guess is wrong, and it was measured out:
-  over 220,000 repetitions at this revision, loaded beside a looping
-  thread-sanitizer harness and unloaded, 24 repetitions lost an owed `Ok`, and
+  over 280,000 repetitions at this revision, loaded beside a looping
+  thread-sanitizer harness and unloaded, 25 repetitions lost an owed `Ok`, and
   every one of them has the same shape. All three closes ran and the ledger
   counted exactly three descriptors back (0 repetitions in the 120,000 that
   counted the delta saw anything else). Every refusal was `EMFILE`, from this
-  process's own narrowed
-  table, never `ENFILE`. The machine's file table stood between 97 and 153 open
+  process's own narrowed table, never `ENFILE`. The machine's file table stood
+  between 97 and 153 open
   files of 1,644,353 at each loss. And an open made with the table still
   narrowed, the instant every publication was in, succeeded in every one of
   them: a descriptor this runtime returned went to no open at all. Contention
