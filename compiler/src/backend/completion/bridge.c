@@ -288,6 +288,11 @@ static void wf_bridge_initialize(void) {
     /* Darwin has no regular-file kernel completion facility in the supported
      * target set, so its qualified path is the bounded typed adapter. */
     if (!wf_bridge_ensure_file()) {
+        /* The endpoint is cleared before the storage it points at is
+         * destroyed, exactly as at shutdown: a ledger left holding this
+         * runtime would announce on freed storage the moment any adapter this
+         * bridge did not build refused an open. */
+        wf_completion_retirement_announces_on(NULL);
         (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
         return;
     }
@@ -1234,25 +1239,40 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
     wf_retirement_waiter waiter;
     wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
     for (;;) {
-        uint64_t epoch = wf_bridge_ready == 0
-            ? 0
-            : wf_completion_wake_epoch(&wf_bridge_runtime);
-        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
-            break;
-        }
+        uint64_t epoch;
+        int progressed;
         if (wf_bridge_ready == 0) {
             /* No runtime to drive: whatever is in flight belongs to an
              * adapter this bridge did not build, and the ledger's own wake is
              * the only one there is. */
-            wf_completion_retirement_sleep(&waiter);
-        } else {
-            /* This open cannot retire while its own thread is inside the
-             * engines, so nothing may wait for it to. */
-            wf_completion_retirement_defer_begin();
-            if (!wf_bridge_progress()) {
-                wf_bridge_park(epoch);
+            if (wf_completion_retirement_state(&waiter)
+                != WF_RETIREMENT_AWAITED) {
+                break;
             }
-            wf_completion_retirement_defer_end();
+            wf_completion_retirement_sleep(&waiter);
+            continue;
+        }
+        /* Driving the engines runs other operations on this thread — with no
+         * helper, a queued adapter request, which can be an open that is
+         * refused in its turn and registers behind this waiter.  So this waiter
+         * stands aside for exactly as long as it is inside one of them, and has
+         * its place back before it decides or sleeps. */
+        wf_completion_retirement_defer_begin(&waiter);
+        progressed = wf_bridge_progress();
+        wf_completion_retirement_defer_end(&waiter);
+        /* The epoch after everything this thread does, and before the state it
+         * would park on.  A transition that lands after this read moves the
+         * epoch and the park returns at once; one that landed before it is in
+         * the state read below.  What this order rules out is the thread
+         * cancelling its own park: an announcement of its own between the two
+         * reads makes every park return immediately, which is not a wait but a
+         * spin — 44,555 turns of this loop and not one sleep, measured. */
+        epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
+            break;
+        }
+        if (progressed == 0) {
+            wf_bridge_park(epoch);
         }
     }
     wf_completion_retirement_wait_end(&waiter);

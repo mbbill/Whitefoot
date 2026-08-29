@@ -671,36 +671,34 @@ static wf_file_result wf_file_retire_and_retry(
     int may_run_owed_work
 ) {
     wf_retirement_waiter waiter;
-    int registered = 0;
+    wf_completion_retirement_wait_begin(
+        &waiter,
+        seen,
+        wf_file_adapter_owed_work,
+        adapter,
+        may_run_owed_work
+    );
     for (;;) {
         if (may_run_owed_work != 0) {
             wf_file_work owed;
             /* Run the queue before every decision and after every wake, not
              * once: this thread is one of this adapter's engines, and work
-             * queued while it waits is work only an engine can retire.  It
-             * leaves the waiter order while it runs, and the ledger is told
-             * the operation it is deciding cannot retire meanwhile, so an
-             * open refused on another thread neither waits for it nor waits
-             * behind it. */
-            if (registered != 0) {
-                wf_completion_retirement_wait_end(&waiter);
-                registered = 0;
-            }
-            wf_completion_retirement_defer_begin();
+             * queued while it waits is work only an engine can retire.  This
+             * waiter stands aside for each item it runs and no longer, so an
+             * open among them that is refused in its turn can answer instead of
+             * waiting behind the thread that is running it.
+             *
+             * It stands aside; it does not leave.  Leaving and registering
+             * again puts this open at the back of the order every time it runs
+             * the work it owes, which hands a returned descriptor — and with it
+             * the program's one `Ok` — to an open that asked later: on a
+             * scripted two-waiter shape, to the later one in 200 runs of
+             * 200. */
             while (wf_file_take_work(adapter, &owed, 1)) {
+                wf_completion_retirement_defer_begin(&waiter);
                 wf_file_run_work(adapter, &owed, helper, 0);
+                wf_completion_retirement_defer_end(&waiter);
             }
-            wf_completion_retirement_defer_end();
-        }
-        if (registered == 0) {
-            wf_completion_retirement_wait_begin(
-                &waiter,
-                seen,
-                wf_file_adapter_owed_work,
-                adapter,
-                may_run_owed_work
-            );
-            registered = 1;
         }
         if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
             break;
@@ -1170,9 +1168,11 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
      * is destroyed, not after.
      *
      * Every reader of this adapter passes `wf_file_adapter_initialized` first
-     * and then takes `queue_lock` -- `wf_file_adapter_queued` does, and so
-     * does the decline check `wf_file_adapter_transfer_runs_on_caller` through
-     * it.  Storing zero after the destroys would leave a window in which that
+     * and then uses storage this teardown destroys: `queue_lock` itself, or the
+     * queue count beside it, which is what `wf_file_adapter_queued` reads for
+     * the retirement ledger and for the decline check
+     * `wf_file_adapter_transfer_runs_on_caller`.  Storing zero after the
+     * destroys would leave a window in which that
      * guard still answers yes and the mutex it guards no longer exists, so a
      * reader admitted through it locks destroyed storage.  Storing zero first
      * closes the window to the ordinary one this function's precondition

@@ -473,20 +473,50 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  * a return to a later-registered open publishes the program's one `Ok` at the
  * wrong call: on a shape whose three refused opens race one returned
  * descriptor, an unordered award put it at the wrong one in 963 of 1000 runs.
- * "Earliest" is registration order into this one ledger, whichever route the
- * open took: a ring entry registers where its refusal is reaped, a bounded
- * adapter open and a blocking direct call where their own attempt was refused.
- * For one program thread that is the order the opens were submitted in.
+ * That order is the whole of what this runtime promises about which refused
+ * open takes a returned descriptor, and it is worth stating exactly, because a
+ * stronger reading of it is false and a program that leaned on the stronger one
+ * would be leaning on nothing.  "Earliest" is registration order into this one
+ * ledger, whichever route the open took: a ring entry registers where its
+ * refusal is reaped, a bounded adapter open and a blocking direct call where
+ * their own attempt was refused.  A waiter keeps that place for as long as it
+ * waits — running the work it owes does not surrender it, which is why standing
+ * aside is not leaving.  So for a thread that performs its own attempts, the
+ * opens it wrote are refused in source order, registered in that order and
+ * awarded in that order: the first open it wrote is the one that publishes the
+ * `Ok`, and a refused open it runs as owed work behind that one takes the
+ * refusal that sequential execution gives it.  Across threads nothing is
+ * promised and nothing can be — two threads' opens register in whatever order
+ * the host refuses them, and a helper pool refuses one thread's queued opens in
+ * whatever order its helpers reach them.  Order between threads is not this
+ * ledger's to keep: it rests on the in-order commit of outside-rooted writes
+ * the lowering performs, and a program that needs one open before another needs
+ * them ordered there.
  *
- * Every transition of this ledger that can change a waiter's answer has to
- * reach every place a waiter can sleep, and there are two: this ledger's own
- * condition variable, and the runtime's park endpoint, where a direct call
- * waits because it may be the only thread that can reap the completion it is
- * waiting for.  A transition announced on one of them only stops the process:
- * a second waiter registering turns the first waiter's answer from "keep
- * waiting" into "publish", and a first waiter asleep on the other endpoint is
- * never told.  `wf_completion_retirement_announces_on` is how the ledger is
- * given that endpoint.
+ * A transition announces where it can leave another waiter asleep on an answer
+ * that is no longer the best one available to it — and then on both places a
+ * waiter can sleep, this ledger's own condition variable and the runtime's park
+ * endpoint, where a direct call waits because it may be the only thread that
+ * can reap the completion it is waiting for.  Announcing on one of them only
+ * stops the process: a second waiter registering turns the first waiter's
+ * answer from "keep waiting" into "publish", and a first waiter asleep on the
+ * other endpoint is never told.  `wf_completion_retirement_announces_on` is how
+ * the ledger is given that endpoint.  Accepting an operation, retiring one, and
+ * a waiter entering or leaving the order all qualify.
+ *
+ * The rule is about *another* waiter, and both halves of that matter.  A thread
+ * never needs to wake itself: an announcement made between the moment a thread
+ * reads the wake epoch and the moment it parks on that epoch cancels its own
+ * park, so a route that announces there does not wait, it spins — measured on
+ * the direct route, 44,555 turns of its loop and not one park that slept.  And
+ * a transition nothing sleeps through owes nothing: standing aside and coming
+ * back are silent, because the thread that stands aside is running rather than
+ * sleeping and comes back to this ledger to answer, so every answer its absence
+ * creates is still reachable when it does; the waiter its absence exists for is
+ * one the operation it is running registers afterwards, which reads the ledger
+ * where it registers.  A waiter left asleep by a silent transition is one whose
+ * answer is "something else is still in flight", and that something announces
+ * when it retires.
  *
  * This lives with the completion core because the core is the one unit every
  * target engine and the bridge link.  The bounded POSIX adapter and the Linux
@@ -520,6 +550,12 @@ typedef struct wf_retirement_waiter {
      * the ledger when it hands one over, so the award is spent once however
      * many times this waiter asks where it stands. */
     int awarded;
+    /* Whether this waiter's own thread is inside another operation right now,
+     * and so is not asking.  It keeps its place in the order and its claim on
+     * a return; what it gives up while it stands there is the duty to publish,
+     * because an operation registered behind it may be the very one it is
+     * running (`wf_completion_retirement_defer_begin` below). */
+    int aside;
 } wf_retirement_waiter;
 
 /* Where a refused open stands.  `AWAITED` is the only answer that means "keep
@@ -592,14 +628,31 @@ void wf_completion_retirement_wait_begin(
 );
 void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
 
-/* An operation whose retirement is blocked because the thread that owns it is
- * running another operation first — a refused open running the work its own
- * adapter still owes, or a direct call driving the engines while it waits.  It
- * cannot give its descriptor back until that finishes, so nothing may wait for
- * it to: a waiter that counted it would wait for a thread that is waiting for
- * the waiter.  Told to the ledger for exactly as long as that holds. */
-void wf_completion_retirement_defer_begin(void);
-void wf_completion_retirement_defer_end(void);
+/* A registered waiter whose thread is running another operation first — a
+ * refused open running the work its own adapter still owes, or a direct call
+ * driving the engines while it waits.  Told to the ledger for exactly as long
+ * as that holds, and about the waiter rather than about an anonymous count,
+ * because two different facts are wanted at once and only the waiter carries
+ * both.
+ *
+ * The operation cannot retire while its own thread is elsewhere, and being a
+ * registered waiter already says that: it stays in the waiter count, which is
+ * what every other waiter subtracts from what is in flight.  Saying it twice —
+ * a waiter and a separate deferred count — subtracts it twice, and a waiter
+ * that subtracts one operation too many concludes that nothing else is running
+ * when something is, and publishes a refusal the sequential program answers.
+ *
+ * What it does give up is the duty to publish.  The operation it is running may
+ * itself be an open that is refused and registers behind it, and that one must
+ * be able to answer: a waiter that blocked it would be waiting for a thread
+ * that is waiting for the waiter.  So while a waiter stands aside the earliest
+ * *deciding* waiter is the one that publishes.  Its claim on a returned
+ * descriptor is not given up, because that claim is registration order and
+ * standing aside is not leaving: the later open publishes the refusal source
+ * order gives it, and the earlier one takes the descriptor when it comes back
+ * to ask.  Neither call announces (`wf_completion_retirement_announces_on`). */
+void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter);
+void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter);
 
 /* Where this waiter stands.  It takes the ledger's lock and never sleeps
  * under it; every caller of it is a refused open, which is the path this
@@ -609,8 +662,9 @@ void wf_completion_retirement_defer_end(void);
  * the waiter's own `owed` above: a held ring entry blocks no thread and owes
  * nothing, an adapter open that runs its own queue owes that queue and must
  * run it before it decides, and one running as owed work owes the queue its
- * suspended caller cannot reach.  The global half — every operation deferred
- * above — the ledger subtracts itself.
+ * suspended caller cannot reach.  The global half the ledger subtracts itself:
+ * every registered waiter, including one standing aside above, is an operation
+ * that cannot retire until its own thread comes back to it.
  *
  * This is also where a returned descriptor is awarded, which is why the
  * waiter is not `const`: answering `HAPPENED` hands this waiter the return it
