@@ -2461,36 +2461,309 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-#[test]
-fn zz_temp_dump_blocks() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("target");
-    let module = with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
-        let staged = program
+/// The blocks that dominate `block`, computed from the successor relation the
+/// probe helpers already use.
+///
+/// A slot index is rendered straight into the `getelementptr` its block emits,
+/// so the value has to dominate that block; the emitter trusts that the same
+/// way it trusts every other operand, and these tests earn the trust rather
+/// than assuming it.
+fn blocks_dominating(function: &crate::IrFunction, block: crate::IrBlockId) -> Vec<usize> {
+    let count = function.blocks().len();
+    let all: Vec<usize> = (0..count).collect();
+    let mut dominators: Vec<Vec<usize>> = (0..count)
+        .map(|index| if index == 0 { vec![0] } else { all.clone() })
+        .collect();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for index in 1..count {
+            let predecessors: Vec<usize> = function
+                .blocks()
+                .iter()
+                .enumerate()
+                .filter(|(_, candidate)| block_targets(candidate).contains(&index))
+                .map(|(ordinal, _)| ordinal)
+                .collect();
+            let mut next: Vec<usize> = match predecessors.split_first() {
+                None => vec![index],
+                Some((first, rest)) => {
+                    let mut shared = dominators[*first].clone();
+                    for predecessor in rest {
+                        shared.retain(|candidate| dominators[*predecessor].contains(candidate));
+                    }
+                    shared.push(index);
+                    shared.sort_unstable();
+                    shared.dedup();
+                    shared
+                }
+            };
+            next.sort_unstable();
+            if next != dominators[index] {
+                dominators[index] = next;
+                changed = true;
+            }
+        }
+    }
+    dominators[block.index()].clone()
+}
+
+/// The block the unstaged emission submits its first target operation in.
+fn the_block_that_submits(module: &str) -> crate::IrBlockId {
+    let labels = ir_blocks_containing(emitted_function(module, "probe"), "_submit(");
+    let label = labels.first().expect("the probe must submit somewhere");
+    let ordinal = match label.as_str() {
+        "entry" => 0,
+        other => other
+            .strip_prefix("bb")
+            .expect("a block label")
+            .parse::<usize>()
+            .expect("a block ordinal"),
+    };
+    crate::IrBlockId::from_index(ordinal).expect("a block ordinal")
+}
+
+/// A `u64` the submitting block may address a ring through: a parameter of a
+/// block that dominates it, which is where a driver's loop-carried slot lives.
+fn a_slot_index_for(function: &crate::IrFunction, block: crate::IrBlockId) -> crate::IrValueId {
+    let u64_type = crate::IrType::Integer {
+        width: 64,
+        signed: false,
+    };
+    blocks_dominating(function, block)
+        .iter()
+        .filter(|dominator| **dominator != 0)
+        .find_map(|dominator| {
+            function.blocks()[*dominator]
+                .parameters()
+                .iter()
+                .find(|(_, ty)| *ty == u64_type)
+                .map(|(value, _)| *value)
+        })
+        .expect("the loop must carry a u64 the body can address a ring through")
+}
+
+/// Which slot the descriptor under test gives the block that submits.
+#[derive(Clone, Copy)]
+enum SlotChoice {
+    /// A `u64` a dominating block carries — what a driver threads in.
+    Carried,
+    /// A value of the wrong type.
+    NotAnIndex,
+    /// Nothing, which is the descriptor that would silently share one record.
+    None,
+}
+
+/// A non-`u64` the submitting block could name, to prove the type is checked.
+fn a_value_that_is_not_an_index(
+    function: &crate::IrFunction,
+    block: crate::IrBlockId,
+) -> crate::IrValueId {
+    let u64_type = crate::IrType::Integer {
+        width: 64,
+        signed: false,
+    };
+    blocks_dominating(function, block)
+        .iter()
+        .find_map(|dominator| {
+            function.blocks()[*dominator]
+                .parameters()
+                .iter()
+                .find(|(_, ty)| *ty != u64_type)
+                .map(|(value, _)| *value)
+        })
+        .expect("the probe's loop must carry something that is not an index")
+}
+
+fn the_unstaged_probe() -> String {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the probe must emit")
+            .into_string()
+    })
+}
+
+/// Emits the probe with a ring of `slots` records per site, addressed as
+/// `choice` says.
+fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendFailure> {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    let submitting = the_block_that_submits(&the_unstaged_probe());
+    with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
+        let probe = program
             .functions()
             .iter()
             .find(|function| function.name() == "probe")
-            .expect("probe");
-        println!("carrying {:?}", blocks_that_reach_the_back_edge(staged));
-        for (index, block) in staged.blocks().iter().enumerate() {
-            let u64s: Vec<crate::IrValueId> = block
-                .parameters()
-                .iter()
-                .filter(|(_, ty)| {
-                    *ty == crate::IrType::Integer {
-                        width: 64,
-                        signed: false,
+            .expect("the probe function");
+        let carrying = blocks_that_reach_the_back_edge(probe);
+        assert!(
+            carrying.contains(&submitting),
+            "the probe's submission must be inside the carrying region, or the ring proves nothing"
+        );
+        // A driver threads the slot into every block of its region, because
+        // the block that retires an operation need not be the block that
+        // started it: here the loop's exit is what drains the window.
+        let addressed: Vec<(crate::IrBlockId, crate::IrValueId)> = (1..probe.blocks().len())
+            .map(|index| {
+                let id = crate::IrBlockId::from_index(index).expect("a block ordinal");
+                (id, a_slot_index_for(probe, id))
+            })
+            .collect();
+        let slot_index = match choice {
+            SlotChoice::Carried => addressed,
+            SlotChoice::NotAnIndex => addressed
+                .into_iter()
+                .map(|(block, slot)| {
+                    if block == submitting {
+                        (block, a_value_that_is_not_an_index(probe, block))
+                    } else {
+                        (block, slot)
                     }
                 })
-                .map(|(value, _)| *value)
-                .collect();
-            println!("block {index}: u64 params {u64s:?}");
-        }
-        emit_llvm_for_target(program, target)
-            .expect("emit")
-            .into_string()
-    });
-    let main = emitted_function(&module, "probe");
-    println!("submits {:?}", ir_blocks_containing(main, "_submit("));
-    println!("joins {:?}", ir_blocks_containing(main, "@wf__completion_file_join("));
-    println!("opens {:?}", ir_blocks_containing(main, "@wf__completion_file_open_join("));
+                .collect(),
+            SlotChoice::None => Vec::new(),
+        };
+        assert!(
+            program.set_completion_pipeline_for_test(
+                "probe",
+                crate::IrCompletionPipeline::with_slots(
+                    crate::IrBlockId::from_index(0).expect("the entry block"),
+                    carrying,
+                    crate::IrCompletionWindow::new(0, 65_536, 32),
+                    slots,
+                    slot_index,
+                ),
+            ),
+            "the probe function must take a pipeline"
+        );
+        emit_llvm_for_target(program, target).map(super::super::emitter::LlvmModule::into_string)
+    })
+}
+
+/// The types this function reserves, in reservation order and without the
+/// temporary names, which shift when a module also asks for a window.
+fn reserved_types(function: &str) -> Vec<String> {
+    function
+        .lines()
+        .filter_map(|line| line.split_once("= alloca "))
+        .map(|(_, reserved)| reserved.trim().to_owned())
+        .collect()
+}
+
+/// A staged region reserves one operation record per slot and addresses the
+/// one the block names.
+///
+/// This is what makes a back edge with work in flight correct rather than
+/// merely admitted. The carrying block is emitted once and reached once per
+/// iteration; with a single record the second iteration would hand the target
+/// a token and a result slot the first iteration's operation is still being
+/// written into. So the reservation becomes an array, and the element is
+/// chosen where the operation is started, from the index the driver carried
+/// into the block.
+#[test]
+fn a_staged_region_reserves_one_operation_record_per_slot() {
+    let unstaged = the_unstaged_probe();
+    assert!(
+        !unstaged.contains("alloca [4 x"),
+        "the unstaged probe must reserve one record per site, not a ring"
+    );
+    let staged = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
+    let staged = emitted_function(&staged, "probe");
+
+    // Two sites, each with its token, its result slot, its raw value and its
+    // raw error: eight rings, and every one of them four elements wide.
+    let rings = reserved_types(staged)
+        .into_iter()
+        .filter(|reserved| reserved.starts_with("[4 x "))
+        .count();
+    assert_eq!(
+        rings, 4,
+        "the handed-out site reserves a ring for its token, its result, its raw \
+         value and its raw error"
+    );
+
+    // And every element pointer is that ring indexed by the slot, in the block
+    // that names it — never a constant element the two iterations would share.
+    let indexed: Vec<&str> = staged
+        .lines()
+        .filter(|line| line.contains("getelementptr inbounds [4 x"))
+        .collect();
+    assert_eq!(
+        indexed.len(),
+        6,
+        "the submission addresses the two records the target is handed — the \
+         token and the result slot — and the retirement addresses all four: \
+         {indexed:?}"
+    );
+    for line in &indexed {
+        let (_, index) = line
+            .rsplit_once(", i64 0, i64 ")
+            .unwrap_or_else(|| panic!("an element pointer indexes its ring: {line}"));
+        assert!(
+            index.starts_with("%v"),
+            "an element pointer must be indexed by a named slot, never a constant \
+             element the two iterations would share: {line}"
+        );
+    }
+}
+
+/// One slot addresses storage exactly as a program with no pipeline does.
+///
+/// A window of one is always a legal answer — it is the schedule the
+/// sequential program already runs — so the storage a one-slot region reserves
+/// has to be the storage the unstaged program reserves, element for element,
+/// with no array and no index arithmetic between the operation and its record.
+#[test]
+fn one_slot_reserves_exactly_what_an_unstaged_program_reserves() {
+    let unstaged = the_unstaged_probe();
+    let one = emit_a_ring(1, SlotChoice::Carried).expect("a one-slot probe must emit");
+    assert_eq!(
+        reserved_types(emitted_function(&one, "probe")),
+        reserved_types(emitted_function(&unstaged, "probe")),
+        "a one-slot region reserves what the sequential program reserves"
+    );
+    assert!(
+        !one.contains(", i64 0, i64 %v"),
+        "a one-slot region indexes its records by no run-time value: the element \
+         is the reservation's only one"
+    );
+    assert!(
+        !unstaged.contains(", i64 0, i64 %v"),
+        "and neither does the program with no pipeline at all"
+    );
+}
+
+/// A ring with no elements is refused.
+#[test]
+fn a_ring_with_no_elements_is_refused() {
+    assert_eq!(
+        emit_a_ring(0, SlotChoice::Carried).err(),
+        Some(crate::BackendFailure::MisaddressedCompletionSlot),
+        "a descriptor claiming no slots would reserve a zero-length array and index into it"
+    );
+}
+
+/// A slot that is not the `u64` the ring is indexed with is refused.
+#[test]
+fn a_slot_that_is_not_an_index_is_refused() {
+    assert_eq!(
+        emit_a_ring(4, SlotChoice::NotAnIndex).err(),
+        Some(crate::BackendFailure::MisaddressedCompletionSlot),
+        "an index of the wrong type emits a module that does not verify"
+    );
+}
+
+/// A carrying block that submits with no slot is refused, not handed element
+/// zero.
+///
+/// This is the refusal that matters. Falling back to the first element there
+/// is exactly the sharing the ring exists to prevent, and it would show up
+/// only as two iterations reading one buffer — never as a diagnostic.
+#[test]
+fn a_carrying_block_with_no_slot_is_refused_rather_than_sharing_one_record() {
+    assert_eq!(
+        emit_a_ring(4, SlotChoice::None).err(),
+        Some(crate::BackendFailure::MisaddressedCompletionSlot),
+        "a submission inside a ring must address a slot"
+    );
 }
