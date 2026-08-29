@@ -22,18 +22,19 @@ and 2 are true residue** (§2.3 there). (2) **No claim anywhere in 682 source
 files has selector width m ≥ 2**, and only three have m = 1 (§3.3 there). (3)
 **All 18 real-program claims discharge SubscriptBounds**, and there is **not one
 `claim` statement anywhere in the blind-writer corpus** (§1.4, §2.1 there). The
-first and third strengthen the principle — a claim in this tree names a missing
-publisher, not a missing fact language — and the second and third strengthen
-§11's U1: the laundering family needs a boundary-derived selector, and in real
-code that family is empty, because every function holding a real-program claim
-contains no call at all, so review is being asked to fence a shape nobody has
-yet written. Two things narrow. The refuter §10.2 rejected on correctness
-grounds (A2–A4) is also moot on evidence: nothing anyone has written would
-exercise it, and a feasibility study would have to construct its programs rather
-than find them. And of the families this design still argues about, the
-loop/`flow` family is the one live syntax-versus-prover choice left — the true
-residue is two claims, and the backward-transfer gap is one row rule in the
-existing vocabulary (§5.3's erratum).
+first and third are existence evidence for the principle — every claim this
+tree holds names a missing publisher, not a missing fact language. The owner's
+standing rule governs how the second and third may be read: the test suite is
+not real usage, WF is not finalized, and no real corpus exists, so a family's
+absence from these files proves nothing about whether it is needed; these
+counts are existence proofs and seed samples only. Accordingly: U1's fence
+stands or falls on F2's constructed trial and on design-space reasoning, not
+on the corpus; the refuter stays rejected on the correctness grounds of §10.2
+(A2–A4), the corpus adding nothing either way; and of the families this design
+still argues about, the loop/`flow` family is the live syntax-versus-prover
+choice — the corpus's true residue is two claims, and its backward-transfer
+gap is one row rule in the existing vocabulary (§5.3's erratum), both read as
+shapes that exist, not as bounds on what will.
 
 ## Contents
 
