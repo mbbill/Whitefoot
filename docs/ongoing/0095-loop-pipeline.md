@@ -124,13 +124,24 @@ Every refused open, whichever engine attempted it, then follows four steps:
    re-attempt once here too, and publish what it says.
 
 A returned descriptor is awarded in the order the waiters registered, which is
-the order the publication rule already follows. Step 2 is what spends a refused
-open's one re-attempt, so two refused opens must not spend theirs on the same
-returned descriptor: while a waiter registered earlier is owed a re-attempt, a
-later one's step 2 does not fire for that return. The earliest takes it and
-re-attempts first, and only what it does not consume falls to the next — its
-re-attempt fails, or the descriptor it takes is one the kind check refuses,
-which disposes of it and is a return again. Source order gives the `Ok` to the
+the order the publication rule already follows, and it is awarded once. Step 2
+is what spends a refused open's one re-attempt, so two refused opens must not
+spend theirs on the same returned descriptor: while a waiter registered earlier
+is owed a re-attempt, a later one's step 2 does not fire for that return. The
+earliest takes it and re-attempts first, and only what it does not consume
+falls to the next — its re-attempt fails, or the descriptor it takes is one the
+kind check refuses, which disposes of it and is a return again.
+
+Being awarded once means once against every consumer, not only against the
+other waiters. An open the host satisfies takes a descriptor out of the table
+whether or not it ever waited for one, so it is charged for it: a runtime that
+counted only its awards would still be offering a refused open the descriptor
+another open had already carried off. The mark that rations returns is
+therefore moved by both — an award to a waiter and a take by a satisfied open —
+never moves backwards, and never passes the count of what has actually come
+back. The Evidence section's account of the shortfall this repaired is where the schedules are.
+
+Source order gives the `Ok` to the
 first open that asks for it, so an unordered award publishes the program's one
 `Ok` at the wrong call. "Earliest" is registration order into the one ledger,
 whichever route the open took: a ring entry registers where its refusal is
@@ -554,7 +565,11 @@ by exempting the carrying block from the rule.
   `test_bridge_open_exhaustion_is_retried_once`,
   `test_bridge_open_behind_a_submitted_close_succeeds`,
   `test_descriptor_return_follows_the_outcome`,
-  `test_a_ring_close_counts_a_return_only_when_it_ran`.
+  `test_a_ring_close_counts_a_return_only_when_it_ran`,
+  `test_an_open_that_took_a_return_is_charged_for_it`,
+  `test_a_promised_descriptor_is_not_promised_again`,
+  `test_an_outside_free_charged_to_an_open_refuses_no_waiter`,
+  `test_an_awarded_attempt_is_charged_once`.
 - `compiler/src/backend/completion/retirement_interleave_probe.c`, run by the
   same target at one and four helpers: a refused open on every route at once,
   250 repetitions a run, with a watchdog of its own because the defect it
@@ -566,53 +581,88 @@ by exempting the carrying block from the rule.
   `RLIMIT_NOFILE`, which the harness process cannot do without changing every
   case that runs after it.
 
-  **This probe reports a shortfall that is real, and rare.** Round 8's
-  verification saw it lose an owed `Ok` under heavy concurrent load — 5 runs in
-  1,050 — and guessed the machine's own file table, not this process's narrowed
-  one, was refusing the open. That guess is wrong, and it was measured out:
-  over 280,000 repetitions at this revision, loaded beside a looping
-  thread-sanitizer harness and unloaded, 25 repetitions lost an owed `Ok`, and
-  every one of them has the same shape. All three closes ran and the ledger
-  counted exactly three descriptors back (0 repetitions in the 120,000 that
-  counted the delta saw anything else). Every refusal was `EMFILE`, from this
-  process's own narrowed table, never `ENFILE`. The machine's file table stood
-  between 97 and 153 open files of 1,644,353 at each loss. And an open made
-  with the table still narrowed, the instant every publication was in,
-  succeeded in every one of them: a descriptor this runtime returned went to no
-  open at all. Contention
-  makes it commoner — about 1 repetition in 7,000 with three probe processes
-  and a thread-sanitizer harness loop sharing four cores, against 1 in 60,000
-  with the machine to itself — but it is not a load artefact, and it is not the
-  machine's. Run the way the gate runs it, one process at a time, it is rare
-  enough to hide: 250 runs of 250 repetitions across five load regimes here
-  reported none.
+  **This probe reported a shortfall that was real and rare, and it is fixed.**
+  Round 8's verification saw it lose an owed `Ok` under heavy concurrent load —
+  5 runs in 1,050 — and guessed the machine's own file table, not this
+  process's narrowed one, was refusing the open. That guess is wrong, and it
+  was measured out: over 280,000 repetitions at the revision before the repair,
+  loaded beside a looping thread-sanitizer harness and unloaded, 25 repetitions
+  lost an owed `Ok`, and every one of them has the same shape. All three closes
+  ran and the ledger counted exactly three descriptors back (0 repetitions in
+  the 120,000 that counted the delta saw anything else). Every refusal was
+  `EMFILE`, from this process's own narrowed table, never `ENFILE`. The
+  machine's file table stood between 97 and 231 open files of 1,644,353 at
+  those losses — 17 of the 25 above 153 — which is nowhere near a host limit.
+  And an open made with the table still narrowed, the instant every publication
+  was in, succeeded in every one of them: a descriptor this runtime returned
+  went to no open at all. Contention makes it commoner — about 1 repetition in
+  7,000 with three probe processes and a thread-sanitizer harness loop sharing
+  four cores, against 1 in 60,000 with the machine to itself, and 25 in 280,000
+  over the whole measurement — but it is not a load artefact, and it is not the
+  machine's. Run the way the gate runs it, one process at a time, it was rare
+  enough to hide: 250 runs of 250 repetitions across five load regimes reported
+  none.
 
-  Where it comes from is the one place the award rule can promise more than the
-  host has. A return is awarded to a waiter, and a waiter spends exactly one
-  re-attempt on the award it is given. But a descriptor that comes back can
-  also be taken by an open whose *first* host attempt lands after the close:
-  that open never registers as a waiter and takes no award, so the ledger still
-  has an award to hand out for a descriptor that is already gone. The waiter
-  that takes it re-attempts, is refused, and publishes — its one re-attempt
-  spent on nothing — and when the returns run out of waiters that way the last
-  descriptor is left with no open to claim it. The measurement says the same
-  thing from outside: in the repetitions where every one of the five opens is
-  refused before any close lands — five re-attempts, so no open outside the
-  award system — not one loss has ever been recorded, though under load those
-  are about half of all repetitions; all 18 losses whose re-attempt count was
-  recorded had four or fewer, which is exactly the shape in which an open took
-  a descriptor without becoming a waiter.
+  Where it came from is the award mark, and the diagnosis is a trace of the
+  ledger's own events at a loss rather than an inference from counts. Two
+  things could promise one returned descriptor twice, and both are now closed.
 
-  It is older than the aside work in this batch: the revision before the aside
-  announced loses it too (2 runs in 800 at round 8), a build of this revision
-  with that announcement removed loses none over the same load, and 20,000
-  repetitions at the pre-aside revision here lost none against 1 in 20,000 at
-  this one — none of which separates. It belongs to the award rule, not to the
-  announcement rule, and it is the next thing this record owes. It is left red
-  rather than skipped away: the probe now separates a refusal that is not this
-  process's narrowed table from one that is, and reports the second as the
-  failure it is, with the errno of each open, the descriptors returned, the
-  re-attempts granted, and whether a descriptor was left over.
+  The first is the mark's re-opening. A waiter's `seen` is read before its own
+  host attempt, and on the ring that is its submission — long before the kernel
+  refuses it, and longer still before the refusal is reaped and the waiter
+  registers. So refused opens arrive at the ledger late, with stale `seen`
+  values, and they arrive one at a time: each finds the waiter order empty
+  because the one before it has already left to spend its award. The mark
+  reopened on each of them, back to a `seen` older than what it had already
+  spent. The trace of one loss is exactly that: one close returns a descriptor,
+  and three ring refusals register in turn, each resetting the mark to the same
+  older count and each being awarded the same single return; two of them
+  re-attempt against a descriptor that is gone and publish `Err(EMFILE)`, and a
+  later close's descriptor is left with no open to claim it. The mark now only
+  ever rises.
+
+  The second is the open that never becomes a waiter. A descriptor that comes
+  back can be taken by an open whose own host attempt lands after the close:
+  that open registers nothing and spends no award, so the ledger still had an
+  award to hand out for a descriptor already gone. Such an open is now charged
+  for what it took — `wf_completion_retirement_open_took_a_descriptor`, called
+  on every route and on both a first attempt and a re-attempt, with the award a
+  waiter was granted charged once rather than twice. The mark is therefore
+  moved by both of the things that can consume a return, never moves backwards,
+  and never passes the return count: every descriptor this runtime puts back is
+  promised to exactly one consumer.
+
+  What that leaves is a window the ledger cannot see through, stated plainly
+  because it is the next thing here that could lose an `Ok`: an open takes a
+  descriptor at the moment the host satisfies it, but this runtime learns of a
+  close only when the close's own completion is reaped, so a take charged
+  before the return it consumed has been counted is charged against nothing and
+  the return is offered again when it lands. Closing it means deciding on the
+  balance of takes and returns rather than on returns alone, and re-anchoring
+  that balance at each waiter's own attempt. It is not closed here, and the
+  measurement below is what says how much of the shortfall it accounts for.
+
+  Measured after the repair on the same contention that measured the defect —
+  three probe processes on four cores with a looping thread-sanitizer harness
+  beside them, two of them this revision at one and four helpers and the third
+  the pre-fix revision `17fd7ec9` — **1,920,000 repetitions at this revision
+  lost nothing**, and miscounted nothing, while the 960,000 repetitions the
+  control ran in the same sweeps lost 237, one in 4,050. Run unloaded the
+  control passes 20,000 repetitions without a loss, which is the same thing
+  round 9 measured from the other side: the contention is what makes the
+  schedule common, not what causes it.
+
+  The probe is what measures all of this, and it now checks the ledger's
+  promise as well as the count of published opens: five opens can be granted at
+  most five re-attempts, a repetition may not publish more refusals than the
+  ledger granted re-attempts, and a repetition that ends with a spare
+  descriptor beside a published refusal is reported as the lost `Ok` it is
+  however the opens count up. A refusal from outside this process's narrowed
+  table — `ENFILE`, `ENOMEM` — is a repetition whose premise did not hold and
+  is excluded as not asked, announced per repetition and counted on the passing
+  line as well as the failing one; a genuine `EMFILE` shortfall that coincides
+  with such a refusal in the same repetition is excluded too, which is the
+  strictest edge of that boundary and is where the classification is stated.
 
   What that skip costs is worth saying plainly: mounting an `overlayfs` needs a
   privilege, so on a host or a job that lacks it the probe reports the skip and
@@ -663,6 +713,24 @@ by exempting the carrying block from the rule.
   with the owed queue run once instead of on every pass, the probe passes six
   of six — so the live read is the fix and the other two are the rule it needs
   to stay one.
+  `test_an_open_that_took_a_return_is_charged_for_it` fails at zero, one and
+  four helpers against a runtime whose satisfied open is charged for nothing:
+  the waiter is told a descriptor came back for it when the descriptor is
+  already in another open's hand.
+  `test_a_promised_descriptor_is_not_promised_again` fails at zero and one
+  helper against the mark restored to re-opening on every waiter that finds the
+  order empty — the defect the 1,920,000-repetition sweep is about, and the
+  only one of these four whose control is the shipped code of the revision
+  before this one.
+  `test_an_awarded_attempt_is_charged_once` fails at zero, one and four helpers
+  against a charge that ignores the award it was made on: the mark takes a
+  second descriptor for the one the award had already spent, and the next
+  waiter is refused the return it is owed.
+  `test_an_outside_free_charged_to_an_open_refuses_no_waiter` has no control of
+  that kind, and says so: it is the adversarial schedule for the charge rather
+  than a defect's test, and what it asserts is that a waiter the charge
+  deprives is kept waiting rather than refused, and still makes its one attempt
+  at the moment nothing is left in flight.
   `test_a_waiter_that_stands_aside_keeps_its_claim` fails at one and four
   helpers against two different alternatives: a ledger that passes a waiter
   standing aside over for the award, which hands the descriptor to the later
@@ -920,8 +988,10 @@ by exempting the carrying block from the rule.
   and four helpers, 0 stalls and 0 losses, against 5 stalls in 20 runs at one
   helper and 19 in 20 at four at the revision before the ledger announced on
   both endpoints; and `retirement_interleave_probe` 25 runs at one and four
-  helpers, all passing, plus one run under the thread sanitizer — the rare
-  shortfall that probe does report, about one repetition in nine thousand, is
+  helpers, all passing, plus one run under the thread sanitizer. The rare
+  shortfall that probe used to report — 1 repetition in 7,000 under three-way
+  contention, 1 in 60,000 unloaded, 25 in 280,000 over the whole round-9
+  measurement, and 0 in 1,920,000 since the award mark was repaired — is
   recorded with its diagnosis where the probe itself is described above.
 
   One nonzero exit of the thread-sanitizer harness is on this record without an
