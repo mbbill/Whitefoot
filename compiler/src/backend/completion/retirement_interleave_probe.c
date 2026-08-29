@@ -535,9 +535,16 @@ int main(int argc, char **argv) {
     (void)unlink(wf_interleave_path);
     wf_interleave_unmount_overlay(directory);
     if (attempted == 0) {
-        printf("completion-retirement-interleave: SKIP this process cannot"
-               " narrow its own descriptor table, so no open here is one the"
-               " host refuses for want of a descriptor\n");
+        if (skipped != 0) {
+            printf("completion-retirement-interleave: SKIP every one of %d"
+                   " repetitions met a refusal this process's narrowed table"
+                   " did not cause, so none of them asked the question\n",
+                   skipped);
+        } else {
+            printf("completion-retirement-interleave: SKIP this process cannot"
+                   " narrow its own descriptor table, so no open here is one"
+                   " the host refuses for want of a descriptor\n");
+        }
         return WF_INTERLEAVE_SKIP;
     }
     printf("completion-retirement-interleave: %s repetitions=%d lost=%d"
