@@ -1,61 +1,127 @@
-# The claim model, redesigned: premise ownership
+# Proof replaces claim: the trap-free language
 
-Design deliverable for batch 0106. Tree read: `integration/2026-08-28c`, tip
-`b1367c82`, spec v0.39 ACTIVE. Bare line numbers are `spec/kernel-spec.md` at
-that tip; every other citation names its file.
+Design deliverable for batch 0108, superseding batch 0106's *"The claim model,
+redesigned: premise ownership"* **in place**. Tree read:
+`batch/0106-claim-model-design`, spec **v0.39 ACTIVE**; bare four-digit line
+numbers are `spec/kernel-spec.md` at that tip, and every other citation names its
+file. Evidence beside this file: `TERRAIN.md` (the rule and prover map),
+`CENSUS.md` (the B0 measurement), `F2-REVIEW-TRIAL.md` (the review trial), and
+`CLAIM-DISSOLUTION-AUDIT.md` (the 0107 adjudication, whose verdict table,
+proposal list and irreducible list I1-I7 this design implements).
 
-This is the single design the project should implement. It is a synthesis: three
-independent designs were written from three angles (prover-first, world-first,
-writer-first) and reviewed by two adversarial judges who landed twenty
-counterexample programs between them. The map they all worked from is
-`TERRAIN.md`, beside this file. §10 records which idea came from where, which
-were rejected, and by which counterexample.
+Nothing here is implemented and no compiler code was written for it. The
+specification text in section 3 is draft text for a work branch, not an
+amendment.
 
-Nothing here is implemented. Every verdict change in §7 is a proposal, and the
-specification text in §3 is draft text for a work branch, not an amendment.
+## 0. What changed, and the result in one page
 
-**Census headlines.** `CENSUS.md`, beside this file, is batch 0106's B0
-measurement of the corpus this design reasons about, and three of its numbers
-should be read before §5 and §7. (1) Of the 114 gap-stating claims in the tree,
-**108 are forward publisher gaps, 4 are backward transfers over a `±wrap` row,
-and 2 are true residue** (§2.3 there). (2) **No claim anywhere in 682 source
-files has selector width m ≥ 2**, and only three have m = 1 (§3.3 there). (3)
-**All 18 real-program claims discharge SubscriptBounds**, and there is **not one
-`claim` statement anywhere in the blind-writer corpus** (§1.4, §2.1 there). The
-first and third are existence evidence for the principle — every claim this
-tree holds names a missing publisher, not a missing fact language. The owner's
-standing rule governs how the second and third may be read: the test suite is
-not real usage, WF is not finalized, and no real corpus exists, so a family's
-absence from these files proves nothing about whether it is needed; these
-counts are existence proofs and seed samples only. Accordingly: U1's fence
-stands or falls on F2's constructed trial and on design-space reasoning, not
-on the corpus; the refuter stays rejected on the correctness grounds of §10.2
-(A2–A4), the corpus adding nothing either way; and of the families this design
-still argues about, the loop/`flow` family is the live syntax-versus-prover
-choice — the corpus's true residue is two claims, and its backward-transfer
-gap is one row rule in the existing vocabulary (§5.3's erratum), both read as
-shapes that exist, not as bounds on what will.
+### 0.1 The supersession, stated
+
+The 0106 design kept `claim` and rebuilt it. The owner's charter of 2026-08-29
+discards the construct. This file is the same design with its third publisher
+replaced, not a new one:
+
+| 0106 | 0108 |
+| --- | --- |
+| **the principle** - premise ownership, three publishers, disjoint subject matter | **kept verbatim**, with publisher 3 replaced (section 1) |
+| publisher 3 = the reviewed claim | publisher 3 = **executed control flow, a verified contract, and a verified induction statement** - all three machine-checked, none trusted |
+| `[ENT-3.S5]` the value-commit image closure; the generalised `[ENT-3.S10]`; the image column and its complement | **kept and completed** with every row the 0107 audit requires (3.4, 3.11) |
+| `[CLM-1]` gate, `[CLM-2]` non-duplication, `[CLM-3]` partition, the `because` record, the gap token the *writer* spells | **all deleted**; the gap token is **computed by the compiler** (section 6) |
+| the loop head published as a subtraction; induction deferred to a gated batch B6 | **`[ENT-5.R]` retention plus `[IND]` the induction statement**, both drafted here (3.6, 3.8) |
+| T3 untouched (design section 1.6) | **T3 re-derived**; its premise becomes a property of the accepted set (section 5) |
+| U1 red ink: the laundering family is admitted and review is the only fence | **U1 is gone.** With no claim there is no laundering route and no review obligation; `F2-REVIEW-TRIAL.md` becomes the record of why (11.4) |
+| 12 open questions | 9 flagged decisions (section 9) and 11 open questions (section 10) |
+
+Section by section, so nothing is lost silently:
+
+| 0106 section | disposition here |
+| --- | --- |
+| 1 The principle | **carried forward** (1.1-1.5), publisher 3 replaced |
+| 1.4, 1.5 the laundering limit and the reviewer's rule | **dropped**; no construct is left for a laundering argument to inhabit, and there is no review record to have a rule about (11.4) |
+| 2 The complete case walk (20 rows over claim admission) | **superseded** by section 4, which walks the 50 audit scenarios, the 7 irreducibles, the 6 customers and the corpus instead |
+| 2.8 The residual claim | **dropped**; no subject |
+| 3 The specification replacement text | **carried forward and completed** into section 3 |
+| 3.4-3.6 the claim gate, `[CLM-1]`, `[CLM-2]` | **dropped**; the rules are deleted (3.1) |
+| 4 The judgment architecture | **carried forward** into 3.10.7 and 3.14 |
+| 5 The prover ceiling | **carried forward** into 3.4, 3.5 and 4.4, with the audit's row corrections applied |
+| 6 Non-duplication and residuality | **dropped**; consequence C-III dies with the runtime cost that motivated it (1.3, 2.10) |
+| 7 Conformance migration | **carried forward** into section 7 |
+| 8 Implementation plan | **carried forward** into section 8, re-batched |
+| 9 The attacks the judges landed (on the 0106 drafts) | **superseded** by section 2, which adjudicates the attacks landed on the 0108 drafts |
+| 10 Provenance of the ideas | **dropped**; section 2 records provenance where it decides something, and the audit records the rest |
+| 11 Unsolved problems, in red ink | **carried forward** into section 11; U1 and U3 leave the list (11.4) and three new entries join it |
+| 12 Open questions for the owner | **carried forward**, split into section 9's decisions and section 10's questions |
+| Appendix A, the five holes | **carried forward** into 1.4 |
+| Appendix B, the one-paragraph version | **dropped**; section 0.2 replaces it |
+
+### 0.2 The result
+
+Delete `claim` and the language loses **no discharge route any accepted program
+uses**, because each of the six things a claim could discharge is dischargeable
+by a guard, a contract, a published operation image, a retained loop fact, or a
+verified induction statement - and every one of those is a fact the checker
+itself derived or verified. Section 4's case walk is the demonstration: 50 audit
+scenarios, 7 irreducibles, 6 customers, 135 corpus claims, 20 corpus sites walked
+one at a time.
+
+Four things become true that were not:
+
+1. **`[ENT-1]` version monotonicity becomes unconditional.** Today the
+   specification grants monotonicity to every discharged operation, call goal and
+   selected-return relation and withdraws it from claims in the same sentence
+   (2853-2855). `claim` is the only construct in the language whose acceptance
+   *shrinks* when the prover gets stronger. After the deletion no construct's
+   admission depends on a fact **not** being derivable - and section 2.4 is the
+   adjudication that had to be won to keep that sentence true.
+2. **`[SCOPE-4]` becomes a trap-freedom statement rather than a trap
+   definition.** An accepted program has no writer-reachable runtime contract
+   violation at all.
+3. **`[PAR-1]`, `[PAR-2]` and `[PAR-3]`'s identity guarantees become
+   unconditional** (3.13), and the staged permission judgment loses a read
+   footprint and a non-continuing edge per former claim site. That is the
+   parallelism the charter asks for, and it is a deletion rather than a feature.
+4. **Deterministic verification removes branches from the emitted code.** Every
+   worked loop in section 3 loses one comparison or one never-taken arm relative
+   to the spelling that compiles today.
+
+The cost is one honest bill, stated in red ink in 11.1: where a fact is true and
+underivable, the writer writes a branch whose false edge cannot be taken, and in
+value position invents a value for it.
+
+### 0.3 What is compiled and what is read
+
+Every verdict marked *(compiled)* was run against the gate-profile `whitefootc`
+built from this tree at spec v0.39. The design draws on 160 audit probes, 16
+`t*` probes, 26 `L*` probes, 25 `c*` probes, 7 judge probes and my own 4; all of
+them were re-run for this file and all reproduce. Section 12 is the consolidated
+ledger and says, row by row, what compiles and what is a prediction about a rule
+that does not exist.
+
+The four probes that are mine are the ones that changed a decision:
+`y1`/`y2` (a compiled separating pair refuting the drafted P-LOOP candidate
+definition), `y3` (the loop it breaks), and `y4` (the one claim customer no part
+of the batch had witnessed).
 
 ## Contents
 
 1. [The principle](#1-the-principle)
-2. [The complete case walk](#2-the-complete-case-walk)
-3. [The specification replacement text](#3-the-specification-replacement-text)
-4. [The judgment architecture](#4-the-judgment-architecture)
-5. [The prover ceiling](#5-the-prover-ceiling)
-6. [Non-duplication and residuality](#6-non-duplication-and-residuality)
-7. [Conformance migration](#7-conformance-migration)
-8. [Implementation plan](#8-implementation-plan)
-9. [The attacks the judges landed](#9-the-attacks-the-judges-landed)
-10. [Provenance of the ideas](#10-provenance-of-the-ideas)
-11. [Unsolved problems, in red ink](#11-unsolved-problems-in-red-ink)
-12. [Open questions for the owner](#12-open-questions-for-the-owner)
+2. [The adjudication](#2-the-adjudication)
+3. [The construct catalog](#3-the-construct-catalog)
+4. [The complete case walk](#4-the-complete-case-walk)
+5. [T3 and W3, re-derived](#5-t3-and-w3-re-derived)
+6. [Diagnostics and teaching](#6-diagnostics-and-teaching)
+7. [Conformance and activation](#7-conformance-and-activation)
+8. [The implementation plan](#8-the-implementation-plan)
+9. [Flagged decisions for the owner](#9-flagged-decisions-for-the-owner)
+10. [Open questions, each with a recommendation](#10-open-questions-each-with-a-recommendation)
+11. [Honest limits, in red ink](#11-honest-limits-in-red-ink)
+12. [Probe ledger](#12-probe-ledger)
 
 ---
 
 ## 1. The principle
 
-### 1.1 Stated once
+### 1.1 Stated once, with the third publisher replaced
 
 > **Premise ownership.** Every premise a Whitefoot proof may use is published by
 > exactly one of three publishers, and each publisher's output is fixed by this
@@ -64,2275 +130,4332 @@ shapes that exist, not as bounds on what will.
 > 1. **The entailment** publishes what the operation table and the control graph
 >    entail about values this function's own text produced.
 > 2. **The callable boundary** publishes what a machine-verified contract
->    (`requires`, an FN-9-verified `ensures`) or a specification-fixed operation
->    contract states about values a callee or the world produced.
-> 3. **The reviewed claim** publishes one always-true function-local lemma about
->    values this function's own text produced, standing above the entailment's
->    published ceiling.
+>    (`requires`, an `[FN-9]`-verified `ensures`, an `[FN-10]`-verified write
+>    postcondition) or a specification-fixed operation contract states about
+>    values a callee or the world produced.
+> 3. **The writer's verified statement** publishes what the writer said about
+>    this function's own values *and the checker then proved*: an executed
+>    branch condition, and a verified induction statement over a loop or a local
+>    computation.
 >
 > A premise no publisher publishes is available to no one: not to the checker,
-> not to the writer, not to the reviewer.
+> not to the writer, not to a reviewer.
 
-Everything below is a consequence. The area has had all three publishers since
-v0.20-something; what it has never had is the statement that they are three, that
-their subject matter is disjoint, and that each one's output is *published* —
-enumerable, fixed by the specification, and citable.
+The 0106 file's publisher 3 was *the reviewed claim*: one always-true lemma,
+taken on a human's word, backed by a retained runtime trap. That is the only
+sentence of the principle that moves, and moving it is the whole batch.
 
-### 1.2 The four consequences
+### 1.2 What the replacement buys, stated as the publication law
 
-**(C-I) The claim gate is a subject-matter rule, not a position rule.**
-Publisher 3 may speak only about publisher 1's subject matter: values this
-function's own text produced. A value a callee returned, or wrote into caller
-storage, is publisher 2's subject matter, and publisher 3 may not restate it —
-that is constitution W3 and [CLM-1] 2720 word for word. *Choosing an edge
-publishes no value*, so a selector transfers no subject matter. H1 and H3 are
-both decided here, in opposite directions, by one question: **did a boundary
-produce this value?**
+After the deletion the fact-source list `[ENT-1]` 2831-2836 governs reads, with
+nothing removed but the writer's *word*:
 
-**(C-II) Publisher 1's output must be a closure, and its complement must be
-published too.** "Published" is not satisfiable by a list chosen one construct at
-a time. Today [ENT-3] is eleven numbered sources — S5 for copies, S6 for lengths,
-S7 for `p ± k`, S9 for named const arrays, S10 for two of [SYS-8]'s seven
-relations, S11 for counted loops — and S8 was struck with the note that it "may
-return as a later version's monotone addition the day a corpus program writes the
-shape" (3009). That sentence *is* the defect, in the specification's own voice: a
-publisher whose output grows by petition has no published output. Replace the
-list with one closure indexed by the operation table and the control graph — both
-already closed, both already normative — and publish its complement as a finite
-set of gap kinds. H2's prover half is decided here.
+> Every fact source `[ENT-3]` is an executed control condition, a requirement
+> statically proved by every ordinary caller before S4 admits it to a body, a
+> declared allocation or type property, a constant, an operation row's published
+> image, S11's compiler-owned structural consequence, S12's machine-verified
+> normal-result publication, or a machine-verified induction statement.
 
-**(C-III) Two publishers may not publish the same premise.** A claim whose
-content publisher 1 already publishes is a duplicate publication: it costs a
-retained runtime check on every reach (2748) and buys nothing. That is H4's
-verdict, derived rather than inherited, and it also derives *why* the verdict must
-flip when the ceiling rises — a ceiling raise moves content from publisher 3 to
-publisher 1, and the writer's edit is to stop publishing it twice.
+One kind left the list and one joined it, and the *shape* of the list changed
+qualitatively: **every source is now something the compiler itself observed or
+verified.** Before the deletion, exactly one entry was a writer's word taken on
+trust; after it, the entry in that position is a statement the checker proves
+before it is a fact.
+That sentence is the whole content of section 5's W3 amendment, and it is why
+T3's derivation gets stronger rather than weaker.
+
+### 1.3 The four consequences, re-derived
+
+**(C-I) Subject matter, not position.** Unchanged in force and simpler in
+statement. Publisher 3 may speak only about publisher 1's subject matter -
+values this function's own text produced - but with the claim gone the rule no
+longer needs a *gate* to enforce it. A verified statement cannot smuggle a
+premise across a boundary: if the base and step do not derive, it is rejected,
+whatever its support reads. **`[ENT-6]`'s entire claim-authority analysis
+(3215-3248, and `compiler/src/semantic/claim_locality.rs`, 2122 lines) is
+deleted with no replacement**, and that is the single largest simplification the
+deletion buys.
+
+**(C-II) Publisher 1's output is a closure and its complement is published.**
+Unchanged, and now load-bearing for a second reason: with no claim to stand over
+the ceiling, a ceiling clause is a program the writer must *restructure*, so the
+complement has to be honest. Section 3.4 carries the closure forward; section 6
+computes its tokens instead of asking the writer to spell them.
+
+**(C-III) Two publishers may not publish the same premise.** This consequence
+**dies with the claim, and its death is a result rather than a loss.** The rule
+existed because a duplicate publication cost a retained runtime check on every
+reach (2748). An induction statement costs nothing at runtime, so a statement
+that publishes what publisher 1 already publishes costs nothing, and
+`[IND-9]` says so normatively. Section 2.10 records the owner's ruling and the
+asymmetry that derives it.
 
 **(C-IV) Every refusal names the publisher who owns the premise the writer
-needs.** A writer refused today is told which rule said no. Under the principle
-they are told which of the three publishers owns what they are missing and how to
-get it published: raise it from the boundary (a contract), from the text (a
-branch or a different spelling), or from review (a claim). H5's uniform teaching
-channel is that sentence, mechanised.
+needs.** Unchanged, strengthened, and now mechanical: the writer no longer
+spells the gap token in a `because` record, because there is no record - the
+compiler computes it (section 6).
 
-### 1.3 Why premise ownership, and not one of the three angles
+### 1.4 The five holes, and the one that closes itself
 
-Each of the three input designs found one true thing and mislocated it.
+The 0106 file's central table said the five charter holes were one defect.
+Under the deletion four of them stay closed by the same mechanism and the fifth
+stops existing:
 
-- *world-first* derived the gate from what a boundary can inject, and got C-I
-  right, but then asserted its judgment computes *settlability of truth* when it
-  computes *enumerability of the value set*, and both judges refuted the
-  equivalence with three-line programs. Ownership separates the two cleanly: the
-  gate decides **subject matter**, review decides **truth**.
-- *writer-first* derived the gate from what a reviewer may cite and got the same
-  answer, more honestly — it stated its condition as necessary and not
-  sufficient — but declined to move publisher 1 at all, leaving the ceiling as
-  the eleven-source list and the writer paying a retained runtime check where a
-  proof was available.
-- *prover-first* built publisher 1's closure, which is the best construction in
-  the batch, but then tried to recover the review residue with a machine (a
-  witness state and a `refuted-on-a-path` verdict) that both judges broke, and
-  shipped a loop rule that derives a false fact.
-
-Premise ownership is what the three were each half-stating. It is also the frame
-in which each of the five charter holes is the *same* defect rather than five:
-
-| hole | the defect, in one sentence |
+| hole | disposition at 0108 |
 | --- | --- |
-| H1 | Edge choice was treated as a publication, so publisher 2's subject matter grew to cover values it never produced. |
-| H2 | `0 ≤ picked ≤ 1` had **no publisher**: publisher 1's list had no entry for a delivered literal, and publisher 3 was refused by H1's error. A premise with zero publishers is a program with no legal spelling. |
-| H3 | A value a callee produced had **no owner**: publisher 2 produced it, publisher 1 did not model it, and publisher 3 was permitted to speak about it. |
-| H4 | Publishers 1 and 3 publishing the same premise, with no rule saying which one must stop. |
-| H5 | The writer was never told which publisher owns the premise they lack. |
+| H1 - edge choice treated as a publication | closed by the value-commit image closure (3.4): one operation committed to one destination establishes one image however it is spelled |
+| H2 - a delivered literal had no publisher | closed by the same clause; a `give` edge is a value-commit event |
+| H3 - a callee-written value had no owner | closed by `[FN-10]`, the write postcondition (3.10), which is publisher 2 finally able to speak about what a callee wrote |
+| H4 - two publishers publishing one premise | **dissolved.** With no runtime cost to duplication there is nothing to arbitrate |
+| H5 - the writer was never told which publisher owns what they lack | closed by the computed gap token and its seven-row fix table (section 6) |
 
-That table is the design's central argument. If it is right, one principle covers
-the space and no case-by-case exception is needed. §11 records the one place
-where it does not reach, in red ink, as an unsolved problem rather than a rule.
+### 1.5 The one thing the principle still does not decide
 
-### 1.4 The one thing the principle does *not* decide
+Ownership decides who may speak about a value. It does not decide how *much* the
+entailment can say about it. The complement of publisher 1's closure - the
+prover ceiling - is a real ceiling, and the 0106 file's four gap kinds survive
+as four of the seven tokens in section 6.1. What has changed is the writer's
+recourse when they hit it: under 0106 they wrote a claim and a human validated
+it; under 0108 they write a branch, a contract, or a statement the machine
+validates, and if none of the three reaches the fact they **restructure the
+program**. Section 11.1 states that bill in red ink and prices it in three
+tiers.
 
-Ownership decides who may speak about a value. It does not decide whether what
-they said is true. A claim over values the function's own text produced whose
-truth nevertheless depends on which arm a boundary selected — the *laundering
-family* — passes the gate and is refused, if at all, by review.
-
-```whitefoot
-fn hidden() -> result: own u64 pure { return 9_u64; }
-
-let n = hidden();
-let big = ige(n, 4_u64);
-let y = if big { give 5_u64; } else { give 1_u64; }
-claim laundered: ilt(y, 4_u64) because "…";   // admitted. FALSE when big.
-```
-
-`y`'s support reads two literals; no boundary produced it; the gate admits. The
-predicate is materially `n < 4`.
-
-This is not an exception carved into the rule — the rule is about subject matter
-and it answers correctly that `y` is publisher 1's subject. It is the **limit of
-what a mechanical subject-matter test can do**, and three independent facts say
-no setting of the dial improves it:
-
-1. To refuse this program while admitting `claim ilt(y, 4_u64)` over arms
-   `{0, 1}`, a checker must compute the joined value set. A checker that computes
-   it derives `y < 4` for the good program outright, and the good claim is then a
-   duplicate publication (C-III) and is refused anyway. **The checker is on the
-   wrong side of both halves.** (writer-first §1.6, and neither judge disputed
-   it.)
-2. Every path-sensitive technique that would separate them — trace partitioning,
-   powerset domains, CEGAR, guarded facts — needs a merge policy, a disjunct
-   bound, search, or a second logic, and [ENT-1] 2831/2836 forbid all four.
-3. The one mechanical defence proposed in the batch, prover-first's
-   `refuted-on-a-path`, was refuted twice: it rejects true text-reviewable claims
-   (judge-1 §1.2) and its tag is a path *suffix*, so two bounds sharing a tag
-   need not share an execution (judge-2 F-2). §9 gives both programs.
-
-So the design states the limit in the specification instead of pretending to
-close it, compensates it with published review evidence (§4.5's case list and
-§3.8's review note), and proposes the measurement that would move the line
-(§8's review trial). T3 already lives with fallible reviews and says so: "an
-execution that reaches it is a defective program **whose review was wrong**"
-(`docs/constitution.md` T3). What T3 needs is that the review be *possible*, and
-premise ownership is exactly the property that makes it possible.
-
-### 1.5 The reviewer's rule, made precise by the principle
-
-The compensation is not hand-waving, because ownership sharpens 2720 into a
-checkable procedure. [CLM-1] 2720 already says review "may not use … an unstated
-caller or environment promise, a user callee's body or unstated system behavior
-in place of a verified or specification-fixed callable-boundary fact". Under the
-principle that reads:
-
-> **A `derivation:` line may cite only published premises.** Each step cites a
-> fact the entailment publishes at that point, a contract the callable boundary
-> publishes, an earlier reviewed claim named in `premises:`, or the function's own
-> text. A step that needs an unpublished premise makes the record invalid and the
-> reviewer refuses.
-
-In the laundering program the reviewer's premise set contains "y is `5_u64` or
-`1_u64`" (text) and *nothing whatever about `hidden`*, because `hidden` publishes
-no contract. To conclude `y < 4` the derivation must decide which arm ran, which
-needs an unpublished premise. **The record is invalid and the review refuses.**
-In the sibling with arms `{0, 1}` the derivation covers both cases from the text
-and is valid.
-
-That is why "settlable" is the right word and "true" is not: the reviewer's job is
-to decide whether the record's derivation stands on published premises, which is
-a finite, mechanical-in-shape task once the case list is in front of them.
-
-### 1.6 What the principle does to the constitution
-
-- **T3 is untouched and needs no re-derivation.** A claim still means what 2696
-  says it means: true on every execution reaching the statement, reviewed,
-  retained, never elided. No construct admitting non-always-true predicates is
-  introduced.
-- **W3 is strengthened in one place and clarified in another.** Strengthened:
-  H3's carve-out was the one route by which an unverified cross-function promise
-  could become a lemma, and §3.4 closes it. Clarified: W3's phrase "over the
-  current function's own value **and control** authority" was written to license
-  the CLM-1 clause this design deletes. §12 Q1 puts the reading to the owner with
-  a recommended amendment.
-- **R4 improves.** Every verdict this design moves either removes a runtime check
-  (a claim becomes a proof) or converts a compile-time refusal with no legal
-  repair into a compiling program.
+The 0106 file's *laundering family* - a claim whose truth depends on which arm a
+boundary selected, admitted by the subject-matter gate and refusable only by
+review - has no successor and needs none. There is no construct left that a
+laundering argument could inhabit. `F2-REVIEW-TRIAL.md`, which measured whether
+reviewers catch such a claim, is kept beside this file as the evidence for why
+the model that needed it is gone (11.4).
 
 ---
 
-## 2. The complete case walk
+## 2. The adjudication
 
-Every row is decided by two questions and nothing else:
+Two adversarial judges read the three 0108 part-designs and landed nineteen
+distinct flaws, nine of them named fatal. I adjudicated every one against the
+quoted rule text and, where a program could arbitrate, against the compiler.
+**Every judged fatal is upheld except one, which is upheld in part.** Four are
+memory-unsafety admissions; one falsifies the batch's headline theorem; five are
+seams between the parts. The repairs are in section 3 with the rules they
+repair; this section is the verdict, the evidence, and - for the four that
+needed a design decision rather than a side condition - the reasoning.
 
-- **admission (publisher 3's subject matter):** does the predicate's support read
-  a value a callable boundary produced?
-- **necessity (C-III):** does publisher 1 already publish this content?
+I also record three findings of my own that neither judge made, one of which is
+a compiled separating pair that changes a central rule.
 
-No row consults a construct kind, a source shape, a selector, a position, a
-nesting depth, or a count. "v0.39" is the verdict at `b1367c82`; "here" is this
-design's verdict; the delta column marks a move.
+### 2.1 The verdict table
 
-| # | shape | v0.39 | here | delta |
+| id | flaw, in one line | verdict | evidence | repair, and where |
 | --- | --- | --- | --- | --- |
-| 1 | ground expression (`3209 % 64`) | accept | **CLM-2 duplicate** | ✔ |
-| 2 | named consts | accept | **CLM-2 duplicate** | ✔ |
-| 3 | parameter through a total row (`cursor % 4`) | accept | **CLM-2 duplicate** | ✔ |
-| 4 | `%`, `/`, `imin`, `imax`, `iand`, shifts over locals | accept (46 corpus claims) | **CLM-2 duplicate** | ✔ |
-| 5a | `value_if` delivering literals | **reject CLM-1** | **CLM-2 duplicate** | ✔ |
-| 5b | `value_if`/`value_match` delivering a call payload | reject CLM-1 | reject CLM-1 | — |
-| 6a | arm-written storage, both definitions below the bound | **reject CLM-1** | **CLM-2 duplicate** | ✔ |
-| 6b | arm-written storage, one definition above the bound | reject CLM-1 | **accept**, retained claim + review note | ✔ |
-| 7 | loop-carried literal update under a boundary endpoint | **reject CLM-1** | **accept**, retained claim (`flow` gap) | ✔ |
-| 8 | loop accumulator (`acc = acc + 1`) | accept (39 corpus claims) | accept (`flow` gap) | — |
-| 9a | storage a callee wrote through `&uniq` | **accept** (carve-out 3242) | **reject CLM-1**, gap `boundary` | ✔ |
-| 9b | length of a buffer a callee whole-place replaced | accept | **reject CLM-1** | ✔ |
-| 10 | `len(deref buf)` bound before a callee element write | accept | accept | — |
-| 11 | payload of a matched call result | reject CLM-1 | reject CLM-1 | — |
-| 12 | restatement of a verified `ensures` result | reject CLM-1 | reject CLM-1 | — |
-| 13 | claim inside a boundary-selected arm | accept | **CLM-2 duplicate** or accept, by facts | ✔ (reason) |
-| 14 | claim after a typed exit (the 0097 pair) | accept | **CLM-2 duplicate** | ✔ |
-| 15 | nested boundary selections over literals | **reject CLM-1** | **CLM-2 duplicate** | ✔ |
-| 16 | a [SYS-8] outcome relation outside today's S10 | reject CLM-1 | reject CLM-1; the obligation now discharges with no claim | ✔ (route) |
-| 17 | a value of an array element | accept | accept (`content` gap) | — |
-| 18 | **laundering** (literal arms, boundary-decided truth) | reject CLM-1 | **accept; review refuses** | ✔ ⚠ |
-| 19 | two-conjunct claim, one conjunct derivable | reject CLM-2 overlap | **CLM-2 duplicate (component)**, fix names the ordinal | ✔ (fix) |
-| 20 | claim over a bare parameter, false in general | accept; review refuses | unchanged | — |
+| **A1** | `[IND-4]`'s wrap/sat proviso is vacuous: a `wrap` row has no `[ENT-6]` domain obligation, so `a -wrap b` substitutes to `a - b` unconditionally | **upheld** | `j01_wrap_total.wf` **accepts** (compiled): `let room = a -wrap b;` with no guard and no obligation. `j02` (compiled) rejects the shape the drafted rule would admit | 3.8, `[IND-4]` clause (d): the *corresponding exact row's* `[OP-2]` no-wrap side condition must be derivable at that commit |
+| **A2** | `[IND-4]`'s "substitution applies identically to every hypothesis" makes the step self-cancelling, admitting a false invariant and a silent unsigned overflow | **upheld** | hand arithmetic, reproduced independently: `p := 255*p0 - 255*H1 = -65025`, verified, for a loop whose accumulator grows by 1000 | 3.8, `[IND-6]` the frame rule: statement polynomials are head-frame facts and are never substituted |
+| **A3** | P-OFF's `x` row publishes `r - a >= al*(bl-1)` with no `bl >= 1` condition, so `a in [2,10]`, `b = 0` publishes `a >= 10` | **upheld** | `j03_poff_mul_unsound.wf` (compiled) rejects exactly the obligation the false fact would discharge; `harm(a: 2, b: 0)` satisfies every `requires` and underflows | 3.5, `[ENT-3.S5.O]`: publish the `x` rows only when the state derives `Z - b <= -1` |
+| **A4** | `[IND-7]`'s greedy elimination is non-monotone under prover strengthening, falsifying `[ENT-1]`'s rewritten monotonicity sentence | **upheld** | hand construction over three terms; a new row image inserts a hypothesis earlier in a fixed order and displaces the useful one | 3.9, `[IND-7]` replaced by a **certificate** form; 2.4 is the reasoning |
+| **A5** | the batch names P-COMMIT, P-DOM, P-ROW's `%`, `/`, `imin`/`imax`, P-MONO, the corrected `*wrap` box image and the `ior`/`maxor` image as hard prerequisites and drafts none of them | **upheld in part** | correct about the three part-designs; **wrong about the batch**: `[ENT-3.S5]`, the generalised S10, the image column and its `%`, `/`, `imin`/`imax` and bit rows are drafted in the 0106 file this one supersedes (its 3.2 and 5.3) | 3.4 and 3.5 carry them forward and complete them; 2.5 records the correction |
+| **A6** | three parts, three edge-ordering texts, one of them v0.39's order, which both siblings call mandatory to reverse | **upheld** | spec 3095 quoted: "each taken after that edge's scope-exit kills and then closed"; `r7_closure_vs_kill.wf` (compiled) rejects `best < len(data)` | 3.3, one rule id `[ENT-5.P0]`; `[ENT-5.X1]` is deleted as a duplicate and 3.14's pipeline is rewritten |
+| **A7** | `[FN-10]`'s flagship clause `ensures wrote(deref(at): next): ige(next, deref(at))` cannot be established at the caller: the entry image of the caller's place is dead after the callee-effect kill, and `[ENT-2]` gives no snapshot term | **upheld** | argument over quoted `[FN-10.E]`/`[FN-10.K]`/`[ENT-2]` text; the same defect as D7 in the other direction | 3.10, `[FN-10.A]`: a write clause is admitted only over operands the call does not disturb. The snapshot term is flagged decision D6 |
+| **A8** | the unlabelled induction statement has no rule text: no path, no start, no stop, no depth bound | **upheld** | the sibling file designing the same route fixes a depth of 8 "because `[ENT-1]` forbids an implementation-chosen limit"; the other bounds nothing | 3.9, the **local** form, drafted in full with a straight-line region restriction |
+| **A9** | `[IND]` has no proof-view discipline, so a statement resting on S4 publishes in the S4-blinded view and `[PRV-3]`'s external fence is defeated | **upheld** | `[PRV-3]` 3392 and `[FN-9]`'s per-view aggregates quoted; the drafted `[IND-8]` has no counterpart | 3.9, `[IND-5.V]` and `[IND-8.V]`, mirroring `[FN-9]`'s `Cq`/`Bq` |
+| **A10** | the generalised `[ENT-3.S10]` mandates establishing `next = start + required`, a three-term relation `[ENT-2]` 2901 cannot hold | **upheld** | spec 2577 and 2901 quoted; the escape clause reaches a bad *operand*, not a bad *arity* | 3.11, `[ENT-3.S10]` gains an explicit arity projection |
+| **A11** | the contract part still queries the **U** view the core part deletes | **upheld** | `[PRV-3]` 3404 defines U as the complete state minus S3; with S3 deleted `U == complete` pointwise | 3.10 and 3.14: two views everywhere |
+| **A12** | `[FN-10]`'s disjointness tie-break is a silent-loss rule its own author recommends against | **upheld** | the drafted rule and its own Q3 contradict each other | 3.10, `[FN-10.A]` clause (e): reject at admission |
+| **A13** | the redundancy-note channel is homed in `[DIAG-3] 1985`, a rule the same file deletes | **upheld** | quoted from both sections of the same file | 6.4: homed in `[DIAG-1]`, with a sentence forbidding it from ever becoming a verdict |
+| **A14** | deleting `[TRAP-1]` wholesale drops a lowering-shape guarantee `[QUAL-3]` cites, and silently retires a deferred amendment | **upheld** | `[TRAP-1]`'s "no instance resource table, per-instance reaper, or pending-operation transfer ... on an `inline-terminal` transfer path `[QUAL-3]`" is not about the claim's own execution | 3.13: re-derived into `[QUAL-3]` from the new `[SCOPE-4]`; the deferral's withdrawal is a META-5 line |
+| **A15** | the `gap` token table never names the batch's own new construct, and the one token that fires on loops teaches a fix that cannot work | **upheld** | clause 4 fires exactly on the candidates P-LOOP **deleted** - facts that are not inductive - and tells the writer to state them as an induction statement, whose step will fail on the very path that killed the candidate | 6.1: a seventh token `induction`, and clause 4 rewritten |
+| **A16** | `[IND-6]` checks the step in the **body-exit** state while `[IND-4]`'s substitution expresses the polynomial over **head** values, verifying a false invariant and admitting an out-of-bounds write | **upheld** | `j3_ind6_checkpoint_break.wf` (compiled) rejects `x < len(out)`, the single obligation the false publication discharges; `j3b_ind6_consumer.wf` (compiled) **accepts** with that fact supplied. The pair is the break | 3.8, `[IND-6]` the frame rule; and 2.3 |
+| **A17** | `[IND-4]`'s "until no destination written on the path remains" forces re-substitution, a second independent unsoundness and a determinism defect | **upheld** | on the same program it rewrites `p = cursor` to `p = 0` by a different route; and two readings of "until" accept different programs | 3.8, `[IND-4]` clause (a): **one backward pass, no revisiting** |
+| **A18** | `[FN-10]` verifies a write clause on `Ok` returns and establishes it on **every** normal continuation, so an `Err` return leaves the place unconstrained and the caller reads past the end | **upheld** | `j2_fn10_err_hole_shape.wf` (compiled) is that program minus the clause, rejecting on exactly `cursor < len(values)` | 3.10, `[FN-10.V]`: a write clause selects **every** return |
+| **A19** | P-LOOP's candidate set is the **tightest** entry bound per ordered pair, so it can never retain a weakening - and the inductive bound of an ordinary counting loop is almost always a weakening | **upheld**, and I compiled the separating pair | `[ENT-2]` 2901 and `[ENT-4]` rule (3) quoted: a closed state holds one bound per ordered pair. **`y1_entry_tight_step.wf` rejects** and **`y2_relaxed_step.wf` accepts** (both compiled) on the same step obligation, the only difference being whether the head fact is the entry-tight atom or its weakening. `y3_const_extent_loop.wf` (compiled) is the loop | 3.6, `[ENT-5.R2]`: the **constant ladder**; and 2.6 |
+| **A20** | `[ENT-5.R3]` freezes the candidate universe in the no-retention flow, so an inner loop can never receive a fact only an outer loop's retention makes available | **upheld** | `fir_filter.wf:45` is that program and is in the same file's own migration table; the audit's own P-LOOP text does not freeze the universe | 3.6, `[ENT-5.R3]`: an ascending universe iteration, which **terminates because the ladder makes the universe a subset of a syntactically fixed finite set** |
+| **A21** | the generalised `[ENT-3.S10]` silently drops spec 2988's `[PRV-1]` dependency sentence, defeating the world-value fence the whole design leans on | **upheld** | spec 2988 quoted: "Each result endpoint's `[PRV-1]` dependency additionally includes the concrete start actual, so this relation never launders an external start into an internal result." The drafted replacement has four sentences and that is not one | 3.11: restored and generalised to every actual the source names |
+| **A22** | two notations and two verification procedures for I1 - `bound` with a substitution-and-elimination check, and `prove` with an unfold-to-depth-8 check and a new 60-100 row denotation column | **upheld** | the two cost accounts are an order of magnitude apart in one deliverable | 3.9: one construct, `bound`; `prove` and the denotation column are **not adopted**; 2.7 is the reasoning and 3.9's finding on data-dependent probes is kept |
+| **A23** | the four bucket-B corpus claims get three mutually exclusive dispositions, and two of the three rest on a factual claim a compiled sibling probe refutes | **upheld** | `t4`, `t8`, `t10` all **accept** (re-run, compiled): T1, T2, T3 and R1 dissolve today with a guard and no new rule | 4.5: one disposition per claim; the statement and the backward wrap rows both lose their necessity argument, and 2.8 states what that costs |
+| **A24** | seven determinism gaps: circular term/hypothesis order; `RELAX` undefined on a mixed-sign degree-2 monomial; `[IND-8]`'s `m` ambiguous; cross-type difference bounds have no `[ENT-2]` producer; `[ENT-3.S5.B]`'s reading point pinned only in prose; `[ENT-5.R6]`'s monotonicity argument omits `B`; the META-5 delta is never summed | **upheld, all seven** | `j4_mixed_type_compare.wf` (compiled) shows `ile(a_u32, b_u64)` is `[TYPE-5] TypeMismatch` today, so `[IND-8]` would be the first producer of a fact class `[ENT-2]` has never carried | closed at 3.9 (order dissolved by the certificate form; `RELAX` corners; `m`; the cap), 3.9's `[IND-8.T]` (the `[ENT-2]` amendment), 3.5 (the reading point nailed to the event), 3.6 (`B` monotone in `R`), and 7.3 (the summed delta) |
+| **A25** | smaller, all upheld: `[ENT-5.R4]`'s definition is circular against its own algorithm; `[IND-8]`'s constants escape the `2^127` cap; `[IND-3]`'s `ine`-as-hypothesis clause is dead text; I4's closure is narrower than its headline; `[ENT-2]` 2891's amendment puts a statement in the *goal* universe; `[SYS-8]`'s SystemRange customer is unwitnessed | **upheld** | the last one I closed: **`y4_systemrange_guard.wf` accepts** (compiled) | 3.6, 3.9, 3.12, and 12 |
 
-Row 18 carries a warning mark and is the subject of §11.
+### 2.2 My own findings, which neither judge made
 
-### 2.1 Rows 1–4 — the ground case and the remainder family
-
-```whitefoot
-let seed = 3209_u64;
-let offset = seed % 64_u64;
-claim guard: ilt(offset, 64_u64) because "…checker gap: the entailment state
-  carries no residue for a literal remainder, so the bound is left to this
-  executed check…";
-```
-
-That is `accept-clm1-local-claim-after-boundary-exit.wf`, the accepted member of
-the differential-fuzz pair batch 0102 was written to admit, and its own `checker
-gap:` field is the confession: **v0.39's flagship accepted claim is a workaround
-for a checker that cannot evaluate a closed ground expression.** Under §5's image
-closure the `%` row publishes `Z ≤ r`, `r ≤ d − 1` and `r ≤ a`; with both operands
-pinned the result is pinned; the predicate is derivable. **Duplicate publication;
-the claim is deleted and the program compiles with no runtime check.**
-
-There is no constant rule and no ground-folding rule. `3209 % 64` is folded by
-the same image rule that serves `index % 19_u64` with `index` a parameter (row 3)
-and `a % d` with both variable (row 4): the image is a function of the operand
-bounds, and a literal's bounds pin it. That is the whole of C-II — a closure has
-no cases.
-
-Row 4 is 46 of the corpus's 135 claims, whose gap text is written 35 times
-verbatim: *"ENT proves the remainder operation domain but does not publish its
-result range"*. It is a precise bug report against the eleven-source list: the
-checker proves `%`'s **domain** (IntegerDomain, `d ≠ Z`, 3148) and discards its
-**range**, because S7 has a row for `p ± k` and none for `%`. All 46 retire.
-
-### 2.2 Row 5 — delivered values, and why this is not a constants exception
+**S1 - `[IND-4]` as drafted refuses its own flagship example.** The
+substitution walks backwards "replacing, at each `let` or `set` commit whose
+destination occurs in the polynomial, that destination by the polynomial of the
+commit's right-hand side, until no destination written on the path remains", and
+"a subscript ... **refuses** the statement". The I2 worked example is
 
 ```whitefoot
-let condition = hidden_true();
-let picked = if condition { give 0_u64; } else { give 1_u64; }
-claim reviewed_delivery: ilt(picked, 4_u64) because "…";
-return values[picked];
+let w = deref(weights)[i];
+let wide = cvt<u8, u32>(w);
+set sum = sum + wide;
+bound @weigh per_byte: ile(sum, 255_u32 * i);
 ```
 
-`reject-clm1-claim-on-delivered-selection.wf`, a normative reject at `b1367c82`,
-and the sharpest artifact in the charter: the predicate is true on every
-execution, its truth reads nothing the callee returned, and **both** documented
-writer routes are closed. [ENT-6] 3169 promises "one dominating branch
-establishing its canonical goal, or a CLM-2-admissible residual claim"; here the
-dominating branch *is* the `value_if`, and the claim is refused by CLM-1. The
-program has no legal spelling.
+and its trace keeps `wide` in the polynomial and relaxes it with `cu(wide) =
+255`. But `wide` **is** a destination written on the path, so the rule replaces
+it by its `cvt` operand `w`; `w` is also a destination written on the path, and
+its right-hand side is a **subscript**, so the rule refuses. **The rule text and
+the worked example contradict each other, and the rule text refuses the
+example.** The repair is not to weaken the refusal: it is to say what a
+path-local value *is*. Section 3.8's `[IND-4]` clause (e) gives an unsubstitutable
+`let` commit a **fresh opaque witness term** with its commit-point bounds as
+hypotheses - the device `[IND-4]` already uses for `a / k` - and reserves refusal
+for an unsubstitutable `set`. With it, the I2 trace runs unchanged with `w`'s
+witness in place of `wide`.
 
-Both sides move, independently and generally.
+**S2 - A5 is overstated, and the correction matters for scheduling.** All three
+part-designs assign the value-flow publishers to a fourth designer and both
+judges conclude the batch is unmergeable. The publishers are drafted: the 0106
+file this one supersedes contains `[ENT-3.S5]` (the value-commit image closure -
+the audit's P-COMMIT plus its frame), the generalised `[ENT-3.S10]`, the
+`[ENT-1]` ceiling clause and complement, and the row list naming `%`, `/`,
+`imin`/`imax` and the bit rows with their images. What is genuinely missing is
+narrower and I draft it here: **P-DOM** (3.5), **P-MONO/P-OFF corrected**
+(3.5), the **corrected `*wrap` box image** and the **`ior`/`maxor` image** (3.5),
+and the enumeration discipline that makes the column total (3.4). The batch is
+one merge, as the core part says; it is not missing a designer.
 
-*Admission:* `picked`'s support reads two literals. No boundary produced them.
-`condition` chose an edge, and choosing publishes no value. **CLM-1 admits.**
+**S3 - `[ENT-3.S10]`'s widening is two changes wearing one sentence.** The
+drafted generalisation changes *which operations* the source covers (five named
+operations become every `[SYS-2]` operation) **and** *how much* it imports (two
+endpoint facts become every `[SYS-8]` relation). The second is argued; the first
+is not argued anywhere. I keep both, because the accreting-list objection applies
+to the operation list exactly as it applies to the relation list, but I add the
+obligation that makes the widening safe: each `[SYS-8]` contract's admitted
+projection is **enumerated in the same change**, exactly as an operation row's
+image is (3.11). Without that, the widening replaces one accreting list with an
+unenumerated one.
 
-*Necessity:* under §5's flow closure a `value_if` receiver is an ordinary merge
-point, and each delivering edge establishes exactly the image an ordinary
-`let x = a;` would establish for its delivered atom at that point. `give 0_u64;`
-therefore establishes `picked = 0`, `give 1_u64;` establishes `picked = 1`, and
-the merge — the same merge as everywhere else, weakest bound held by all (3097) —
-gives `0 ≤ picked ≤ 1`. The predicate is derivable. **CLM-2 duplicate; the claim
-is deleted; the program compiles with no runtime check.**
-
-The charter warned that a union fact for delivered constants is exactly the
-case-by-case exception to avoid, because next comes constant-plus-one, a product
-of two constants, a length read from a file. The design opens none of them as
-cases, because there is no delivery rule at all any more:
-
-| next case | who publishes it, and why |
-| --- | --- |
-| `give 0_u64` | publisher 1: the literal row's image, reached because a delivery edge is a merge input like any other. |
-| `give p +wrap k` | publisher 1: the `+wrap` row's image. Under the closure this needs no new sentence; today it fails only because GIVE-1 292 restricted the *carrier* by spelling. |
-| `give imul.wrap(3_u64, 4_u64)` | publisher 1: the multiply row's image, which pins a product of two pinned operands. |
-| a length read from a file | **publisher 2.** It is a value the world produced. No image, no claim: a contract or a branch. |
-| `sum ≤ i * stride` across a loop | publisher 3, gap kind `vocabulary`: a product of two non-constant terms is not a difference bound. |
-
-Four different answers, one rule each, none of them a case.
-
-Note also that TERRAIN #3 is right and must not be mis-read: the DBM join of
-`x = 0` and `x = 1` already yields `0 ≤ x ≤ 1` correctly, because both directed
-pairs are present in both inputs. H2's loss was never the join. It was that
-`give 0_u64;` established **no image at all**.
-
-Row 5b is unchanged and is decided by the same sentence: `give w;` where `w` is a
-`ReadBytes` payload puts a boundary-produced value in the support, so CLM-1
-refuses, with the fixed restructuring at [DIAG-1] 1859.
-
-### 2.3 Rows 6a/6b — arm-written storage, and the third spelling defect
+**S4 - the compiled separating pair for A19.** Both judges reasoned about
+P-LOOP's candidate definition from rule text. The question is decidable today,
+because the step obligation of a candidate can be posed as a contract:
 
 ```whitefoot
-let cursor = 3_u64;
-if condition { set cursor = 0_u64; } else { let untouched = 0_u8; }
-claim reviewed_written: ilt(cursor, 4_u64) because "premises: cursor is either
-  the literal 3_u64 this function wrote before the branch or the literal 0_u64
-  the selected arm wrote…";
+fn step_tight(tap: own u64, cap: own u64) -> result: own u64 pure contract {
+  requires ile(tap, 0_u64);      // the ENTRY-TIGHT atom: tap = 0, cap = 8
+  requires ine(tap, cap);        // the loop's own exit test, negated
+  requires ieq(cap, 8_u64);
+  ensures ile(result, 0_u64);
+} { let next = tap +wrap 1_u64; return next; }
 ```
 
-`reject-clm1-claim-on-storage-written-under-selection.wf`. Its own `derivation:`
-line — *"both literals are below 4_u64, so cursor is below 4_u64 whichever
-definition reached this point"* — is a sentence a reviewer settles in eight lines
-and the checker can now check.
+`y1_entry_tight_step.wf` **rejects** (compiled). The same function with the
+head fact weakened to `ile(tap, cap)` and the conclusion to `ile(result, cap)` -
+`y2_relaxed_step.wf` - **accepts** (compiled). The pair says, with the compiler
+rather than by reading, that **the entry-tight atom is not inductive and its
+weakening is**, and `y3_const_extent_loop.wf` (compiled, rejects `tap <
+len(taps)`) is the ordinary constant-extent walk that needs it. This is the
+evidence that turns A19 from a plausible reading into a rule change.
 
-*Admission:* both reaching definitions are literals. **CLM-1 admits.**
+### 2.3 A16 and A2: the frame, which is one defect wearing two costumes
 
-*Necessity:* here the design closes a defect nobody put on the charter's list.
-Today `let x = 0_u64;` establishes `x = 0` under S5 (2963–2964) and
-`set x = 0_u64;` establishes **nothing** — `set` appears in [ENT-3] and [ENT-5]
-only as a kill event (3036, 3066(a)) — although the two have identical value
-semantics. That is a distinction by spelling, which `CLAUDE.md` forbids
-("by grammar and semantic rule, never by shape"). Under the closure it cannot
-arise: **the image closure is indexed by the operation and its destination, not
-by the binding form.** A `set` commits a value produced by a row into a place;
-the row's image is established on that place after the `set`'s own kill, in the
-edge order [ENT-5] already fixes. The then edge carries `cursor = 0`, the else
-edge `cursor = 3`, the merge gives `0 ≤ cursor ≤ 3`, and the predicate is
-derivable. **CLM-2 duplicate.**
+The step check has to answer one question: *for every execution that enters the
+body at a head satisfying the hypothesis and follows path p to the back edge,
+does the statement hold of the values at the next head?* The goal is naturally
+about **exit** values and the hypothesis about **head** values, so exactly one
+translation is needed and every quantity in the check must end up on the same
+side of it.
 
-Row 6b is the same program with `9_u64` in place of `3_u64`. Admission is
-identical; the merged state is `0 ≤ cursor ≤ 9`; the predicate is neither derived
-nor refuted. **Accepted, retained claim**, with the review note of §3.8:
+`[IND-4]`'s backward substitution translates the goal into the head frame. That
+is the right choice and it is correct as an algorithm - a single backward pass
+leaves every occurrence denoting its path-entry value. Two drafted sentences then
+read quantities in the wrong frame:
 
-```text
-review note [CLM-1] `reviewed_written`: at this statement the entailment does not
-exclude cursor = 9_u64, whose definition is `let cursor = 9_u64;` at f.wf:3:7 and
-which reaches here through the else edge of the match at f.wf:4:3. The reviewed
-derivation must cover that case.
-```
+- `[IND-6]` reads the state at the **body exit**, so a term the body writes later
+  on the path is bounded by its exit value while the polynomial means its head
+  value. That is A16, and `j3`/`j3b` compile the harm.
+- `[IND-4]`'s closing sentence substitutes **every** hypothesis, including the
+  statement's own polynomial - which is a head-frame fact and needs no
+  translation. Substituting it makes the hypothesis equal to the goal modulo the
+  binder shift, and the body's effect cancels. That is A2.
 
-That is prover-first's best writer-facing text, recovered from the reviewer's
-case list and the certain state, and emitted as **review evidence, never as a
-verdict**. §9 shows the two programs that killed it as a verdict.
+So the repair is one rule and it fixes both: **name the frame, put everything in
+it, and say what happens to a term that has no value in it.** Section 3.8's
+`[IND-6]` does that in four clauses, and section 3.8's `[IND-4]` clause (e)
+handles the last part (S1) by turning a path-local into a witness term rather
+than by refusing.
 
-### 2.4 Rows 7–8 — loops, and why there is no loop clause
+### 2.4 A4: the monotonicity break, and the repair that keeps both laws
 
-```whitefoot
-let upper = endpoint(value: input);          // a call result
-let cursor = 0_u64;
-for @steps step in 0_u64..upper { set cursor = 1_u64; }
-claim reviewed_carried: ilt(cursor, 4_u64) because "…";
-```
+This is the adjudication that decides whether the batch may keep its headline
+sentence, so it gets the reasoning in full.
 
-`reject-clm1-claim-on-loop-carried-update.wf`. *Admission:* `cursor`'s support
-reads two literals; `upper` decided how many times the loop ran and produced no
-value into `cursor`. **CLM-1 admits.** *Necessity:* v0.40's loop head is still
-[ENT-5] 3110/3120's subtraction (§5.4 explains why, and publishes it as a `flow`
-ceiling clause), so the pre-loop fact is subtracted and nothing reaches the
-continuation. **Accepted with a retained claim**, gap kind `flow`. The program
-compiles; today it does not.
+**The break.** `[IND-7]` eliminates one term at a time against "the **first**
+unused hypothesis whose coefficient `b` on `t` satisfies `a*b > 0`", where the
+hypothesis order enumerates, "for each ordered pair of terms in term order, the
+tightest difference bound derivable at the check point, **if any**". A stronger
+checker derives a bound on a pair where the earlier one derived none; that bound
+is inserted at its fixed position, which may **precede** the one the earlier
+checker selected, and it displaces it. Terms `a`, `b`, `c` and goal `a - c + 1
+<= 0`: version 1 has no bound on `(a,b)`, selects `a - c <= -1`, residual 0,
+accepted; version 2 derives `a - b <= 100`, `(a,b)` precedes `(a,c)`, residual
+becomes `b - c + 101` and then 101, rejected. **A program that compiled under
+v0.40 does not compile under v0.41.** That is the exception `[CLM-2]` had,
+reintroduced by the construct that replaces the claim, and worse: `[CLM-2]` fired
+on a predicate the writer could delete, while here the writer must re-derive a
+statement against an elimination order they cannot see.
 
-**A loop clause was proposed and is rejected.** world-first's clause 3 —
-a component whose back-edge definition transitively reads something the body
-redefines joins the loop's "repetition class" — was judge-1's favourite idea in
-that document. It does not survive. Judge-2's program:
+**The three repairs on the table, and why two fail.**
 
-```whitefoot
-let n = endpoint(value: input);
-let flag = 0_u64;
-for @steps step in 0_u64..n { set flag = 1_u64; }
-claim never_ran: ieq(flag, 0_u64) because "…";   // admitted by clause 3
-```
+- *Freeze the fragment.* Declare `[IND-7]` an amendment-level surface, so
+  changing it is an accepted-set change like changing the grammar. This does not
+  work, because the break is driven by **ambient prover strengthening** - adding
+  a row image changes which difference bounds are derivable at the check point -
+  which is exactly the "implementation strengthening" `[ENT-1]` promises is safe.
+  The theorem would have to be weakened to "strengthening preserves acceptance
+  provided it does not change what is derivable at an `[IND-7]` check point",
+  which is no theorem at all.
+- *Make the hypothesis list syntactically total*, so a strengthening tightens an
+  existing slot but never inserts one - for instance by filling an underivable
+  slot with the type-implied bound `cu(t1) - cl(t2)`. Monotone, and it **breaks
+  I1**: the midpoint derivation's second elimination consumes `lo - hi <= -1`
+  and depends on the slot `(q, hi)` being *absent*; filled with `max(u64)` it is
+  selected instead and the derivation dies. The repair costs the one irreducible
+  the owner asked to be examined.
 
-`flag`'s back-edge definition is a literal, so it is not trip-count-dependent by
-the clause's own test, yet `flag == 0` is true exactly when `endpoint` returned
-zero. The clause catches self-composition and misses "whether a definition
-executed at all". Repairing it means taxing every component a loop body may
-redefine whenever the repetition is boundary-decided — which is v0.38's blanket
-restricted to loops, and which refuses row 7, the case the clause was introduced
-alongside. And a rule that could separate row 7 from `never_ran` must compute the
-value set, which makes row 7's claim a duplicate publication and gives the rule
-nothing to do (§1.4, fact 1).
+**The repair I adopt: make the check a certificate rather than a sequence.**
+`[IND-7]` stops prescribing *which* hypothesis eliminates each term and instead
+asks whether **some** assignment of hypotheses to terms, drawn from a
+syntactically fixed finite list and bounded by a spec-fixed cap, drives the
+relaxed residual to zero. Section 3.9 gives the text. Four properties decide it:
 
-**Therefore there is no loop clause.** A loop head is a merge whose inputs are the
-preheader and the back edges; a merge publishes no value; loop-carried components
-are decided exactly as row 6 is. Row 8's accumulator and judge-1's
-`claim ilt(acc, 4_u64)` under a boundary-decided endpoint are members of the
-laundering family (§11), decided by review, with the case list rendering the
-back-edge definition **as a recurrence** so the reviewer knows an induction is
-owed and does not mistake it for a two-case enumeration.
+1. **Monotone, and provably so.** Tightening a hypothesis constant makes
+   `-lambda*h` smaller, so the residual is smaller and a succeeding certificate
+   still succeeds. Adding a hypothesis only enlarges the certificate space and
+   every prior certificate survives with that hypothesis unused. Therefore *no
+   prover strengthening can reject a statement an earlier checker verified*, and
+   `[ENT-1]`'s new sentence holds without exception.
+2. **It accepts a superset of the greedy rule.** Every greedy elimination
+   sequence *is* a certificate. So none of the drafted traces - I1's midpoint,
+   I2's accumulator, I3's product, I4's counter, the four bucket-B statements,
+   the counted ipv4 restructure - has to be re-derived. That is not a
+   convenience; it is what makes the repair affordable at this stage of the
+   batch.
+3. **It dissolves three other defects.** The circular term/hypothesis order
+   (A24's D-1 and D-8) has nothing left to be circular about, because no order
+   fixes the accepted set. The loop file's own Q4 - "a different order accepts a
+   different, incomparable set of statements, and F-L4 is the experiment that
+   would move this" - stops being an open question.
+4. **It is deterministic.** Acceptance is a total predicate over a spec-fixed
+   finite space with spec-fixed caps and a hard error beyond them. Two conforming
+   implementations compute the same answer on the same inputs.
 
-### 2.5 Rows 9a/9b/10 — callee-written storage, and the separating pair
+**The one thing to flag.** `[ENT-1]`'s law is quoted as *closed, deterministic,
+search-free*, and an existential over a finite space is, literally read, a
+search. I hold that it is legal - the prohibition is on **implementation-chosen**
+strategy, and every conforming implementation computes the identical predicate,
+which is the property 2836 actually demands - but the owner should rule.
+**Flagged decision D1** (section 9) states both readings, prices the fallback
+(freeze the fragment and weaken the theorem), and records that I adopted the
+certificate form.
 
-```whitefoot
-fn fill['s](slot: &uniq 's u64) -> result: own unit writes(slot) { … }
+### 2.5 A5: what the batch was actually missing
 
-fn read(values: own array<u8, 4>) -> result: own u8 traps {
-  let cursor = 0_u64;
-  region 'w { let done = fill<'w>(slot: &uniq 'w cursor); }
-  claim written_by_callee: ilt(cursor, 4_u64) because "premises: fill writes a
-    value below four into slot…";              // ← the forbidden citation
-  return values[cursor];
-}
-```
+Recorded so the scheduling conclusion is not carried forward wrong. Both judges
+conclude, correctly from the three files in front of them, that "the batch as it
+stands cannot be merged". The premise is that seven publishers are drafted
+nowhere. Five of the seven are drafted in the 0106 design being superseded, and
+this file carries them forward with their corrections (3.4, 3.5, 3.11). What was
+genuinely undrafted anywhere in the project is:
 
-Under v0.39 this compiles: `cursor` seeds `Local` (3222), no call *result* reaches
-it, and 3242 makes the call's `&uniq` write invisible to claim authority. The
-claim is true only because of `fill`'s body — the citation 2720 forbids. **Here
-it is a CLM-1 refusal**, gap kind `boundary`.
-
-The seed is defined without a new projection: **a call joins its witness into
-exactly the components whose facts [ENT-5]'s kill (b) would kill at that call**,
-under the same [EFF-2] projection and the same [OWN-7] overlap. Three consumers,
-one relation — kills (3066), [PRV-1] write components (3207), and now admission.
-Today the three disagree about one event: kills see the `&uniq` write, provenance
-sees it, and only claim authority looks away (TERRAIN §1.8).
-
-Two consequences fall out of the existing kill rule and are **not legislated**:
-
-- *Row 10 survives.* [ENT-5] 3036 puts a length term's support at the root
-  binding of the viewed place and excludes element storage, and 3066(a) says an
-  element write kills no length fact. So a callee that writes elements through
-  `&uniq buf` taints the all-elements component and not the length, and
-  `claim c: ilt(i, room)` over `room = len(deref buf)` bound before the call stays
-  admissible. That is `docs/patterns.md` P16, whose whole content is that the
-  length fact survives a callee write, and which 34 of 41 length bindings in the
-  blind-writer trial existed because writers disbelieved.
-- *Row 9b refuses.* 3066(a) also says "a whole-place replace of a buffer or of any
-  prefix of it **kills** that buffer's length facts". So a callee that
-  whole-place-replaces a `&uniq buffer<u8>` with one sized by a call result taints
-  the length, and `claim ilt(len(room), 4_u64)` after it is refused. A design that
-  *legislates* a blanket length exemption instead of deriving it from the kill
-  projection admits that program; judge-2 wrote it as F-4 against world-first.
-
-Rows 9a and 10 are TERRAIN #16's separating pair — "authority follows the storage
-root" versus "authority follows the last writer" — and the answer is neither:
-**authority follows the components the declared write projection reaches**, which
-is what the fact state already computes.
-
-*One ambiguity to close before B2 writes a line of text.* 3036 excludes element
-storage from a length term's support and says so twice, and its last clause
-already covers this case — "so a `set` commit **or projected callee write**
-through the chain kills exactly the facts supported by that storage". But
-3066(b)'s prose reads "a callee writing only through one `&uniq` actual kills
-exactly the facts whose support overlaps **that actual's resolved place**", and a
-whole-buffer actual's resolved place does overlap a length term's root binding.
-The two sentences are reconciled only by [EFF-2]'s projection carrying element
-granularity, which 2068 permits ("those the callee's own summary fixes … after the
-[EFF-2] boundary projection, and the exact subscripted position for a direct
-element access") and which the compiler implements — `KillEvent::Write` carries an
-`element: bool` whose doc comment is the rule
-(`compiler/src/semantic/entailment/flow.rs:60–66`). **Row 10 and P16 depend on
-that reading.** B2 must confirm it against [EFF-2] and, if the projection is
-coarser than the compiler assumes, the defect is in the fact state first and in
-admission only as a consequence — which is §4.4's point about a shared blast
-radius, arriving earlier than expected.
-
-The writer's repair is the one every surveyed tradition names (TERRAIN §5.4):
-publish it on the boundary. Whitefoot's FN-9/S12 publishes relations about
-*results* and not about `&uniq`-written parameters, so for the write channel the
-repair today is "branch on the written value". That is an honest ceiling, and
-§12 Q3 opens write-postconditions as its own question — a hole is not justified
-by the inconvenience of closing it.
-
-**The exposure is reasoned, not measured.** No claim in the tree has this shape,
-and the `s36`/`s37` skeptic programs the charter cites do not exist at `b1367c82`
-(TERRAIN #17). §8's first batch builds the reconstruction and runs it under v0.39
-before a line of spec text is written, because this is the design's only
-*tightening* and both judges said the same thing about it.
-
-### 2.6 Rows 11–12, 16 — the cases the gate exists for
-
-`reject-clm1-claim-on-selected-payload.wf` (a matched `Ok` payload) and
-`clm1-neg-user-result-claim-locality.wf` (a call result read into a Bool) are
-unchanged and are now the canonical illustrations of the principle: their support
-reads a value publisher 2 produced, publisher 2 published no contract about it,
-and publisher 3 may not invent one. Their own `checker gap:` prose already says
-so — *"a caller claim has no authority to substitute an unverified callee body for
-a published boundary fact"*.
-
-2745 survives verbatim: a verified `ensures` and its S12 publication never make
-the returned value text-produced. The caller consumes publisher 2's publication
-directly and may not restate or strengthen it.
-
-Row 16 changes the *route* rather than the verdict. Today S10 imports two of
-[SYS-8]'s relations (`start ≤ next`, `next ≤ end`) and 2990 leaves the other five
-— `ReadBytes(next)` only for `next > start`, `next = start + required` for
-`host_copy_bytes`, the `entries` relation, the buffer-disposition contracts —
-outside the state as "retained checked-program facts". A writer who needs one of
-them has **no route at all**: the value is boundary-produced so a claim is
-refused, and the fact the specification itself fixes at 2537–2577 is not
-published. §5.3 imports all of them. The same accreting-list defect as row 4, on
-the world side.
-
-### 2.7 Rows 13–15 — the 0097 shapes, decided by not being a question
-
-The 0097 campaign generated programs with a claim standing after a boundary
-selection and measured **63 rejections out of 63, all `NonLocalClaim`, with zero
-true positives** (`docs/done/0097-differential-fuzz.md:205–216`). v0.38 refused
-them by position; v0.39 admits them by comparing definition occurrences; here
-they are not a question at all, because a selector contributes nothing to
-admission. A claim inside an arm, a claim after an `Err` arm returns, and a claim
-under three nested matches are admitted or refused by exactly what their support
-reads, and then decided by facts.
-
-The reason changes even where the verdict does not, and that is the whole of H1's
-complaint. v0.39 admits `accept-clm1-local-claim-inside-selected-arm.wf` because
-`position`'s reaching definition is the same *definition occurrence* on every
-incoming edge — a property of analysis artifacts, implemented as
-`DefinitionId { site: std::ptr::from_ref(stmt).addr() }`
-(`compiler/src/semantic/claim_locality.rs:104–145`) with four soundness
-preconditions nothing enforces (`docs/done/0102-clm1-narrow.md:379–387`). Here it
-is admitted because `position`'s support reads a parameter and a literal — a
-property of the program text. There is no identity to compare, so nothing can
-silently equate two definitions when someone refactors an allocation.
-
-Row 15's three-deep nesting needs no rule: a join of joins of text-produced
-components is text-produced, by induction on the merge structure. There is no
-frame stack, no acquire, no discharge, and no nesting depth anywhere in the
-judgment.
-
-### 2.8 Rows 17, 19, 20 — the residual claim, and what it looks like now
-
-Row 17 is the `content` gap: the term vocabulary has no per-element term (2870(a)
-excludes subscript suffixes) and the component tree has one conservative
-all-elements component (3218), so a fact about `arr[0]`'s value has no publisher
-but publisher 3. That is a permanent ceiling clause, not an omission, and the
-writer is told the token.
-
-Row 19 is a two-conjunct claim one conjunct of which publisher 1 derives. It is
-refused — two publishers may not publish one premise — and the diagnostic names
-the component ordinal and the derivation, so the edit is located. §6.3 derives
-why this stays a refusal and what changes about it.
-
-Row 20 (`claim ilt(cursor, 4_u64)` over a bare parameter, false for most `u64`) is
-admitted by the gate and refused by review, exactly as 2746 already says
-("a `Local` component is not thereby true"). No new rule: a rule here would be a
-shape rule ("a claim whose predicate is a bare parameter comparison"), which is
-the case-by-case exception the charter forbids. The case list renders
-"reached by: parameter `cursor`", and `requires` is the named instrument.
-
----
-
-## 3. The specification replacement text
-
-Draft text for a work branch. Line numbers are `spec/kernel-spec.md` at
-`b1367c82`. Everything not listed survives byte-identical except for the class
-rename of §3.4.
-
-### 3.0 What survives untouched
-
-| rule | lines | why |
+| item | why it was missing | drafted at |
 | --- | --- | --- |
-| [ENT-2] | 2866–2905 | the vocabulary is not the problem; every corpus claim is DBM-expressible. Terms, difference bounds, disequalities, signed goals, the implicit facts, and term identity under-approximating aliasing while kills over-approximate it |
-| [ENT-4] | 3011–3034 | three closure rules, the Boolean reconstruction, the contradiction rule |
-| [ENT-5] support and kills | 3036–3067 | admission, kills and provenance must read one relation (§4.4); kill (b) is the model the new seed copies |
-| [ENT-5] ordinary join | 3095–3103 | the merge operator is right; this design makes strictly more points use it |
-| [ENT-6] obligations | 3130–3181 | four families, four goals, the closed constrained-subject list |
-| [CLM-1] meaning, shape, five fields, D/S/F, `Contrib(P)` | 2696–2740 | untouched |
-| [CLM-1] retention | 2748–2757 | one retained runtime check in every build mode, never elided |
-| [CLM-3] | 2801–2829 | `deny_claims` unchanged in mechanism; `MayClaims` empties in strictly more closures |
-| [PRV-1..3] | 3305–3412 | untouched. After §3.4 the two judgments agree that control choice contributes nothing and differ only in what seeds them |
-| [DIAG-3] | 1960–1986 | the trap record still carries only the claim's IDENT; the five fields are compile-time review data and the trap is not a debugging channel |
-| [PAR-3] | 2074–2079 | claims are not consumed as proof by the permission judgment |
-
-### 3.1 [ENT-1] — the published ceiling and the direction guarantee
-
-**Add after 2852:**
-
-> The derivable set of this fragment is its **published ceiling**: [ENT-2]'s
-> vocabulary, [ENT-3]'s sources — every operation row's image, every
-> specification-fixed operation contract, and the axioms — [ENT-4]'s closure, and
-> [ENT-5]'s flow, kills, merges and loop rule. The ceiling's complement is
-> published as exactly four gap kinds — `vocabulary`, `image`, `flow` and
-> `content` [CLM-1] — together with the `boundary` class, which is the callable
-> boundary's subject matter and which no claim may bridge. An implementation
-> derives exactly the ceiling: neither less, which is a defect, nor more, which
-> would make [CLM-2]'s duplication verdict implementation-dependent and is
-> forbidden by 2835.
-
-**Replace 2853–2855 with:**
-
-> Version monotonicity of fact-source and closure strengthening preserves every
-> already-discharged operation, call goal, or selected-return relation, but claims
-> deliberately sit at the proof frontier. Raising the published ceiling —
-> widening the vocabulary, publishing an image a row withheld, strengthening a
-> flow point's transfer, or admitting a contract as a source — is an
-> amendment-level accepted-set change. Such an amendment may newly derive a claim
-> predicate, its negation, or one contribution component; [CLM-2] must then reject
-> that source, and the author removes the duplicated content. **Every source edit
-> a ceiling raise forces removes claim content: it never adds an obligation, never
-> requires a new claim, and never narrows an ordinary program's accepted set.**
-> The rejection names the derivation the checker now has and the exact content to
-> remove [DIAG-1], so the upgrade class is bounded and mechanically located. This
-> is an explicit source-upgrade rule, never authority for compiler or optimizer
-> elision.
-
-2856's amendment classes survive, with "adding or removing a `BoundaryResult`
-seed" reading "an admission seed" and covering §3.4's call-write seed.
-
-*Why the guarantee is worded "removes claim content" and not "is a deletion".*
-world-first proposed the stronger sentence while keeping the per-component
-verdict that falsifies it: a strengthening that learns one conjunct of a
-two-conjunct claim forces a predicate edit and a rewrite of the record's
-`derivation:` and `conclusion:` lines, which is a restructuring. Judge-1 caught
-that. The wording here is the strongest sentence that is true of both the
-whole-occurrence and the component case.
-
-### 3.2 [ENT-3] — eleven sources become three
-
-**Replaced:** S5 (2962–2964), S6 (2965–2969), S7 (2970–2978), S9 (2979–2983).
-**Generalised:** S10 (2984–2990). **Deleted:** 3009, the retired-S8 sentence,
-whose content — a source "may return … the day a corpus program writes the shape"
-— is the accreting-list method this design replaces. **Unchanged:** S1 (control
-conditions), S3 (claims), S4 (`requires`), S11 (counted structure), S12 (verified
-results).
-
-**Draft, one source in place of four:**
-
-> **[ENT-3.S5] (operation image).** Every operation-table row usable in a total,
-> non-consuming position carries one image rule fixed by [OP-2] alongside its type
-> and effect rows: the unique strongest finite set of [ENT-2] facts over the row's
-> result terms entailed by that row's exact semantics from the closed state's
-> facts over its operand terms.
-
-> At every **value-commit event** whose value is a direct application of such a
-> row and whose operands are each a term or a constant — an ordinary `let`
-> initializer, a `set` or `replace` commit, a `give` delivery edge, or an FN-9
-> selected-return binding — establish that row's image over the committed
-> destination place, on the normal continuation, after that event's own [ENT-5]
-> kill. The binding form is not read: one operation committed to one destination
-> establishes one image however it is spelled. Allocation length, `len(P)`
-> binding, slice creation, copy, conversion, and constant introduction are image
-> rules of their rows and are not separate sources.
->
-> A row whose exact image is not unique in the [ENT-2] vocabulary publishes the
-> **empty image**, and that publication is itself a clause of the ceiling
-> [ENT-1] with gap kind `image`. Uniqueness is a property of the row, not of the
-> state: a row publishes one image or none.
-
-Three things this clause does that the four it replaces could not.
-
-- **It removes the `let`/`set` distinction by spelling.** world-first found this
-  defect and filed it as an open question; here it is not a rule but an absence
-  of one, because the closure is indexed by operation and destination.
-- **It removes the delivery carrier grammar.** A `give` edge is a value-commit
-  event, so `give 0_u64;` establishes what `let x = 0_u64;` establishes. §3.3
-  deletes [ENT-5]'s delivery block and [GIVE-1]'s carrier judgment outright.
-- **It makes an unpublished row impossible.** `imin` is listed in [ENT-6] 3227 as
-  a total value operation for authority transfer and appears in no [ENT-3]
-  source; under the closure that state does not exist, because a row without an
-  image entry is a hole in a closed table.
-
-**Draft generalisation of S10:**
-
-> **[ENT-3.S10] (specification-fixed operation contracts).** For a `match_stmt` or
-> `value_match` whose scrutinee is a call to a [SYS-2] operation, or a bare IDENT
-> naming a `let` binding of that call's outcome type under the existing no-kill,
-> no-`set` path discipline: at each arm's entry establish **every** relation
-> [SYS-8] fixes for that arm's outcome, with each declared parameter read as its
-> exact actual term or constant. A relation whose substitution leaves a
-> non-[ENT-2] operand establishes nothing. These facts carry the trust class of a
-> declared operation contract, never a writer statement.
-
-This deletes 2990. Keeping two of [SYS-8]'s relations and withholding five is not
-a principle; it is the accreting list on the world side.
-
-### 3.3 [ENT-5] — one merge operator, delivery deleted, the loop rule published
-
-**Deleted whole:** 3078–3093, the sixteen-line bounded-relation-delivery block,
-with 3084's carrier exclusion list and 3085's "A `value_match` forms no delivery
-image under any source shape". **Also deleted:** [GIVE-1] 286–293's additional
-fact-carrier judgment; GIVE-1 keeps delivery completeness and exact mode/type
-agreement (273–285) and loses the carrier grammar, because there is no carrier.
-
-**Draft replacement, three sentences inside the joins paragraph at 3095:**
-
-> The continuation of a `value_if` or `value_match` is an ordinary merge point.
-> Its inputs are the states on every delivering `give` edge, each taken after that
-> edge's value-commit image over the receiving binding [ENT-3.S5], then after that
-> edge's scope-exit kills, and then closed [ENT-4]; the join is the join of 3097,
-> unchanged. No separate delivery image, carrier admission, per-relation delivery
-> rule, or term substitution exists.
-
-*Why "establish the image over the receiving binding" and not "substitute the
-delivered atom's term".* prover-first proposed the substitution and judge-2
-refuted it: a literal is an [ENT-2] term, `0_u64` normalizes onto the
-distinguished zero term Z (2870(f)), and 2905 puts Z in every implicit fact
-`t − Z ≤ max(T)`, so substituting every occurrence of the delivered term rewrites
-the arm's entire numeric frame into relations against the receiver. Establishing
-an image over a destination has no such failure mode, because an image is a
-finite set of facts about one result place.
-
-**Replaced:** 3110–3128, restated so the ceiling is honest about them.
-
-> The fact state at the head of a `loop_stmt` is the state before the loop minus
-> every fact having a support member that a continuing kill event of that loop may
-> kill. A counted `for_stmt` head is the closed post-capture state minus the same,
-> with S11's structural body-entry bounds added on each true header edge. **A loop
-> head is a merge point whose transfer this version publishes as this
-> subtraction**; a relation the loop maintains and the subtraction removes is a
-> ceiling clause with gap kind `flow` [ENT-1]. Replacing the subtraction by the
-> [ENT-5] join over the preheader and back edges, computed to a verified
-> post-fixed point, is a ceiling raise and an amendment-level accepted-set change.
-
-That is deliberately weaker than what two of the three input designs wanted. §5.4
-gives the reason and §9 gives the two programs that decided it.
-
-**Add one sentence to the joins paragraph**, for the behaviour the compiler
-already has and the specification never named (TERRAIN #18,
-`compiler/src/semantic/entailment/state.rs:4045–4068`):
-
-> When a joined relation's selected derivation depends on an S12 publication and
-> the same relation is also derivable without one, the join retains both
-> derivations. This adds no relation to the joined state and removes none; it
-> exists so the [PRV-1] view partition and every non-explosive-ancestry query see
-> a publication-free route where one exists.
-
-[ENT-1] 2836 requires two conforming implementations to derive the same states; a
-second implementation cannot satisfy that against undocumented behaviour.
-
-### 3.4 [ENT-6] — claim authority becomes the admission state
-
-**Replaced:** 3215–3248. **Repealed outright:** 3233–3239, the v0.39
-control-dependence paragraph including its worked `3209_u64 % 64_u64` example, and
-3241–3243, the `&uniq` carve-out. **Renamed throughout:** `Local` →
-`TextProduced`, `BoundaryResult` → `BoundaryProduced`. The old names invited every
-reader to reason about *position*; the new ones name the question the judgment
-asks.
-
-**Draft:**
-
-> For [CLM-1] only, ENT-6 also computes one independent finite forward
-> **admission** state over the structural normal-control graph. Admission is not
-> an entailment fact, optimizer fact, callee summary, or [PRV-1] provenance pair,
-> and it grants no operation authority. Each component is `TextProduced` or
-> `BoundaryProduced(witness)`; component join retains `BoundaryProduced` when
-> either input has it and retains the earliest witness in stable source order. The
-> component tree is structural and finite, exactly as 3218–3220 fixes it.
->
-> **Seeds.** Every typed literal, named const, const-generic constant, source
-> parameter component, command-entry parameter component, compiler-owned counted
-> capture, and otherwise untainted local initializer begins `TextProduced`. Every
-> result component of every ordinary user call and every system call begins
-> `BoundaryProduced`, unconditionally, as 3223–3225 fixes it — the seed inspects
-> no callee body, argument, effect row, [PRV-1] class, [SYS-2] component class, or
-> FN-9/S12 relation. **Every caller storage component whose facts [ENT-5]'s kill
-> event (b) would kill at a call likewise begins `BoundaryProduced` at that call,
-> with that call as witness**, under the same [EFF-2] boundary-projected `writes`
-> occurrences and the same [OWN-7] resolved-place overlap. The two judgments
-> therefore respond to one call write identically.
-
-> **Transfer** is 3227–3230 unchanged: every total value operation joins the
-> admission classes it reads into the results it produces; construction and
-> projection are component-sensitive, so a boundary payload does not taint an
-> independent local sibling; a place read obtains the reaching class of its
-> selected storage component joined with any conservative element selector; an
-> unconditional explicit write to one statically exact whole value or exact field
-> component is a strong replacement and may clear an older witness when its
-> right-hand side is `TextProduced`.
->
-> **Control contributes nothing.** A condition, match scrutinee or tag, counted
-> endpoint, or other selector chooses an edge and produces no value. It
-> contributes no admission class to any component: not to a binder its arm
-> introduces, not to a value a `value_if` or `value_match` delivers along it, not
-> to a component at a reconvergence, loop head or loop exit, and not to storage
-> the selected edge wrote. Two reaching definitions are never compared for
-> identity; a merge takes the componentwise lattice join and nothing else.
-> A claim is a statement about values, and only what produced a value bears on
-> whether this function may state a lemma about it. [PRV-1] 3327–3330 excludes
-> control dependence for the same reason, and the two judgments now agree.
->
-> **Witness and ordering.** One boundary witness contains the introducing call's
-> NodePath and kind, plus the user callee's source declaration origin and source
-> name or the system operation's `system_declaration_ordinal` and spelling; the
-> least call NodePath wins, with boundary kind and stable callee identity as a
-> deterministic tie-break at one path. The admission state is computed once before
-> S3, U, B, `Eligible`, or any `Full-minus` mask and is reused unchanged by every
-> claim component query. For one component, CLM-1 queries exactly [ENT-5]'s
-> ordinary S-derived relation or opaque-goal support, including each root and
-> holder; canonical normalization may add a fact identity but never subtract
-> support read by the retained S expression.
-
-Net: 34 lines to about 24, and the two hardest paragraphs in §18 replaced by one
-lattice with three seeds and one join. Nothing in the judgment names an analysis
-artifact, so `DefinitionId`, `DefinitionKind`, `ControlFrame` and
-`ControlAuthority` have no referent in the specification and are deleted from the
-compiler (§4.3).
-
-### 3.5 [CLM-1] — the gate, its limit, and the gap token
-
-**Replaced:** 2742–2746.
-
-> At the claim point, CLM-1 queries every component's ordinary S-derived support
-> [ENT-5] in component-ordinal order against [ENT-6]'s frozen admission state.
-> Every runtime value component and holder read by that support must be
-> `TextProduced`. If any support member is `BoundaryProduced`, this claim's gap is
-> `boundary`; the whole claim rejects under CLM-1 using [DIAG-1]'s least component,
-> earliest boundary witness, and the support carrier whose canonical source
-> spelling [FORM-2] occurs first in the predicate's own source order among those
-> observing that witness; and no S3 source, lifecycle query, `Eligible` member,
-> counterfactual run, ClaimLedger record, or lowering authority is formed for that
-> occurrence.
->
-> A verified `ensures` and its S12 publication never make the returned value
-> `TextProduced`: the caller consumes the verified relation directly and cannot
-> restate or strengthen it with a claim. This admission is independent of truth
-> and of [PRV-1] provenance; a `TextProduced` component is not thereby true or
-> internal, and a PRV-internal call result is still `BoundaryProduced`.
-
-**Add after 2720** — the sentence all three input designs needed and only one
-wrote, and which judge-2 listed as undone by all three:
-
-> A claim's five fields must be settlable against this function's source text, the
-> semantics of this specification, the facts valid at the claim point, and the
-> machine-verified or specification-fixed callable-boundary facts named above, and
-> against nothing else. A `derivation:` line may cite only such published
-> premises; a step requiring an unpublished premise makes the record invalid and
-> the review refuses it. **The admission judgment below is the mechanical
-> necessary condition for that settlability and is not a truth screen.** A
-> predicate whose support reads a value a callable boundary produced cannot be
-> settled from that evidence whatever its truth, and is refused. A predicate whose
-> support reads only values this function's own text produced is settlable, and
-> whether it is *settled* — whether the derivation covers every case the text
-> admits — is the review's decision, for which [DIAG-2] retains the reaching
-> definitions of each support component.
-
-**Amend the five-field record at 2707–2721:**
-
-> The `checker gap:` value begins with one of the fixed tokens `vocabulary`,
-> `image`, `flow`, or `content`, followed by one ASCII space and nonempty prose.
-> Each token names one published clause of the entailment ceiling [ENT-1]:
-> `vocabulary`, the fact is not a difference bound or disequality over two terms;
-> `image`, the operation row's exact image is not unique in that vocabulary and
-> the row publishes the empty image; `flow`, no single reaching edge carries the
-> fact and the flow point's published transfer does not derive it; `content`, the
-> fact is about an element of an array, slice or buffer. The token `boundary` is
-> not admissible: a claim never bridges a callable-boundary or
-> specification-fixed-contract gap, and a claim naming it rejects under CLM-1 with
-> that rule's fixed restructuring. The token is checked; the prose is retained
-> review data and is not.
-
-Four spec lines and one lexical check. What they buy:
-
-- the writer states *which published limit* they are standing above, which is a
-  claim a reviewer can check, in place of free prose 35 of whose instances are
-  byte-identical today;
-- every future ceiling amendment is a mechanical migration — grep the token, read
-  the prose — and can be **announced** before it ships;
-- H5's uniform teaching channel exists, because every claim-family diagnostic can
-  now name a token and its clause;
-- the review question becomes *"is this token right?"* instead of *"is this prose
-  true?"*.
-
-The tokens name **kinds, not instances**. A per-instance ceiling identifier
-(`ENT-CEIL-REM-RANGE`) was the alternative; it needs a new identifier per
-amendment and a registry to keep them live, and it buys only a finer grep.
-
-### 3.6 [CLM-2] — one non-duplication rule, residuality unchanged in unit
-
-**Replace 2764–2766 and 2775–2776 with one rule:**
-
-> Otherwise, query both signs of every image in the ordered inventory. Deriving
-> any negative sign rejects c as **refuted**. Deriving the positive sign of the
-> whole predicate, or the positive sign of any one contribution component, rejects
-> c as a **duplicate publication**: the entailment already publishes that content
-> at this point, and one premise has one publisher. The rejection names whether
-> the whole predicate or one component ordinal was derived, and the ordered fact
-> sources of the derivation that produced it. Thus `claim True()` is a duplicate
-> publication and `claim False()` is refuted on every reachable path.
-
-The four verdicts of v0.39 — vacuous, redundant, refuted, overlapping — become
-three: **vacuous** (contradiction, tested first, unchanged at 2761), **refuted**,
-and **duplicate publication**, which absorbs redundant and overlapping into one
-rule with one reason and one shape of fix. Residuality (2782–2799) is unchanged,
-including its per-component `Full-minus(c,a)` masks: S3 establishes components
-(2951), so the component is the unit of publication throughout, and the same unit
-carries non-duplication, residuality, lifecycle and diagnostics. §6.2 derives
-that choice and §6.4 records what it costs.
-
-### 3.7 [ENT-6] 3169–3173 — the route menu, stated as total
-
-**Replace 3169:**
-
-> Exactly one of three routes discharges any unproved family, selected by which
-> publisher owns the missing premise. When the residual reads only values this
-> function's own text produced, the route is one dominating branch establishing
-> the canonical goal, or one CLM-2-admissible residual claim. When it reads a
-> value a callable boundary produced, the route is an exact verified `ensures` on
-> the callee and its S12 publication, a specification-fixed [SYS-8] fact, or an
-> ordinary branch on the returned value; a claim is not available and [CLM-1]
-> refuses it. When the constrained subject is unconditionally external, the route
-> is the dominating value branch of [PRV-2] and [PRV-3] alone. **At least one
-> route is always open, and the diagnostic names it** [DIAG-1].
-
-3170–3173 survive. The last sentence is normative on purpose: H2 is precisely the
-failure of that promise, and a rule the specification does not state is a rule
-nothing checks. §8's first falsifier makes it a conformance obligation.
-
-### 3.8 [DIAG-1] and [DIAG-2] — one payload, one cause, one fix, one case list
-
-**Replace 1855–1859:**
-
-> Every claim rejection carries the same payload: the claim name and `claim_stmt`
-> NodePath, the exact predicate, one `cause` drawn from the closed set
-> { `predicate-shape`, `formation`, `duplicate-name`, `non-local`, `refuted`,
-> `duplicate-publication`, `vacuous`, `non-residual`, `inadmissible-gap-token` },
-> the deterministic concrete instance, the component ordinal where the cause
-> selects one, the gap token where the claim carries one, and one mechanical fix
-> fixed by the cause.
-
-| cause | mechanical fix |
-| --- | --- |
-| `non-local`, user-call result witness | *publish the required cross-function relation as an exact verified ensures clause on the callee and remove this caller claim* (1859, kept) |
-| `non-local`, system-call result witness | *use the system operation's specified fact or typed outcome, or branch on the returned value; do not claim an unstated system-result property* (1859, kept) |
-| `non-local`, call-written-storage witness | *publish the required relation as an exact verified ensures clause on the callee that writes this storage, or branch on the written value* (new) |
-| `duplicate-publication`, whole predicate | *the entailment derives this predicate here from `<sources>`; delete this claim statement* (new) |
-| `duplicate-publication`, one component | *the entailment derives component `<ordinal>` here from `<sources>`; remove it from the predicate and its lines from the record* (new) |
-| `non-residual` | *no admission root consumes this content; delete this claim statement* (new) |
-| `refuted` | *the entailment derives the negation here from `<sources>`; the reviewed derivation is wrong* (new) |
-| `vacuous` | *this statement is not reachable with a consistent state* (new) |
-| `inadmissible-gap-token` | *`boundary` is not a claim gap; see the two restructurings above* (new) |
-| shape and formation causes | existing per-rule text |
-
-Today the whole redundancy family carries **no mechanical fix at all**
-(1855–1856), and it is the family every ceiling raise will grow. That is H5's and
-H4's shared defect and it is one table.
-
-**Add to [DIAG-2] 1884–1886, the reviewer's case list:**
-
-> For every accepted claim occurrence, the checked program retains, per
-> contribution component and per support component, the ordered NodePaths of the
-> value-commit events whose definitions reach that support at the claim point,
-> each marked *forward* or *recurrent* when it reaches through a back edge. This
-> is published review data and never an acceptance criterion: it is the evidence
-> the review duty at 2719 requires, and a defect in it is a diagnostic defect.
-
-Two properties make this safe where v0.39's definition identity was not: its
-identities are NodePaths, which [DIAG-1] 1858 already requires to be publishable
-and stable, and nothing reads it to decide a verdict, so 0102's four unenforced
-soundness preconditions have no analogue.
-
-**Add the review note.** An accepted claim whose predicate the certain state
-neither derives nor refutes, and one of whose support components has more than
-one reaching value-commit event, emits one non-blocking review note naming the
-component, the reaching definitions the certain state does not exclude, and the
-edge each arrives on:
-
-```text
-review note [CLM-1] `reviewed_written`: the entailment does not exclude
-  cursor = 9_u64 here. Reaching definitions of `cursor`: `let cursor = 9_u64;`
-  at f.wf:3:7 (forward, else edge of the match at f.wf:4:3) and
-  `set cursor = 0_u64;` at f.wf:5:5 (forward, then edge). The reviewed
-  derivation must cover every listed case.
-```
-
-It is a note, not a verdict, and the distinction is load-bearing: as a verdict
-the same computation rejects claims that are true and text-reviewable (§9, A2 and
-A3). As review evidence it is the best writer-facing text proposed anywhere in
-this batch, and it costs no new analysis state — the case list is already
-retained and the certain state is already computed.
-
-### 3.9 Net specification shape
-
-| rule | replaced | added | direction |
-| --- | --- | --- | --- |
-| [ENT-1] ceiling + direction guarantee | 3 | ~18 | +15 |
-| [ENT-3] S5/S6/S7/S9 → one image source | 22 | ~14 | −8 |
-| [ENT-3] S10 generalised; 3009 deleted | 8 | ~6 | −2 |
-| [ENT-5] delivery block + [GIVE-1] carrier | 24 | ~3 | −21 |
-| [ENT-5] loop rule restated; join sentence | 19 | ~13 | −6 |
-| [ENT-6] claim authority → admission | 34 | ~24 | −10 |
-| [CLM-1] gate, settlability, gap token | 5 | ~22 | +17 |
-| [CLM-2] four verdicts → three | 8 | ~7 | −1 |
-| [ENT-6] route menu | 1 | ~8 | +7 |
-| [DIAG-1] payload + fix table; [DIAG-2] case list, note | 5 | ~26 | +21 |
-| **net** | **129** | **~141** | **≈ +12 lines** |
-
-Twelve lines longer, with **three concepts removed from the language** —
-definition-occurrence identity, the delivery carrier grammar, and the
-`redundant`/`overlapping` verdict split — and the operation table gaining an image
-column, which is the real specification work and is counted in §8 rather than
-here.
-
----
-
-## 4. The judgment architecture
-
-### 4.1 What is computed, and by whom
-
-One forward walk over the [FN-1] structural normal-control graph produces two
-products that share a graph, a kill relation and a merge operator and are
-otherwise independent.
-
-| product | lattice | join | consumed by |
-| --- | --- | --- | --- |
-| **certain state** | DBM bounds + disequalities + signed opaque goals | weakest bound / intersection held by all (3097) | [ENT-6] obligations, [FN-8], [FN-9], [CLM-2] |
-| **admission state** | two points, `TextProduced` ⊑ `BoundaryProduced(witness)`, per component | `BoundaryProduced` if either; earliest witness | [CLM-1] only |
-
-There is **no third state.** prover-first proposed one — a per-pair strongest
-bound tagged with a merge input edge — to recover the laundering family
-mechanically, and §9 gives the two programs that refuted it. The case list of
-§3.8 is retained *data*, not a lattice, and no judgment reads it.
-
-Ordering is unchanged and non-circular: the admission state reads no fact, so it
-is computed once before S3, `Eligible` and every `Full-minus` mask (3247), and
-CLM-2's counterfactual reruns cannot change what CLM-1 admitted. A locality
-judgment that depended on facts would make residuality circular (TERRAIN #5).
-
-### 4.2 What identity the admission state tracks — and why it cannot rot
-
-Two, both already published and already ordered:
-
-- the **component path** — `Field | EnumTag | EnumPayload | Element | Length |
-  Deref` steps over a structural tree derived from types (3218);
-- the **boundary witness** — the call's NodePath and kind plus the callee's stable
-  source identity (3245), with the least-NodePath tie-break (3246).
-
-It tracks **no definition identity at all**, and that is the direct answer to H1's
-real complaint. H1 is not that v0.39's rule is wrong; it is that the rule's
-criterion is an equality test between analysis artifacts. The compiler answers
-"are these two reaching definitions the same occurrence?" with
-`DefinitionId { site: std::ptr::from_ref(stmt).addr(), kind }`
-(`claim_locality.rs:104–145`), sound only under four preconditions that neither
-the type system nor any test enforces, whose failure mode 0102 states plainly:
-"a refactor that cached or compared identities across allocations could silently
-equate two distinct definitions and drop a selector's witness"
-(`docs/done/0102-clm1-narrow.md:379–387`). All four vanish, because the question
-they answer is not asked.
-
-The general property, and the sentence that belongs in the specification rather
-than only in a design document:
-
-> **A judgment whose criterion is a lattice point can be wrong only by being
-> imprecise; a judgment whose criterion is an artifact identity can be wrong by
-> being unsound.**
-
-v0.39 chose the second. This design chooses the first, and states the imprecision
-it buys: a call that writes through `&uniq` taints every component its effect row
-projects onto, whether or not that particular call actually wrote them.
-
-### 4.3 Termination, determinism, cost
-
-**Loops.** The admission state is the least fixed point of the same componentwise
-join. It terminates because the lattice is two-point, the component tree of one
-function body is finite (3218), and every transfer is monotone: each component
-can rise at most once. This is the same kind of fixed point [ENT-6] 3210–3211
-already runs for [PRV-1] dependency, so no new mechanism class enters the
-language, and the current implementation already runs an inner fixed point per
-loop (`claim_locality.rs:758`).
-
-**Determinism.** [ENT-1] 2836 requires two conforming implementations to derive
-the same claim-authority component tree, reaching state, support carrier and
-witness. Today that rests on both implementations agreeing about
-definition-occurrence identity, which neither the spec nor a test pins. Here it
-follows from the lattice and the published witness order, and §3.5 pins the
-carrier tie-break that 2744 and 1857 today word differently and that
-`flow.rs:6816–6832` resolves by whatever `claim_component_supports` yields first.
-
-**Cost.** `ControlAuthority::acquired` scans the held frame vector once per frame
-an edge carries, "so its cost grows with the product of the two", and 0102 took
-no measurement (`docs/done/0102-clm1-narrow.md:363–375`). That term is deleted
-outright. The per-edge work becomes one componentwise join.
-
-### 4.4 One relation, three consumers
-
-The call-write seed is defined as *exactly* what [ENT-5]'s kill (b) kills, and
-that is the design decision that keeps the area from re-growing a private notion
-of what a call touched. The compiler already carries the projection in the shape
-needed: `KillEvent::Write { place, element, source }`
-(`compiler/src/semantic/entailment/flow.rs:62–70`), whose `element` flag is what
-keeps P16 alive. Kills (3066), [PRV-1] write components (3207) and admission
-become three consumers of one relation. If it is wrong, all three are wrong
-together and one fix repairs all three — the opposite of today, where two see the
-`&uniq` write and one looks away. §8's falsifier F4 makes the shared blast radius
-the test.
-
-### 4.5 What leaves the compiler, and what arrives
-
-**Deleted.** `DefinitionId`, `DefinitionKind` (`claim_locality.rs:93–145`);
-`ControlFrame`, `ControlAuthority` with `with_added`/`remove`/`acquired`/`join`
-(`:147–228`); `AuthorityState::control` (`:637–639`); the definition-comparing
-half of `AuthorityValue::merge` (`:584–630`), which becomes a plain lattice join;
-the three unconditional selector stamps — match binder (`:1105`), delivered value
-(`:1165–1166`), counted binder (`:1300`); the three frame-discharge sites
-(`:1158–1160`, `:1187–1194`, `:1266–1272`). In `flow.rs`: `eligible_delivery_terms`
-(`:6279`), `delivery_edge_state` (`:6343`), `establish_delivery_join_view`
-(`:6473`) — a delivery edge is a value-commit event and a merge input.
-
-**Added.** The call-write seed at the call sites that already evaluate arguments
-(`claim_locality.rs:1370–1394`), reading `KillEvent::Write`'s existing projection;
-a new `semantic/entailment/image.rs` holding one image rule per operation row,
-table-driven; the case-list retention in the checked-program metadata; the gap
-token's lexical check in claim formation.
-
-**Kept unchanged.** The postcondition-candidate second pass in `join_at`
-(`state.rs:4045–4068`), which now acquires the specification sentence of §3.3;
-`staged_permission.rs`, since [PAR-3] does not consume claims as proof
-(`:818–826`, `:608`, `:1136`, `:1669`).
-
-### 4.6 The invariants this design must not break
-
-- **Six terminal roots, all partial-operation obligations** (2789). Untouched.
-  This design gives claims no new job; it takes jobs away.
-- **`TextProduced` is not `true` and is not `internal`** (2746, 2757, PRV-1 3310).
-  Preserved and reinforced by the rename. CLM-1, CLM-2 and PRV-2/3 can still each
-  refuse one occurrence for three unrelated reasons.
-- **Admission is computed once, before S3 and every mask** (3247). Preserved; it
-  reads no fact.
-- **Admission reads exactly the support the kills read** (3048, 3248). Preserved
-  verbatim; `S`, not `D` and not `F`, remains the image whose support is queried.
-- **`Full-minus` produces exactly the same PRV failure set as `Full`**
-  (3050–3054). Preserved: the mask still suppresses only S3 events, and neither
-  the image closure nor the admission state depends on S3.
-- **[CLM-3] counts claims and nothing else does** (2815). Mechanism untouched;
-  `DirectClaims`'s `(instance, NodePath, name)` identity (2809) unchanged; no
-  second claim-like construct is introduced. Its *meaning* shifts in the intended
-  direction — a `MayClaims`-empty subtree becomes reachable for the third of the
-  corpus that two missing images were blocking from it.
-
----
-
-## 5. The prover ceiling
-
-### 5.1 The charter's hardest question, answered once
-
-> *Where does proving power live, and what is its general shape?*
-
-It lives in publisher 1, and its shape is **a closure indexed by two closed sets
-the language already owns: the operation table and the control graph.** A writer
-can only write operations from the table and control from the grammar. Therefore:
-
-- adding a language operation adds an image rule to its row **in the same
-  change**, or publishes the empty image and thereby names a ceiling clause.
-  There is no state in which an operation exists and its proof behaviour has not
-  been decided. `imin` is exactly that state today.
-- adding a control construct adds its merge points, and a merge point is a merge
-  point. There is no state in which a construct delivers values and its fact
-  behaviour has not been decided. `value_match` is exactly that state today
-  (3085).
-- adding a system operation adds its contract to the source list. Five of
-  [SYS-8]'s relations are exactly that state today (2990).
-
-**Three constructs are in that state at `b1367c82`, and each is one of the
-charter's holes.** That is the argument that the list-shaped design fails
-structurally rather than by oversight, and it is a structural argument rather
-than a corpus count.
-
-### 5.2 The complement, published
-
-A closure has a complement, and the complement is what a claim is for. Four
-kinds, each a stated clause and each a token the `checker gap:` field must name.
-
-| token | the gap | why it is out, and for how long |
+| **P-DOM**, the two-nonconstant `.defined` route | the audit named it as a `[ENT-6]` normalization route and no design wrote the sentence; `L08`/`L09` (compiled) reject with the projection already supplied | 3.5, `[ENT-6.D]` |
+| **P-MONO / P-OFF**, corrected | drafted by the loop part and disowned by it; unsound as drafted (A3) | 3.5, `[ENT-3.S5.O]` |
+| the corrected **`*wrap` box image** | the audit required the correction; no part took it | 3.5 |
+| the **`ior` / `maxor`** image | same | 3.5 |
+| the **enumeration discipline** that makes the column total and reviewable | 0106 stated it; nothing carried it into a gate | 3.4, 7.4 |
+
+The sequencing conclusion is unchanged and it is the core part's: **the deletion
+narrows the accepted set and the publishers widen it, so this is one merge.**
+Section 8 orders the work inside that merge.
+
+### 2.6 A19 and A20: what P-LOOP may retain
+
+The drafted candidate set is "the atomic facts of `E(@l)` that are not in
+`H0(@l)`". `[ENT-2]` 2901 makes an atomic fact one difference bound, and
+`[ENT-4]` rule (3) makes the closed state hold exactly one - the tightest - per
+ordered pair. So per pair the only candidate is the constant that holds at
+entry, and P-LOOP retains that constant or nothing.
+
+The inductive bound of an ordinary counting loop is almost never that constant.
+`for`-shaped or `loop`-shaped, a walk over a container whose length folds to a
+literal has `tap = 0` and `tap_count = 8` at entry, so the closed entry state
+holds `tap - tap_count <= -8`; the body derives `-7` on the back edge; `-8` is
+deleted in round one and the head learns nothing. The fact the loop maintains is
+`tap - tap_count <= 0`, which is **true at entry** and **never a candidate**.
+`y1`/`y2`/`y3` compile all three halves of that sentence.
+
+Two consequences follow, and both matter more than the defect.
+
+**The family splits on whether the extent folds to a constant.** A walk over
+`&buffer<u8>` with a symbolic `source_length` works, because the entry-tight atom
+on `(scan, source_length)` *is* `<= 0`; the byte-identical walk over
+`array<u8, 8>` does not. That is the audit's own indictment of I7 - "the family
+splits on whether the count is a compile-time constant, which is not a
+distinction any writer would predict" - turned inward on the batch's own
+headline rule.
+
+**The repair must not become a widening.** Closing the candidate set downward in
+the constant makes it infinite and destroys the deletion argument. My repair
+(3.6, `[ENT-5.R2]`) is a **spec-fixed finite ladder**: for each ordered pair, the
+candidates are the bounds whose constant is drawn from `K`, the finite set of
+integers the function's own text determines - every bound constant in the closed
+entry states, every constant of a normalized `[ENT-2]` goal of the function, and
+0 and -1 - restricted to constants at least as large as the entry-tight one. Four
+properties:
+
+- **A1-immunity survives verbatim.** Every candidate is *entailed at entry*,
+  because its constant is at least the entry-tight constant. P-LOOP still never
+  establishes at a head a fact that was not already true before the loop, and
+  `[ENT-5.R9]`'s two counterexample programs are refused by construction exactly
+  as drafted.
+- **The deletion still terminates and is still unique.** `K` is syntactically
+  determined and finite; the candidate set is a subset of `pairs x K`; deletion
+  only shrinks it.
+- **It closes the constant-extent family.** For `(tap, tap_count)`, `0` is in `K`
+  (the loop's initializer puts `tap - Z <= 0` in the entry state); the candidate
+  `tap - tap_count <= 0` is true at entry and re-derived on the back edge, so it
+  is retained, and `y2` compiles that step.
+- **It pays for itself in complexity by a factor of `|K|`,** which is the number
+  of distinct constants one function mentions. Section 3.6 states the cost.
+
+**A20 then becomes free.** The drafted `[ENT-5.R3]` freezes the candidate
+universe in the no-retention flow to make termination trivial, at the cost that
+an inner loop can never receive a fact only an outer loop's retention makes
+available - which `fir_filter.wf:45` wants, in the same design's own migration
+table. With the ladder, the universe is a subset of a **syntactically fixed
+finite set** (`pairs x K`), so the outer ascending iteration - recompute the
+universes under the converged family, converge again, repeat - terminates by
+finiteness rather than by fiat. Section 3.6 draws the two-level fixed point and
+its monotonicity argument. The audit's own P-LOOP text never froze the universe;
+the freeze was an artifact of drafting and the repair returns to the audit.
+
+### 2.7 A22: one notation for I1, and what the second one contributed
+
+The owner's I1 ruling asked for one thing: examine the declared-statement route,
+state exactly what normalizer power it needs, and price the residue. Two parts
+did it separately and produced two keywords, two procedures, and two cost
+accounts an order of magnitude apart. I land one.
+
+**`bound`, with the substitution-and-certificate check, is the construct.** It is
+closed, its soundness argument is written and checks out, it needs **no new
+column on the operation table**, and it is the same construct that answers I2,
+I3 and I4 - so the language gains one statement form rather than two. The three
+normalizer powers I1 needs, stated exactly as the owner asked, are in 3.9.3:
+the division witness for a literal divisor, elimination against ambient
+difference bounds over the statement's own terms, and integer tightening
+(`floor(C/s)`). All three are inside `[IND-7]` as this file drafts it.
+
+**`prove` and its exact algebraic denotation column are not adopted.** The
+column is 60-100 rows carrying a per-row correctness obligation that review must
+discharge, which roughly doubles the review load of the image column - and the
+image column is being enumerated in this same change. Its own author recommends
+buying the experiment before the column. The route it describes reaches nothing
+`[IND-4]` does not reach, and it reaches it by unfolding through eight commit
+events with no path restriction, which is strictly harder to fence.
+
+**What the second design contributed, and I keep as a finding.** The split
+between algebraic and data-dependent probes is the best idea in that section and
+it survives the deletion of its notation: *the algebraic probes (binary,
+ternary, galloping) go to the declared statement; the data-dependent probe
+(interpolation search) goes to an `ensures` on the function that computes the
+scaled offset, whose `ensures ilt(result, span)` under `requires ilt(lo, hi)`
+gives the caller `mid < hi` by the same cancellation.* **Nothing needs a shape
+rule.** That is the sentence that closes the door on `[ENT-3.S8]`'s restoration
+for good, and it is in 3.9.4.
+
+### 2.8 A23: the four bucket-B claims, and what losing them costs
+
+`CENSUS.md` names four claims whose fact is two-term but whose only bridge is a
+three-term equality, calls them "the only fact-language work the whole corpus
+asks for", and every part of the batch built an argument on them. Three parts
+gave them three incompatible routes. The compiler settles it:
+
+| site | the three routes offered | verdict |
 | --- | --- | --- |
-| `vocabulary` | the fact is not a difference bound or a disequality over two terms: a three-term relation, a product or quotient of two non-constant terms, a congruence, anything nonlinear | permanent while the fact language is [ENT-2]'s. Widening it is a different design with a different cost curve (octagons, polyhedra), and [ENT-1] 2835–2836 is why the language must be fixed rather than best-effort |
-| `image` | the row's exact image is not unique in that vocabulary — two non-constant `+`/`-`/`*` operands (3146 already says so), `bxor`, a normalization with alternative positive clauses such as signed division/remainder (2739 already says so) | permanent per row while the row's image is non-unique. This is the one token that can be retired for a specific row by amendment, and the writer should know it |
-| `flow` | no single reaching edge carries the fact and the flow point's published transfer does not derive it: a correlation the convex join loses, a relation a loop head's subtraction removes | permanent for the convex-join case while the domain has no disjunction; **retirable for the loop case** by the amendment §3.3 names |
-| `content` | the fact is about an element of an array, slice or buffer | permanent while the element component is one conservative all-elements component (3218) and terms exclude subscript suffixes (2870(a)) |
+| `percent_decode.wf:28`, `:31` | a guard rewrite; an unlabelled statement; the backward `+-wrap` rows | **the guard rewrite.** `t4_percent_escape_free.wf` **accepts** (re-run, compiled) with no new rule: two `+checked` arm equalities and one guard `ilt(last_index, source_length)` discharge both subscripts |
+| `wfgrep.wf:434` | a guard respelling; an unlabelled statement; the backward rows | **the guard respelling.** `t10_residue_repaired.wf` **accepts** (compiled): `ine(room, 0_u64)` written `ilt(carry, input_room)` |
+| `wfgrep.wf:553` | restructure; an unlabelled statement; the backward rows | **restructure**, guarding `source_index` directly against `input_room`. No route is compiled; 4.5 records it as the corpus's one true residue |
+| `ipv4_checksum.wf:22` (the congruence residue) | a pair guard; a counted restructure plus a statement | **the pair guard.** `t8_ipv4_parity_free.wf` **accepts** (compiled), and its false edge is the odd-tail case the RFC actually specifies |
 
-And the one that is not a gap: `boundary`, the callable boundary's subject
-matter, whose two repairs are already written at [DIAG-1] 1859.
+Two arguments lose their support and both must be re-priced honestly rather than
+papered over.
 
-### 5.3 What the ceiling gains at v0.40, concretely
+**The local induction statement loses three of its four stated customers.** Its
+strongest argument was "these four have no `if`/`else` route: their `else` arms
+are unreachable", and `t4`'s two `Err` arms are empty, legal, and the honest
+reading of an index within two of `max(u64)`. What survives is **I1's midpoint**,
+where the `else` arm genuinely is a lie about the program - *what does a binary
+search do when its own midpoint is outside its own window?* One customer is a
+thin case for a statement form, and section 9's **flagged decision D2** is
+exactly that question, with my adopted recommendation (ship it, restricted) and
+the recorded dissent (hold it) stated side by side.
 
-The vocabulary is unchanged; the redesign is entirely on the establishment side.
-Rows whose image is nonempty and which have no source today include:
+Note also that A1's repair removes T3's derivation independently: with the wrap
+gate in place, `room = input_room -wrap carry` contributes `input_room - carry`
+only when `carry <= input_room` is already derivable, which is the fact the
+statement was trying to prove.
 
-- **`%` and `/`.** Unsigned `a % d` with `d ≥ 1` derivable: `Z ≤ r`, `r ≤ d − 1`,
-  `r ≤ a`. Signed `a % c` for constant `c`: `r ≤ |c| − 1`, `Z − r ≤ |c| − 1`.
-  Unsigned `a / d` with `d ≥ 1`: `q ≤ a`. All C0-expressible and unique. 46 of the
-  corpus's 135 claims name the missing one.
-- **`imin` / `imax`.** `imin(a,b) ≤ a`, `imin(a,b) ≤ b`, dual for `imax`. Five
-  corpus claims. Listed at 3227 for authority transfer and in no source today.
-- **The ground case of every arithmetic row**, as the degenerate case where the
-  operand bounds pin the operands. There is no constant folder; there is one
-  image rule per row.
-- **Bit rows that were never reached for.** `ipopcount(x) ≤ width(T)`,
-  `iclz(x) ≤ width(T)`, `ictz(x) ≤ width(T)` are C0-expressible and free.
-- **All seven [SYS-8] outcome contracts** rather than two.
+**The backward `+-wrap` rows lose their necessity argument.** The contract part
+promotes them from the audit's *demoted* status to required, on the ground that
+"with `claim` deleted these four programs have no other route". Three of the four
+have a compiled route. I keep the rows - they are sound, they are cheap, and
+`wfgrep.wf:553` and the general shape still want them - but I keep them as an
+**ordinary row-image direction decision inside the enumeration** (3.5), not as a
+rule the batch is required to buy, and I record that the audit's demotion stands
+on its own reasoning.
 
-Rows that publish the **empty image**, explicitly, as ceiling clauses: every
-float row, every `f`-domain compare, `bxor`, signed division and remainder's
-non-unique normalizations, and any `+`/`-`/`*` with two non-constant operands.
+### 2.9 A6 and A11: the seams, closed by deletion rather than by choice
 
-The magnitude of the image column is 60–100 rows by the shape of [OP-6]'s `cvt`
-pairs, [OP-7]'s domain prefixes and [OP-8]'s bit, shift, rotate, saturating and
-min/max rows. Most are one line; many are the explicit empty image. **This was
-not enumerated row by row by any of the three designs, and enumerating it is
-batch B1's first task and its own falsifier** (§8, F3) — an enumeration that
-must decide each row's *direction* as well as its image, per the erratum below.
+Three parts wrote three edge-ordering texts. Two are the same rule under two
+ids; the third is v0.39's order. There is nothing to choose between: `[ENT-5.P0]`
+and `[ENT-5.X1]` say the same thing, `[ENT-5.P0]` says more of it (it also fixes
+where an image lands relative to its own kill), and the third text is simply
+wrong - `r7_closure_vs_kill.wf` (compiled) rejects `best < len(data)` under it,
+so "every remember-this-index pattern loses its bound". Section 3.3 keeps
+`[ENT-5.P0]`, deletes `[ENT-5.X1]`, and section 3.14 rewrites the acceptance
+pipeline to match. The same disposal applies to the U view (A11): `[PRV-3]` 3404
+*defines* U as the complete state minus S3, so deleting S3 makes `U == complete`
+by the definition rather than by argument, and every text that still names three
+views is corrected rather than reconciled.
 
-> **Erratum (B0 census).** The list above, and §5.1's shape argument, take the
-> image column to be **forward**: operand facts in, result facts out. Every
-> example here is forward, and §3.2's draft [ENT-3.S5] is worded that way too
-> ("entailed by that row's exact semantics from the closed state's facts over its
-> operand terms"). `CENSUS.md` §2.3 and §2.4 measure what that reaches. It
-> reaches 108 of the tree's 114 gap-stating claims — and **four real-program
-> claims it closes none of**: `percent_decode.wf:28`, `percent_decode.wf:31`,
-> `wfgrep.wf:434` and `wfgrep.wf:553` (rows T1–T4 of `CENSUS.md` §2.4). Their
-> missing fact runs **backward across a `±wrap` row**: from a fact the state
-> already carries about the row's *result* to a fact about its *operands*, across
-> `r = a ± b` with `r`, `a` and `b` distinct. Neither a DBM nor an octagon can
-> hold that equality — but nothing has to hold it. Given the no-wrap side
-> condition the state already carries (`b <= a` for a subtraction), **one backward
-> row rule, entirely inside the existing [ENT-2] vocabulary, closes all four**:
-> publish `a - b >= k` when the state carries `r >= k`, and `a != b` when it
-> carries `r != 0`. Two corrections follow, and both are applied below. First,
-> whether a row's image may run backwards is not a detail of B1's enumeration but
-> a decision it must take, so it is added to B1's scope (§8). Second, **F3 audits
-> the column for uniqueness and does not ask about direction at all** (§8.1),
-> which is amended there. What does not change: these four are a *publisher* gap,
-> not a vocabulary gap, so the ceiling argument of §5.1–§5.2 stands and the true
-> residue remains the two claims `CENSUS.md` §2.4 names. This backward rule is
-> the only fact-language work the whole corpus asks for, and three real programs
-> ask for it.
+Two seams held under attack and are recorded as such, because a review that only
+lists breaks misprices the work:
 
-### 5.4 What the ceiling deliberately does *not* gain, and why
+- **The loop/contract seam at heads.** `[FN-9.L1]` deliberately asserts a
+  *non*-rule - a contract fact is an ordinary P-LOOP candidate with no longer and
+  no shorter a life than an operation image of the same support - and the loop
+  design makes no exception for contract facts. The joint is anchored by
+  `c23` **accepting** and `c09` **rejecting** on byte-identical statement
+  sequences whose only difference is a `loop`. Two designers who could have
+  invented parallel mechanisms deliberately did not. Kept verbatim at 3.10.4.
+- **The core/loop interface obligations L1-L6.** All six are satisfied by the
+  induction statement as this file drafts it, and 3.9.6 checks them one at a
+  time.
 
-**Loop induction stays out of v0.40**, and the loop head is published as the
-subtraction it is (§3.3). Two of the three input designs wanted it and one wrote
-the rule; both judges independently broke that rule with programs in which the
-declared head state asserts a false bound and a `SubscriptBounds` obligation
-discharges against it — an out-of-bounds read in a program with no `claim` in it
-(§9, A1). The error was one clause: widening once and stopping, with a stated
-termination argument ("stable across two consecutive iterates") that the
-counterexamples violate.
+### 2.10 The redundancy ruling, and why it is the load-bearing asymmetry
 
-The repair is standard — widen at every unstable iterate and iterate until
-`B(X) ⊑ X` is *verified* — but it is not a one-line edit to this design. It
-introduces the first fixed point over `FactState` and therefore the language's
-first widening operator (TERRAIN #4: "the project has never paid for, and
-therefore never had to specify, a widening operator"); it makes the cost
-unbounded by any published pass count; and it needs a soundness gate no proposed
-falsifier supplied — prover-first's F4 only checks that the new head state is *at
-least as strong* as the subtraction, which the broken rule satisfies while being
-wrong.
+The 0107 audit rejected a loop invariant clause partly on redundancy grounds. The
+owner's ruling of 2026-08-29 supersedes that reading: **a written induction
+statement is never an error merely for being redundant.** The reason belongs in
+the design notes and it is an asymmetry rather than a preference:
 
-So the sequencing is a soundness decision, not a churn decision. The ceiling is
-honest about it: the loop head's transfer is published, the 39 loop-induction
-claims carry the token `flow`, and §8's batch B6 raises that clause with three
-gates — the post-fixed-point check as a compiler assertion on every loop, a
-differential corpus run against the subtraction, and a measured cost on the two
-largest programs. That is the ceiling machinery doing exactly the job it was
-designed for, on its own first customer.
+> A `claim` **trapped at runtime**. A redundant claim was therefore a live trap
+> site retained in every build mode, for a predicate the checker already knew - a
+> permanent cost, and a site whose review record asserted a checker gap that did
+> not exist. `[CLM-2]`'s non-duplication rule had to ban it. An induction
+> statement **costs nothing at runtime**: it is erased proof syntax, like
+> `requires` and `ensures`. Redundancy therefore costs nothing. And the asymmetry
+> runs forward as well as backward: because a redundant statement is legal, a
+> later version's stronger prover may quietly make old statements redundant
+> without breaking, churning, or forcing an edit to a single program. Under
+> `[CLM-2]` the same strengthening was a **hard error** on every program carrying
+> the newly-derivable claim - `[ENT-1]` 2853-2858 says so explicitly - which is
+> why the claim model could not let its own prover grow.
 
-### 5.5 The honest weakness of "every row publishes an image"
+Two sentences that look like they are in tension are both true and are the two
+halves of the ruling. *A statement is never required where retention suffices*
+(`[ENT-5.R]` keeps the easy loops annotation-free, which is the audit's rejection
+of a mandatory invariant clause surviving in exactly the form it survives in).
+*A statement covering what retention reaches is not an error* (`[IND-9]`). The
+first keeps the notation from becoming proof plumbing; the second keeps the
+prover free to grow.
 
-Judge-2 stated it precisely and it must not be buried: **the column can be total
-over rows and still weak on a row, and nothing detects that.** Totality is
-mechanically checkable — a gate test that every row in the operation table has an
-image entry — but *strength* ("the unique strongest set of [ENT-2] facts the row's
-semantics entail") is a per-row proof obligation discharged by review, exactly as
-the `because` prose is.
-
-Three things reduce the exposure and none eliminates it:
-
-1. one conformance case per nonempty image row, asserting the facts it publishes;
-2. the empty image being an explicit, reviewable publication rather than an
-   absence, so "no image" is a decision someone signed;
-3. the gap token, which turns "the checker is weak here" from an unspoken
-   condition into a citation a reviewer can dispute.
-
-A row whose published image is weaker than its semantics entail is a *defect*
-under [ENT-1]'s "derives exactly the ceiling: neither less, which is a defect",
-and it shows up as a writer's claim carrying the token `image` where the token is
-wrong. That is a better failure mode than today's — where the same weakness is
-indistinguishable from a deliberate limit — but it is not a proof.
-
-### 5.6 What each publisher owns, in one sentence for the writer
-
-- **The entailment:** *the checker knows the range and relations of every value
-  your function computes, as far as two-term difference bounds can express them,
-  through every branch, delivery and merge, but not across a loop back edge.*
-- **The callable boundary:** *the checker knows about a callee's result and about
-  storage a callee wrote exactly what that callee's verified `ensures` or the
-  specification's own operation contract states, and nothing else.*
-- **The reviewed claim:** *you may state a lemma about values your own function
-  produced, above the published ceiling, naming which of the four ceiling clauses
-  you are standing over; the check is retained and never removed.*
-
-That is a promise a writer can hold in their head, and it is what
-`docs/done/0098-blind-writer.md:40` found in practice under a *weaker* ceiling:
-"Zero `claim` statements in 1,694 lines. Every subscript, every `%` and `/`, every
-system range call was discharged by ordinary `if` branches and `len()` rebinding.
-The proof obligations — the part of this language everyone expects to be the wall
-— were not the wall." Under today's ceiling that outcome required the writer to
-route around `%`'s missing range with branches. Under this one it is the default.
+This ruling is also what makes `[ENT-1]`'s new unconditional monotonicity
+sentence true of the *whole* language rather than of the claim-free fragment. If
+a redundant statement were an error, the batch would have removed one
+monotonicity exception and immediately added another - and section 2.4 is the
+adjudication that stopped it from adding a second one by a different route.
 
 ---
 
-## 6. Non-duplication and residuality
+## 3. The construct catalog
 
-### 6.1 The verdict, derived
-
-Three semantics for a checker-provable claim are consistent with T3, because T3's
-derivation needs a claim to be *true*, not *necessary*: hard rejection, a note, or
-acceptance-as-documentation. The file name
-`tests/conformance/cases/clm2-pos-redundant-claim-advisory.wf` is the fossil of a
-fourth answer that once shipped (`docs/roadmap.md` PROOF-8 records "five
-non-rejecting redundancy advisories"), and its manifest today expects a CLM-2
-reject.
-
-Under premise ownership the question is not a preference. **Two publishers may
-not publish one premise**, and the three candidates are ranked by three pieces of
-project law:
-
-- **T3 / P0.** A retained claim is one runtime check retained in every build mode,
-  never elided, evaluated once at every dynamic reach (2748). A check no admission
-  root needs taxes *correct* programs and buys nothing. Acceptance-as-documentation
-  is refuted by T3's own premise, not by taste.
-- **W3.** Accepted claims are never removed, so the compiler may not silently drop
-  the check.
-- **R4.** Unrepresentable > check-time rejection with rule-citing diagnostics >
-  runtime trap. A note is a rejection the writer may ignore, which under an
-  AI-writer model is silence with extra steps.
-
-The compiler may not drop the check, may not keep it silently, and may not merely
-mention it. **It must refuse the source.** There is one more argument, found by
-world-first and worth keeping because it is architectural rather than
-axiological: an accepted occurrence contributes S3 (2950–2951), which changes the
-fact state, which changes **every other claim's** residuality — `Full-minus(c,a)`
-re-runs the whole-program analysis "with every other Eligible S3 source …
-unchanged" (2784). Admitting an unnecessary occurrence perturbs the counterfactual
-every other occurrence is measured against, and 2796's "one simultaneous
-classification over fixed `Eligible`" stops being well-founded. Acceptance of a
-duplicate is not neutral; it destabilises the judgment that decides the others.
-
-### 6.2 Why the unit is the component, and what that costs
-
-writer-first proposed a real simplification: prove that `redundant` is a strict
-special case of `non-residual` and delete the verdict, then drop per-component
-residuality so every forced edit is a whole-statement deletion. The proof is the
-most substantive reasoning in the batch and is worth stating:
-
-> If every component of `Contrib(P)` is derivable in the pre-S3 state at the claim
-> point, the occurrence is non-residual. S3 establishes exactly those components
-> (2951), each carrying the ordinary support of its S-derived relation or goal
-> (3048). `Full-minus(c)` withholds exactly those source events and changes no
-> evaluation, effect, ownership, cleanup, scope, join, loop or runtime statement
-> (3050–3051). By hypothesis each component is derivable from unmasked sources at
-> that point; support is a property of the fact and not of its derivation
-> (3036, 3040), so the independently derived fact dies on identical edges (3066)
-> and survives identical joins (3097). Every queried state is equal in Full and
-> `Full-minus(c)`, so no terminal root can differ. ∎
-
-It has **one unclosed step**, which judge-2 found: it needs "no downstream
-judgment distinguishes an established fact from a derived one", and [ENT-4] 3023
-("Derivability never decomposes a merely derived parent") is evidence the
-specification distinguishes them somewhere. §8's batch B3 closes it against
-3014–3023's Boolean reconstruction or keeps both tests; either way the writer's
-experience is identical, because the diagnostic and the fix are the same.
-
-This design keeps the **component** as the unit throughout, for a reason that is
-not a preference either: S3 establishes components, so the component is the unit
-of publication, and one unit should carry non-duplication, residuality, lifecycle
-and diagnostics alike. Dropping per-component residuality would be a real
-performance win — one whole-program re-analysis per component per claim
-disappears — but nobody has measured it, and "fix measured performance problems
-instead of designing for imagined scale" cuts against buying it with a
-non-uniformity. §12 Q5 puts it to the owner.
-
-### 6.3 What keeps the writer stable as the prover grows
-
-Nothing keeps it *stable*, and promising stability would be dishonest: [ENT-1]
-2853 deliberately places claims at the proof frontier and withdraws version
-monotonicity from them in the same sentence that grants it to everything else.
-The history is consistent — SHA-256 moved to claim-independent obligations "after
-deleting four claims" when S11 shipped; a later migration "replaces eleven DEFLATE
-claims with value branches"; DEFLATE moved 16 claims to 12 (`docs/roadmap.md`
-PROOF-8). Every prover improvement in this project has been accompanied by a
-corpus edit deleting claims, and this design's own amendment retires roughly half
-the corpus's claims.
-
-What can be guaranteed is four things, and together they are the answer:
-
-1. **Within a version there is no churn at all**, and there never was. [ENT-1]
-   2835 forbids any implementation from strengthening the derivable set and 2836
-   requires two conforming implementations to derive identical states. Today's
-   instability is *entirely* a specification-version phenomenon that 2766
-   describes as if it were implementation drift ("Checker strengthening"). Naming
-   the ceiling (§3.1) fixes that confusion, and it is half the complaint.
-2. **The direction is guaranteed** (§3.1): every forced edit removes claim
-   content. Never a new obligation, never a new claim, never a narrowed ordinary
-   accepted set, and each removal deletes one retained runtime check. The writer's
-   experience is not stable; it is monotonically improving, and the language
-   should say which.
-3. **The edit is located and mechanical** (§3.8): the rejection names whether the
-   whole predicate or which component was derived, renders the derivation the
-   checker now has, and gives one fix. Today this family carries **no mechanical
-   fix at all** (1855–1856), which is the actual defect behind H4 — the writer is
-   told their program is now wrong and not told what to do.
-4. **The migration is announceable** (§3.5): a ceiling raise names the clause it
-   closes, and every claim standing over that clause carries its token. Raising
-   the `%` row's image retires exactly the `image`-token claims whose prose names
-   remainder. That is a grep before the amendment ships, not archaeology after.
-
-The writer's own instrument is the token. Before this design a writer had no way
-to know whether their claim stood above a permanent limit or a temporary one.
-After it, `vocabulary` and `content` are permanent by construction, `flow` is
-permanent for the convex-join case and retirable for the loop case, and `image` is
-the token that says *this row could publish more one day*. A writer who wants
-stability writes claims whose token is not `image`, and knows why.
-
-### 6.4 What this design's own ceiling raise costs, honestly
-
-By its own rule this design is an amendment that raises the ceiling a long way,
-and it therefore retires a large fraction of every claim in the tree: the 46
-remainder claims, three ground-remainder claims, three payload-construction
-claims, the delivered-value and arm-written conformance cases, and both members
-of the differential-fuzz pair. The 39 loop-induction claims survive, with the
-token `flow`, until batch B6.
-
-That churn is not a cost the design pays reluctantly. Every claim it retires was a
-retained runtime check that correct programs were paying, on every reach, for a
-fact the checker should have known. It is the deliverable.
-
----
-
-## 7. Conformance migration
-
-Every item below is conformance evidence under repository rule 4, so the merge
-recording it names the exact added, modified, deleted or renamed content and its
-before/after boundary in `governance/APPROVALS.md`. Paths are
-`tests/conformance/cases/` unless named. Batch letters refer to §8.
-
-### 7.1 Verdicts that move
-
-| case | v0.39 | here | batch |
-| --- | --- | --- | --- |
-| `accept-clm1-local-claim-after-boundary-exit.wf` | accept | **reject CLM-2 duplicate-publication**, + a new accept sibling with the claim deleted | B1 |
-| `accept-clm1-local-claim-after-boundary-join.wf` | accept | same | B1 |
-| `accept-clm1-local-claim-inside-selected-arm.wf` | accept | same (`cursor % 4_u64` is now derivable) | B1 |
-| `reject-clm1-claim-on-delivered-selection.wf` | reject CLM-1 | **reject CLM-2 duplicate-publication**, renamed `clm2-neg-…`, + accept sibling with the claim deleted | B2 |
-| `reject-clm1-claim-on-storage-written-under-selection.wf` | reject CLM-1 | **reject CLM-2 duplicate-publication**, renamed, + accept sibling | B2 |
-| `reject-clm1-claim-on-loop-carried-update.wf` | reject CLM-1 | **accept**, claim retained, renamed `accept-clm1-…`, gap token `flow` | B2 |
-| `ent5-neg-value-match-no-delivery.wf` | negative | **positive**: a `value_match` receiver is an ordinary merge | B1 |
-| `ent5-pos-value-if-delivery-join.wf` | accept, two claims load-bearing | **rewritten**: both `%` claims become duplicates; the delivery join is shown without claims, which is a better fixture | B1 |
-| `clm1-pos-passing-claim-establishes-fact.wf` | accept (`seed = 3; index = seed % 8`) | **rewritten**: the predicate is now derivable; needs a genuine `vocabulary` residual | B1 |
-| `clm2-pos-redundant-claim-advisory.wf` | reject CLM-2 | verdict unchanged; classification renamed to `duplicate-publication`; file renamed `clm2-neg-repeated-claim-duplicate-publication.wf` so the "advisory" fossil goes | B3 |
-| `ent3-neg-stage8b-local-one.wf`, `ent3-pos-stage8b-bit-sources.wf` | verdicts hold | derivations move from S7 rows to row images | B1 |
-
-### 7.2 Verdicts that hold, with their prose re-narrated
-
-`reject-clm1-claim-on-selected-payload.wf`,
-`clm1-neg-user-result-claim-locality.wf`,
-`clm1-neg-system-result-claim-locality.wf`, every `ent2-*`, `ent4-*`, `prv*`,
-`clm3-*`, `clm1-trap-*`, and `clm2-neg-refuted-claim`. No manifest change. The
-`checker gap:` prose of every retained claim gains its token, and prose that
-appeals to definition occurrences is rewritten to state the reason that is now
-true. `ent5-neg-loop-rule-drops-preloop-fact.wf` stays negative and is now the
-case that *documents* the published `flow` clause rather than an accident.
-
-### 7.3 New cases required
-
-| case | pins |
-| --- | --- |
-| `reject-clm1-claim-on-callee-written-storage.wf` | §2.5's program. **The first corpus member of H3, ever** |
-| `reject-clm1-claim-on-callee-written-literal.wf` | boundary opacity: the callee writes only `0_u8` and the claim is still refused, so a later reader cannot "improve" the seed by inspecting the callee |
-| `accept-clm1-length-survives-a-callee-element-write.wf` | P16 and the element half of kill (b); the guard that the seed did not over-reach |
-| `reject-clm1-claim-on-callee-replaced-buffer-length.wf` | the whole-place-replace half of kill (a); the program that a legislated length exemption would wrongly admit |
-| `accept-clm1-nested-selection-local.wf` | three literal definitions under two nested boundary selectors; catches a reintroduced frame stack |
-| `accept-clm1-claim-on-loop-carried-literal.wf` | row 7 with a `loop_stmt` rather than a `for_stmt`, so both repetition forms are covered |
-| `accept-ent5-delivery-of-literal-discharges-a-subscript.wf` | §3.3: two arms deliver `0_u64` and `1_u64` and an ordinary subscript discharges with no claim |
-| `accept-ent3-set-commit-establishes-image.wf` | the `let`/`set` spelling defect, closed |
-| `accept-ent3-value-match-delivery.wf` | 3085's deletion |
-| one case per admissible gap token, plus one reject naming `boundary` | §3.5's lexical check and the token's teaching |
-| `reject-clm1-carrier-tiebreak.wf` | the tie-break at a genuine tie, which 0102 left unpinned |
-| `clm2-neg-duplicate-component-names-its-sources.wf` | §3.8's payload: the component ordinal, the derivation, and the fix |
-| one case per nonempty image row family (`%`, `/`, `imin`/`imax`, `iand`, shifts, popcount family) | §5.5's partial mitigation |
-| one case per newly imported [SYS-8] contract | §3.2's S10 |
-
-### 7.4 The claim corpus, by the writers' own gap text
-
-Tallied mechanically at `b1367c82` over `tests/conformance/cases/*.wf` and
-`tests/programs/*.wf`.
-
-| gap text (verbatim, deduplicated) | n | token | fate |
-| --- | --- | --- | --- |
-| "ENT proves the remainder operation domain but does not publish its result range" and its three variants | **43** | — | **retired** by the `%` image |
-| "the entailment state carries no residue for a literal remainder / for a remainder by a literal" | **3** | — | **retired**, ground case of the same image |
-| "ENT does not publish the result range of imin" | 5 | — | **retired** by the `imin` image |
-| "ENT does not publish a nominal payload value through borrow-mode match" and the constructor-field variant | 3 | — | **retired**: construction is a row and its image is `field = operand` |
-| "ENT does not derive the strict loop range from the equality exit and loop recurrence" and its four rewordings | 12 | `flow` | **kept** until B6 |
-| "ENT does not derive this ordinary-loop induction invariant / across the backedge" | 5 | `flow` | **kept** until B6 |
-| "ENT does not correlate the two borrowed column lengths / the two nominal field lengths" | 8 | `flow` | **kept** until B6: the loop range blocks them; the length correlation itself is two-term and needs only a publisher (S6, or a `requires`) — see the erratum below |
-| "ENT does not publish the borrowed buffer length through the child call" | 2 | `flow` | **kept** |
-| "ENT does not normalize the remaining-length guard into this offset bound" | 2 | `vocabulary` | **kept**, pending review of the token |
-| "ENT does not publish an uncontracted user-call argument value into apply" | 2 | `boundary` | **verdict unchanged**: deliberate-refusal fixtures |
-| "there is no checker gap for a direct False() predicate" and siblings | 6 | — | unchanged negative fixtures |
-
-Roughly **54 of 135 claims retire**; 39 mention a loop and survive on `flow`
-until B6 — the eight two-length claims among them, per the erratum below, which
-is where `CENSUS.md` §2.2 independently places them; the rest are deliberate
-`boundary` refusals, one `content` claim, and a `vocabulary` residue the census
-counts as three claims tree-wide.
-
-> **Erratum (B0 census).** The eight "two borrowed column lengths / two nominal
-> field lengths" claims were tagged `vocabulary` in the table above, with the
-> reason "a relation between two independent lengths is not two-term". **That
-> reason is false**, and `CENSUS.md` §6.3 shows why: [ENT-2] 2870(b) makes
-> `len(P)` a term and 2901 makes `t1 - t2 <= c` an atomic fact, so
-> `len(a) - len(b) <= 0` is a well-formed [ENT-2] fact, and conjoined with
-> `len(b) - len(a) <= 0` it is exactly the equality those claims want — in the
-> vocabulary the language already has. What is missing is a **publisher**: in
-> `x-struct-of-buffers-checksum-run.wf` both lengths come from
-> `buffer_new(6_u64, …)` and S6 could publish both, and in
-> `x-buffer-borrowed-columns-run.wf` the equality is a caller fact a `requires`
-> clause would publish. All eight are publisher gaps (`CENSUS.md`'s bucket P),
-> and their token is `flow` — the loop range is what actually blocks them, and
-> each gap text says so first. The row is corrected accordingly. Their fate is
-> unchanged (kept until B6), but the reason for keeping them is a missing
-> transfer, not a missing fact language, and they must not be counted toward
-> §5.2's `vocabulary` ceiling clause — which, on the census's count, holds three
-> claims in the whole tree rather than the ten this table assigned it.
-
-### 7.5 Other derived material
-
-- **`tests/programs/`**: 18 claims in 7 files. The remainder and `imin` ones are
-  deleted; `wfgrep.wf` (5), `percent_decode.wf` (4), `fir_filter.wf` (3),
-  `ipv4_checksum.wf` (2), `utf8parse.wf` (2), `raw_deflate_dynamic_decode.wf` (1)
-  and `par_layout.wf` (1) each need re-reading against the new ceiling. The 18
-  claim-free programs are unaffected, and their IR must stay byte-identical modulo
-  the version banner — that is a falsifier, not a hope (§8, F7).
-- **`tests/codegen/cases/bounds/`**: 15 claims in 13 fixtures, of which 12 are
-  one-line `ieq(value, N)` drift oracles. **All thirteen fixtures are rejected by
-  the current compiler**, so this item is not an adjustment to a working fixture
-  set: it is a rewrite of thirteen files that do not compile, each needing a
-  claim with a legal subject before any question about the new ceiling arises, or
-  replacement by a non-claim oracle. This is real work and is easy to
-  under-estimate.
-
-  > **Erratum (B0 census).** This bullet previously read "Under the image closure
-  > most become duplicates and must be re-cut to a predicate above the new
-  > ceiling", which assumes the thirteen fixtures compile at `b1367c82`. They do
-  > not. `CENSUS.md` §6.1 compiled every one: all thirteen are rejected, **all
-  > thirteen citing [CLM-1]** — the twelve masked-index drift oracles claim
-  > `ieq(value, N)` over a *direct user-call result*, publisher 2's subject
-  > matter, refused by [CLM-1] since long before v0.39, and
-  > `output-capacity-lockstep/p08` claims `False()`, which fails CLM-1 fact-free
-  > formation. Two things change. **Size**: the work is a rewrite rather than a
-  > re-cut. Each fixture's claim must first be given a subject the fixture's own
-  > text produced — under v0.39's gate and under this design's alike, since a
-  > direct call result stays `boundary` subject matter — and only then can the
-  > image closure make it a duplicate. Nothing in B1's ceiling raise moves these
-  > verdicts on its own, because [CLM-1] is judged before [CLM-2] and refuses them
-  > first. **Verification**: they cannot serve as before/after oracles for the
-  > verdict moves of §7.1, nor for F7's IR identity, because there is no compiling
-  > "before" to differ from; a rewritten fixture's first accepted compile is its
-  > own new baseline, and its drift-oracle role has to be re-established rather
-  > than preserved. B5's line "re-cut the drift oracles" should be read with
-  > that. The count is otherwise inert: `CENSUS.md` §1.2 D and §5 limitation 6
-  > exclude these 15 claims from every discharge population, so no number in §7.4
-  > or §5.3 rests on them.
-
-- **Compiler tests.** `compiler/src/semantic/tests/claim_locality.rs` holds ~130
-  tests. Every test naming `DefinitionId`, `ControlAuthority`, `acquired` or a
-  selector stamp is deleted **with its subject**, and the honest technical
-  explanation is that the mechanism ceased to exist. Six move from non-local to
-  local: `a_call_result_used_as_if_control_taints_written_values` (:637),
-  `a_write_on_one_arm_only_is_selected_at_the_join` (:1716),
-  `a_counted_endpoint_selects_loop_carried_state` (:1783),
-  `an_ordinary_loop_selects_state_its_iterations_wrote` (:1816), and the two
-  laundering tests below. `a_local_named_const_component_reaches_the_redundancy_judgment`
-  (:1187) keeps its rejection and is renamed for the new cause name.
-- **The two laundering tests.** `a_result_tag_cannot_be_laundered_through_a_value_match`
-  (:332) and `a_call_result_used_as_value_if_control_taints_the_delivery` (:598)
-  assert that the *checker* refuses `claim ieq(picked, 0_u64)` over arms `{0,1}`.
-  Under this design the checker admits them and review refuses them. They are
-  **rewritten as acceptance tests carrying §3.5's reason in their doc comment**,
-  not deleted — judge-2 listed this as undone by all three input designs, and the
-  spec sentence that justifies it is the one added at 2720.
-- **Load-bearing and unchanged**: `a_matching_binder_is_selected_by_its_own_tag`
-  (:1853, the binder *is* the payload), `a_direct_result_payload_keeps_the_call_boundary`
-  (:298), `the_length_of_a_returned_buffer_keeps_the_call_boundary` (:485),
-  `a_returned_box_cannot_hide_its_dereferenced_payload` (:513),
-  `an_exact_ensures_does_not_authorize_a_caller_restatement_claim` (:857).
-- **Anchors and docs**: `compiler/src/backend/qualification.rs`'s `REVIEWED_FOR`,
-  the six digest anchors and two transcribed literals any spec activation touches
-  (`docs/done/0102-clm1-narrow.md:66–90`), `docs/patterns.md` P15–P18, and the
-  roadmap's PROOF-8 entry.
-
----
-
-## 8. Implementation plan
-
-Design only; no code is written here. Sizes are estimates and are the numbers I
-would most expect to be wrong. Each batch is one merge to `main` and must pass
-canonical `make check` at the exact revision merged; each carries its own derived
-material, because bringing everything derived to the newest version in the same
-work is not optional.
-
-**B0 — measure before deciding. Small (1–2 days, no spec text).**
-Build the H3 reconstruction (§2.5's `fill`/`read` pair, plus a variant where the
-callee's write depends on its own `match` on a call result) and compile it at
-`b1367c82`. This design's only *tightening* rests on the prediction that v0.39
-accepts it, and no one has seen it compile — the `s36`/`s37` programs the charter
-cites do not exist in this tree. Build the laundering programs of §1.4 and §9 in
-the same pass, and stand up the review-trial harness (F2). Deliverable: a
-`docs/done/` record with the measured verdicts. **If v0.39 already rejects the
-reconstruction, §3.4's write seed is unnecessary and this design changes at Q3.**
-
-**B1 — the ceiling. Large (the biggest batch; ~2 weeks).**
-Enumerate the operation table's image column row by row **and decide each row's
-direction** (§5.3 and its erratum, §5.5) — per `CENSUS.md` §2.4 the enumeration
-must settle whether a row may publish a *backward* rule from result facts to
-operand facts, and specifically must decide the `±wrap` backward rule, which is
-the corpus's only fact-language request and closes four claims in three real
-programs; write
-[ENT-3.S5], the generalised S10, [ENT-1]'s ceiling and direction guarantee, and
-[ENT-5]'s value-commit/merge text; delete the delivery block, [GIVE-1]'s carrier
-judgment and 3009. Compiler: new `semantic/entailment/image.rs` (~700 lines,
-table-driven), `flow.rs` loses three delivery functions and gains the
-value-commit dispatch, `state.rs` gains image application. Migration: the ~54
-retiring claims, the three moved accepts, the two `ent5` delivery cases, the
-`ent3` stage-8b derivations, the codegen bounds fixtures. Gate additions: a test
-that every operation-table row has an image entry; one conformance case per
-nonempty image row family.
-
-*Why the ceiling lands before the gate.* Under [DIAG-1]'s schedule CLM-1
-authority is judged before CLM-2, so while the gate is unchanged the
-delivered-value and arm-written cases stay CLM-1 rejects and their verdicts do
-not move. Landing the gate first would move them to accept in B2 and to CLM-2
-reject in B1', costing two approval records per case for one net change.
-
-**B2 — the gate. Medium (~1 week).**
-Write [ENT-6]'s admission state, repeal 3233–3239 and 3241–3243, rename the
-classes, write [CLM-1]'s gate and the settlability sentence at 2720, and write
-[ENT-6]'s route menu. Compiler: `claim_locality.rs` loses `DefinitionId`,
-`DefinitionKind`, `ControlFrame`, `ControlAuthority`, the definition-comparing
-merge and the six selector/discharge sites (−300 to −400 lines), and gains the
-call-write seed reading `KillEvent::Write`'s projection (+60 to +90). Migration:
-the three moved rejects and their accept siblings, the six moved compiler tests,
-the two rewritten laundering tests, and §7.3's five admission cases. Estimated
-final size of `claim_locality.rs`: 1,700–1,850 lines from 2,122.
-
-**B3 — non-duplication and residuality. Small (~3 days).**
-Write [CLM-2]'s single rule; close or refute §6.2's unproved step against
-3014–3023 and record which; rename the verdicts in [DIAG-1]'s cause set. If the
-step does not close, the two tests stay separate and only the *names* and the
-fixes unify — the writer sees no difference.
-
-**B4 — the teaching channel. Medium (~1 week).**
-Write [DIAG-1]'s payload and fix table, [DIAG-2]'s case list, the gap token and
-its lexical check, the review note, and the carrier tie-break. Migration: all
-~86 surviving claims gain a token; the diagnostic goldens are re-cut. This is the
-batch with the widest, shallowest diff and it should not be merged with another.
-
-**B5 — the corpus pass. Medium (~1 week).**
-Re-read the seven claim-bearing real programs and the 13 codegen bounds fixtures
-against the settled ceiling; re-cut the drift oracles; run F7 (byte-identical IR
-on the claim-free programs); update `docs/patterns.md` P15–P18 and PROOF-8.
-
-**B6 — the loop head, later and gated. Large, and separate.**
-Raise the `flow` clause: replace the subtraction by the [ENT-5] join over the
-preheader and back edges with widening at every unstable iterate, iterated until
-`B(X) ⊑ X` is verified. Three gates, all mandatory: a compiler assertion that the
-declared head state is a post-fixed point on every loop in the corpus; a
-differential run showing the head state dominates the subtraction on every
-conformance case and program; and a measured compile time on `wfgrep.wf` (1,417
-lines) and `raw_deflate_vectors.wf` (863 lines). Retires most of the 39 `flow`
-claims. **This is the only batch with a soundness bill and it must not be folded
-into B1.**
-
-### 8.1 Falsifiers
-
-Each names the element it would refute, and each is an experiment.
-
-**F1 — the route menu, mechanized.** §3.7 states normatively that at least one
-route is always open and the diagnostic names it. Generate programs with unproved
-obligations, apply the compiler's own named fix mechanically, recompile. Any
-program where the named route does not compile refutes the theorem. H2 is exactly
-one such program today. The 0097 harness already generates the corpus; only
-apply-and-recompile is new. **Run this first after B2.**
-
-**F2 — the review trial.** §1.4 rests on the assertion that a laundering claim
-carries its own counterexample in the function text. Hand reviewers — human, and
-separately AI-assisted, since 2719 admits both — a blinded set of joined-literal
-claims, half true on every arm and half true on one arm only, with §3.8's case
-list attached and, as a control, without it. If reviewers approve the false ones
-at a material rate *with* the list, the gate's line is in the wrong place and the
-checker must do more than this design asks. If they catch them with the list and
-miss them without it, the case list is not optional. **This is the measurement
-the whole design's weakest premise rests on** and it is the only proposed
-experiment in the batch that measures reviewers instead of asserting about them.
-*Status: the AI-assisted half has been run; `F2-REVIEW-TRIAL.md` reports 0 false
-approvals of 16 with the case list and 0 of 16 without, on a 24-item set. The
-human half has not been run, and the trial's three coverage limits are stated
-there.*
-
-**F3 — the image-uniqueness audit.** Walk every operation-table row and write its
-image. Refutes §3.2 if any row's exact image is expressible but not unique in
-[ENT-2] and the non-uniqueness is *not* already covered by 2739's
-`bxor`/signed-normalization exclusions or 3146's two-non-constant-operand
-exclusion — i.e. if `image` turns out to be an open-ended list rather than a small
-closed one. **Direction (erratum, B0 census).** The audit as first written asked
-only about uniqueness. It also asks, per row, whether the row publishes a
-*backward* rule — a fact about the result establishing a fact about the operands
-across `r = a ± b` — and in particular whether `+wrap`/`-wrap` do, under the
-no-wrap side condition the state already carries. A forward-only column closes
-none of `CENSUS.md` §2.4's T1–T4, so a forward-only answer here is not a neutral
-outcome but a decision to leave four real-program claims standing. The direction
-half of F3 is refuted if the backward rule cannot be stated per row from side
-conditions already in the state — that is, if publishing it would require holding
-the three-term equality itself, which [ENT-2] cannot.
-
-**F4 — a write the kill relation misses.** Exhibit a program in which a callee's
-write reaches caller storage that [ENT-5] kill (b) does not kill. It refutes the
-admission seed **and** the fact state **and** [PRV-1] 3207 simultaneously. That
-shared blast radius is the point: a private authority projection would have hidden
+Eight constructs, in the order a fact travels: the deletion, the guard, the edge
+order, the operation image, the row column, loop retention, the loop exit, the
+induction statement, the contract system, and the boundary. Each carries draft
+specification text with rule ids and exact sentences, a worked example, the
+judgment as an algorithm where one is needed, and the falsifier that would refute
 it.
 
-**F5 — a program someone wants that the write seed refuses.** A legitimate claim
-over storage a callee wrote whose relation cannot be published as an `ensures`.
-If it exists, the seed is too strong given today's FN-9 and Q3 becomes urgent.
-The corpus contains zero such programs, which is not evidence either way — only a
-program someone wants and cannot write is.
+### 3.1 The deletion of `claim`
 
-**F6 — churn that is not a removal.** §3.1 guarantees every forced edit removes
-claim content. Take B1's own ceiling raise and check that all 54 affected claims
-delete or lose a conjunct cleanly with no invented restructuring. If any needs a
-rewrite beyond the record lines the removed content owned, the granularity is
-still wrong.
+#### 3.1.1 What goes, exhaustively
 
-**F7 — corpus IR identity.** The 18 claim-free real programs must compile to
-byte-identical IR modulo the version banner across B2, exactly as 0102 verified
-for 26 sources. A single moved program means the write seed's projection is wider
-than the kill projection it claims to reuse.
-
-**F8 — the blind-writer trial, repeated.** `docs/done/0098-blind-writer.md`
-reports zero claims in 1,694 lines under today's ceiling. Repeat it after B1.
-*Prediction, recorded so it can fail:* the walls will be loop induction and
-two-term-vocabulary relations, and **not** claim locality. A campaign that reports
-locality as the wall contradicts both that record and this design.
-
-**F9 — the one that would refute the principle.** A program someone wants to
-write whose only correct spelling requires a claim over a value a callee or the
-world produced, and for which neither a verified `ensures`, a
-specification-fixed contract, nor a branch on the returned value is available.
-That would show the `boundary` class is not always repairable and that the gate is
-too strong. Four independent traditions agree the callable boundary is the right
-place (TERRAIN §5.4) — which is why this is worth actively hunting rather than
-waiting for.
-
----
-
-## 9. The attacks the judges landed
-
-Two judges wrote twenty counterexample programs against the three input designs.
-Every one is answered here, either because the design element it broke is not in
-this synthesis or because the synthesis changed the element. Nothing is inherited
-unexamined.
-
-### A1 — the loop rule derives a false fact *(both judges, two independent programs)*
-
-```whitefoot
-let a = 0_u64; let b = 0_u64;
-loop @l {
-  if igt(a, 5_u64) { set b = b +wrap 1_u64; }
-  set a = a +wrap 1_u64;
-  if igt(a, 100_u64) { break @l; }
-}
-return small[b];                      // small: own array<u8, 2>
-```
-
-Under prover-first's rule `H1 = {0≤a≤1, b=0}`, `H2 = {0≤a≤2, b=0}`; only `(a,Z)`
-changed, so widening relaxes `a` and **keeps `b = 0`**; `B(W)` then unlocks the
-inner branch and gives `0≤b≤1`; the head is `W ⊔ B(W)` and the rule **stops**.
-`b` actually reaches ~94, so a `SubscriptBounds` obligation discharges against a
-false bound with **no claim in the program**. Judge-2's `i/g/h/x` gate chain is the
-same defect through a three-deep dependency chain.
-
-**Dissolved by not shipping it.** §3.3 publishes the loop head as the subtraction
-it is today, and §5.4 states the repair (widen at every unstable iterate, iterate
-until `B(X) ⊑ X` is *verified*) as batch B6 with three mandatory gates, one of
-which is the post-fixed-point assertion these programs violate. The 39 loop claims
-keep the token `flow` until then, which is honest rather than convenient.
-
-### A2 — `refuted-on-a-path` rejects true, text-reviewable claims *(judge-1)*
-
-```whitefoot
-let flag = hidden_true();
-let cursor = 9_u64;
-if flag { set cursor = 0_u64; }
-if flag { claim c: ilt(cursor, 4_u64) because "…"; return values[cursor]; }
-return 0_u8;
-```
-
-A tag names a merge *input edge*, not an executable path. The else edge's witness
-bound `cursor ≥ 9` refutes the predicate under one tag, yet that path cannot reach
-the claim. The claim is true and settlable from the text, and it is precisely a
-`flow`-gap claim — the category the design reserves for claims. A new
-false-rejection engine of v0.38's own class.
-
-### A3 — the witness tag is a path suffix *(judge-2)*
-
-```whitefoot
-let t = calls_bool();
-let a = 0_u64; let b = 0_u64;
-if t { set a = 5_u64; }             // merge A
-if t { set b = 5_u64; }             // merge B
-claim paired: ieq(a, b) because "…";   // TRUE on every execution
-```
-
-A bound that merely *flowed through* a merge is retagged with the last merge's
-input edge, so two bounds sharing a tag need not share an execution: `a ≥ 5` from
-merge A and `b ≤ 0` from merge B's false edge derive `a − b ≥ 1` under one tag and
-reject a claim true on every execution. The alternative reading — never retag —
-makes the mechanism unable to fire at a loop head, one of the three cases it was
-promised for. The third option, a path token surviving merges, is trace
-partitioning, which [ENT-1] 2831 forbids.
-
-### A4 — the refuter is blind exactly where claims live *(judge-1)*
-
-```whitefoot
-let arr = buffer_new(8_u64, 0_u8);
-match g(x: input) { Ok(value: v) => { set arr[0_u64] = 1_u8; } Err(error: e) => { } }
-let e = arr[0_u64];
-claim c: ieq(e, 1_u8) because "premises: g never fails for our inputs …";
-```
-
-Elements are a `content` gap, so nothing is tracked and nothing can refute. The
-claim is admitted and justified only by `g`'s body.
-
-**A2, A3 and A4 are dissolved together.** The witness state and the
-`refuted-on-a-path` verdict are **not in this design** (§4.1). §3.8 keeps the one
-thing they were worth — the rendered message, which is the best writer-facing text
-proposed anywhere in this batch — as a **review note** computed from the retained
-case list and the certain state. As a note, A2's program gets a note and compiles;
-A3's program gets a note and compiles; A4's program gets no note, which is honest,
-because the checker genuinely knows nothing there. A4 is also a member of the
-laundering family and is §11's subject.
-
-### A5 — a design's stated fence property is false *(judge-1, judge-2)*
-
-```whitefoot
-let cursor = 3_u64;
-if condition { set cursor = 0_u64; }     // condition = a call result
-claim c: ieq(cursor, 0_u64) because "…"; // admitted; true iff the call said True
-```
-
-world-first claimed its judgment "refuses every claim whose predicate may take a
-premise from the world" and licensed only predicates true of *every* member of the
-enumerable union, while its computed gate never checks that side condition. Both
-judges refuted the sentence with three-line programs.
-
-**Dissolved by not asserting it.** §1.1 makes the gate a **subject-matter** rule
-and §3.5 states in the specification that it is a *necessary condition for
-settlability and not a truth screen*. This program is admitted, the reviewer
-enumerates `{3, 0}`, finds the derivation needs an unpublished premise about
-`condition`, and refuses. §11 marks the residue in red ink.
-
-### A6 — the trip-count clause misses the trip count *(judge-2)* and ignores `break` *(judge-1)*
-
-```whitefoot
-let n = endpoint(value: input);
-let flag = 0_u64;
-for @steps step in 0_u64..n { set flag = 1_u64; }
-claim never_ran: ieq(flag, 0_u64) because "…";   // admitted by clause 3
-```
-
-```whitefoot
-let acc = 0_u64;
-for @steps step in 0_u64..64_u64 {              // endpoints are literals
-  set acc = acc +wrap 1_u64;
-  match g(x: input) { Ok(value: v) => { break @steps; } Err(error: e) => { } }
-}
-claim c: ilt(acc, 4_u64) because "…";           // admitted; g decides the count
-```
-
-The clause tests for self-composition, so it misses "whether a definition executed
-at all"; and a counted loop's repetition class as drafted reads only its endpoint
-captures, so a `break` on a call result escapes it.
-
-**Dissolved by deleting the clause** (§2.4), with a derivation rather than a
-patch: any repair that catches `never_ran` while admitting row 7 must compute the
-joined value set, and a checker that computes it derives row 7's predicate and
-makes that claim a duplicate publication. There is no setting of the dial with
-work to do. Both programs are laundering-family members and go to review, and the
-case list renders `acc`'s back-edge definition **as a recurrence** so the reviewer
-knows an induction is owed — which answers judge-1's separate complaint that a
-flat definition list would conceal it.
-
-### A7 — a normative direction guarantee falsified by a retained verdict *(judge-1)*
-
-world-first proposed "every source edit this rule forces is a deletion" while
-keeping the per-component overlap verdict, under which a strengthening that learns
-one conjunct forces a predicate edit **and** a rewrite of the record's
-`derivation:` and `conclusion:` lines.
-
-**Dissolved by wording the guarantee to what is true** (§3.1): every forced edit
-*removes claim content*, never adds an obligation, never requires a new claim,
-never narrows an ordinary program's accepted set. §3.8 gives the component case
-its own fix line naming the ordinal, so the edit is located even though it is not
-a whole-statement deletion.
-
-### A8 — "there is exactly one way for a value set to be invisible" is false *(judge-1)*
-
-```whitefoot
-let n = endpoint(value: input);
-let acc = 0_u64;
-for @steps step in 0_u64..n { set acc = acc +wrap 1_u64; }
-claim bounded_acc: ilt(acc, 4_u64) because "…";
-```
-
-**Dissolved by not making that claim.** §1.1 says the gate decides subject matter,
-and §1.4 states the second way — a boundary-decided *choice among* text-produced
-values — as the design's stated limit, with three reasons no mechanism closes it
-and one measurement (F2) that would move the line.
-
-### A9 — a shape rule survives: `give a;` carries a fact, `give 0_u64;` does not *(judge-1)*
-
-**Dissolved by §3.2.** A `give` edge is a value-commit event and the image is
-indexed by the operation and its destination, not by the atom's spelling. The
-carrier grammar at [GIVE-1] 291–293 and [ENT-5] 3084 is deleted, not narrowed.
-The same deletion closes world-first's `let`/`set` spelling defect and prover-first's
-`value_match` exclusion in one clause.
-
-### A10 — the delivery substitution corrupts the state on its own headline case *(judge-2)*
-
-prover-first replaced delivery with "substitute every occurrence of the delivered
-atom's term by the receiving binding". A literal is an [ENT-2] term, `0_u64`
-normalizes onto Z (2870(f)), and 2905 puts Z in every implicit fact
-`t − Z ≤ max(T)`; the substitution rewrites the arm's whole numeric frame into
-relations against `picked`.
-
-**Dissolved by §3.3.** There is no substitution. The delivery edge *establishes
-the delivered atom's row image over the receiving binding* — a finite set of facts
-about one destination place — which is world-first's correct *form* without
-world-first's self-contradicting carrier list.
-
-### A11 — the length exemption, legislated, admits a world-determined length *(judge-2)*
-
-```whitefoot
-fn refill['b](slot: &uniq 'b buffer<u8>) -> result: own unit writes(slot) {
-  let n = measure();
-  set deref(slot) = buffer_new(n, 0_u8);          // whole-place replace
-  return unit();
-}
-… region 'b { let done = refill<'b>(slot: &uniq 'b room); }
-let extent = len(room);
-claim bounded: ilt(extent, 4_u64) because "…";    // admitted by a blanket exemption
-```
-
-**Dissolved by deriving instead of legislating** (§2.5, §3.4). The seed is exactly
-what kill (b) kills, and [ENT-5] 3066(a) already says a whole-place replace kills
-that buffer's length facts while an element write kills none. So this program is
-refused and P16's program is admitted, from one rule, with no length clause
-anywhere. §7.3 makes both a conformance case.
-
-### A12 — the H3 seed's length behaviour was asserted, not written *(judge-1)*
-
-prover-first's prose said the projection reaches elements and not the length and
-wrote no clause. **Dissolved by §3.4**, which names kill (b) as the seed's
-definition, so the element/length split is not this rule's business at all.
-
-### A13 — a demand-driven ceiling keeps a distinction by spelling *(judge-2)*
-
-```whitefoot
-let a = 3_u64 +wrap 4_u64;         claim x: ilt(a, 13_u64) …   // a source exists
-let b = imul.wrap(3_u64, 4_u64);   claim y: ilt(b, 13_u64) …   // "not a source until written"
-```
-
-world-first's law made a source exist "when a program someone wants to write is
-blocked without it", which is the accreting list with an admission test. Two
-adjacent ground expressions get opposite treatment for no semantic reason.
-
-**Dissolved by §3.2's totality.** Every row publishes an image or the empty image.
-`imul.wrap` of two pinned operands is pinned by the multiply row's image; there is
-no petition and no waiting list, and 3009 — the specification's own statement of
-the petition method — is deleted.
-
-### A14 — the redundancy⊂non-residuality proof has an unclosed step *(judge-2)*
-
-It needs "no downstream judgment distinguishes an established fact from a derived
-one", and [ENT-4] 3023 is evidence the specification distinguishes them somewhere.
-**Dissolved by not depending on it** (§6.2): §3.6's rule states both tests, batch
-B3 closes or refutes the step against 3014–3023, and the writer's diagnostic and
-fix are identical either way.
-
-### A15 — admitting a partly-derived conjunct contradicts the P0 argument *(judge-2)*
-
-writer-first refused acceptance-as-documentation because a retained check costs
-P0 forever, then admitted a two-conjunct claim one conjunct of which the checker
-derives — whose retained check evaluates that conjunct forever.
-**Dissolved by keeping the component as the unit** (§3.6, §6.2): a derived
-component is a duplicate publication and is refused, with a fix naming the ordinal.
-
-### A16 — deferring the ceiling channel on churn grounds *(judge-2)*
-
-writer-first deferred its ceiling identifiers "as its own batch … it touches all
-135 existing claims", which is migration-cost reasoning the charter excludes.
-**Dissolved by shipping the token in B4** (§3.5), inside this design, with the
-migration of all surviving claims as part of it. The one thing this design *does*
-sequence separately, the loop head, is sequenced on a soundness bill and two
-counterexample programs (§5.4), not on churn.
-
-### A17 — the three items all three input designs left undone *(judge-2)*
-
-- **The laundering family needs a decision in the specification, not a design
-  document.** Written, at 2720, in §3.5.
-- **The postcondition-candidate second pass has no sentence.** Written, in §3.3.
-- **Nobody measured anything.** Batch B0 exists for exactly that and gates the
-  only tightening (§8).
-
----
-
-## 10. Provenance of the ideas
-
-### 10.1 Taken
-
-| idea | from | why it survived |
+| kind | deleted | after |
 | --- | --- | --- |
-| The ceiling as a **closure indexed by the operation table and the control graph**; every row publishes an image or an explicit empty image; every merge is the same merge; every specification-fixed contract is a source | prover-first §1.3 | the only construction in the batch that makes "a hole nobody enumerated" structurally impossible. Its own evidence is structural, not a count: `imin` has an authority row and no fact source, `value_match` delivers values and forms no image, five [SYS-8] contracts sit outside the state — three constructs in that state today, each one of the charter's holes. Both judges ranked it first among ideas |
-| The **four gap tokens plus the inadmissible `boundary` token**, checked at the head of `checker gap:` | prover-first §1.4/§3.5 | four spec lines and one lexical check; gives H5 a uniform channel, makes every ceiling amendment greppable and announceable, and converts the review question from "is this prose true" to "is this token right". Preferred over per-instance ceiling identifiers, which need a registry and a new identifier per amendment |
-| **One kill projection, three consumers**: the call-write seed is exactly what [ENT-5] kill (b) kills, with the shared blast radius as its falsifier | writer-first §4.4/D3 | judge-2 called it the best paragraph in the batch. It is what stops the area re-growing a private notion of what a call touched, and it is why the length behaviour needs no clause |
-| The mechanical condition stated as **necessary and not sufficient**, in the specification, with the laundering family named | writer-first §1.8 | the difference between a design that has a limit and one that has an unexamined hole. Both judges said so |
-| The **reviewer's case list** as published review data, never an acceptance criterion | writer-first §7.3 | the one safe place a definition inventory can exist after `DefinitionId` dies: NodePath identities, diagnostic-defect blast radius, and it makes 2719's review duty executable |
-| The **theorem** that redundancy is a special case of non-residuality | writer-first §6.1 | kept as the reason the two tests coincide and as a B3 obligation, not as a load-bearing premise (A14) |
-| **Delivery equals what an ordinary `let` establishes** (the form) | world-first §3.4 | immune to the "next case" objection by construction. Its instance was self-contradicting; the closure of §3.2 supplies the correct one |
-| **`set` should establish what `let` establishes** | world-first §2.6/Q9 | a real distinction by spelling nobody else found. Under §3.2 it is not a rule but the absence of one |
-| The **[ENT-1] direction guarantee** | world-first §3.6 | the honest replacement for a stability promise 2853 cannot make — reworded to what is true (A7) |
-| The **channel enumeration** (C4 injects nothing; C5 is C2) | world-first §0 | the cleanest statement of why v0.38's clause was a category error rather than conservatism; used as the derivation of "choosing an edge publishes no value" |
-| The design rule **"a lattice point can be wrong only by being imprecise; an artifact identity can be wrong by being unsound"** | prover-first §4.2 | H1's real lesson; §4.2 puts it where the specification can hold it |
-| The **`refuted-on-a-path` rendered message** | prover-first §1.7 | the best writer-facing text in the batch. Kept as a note; the verdict is not (A2, A3) |
-| The **closed cause→fix table** and the **carrier tie-break by predicate source order** | writer-first D10/D11, prover-first §3.8 | the carrier is the value the writer must change, so it should be the one their eye reaches first |
+| numbered rules | `[CLM-1]` 2696-2757, `[CLM-2]` 2759-2799, `[CLM-3]` 2801-2829, `[DIAG-3]` 1960-1986, `[TRAP-1]` 2432-2434 | 138 become **133** |
+| grammar productions | `claim_stmt` (225), its `stmt` alternative (208), `"deny_claims"?` in `fn_decl` (166) | 75 become **73** |
+| fixed lowercase atoms | `claim`, `because`, `deny_claims` | moved to the `[FORM-3]` retired-spelling reservation list beside `trap` |
+| effect categories | `traps` (`[EFF-1]` 1348/1354, `[EFF-2]` 1372/1415, the four-component normalization at 1094, the `pure` gloss at 1423) | 4 become **3** |
+| fact sources | `[ENT-3.S3]` 2950-2955; the ordinal is **retired, not reused**, exactly as S8 is | 11 become 10, and `[IND]` adds one back (1.2) |
+| judgments | `[ENT-6]`'s claim-authority state 3215-3248 in full - the `Local`/`BoundaryResult` tree, the seeds, the transfer rules, the v0.39 control-dependence paragraph, the H3 `&uniq` carve-out, the witness identity and its tie-break | in the compiler, `claim_locality.rs` entire (2122 lines) plus its `flow.rs` call sites |
+| proof views | the *unasserted* state U; `ViewStates` becomes `{ complete, s4_blinded, entry_images }`, `[FN-9]`'s per-relation `Cq/Uq/Bq` becomes `Cq/Bq`, `[FN-8]` 1308's three-way relation classification becomes two-way | 3 become **2** |
+| demand kinds | `[PRV-2]`'s `direct(F, d, L)` and the tag order `direct < bridge` (3374); derived, not chosen - see 3.1.3 | 2 become **1** |
+| acceptance-bearing re-analysis | `[CLM-2]` 2782-2798's `Full-minus(c, a)` and `Full-minus(c)` counterfactuals and `[DIAG-2]` 1901's "sole permitted acceptance-bearing rewalks" | `1 + k + sum(m)` whole-program walks become **one forward walk per function per view** |
+| runtime surface | the retained check (`[CLM-1]` 2748), the trap record, the abort path (`[SCOPE-4]` 28-30, `[TRAP-1]`, `[PROG-3]` 1497-1498), and the erroneous-execution clauses (`[PAR-1]` 2010-2019, `[PAR-2]` 2043, `[PAR-3]` 2074-2079) | **runtime-trap families: 1 becomes 0** |
 
-### 10.2 Rejected, with the counterexample that decided it
+`[DIAG-3]` is deleted rather than kept because its own text (1978) says no
+construct other than a failing claim produces its record: retaining it would be
+the specification describing an output no conforming program can cause. `[EFF-2]`
+1372 sources `traps` from exactly "a `claim` or a call to an operation or
+function whose selected row includes `traps`", and 1373/1410/2682 confirm no
+operation row carries it, so the category is **inductively empty** the moment the
+construct goes; `t5` (compiled) shows the compiler already reports
+`extra: ["traps"]` for a claim-free body that declares it.
 
-| idea | from | rejected because |
-| --- | --- | --- |
-| The **loop-head fixed point as drafted** (widen once, one confirming pass, "at most four passes") | prover-first §1.5/§3.3 | A1. Two independent judge programs in which the declared head state asserts a false bound and a `SubscriptBounds` obligation discharges against it, with no claim in the program. Kept as batch B6 with a verified post-fixed point and three gates |
-| The **witness state and the `refuted-on-a-path` verdict** | prover-first §1.7 | A2 (rejects true `flow`-gap claims, the category claims exist for), A3 (the tag is a path suffix, so bounds sharing a tag need not share an execution; and the "never retag" reading cannot fire at a loop head), A4 (blind wherever a claim is legitimate). The message survives as a note |
-| The **delivery-by-term-substitution** rule | prover-first §3.3 | A10. A literal normalizes onto Z and 2905 puts Z in every implicit fact |
-| **Trip-count dependence (clause 3)** | world-first §1.3 | A6. It catches self-composition and misses "whether a definition executed at all"; a counted loop's repetition class ignores `break`; and any repair either becomes v0.38's blanket over loops or needs the value analysis that makes the good claim a duplicate |
-| The **legislated length exemption (clause 4)** | world-first §1.3 | A11. It contradicts [ENT-5] kill (a) verbatim and admits a claim over a length a system call sized |
-| The **demand-driven fact-source law** ("a program someone wants to write is blocked without it") | world-first §5.1 | A13. It is the accreting list with an admission test, and it keeps two adjacent ground expressions on opposite sides |
-| **Dropping per-component residuality** | writer-first D7 | not a counterexample but a uniformity argument (§6.2): S3 establishes components, so the component is the unit of publication, and the performance win it buys is unmeasured. Put to the owner at Q5 |
-| **Dropping the overlap verdict** | writer-first D6 | A15. A derived conjunct's retained check costs P0 forever, which is the same argument that refuses acceptance-as-documentation |
-| **Deferring the ceiling channel on churn grounds** | writer-first Q2 | A16. Migration cost is not a design criterion |
-| **Advisory / accept-with-a-note redundancy** | the `clm2-pos-redundant-claim-advisory.wf` fossil | §6.1. Refuted by T3/P0 (a check no root needs taxes correct programs), by R4 (a rejection the writer may ignore is silence), and by the architectural argument that an accepted duplicate perturbs every other claim's `Full-minus` counterfactual |
+#### 3.1.2 The load-bearing replacement text
 
-### 10.3 Where the two judges disagreed, and how it was decided
+Purely English uses of the word "claim" that are not the construct (574, 588,
+595, 614, 968, 2397) are untouched.
 
-Judge-1 ranked prover-first first on the charter's own terms and would have
-grafted world-first's clause 3; judge-2 ranked writer-first first and said clause
-3 and clause 4 "should not survive into a draft". The disagreement resolves on
-evidence rather than by splitting: judge-2's `never_ran` program refutes clause 3
-directly, and §2.4 adds the derivation that no repair to it has work to do.
-Judge-1's own ranking note says the ranking inverts "if the owner weights
-soundness-as-written above ceiling"; this design takes the ceiling *and* declines
-the one clause that carried the soundness bill, which is the position neither
-judge was asked to score.
+**`[SCOPE-2]` 19** - DELETE (the retained-claim review-record sentence). Owner
+approval is a repository act over exact source bytes and stops being a
+specification judgment.
 
----
+**`[SCOPE-2]` 20-21** - replace both sentences with:
 
-## 11. Unsolved problems, in red ink
+> Every proof-required hazardous operation is statically discharged by the
+> deterministic checker before lowering; a writer establishes a missing fact with
+> executed control flow, with a machine-verified contract, or with a
+> machine-verified induction statement, and no operation receives an implicit
+> runtime fallback or a writer-spelled runtime boundary.
+> There is no writer-emittable unchecked state and no writer-emittable trusted
+> assertion: nothing writer-stated is a fact until this specification's own
+> derivation establishes it.
 
-The charter says: *if the synthesis needs an exception, say so in red ink as an
-unsolved problem rather than hiding it as a rule.* Three things qualify. None of
-them is an exception carved into the principle; all three are places where the
-principle is right and the mechanism is incomplete, and each is stated here rather
-than smoothed into a clause.
+**`[SCOPE-4]` 27-30** - replace the whole rule with:
 
-### RED INK — U1 — the laundering family is admitted, and review is the only fence
+> `[SCOPE-4]` An accepted program has no writer-reachable language runtime
+> contract violation. No source construct traps, aborts, or otherwise fails at
+> runtime by its own language contract, and no source construct can request such
+> a failure. Every partial operation is admitted only by static discharge of its
+> domain `[ENT-6]`, every writer-stated proof obligation is verified at compile
+> time `[FN-8, FN-9, FN-10, IND]`, and no accepted operation carries a retained
+> runtime check.
+> A resource failure, a target-layout or target-qualification failure
+> `[STOR-6, QUAL-1]`, and a trusted-computing-base failure remain outside this
+> guarantee exactly as `[SCOPE-3]` fixes; none of them is a language trap, none
+> cites a language rule, and no rule of this specification is stated in terms of
+> them.
 
-A claim whose support reads only values this function's text produced, but whose
-truth depends on which of those values a boundary selected, passes the gate.
+That last paragraph is the honest fence and must be in the text: after the
+deletion the only non-continuing runtime path a target may still materialize is
+`[STOR-6]`'s address-domain guard, which `[DIAG-2]` already requires to be
+discharged or guarded and which `[DIAG-3]` 1978 already excluded from the record.
+It is invisible to the source language and belongs to the trusted base.
 
-```whitefoot
-let n = hidden();
-let big = ige(n, 4_u64);
-let y = if big { give 5_u64; } else { give 1_u64; }
-claim laundered: ilt(y, 4_u64) because "…";   // admitted. FALSE when big.
+**`[ENT-1]` 2853-2858** - the replacement the whole batch rests on:
+
+> Version monotonicity: fact-source and closure strengthening preserves every
+> already-discharged operation, call goal, selected-return relation and verified
+> induction statement, and **preserves the acceptance of every accepted program
+> without exception**. A later normative checker derives at least what an earlier
+> one derived; because no construct's admission depends on a fact *not* being
+> derivable, a program accepted by an earlier conforming checker is accepted by a
+> later one. No source edit is ever forced by a checker strengthening.
+> Activating `[PRV-2]` or `[PRV-3]` for an already attached protected family,
+> attaching a new protected family, changing a `[SYS-2]` component from internal
+> to external, or adding a callable publication surface remains an
+> amendment-level accepted-set change rather than implementation strengthening.
+
+The second sentence is the whole point: *"no construct's admission depends on a
+fact not being derivable"* is exactly what `[CLM-2]` violated, it is the reason
+the exception existed, and it is now a checkable property of the rule set - which
+section 2.4 had to defend against the batch's own new construct, and section
+9's D1 flags.
+
+The remaining edits are mechanical and are given in spec order so the amendment
+can be executed from this table:
+
+| line | edit |
+| --- | --- |
+| `[FORM-1]` 94 | "STRING appears only in `doc` entries and `claim` justifications" becomes "STRING appears only in `doc` entries" |
+| `[GRAM-4]` 166, 208, 225 | delete the three productions and the marker |
+| `[GIVE-1]` 282 | "A `claim` or call that may trap also has a normally continuing edge..." becomes "A call also has a normally continuing edge and does not count as delivery or must-divergence" |
+| `[OP-2]` 840 | "An executed branch condition, requirement, or retained claim continuation" becomes "An executed branch condition, a requirement, or a verified induction statement" |
+| `[OP-4]` 878 | replaced by 3.12's four-route menu |
+| `[OP-5]` 892 | "a `claim` condition is the one writer-authored runtime checked site" is deleted; the sentence becomes "An `if` condition is executed control flow `[GRAM-6]`; a contract predicate and an induction statement's relation are erased proof syntax `[FN-8, FN-9, FN-10, IND-1]` and create no runtime site" |
+| `[OP-9]` 944 | "so a claim about an unconditionally external n cannot launder it past the required real branch" becomes "so an unconditionally external n reaches an allocation only through a real branch that establishes the fit predicate" |
+| `[FN-1]` 1027, 1052, 1055 | drop "and a passed `claim`"; "every source call and claim identity are retained" becomes "every source call identity is retained"; delete the `deny_claims` sentence |
+| `[FN-2]` 1225 | delete the `deny_claims command fn main` prefix sentence |
+| `[FN-8]` 1261, 1270, 1308 | drop "claim audits"; "Imported claims are tested first; otherwise..." becomes "The first refuted or unproved clause in source order owns the FN-8 rejection"; the three-way classification becomes two-way |
+| `[EFF-1]` 1094, 1348, 1354, 1423 | three components, not four; delete the `traps` alternative; amend the `pure` gloss |
+| `[EFF-2]` 1372, 1373, 1410, 1415 | the body-syntactic contribution exhibits reads, writes and allocations only; delete the three claim sentences |
+| `[ERR-4]` 1463 | "Classification: expected environment and input failures are values (`Result`); unproved function, operation-domain, allocation-fit, bounds, and system-range obligations are source rejections. **There is no third class: no source construct defers a proof obligation to runtime `[SCOPE-4]`.**" |
+| `[PROG-3]` 1485, 1497-1498 | delete the `deny_claims` start-time sentence; a start failure becomes the only way an instance terminates without mapping a returned `ExitStatus`, and it is a target or environment condition |
+| `[DIAG-1]` 1760, 1846-1869 | delete the claim-name carrier and the whole claim-diagnostic schedule and `[CLM-3]` stage; section 6 is their replacement |
+| `[DIAG-2]` 1884-1893, 1897, 1901-1903, 1941-1942 | "No writer-reachable source-language runtime check exists..."; one facts-off sentence; delete the S3 view tag, the `Full-minus` sentences, the retention paragraph and the ClaimLedger |
+| `[ENT-1]` 2833, 2836, 2843, 2850, 2861, 2864 | the fixed-judgment list becomes complete-state discharge `[ENT-6]`, call-goal discharge `[FN-8]`, selected-return verification `[FN-9, FN-10]`, and induction verification `[IND]`; two fact states, not three; delete the claim-authority vocabulary and partition sentences |
+| `[ENT-2]` 2891, 2892, 2898 | drop claims from the goal universe; keep "exact signed disjunctive roots already present in a written condition"; delete the CLM-2 contribution identity. **An induction statement's relation is not a goal** - 3.9's `[IND-3]` gives it its own clause (A25) |
+| `[ENT-3]` 2910, 2930, 2936-2940, 2950-2955 | 2910's "no ... writer-stated or inferred loop induction ... exists" becomes "no **unverified** writer-stated or inferred loop induction exists"; "at every ordinary non-claim establishment" becomes "at every establishment"; delete the `Contrib(P)` paragraph and S3; add the retirement sentence beside S8's |
+| `[ENT-4]` 3028 | delete the CLM-2 contradiction clause; the contradiction rule is untouched |
+| `[ENT-5]` 3053, 3108 | "B differs from the complete state only by suppressing every S4 source"; "no S11 body fact or capture fact reaches the join" |
+| `[ENT-6]` 3169-3173, 3215-3248 | 3.12's route menu; delete the claim-authority block |
+| `[PRV-2]` 3346, 3352, 3355, 3370, 3380, 3386 | 3.1.3's collapse; delete "A `claim` is not a repair" |
+| `[PRV-3]` 3404-3406, 3412 | two views; "A local PRV-3 rejection never becomes a call-argument event" |
+| section 18 heading 2694 | "Obligation discharge: entailment and provenance (normative)" |
+
+**The S3/S8 retirement sentence**, placed beside S8's at 3009:
+
+> The labels S3 and S8 are retired, not reused. S3 was the executed-claim source;
+> the `claim` construct is deleted and no *unverified* writer statement is a fact
+> source.
+
+#### 3.1.3 The three derived collapses
+
+**Three proof views become two.** `[PRV-3]` 3404 defines U as the complete state
+with "exactly S3 claim establishment" removed, so deleting S3 makes `U` and the
+complete state the same state at every program point *by the definition*. Every
+source, kill, join and closure is applied twice instead of three times; `[ENT-1]`
+2836's cross-implementation obligation names two states; `[FN-8]` 1308's
+three-way split becomes two-way. Nothing about provenance's meaning changes -
+`[PRV-2]` and `[PRV-3]` defend against an external value reaching a protected
+subject and the state that decides it, B, is untouched. The middle view existed
+only to answer *"would this still discharge if the writer's word were
+withdrawn?"*, and after the deletion the writer has no word to withdraw.
+
+**`[PRV-2]`'s `direct` demand kind becomes unreachable.** The argument, as a
+proof obligation a reviewer can check against quoted text: (1) `[PRV-3]` 3389 -
+the `[ENT-6]` complete-state judgment runs first, and if it fails no PRV-3
+candidate exists - so every leaf reaching the partition has discharged in the
+complete state; (2) 3397 retains a direct demand only on *failure in U*; (3)
+`U == complete`, so failure in U is unsatisfiable. Therefore `Targets(c, q)` is
+built entirely from bridge records and the tag order has one element. The reading
+this confirms is the right one: a *direct* demand was precisely "the caller's
+actual reached a protected subject and only the callee's **claim** stood between
+them". **The claim was the only non-bridge route from external data to a
+protected operation, and `[PRV-2]`'s two demand kinds were exactly the two
+routes.** Section 3.9's `[IND-8.V]` is what keeps the induction statement from
+becoming a second one, and A9 is the adjudication that caught it.
+
+**The counterfactual re-walks disappear.** `[CLM-2]` 2782-2798 required, per
+admitted claim `c` and per contribution component `a`, a repeat of the whole
+program analysis with `a`'s S3 event withheld, plus one more with all of `c`
+withheld. Deleting the claim deletes the only construct in the language whose
+*acceptance* is defined by a counterfactual, and with it the failure-atomic
+scratch discipline, the masked-witness inventory, and the
+"inconsistent-counterfactual is a compiler failure" clause.
+
+#### 3.1.4 Falsifiers for the deletion
+
+**F-D1 (the monotonicity theorem).** *Refutation:* exhibit any surviving rule
+whose acceptance condition is negative in the fact state - a rule that rejects
+when something *is* derivable. The audit is mechanical: grep the amended
+specification for "redundant", "refuted", "vacuous", "already derives",
+"unnecessary". This experiment found `[IND-7]` (section 2.4) and it must be
+re-run after every repair.
+
+**F-D2 (`traps` is really empty).** *Refutation:* find any operation-table row,
+system operation, or compiler-derived operation whose selected row includes
+`traps`. Five specification sites were checked and `t5` compiles the consequence;
+the operation table is 203 system records long and was not read row by row.
+
+**F-D3 (`direct` really is unreachable).** *Refutation:* construct a program,
+under the amended rules, producing a protected leaf that discharges in the
+complete state, fails in B, has a nonempty parameter set, and is not discharged
+in U. Since `U == complete` this requires the complete state both to discharge
+and not to discharge one leaf, so a refutation is an inconsistency in the reading
+of 3389 and 3397.
+
+**F-D4 (the corpus disposition).** *Refutation:* rewrite `percent_decode.wf`,
+`ipv4_checksum.wf` and `wfgrep.wf` claim-free in full and find that the reduced
+probes do not survive contact with the whole sources - an interaction with an
+effect row, a contract, or another claim in the same function. **Cheap, and it
+must be run before the migration is scheduled rather than after.**
+
+### 3.2 Guard publication - the successor's load-bearing rule
+
+The finding is that **it needs no amendment**. `[ENT-3.S1]` (2945-2948) already
+publishes everything the successor story needs; what follows is the rule restated
+as the specification will read it, because after the deletion it is the first
+rule a writer meets.
+
+> **`[ENT-3.S1]` (guard facts).** At an `if_stmt` or `value_if`, each goal G in
+> the condition's goal-origin set is established as `+G` at the then-block's
+> entry and `-G` at the else-block's entry; for an else-free `if_stmt`, `-G` is
+> established on the false edge, which joins the then exit at the continuation
+> `[ENT-5]`. Independently, when the condition has comparison origin R, R is
+> established at the then entry and R's exact negation at the else entry or false
+> edge. L0 negation is exact over mathematical integers: the negation of
+> `a - b <= c` is `b - a <= -c - 1`; the negation of `a = b` is `a != b` and
+> conversely.
+
+Read off the four edge kinds, exhaustively:
+
+| edge | what arrives |
+| --- | --- |
+| **then entry** of `if c { ... }` | `+G` for every G in c's goal-origin set; the comparison relation R when c has one; every member of `+G`'s signed decomposition set (so `band(A,B)` publishes `+A` and `+B`, recursively) and each member's own comparison projection |
+| **else entry** of `if c { ... } else { ... }` | `-G` for every such G; R's exact negation; every member of `-G`'s decomposition set (so `bor(A,B)` publishes `-A` and `-B`, recursively) |
+| **false edge** of an else-free `if` | exactly the else-entry facts, on the edge that joins the then exit at the continuation |
+| **continuation** of `if c { ... }` whose then arm cannot reach it | exactly the false edge's facts, because `[ENT-5]` 3095 gives an arm all of whose paths leave by `return`, `break`, `give` or `propagate`'s error edge no contribution to the join |
+
+**The fourth row carries the corpus.** It is the guard-and-exit idiom -
+`if past { break @l; }` - and it is why a loop whose exit test is
+`ige(at, length)` republishes `ilt(at, length)` at every continuing point,
+whatever the stride, with no induction at all. `t2` (compiled) is that program: a
+claim-free byte walk over a runtime-length buffer.
+
+`else if` needs no clause: it is a nested `if_stmt` in the else block
+`[GRAM-6]`, so its then entry carries the outer negation and the inner assertion
+by composition, and the chain's last else carries every negation. An ordinary
+`match_stmt` or `value_match` over a user enum publishes nothing about a
+payload's *value* on any arm and this does not change - `[ENT-2]` 2870 has no tag
+term, so there is no fact to publish. The two exceptions are already written and
+are the ones the corpus uses: `[ENT-3.S7]`'s checked-arithmetic arm equality and
+`[ENT-3.S10]`'s system-range endpoint facts.
+
+**The transfer function**, stated so a second implementation reproduces it:
+
+```
+G  := goal_origin_set(c)                    # ENT-3 2922-2926, unchanged
+R  := comparison_origin(c)                  # ENT-3 2915, unchanged; may be absent
+then_edge_facts := { +g } U signed_decomposition(+g) for g in G
+                 U { projection(m) : m in those members with one }
+                 U { R }                                  if R present
+else_edge_facts := { -g } U signed_decomposition(-g) for g in G
+                 U { projection(m) : ... }
+                 U { exact_negation(R) }                  if R present
+exact_negation(a - b <= c) = (b - a <= -c - 1)     # mathematical integers
+exact_negation(a = b)      = (a != b);  and conversely
 ```
 
-**This is the design's one genuine soundness residue and it must not be
-under-sold.** T3 rests one notch more heavily on the review than it did under
-v0.39, which refused this shape (along with 63 of 63 true programs of the same
-shape). What the design offers in exchange:
+**Worked example, as it compiles today.** `t14_else_free_guard.wf` (compiled,
+**accepts**) is the zero-cost shape:
 
-- the specification *states* the limit at 2720 rather than implying a fence that
-  does not exist (§3.5);
-- the reviewer's premise rule is made precise — a `derivation:` may cite only
-  published premises, and this one cannot (§1.5);
-- the case list and the review note put the counterexample in front of the
-  reviewer (§3.8);
-- **F2 measures whether that works**, on humans and on AI-assisted reviewers, with
-  and without the case list (§8).
+```whitefoot
+fn peek['d](data: &'d buffer<u8>, index: own u64) -> result: own u8 reads(data) {
+  let acc = 0_u8;
+  let room = len(deref(data));
+  let inside = ilt(index, room);
+  if inside {
+    let byte = deref(data)[index];
+    set acc = byte;
+  }
+  return acc;
+}
+```
 
-What the design does *not* offer is a mechanism, and §1.4 gives three independent
-reasons why: the checker is on the wrong side of both halves of the family, every
-path-sensitive technique is forbidden by [ENT-1] 2831/2836, and the one mechanism
-proposed in this batch was refuted twice (A2, A3). **If F2 reports that reviewers
-approve false laundering claims at a material rate even with the case list, this
-design's central concession is wrong and the area needs a fourth idea nobody in
-this batch had.** That is the observation that would separate the two hypotheses,
-and it is worth running before B2 ships rather than after.
+`let room = len(deref(data));` establishes `room = len(deref(data))` by S6;
+`inside` has comparison origin `index - room <= -1`, so S1 establishes exactly
+that at the then entry; `[OP-4]` attaches `index < len(deref(data))`, `[ENT-6]`
+normalizes it, and `[ENT-4]` closure derives it in one transitivity step.
+`[GRAM-6]` forbids an empty else and prescribes the else-free form, whose false
+edge joins the continuation. **Nothing is invented and nothing is reviewed.**
 
-**F2 has now run on AI reviewers and the concession survives it**
-(`F2-REVIEW-TRIAL.md`): 0 false approvals of 16 with the case list, 0 of 16
-without, and 0 of 32 true claims rejected in each condition, on a 24-item set
-carrying eight false laundering claims. U1 stays in red ink anyway, for three
-reasons the trial states: the reviewers were four runs of one model family and no
-human arm was run; every false record in that set lied by misdescribing a literal
-in the reviewed function rather than by citing an unpublished premise about the
-selector, which is the shape §1.5 anticipates and the shape a competent liar
-would write; and every item sits at the easy end of the family. The follow-up
-that would actually close U1 is a second set whose false derivations state every
-arm's value correctly and are false only about which arm can run.
+### 3.3 `[ENT-5.P0]` - the edge order, one rule
 
-### RED INK — U2 — the image column is total by test and strong only by review
+The single ordering text for the whole language, replacing `[ENT-5]` 3095's
+kill-then-close ordering and absorbing the audit's P-ORDER and P-CLOSE. The
+sibling id `[ENT-5.X1]` is **not** written; A6 is the adjudication.
 
-§3.2 says every row publishes "the unique strongest finite set of [ENT-2] facts
-entailed by that row's exact semantics". Totality is machine-checkable; strength
-is not. A row whose published image is weaker than its semantics entail is a
-defect by [ENT-1]'s own words and **nothing detects it**. §5.5 lists the three
-partial mitigations and says plainly that none is a proof. The failure mode is
-better than today's — a weak image shows up as a writer's claim carrying a token
-that is wrong, which is disputable — but "the list can never again be short in a
-place nobody thought of" is an overclaim, and judge-2 was right to say so. The
-honest statement is: **the list can never again be short in a place nobody
-*enumerated*; it can still be shallow in a place someone enumerated badly.**
+> **`[ENT-5.P0]` (edge order).** On every edge, in this fixed order: (1)
+> establish every `[ENT-3]` image and every `[ENT-3.S12]` or `[FN-10.E]` relation
+> that edge's events establish, **each after that event's own `[ENT-5]` kill and
+> before the next event of the same edge is processed, in `[FN-1]` order**; (2)
+> take the `[ENT-4]` closure of the resulting state; (3) apply that edge's
+> scope-exit kills (c) and (d); (4) close again. A consequence whose own terms
+> are still live after (3) survives; a fact supported by a dying term dies. The
+> continuation of a `value_if` or `value_match` is an ordinary merge point whose
+> inputs are the states on every delivering `give` edge, each taken through this
+> same order, and the join is the join of 3097, unchanged.
 
-### RED INK — U3 — the loop ceiling is published, and it is low
+**Why it is mandatory rather than desirable.** Without step (2) before step (3),
+v0.40 as drafted **rejects** `p_vif_both_bare.wf`, a program v0.39 accepts - a
+redesign that loses an accepted program to an ordering accident is not a
+redesign. And `r7_closure_vs_kill.wf` (compiled) **rejects** `best < len(data)`
+under today's order, so **every** "remember this index" pattern loses its bound,
+inside loops and outside them. It is also a precondition of loop retention: the
+binder-derived equality `best = i` is killed on the break edge before
+`i < extent` can be combined with it, so without P0 every candidate whose
+derivation runs through the compiler-owned binder update dies on the very edge
+where retention tests it.
 
-Thirty-nine of the corpus's remaining claims — the second-largest family — exist
-because a loop head subtracts rather than merges, and this design ships that
-subtraction unchanged. It is *published* rather than accidental, which is the
-improvement; it is still the largest single thing the checker does not know, and
-the writer pays a retained runtime check for each one. Batch B6 is where that bill
-comes due, and B6 is the batch that introduces the language's first widening
-operator and its first fixed point over `FactState`. Two judges broke the only
-version of that rule anyone has written. **Nobody should read this design as
-having solved loop induction; it has scheduled it and stated the gates.**
+**Determinism.** Steps (1)-(4) are a fixed sequence over operations the checker
+already performs, and `[ENT-5]` 3120-3127 already fixes exactly this order at the
+counted preheader, so this generalises the specification's own device. The
+inner clause of (1) - *each after its own kill, in `[FN-1]` order, before the
+next event* - is the sentence A24's D-5 asks for: it nails the backward row
+images' reading point to the **event**, not to the edge, so an edge carrying two
+commits has no ambiguity about how many closures precede the second reading.
 
-### What is *not* on this list
+### 3.4 `[ENT-3.S5]` - the value-commit image closure
 
-Three things that look like exceptions and are not, recorded so a later reader
-does not mistake them:
+Carried forward from the 0106 design (its 3.2), which is where the audit's
+P-COMMIT and the operation-image frame were first drafted. Unchanged in content;
+the ordering clause moves out into `[ENT-5.P0]`.
 
-- **Parameters seed `TextProduced` while [PRV-1] 3312 seeds a command-entry
-  parameter unconditionally external.** Not an exception: three orthogonal axes
-  (2746), and [PRV-3] 3406 independently refuses claim authorization of an
-  external constrained subject. Judge-1 attacked this seam and found no break.
-- **A verified `ensures` does not declassify its returned value.** Not an
-  exception but the principle: publisher 2's publication is consumed directly, and
-  publisher 3 may not restate it (2745, retained verbatim).
-- **The `content` gap.** Not an exception but a published ceiling clause: the
-  vocabulary has no per-element term and the component tree has one conservative
-  all-elements component.
+> **`[ENT-3.S5]` (operation image).** Every operation-table row usable in a
+> total, non-consuming position carries one image rule fixed by `[OP-2]`
+> alongside its type and effect rows: the unique strongest finite set of
+> `[ENT-2]` facts over the row's result terms entailed by that row's exact
+> semantics from the closed state's facts over its operand terms.
+>
+> At every **value-commit event** whose value is a direct application of such a
+> row and whose operands are each a term or a constant, establish that row's
+> image over the committed destination place, on the normal continuation,
+> under `[ENT-5.P0]`. **The binding form is not read: one operation committed to
+> one destination establishes one image however it is spelled.** Allocation
+> length, `len(P)` binding, slice creation, copy, conversion and constant
+> introduction are image rules of their rows and are not separate sources.
+>
+> A row whose exact image is not unique in the `[ENT-2]` vocabulary publishes the
+> **empty image**, and that publication is itself a clause of the ceiling
+> `[ENT-1]` with gap kind `image`. Uniqueness is a property of the row, not of
+> the state: a row publishes one image or none.
 
----
+**The closed list of value-commit events**, from the audit's P-COMMIT, is: an
+ordinary `let` initializer; a `set` or `replace` commit; a `give` delivery edge
+of a `value_if` or `value_match`; a `propagate` initializer's normal continuation
+binding; an `[FN-9]` selected-return binding; and a direct `[GRAM-8]`
+construction, which establishes `x.f = a` for each field whose atom is a term or
+constant of fragment type and `len(x.f) = len(P)` for each field initialized by
+`P` or `move P` at array, slice or buffer type.
 
-## 12. Open questions for the owner
+Three things this clause does that the four sources it replaces could not: it
+removes the `let`/`set` distinction by spelling; it removes the delivery carrier
+grammar (`give 0_u64;` establishes what `let x = 0_u64;` establishes, so
+`[ENT-5]` 3078-3093's sixteen-line delivery block and `[GIVE-1]` 286-293's
+carrier judgment are deleted); and **it makes an unpublished row impossible**,
+because a row without an image entry is a hole in a closed table.
 
-Each has a recommendation. None is a stopping point for branch work; they are the
-decisions I cannot make.
+**This clause is a hard prerequisite of everything downstream.** The audit's
+`b15`/`b15b` pair is its evidence, and loop retention reduces to today's
+subtraction exactly without it: with `set` mute, every candidate dies on round
+one.
 
-**Q1 — `docs/constitution.md` W3 says a claim is a theorem "over the current
-function's own value **and control** authority". This design removes control
-authority. Amend the phrase, or read it as already permitting this?**
-*Recommendation: read it as permitting, and amend for clarity in the same
-approval.* The defended object W3 names in the same sentence is a **result
-property** — "a caller may rely on a user callee's result behavior only through
-its machine-verified callable boundary … never by using a claim to restate an
-unstated or stronger result property" — and the admission state defends exactly
-that, in one more place than v0.39 does (call-written storage). A merge over
-definitions the function itself wrote *is* the function's own control authority.
-I would amend the phrase to "over values this function's own text produced" and
-add the sentence that the admission judgment is a necessary condition for
-reviewability rather than a truth screen. **If the owner reads "control
-authority" as independently load-bearing, §1.1's C-I fails and this design should
-be stopped there rather than patched.**
+**The enumeration discipline** - the sentence that makes the column reviewable,
+which 0106 stated in prose and which becomes a gate here:
 
-**Q2 — U1: is review an acceptable fence for the laundering family?**
-*Recommendation: yes, provisionally, and run F2 before B2 merges.* T3 already
-names a wrong review as its failure mode, and the alternatives are a rule that
-rejects 63 of 63 true programs (v0.38) or a mechanism two judges broke. But the
-concession rests on a claim about reviewers, and a claim about reviewers should be
-measured. This is the question I would most want the owner's eye on.
+> A conforming implementation's operation table has an image entry for every row.
+> A row's entry is either a finite set of `[ENT-2]` facts or the explicit empty
+> image. The gate test is totality over rows; per-row **strength** is a review
+> obligation, and a row whose published image is weaker than its semantics entail
+> is a defect under `[ENT-1]`'s "derives exactly the ceiling: neither less, which
+> is a defect".
 
-**Q3 — the H3 write seed is amendment-level by the specification's own words
-([ENT-1] 2856, [CLM-1] 3243). Approve the amendment?**
-*Recommendation: yes, and run B0 first.* The argument is a premise argument, not a
-corpus argument: a value a callee produced is a value a callee produced, whether
-it arrived as a result or through a `&uniq` actual, and kills and [PRV-1] already
-agree. But the exposure is reasoned rather than measured and the corpus contains
-zero programs of the shape. A related sub-question the owner should see: closing
-the carve-out leaves the writer without the repair every surveyed tradition names,
-because FN-9/S12 publishes relations about *results* and not about
-`&uniq`-written parameters. Should write-postconditions be opened as their own
-design question? *Recommendation: yes, separately; a hole is not justified by the
-inconvenience of closing it.*
+**The honest weakness, restated because it must not be buried.** The column can
+be total over rows and still weak on a row, and nothing detects that. Three
+things reduce the exposure and none eliminates it: one conformance case per
+nonempty image row family; the empty image being an explicit, reviewable
+publication rather than an absence; and the computed gap token (section 6), which
+turns "the checker is weak here" from an unspoken condition into a citation a
+reviewer can dispute. Section 11.2 keeps this in red ink.
 
-**Q4 — the three conformance accepts batch 0102 added three days before this
-design.** `accept-clm1-local-claim-after-boundary-exit.wf`,
-`…-after-boundary-join.wf` and `…-inside-selected-arm.wf` become CLM-2
-duplicate-publication rejects in B1, because their predicates are ground or
-near-ground remainders the image closure now folds.
-*Recommendation: keep the programs, move the verdicts, and add a claim-free accept
-sibling for each.* The pair is the corpus's memory of the 63/63 campaign and is
-worth preserving as evidence that the shape compiles — which under this design it
-does, without a claim. I flag the recency because reversing a three-day-old
-approved verdict deserves an explicit eye, not a migration-table row.
+### 3.5 The rows the audit requires
 
-**Q5 — the unit of non-duplication and residuality: component or occurrence?**
-This design keeps the component, because S3 establishes components and one unit
-should carry every judgment. Dropping to the occurrence removes one whole-program
-re-analysis per component per claim — the largest single performance item in the
-area — and makes every forced edit a whole-statement deletion, at the cost of
-admitting a claim one conjunct of which the checker derives, whose retained check
-costs P0 forever.
-*Recommendation: keep the component, measure the counterfactual cost in B3, and
-revisit with a number.* "Fix measured performance problems instead of designing
-for imagined scale" cuts against buying the win with a non-uniformity, and nobody
-has measured it.
+Ten items. Five are carried forward from the 0106 design; five are drafted here
+for the first time (S2). Everything below is one row of the image column of 3.4,
+except `[ENT-6.D]`, which is a normalization route.
 
-**Q6 — the class rename `Local`/`BoundaryResult` → `TextProduced`/`BoundaryProduced`.**
-*Recommendation: rename.* "Local" is the word that made the confusion possible — a
-value can be lexically local and boundary-produced at once — and every reader who
-reasoned about this area from position rather than from premises was invited to by
-that name. Roughly twenty occurrences in the specification, mechanically.
+#### 3.5.1 Carried forward, with the corrections the audit required
 
-**Q7 — should the ceiling amendment channel be normative, i.e. must an amendment
-that raises a ceiling clause *name* the clause and *list* the claims it retires
-before it ships?**
-*Recommendation: normative for naming the clause, tooling for listing the claims.*
-Naming the clause is what makes the token useful and costs one sentence. Producing
-the list is a compiler pass over the corpus and belongs in tooling on top of
-§3.8's payload, not in the language.
+For unsigned T unless stated. `Z` is `[ENT-2]`'s distinguished zero term.
 
-**Q8 — the loop head (U3): schedule B6 now, or after a blind-writer campaign?**
-*Recommendation: after F8.* The ceiling is honest either way, and F8's repeated
-blind-writer trial is the cheapest available evidence about whether loop induction
-or the two-term vocabulary is the real wall once the image closure lands. B6 is
-the batch with the soundness bill; it should be aimed by measurement.
-
----
-
-## Appendix A — the five holes, dissolved
-
-| hole | what it was | what dissolves it |
+| row | image | note |
 | --- | --- | --- |
-| **H1** control dependence | v0.38 taxed reachability (63/63 false rejections, zero true positives); v0.39 narrowed it to definition-occurrence identity implemented as checked-statement addresses with four unenforced soundness preconditions | Choosing an edge publishes no value, so a selector transfers no subject matter (§1.1 C-I, §3.4). The judgment tracks no artifact identity, so the preconditions have nothing to protect (§4.2) |
-| **H2** the delivered-value squeeze | CLM-1 refused by shape; the entailment had no image for a literal carrier; the writer was squeezed between two systems whose boundary nobody derived | Both sides, independently and generally: the gate stops reading the selector, and the entailment's ceiling becomes a closure in which a `give` edge is a value-commit event like any other (§2.2, §3.2, §3.3). No constants exception; §2.2's table shows the next four cases decided by the same rules |
-| **H3** the `&uniq` carve-out | a caller could claim a property of bytes a callee's own match chose; kills and provenance saw the write and only claim authority looked away | A callee write produces a value, so it seeds the boundary class — defined as *exactly* what [ENT-5] kill (b) kills, so the element/length behaviour needs no clause and one relation has three consumers (§2.5, §3.4, §4.4) |
-| **H4** the redundancy interplay | hard reject with no mechanical fix; every prover gain a breaking change; the finer per-component half unnamed | Two publishers may not publish one premise, so the verdict is derived rather than inherited; the four verdicts become three; the family gains a fix that names the derivation and the content to remove; and the language guarantees the *direction* rather than a stability it cannot promise (§3.1, §3.6, §6) |
-| **H5** the rendered diagnostics | unpinned carrier tie-break; a per-rule teaching channel; the redundancy family with no fix at all | One payload, one closed cause set, one fix per cause, each naming which publisher owns the missing premise; the carrier pinned to predicate source order; the gap token; the reviewer's case list; the review note (§3.5, §3.8) |
+| `a % d`, state derives `d >= 1` | `Z <= r`, `r <= d - 1`, `r <= a` | **46 of the 108 bucket-P corpus claims** - the largest single family. Scoped to unsigned; the signed rows need their own statement (`r <= abs(c) - 1`, `Z - r <= abs(c) - 1` for a constant `c`) |
+| `a / d`, state derives `d >= 1` | `q <= a` | as above |
+| `imin(a,b)` / `imax(a,b)` | `r <= a`, `r <= b` / `r >= a`, `r >= b` | listed at `[ENT-6]` 3227 as a total value operation and appearing in **no** `[ENT-3]` source today; that state is exactly what 3.4 makes impossible |
+| `ipopcount(x)`, `iclz(x)`, `ictz(x)` | `r <= width(T)` | free, and never reached for |
+| `ishr.wrap(x, k)`, k a literal | `r - x <= 0`; and from `x - Z <= hx`, `r - Z <= floor(hx / 2^k)` | - |
+| `ishl.wrap(a, k)`, k a literal | from `a - Z <= ha`, `r - Z <= M` where **M is the attained maximum of `(v * 2^k) mod 2^w` over the integers v in `[0, ha]`** | the audit's required correction. The drafted `min(ha*2^k, max(T))` gives 255 for u8, `ha = 200`, `k = 1`, and the attained maximum is **254**, because `v*2` is always even. A weaker-than-unique image is a defect under `[ENT-1]`. M is computed as `ha * 2^k` when that is below `2^w`, and `2^w - 2^k` otherwise. A non-literal shift count publishes the empty image |
+| `a -sat b` | `r - a <= 0`, `Z - r <= 0`; and from `b - Z >= k`, `r - a <= -k` | the strict-decrease clause is what makes a saturating back-off loop's measure visible; without it the row publishes only `r <= a`, which is true and useless |
+| `a +sat b` | `a - r <= 0`, `b - r <= 0`, `r - Z <= max(T)` | this is where the monotonicity fact lives **free**: no side condition to discharge. `c19b` and `c24` (compiled) are the witnesses that neither the exact nor the saturating row publishes it today |
+| `a *sat b` | `r - Z <= max(T)`; and when b is a constant `c >= 1`, `a - r <= 0` | - |
+| every float row, every f-domain compare, `bxor`, signed division and remainder's non-unique normalizations | **the explicit empty image** | the publication is a ceiling clause with token `image`, not an absence |
 
-## Appendix B — the one-paragraph version
+#### 3.5.2 The corrected `*wrap` box image (drafted here)
 
-Every premise a Whitefoot proof may use is published by one of three publishers —
-the entailment, the callable boundary, the reviewed claim — and a premise no
-publisher publishes is available to no one. The area's five holes are all one
-defect: premises with two owners or none. The entailment's output was an accreting
-list of eleven sources, so `give 0_u64` carried nothing, `%` published no range,
-`imin` had no source at all and five [SYS-8] contracts sat outside the state;
-replace the list with a closure indexed by the operation table and the control
-graph, and publish its four-kind complement as the language's stated ceiling.
-A boundary publishes values, not edge choices, so a selector contributes nothing
-to claim admission and the whole control-dependence apparatus — with the heap
-addresses it compares — is deleted; but a callee's write through `&uniq` *is* a
-publication, so it seeds the boundary class, defined as exactly what the fact
-state's kill already computes. A claim publishes what the ceiling does not, over
-values the function's own text produced, naming its gap token; publishing what the
-entailment already publishes is refused, and every ceiling raise removes claim
-content, names the clause it closed, and can be announced before it ships. What
-remains unsolved, and is written in red ink rather than smoothed away, is that a
-boundary can still *choose among* values the text produced, and no mechanism this
-project can afford separates a true such claim from a false one — so the
-specification says so, hands the reviewer the case list, and proposes the
-experiment that would move the line.
+The audit required this row to "fix the arithmetic and state what it publishes
+when `ha*hb` leaves the type", because three defensible readings accept different
+programs, which `[ENT-1]` 2835-2836 forbids.
+
+> **`[ENT-3.S5.M]` (unsigned multiply box).** At `a *wrap b` or a discharged
+> exact `a * b` at unsigned T of width w, from `a - Z <= ha` and `b - Z <= hb`
+> both derivable, let `p = ha * hb` **over the mathematical integers**, as
+> `[ENT-6]` 3143 already requires for normalization. Publish `r - Z <= p` when
+> `p <= max(T)`, and **publish nothing** otherwise. When either operand bound is
+> absent, publish nothing.
+
+The "publish nothing" branch is the whole content of the correction: a wrapping
+product whose box leaves the type has no sound constant bound below `max(T)`, and
+`r - Z <= max(T)` is already an implicit fact of 2905, so publishing it would be
+publishing nothing while looking like something.
+
+#### 3.5.3 The `ior` / `maxor` image (drafted here)
+
+> **`[ENT-3.S5.B1]` (bitwise or).** At `ior(a, b)` at unsigned T, publish
+> `a - r <= 0` and `b - r <= 0` unconditionally. From `a - Z <= ha` and
+> `b - Z <= hb` both derivable, publish `r - Z <= maxor(ha, hb)`, where
+> `maxor(x, y)` is the **attained** maximum of `u | v` over `0 <= u <= x`,
+> `0 <= v <= y`, computed as: if `x = 0` then `y`; if `y = 0` then `x`;
+> otherwise let `m` be the highest bit set in `x | y`, and
+> `maxor(x, y) = 2^(m+1) - 1`.
+
+The audit records that the weaker `< 2^k` sketch is withdrawn and `maxor` is the
+attained maximum, for the same `[ENT-1]` reason as the shift row.
+
+#### 3.5.4 `[ENT-3.S5.O]` - the relaxed-operand image, with A3's repair
+
+The audit's P-MONO published `r >= a` at an exact `+` or `*` under a discharged
+no-wrap side condition. The loop part generalised it to a two-sided relaxation
+and, in doing so, published a false fact. This is the repaired rule.
+
+> **`[ENT-3.S5.O]` (relaxed-operand image).** At `r = a op b` for `op` in
+> `{+, -, *}` at unsigned T, where the state discharges that operation's no-wrap
+> side condition - which the `Ok` arm of `+checked` / `-checked` / `*checked`
+> establishes by construction and an exact `+` / `-` / `*` establishes by its own
+> discharged `[OP-2]` obligation - let `[bl, bh]` and `[al, ah]` be the tightest
+> constant intervals for `b` and `a` derivable in the state. Publish:
+>
+> | op | published | side condition |
+> | --- | --- | --- |
+> | `+` | `r - a >= bl`, `r - a <= bh`, `r - b >= al`, `r - b <= ah` | none beyond the no-wrap condition |
+> | `-` | `a - r >= bl`, `a - r <= bh` | none beyond the no-wrap condition |
+> | `*` | `r - a >= al * (bl - 1)`, `r - a <= ah * (bh - 1)` | **only when the state derives `Z - b <= -1`** |
+>
+> Where an endpoint is unbounded the corresponding fact is not published.
+
+**The `*` side condition is A3's repair and it is load-bearing twice.** Without
+it, `a` in `[2,10]` and `b = 0` publishes `r - a <= 10*(0-1) = -10`, that is
+`a >= 10`, false for every admitted `a` except 10; `j03_poff_mul_unsound.wf`
+(compiled) rejects exactly the obligation that false fact discharges, and the
+call `harm(a: 2_u64, b: 0_u64)` satisfies every `requires` and underflows. It is
+also needed for **determinism**: with `bl = 0`, a *tighter* `al` publishes a
+*weaker* lower bound on `r - a`, so the body transfer is not monotone in the head
+state, and loop retention's "the union of two inductive families is inductive"
+fails with it. One missing side condition breaks soundness and determinism
+together. The rule's own justifying customer - `capacity *checked 2_u64` with
+`capacity >= 1`, so `bl = bh = 2` and `r - a >= 1` - is unaffected, and the
+`L21`/`L22` separation (compiled: `igt` accepts, `ige` rejects) survives intact.
+
+**This row strictly subsumes P-MONO**, whose `r >= a` is the `+` row with `bl`
+relaxed to 0, which unsigned typing always gives.
+
+#### 3.5.5 `[ENT-6.D]` - the two-nonconstant `.defined` route (drafted here)
+
+The audit's P-DOM. Nothing in the batch drafted it, and two of the induction
+statement's three flagship examples reject without it with the published
+projection already supplied (`L08`, `L09`, compiled).
+
+> **`[ENT-6.D]`** `[ENT-6]` gains one normalization route. At unsigned T, the
+> goal `a -defined b` is discharged when the closed state derives `b - a <= 0`.
+> The goal `a +defined b` is discharged when the closed state derives
+> `a - Z <= c1` and `b - Z <= c2` with `c1 + c2 <= max(T)` over the mathematical
+> integers. The goal `a *defined b` is discharged when it derives
+> `a - Z <= c1` and `b - Z <= c2` with `c1 * c2 <= max(T)`. This decides a goal
+> from bounds already in the closed state and introduces no term.
+
+**Intent.** None written, and that is the point: today the writer's own sentence
+*"I never take more than I have left"*, spelled `ile(want, remaining)`, is
+refused while `remaining -defined want` is accepted. That is the proof residual
+promoted into source, and it is the calibration failure the audit identified.
+The constant-subtrahend case is **already decided this way today** (`s11`,
+compiled, accepts exact `remaining - 7_u64` under `ile(7_u64, remaining)`), so
+this generalises an existing route rather than inventing one.
+
+**Determinism.** A lookup of two existing bounds and one comparison of
+mathematical integers.
+
+#### 3.5.6 `[ENT-3.S5.B]` - the backward `+-wrap` rows
+
+Kept, with its necessity argument corrected (A23, 2.8): three of its four claimed
+customers dissolve today with a guard. It is a **direction decision inside the
+enumeration**, taken because it is sound, cheap, and the general shape wants it -
+not because the batch is required to buy it.
+
+> **`[ENT-3.S5.B]` (backward wrap image).** At a value-commit event whose value
+> is `a +wrap b` or `a -wrap b` at unsigned T with operand terms a and b,
+> committed to place r, and where the closed state derives that row's no-wrap
+> side condition - for `-wrap`, `b - a <= 0`; for `+wrap`, `a - Z <= c1` and
+> `b - Z <= c2` with `c1 + c2 <= max(T)` - establish additionally, from the facts
+> the state carries about r at the reading point `[ENT-5.P0]` clause (1) fixes:
+>
+> | row | fact about r | published about the operands |
+> | --- | --- | --- |
+> | `a -wrap b` | `r - Z >= k` | `a - b >= k` |
+> | `a -wrap b` | `r - Z <= h` | `a - b <= h` |
+> | `a -wrap b` | `r != Z` | `a != b` |
+> | `a +wrap b` | `r - Z <= h` | `a - Z <= h` and `b - Z <= h` |
+> | `a +wrap b` | `r - Z >= k`, b a constant c | `a - Z >= k - c` |
+>
+> Where the state holds several facts about r on one pair, the **tightest** is
+> read. The backward rows are applied **once** per commit event, at the reading
+> point of `[ENT-5.P0]` clause (1) - after that event's own kill, after its
+> forward image, after one closure - and their output names only a and b, so no
+> backward fact enables another backward fact at the same event and there is no
+> iteration here. Where the commit destination r is also an operand place - the
+> cursor shape `set at = at -wrap 1_u64` - the operand term is the destination's
+> **pre-commit** value, which `[ENT-5]`'s kill has removed, so no backward fact
+> is published. No other backward fact is published; in particular `a +wrap b`
+> publishes nothing backward from `r != Z`, and nothing backward from `r >= k`
+> with both operands non-constant, because neither is a difference bound in this
+> vocabulary.
+
+Two notes the rule's reader needs, and one A24 asked for. First, `a - b >= k` is
+not a restatement of `r >= k`: it is a bound on the **operand pair**, which the
+domain can hold, while `r = a - b` is a three-term equality it cannot. Second,
+the addition rows are deliberately lopsided, and the asymmetry is arithmetic
+rather than an oversight: under no-wrap both unsigned operands are below the sum,
+so an upper bound on the sum bounds each operand, while a lower bound on a sum
+constrains only their total. Third - the sentence A24's D-5 asked for - the
+cursor clause: without it, `set at = at -wrap 1_u64` names an `a` that no live
+term denotes, and the row is the common shape in the corpus.
+
+**The warning the rule must carry.** These are the only images that are not a
+pure function of the operand bounds; they read facts about r. `[ENT-1]` 2836 still
+holds because the reading point is pinned to the letter by `[ENT-5.P0]`, and
+loosening any of those words makes two conforming implementations diverge. Its
+conformance case must assert the **reading point**, not only the published facts
+(7.2, case 12).
+
+#### 3.5.7 The falsifier for the whole column
+
+**F-R1 (the image does not leak).** *Refutation:* implementing the rows changes
+the acceptance of any program that does not contain a site of the row in
+question. The `[ENT-5.P0]` reading point and the `[ENT-3.S5.O]` `*` side
+condition are the two places this is most likely to fail, and `j03` is the
+program that finds the second one.
+
+**F-R2 (uniqueness, per row).** *Refutation:* for any nonempty image row,
+exhibit operand bounds and an execution attaining a value the image excludes
+(unsound), or a strictly tighter `[ENT-2]` fact the row's semantics entail
+(a defect under `[ENT-1]`). The shift row and the `ior` row were repaired by
+exactly this experiment; **it must be run row by row and it is batch B1's own
+falsifier.**
+
+### 3.6 `[ENT-5.R]` - loop-head retention
+
+The audit's P-LOOP, drafted as an executable rule with its three mandatory
+corrections in the rule text, and with A19's and A20's repairs. This replaces
+`[ENT-5]` 3110-3116 and the second sentence of 3120-3128, and supersedes the 0106
+design's published `flow` ceiling and its deferral of induction to a gated batch.
+
+#### 3.6.1 The draft sentences
+
+> **`[ENT-5.R1]` (back edges).** A **back edge** of a loop `@l` is the single
+> edge of the conservative structural normal-control graph `[FN-1]` that leaves
+> the last statement of `@l`'s body and re-enters `@l`: for a `loop_stmt`, the
+> edge to the body entry; for a `for_stmt`, the edge carrying the compiler-owned
+> binder update to the header. Because the language has no `continue` form
+> `[GRAM-6]`, every loop has exactly one back edge, and the state on it is the
+> `[ENT-5]` join of every path through the body that reaches it. A `break` edge
+> naming `@l` or an enclosing loop, a `return` edge, and a `propagate` error edge
+> are not back edges of `@l`.
+>
+> **`[ENT-5.R2]` (candidates, and the constant ladder).** For each loop `@l`, its
+> **subtracted head** `H0(@l)` is the state this version already computes: for a
+> `loop_stmt`, the state before the loop minus every fact having a support member
+> that a continuing kill event of `@l` may kill; for a `for_stmt`, the closed
+> post-capture state minus the same. Its **entry state** `E(@l)` is the closed
+> state at its preheader.
+>
+> The function's **constant ladder** `K` is the finite set of integers consisting
+> of: every bound constant appearing in any `E(@l)` of the function; every
+> constant of the normalized form of any `[ENT-2]` goal of the function or of the
+> exact negation of one; and `0` and `-1`. `K` is determined by the function's
+> syntax and its entry states and is computed once.
+>
+> The **candidate set** `C(@l)` is the set of atomic facts `f` such that: `f` is
+> derivable in `E(@l)`; `f` is not derivable in `H0(@l)`; and either `f` is a
+> disequality, or `f` is a difference bound `t1 - t2 <= c` whose constant `c` is
+> in `K`.
+>
+> **`[ENT-5.R3]` (universes and families).** A **retention family** is a choice,
+> for every loop `@l` of the function, of a subset `R(@l)` of `C(@l)`. The **head
+> state** of `@l` under a family is the `[ENT-4]` closure of
+> `H0(@l) U R(@l) U B(@l)`, where `B(@l)` is the set of facts published by `@l`'s
+> verified `bound_stmt`s `[IND-8]`. The fixed order of 3126 becomes: preheader
+> establishment and closure; continuing-kill subtraction; retention; for a
+> `for_stmt`, S11's two body-entry bounds on the true header edge and
+> `[ENT-5.X]`'s bounds on the false one; then bound publication; then closure.
+> **`B(@l)`'s projection is computed in the pre-publication state**, so two
+> `bound_stmt`s on one loop publish simultaneously and the order of statements on
+> one loop is not observable.
+>
+> **`[ENT-5.R4]` (inductive).** A family is **inductive** when, for every loop
+> `@l` and every fact `f` in `R(@l)`, `f` is derivable in the state on `@l`'s
+> back edge obtained by the ordinary forward flow of the whole function under
+> that same family.
+>
+> **`[ENT-5.R5]` (the family this version uses).** Let `U0` be the family
+> universe computed from the flow in which every loop head is `H0` - that is,
+> with no retention anywhere - and `R0` the greatest inductive family within
+> `U0`. For `i >= 1`, let `Ui` be the family universe recomputed from the flow
+> under `R(i-1)`, and `Ri` the greatest inductive family within `Ui`. The
+> sequence is ascending in both components; the family this version uses is its
+> limit, which is reached in at most `|pairs(F) x K| + 1` outer rounds, where
+> `pairs(F)` is the set of ordered pairs of terms live in the function.
+>
+> **`[ENT-5.R6]` (existence and uniqueness).** Within one universe the greatest
+> inductive family exists and is unique. The body transfer is monotone in the
+> head state - every `[ENT-3]` source, `[ENT-5]` kill, `[ENT-5]` join and
+> `[ENT-4]` closure rule derives at least as much from a larger input state - and
+> `B(@l)` is monotone in `R(@l)`, because `[IND-8]`'s projection relaxes the
+> statement's other terms to constants the state derives and a larger state
+> derives tighter constants. Therefore the union of two inductive families is
+> inductive, and the union of all of them is the greatest one. The outer sequence
+> of `[ENT-5.R5]` is ascending for the same reason: a larger family makes each
+> preheader state larger, hence each universe larger, hence each greatest
+> inductive family within it at least as large.
+>
+> **`[ENT-5.R7]` (computation).** Within one universe the greatest inductive
+> family is computed by deletion: start from `R(@l) = C(@l)` for every loop;
+> recompute the function's forward flow under the current family; delete from
+> `R(@l)` every fact not derivable on `@l`'s back edge in that flow; repeat until
+> a round deletes nothing. **Deletion is simultaneous over all loops of the
+> function**: a round deletes from every loop before the next round recomputes.
+> Candidate sets are finite and never grow, so at most `|C| + 1` inner rounds
+> occur.
+>
+> **`[ENT-5.R8]` (soundness, normative note).** Every candidate is derivable in
+> `E(@l)`, hence true on every entry to `@l` under the family that produced that
+> universe. Order the visits to all loop heads of a function in any execution by
+> trace position and induct: at a first visit to `@l`'s head the facts of `R(@l)`
+> hold because they held at entry; at a later visit they hold because the
+> previous visit's head satisfied the whole family, the body transfer derived
+> each of them on the back edge `[ENT-5.R4]`, and every fact the derivation used
+> was either in `H0` - sound by 3110 - or in the family, which the induction
+> hypothesis supplies. The published bound facts `B(@l)` are assumed in the same
+> induction and are discharged by `[IND-5]` and `[IND-6]` at the limit family; a
+> function with an unverified `bound_stmt` is rejected, so no accepted program
+> rests on an unproved member of the assumption set.
+>
+> **`[ENT-5.R9]` (A1 immunity, normative note).** Retention never establishes at
+> a loop head a fact that was not already true before the loop. It is a
+> **deletion** from a set of facts the entry state already derives; the analysis
+> has no widening operator, no join over an iterated head state, and no way to
+> write a constant that no source produced - the ladder `K` is drawn entirely
+> from constants the function's own text and entry states contain, and every
+> candidate is required to be derivable in `E(@l)`. In particular
+>
+> ```whitefoot
+> let n = endpoint(value: input);
+> let flag = 0_u64;
+> for @steps step in 0_u64..n { set flag = 1_u64; }
+> ```
+>
+> has `flag - Z <= 0` among the candidates of `@steps`, and the body's `set`
+> derives `flag - Z <= 1` and `Z - flag <= -1` on the back edge, from which
+> `flag - Z <= 0` is not derivable; the candidate is deleted in round one and the
+> head learns nothing. Correspondingly, `ilt(cursor, 4_u64)` after
+> `for @steps step in 0_u64..upper { set cursor = 1_u64; }` is not derived at the
+> continuation, because a retained fact is a *head* fact and the continuation
+> join is unchanged by this rule.
+
+#### 3.6.2 The judgment, as an algorithm
+
+A second implementation reproduces this byte-identically by executing exactly:
+
+```
+ 1  K       := ladder(F)                       # ENT-5.R2, syntactic, computed once
+ 2  family  := empty for every loop
+ 3  repeat                                     # the outer universe iteration
+ 4      flowU := forward flow of F under family
+ 5      for each loop @l:  E, H0 from flowU;  C(@l) := ladder-restricted candidates
+ 6      R(@l) := C(@l) for every loop
+ 7      repeat                                 # the inner deletion
+ 8          flow := forward flow with head(@l) = close(H0(@l) U R(@l) U B(@l))
+ 9                                             (+ S11 body-entry bounds for counted)
+10          D := { (@l,f) : f in R(@l), f not derivable on backedge(@l) in flow }
+11          R := R \ D
+12      until D is empty
+13      grew := (R strictly contains family)
+14      family := R
+15  until not grew
+16  verify every bound_stmt against the final flow            [IND-5], [IND-6]
+```
+
+Every step is a total function of the syntax tree and of already-specified
+operations. Line 8's "forward flow" is `[ENT-3]` 2907 unchanged; line 10's
+"derivable" is `[ENT-4]` 3011 unchanged; line 11 removes a set and no order
+inside a round is observable, because the round's tests all read `flow`, which
+line 8 fixed before any deletion. **There is no widening operator, no fixed point
+over `FactState`, no choice point, no backtracking and no implementation-chosen
+threshold**, so `[ENT-1]` 2835-2836's byte-identical-derivation requirement
+holds.
+
+**Why the inner deletion must be simultaneous.** `r_p1_nested.wf` is an ordinary
+nested walk in which the inner loop's candidate `y - Z <= 0` is re-derived on the
+inner back edge *only while the outer loop's candidate `x - Z <= 0` survives*. A
+per-loop procedure with no stated order lets an implementation solve the inner
+loop first, retain `y <= 0`, then delete `x <= 0` at the outer loop and never
+revisit the inner one - retaining a fact that is false on the second outer round
+and admitting an out-of-bounds read. This is the only *soundness* break the audit
+found against any proposal, and it belongs in the rule text rather than in a
+note. The separating pair is machine-checked: `L10a` (compiled) **rejects** the
+inner step's `ensures ile(result, 0_u64)` with `"x - 0 <= 0", Unproved`, and
+`L10b` (compiled) **accepts** the same step once the outer candidate is supplied
+as a `requires`. Lines 6-12 have no order to fix because a round's tests are all
+taken against one flow.
+
+**Why the outer universe iteration is needed** (A20). `fir_filter.wf:45` is the
+witness and it is in the loop design's own migration table: the inner `@taps`
+loop needs `read_cursor - Z <= 7`, which is derivable at its preheader only if
+the **outer** loop retained `filter.delay.cursor <= 7`. Freezing the universe in
+the no-retention flow makes that candidate unreachable in every round. The
+audit's own P-LOOP text does not freeze the universe; the freeze was drafting for
+easy termination, and with the ladder the universe lives in the fixed finite set
+`pairs(F) x K` so termination is by finiteness instead.
+
+#### 3.6.3 Breaks, typed exits, nesting, regions
+
+- **`break`.** A break edge is not a back edge, so no candidate has to be
+  re-derived on it. A retained head fact flows through the body to the break edge
+  under ordinary kills and reaches the continuation join of 3097 unchanged, which
+  is what makes the break-carried witness of 3.7.3 work.
+- **`return` and `propagate`'s error edge.** Not back edges; 3110's existing
+  sentence that a fact a non-continuing edge kills is still removed on that edge
+  is unchanged.
+- **Nested loops.** An inner loop's candidates are still computed from the state
+  at *its* preheader, so facts established inside an outer iteration - a row base
+  address, a per-record limit - are candidates of the inner loop exactly as
+  before; facts carried from outside the outer loop are shared through line 8's
+  single flow, and facts the outer loop *retains* enter the inner universe on the
+  next outer round.
+- **The counted head.** Candidates are drawn from the closed post-capture state,
+  so capture terms may appear in them (`upper_capture = n` is a candidate and
+  survives unless `n` is written in the body). **The binder is not live before the
+  loop, so no candidate mentions the binder**, and the hidden binder update on the
+  back edge kills every fact supported by it. That is not an accident of
+  drafting: it is exactly why the trip-count family cannot be reached by
+  retention and needs `[IND]` instead (3.9.5).
+- **Regions and borrows.** A candidate whose support contains a borrow holder
+  released by a region exit inside the body cannot be re-derived on the back
+  edge, because its support member is dead there; it is deleted in round one. No
+  special sentence is needed.
+
+#### 3.6.4 Complexity
+
+Let `T` be the number of `[ENT-2]` terms live in the function, `n` its
+statements, `L` its loops, `D` the disequalities of the entry states. Then
+`|C| <= L * (2T^2 * |K| + D)`, one inner round is one forward pass at
+`O(n * T^3)` with the standard DBM closure, the inner loop runs at most `|C| + 1`
+rounds, and the outer loop at most `|pairs(F) x K| + 1` times. The honest reading:
+`T` is the number of terms live in **one function**, not in the program; `|K|` is
+the number of distinct constants one function mentions; and a round that deletes
+nothing ends the loop, so in practice the count is the length of the longest
+chain of candidates that depend on one another, which is at most three in every
+program in `tests/programs/`. **A spec-fixed round cap is legal under `[ENT-1]`
+and none is written**, because no measurement asks for one; if one is ever needed
+it is a number in the specification, never an implementation choice.
+
+The ladder multiplies the candidate count by `|K|` and that is the price of A19.
+It is the one place in this design where a repair costs measurable compile time,
+and F-L2 below is the measurement.
+
+#### 3.6.5 Worked examples
+
+**(a) The descending walk (ITER-03, ITER-28).** `r13_descend_guarded.wf`
+(compiled) rejects today with residual `cursor < len(data)`.
+
+```whitefoot
+let length = len(data);
+let cursor = length;
+let sum = 0_u8;
+loop @down {
+  let live = igt(cursor, 0_u64);
+  if live { } else { break @down; }
+  set cursor = cursor -wrap 1_u64;
+  let value = data[cursor];
+  set sum = sum +wrap value;
+}
+```
+
+`E(@down)` derives `cursor - length <= 0` and `length - cursor <= 0`; the
+continuing `set cursor` kills both, so both are candidates (with constant 0,
+which is in `K`). Round one, on the back edge: the guard gives `cursor >= 1`,
+S7's range-guarded wrap subtraction plus the value-commit image give
+`cursor' = cursor - 1` over the `set` destination, and from the head's
+`cursor - length <= 0` the flow derives `cursor' - length <= -1`, hence
+`<= 0`. The first candidate is re-derived and retained; the second is not and is
+deleted. `R(@down) = { cursor - length <= 0 }`, converged in one round, and the
+subscript discharges from `cursor' - length <= -1`. **No writer text.** The step
+obligation is machine-checked today in isolation: `r13b_descend_step.wf`
+(compiled) **accepts** exactly this induction supplied as `requires`/`ensures`.
+
+**(b) The constant-extent walk, which the drafted rule lost (A19).**
+
+```whitefoot
+let taps = buffer_new(8_u64, 1_u8);
+let tap_count = len(taps);
+let tap = 0_u64;
+loop @taps_loop {
+  let finished = ieq(tap, tap_count);
+  if finished { break @taps_loop; }
+  let coefficient = taps[tap];
+  set tap = tap +wrap 1_u64;
+}
+```
+
+`y3_const_extent_loop.wf` (compiled) rejects with `[OP-4] residual: tap <
+len(taps)`. `E` derives `tap_count = 8` and `tap = 0`, so the *tightest* atom on
+the pair is `tap - tap_count <= -8`, which the back edge does not re-derive. The
+ladder puts `tap - tap_count <= 0` in `C(@taps_loop)` because `0` is in `K` and
+the bound is derivable at entry; the negated exit test gives `tap != tap_count`,
+`[ENT-4]` rule (2) tightens the head's `<= 0` to `<= -1` inside the body, the
+`+wrap` image gives `tap' = tap + 1`, and `tap' - tap_count <= 0` is re-derived.
+Retained. The subscript then discharges from the in-body `<= -1`.
+**`y1_entry_tight_step.wf` rejects and `y2_relaxed_step.wf` accepts** (both
+compiled): those two functions are the two candidates' step obligations posed as
+contracts, and they are the evidence that the ladder is necessary and sufficient
+here.
+
+**(c) The chunked carried cursor (ITER-19, ITER-20).** `L12_chunk_loop_carry.wf`
+(compiled) rejects with `[FN-8] UndischargedCallRequirement ile(carry, room)` -
+which is the scenario's own sentence, that the *next* iteration's read cannot
+re-prove that the carry fits.
+
+```whitefoot
+loop @chunks {
+  let filled = refill(start: carry, end: room);   // requires ile(start, end)
+  let done = ieq(filled, carry);
+  if done { break @chunks; }
+  let short = ile(filled, 15_u64);
+  if short { set carry = filled; } else { set carry = 15_u64; }
+}
+```
+
+`carry - room <= 0` is derivable at the preheader (`carry = 0`, `Z <= room`) and
+the continuing `set carry` kills it, so it is a candidate. On the back edge - the
+join of both arms - the short arm derives it from the modelled `ensures`
+`filled <= room` through the value-commit image, and the long arm from the
+negated guard `15 < filled <= room`; the `[ENT-5]` join keeps the bound both arms
+hold, so it is retained and the next round's `requires` discharges at the head,
+**with no writer text at all**. `L14_chunk_step.wf` (compiled) **accepts**
+exactly this induction posed as a contract across the modelled read and both
+arms. The price today is `L13_chunk_loop_guarded.wf` (compiled, accepts): four
+added lines that re-test `ile(carry, room)` at every head and `break` when it
+fails, whose `else` arm is unreachable - the fabricated arm the audit's intent
+test refuses.
+
+**(d) The capacity-checked worklist (ITER-23).** `L17_worklist_uncapped.wf`
+(compiled) rejects with `head < len(queue)` and **deserves to**: `pending` grows
+by a number read out of the data, so `pending <= len(queue)` is false and the
+program is wrong. **Any loop rule that rescues it is refuted by this probe**, and
+recording that is how an iteration rule is bounded. The correct program checks
+capacity on the **push** side, where the check is real, and
+`L18_worklist_capped.wf` (compiled) does exactly that and still rejects today;
+under retention, `pending - len(queue) <= 0` is a candidate re-derived on the
+only continuing path (the `ok` arm, where the just-executed test gives it
+directly through the value-commit image), while the `Err` arm and the `else` arm
+leave by `break` and are not back edges. `L20_worklist_step.wf` (compiled)
+**accepts** that induction posed as a contract. The potential-function reading
+the scenario file argues for is not needed: it is a *termination* argument,
+Whitefoot has no termination obligation, and the *safety* obligation is the
+subscript, which the capped invariant closes without counting anything.
+
+#### 3.6.6 Falsifiers
+
+**F-L1 (reach).** Eleven audit scenarios and nine corpus claims are predicted to
+dissolve under retention. *The experiment:* implement `[ENT-5.R]` over the
+value-commit image and `[ENT-5.P0]`, and delete the claims from `fir_filter.wf`,
+`utf8parse.wf`, `percent_decode.wf`, `wfgrep.wf` and `par_layout.wf`. *Refuted
+if* fewer than six of the nine predicted sites compile, or if any program needs a
+statement the table does not predict. **This is the single highest-value
+experiment in the design**, and note that its threshold must be evaluated against
+this file's `[ENT-5.R2]`: under the drafted candidate definition the three
+`fir_filter` sites fail on rule text alone (A19), so a run against the unrepaired
+rule would refute the wrong thing.
+
+**F-L2 (cost).** The ladder multiplies the candidate count by `|K|` and the outer
+universe iteration adds rounds. *Refuted if* any program in `tests/programs/`
+needs more than five inner rounds or more than two outer rounds, or if compile
+time on `wfgrep.wf` (1,417 lines) or `raw_deflate_vectors.wf` (863 lines) moves
+by more than a small constant factor. Instrument the round counters; no new
+programs needed.
+
+**F-L3 (simultaneity).** `r_p1_nested.wf` must remain a rejection under
+`[ENT-5.R7]`, and an inner-first per-loop procedure must accept it. *Refuted if*
+a conforming implementation of R7 accepts it, or if no per-loop ordering accepts
+it - the second would mean the audit's soundness break was not one.
+
+**F-L4 (A1 immunity is a property, not a hope).** *Refuted if* any program exists
+in which the head state under the limit family derives a fact false on some entry
+to that loop. The 0106 design's section 9 counterexamples are the seed set and
+`[ENT-5.R9]` predicts they are refused by construction.
+
+### 3.7 `[ENT-5.X]` - the counted false edge
+
+The audit withdrew the counted exit postcondition `binder = upper_capture` for
+want of a customer. Section 3.9.5 supplies the customer. But the withdrawn form
+is also **false**, and that has to be said before it is restored.
+
+`L23_for_descending_range.wf` (compiled) is the counterexample:
+
+```whitefoot
+let seen = 0_u64;
+for @scan i in 5_u64..3_u64 { set seen = i; }
+```
+
+The loop runs zero times and the binder is 5 at the false header edge, while
+`upper_capture` is 3. `binder = upper_capture` is simply not a theorem of the
+counted form. The repair is one side condition.
+
+> **`[ENT-5.X]` (counted false edge).** On the false header edge of an admitted
+> `for_stmt`, establish `upper_capture - binder <= 0`. Establish additionally
+> `binder - upper_capture <= 0` exactly when the closed post-capture state of
+> 3120 derives `lower_capture - upper_capture <= 0`. Both are established under
+> `[ENT-5.P0]`, so they are closed with the still-live capture-to-endpoint
+> equalities of S11 **before** the binder and the captures leave scope. 3116's
+> sentence that the false header edge establishes no S11 fact is replaced by this
+> rule; the `break` edges and the continuation join are unchanged.
+
+**Soundness.** The first conjunct is the negation of the header comparison just
+executed and needs no side condition. The second: the binder is initialized to
+`lower_capture`, is updated only by the compiler-owned `+1` on an edge from a
+state where `binder < upper_capture`, and both captures are immutable after the
+preheader, so `binder <= upper_capture` is invariant *given*
+`lower_capture <= upper_capture` at initialization - and without that premise the
+binder never moves, which is exactly what `L23` refutes.
+
+**What it does not do.** It publishes nothing about a `break` edge and nothing
+about any body-written quantity. On its own it closes nothing: its whole value is
+that a `bound_stmt`'s head fact, which relates a body-written quantity to the
+binder, can be composed with it under `[ENT-5.P0]` before the binder dies. That
+composition is 3.9.5.
+
+**Worked example - the break-carried witness (ITER-22, ITER-33, ITER-34).**
+`p7_witness.wf` (compiled) rejects today with residual `found < len(data)`.
+
+```whitefoot
+let length = len(data);
+let found = 0_u64;
+let hit = False();
+for @scan i in 0_u64..length {
+  let value = data[i];
+  let is_target = ieq(value, 7_u8);
+  if is_target { set found = i; set hit = True(); break @scan; }
+}
+if hit { let again = data[found]; }
+```
+
+`found - Z <= 0` is in `E(@scan)` and the continuing `set found` kills it, so it
+is a candidate. On the back edge the only path reaching it is the non-matching
+path, on which `found` is unchanged, so it is re-derived and retained; the
+matching path leaves by `break`, which is not a back edge, so it imposes no
+obligation on the candidate - `[ENT-5.R1]` doing the work. On the break edge,
+S11 gives `i < upper_capture` and the preheader gives `upper_capture = length`;
+the value-commit image gives `found = i`; `[ENT-5.P0]` closes
+`found - length <= -1` **before** `i` and `upper_capture` leave scope; the
+surviving fact's support is `{found, length}` and it reaches the continuation
+join. The `if hit` arm then discharges with no writer text.
+
+Note that the *empty-buffer* case needs no disjunction and no `hit` reasoning: on
+the false header edge `found` is still 0 but `length` may be 0, so the join of
+the false edge and the break edge gives only `found - length <= 0`. The audit's
+ITER-34 route - an early return for the empty buffer, after which
+`found < extent` is unconditional - is therefore the right program, and the 0106
+design's convex-join ceiling clause still has **no witness here**. Section 11.3
+records that clause's disposition.
+
+### 3.8 `[IND]` part one - the statement, its substitution, and its frame
+
+For facts retention cannot reach because they are **not true before the loop**:
+the audit's I2 (`sum <= 255 * i`), I3 (`acc <= i * factor`) and I4
+(`hits <= i`). Retention is a deletion from what was already true; these facts
+become true one iteration at a time, so no deletion procedure can produce them
+and no stronger row image can either.
+
+#### 3.8.1 The spelling, and why it passes the intent test
+
+```whitefoot
+for @weigh i in 0_u64..count {
+  bound @weigh per_byte: ile(sum, 255_u32 * i);
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+Read it as English: *bound, for the loop `@weigh`, named `per_byte`: `sum` is at
+most 255 times `i`.* This is what the writer of an accumulator loop already
+wanted to say and already writes in a comment - the loop's running bound is the
+one thing a reader of a fold wants documented - and deleting the line deletes a
+statement about the program, not a hint to a prover. It names no term the
+compiler chose, no residual, no lemma and no proof step: it is the **conclusion**,
+in the writer's own arithmetic.
+
+Contrast the owner's calibration point. Proof plumbing pinned on `let`s -
+`let bound_term = ...; let step_ok = ...;` and a statement over them - is rejected
+precisely because the writer is made to name the prover's intermediate values. A
+`bound_stmt` names none.
+
+**Position.** A `bound_stmt` carrying a label is admitted only as a **leading**
+statement of that label's loop body: it may be preceded only by other
+`bound_stmt`s and by `doc`. That is where a reader looks for what a loop
+maintains, it makes "this holds whenever we arrive here" unambiguous, and it
+gives the rule a single syntactic place to check. The **local** form, which
+carries no label, is 3.9.4 and is restricted differently.
+
+**Grammar** (`[GRAM-4]`, one production; `[GRAM-5]` gains a relation grammar used
+only here):
+
+```wf-ebnf
+stmt        := ... | bound_stmt
+bound_stmt  := "bound" LABEL? IDENT ":" rel_term ";"
+rel_term    := IDENT "(" affine "," affine ")"
+affine      := product (("+" | "-") product)*
+product     := factor ("*" factor)*
+factor      := place | literal | "len" "(" place ")"
+```
+
+`rel_term`'s head IDENT is one of the `[OP-5]` comparison names (`ile`, `ilt`,
+`ige`, `igt`, `ieq`, `ine`), read as a relation and **never evaluated**. `affine`
+and `product` have exactly two precedence levels, fixed here. `[GRAM-6]`'s
+no-precedence rule is about *evaluated* expressions, where evaluation order, trap
+points and ANF are the reason for the restriction; a `bound_stmt` is never
+evaluated, has no trap point and produces no value, so the same reason does not
+apply - the argument that already lets `[FN-9]` clauses use an operand grammar
+the statement grammar does not have. **Division is not admitted in `affine`**; it
+reaches the check only through substitution, so that no surface statement can
+name a rounding the writer did not write. Within one `fn_decl` every
+`bound_stmt` name is unique, exactly as claim names were (`[CLM-1]` 2754's rule,
+retained with the claim gone).
+
+#### 3.8.2 The draft sentences
+
+> **`[IND-1]` (no runtime behaviour).** A `bound_stmt` establishes no runtime
+> behaviour. It compiles to no instruction, tests nothing, and can neither trap
+> nor diverge; it exhibits the empty `[EFF-2]` row and does not count as delivery
+> or must-divergence `[GIVE-1]`. A `bound_stmt` whose base or step obligation
+> `[IND-5, IND-6]` is not discharged is a **hard error** at that statement's
+> node. There is no runtime fallback and no retained check: the language has
+> none.
+>
+> **`[IND-2]` (position).** A labelled `bound_stmt` is admitted only in the
+> leading position of the body of the `loop_stmt` or `for_stmt` carrying that
+> label, preceded only by `doc` and other `bound_stmt`s of the same label; any
+> other position is a hard error citing `[IND-2]`. An unlabelled `bound_stmt` is
+> a **local statement** and is admitted under `[IND-10]`.
+>
+> **`[IND-3]` (the statement polynomial).** The statement polynomial of a
+> `bound_stmt` is obtained from its `rel_term` by moving both sides to the left
+> in the normal form `p <= 0` (`ilt` and `igt` contributing the integer `+1`,
+> `ieq` producing the two polynomials `p <= 0` and `-p <= 0`), and by expanding
+> `affine` and `product` into the canonical multivariate polynomial with integer
+> coefficients over `[ENT-2]` terms, monomials sorted by the `[FORM-2]` canonical
+> spelling of their factors and then by degree. `ine` is not admitted as a
+> statement relation. All arithmetic in `[IND-3]` through `[IND-8]` is over the
+> mathematical integers, as `[ENT-6]` 3143 already requires for normalization.
+> Three spec-fixed limits apply at every step and each violation is a hard error
+> naming the statement: coefficient or constant magnitude at most `2^127`, degree
+> at most 4, and at most 256 monomials. These are spec-fixed limits, not
+> implementation choices.
+>
+> *Typing.* A `rel_term`'s operands may mix fragment integer types, and a
+> `product` may multiply terms of different types. `[OP-5]`'s equal-type
+> requirement is a rule about an *evaluated* comparison, whose result must have a
+> representation; a `bound_stmt` is never evaluated, its relation is read over the
+> mathematical integers, and each term contributes the interval of its own type.
+> Every operand must still have a fragment integer type, and a signed term
+> contributes its own signed interval.
+>
+> *Vocabulary fence.* **No operand of a `bound_stmt` names an element of an
+> indexable place, and no `bound_stmt` quantifies.** `[ENT-2]` 2870(a) is
+> unchanged: `factor` admits a place, a literal, or `len` of a place, and a
+> subscript suffix is not a place for this purpose. A `bound_stmt` therefore
+> cannot state a per-element property (irreducible I5) or a data-structure
+> invariant (irreducible I6), and no rule of this design lets an iteration
+> notation swallow either.
+>
+> **`[IND-4]` (body paths and substitution).** A **body path** of a loop is a
+> maximal path of the conservative structural normal-control graph `[FN-1]` from
+> the loop's body entry to its back edge `[ENT-5.R1]`; a path leaving by `break`,
+> `return` or a `propagate` error edge is not a body path and carries no step
+> obligation, because it does not reach a later head. A `bound_stmt` whose loop
+> has more than **64** body paths is a hard error naming that statement and the
+> limit; this is a spec-fixed limit, not an implementation choice.
+>
+> Along one body path, the **substituted statement polynomial** is obtained by
+> **one backward pass** over the path, from its end to its entry, replacing, at
+> each `let` or `set` commit whose destination occurs in the polynomial at the
+> moment the pass reaches that commit, that destination by the polynomial of the
+> commit's right-hand side. **The pass visits each commit exactly once and never
+> revisits one**; after it, every occurrence of every term denotes that term's
+> value at the path's entry. The admitted right-hand sides and their polynomials
+> are:
+>
+> (a) `a + b`, `a - b`, `a * b`, and the `Ok`-arm binding of `+checked`,
+> `-checked` or `*checked`: the exact polynomial, provided the state at that
+> commit on that path discharges the operation's `[ENT-6]` domain obligation;
+>
+> (b) `a op b` at a `wrap` or `sat` operation: the exact polynomial **only when
+> the state at that commit derives the corresponding exact row's `[OP-2]`
+> no-wrap side condition** - for `-wrap` and `-sat`, `b - a <= 0`; for `+wrap`
+> and `+sat`, `a - Z <= c1` and `b - Z <= c2` with `c1 + c2 <= max(T)`; for
+> `*wrap` and `*sat`, `c1 * c2 <= max(T)` for the corresponding bounds. When the
+> condition is not derivable the commit is unsubstitutable and clause (e)
+> applies;
+>
+> (c) a `cvt` at a widening conversion: its operand. A copy or literal: that
+> atom;
+>
+> (d) `a / k` for a literal `k >= 1`: a fresh opaque term `q` together with the
+> two hypotheses `k*q - a <= 0` and `a - k*q <= k - 1`;
+>
+> (e) **any other right-hand side** - a call, a subscript, a construction, a
+> `replace`, a `propagate`, a delivered value, or a wrapping or saturating
+> operation whose side condition (b) does not discharge. If the destination is a
+> `let` binder committed exactly once on the path, the commit contributes a
+> **fresh opaque witness term** `o` for that binder, together with, as
+> hypotheses, every constant bound on that destination derivable in the state
+> immediately after that commit on that path. If the destination is a `set`
+> destination, the substitution **refuses** the statement, with a diagnostic
+> naming that commit and, where the refusal is a wrapping operation, the checked
+> spelling that would admit it.
+
+Clause (b) is A1's repair; the "one backward pass, never revisits" sentence is
+A17's; clause (e)'s witness half is S1's, and it is what lets the I2 example's
+`let w = deref(weights)[i];` stand as an opaque term with `w <= 255` rather than
+refusing the statement the design was built for.
+
+> **`[IND-5]` (base).** For a labelled `bound_stmt` on loop `@l`, the base
+> obligation is the statement polynomial checked by `[IND-7]` in the closed state
+> at `@l`'s preheader. For a `for_stmt`, it is checked in the closed post-capture
+> state of 3120, in which `binder = lower_capture` holds.
+>
+> **`[IND-6]` (step, and the frame).** The step obligation of a labelled
+> `bound_stmt` is one obligation per body path `[IND-4]`. On each body path, take
+> the statement polynomial, replace every occurrence of that loop's `for_stmt`
+> binder by `binder + 1`, and substitute the path's commits `[IND-4]`. The result
+> is a **head-frame polynomial**: every term in it denotes its value at the
+> path's entry, which is the loop head.
+>
+> The obligation is checked by `[IND-7]` **in the head state** - the closed state
+> at the loop head under `[ENT-5.R3]`'s order - extended by exactly two sets of
+> hypotheses:
+>
+> (i) the **path conditions**, each branch condition governing that path,
+> expressed in the head frame by the same `[IND-4]` backward substitution taken
+> from that branch back to the path entry; a path condition whose substitution
+> refuses is dropped rather than refusing the statement; and
+>
+> (ii) the **witness hypotheses** `[IND-4]` clauses (d) and (e) introduced.
+>
+> No fact read at the body-exit state enters the check, and no state fact is
+> read at any point other than the head. Path-sensitivity is confined to this
+> check: **no fact it derives is published anywhere.** Base and step are both
+> checked in the flow at the limit retention family `[ENT-5.R5]`, once, after
+> deletion has ended.
+>
+> The **statement polynomials of that loop's own `bound_stmt`s are head-frame
+> facts and are never substituted**; they enter `[IND-7]` as hypotheses exactly
+> as written. Every other polynomial entering the check is in the head frame by
+> the paragraph above.
+
+`[IND-6]` is A16's and A2's repair together, and its two operative sentences are
+the ones the drafted rules got wrong in opposite directions. Reading the state at
+the body exit bounds a head-frame term by its exit value - the out-of-bounds
+write `j3`/`j3b` compile. Substituting the statement's own polynomial makes the
+hypothesis equal the goal modulo the binder shift, and the body's effect on the
+accumulator cancels - the silent unsigned overflow of A2's program. **One frame,
+named, with everything translated into it, is the whole content of both
+repairs.**
+
+#### 3.8.3 The frame, worked against the two breaking programs
+
+**A16's program.** `bound @l s: ile(x, 0_u64);` in a loop whose body is
+`set out[x] = 1_u8; set x = cursor; set cursor = 0_u64;` with `cursor = 7`
+before the loop. One backward pass over the body path: at `set cursor = 0_u64`
+the polynomial is `x` and `cursor` does not occur, so nothing happens; at
+`set x = cursor` the destination occurs and `x` is replaced by `cursor`. The pass
+ends with `p = cursor`, denoting the **path-entry** value of `cursor`. Under the
+drafted rule `[IND-7]` relaxed it in the body-exit state, where `cursor = 0`,
+`C = 0`, verified - and `x = 7` at the second head, one byte past a one-byte
+buffer. Under `[IND-6]` the check reads the **head** state, where the entry value
+`cursor - Z <= 7` is what is derivable, `RELAX` gives 7, and the statement is
+**refused**. `j3_ind6_checkpoint_break.wf` (compiled) rejects on exactly the
+obligation the false publication would have discharged, and
+`j3b_ind6_consumer.wf` (compiled) **accepts** with the fact supplied - the pair
+is the break, and the repair turns it back into a rejection.
+
+**A2's program.** `bound @weigh per_byte: ile(sum, 255_u32 * i);` in a loop whose
+body is `set sum = sum + 1000_u32;`. Step: `p0 = sum + 1000 - 255*i - 255`.
+Under the drafted closing sentence the hypothesis is `subst(P) = sum + 1000 -
+255*i`, so `p := 255*p0 - 255*H1 = -65025` and the statement verifies although it
+is false at `i = 1`. Under `[IND-6]` the hypothesis is the statement polynomial
+**as written**, `H1 = sum - 255*i`, so
+`p := 255*p0 - 255*H1 = 255*1000 - 255*255 = 190125`, `RELAX` cannot reduce a
+positive constant, and the statement is **refused**. The published fact that
+would have discharged the exact `+`'s `[OP-2]` obligation never exists.
+
+#### 3.8.4 What `[IND-4]`'s refusals cost, stated
+
+Refusing at an unsubstitutable `set` is the conservative half, and it is where a
+writer will meet the rule. A body that writes an accumulator through a call
+result (`set acc = fold(acc: acc, x: v);`) has no statement route and goes to the
+callee's `ensures` instead - which is the right home, because the callee is what
+knows the step. A body whose accumulator is written by a `replace` of a whole
+place has neither route and goes to `if`/`else` with the price of 3.12. Those are
+honest limits and section 11 keeps them.
+
+### 3.9 `[IND]` part two - the check, the publication, and the local form
+
+#### 3.9.1 `[IND-7]` - the check, as a certificate
+
+This is A4's repair and it is the one place where I replaced a drafted rule
+rather than adding a side condition to it; section 2.4 is the reasoning. The
+drafted rule prescribed *which* hypothesis eliminates each term and was therefore
+non-monotone under prover strengthening, falsifying `[ENT-1]`'s new sentence on
+the day the construct lands. This rule asks instead whether a certificate
+exists.
+
+> **`[IND-7]` (the check).** Let `p <= 0` be the obligation after `[IND-4]` and
+> `[IND-6]`. Its **elimination terms** are the degree-1 monomials of `p` with
+> nonzero coefficient, in `[FORM-2]` canonical spelling order with `[IND-4]`'s
+> witness terms first in order of introduction; there are at most **4**, and more
+> is a hard error naming the statement.
+>
+> The **hypothesis list** `H` is, in this order: the statement polynomials of
+> that loop's `bound_stmt`s as written `[IND-6]`; the path conditions and witness
+> hypotheses of `[IND-6]` clauses (i) and (ii); and, for each ordered pair of
+> elimination terms, the tightest difference bound `t1 - t2 <= c` derivable at
+> the check point `[ENT-4]`, if any. `H` has at most **16** members, and more is a
+> hard error naming the statement.
+>
+> A **certificate** is a partial injection `sigma` from the elimination terms to
+> `H`, together with the derived multipliers: processing the elimination terms in
+> order, for a term `t` with current coefficient `a` in `p` and `sigma(t) = h`
+> with coefficient `b` on `t`, the step is admitted only when `a*b > 0`, and sets
+> `p := |b|*p - |a|*h` and `s := s*|b|`; a term outside `sigma`'s domain is
+> skipped; `s` starts at 1. The certificate **succeeds** when
+> `floor(RELAX(p) / s) <= 0` at the end.
+>
+> The obligation is **discharged exactly when some certificate succeeds.** The
+> certificate space is the set of partial injections from at most 4 terms into at
+> most 16 hypotheses; it is finite, fixed by this rule, and enumerated
+> exhaustively. There is no implementation choice: two conforming
+> implementations decide the same predicate on the same inputs.
+>
+> `RELAX(p)` is the sum, over the monomials of `p`, of the maximum of that
+> monomial's interval, where a monomial's interval is the product of its factors'
+> intervals **taken as the maximum over the corner products** - for a degree-d
+> monomial the maximum over the `2^d` products of endpoints - each factor's
+> interval being `[cl, cu]` for the tightest constant bounds `Z - t <= -cl` and
+> `t - Z <= cu` derivable at the check point, and the empty product being 1.
+> Every quantity is a mathematical integer and `[IND-3]`'s magnitude limit applies
+> at every step.
+>
+> *Soundness.* Each admitted step replaces `p` by `|b|*p - |a|*h` with `|b| > 0`,
+> `|a| > 0` and `h <= 0`, so the new polynomial is at least `|b|` times the old,
+> and the accumulated `s` satisfies `p_final >= s * p_0`. `RELAX` over-approximates
+> `p_final`, so `s * p_0 <= RELAX(p_final)`; `p_0` takes integer values, so
+> `p_0 <= floor(RELAX(p_final) / s)`. The final test therefore proves `p_0 <= 0`.
+>
+> *Monotonicity.* Tightening the constant of any member of `H` makes that
+> hypothesis polynomial larger, hence `-|a|*h` smaller, hence the residual
+> smaller, hence a succeeding certificate still succeeds; adding a member to `H`
+> only enlarges the certificate space, and every prior certificate survives with
+> the new member outside `sigma`'s image. **No fact-source or closure
+> strengthening can refuse a statement an earlier conforming checker verified**,
+> which is what `[ENT-1]` requires of every construct.
+>
+> *This is a fixed incomplete fragment, and it is meant to be.* `[ENT-1]`
+> 2835-2836 forbids an implementation-chosen strategy, not an incomplete one. A
+> statement the fragment cannot verify is a compile error naming the residue, and
+> the writer's routes are to restate the bound, to strengthen a `requires`, or to
+> write the `if` with an honest `else` arm.
+
+**The corner-product sentence is A24's D-2** - the drafted `RELAX` was undefined
+for a mixed-sign degree-2 monomial and two implementations would have differed on
+the first signed accumulator. The two caps (4 elimination terms, 16 hypotheses)
+are what keep the certificate space small: at most `16*15*14*13` orderings, a few
+tens of thousands of tiny polynomial operations per statement per body path,
+which is nothing beside one DBM closure.
+
+**The certificate form accepts a superset of the drafted greedy rule**, because
+every greedy elimination sequence is a certificate. That is what makes the repair
+affordable at this point in the batch: none of the worked traces below has to be
+re-derived, and the loop design's own Q4 - *"the order fixes the accepted set; a
+different order accepts a different, incomparable set"* - stops being an open
+question, because no order fixes anything.
+
+#### 3.9.2 `[IND-8]` - what a verified statement publishes
+
+> **`[IND-8]` (projection).** A verified `bound_stmt` publishes its
+> **projection** on each edge where its facts hold - for a labelled statement,
+> both header edges of its loop and, for a `loop_stmt`, its body-entry edge; for
+> a local statement, its normal continuation. The projection is computed
+> separately on each such edge, in that edge's own state, from the statement
+> polynomial **as written**. It is exactly the following finite set of atomic
+> facts and nothing else: for every term `t` occurring in exactly one degree-1
+> monomial of the normalized `p <= 0` with coefficient `a` in `{+1, -1}`, let
+> `r := p - a*t`; publish `t - Z <= -m` when `a = +1` and `Z - t <= -m` when
+> `a = -1`, where **`m` is the sum over the monomials of `r` of that monomial's
+> minimum**; and when `r` is exactly one degree-1 monomial `b*u` with `b = -a`
+> plus a constant `k`, publish additionally the difference bound
+> `a*t + b*u <= -k` in whichever orientation `[ENT-2]` 2901 admits.
+>
+> Published facts carry the ordinary `[ENT-5]` support of their own terms and are
+> killed ordinarily. **The polynomial itself is never a fact**: no state anywhere
+> holds a relation over more than two terms, and `[ENT-2]` 2870 and 2901 are
+> unchanged. A published constant whose magnitude exceeds `[IND-3]`'s limit is
+> not published, and the projection is otherwise unchanged; publication never
+> raises a hard error.
+>
+> **`[IND-8.T]` (`[ENT-2]` amendment).** A difference bound `t1 - t2 <= c` may
+> relate terms of different fragment integer types. Its meaning is over the
+> mathematical integers, exactly as `[ENT-6]` 3143 already fixes for
+> normalization; `[ENT-2]` 2905's implicit per-term bounds are unchanged, and
+> `[ENT-4]`'s three closure rules apply unchanged. No other rule of this
+> specification produces such a fact, and `[OP-5]`'s equal-type requirement on an
+> *evaluated* comparison is untouched.
+>
+> **`[IND-8.V]` (views).** A `bound_stmt` is verified separately in the complete
+> state and in the S4-blinded state B, exactly as `[FN-9]` verifies a relation
+> per view. Its projection is published **only in the views in which its base and
+> step obligations both discharge.** A statement whose derivation uses an S4
+> requirement source therefore publishes in the complete state and not in B, and
+> `[PRV-3]`'s external-subject partition is unaffected by its presence.
+
+`[IND-8.V]` is A9's repair and it is load-bearing for the *deletion*: 3.1.3 argues
+that the claim was the only non-bridge route from external data to a protected
+operation, and without a view discipline the induction statement is a second one -
+a statement resting on a `requires` would discharge the leaf in B, `[PRV-3]` 3392
+would find no demand remaining, and a caller could pass an external value
+straight through. The sum-of-minima reading of `m`, and the magnitude clause, are
+A24's D-3 and A25.
+
+#### 3.9.3 `[IND-9]` redundancy, and the I2 and I3 traces
+
+> **`[IND-9]` (redundancy).** A `bound_stmt` is **never** an error for being
+> derivable. A statement whose projection the state already derives, at the head
+> or anywhere else, is verified by `[IND-5]` and `[IND-6]` exactly as any other,
+> is kept, and publishes exactly as any other. No rule anywhere compares a
+> statement against what the checker could have proved without it.
+
+That is the owner's ruling of 2026-08-29, and section 2.10 records the asymmetry
+that derives it rather than merely quoting it.
+
+**I2 - an accumulator bounded by its increments.** `s22_accum_const.wf`
+(compiled) rejects today with `[OP-2] residual: sum +defined wide`.
+
+```whitefoot
+fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32
+  reads(weights) contract {
+  define room = len(deref(weights));
+  requires ile(count, room);
+  requires ile(count, 1000_u64);
+} {
+  let sum = 0_u32;
+  for @weigh i in 0_u64..count {
+    bound @weigh per_byte: ile(sum, 255_u32 * i);
+    let w = deref(weights)[i];
+    let wide = cvt<u8, u32>(w);
+    set sum = sum + wide;
+  }
+  return sum;
+}
+```
+
+*Base* `[IND-5]`: post-capture `sum = 0`, `binder = 0`; polynomial
+`sum - 255*i <= 0`; the empty certificate relaxes with `cu(sum) = cu(i) = 0`,
+`C = 0`, `s = 1`, verified.
+
+*Step* `[IND-6]`: one body path. `[IND-4]` replaces `sum` by `sum + wide`; `wide`
+by its `cvt` operand `w`; and `w`'s commit is a subscript, so clause (e) gives a
+witness `o` with the hypothesis `o - Z <= 255` (`w`'s type is u8) read at the
+commit. The binder becomes `i + 1`:
+
+```
+p0 = (sum + o) - 255*(i + 1)   =  sum + o - 255*i - 255
+H1 =  sum - 255*i                            (the statement AS WRITTEN, [IND-6])
+certificate: sigma(i) = H1
+  a = -255 on i, b = -255 on i, a*b > 0 -> p := 255*p0 - 255*H1 = 255*o - 65025 ; s := 255
+RELAX: cu(o) = 255  ->  C = 255*255 - 65025 = 0
+floor(0 / 255) = 0 <= 0   ->  verified
+```
+
+*Publication* `[IND-8]`: on the true header edge the state has S11's
+`binder < upper_capture`, `upper_capture = count` and the contract's
+`count <= 1000`, so `cu(i) = 999`; `sum` is solitary with `a = +1`, `r = -255*i`,
+`m = -254745`, so `sum - Z <= 254745` is published. On the false header edge
+`[ENT-5.X]` gives `binder = upper_capture = count <= 1000`, so `cu(i) = 1000` and
+the published constant is 255000 - a different constant on a different edge,
+computed by the same rule.
+
+*Consumer.* The obligation the program actually has is `sum +defined wide` at
+u32, and it discharges from `sum <= 254745` and `wide <= 255` because
+`254745 + 255 = 255000 <= max(u32)`. **That route is `[ENT-6.D]` and it does not
+exist today**: `L08_i2_consumer.wf` (compiled) supplies exactly those two bounds
+as a contract and still **rejects**. `[ENT-6.D]` (3.5.5) is a hard prerequisite
+of this example, not an optimization, and `L09` says the same for I3.
+
+**I3 - an accumulator bounded by a parameter product.** `s23_accum_param.wf`
+(compiled) rejects today with `[OP-2] residual: acc +defined factor`. The
+statement is `bound @step running: ile(acc, i * factor);` and the whole step is
+one cancellation:
+
+```
+p0 = (acc + factor) - (i + 1)*factor  =  acc - i*factor
+H1 =  acc - i*factor
+certificate: sigma(acc) = H1;  a = +1, b = +1  ->  p := p0 - H1 = 0 ; s := 1
+RELAX(0) = 0 ;  floor(0/1) = 0 <= 0   ->  verified
+```
+
+Note the monomial `i*factor` - a product of two non-constant terms, the thing
+`[ENT-2]` deliberately excludes from the fact language. It appears here only as a
+**column that cancels against itself**, and `[IND-8]` never publishes it: the
+projection publishes `acc - Z <= cu(i)*cu(factor)`, one constant.
+
+*The honest limit this example exposes.* `s23` as written has
+`requires ile(n, room)` with `room = len(deref(out))` unbounded, so
+`cu(i)*cu(factor)` is astronomical and the consumer still fails. **The statement
+gives the running bound; a constant ceiling still has to come from somewhere**,
+and here it must be a `requires ile(n, 1000_u64)` the writer adds. With it,
+`acc <= 999000` and `acc + factor <= 1000000 <= max(u32)` discharges under
+`[ENT-6.D]`. That extra `requires` is a real migration cost and it is also a real
+improvement to the contract: the function genuinely does overflow without it.
+
+**The separation that makes this construct small**, stated once because it is the
+design's central structural idea: **the statement is verified in a polynomial
+language and published in the difference-bound language.** The richer arithmetic
+lives inside one statement's own check and never enters the ambient fact state;
+`[ENT-2]` 2870 and 2901 are untouched; the head learns one difference bound. That
+is the shape the owner's I1 ruling names - *verify the given statement by
+substitute-and-compare over that statement's own terms, which never requires
+holding a three-term relation in the ambient fact state* - generalized from I1 to
+the whole family.
+
+#### 3.9.4 `[IND-10]` - the local statement, and I1
+
+The owner's I1 ruling shelves the two-law dilemma: buy no three-term ambient
+domain, restore no shape source, and examine instead the route where the writer
+**states** the fact and the checker verifies the given statement by
+substitute-and-compare over that statement's own terms. This is that route,
+drafted, with its normalizer power stated exactly and its residue priced.
+
+> **`[IND-10]` (the local statement).** An unlabelled `bound_stmt` is admitted as
+> an ordinary statement, subject to one restriction: **every term of its
+> statement polynomial must be committed within the same straight-line region as
+> the statement itself, by a commit `[IND-4]` admits, or be a place live and
+> uncommitted throughout that region.** A straight-line region is the maximal run
+> of statements ending at the `bound_stmt` and containing no branch, loop,
+> `match`, call boundary or region boundary. Any other statement is a hard error
+> citing `[IND-10]`.
+>
+> Its obligation is the statement polynomial with `[IND-4]`'s backward
+> substitution taken over that region alone - so the region bounds the
+> substitution, and no depth limit is needed - checked once by `[IND-7]` in the
+> closed state at the region's entry, extended by `[IND-4]`'s witness
+> hypotheses. There is no base and no step. Its projection `[IND-8]` is published
+> on its normal continuation, and `[IND-8.V]` applies unchanged.
+
+**The statement, and the program it stands in:**
+
+```whitefoot
+let span = hi -checked lo;      // Ok arm
+let half = span / 2_u64;
+let mid  = lo +checked half;    // Ok arm
+bound probe_inside: ilt(mid, hi);
+let probe = deref(table)[mid];
+```
+
+**The trace.** After substitution - `mid <- lo + half`, `half <- q` with the
+division witnesses `2q - span <= 0` and `span - 2q <= 1`, `span <- hi - lo`:
+
+```
+p0 = lo + q - hi + 1 <= 0
+H  = { 2q - hi + lo <= 0 , hi - lo - 2q <= 1 }      (division witnesses)
+     u { lo - hi <= -1 }                            (the loop's own settled test)
+elimination terms: q (a witness term, first), then hi, lo
+certificate: sigma(q) = the first witness, sigma(hi) = (lo - hi <= -1)
+  t = q  : a = +1, b = +2, a*b > 0 ->  p := 2*p0 - 1*H = lo - hi + 2 ; s := 2
+  t = hi : a = -1, b = -1, a*b > 0 ->  p := p - (lo - hi + 1) = 1 ; s := 2
+RELAX(1) = 1 ;  floor(1 / 2) = 0 <= 0   ->  verified
+```
+
+**So the normalizer power I1 needs, exactly, is three things beyond what I2, I3
+and I4 need**, and this is the answer the owner's ruling asked for:
+
+1. **the division witness** - `[IND-4]` clause (d)'s `a / k` for a literal
+   `k >= 1`, introducing one opaque term and two hypotheses;
+2. **elimination against ambient difference bounds**, not only against the
+   statement's own polynomial - the second step consumes `lo - hi <= -1`, which
+   is a bound over two terms *of the statement itself*, so no three-term ambient
+   relation is ever held;
+3. **integer tightening** - the final `floor(C / s)` with `s = 2`. Without it the
+   derivation is off by exactly one half and the statement is refused. This is
+   the whole content of *"an even window's midpoint is strictly inside it"*, and
+   no relaxation recovers it.
+
+**The cost.** All three are already inside `[IND-7]` as drafted for I2/I3/I4, so
+**I1's cost is not new machinery**; it is that the fragment must carry (2) and
+(3), which I2/I3/I4 alone would not have forced. In particular it costs **no new
+column on the operation table**: the competing design's exact algebraic
+denotation column (60-100 rows, each carrying a per-row correctness obligation
+that review must discharge, roughly doubling the image column's review load) is
+**not adopted**, and A22 is the adjudication.
+
+**The residue the route cannot check, and its price.** Two families survive:
+
+- **Interpolation search.** `mid = lo + (needle - lo_val)*(hi - lo)/(hi_val -
+  lo_val)` divides by a **term**. `[IND-4]` admits `a / k` only for a literal
+  `k`, because a term divisor's witness needs `k >= 1` from the state and its two
+  hypotheses are then degree 2 in the unknowns, which `[IND-7]` only relaxes.
+  **Refused by a stated rule with a diagnostic naming the divisor** - and it
+  **dissolves through the contract system instead**: give the scaling function an
+  `ensures ilt(result, span)` under `requires ilt(lo, hi)`, and the caller's
+  `mid < hi` follows from `lo + scaled < lo + span = hi` by the same
+  cancellation, now with the scaled term bounded by a published relation rather
+  than by an unfold. **The algebraic probes go to the declared statement, the
+  data-dependent probes go to an `ensures`, and nothing needs a shape rule.**
+  That sentence is the one that closes the door on `[ENT-3.S8]`'s restoration for
+  good, and it is the surviving contribution of the design A22 rejects.
+- **Ternary search** `lo + d/3` verifies (literal divisor); **galloping search**
+  needs no statement at all, because the honest program clamps the probe with
+  `imin(lo +checked step, top)` and the `imin` image publishes `r <= top`
+  directly.
+- **A probe that is neither** - a window advanced by a value read from the
+  buffer, with no helper function to carry a contract - has no route and goes to
+  `if`/`else` with the price of 3.12.
+
+**The price of routing I1 itself to `if`/`else`, measured.**
+`L11_bsearch_ifelse_price.wf` (compiled) is the binary search with the midpoint
+test written as an ordinary branch, and it **accepts today, with no rule at
+all**. The price has three parts and only the third is real: (1) one compare and
+one never-taken, perfectly-predicted branch per round - twenty extra branches on
+a million-element search, on values already in registers; (2) nothing at all in
+the fact state, since the branch is the *source* of the fact, so the checker gets
+stronger; (3) **the writer must invent a behaviour the program does not have** -
+what does a binary search do when its own midpoint is outside its own window?
+`break` is the least-bad answer and it is a lie about the program. The third part
+is the audit's own intent test, and it is the whole argument for `[IND-10]`.
+
+**Flagged decision D2** (section 9) puts that argument to the owner with both
+sides, because A23 removed three of `[IND-10]`'s four stated customers.
+
+#### 3.9.5 I4 - the counter and the trip count, and what it does not close
+
+The audit records I4 as irreducible and names it "induction of the kind P-LOOP is
+defined not to do". That is right about retention and wrong about the language
+this design proposes.
+
+**The audit's own witness is a wrong program.** `s13_matchcount.wf` allocates
+`data` and `out` at eight bytes each, counts the bytes equal to zero - all eight
+of them - and writes `out[hits]` with `hits = 8`. It is not merely undischarged;
+it is out of bounds, and no rule may accept it. The item survives its witness
+being repaired: `L24_matchcount_correct.wf` (compiled) sizes `out` at nine and
+still **rejects** with `[OP-4] residual: hits < len(out)`, and
+`L25_matchcount_loop_form.wf` (compiled) is the same count written as an ordinary
+`loop` and rejects identically.
+
+```whitefoot
+let data = buffer_new(8_u64, 0_u8);
+let out  = buffer_new(9_u64, 0_u8);
+let n = len(data);
+let hits = 0_u64;
+for @scan i in 0_u64..n {
+  bound @scan counted: ile(hits, i);
+  let value = data[i];
+  let is_target = ieq(value, 0_u8);
+  if is_target { set hits = hits +wrap 1_u64; }
+}
+set out[hits] = 1_u8;
+```
+
+*Base.* `hits = 0`, `binder = 0`: `0 - 0 <= 0`. Verified.
+*Step.* Two body paths. Matching path: substitute `hits <- hits + 1` - the
+`+wrap`'s side condition `[IND-4]` clause (b) requires is `hits - Z <= c1`,
+`1 <= c2`, `c1 + c2 <= max(u64)`, which the head state carries through the
+published `hits - i <= 0` together with `i < n <= max(u64)` - and `i <- i + 1`,
+giving `p0 = (hits + 1) - (i + 1) = hits - i`; the certificate cancels against
+the statement; `0 <= 0`. Non-matching path: `p0 = hits - (i + 1)`; cancel;
+`-1 <= 0`. Both are exactly the obligations `L05_i4_step.wf` and
+`L06_i4_step_skip.wf` (compiled) pose as contracts, and **today's checker accepts
+both**.
+*Publication.* `hits` is solitary with `a = +1` and `r = -i` is a single
+degree-1 monomial of opposite sign, so `hits - i <= 0` is published on both
+header edges.
+*Exit.* On the false header edge `[ENT-5.X]` applies, because the post-capture
+state derives `lower_capture - upper_capture <= 0` (`0 <= n`), and establishes
+`binder - upper_capture <= 0` beside the negated guard. `[ENT-5.P0]` then closes,
+**before** the binder and captures leave scope:
+
+```
+hits - binder          <= 0     [IND-8]
+binder - upper_capture <= 0     [ENT-5.X]
+upper_capture - n      <= 0     S11 preheader equality
+                         =>  hits - n <= 0     support {hits, n}, both still live
+```
+
+`n = len(data) = 8` and `len(out) = 9`, so `hits < len(out)` discharges at the
+continuation. **I4 is closed, with one written line, no runtime check, and no new
+fact-language power.** Everything it needed was named in the audit; what the
+audit lacked was the statement, and so `[ENT-5.X]` had no customer and looked
+withdrawable.
+
+**What is not closed, stated precisely** (A25). The headline must read: *I4 is
+closed for a counter that leaves its loop by the false header edge, or by a
+`break` taken before the counter's write on that path.* A `for` loop that
+`break`s **after** writing the counter reaches the continuation on an edge where
+`[IND-8]` published nothing - publication is on the two header edges and, for a
+`loop_stmt`, the body-entry edge, never mid-body - and where the write has killed
+the head fact. The `loop`-form variant needs no `[ENT-5.X]` at all, because its
+exit test is a source `if` and S1 supplies `at >= n` on the break edge, but it
+does need retention to carry the published bound across the head, which is
+`[ENT-5.R3]`'s `B(@l)` term. And a count whose relation to the binder the writer
+cannot state in `affine` - a count that advances by a value read from the data,
+with no bound of its own - is still unreachable, **correctly**: there is no true
+statement to write.
+
+#### 3.9.6 The interface obligations, checked
+
+The core part of the batch set six obligations any loop design must satisfy or it
+re-opens something the deletion closed. All six hold:
+
+| # | obligation | where it is satisfied |
+| --- | --- | --- |
+| L1 | the statement is verified, never trusted | `[IND-1]`: an undischarged obligation is a hard error. `[ENT-3]` 2910 becomes "no **unverified** writer-stated or inferred loop induction exists", so the trusted-assertion class stays empty and W3 stays literally true |
+| L2 | the statement creates no runtime site | `[IND-1]`: no instruction, no retained check, empty `[EFF-2]` row, no `[GIVE-1]` delivery |
+| L3 | the statement needs no locality gate | by omission, and it is the largest simplification the deletion buys. `[CLM-1]` 2742's apparatus existed because a claim was *trusted*; a verified statement cannot smuggle anything, so `[ENT-6]`'s claim-authority block stays deleted |
+| L4 | a redundant statement is never an error | `[IND-9]`, and section 2.10's asymmetry |
+| L5 | retention keeps the easy loops annotation-free | `[ENT-5.R]`; a statement is never *required* where retention suffices, and 3.6.5's four worked loops carry no statement |
+| L6 | the statement is about the loop, not about a place | `[IND-2]`'s position rule and `[IND-3]`'s grammar: it states the loop's running bound, base plus step, both ordinary `[ENT-4]` queries under `[IND-7]` |
+
+**And the sentence the batch was missing:** a `bound_stmt`'s status against T3's
+warning clause. T3 warns that "a future construct admitting claim-like predicates
+that are not reviewed always-true lemmas - assertions, expected failures,
+unreviewed conditions - is outside this theorem until the derivation is redone
+against it". **A `bound_stmt` is verified by `[IND-5]` and `[IND-6]` before it is
+a fact, is erased before lowering, and can fail only at compile time; it is
+therefore not a claim-like predicate and does not reopen the derivation.**
+Section 5 carries that sentence into T3 itself.
+
+#### 3.9.7 Falsifiers for `[IND]`
+
+**F-I1 (the fragment verifies what it claims to).** Implement `[IND-7]` against
+the traces of 3.9.3, 3.9.4 and 3.9.5, plus the counted ipv4 restructure of 4.4.
+*Refuted if* any needs a hypothesis the rule does not name, a fifth elimination
+term, or a certificate outside the space. This is the experiment that must be run
+before the text is fixed.
+
+**F-I2 (monotonicity is real).** Take any verified statement, add a row image to
+the checker, and re-verify. *Refuted if* any statement moves from verified to
+refused. Under the certificate form this is impossible by the argument in 3.9.1;
+under the drafted greedy rule it happens, and A4's three-term construction is the
+seed.
+
+**F-I3 (the frame repair is complete).** Re-run A16's and A2's programs under
+`[IND-6]`. *Refuted if* either verifies. Then generalize: for every accepted
+program with a `bound_stmt`, check that the published projection is true at every
+head visit, as a compiler assertion in a debug mode. **This is the only assertion
+in the design that would catch a frame error I have not thought of, and it should
+be built.**
+
+**F-I4 (the path cap is not binding).** *Refuted if* any program in
+`tests/programs/` or the blind-writer corpus has a loop body with more than 64
+paths carrying a bound the writer would state. Count paths statically.
+
+**F-I5 (the notation survives contact with a writer).** Give the labelled
+`bound_stmt` and the three-tier redirect of 3.12 to a blind writer under the
+`0098`/`0100` protocol, with no explanation of the prover. *Refuted if* the
+writer states bounds the checker refuses more often than they hit any other wall,
+or if they reach for the statement where retention would have sufficed and find
+the experience worse than writing nothing. **This is the only falsifier in the
+design that tests the notation rather than a rule, and it is the one the intent
+test actually turns on.**
+
+### 3.10 The contract system
+
+#### 3.10.1 The diagnosis, and the mechanism it says is not needed
+
+Two statement sequences, byte for byte the same, one inside a loop and one not:
+
+```whitefoot
+set at = step(at: at, room: room);   // step: requires ilt(at, room)
+let byte = data[at];                 //       ensures ilt(result, room)
+```
+
+Outside a loop this compiles, twice in a row (`c23`, compiled). Inside a `loop`,
+the identical pair is refused - `[FN-8] UndischargedCallRequirement ilt(at,
+room)` (`c09`, compiled) - and if the call is deleted the subscript is refused on
+its own (`c08`, compiled). **The boundary already publishes the inductive step,
+on the exact commit event a loop body uses, by a route the specification already
+wrote** (`[FN-9]` 1334's narrow set-receiver route). What fails is not the
+contract; it is that a loop head subtracts the fact before the body can re-derive
+it. So the contract-side answer to the audit's iteration-20 is **no new contract
+mechanism at all**, and the interface is written instead of a second machine:
+
+> **`[FN-9.L1]` (contract facts are ordinary retention candidates).** An
+> `[ENT-3.S12]` or `[FN-10.E]` relation established on a value-commit edge is an
+> ordinary fact of the state at that edge. It is subtracted at a loop head by the
+> same rule as any other fact, is a retention candidate under the same condition,
+> and is re-derived at a back edge exactly when its establishing call occurs on
+> that edge and every one of its supports is live there. No rule gives a contract
+> fact a longer life at a loop head than an operation image with the same
+> support, and none gives it a shorter one. A verified `bound_stmt`'s projection
+> is subject to the same sentence, in every proof view `[IND-8.V]`.
+
+The last clause is A9's twin, added here so the two publishers cannot drift
+apart at the seam. The rest is deliberately a *non*-rule, and two consequences
+are worth writing down: a contract fact is never invented at a head, because
+retention never invents a bound that did not hold before the loop, so an
+`ensures` whose fact is false before the first iteration is not rescued; and
+`[ENT-5.P0]` is load-bearing for contracts specifically, because a contract
+fact's support routinely includes a `region`-scoped borrow actual and today's
+checker kills before it closes.
+
+#### 3.10.2 The requires side, kept verbatim
+
+`[FN-8]`'s requires machinery is the healthiest thing in this area and this
+design keeps it. Four properties earn that: the clause is an arbitrary total pure
+`own Bool` rather than a comparison root, so `.defined` queries, named-const
+predicates and any pure total row are already admitted (1233-1234); substitution
+is caller-side and pre-transfer, each formal replaced by that actual's value image
+in the same unchanged state, every goal judged independently, so there is no state
+accumulation to make order matter (1244-1247); entry is S4 and nothing else, with
+no executable prologue and no optimizer license (1252-1254); and a contradictory
+entry state is legal and is metadata (1257-1263).
+
+**All 131 `requires` clauses in the tree keep their exact meaning and need no
+edit.** One compiler defect is filed rather than specified: `define here = r.at;`
+is refused `[FN-8] InvalidRequires` (`c10`, compiled) while the identical
+projection written inline as `requires ile(want, r.at);` is admitted (`c11`,
+compiled). 1233 admits non-consuming datums, a field selection on a parameter is
+one, and 1238 explicitly retains field and `deref` projections on a formal datum.
+Nothing in `[FN-8]` excludes it. **File it against the compiler; write no spec
+text.**
+
+**`requires` is the language's disjunction, and that becomes teaching.** The
+audit dissolves the convex-join family by factoring a correlated body into a
+function whose `requires` *is* the correlation, so each call site instantiates
+its own concrete pair (`s20`, `s21`, compiled, body written once). With `claim`
+gone this is the writer's only route for a two-armed correlation, so it is taught
+rather than discovered: one line in `docs/patterns.md` and one clause in
+`[DIAG-1]`'s `[OP-4]` fix text (6.2). No rule; the machinery exists. It passes
+the intent test because the writer wanted to say *"this body works whenever the
+budget fits the buffer"*, and the body was going to be a function the moment it
+appeared under two arms.
+
+#### 3.10.3 The `ensures` overhaul
+
+Three refusals, all compiled, describe the largest single hole on the boundary:
+
+```whitefoot
+ensures ieq(len(result), n);            // c01: [GRAM-9] parse error at `len(`
+ensures ile(result.stop, room);         // c05: [FN-9] InvalidPostconditionSelector
+ensures when Ok(value: made): ieq(made, want);   // c06: same, routed
+```
+
+The cause is `[FN-9]` 1276: "An unrouted clause is admitted only when the written
+result is `own T` and T is one `[ENT-2]` fragment integer", and its routed twin
+at 1278. **Every factory, every allocator, every parser that returns a span, and
+every fallible version of any of them is outside the contract language.**
+
+> **`[GRAM-9.C1]` (contract length atom).** Inside a `contract_block`, the atom
+> production additionally admits `len` applied to one admitted contract place - a
+> formal datum with field and `deref` projections, an earlier `contract_define`
+> binder, or an `[FN-9]` result or `[FN-10]` written datum so projected - at
+> array, slice or buffer type. No other operation-table row and no user or system
+> call becomes an atom there; the existing mechanical fix continues to name
+> `contract_define` for every other inner call.
+
+This is **required**, not optional: `result` is not in the definition scope
+(1231), so no `contract_define` can bind `len(result)`, and `c01` and `c03` die
+at the same parse offset. The widened datum is unspellable without it. `len` is
+not an ordinary call - spec 802 already carves its operand out by name - so the
+carve-out is narrow and precedented.
+
+> **`[FN-9.E1]` (admitted result datum).** An unrouted `ensures_clause` is
+> admitted when the written result is `own T` for T an `[ENT-2]` fragment
+> integer, `own K` for a struct nominal K, `own buffer<T>`, `own array<T, N>`, or
+> `own slice<'r, T>`, after concrete `[FN-2]` substitution. Its symbolic
+> whole-result datum is the header `result_binding`.
+>
+> A routed clause is admitted as exact `when Ok(value: r):` for written result
+> `own Result<T, E>` where **T is any type this paragraph admits unrouted**, and
+> r is that clause's fresh symbolic payload datum. Route owner, variant, field
+> and freshness admission are unchanged.
+>
+> A **contract datum** is the clause's result datum, a formal parameter datum, or
+> an `[FN-10]` written datum, in each case carrying zero or more field-selection
+> and `deref` projections. A contract datum is an admitted clause **operand**
+> when its finally selected type is an `[ENT-2]` fragment integer, or when it is
+> written `len(D)` for a contract datum D whose finally selected type is an
+> array, slice or buffer type. Borrow-mode results, float results, whole-`Result`
+> datums, non-`Ok` routes and nested-payload routes remain legal ordinary results
+> and supply no relation datum in this version.
+
+Three things this does that the audit's N2 does not. It admits `array` and
+`slice` as well as struct and buffer, because a rule that admits `len(D)` for a
+buffer field and refuses it for an array one makes a reader memorise which
+containers may be measured. It makes result, parameter and written datums **one
+notion** with one projection rule and one `len` rule, which removes a case table
+instead of mirroring one, and which is what makes
+`ensures ile(result.start, result.stop)` fall out with no extra sentence. And it
+routes the payload through the same admission - *T is any type this paragraph
+admits unrouted* - which makes the audit's amendment mechanical rather than a
+promise.
+
+> **`[FN-9.E2]` (clause relation).** After recursively alpha-expanding every
+> shared `contract_define`, the clause expression must have exact type `own Bool`
+> and its root must be exactly one of `ieq`, `ine`, `ilt`, `ile`, `igt`, `ige`.
+> Both operands must be an admitted clause operand `[FN-9.E1]`, a named const, or
+> a typed integer literal, and at least one operand must contain that clause's
+> result datum or, in an `[FN-10]` clause, its written datum. No proof-required
+> exact operation, computed arithmetic result, subscript, ephemeral actual,
+> Boolean connective, or body local becomes a relation term. The comparison
+> normalizes to one finite L0 RelationTemplate; equality's two bounds remain one
+> relation occurrence.
+>
+> *Note on origin.* A specification-fixed operation contract `[SYS-8]` may state
+> a relation this fragment's vocabulary cannot verify, because it is an axiom
+> about a trusted implementation. A user `ensures` states only what `[FN-9]`
+> verifies from the callee's own body in this fragment. The two are the same kind
+> of published fact held to different standards of origin, and a user contract is
+> never widened to match an axiom.
+
+**No Boolean connective**, deliberately and permanently recorded so it is not
+re-proposed: a conjunction is two clauses (`c21`, compiled, both published), and
+1287's "one finite L0 RelationTemplate" is what makes `[FN-9]`'s per-clause
+independence, per-view aggregate and diagnostic `conjunct` ordinal work. A
+*disjunction* is what the language genuinely lacks, and 3.10.2's per-call-site
+instantiation answers it without a connective the fact state cannot hold.
+
+**Entry images are kept and their diagnostic is repaired.** `c22` (compiled)
+shows `ensures ile(result, n);` over a body that writes `n` reported as
+`relation: "n - n <= 0", Unproved` - a tautology reported as unproved, because
+the entry image and the live place share a spelling. The rule is right; an
+`ensures` that silently switched to the exit value of a written parameter would
+change what existing contracts mean. The **rendering** is the defect:
+
+> **`[DIAG-2.E1]`** When an `[FN-9]` or `[FN-10]` relation is unproved because a
+> referenced parameter entry image is unavailable, the payload names that
+> parameter, its ordinal, and the NodePath of the first structural edge whose
+> `[ENT-5]` kill overlapped it, and renders the entry image with the fixed prefix
+> `entry ` in the relation text. The mechanical fix is: bind the entry value
+> before the first write, or restate the clause over a value the body does not
+> write.
+
+**No `entry(...)` spelling is added.** A bare parameter datum already means the
+entry image everywhere, and an explicit synonym would immediately raise the
+question of what a bare datum means in a clause that also has an exit datum - the
+exact ambiguity `[FN-10]` is built to avoid. A24's attack on this rule failed:
+`j1_uniq_len_entry_image.wf` (compiled) **rejects in the callee** when a function
+publishes `ilt(result, len(deref(data)))` and then shrinks the buffer through
+`&uniq`, because 1300 kills the entry image on the first overlapping kill.
+`[FN-9.E1]`'s widening does not reopen it, because `len(D)` for a parameter datum
+obeys the same rule.
+
+#### 3.10.4 The three establishment routes, made consistent
+
+A verified clause is worth nothing until it lands in the caller's state, and
+1330-1339 fixes four routes to do that. Three are broken and each repair is one
+list item.
+
+> **`[FN-9.E4.a]`** Strike `propagated` from the exclusion list at 1331. A
+> `propagate` over an ordinary user call establishes that call's matching
+> verified relations on the normal continuation binding of its
+> `propagate_let_rhs`, with the `[ERR-3]` `Ok` payload as the result datum. The
+> `Err` edge leaves the function and establishes nothing.
+>
+> **`[FN-9.E4.b]`** 1335's first-statement `set outer = payload;` route applies
+> under exactly 1334's conditions on the destination: `outer` is a live bare own
+> place of the exact payload type, and a relation may substitute the payload with
+> post-write `outer` only when it omits the formal supplied by `outer`, if any,
+> and all other supports remain live and disjoint `[OWN-7]`. **Whether `outer`
+> also appeared as an actual of that call is not read.**
+>
+> **`[FN-9.E4.c]`** Delete `projected` from 1336's exclusion list. P may be any
+> live `[ENT-2]` term place of the exact result type formed with field-selection
+> and `deref` projections and no subscript suffix. Every other condition of 1334
+> is unchanged, including `[OWN-7]` disjointness, which is what keeps
+> `set r.at = f(..., room: len(r.data))` sound.
+
+Each has a compiled separating pair: `c17` (rejects, `propagate` drops the
+summary) against `c18` (accepts, the same call spelled `match`); the audit's
+`r12b`/`r12d` for the arm-set route; and `r13a` for P-PROJ, whose aliasing attack
+failed in the callee because a function cannot prove an `ensures` over a
+parameter length it has just invalidated. Together they make one sentence true
+that is false today: **a verified relation is delivered on every commit event
+that commits the call's value, whatever the spelling of the commit** - which is
+3.4's rule for operation images applied to the boundary. `[FN-9.E4.a]` is the
+difference between a growable-vector module compiling and not:
+`tests/programs/growable_vec.wf` propagates on lines 16 and 28.
+
+#### 3.10.5 `[FN-10]` - the write postcondition
+
+The hole, compiled twice. A callee that writes through `&uniq` kills the caller's
+fact and publishes nothing in its place (`c14`, compiled, rejects
+`cursor < len(values)`), and the obvious repair is not available either, because
+`own unit` is not a fragment integer so `[FN-9]` will not look at the clause
+(`c20`, compiled, `InvalidPostconditionSelector` at the *result binding*). Under
+`claim` this program was accepted through `[ENT-6]` 3241-3243's `&uniq`
+carve-out, which the deletion removes; with the carve-out gone the program simply
+fails. **Every surveyed tradition names publishing on the boundary as the answer
+here, and Whitefoot is the one that cannot spell it.**
+
+Three spellings were considered and two rejected for the same reason - both make
+one spelling mean two things depending on context. A bare `deref(slot)` meaning
+the exit image flips a spelling that means the entry image everywhere else, and a
+second implementation would have to index the meaning by the `[EFF-2]` `writes`
+row. A `final(P)` datum former puts two datum vocabularies in one clause and
+invites `ieq(final(a), final(b))`, a relation between two exit images that no
+`[ENT-5]` kill ordering makes well-defined. The chosen spelling is a **clause
+route**, mirroring `when Ok(value: r):` - the same production with a place where
+the variant was.
+
+> **`[FN-10]` (write postcondition).** An `ensures_clause` may carry a **write
+> route** in place of a `when` result route:
+>
+> ```wf-ebnf
+> ensures_clause := "ensures" ( "when" result_route ":" | write_route ":" )? expr ";"
+> write_route    := "wrote" "(" place ":" IDENT ")"
+> ```
+>
+> `place` is the ordinary place production, so a write place is spelled exactly
+> as in a body or in an `[EFF-2]` `writes` row - `deref(slot)`, `deref(r).start`,
+> `s.buf` - with no new syntax and no subscript suffix.
+>
+> **`[FN-10.A]` (admission).** The clause is admitted only when all of: (a) the
+> place resolves to one declared formal parameter of `&uniq` mode carrying
+> field-selection and `deref` projections; (b) its complete projected occurrence
+> appears in this function's declared `[EFF-2]` `writes` row - a clause about a
+> place the function does not write is either dead or a lie about `[EFF-2]`, and
+> both deserve a diagnostic at the declaration; (c) its finally selected type is
+> an `[ENT-2]` fragment integer or an array, slice or buffer type; (d) **every
+> operand of the clause other than the written datum is a term the call cannot
+> disturb** - a formal parameter datum whose place is not in the `writes` row, a
+> `len` of such a datum, a named const, or a literal; and (e) no two write-routed
+> clauses of one function have `[OWN-7]`-overlapping places. The IDENT is that
+> clause's fresh symbolic **written datum**, denoting the value of that place on
+> the function's normal return; it obeys the `ReservedLowerNames` discipline of
+> spec line 804 exactly as a result-route payload binder does. The header
+> `result_binding` is unavailable in a write-routed clause.
+>
+> **`[FN-10.V]` (verification).** A write-routed clause selects **every** return
+> of the function - every `return` of any variant whose edge is a normal return,
+> and the fallthrough when the result type admits one - and every propagated
+> error exit. At each selected return, after ordinary return typing, obligations,
+> calls, effects and pre-return kills, the written datum evaluates to the
+> `[ENT-2]` term or constant naming that place's current value, and the relation
+> is queried immediately before return transfer and edge cleanup, in the fixed
+> complete-then-B view order. If the place's term is not live at that return it
+> was moved out, or its root was killed and not rewritten - the relation is
+> unproved at that return, and the payload names the killing edge `[DIAG-2.E1]`.
+>
+> **`[FN-10.E]` (establishment).** At an ordinary call c satisfying `A0(c)`, and
+> after transfer, consumes, borrow commits, callee-effect kills and target kills,
+> each verified write-routed relation of the callee is established with its
+> written datum replaced by the caller's resolved place for that actual's
+> write-place projection, and each referenced formal replaced by its ordinary
+> pre-transfer actual image. Establishment is subject to the `M(c,q)` conditions
+> 1327 already fixes. A relation whose substitution leaves a non-`[ENT-2]`
+> operand establishes nothing, and only that relation is lost.
+>
+> **`[FN-10.K]` (the kill/publish seam).** The callee-effect kill of `[ENT-5]`
+> 3066(b) runs first and unchanged; `[FN-10.E]` then establishes onto the killed
+> places, under `[ENT-5.P0]` clause (1). The published relation therefore never
+> coexists with a stale fact about the same place, and a place the callee's
+> `[EFF-2]` projection does not reach is neither killed nor published about.
+
+**Clause (a)-(c) and `[FN-10.E]`/`[FN-10.K]` are the drafted rule. Clauses (d)
+and (e) and the word "every" in `[FN-10.V]` are this design's repairs**, and each
+closes a break:
+
+- **(d) is A7.** The drafted flagship clause
+  `ensures wrote(deref(at): next): ige(next, deref(at));` - *"I never move the
+  cursor backwards"* - cannot be established at the caller, because the formal
+  `deref(at)` and the written datum resolve to the **same caller place**, whose
+  pre-transfer image is dead by the time `[FN-10.K]` establishes, and `[ENT-2]`
+  gives the caller no snapshot term. The relation either fails `M(c,q)` or
+  substitutes to `cursor - cursor <= 0`, the exact tautology `[DIAG-2.E1]`
+  diagnoses. Clause (d) refuses that clause **at admission**, where the writer can
+  see why. The sentence it costs the language is real and it is flagged decision
+  D6, whose answer is a caller-side snapshot term with its own kill rule.
+- **(e) is A12**, and it takes the drafted rule's own author's recommendation:
+  two write clauses whose places overlap are a writer error, not a checker limit,
+  so they are refused at declaration rather than silently losing establishment at
+  every call. The drafted silent-loss tie-break is the one place in that design
+  where an ordinary program loses a fact it looks like it should have, which is
+  exactly the failure mode section 6's token apparatus exists to make legible.
+- **"every return" is A18**, and it is a memory-unsafety repair. The drafted rule
+  selected only normal `Ok`-shaped returns while `[FN-10.E]` establishes on the
+  call's single normal continuation edge, whatever variant the callee returned;
+  a callee that returns `Err` having left the place at 99 then publishes
+  `cursor < 4` at a caller who reads 95 bytes past a four-byte buffer.
+  `j2_fn10_err_hole_shape.wf` (compiled) is that program minus the clause,
+  rejecting on exactly `cursor < len(values)`. Selecting every return costs one
+  word and rejects the bad callee, which is right, because it really does leave
+  the place at 99. **Composing the write route with an outcome route
+  (`ensures when Ok(...) wrote(P: w): ...`) is the recorded widening**, not the
+  v0.40 rule; it is more expressive and costs a second route production.
+
+**Worked example - the H3 program, repaired** *(reading; `[FN-10]` does not
+exist)*:
+
+```whitefoot
+fn fill['s](slot: &uniq 's u64) -> result: own unit writes(slot) contract {
+  ensures wrote(deref(slot): written): ilt(written, 4_u64);
+} {
+  set deref(slot) = 2_u64;
+  return unit;                      // written = 2, `2 < 4` discharges
+}
+
+fn read(values: own array<u8, 4>) -> result: own u8 pure {
+  let cursor = 0_u64;
+  region 'w { let done = fill<'w>(slot: &uniq 'w cursor); }
+  //  kill (b) removes `cursor = 0`; FN-10.E then establishes `cursor < 4`
+  return values[cursor];            // discharged: len(values) = 4 from its type
+}
+```
+
+Compare `c14` (the same program without the clause, refused) and `c15` (the same
+program repaired by a runtime branch, accepted). `[FN-10]` is the third answer:
+no branch, no claim, and the callee is the one that had to prove it. A callee
+that must write two correlated places writes two clauses over disjoint places;
+the audit's alternative - return one struct and commit its fields, which
+`[FN-9.E1]` and `[FN-9.E4.c]` now make possible - still exists and is often
+better, and `[FN-10]` covers the case where the writer does not want to change
+the signature, which is the ordinary systems shape and the one
+`tests/programs/byte_string.wf` writes eleven times.
+
+**What `[FN-10]` cannot do, deliberately.** It states no element property - a
+write place's finally selected type may be a container, but only so `len(written)`
+is expressible; there is no term for an element and `[FN-10]` adds none (that is
+I5). It states nothing about a place the `writes` row does not reach, so
+`[EFF-2]` remains the single description of what a callee touches. It never
+speaks about an unchecked world value: `[FN-10]` publishes a relation the callee
+**proved**, and a callee cannot prove a relation about a byte the host chose. And
+it grants no aliasing licence: `[FN-10.E]`'s `[OWN-7]` conditions are 1327's,
+unchanged, and the callee's own `[FN-10.V]` query runs after its own kills.
+
+**The soundness bill, restated correctly.** `[FN-10]` is the one construct in
+this design that adds a new establishment event, so it carries the only real
+soundness obligation here, and the drafted bill mis-stated it. Three properties
+discharge it: the relation was verified in the callee **at every return that
+reaches the call's normal continuation** (A18's repair is exactly the gap between
+*selected* and *reached*, and no pre-existing rule closed it because no
+pre-existing rule publishes on an ungated edge); the set of places it can publish
+about is exactly the set `[EFF-2]` declares and `[ENT-5]` 3066(b) kills, so no
+stale fact survives; and the substitution is the pre-transfer actual resolution
+`[FN-8]` 1244 already performs, run in the opposite direction. The residual risk
+is the `[FN-10.K]` seam and its falsifier is F-C3.
+
+#### 3.10.6 `[FN-8]` / `[FN-9]` / `[FN-10]` unification
+
+Three rules now describe one construct and would duplicate machinery: both
+`[FN-9]` and `[FN-10]` need the datum grammar, the entry-image rule, the
+selected-return walk, the per-view aggregate and the SCC publication, and
+`[FN-8]` and `[FN-9]` both need the contract-expression judgment and
+`contract_define`'s alpha-expansion.
+
+**Keep the numbers; factor the shared text once.** `[FN-8]` gains a leading
+**contract surface** paragraph fixing, in one place, the definition scope and
+`contract_define` erasure (1231, 1235), the pure/total/non-consuming
+contract-expression judgment (1232-1234), the contract-datum grammar
+(`[FN-9.E1]`, plus 1285's operand list), the entry-image rule (1298-1301), and the
+reserved-name discipline (804). `[FN-9]` keeps routes, selected returns and S12
+establishment; `[FN-8]` keeps GoalTemplates, call-site substitution and S4 entry;
+`[FN-10]` is the write route, its selected returns and its establishment - about
+eighteen lines instead of the fifty a self-contained copy would need.
+
+Collapsing all three into one rule id is rejected, and the reason is the
+repository's own: *never relocate a load-bearing path merely for tidiness*, and a
+rule id is the most load-bearing path in this project - it appears in diagnostics
+a writer reads, in conformance case names, and in append-only approval records.
+`[FN-9]` is cited at 20-plus specification lines and in every `fn9-*` case.
+
+#### 3.10.7 The judgment, as an algorithm
+
+```
+A1  parse: contract_define* requires_clause* ensures_clause*      [GRAM-9, +C1]
+A2  for each contract_define in source order: resolve in the definition scope;
+      reject unless every datum is non-consuming and every row pure and total;
+      record it; it is erased by alpha-expansion, never evaluated
+A3  for each requires_clause: alpha-expand; require exact own Bool;
+      form one GoalTemplate; occurrence = (instance, clause NodePath)
+A4  for each ensures_clause: classify route BEFORE lexical resolution of the
+      clause expression, as 1641 already fixes for `when`;
+      admit the datum (E1 for result and payload, FN-10.A for the write place);
+      admit the relation (E2); form one RelationTemplate
+A5  reject an empty block, and a block with defines only                 [1229]
+
+V1  establish every requires GoalTemplate at body entry, independently,
+      in source order, as [ENT-3] S4                                     [1252]
+V2  close; a contradiction makes the instance Uninhabited (metadata)     [1257]
+V3  for each ensures clause in source order:
+      selected-return set:  unrouted -> every explicit return            [1289]
+                            when Ok  -> every direct canonical Ok return [1290]
+                            wrote    -> EVERY return                     [FN-10.V]
+      reject an empty set for an inhabited instance                      [1293]
+      for each selected return in NodePath order: ordinary typing, obligations,
+        calls, effects, kills; bind the datum; query complete, then B
+V4  publish the instance's summaries atomically, per SCC, only on total
+      complete success of every clause of every inhabited instance       [1310]
+
+C1  A0(c): resolution, instantiation, named arguments, exact types, borrow
+      feasibility, every actual-expression obligation, exact formal
+      substitution - in that order, at one pre-transfer point            [1319]
+C2  for each requires GoalTemplate in source order: substitute each formal with
+      that actual's value image in the SAME unchanged state; judge
+      independently; the first refuted or unproved clause owns the rejection
+C3  ordinary transfer, consumes, borrow commits, callee-effect kills, target kills
+C4  for each verified relation q, test M(c,q); establish each q that passes,
+      on the routes of 3.10.4 and [FN-10.E]
+C5  the edge order of [ENT-5.P0]
+```
+
+**Two views, not three** (A11). C2 judges each goal in one state no earlier goal
+modified, so clause order changes nothing; C4's tests are per-relation and
+independent; `[FN-10.A]` clause (e) removed the last order-sensitivity by
+rejecting overlapping write clauses at declaration. Two implementations that
+agree on the fact state before C1 agree on it after C5.
+
+#### 3.10.8 Falsifiers
+
+**F-C1 (the interface claim).** *Claim:* retention alone closes the
+`ensures`-as-inductive-step family with no contract change. *Experiment:*
+implement `[ENT-5.R]` and run `c08`/`c09` unmodified. *Refuted if* either still
+rejects. **The cheapest and most important falsifier in this section**, because
+`c23` already compiles the step in straight-line code, so the prediction is
+narrow.
+
+**F-C2 (the `[FN-9.E1]` reach claim).** Write the `make`/`use_it` factory pair
+and compile. *Refuted if* the `ensures` verifies in the callee but does not
+establish `len(data) = n` on the caller's `Ok` arm, which would mean 1332's
+payload route does not carry a `len` term.
+
+**F-C3 (the `[FN-10]` ordering claim).** Give every `writes`-carrying function in
+`tests/programs` a trivially true write clause, recompile, and diff the accepted
+set. *Refuted if* any program's acceptance changes on a statement whose
+obligation is not about the written place. Eleven `byte_string.wf` sites plus the
+deflate module.
+
+**F-C4 (zero forced edits).** *Refuted if* any of the tree's 131 `requires` or 27
+`ensures` clauses moves verdict. **Free - it is `make check`.**
+
+### 3.11 The boundary and the world
+
+#### 3.11.1 `[ENT-3.S10]`, generalised - with both restorations
+
+Today S10 imports two of `[SYS-8]`'s seven relations for five named operations
+and leaves the rest as "retained checked-program facts" (2990). Keeping two and
+withholding five is the accreting list on the world side. The generalisation is
+carried forward from the 0106 design with **three sentences the drafted version
+lost or never had** (A10, A21, S3).
+
+> **`[ENT-3.S10]` (specification-fixed operation contracts).** For a `match_stmt`
+> or `value_match` whose scrutinee is a call to a `[SYS-2]` operation, or a bare
+> IDENT naming a `let` binding of that call's outcome type under the existing
+> no-kill, no-`set` path discipline: at each arm's entry establish every relation
+> `[SYS-8]` fixes for that arm's outcome, with each declared parameter read as
+> its exact actual term or constant.
+>
+> **Projection.** A relation is established exactly when its normalized form is a
+> finite set of `[ENT-2]` atomic facts under 2901. A relation of higher arity
+> establishes exactly the atomic facts obtained by folding every operand that is
+> a constant, and nothing else; where no such fact remains it establishes
+> nothing. In particular `next = start + required` establishes
+> `next - start <= c` and `start - next <= -c` when `required` is a constant `c`,
+> and the empty set otherwise. A relation whose substitution leaves a
+> non-`[ENT-2]` operand establishes nothing.
+>
+> **Provenance.** Every relation this source establishes carries, in each result
+> term's `[PRV-1]` dependency, the dependencies of every actual the relation
+> names, so this source never launders an external actual into an internal
+> result.
+>
+> **Enumeration.** Each `[SYS-8]` contract's admitted projection is enumerated
+> beside that contract, in the same change that writes it, exactly as an
+> operation row's image is `[ENT-3.S5]`; a contract with no admitted projection
+> says so explicitly. These facts carry the trust class of a declared operation
+> contract, never a writer statement.
+
+**The projection sentence is A10.** Spec 2577 fixes `next = start + required` for
+`host_copy_bytes`, a three-term relation `[ENT-2]` 2901 cannot hold, and the
+escape clause does not reach it: its operands are all perfectly good terms - it
+is the **arity** that is wrong. Without this sentence the rule instructs a
+conforming implementation to establish a fact its own fact language cannot hold,
+and each implementation invents its own projection.
+
+**The provenance sentence is A21**, and it is a restoration. Spec 2988 reads
+"Each result endpoint's `[PRV-1]` dependency additionally includes the concrete
+start actual, so this relation never launders an external start into an internal
+result", and the drafted replacement has four sentences and that is not one -
+because the check was made against `[SYS-8]`'s contract list rather than against
+the sentence being replaced. With it gone, the endpoint the **host** chose no
+longer inherits the external provenance of `start`, `[PRV-3]` partitions it as an
+*internal* subject, `[PRV-2]`'s bridge demand never fires, and an external value
+reaches a protected leaf with no real branch. That is precisely the fence the
+world-value story leans on (`t13a`/`t13b`, compiled) - and the same edit
+**triples the surface it protects**, from five operations to every `[SYS-2]`
+operation and from two relations to seven. Restoring it generalized, to every
+actual the relation names, is the minimum.
+
+**The enumeration sentence is S3.** The widening from five named operations to
+every `[SYS-2]` operation is a second change wearing the same sentence and is
+argued nowhere; the enumeration obligation is what makes it safe, because
+otherwise one accreting list is replaced by an unenumerated one.
+
+#### 3.11.2 `[ENT-3.S10.W]` - the world-values refusal, as a rule
+
+Three of `[SYS-8]`'s sentences are about **bytes**, not endpoints: "On
+`ReadBytes(next)` exactly `[start, next)` may have changed", "`[start, next)` is
+the portable entry-record prefix holding exactly `entries` complete records", and
+the unchanged-buffer clauses. Those are permission and content facts, and the
+generalisation must not be read as importing them.
+
+> **`[ENT-3.S10.W]`** A `[SYS-8]` sentence about which bytes of a buffer may have
+> changed, or about the content of a byte range, establishes no `[ENT-2]` fact.
+> It constrains the operation's permitted behaviour and is consumed by `[EFF-2]`
+> and `[OWN-7]`, not by the fact state. **No construct states a relation about a
+> value a host produced except by executing a comparison on it.**
+
+That last sentence makes the owner's world-value ruling a rule rather than a
+discipline, and it is the only place in the design where the ruling needs text.
+Everything else enforces it structurally: `[FN-9]` verifies from the callee's own
+body, `[FN-10.V]` verifies in the callee against its own kills, `[IND]` verifies
+base and step, and `[PRV-3]` refuses an external subject that reaches a protected
+operation without a real branch.
+
+**Compiled, both halves.** `t13a_world_branch.wf` (= the tree's
+`prv3-pos-external-branch.wf`, **accepts**) discharges a subscript whose index is
+an external `args_count` result by an ordinary `ilt` guard with an honest exit on
+the false edge. `t13b_world_claim.wf` (= `prv3-neg-external-claim.wf`, **rejects
+`[PRV-3]` ExternalProtectedSubject**) is the same program written with a claim.
+After the deletion the second program does not exist and the first is the only
+spelling. And `y4_systemrange_guard.wf` (**accepts**, compiled) is the same story
+on the range obligations themselves: an external `args_count` endpoint passed to
+`read_at`, with `[SYS-8]`'s `start <= end` and `end <= len(destination)`
+discharged by two ordinary guards over the exact terms the obligations name.
+**That probe is claim customer 4, which no part of the batch had witnessed.**
+
+#### 3.11.3 `contract_block` on a system operation: not proposed
+
+`[SYS-2]` operations have no source `contract_block` and this design does not
+give them one. Their contracts are specification text, not writer text, and
+moving them into a `contract_block` would make the specification's own axioms
+look like verified user clauses - the exact confusion `[FN-9.E2]`'s
+note-on-origin exists to prevent.
+
+### 3.12 The if/else residue
+
+#### 3.12.1 `[ENT-6]`'s route menu, restated as total
+
+**Replace 3169-3170 with:**
+
+> Exactly one of four routes discharges any unproved family, selected by where
+> the missing premise must come from. When the residual's terms are all values
+> this function's own body computes and the fact holds on some but not all paths
+> reaching the operation, the route is one dominating branch establishing the
+> canonical goal, whose false edge does not reach the operation. When the
+> residual reads a value a callable boundary produced, the route is an exact
+> verified `ensures` or write postcondition on the callee and its `[ENT-3.S12]`
+> or `[FN-10.E]` publication, a specification-fixed `[SYS-8]` fact, or an
+> ordinary branch on the returned value. When the fact holds at every iteration
+> of an enclosing loop but the head state does not carry it, the route is loop
+> retention `[ENT-5.R]` or one verified induction statement `[IND]`. When the
+> residual is a correlation two values acquired together on one branch, the route
+> is to factor the dependent statements into a function whose `requires` states
+> the correlation and to call it from each branch. **At least one route is always
+> open, and `[DIAG-1]` names which one the residual selects; where the only open
+> route re-establishes a fact an earlier pass established, `[DIAG-1]` names that
+> earlier pass.**
+>
+> No route defers the obligation to runtime. The language supplies no value, no
+> abort, and no fallback on the false edge of a guard: the writer's own program
+> says what happens there `[GRAM-6, FN-1, ERR-4]`.
+
+3171-3173 survive verbatim, with "makes the assertion-only route unavailable"
+rewritten as "leaves only the dominating value branch" and the per-site cost
+clause becoming "at a per-site cost from zero where facts already prove the bound
+to one branch where they do not". The totality sentence is normative on purpose;
+its qualifier is section 10's Q2, and section 11.1 prices what it does not say.
+
+#### 3.12.2 The honest-else rule - there is no new judgment
+
+This is the finding. The language **already** makes a dishonest else
+unrepresentable, by three rules written for other reasons that compose exactly
+right:
+
+1. `[GRAM-6]` 261 - an `if_stmt` `else` whose block is empty is a hard error
+   citing GRAM-6 (spell the else-free `if`). The writer cannot write a silent
+   do-nothing arm and pretend it handled the case.
+2. `[FN-1]` - every path of a function whose result type is not `unit` must reach
+   a `return`, so in value position the else arm must produce a value and the
+   writer's choice is visible in the source.
+3. `[ERR-4]` as redrafted (3.1.2) - expected failures are `Result` values and
+   there is no third class. So the honest choices on a false edge are exactly:
+   return a typed error, return a defined ordinary value, `break` or `return` out
+   of the region, or let control continue where no value is required. **Never an
+   implicit trap, because the language has none.**
+
+The one sentence added is teaching and it lives in the route menu: *the language
+supplies nothing on a false edge*. Under v0.39 that sentence would have been
+false, because `[CLM-1]` supplied an abort. It is the exact sentence the deletion
+buys.
+
+#### 3.12.3 The impossible-else problem, and the three reliefs refused
+
+> **The impossible-else problem.** Let F be a fact true on every execution
+> reaching an operation O that the checker cannot derive. The successor of a
+> claim is `if F' { O } else { E }`, where F' is F spelled as a guard. Because F
+> is always true, **E is code no execution takes**. The language will not write
+> E: it has no `unreachable`, no `assume`, and no trap. So the writer invents E,
+> the reviewer reads E, and the compiler emits a branch it cannot fold.
+
+Three tiers, very different sizes:
+
+- **Statement position: zero.** The guard is the else-free `if` and nothing is
+  invented (`t14`, compiled). This is the common case, because a guarded read or
+  write is usually a statement.
+- **Loop position: zero to one `break`.** The guard-and-exit idiom is the loop's
+  own exit test rewritten to name the obligation's term - `ige(at, length)` in
+  place of `ieq(at, length)` - so the "invented" arm is the loop exit the program
+  already had (`t2`, `t4`, `t8`, compiled).
+- **Value position: one invented value, or one widened signature.** `t1`
+  (compiled): the result type becomes `Result<T, E>` and the false edge returns
+  `Err`. The signature change is honest - the function *is* partial there as far
+  as any checker can tell - but it is real churn and it propagates a `match` to
+  every caller. **This is the one place where the deletion visibly costs the
+  writer something**, and section 11.1 keeps it in red ink.
+
+The dishonest variants are named so a reviewer can refuse them. An `else` that
+returns a plausible-looking wrong value (`return 0_u8;`) is *accepted* by the
+language and is worse than a claim was, because a claim at least announced that
+the writer believed the case impossible. A rewrite that adds a dominating branch
+no execution can take, purely to satisfy the checker, is the audit's own
+intent-test break and is the thing to look for in review.
+
+**Three reliefs considered and refused, each with its reason:**
+
+- **An `unreachable` or `never` construct.** Refused. It is either a runtime
+  abort - the exact writer-reachable trap this design deletes, reintroduced under
+  a different keyword and *without* even a review record - or it is an `assume`,
+  which `[ENT-3]` 2910 and W3 forbid outright. It would also re-open section 5's
+  T3 derivation on the day it closed. There is no third reading.
+- **Relaxing `[GRAM-6]` so an `else` block may be empty when the checker derives
+  a contradiction at its entry.** Refused as useless. If the else edge's state is
+  contradictory then the guard's condition is derivable at the `if`, in which
+  case the writer should have no `if`; and if they keep it, the else-free form
+  already serves. It buys nothing and adds a rule whose premise is a fact query -
+  the one thing `[DIAG-1]`'s schedule works to keep out of grammar-level
+  judgments.
+- **A "reviewed unreachable" carrying a `because` record and no runtime check.**
+  Refused. With no runtime check the record is unfalsifiable by execution, so it
+  is a pure trusted assertion - strictly worse than the claim, which at least
+  trapped. W3's "cheating is made unrepresentable, not detected later" settles
+  it.
+
+**The relief that costs nothing and is not vocabulary at all** is the audit's own
+rule and it is teaching: *branch on the term the obligation names*. Section 4.5
+shows it dissolving four of the six hardest claims in the tree with no rule
+change.
+
+#### 3.12.4 Worked example - the hardest corpus shape, as it compiles today
+
+`tests/programs/percent_decode.wf` carries four claims, two of them the census's
+hardest value-flow rows (`input_index + 1 < source_length` and
+`+ 2 <`, whose bridge is a three-term equality no difference-bound state can
+hold). `t4_percent_escape_free.wf` (compiled, **accepts**) is that program's
+escape, claim-free, with **no new rule**:
+
+```whitefoot
+loop @decode_loop {
+  let more = ilt(input_index, source_length);
+  if more { } else { break @decode_loop; }
+  let byte = src[input_index];
+  let is_percent = ieq(byte, 37_u8);
+  let step = 1_u64;
+  if is_percent {
+    match input_index +checked 1_u64 {
+      Ok(value: next_index) => {
+        match input_index +checked 2_u64 {
+          Ok(value: last_index) => {
+            let last_ok = ilt(last_index, source_length);
+            if last_ok {
+              let high_byte = src[next_index];
+              let low_byte = src[last_index];
+              set step = 3_u64;
+            }
+          }
+          Err(error: over_last) => { }
+        }
+      }
+      Err(error: over_next) => { }
+    }
+  }
+  set output_count = output_count +wrap 1_u64;
+  set input_index = input_index +wrap step;
+}
+```
+
+Three separate rules already in the specification make it work. The loop's exit
+test names the obligation's term, so `[ENT-5]` 3095 leaves
+`ilt(input_index, source_length)` on the continuation and `src[input_index]`
+discharges. `[ENT-3.S7]` publishes `next_index = input_index + 1` and
+`last_index = input_index + 2` on the `Ok` arms. The single guard
+`ilt(last_index, source_length)` then discharges **both** subscripts, because
+closure gives `next_index - last_index <= -1` from the two equalities and
+composes it with `last_index - source_length <= -1`.
+
+Nothing is invented. `has_pair = ige(remaining, 3_u64)` and `last_ok =
+ilt(last_index, source_length)` are the same condition; only the second is the
+obligation spelled as a guard. The two `Err` arms are empty, which is legal for a
+match arm and is the honest reading - an index within one or two of `max(u64)` is
+not the start of an escape. **The source's own doc sentence, "at least three
+remaining bytes place the second successor strictly before source_length", stops
+being a `because` record a human must validate and becomes a branch the checker
+validates.** That is the successor of the `because` text, exactly as the charter
+says, and it is why A23 rules the guard route ahead of two proposed rules.
+
+**The boundary of the `+checked` respelling, compiled.** The audit's headline is
+that spelling a cursor advance `+checked` rather than `+wrap` publishes the
+offset equality the loop head cannot carry. That is right and it is teaching
+material rather than new mechanism - but it has a boundary the audit did not
+draw:
+
+| spelling | publishes | why |
+| --- | --- | --- |
+| `at +wrap d` | **nothing**, unless the state range-guards the wrap | S7 2971 |
+| `at + d` (exact), `at +defined d` | `s = at + k` **when `d` is a constant `k`** | S7's constant-offset equality, after the discharged `[OP-2]` site |
+| `at +checked d`, `Ok(next)`, `d` constant | `next = at + k` | S7's checked-arm equality |
+| `at +checked d`, `Ok(next)`, `d` a **term** | **nothing** | `next = at + d` is a relation over three terms; `[ENT-2]` 2901 has no such fact |
+
+The last row is compiled: `L03_checked_term_publishes.wf` **rejects** with
+`[OP-4] residual: at < len(data)` on statements byte-identical to
+`s16_u32_checked.wf`'s except that the offset is a parameter `stride` instead of
+the literal `4_u64`, with `requires ige(stride, 1_u64)` supplying everything else
+the derivation needs, and `L15_varstride_loop.wf` is the same separation inside a
+loop. **So the audit's nineteen-scenario respelling covers fixed-width strides,
+and the variable-width chunk - a length-prefixed record reader, a UTF-8 decoder,
+a percent-decoder - is not covered by it.** That family is covered by
+`[ENT-3.S5.O]`'s `+` row instead: from `stride >= 1`, `next - at >= 1`, which
+with `next <= length` from the frame test gives `at < length`. Without it the
+writer pays `L16_varstride_guarded.wf` (compiled, accepts): one extra
+`ilt(at, next)` test per chunk with an unreachable `else`. **That is the same
+never-taken-arm price as I1's, in a family far more common than binary search**,
+and it is the strongest argument in the design for buying the relaxed-operand
+image.
+
+### 3.13 `[PAR]`, `[TRAP-1]` and `[QUAL-3]`
+
+Three rules carry the same erroneous-execution block: `[PAR-1]` 2010-2019,
+`[PAR-2]` 2043 and `[PAR-3]` 2074-2079. Each opens with *"An execution in which
+some executed `claim` is false is erroneous"*, so after the deletion the
+antecedent is unsatisfiable and the whole block is vacuous.
+
+Read carefully the block does two jobs. The first is a **promise about the
+defective execution** - one complete `[DIAG-3]` record, abort without unwinding,
+no second or interleaved record, only system-contract-valid transitions, no
+undefined behaviour. The second is a **prohibition on the correct execution**:
+"No permission, submission, completion, or fast path reads a trap latch or pays
+any other cost whose purpose is to stabilize this erroneous execution." That
+second sentence is T3, written into the permission rules. **Deleting the claim
+deletes the first job entirely and discharges the second by construction.**
+
+> **`[PAR-1]`** - replace 2010-2019 with: *Under a permitted overlap, bindings
+> and every Whitefoot state place equal the source-order result, in every
+> execution. That identity is conditional only on `[SCOPE-3]`'s trusted computing
+> base and, for a program linking gated FFI frames, on ABI-well-behaved foreign
+> code; an accepted program has no language runtime contract violation for this
+> rule to except `[SCOPE-4]`.*
+>
+> **`[PAR-2]`** - 2043's second clause becomes *"That identity is conditional
+> exactly as `[PAR-1]`'s is."*
+>
+> **`[PAR-3]`** - replace 2074-2079 with: *The identity above holds in every
+> execution of L, conditional only as `[PAR-1]` fixes. No permission,
+> submission, completion, or fast path pays any cost whose purpose is to
+> stabilize or reproduce a defective execution, and none is available to pay: an
+> accepted program has none `[SCOPE-4, T3]`.*
+
+Everything else in all three rules is untouched - the observability sentences,
+the conforming-implementation-that-overlaps-nothing sentence, the
+resource-exhaustion sentence, 2080's observability sentence and the host-resources
+sentence. They are about **normal** execution and were always independent of the
+claim. `TERRAIN.md` section 6.12 is the check that nothing else is lost: the
+permission judgment treats a `Claim` statement as an ordinary straight-line
+statement with the condition as its read footprint and explicitly does not treat
+the trap edge as a control edge, so **`[PAR-3]` never consumed a claim as
+proof** and no permission decision changes.
+
+**What this buys, precisely.** Three exception clauses leave the META-5 count.
+The staged pipeline's permission judgment loses a **read footprint and a
+non-continuing edge per former claim site**, so an overlap the claim previously
+blocked is now permitted - a real, if small, P0 gain, and the direction the
+charter names when it asks that parallelism become natural. The
+"schedule may select which claim the record names" indeterminacy is gone; it was
+the one place in the specification where an observable was schedule-dependent by
+design. And `[EFF-4]` and `[SCOPE-4]` lose their fault-injection test lane,
+because there is no fault to inject.
+
+**`[TRAP-1]` is deleted, and one sentence of it is re-derived rather than lost**
+(A14). Two of its sentences are not about the claim's own execution:
+
+> Because a trap ends the owning process, **no instance resource table,
+> per-instance reaper, or pending-operation transfer is required, and none
+> appears on an `inline-terminal` transfer path `[QUAL-3]`**.
+> Host-surviving in-process trap containment is a DEFERRED language amendment
+> with its own delta `[META-5]`.
+
+The first is a **shape guarantee about emitted code**, cross-referenced by
+`[QUAL-3]` and stated as a consequence of the trap. Deleting `[TRAP-1]` leaves it
+without a basis while `[QUAL-3]` still points at it. **Re-derive it into
+`[QUAL-3]` from the new `[SCOPE-4]`:** an accepted program has no non-continuing
+language edge at all, so no instance resource table, per-instance reaper or
+pending-operation transfer is required and none appears on an `inline-terminal`
+transfer path. The second sentence is a deferred-amendment record, and deleting
+it silently retires a deferral; **its withdrawal is a line in the META-5 delta**
+(7.3), not an omission. The general whole-process-abort sentence at 2481 survives
+with its cross-reference amended from `[SCOPE-4]` to `[SCOPE-3]`, since after
+the deletion whole-process abort is reachable only through the trusted base.
+
+### 3.14 The acceptance pipeline, after the change
+
+Stated so a second implementation reproduces it byte-identically, which is
+`[ENT-1]` 2836's requirement. This replaces the drafted pipeline whose merge
+order was v0.39's (A6).
+
+```
+for each concrete function instance F, in stable instance order:
+  1. build FN-1's structural normal-control graph; reject unreachable statements
+  2. compute the ladder K and the retention family of [ENT-5.R5]:
+       the outer universe iteration around the inner deletion of [ENT-5.R7],
+       each flow being step 3 run with the current family
+  3. for each proof view V in [complete, s4_blinded]:        # TWO, not three
+       walk F's graph once, in FN-1 order:
+         at each node apply ENT-3's sources for V
+                       (S1 guard, S4 requires (complete only),
+                        S5..S12 images and structure, IND-8 projections
+                        subject to IND-8.V)
+         on each edge apply [ENT-5.P0]: image after its own kill, close,
+                       scope-exit kills, close again
+         at each merge take the ENT-5 join of the arm-exit states, each taken
+                       through that same edge order
+         at each loop head take [ENT-5.R3]'s head state
+         close under ENT-4 wherever the state is queried
+  4. verify every bound_stmt: base [IND-5], step [IND-6], per view [IND-8.V]
+  5. for each obligation occurrence in NodePath order:
+       query the complete state; if not discharged -> reject (section 6)
+  6. for each call in NodePath order: discharge FN-8's goals or reject
+  7. for each selected return: verify FN-9's and FN-10's relations or reject
+  8. run PRV-1's two-stratum fixed point; then PRV-3 local leaves,
+     then PRV-2 call targets, using complete for admission and
+     s4_blinded for the external-subject partition
+  9. publish the checked program
+```
+
+There is no step 10. Under v0.39 there were four more: freeze `Eligible`, run
+`[CLM-2]` component residuality by re-running the walk with one S3 event masked,
+run whole-occurrence residuality the same way, and run `[CLM-3]`'s `MayClaims`
+closure. **The pipeline is now one forward walk per function per view, plus one
+bounded fixed point over a finite candidate set, and no re-walk of anything
+acceptance-bearing.**
+
+**What a second implementation must reproduce:** the two proof views and the same
+closed state at every point; the edge order of `[ENT-5.P0]`, including the
+per-event reading point; the ladder `K`, the universe iteration and the limit
+retention family; the certificate predicate of `[IND-7]` and the projection of
+`[IND-8]`; the same rejection at the same node with the same rendered residual;
+and the same `gap` token and fix string (section 6, and flagged decision D3).
+**Nothing about claims, authority, residuality, counterfactuals, ledgers or
+`MayClaims`, because none of it exists.**
+
+---
+
+## 4. The complete case walk
+
+### 4.1 The fifty audit scenarios
+
+Walked in the audit's order. "**Homed**" means a rule drafted in section 3
+reaches it; the route column names that rule.
+
+| scenarios | route under this design | status |
+| --- | --- | --- |
+| ITER-01, -02, -04, -07, -09, -11, -12, -15, -19, -25, -27; VF-04/04a/04b, -06, -06a, -11, -12, -20, -21/21a, -22/22a (the 19 DISSOLVED-EXISTING primaries and their variants) | already compile: 3.2's guard restatement, the guard-and-exit idiom, the `+checked` respelling, the factored-`requires` route | **homed, and compiled** |
+| ITER-03, -06, -08, -20, -23, -28, -29, -33, -34 | `[ENT-5.R]` + `[ENT-5.P0]`, over `[ENT-3.S5]` | **homed**; worked at 3.6.5 (a), (c), (d) and 3.7 |
+| ITER-05, -14; VF-14, -16, -17 | `[ENT-3.S5]`'s `%`, `/`, `imin`/`imax` and saturating rows (3.5.1) | **homed** |
+| ITER-16, ITER-36 | `[ENT-6.D]` (3.5.5) | **homed** |
+| ITER-24, -30, -35 | `[ENT-3.S5.O]` with A3's side condition (3.5.4) + `[ENT-5.R]` | **homed**; the `L21`/`L22` strictness separation is why the relaxed image and not P-MONO |
+| ITER-13, -32 (**I1**) | `[IND-10]` (3.9.4), one construct, one procedure | **homed**, subject to flagged decision D2 |
+| ITER-17, -18 (**I2, I3**) | `bound @l` + `[ENT-6.D]` | **homed**; 3.9.3 |
+| ITER-21, -31, VF-07 (**I4**) | `bound @l` + `[ENT-5.X]` + `[ENT-5.P0]` | **homed**, with 3.9.5's narrowed statement |
+| ITER-22 | routed `ensures` from inside the loop; `[ENT-5.P0]` | **homed** |
+| ITER-26 (**I6**) | none, deliberately; `[IND-3]`'s vocabulary fence says so normatively | **correctly refused** |
+| ITER-37, -38 | `[ENT-5.R7]`'s simultaneity; `[IND-9]`'s redundancy ruling | **homed**, both in rule text as the audit demanded |
+| VF-01, -02, -03, -05, -05a, -08, -24 | `[ENT-3.S5]`'s value-commit closure + `[ENT-5.P0]` | **homed** (3.4) |
+| VF-08a | `[FN-9.E4.a]` | **homed** |
+| VF-09, -09a, -10 | `[FN-9.E1]` + `[GRAM-9.C1]` | **homed**, and wider than the audit's N2 |
+| VF-12a | `[FN-9.E4.b]` | **homed** |
+| VF-13 | `[FN-9.E4.c]` | **homed** |
+| VF-15, -18, -19 | the shift rows with the attained-maximum correction; `[ENT-3.S5.B1]` (`ior`/`maxor`); `[ENT-3.S5.M]` (the corrected `*wrap` box) | **homed**; the last two are drafted here for the first time |
+| VF-19a (**I7**) | refused: no division by a term (`[IND-4]` clause (d)); the adjacent shape that works - compute `cells` first and allocate `buffer_new(cells, ...)` - is named | **no home, honestly** |
+| VF-22b, VF-23 (**I5**) | guard each use, or size the table to the value's type (`s6`, compiled) | **no home, honestly**; and it is the likely falsifier of the totality sentence (Q2) |
+
+**Scenarios with no home: I5's two and I7's one.** The audit predicted exactly
+those. **Scenarios whose route has no drafted rule: none.** That is the
+difference between this file and the three part-designs it synthesises, and S2 is
+why: five of the seven "missing" publishers were drafted in the file being
+superseded.
+
+### 4.2 The seven irreducibles
+
+| id | the knowledge | disposition here | what it cost |
+| --- | --- | --- | --- |
+| **I1** - a probe inside a carried window | `lo <= mid < hi` with `mid = lo + (hi-lo)/2` | **closed by `[IND-10]`**, subject to D2. The window half is `[ENT-5.R]`; the midpoint is one local statement whose three normalizer powers are named exactly at 3.9.4 | no new table column, no ambient three-term relation, no shape source. The two-law dilemma stays shelved, as the owner ruled |
+| **I2** - an accumulator bounded by its increments | `sum <= 255 * i` | **closed** by `bound @l` + `[ENT-6.D]` (3.9.3) | one written line, and `[ENT-6.D]`, which the corpus wants anyway |
+| **I3** - an accumulator bounded by a parameter product | `acc <= i * factor` | **closed** by the same, **plus one added `requires` ceiling** the writer must supply | the extra `requires` is real migration cost and a real improvement: the function genuinely overflows without it |
+| **I4** - a counter bounded by the trip count | `count <= n` after the loop | **closed**, narrowed: for a counter leaving by the false header edge, or by a `break` taken before the counter's write on that path (3.9.5) | one written line, `[ENT-5.X]`'s repair, and `[ENT-5.P0]`. The audit's own witness `s13` is itself out of bounds; `L24` is the repaired one |
+| **I5** - a validated element property narrower than the element type | "every element of this buffer is below K" | **open.** The two answers are: size the table to the value's type, which genuinely dissolves the byte-wide case (`s6`, compiled, and it is the better program) and is impossible at `2^32` entries; or guard each use, which re-runs a validation the program already performed | priced at 4.4's vocabulary ledger row V5/V6 and declined. `[IND-3]`'s vocabulary fence says in rule text that no iteration notation swallows it |
+| **I6** - a quantified data-structure invariant | "every `next` field in this arena is a valid index or the sentinel" | **open, and deliberately unreachable.** Both audit sides recommended rejecting any iteration notation that would swallow it, and the audit affirmed that without qualification. **`[IND-3]`'s vocabulary fence is that affirmation, written as a rule** rather than left for a reader to derive from a grammar | nothing; its home, if the language grows one, is a type invariant or a contract over the aggregate |
+| **I7** - a runtime-strided walk | `k * stride < len(records)` with the stride read from a header | **open.** `[IND-4]` refuses division by a term with a stated rule and a diagnostic naming the divisor, because a term divisor's witnesses are degree 2 in the unknowns | the audit's sharpest complaint about I7 - *the family splits on whether the count is a compile-time constant, which no writer would predict* - is **not** answered, and 11.3 keeps it in red ink. The corrected `*wrap` box image (3.5.2) answers the constant half |
+
+**I4 and I1 are the two the audit called irreducible that this design closes**, and
+both are closed by the same structural idea: verify in a polynomial language,
+publish in the difference-bound language.
+
+### 4.3 The six claim customers
+
+`[CLM-2]` 2789 fixes the closed list of what a claim could discharge, and
+`TERRAIN.md` records that all 135 corpus claims name one of them.
+
+| # | customer | what discharged it with a claim | what discharges it now | corpus claims | compiled witness |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **SubscriptBounds** `i < len(P)` | an S3 component on the normal continuation | an S1 guard on the same comparison; or a row image bounding `i`; or a retained loop fact; or a verified statement | **55 of 83** in accepting sources; **all 18** real-program claims | `t14`, `t1`, `t2`, `t4`, `t8`, `t10` |
+| 2 | **IntegerDomain**, the `.defined` goal | S3 | an S1 guard on each operand's bound; the `Ok` arm of `+checked`; **`[ENT-6.D]`**'s two-bound route | **25 of 83**, every one in a case written to exercise the rule | `t4`'s `+checked` arms, `t5`; `L08`/`L09` are the compiled evidence that `[ENT-6.D]` is required |
+| 3 | **AllocationFit** `buffer_fits<T>(n)` | S3 | an S1 guard on `buffer_fits<T>(n)`, a pure total predicate the writer may branch on | **0** | `t11` |
+| 4 | **SystemRange** `start <= end`, `end <= len(buffer)` | S3 | S1 guards on the two endpoint comparisons; `[ENT-3.S10]` for the returned endpoints | **0** | **`y4`** - written for this file, and the row no part of the batch had witnessed |
+| 5 | **`[FN-8]` call requirement** | S3 in the caller | an S1 guard in the caller establishing the instantiated goal | **2 of 83** | `t11` |
+| 6 | **`[FN-9]` selected-return proof** | S3 in the callee | an S1 guard in the callee; the boundary-export idiom (return from inside the loop where the binder is live) | **1 of 83** | `t12` |
+
+**Two readings matter.** In programs someone wanted, the claim construct was a
+**subscript-bounds construct**: all 18 real-program claims and 55 of 83 discharge
+customer 1, zero discharge customers 3 and 4, one discharges customer 6. The
+successor story therefore stands or falls on whether a subscript bound can be
+guarded, and the ledger says it can, in every shape the corpus writes except the
+six of 4.5. And **customers 3 and 4 never needed the construct at all**:
+`buffer_fits<T>(n)` is a pure total predicate and the two `[SYS-8]` range goals
+are ordinary comparisons, each directly branchable, and zero claims in 682 source
+files ever discharged either. **Every customer now has a compiled witness**,
+which was the one gap left in the batch.
+
+### 4.4 The vocabulary ledger - the price list
+
+Every place this design or its neighbours wanted a term `[ENT-2]` does not have.
+`[ENT-2]`'s current vocabulary is difference bounds over two terms,
+disequalities, and signed goals; cost is measured against that.
+
+| id | the term | buys | closure cost | soundness bill | verdict |
+| --- | --- | --- | --- | --- | --- |
+| V1 | `t <= c * b`, c a literal, b a term | I2 as an *ambient* fact; the constant half of I7 | zone becomes coefficient-aware; O(n^3) stays but each step carries a rational | moderate: every row image producing such a bound must be re-verified, and `c * b`'s overflow side-conditioned | **not bought.** `[IND]` reaches I2 without it, by holding the product inside one statement's check |
+| V2 | `t <= u * v`, both non-constant | I3 ambiently; I7 in full | nonlinear; no complete decision procedure, so any rule is a spec-fixed incomplete fragment | high: the fragment must be in the specification, not chosen by the implementation | **not bought**, same reason |
+| V3 | three-term relations (octagon, then polyhedra) | I1 as an ambient fact | octagon is O(n^3) over 2n variables with a documented normal form; polyhedra is exponential | large: every existing image restated in the wider domain and re-reviewed | **not bought.** The owner shelved the dilemma and `[IND-10]` is the route examined instead |
+| V3' | I1 by **declared statement** | I1's algebraic probes (binary, ternary, galloping) | **none in the ambient domain** | `[IND-7]`'s fragment, already needed for I2/I3/I4 | **bought** (3.9.4), subject to D2 |
+| V3'' | I1 by an **exact algebraic denotation column** on the operation table | the same programs | none ambient | 60-100 rows, each a per-row correctness obligation review must discharge - roughly doubling the image column's review load | **not bought** (A22). Its own author recommends buying the experiment first, and the experiment's expected answer (six rows, not sixty) converges on `[IND-4]`'s admitted-RHS list, which is free |
+| V4 | mod-k congruence `t = r (mod k)` | nothing in this audit | small: one residue per term | small | **not bought - no customer.** The two-byte fold dissolves with `+checked` (`s17`, compiled), `by k` is withdrawn, and the ipv4 congruence dissolves with a pair guard (`t8`, compiled). Recorded as priced and unbought so it is not re-proposed |
+| V5 | quantified element facts, `for all e in P: e < K` | I5, I6 | instantiation is a search unless the instantiation set is spec-fixed | very large: every mutation needs re-instantiation | **not bought**, and both audit sides plus the owner asked that no iteration notation swallow I6 |
+| V6 | one conservative value interval per indexable place | *part* of I5 | small: one interval per place, interval join at merges | moderate | **not bought**, and the ceiling text must say **which half of I5 it is**: `[ENT-3.S9]` 2981 **already** publishes the declared element range of a named const array, which is why `p_constarr.wf` compiles and `p_content.wf` does not. V6 generalises S9 to runtime-built tables and still does not close I5, because the fill loop's element write is a continuing kill and the component is top at the head - so V6 needs I4's machinery to be worth anything, and buying it alone buys a program nobody writes |
+
+**The counted family is declined twice, and both declines are stronger than the
+audit's.** `rev` passes the intent test but no scenario requires it: the
+descending walk dissolves under retention (3.6.5 (a), machine-checked step), and
+a descending walk whose carried bound is *not* true at entry is now reachable by
+a `bound_stmt`, which works for **every** monotone measure rather than for the
+one shape a grammar would name. Were it ever written, the terminal decrement
+`lower_capture - 1` is unrepresentable at the type's minimum, so the exit test
+must be `lower_capture < binder` evaluated *before* the decrement, and the claim
+that "S11 is unchanged verbatim and no other rule moves" does not survive that
+repair. `by k` is withdrawn on *existing machinery first* - its sole justifying
+customer compiles today with `+checked` (`s17`), and a block walk compiles with a
+**variable** width `by 16` could not express (`r6`, compiled) - with a
+determinism defect as a second reason (a strength-reduced `binder <= upper - k`
+underflows for `0..3 by 4` and publishes a **false** fact) and a third added
+here: `by k` would fork `[ENT-5.X]`, `[IND-6]`'s substitution and `[IND-8]`'s
+projection into `k`-parameterized twins, four rule texts forked to express
+something `s17` already compiles.
+
+### 4.5 The corpus, dispositioned
+
+Migration cost is not a design criterion and nothing below argues for or against
+any rule; corpus counts are **existence evidence and seed samples, never scope
+bounds**. This is the work list.
+
+#### 4.5.1 The 135 claims by home
+
+| home | files | claims | disposition |
+| --- | --- | --- | --- |
+| `tests/programs/` | 7 of 25 | **18** | rewritten claim-free, function by function (4.5.2) |
+| `tests/conformance/cases/` | 81 | **102** | 39 `run` and 9 `accept` cases rewritten claim-free or retired with a stated reason; 33 `reject` cases deleted with their rules (7.2) |
+| `tests/codegen/cases/bounds/` | 13 | **15** | all 13 fixtures rewritten; **none compiles today** (4.5.3) |
+
+By customer, over the 83 claims in sources the current compiler accepts:
+SubscriptBounds 55, IntegerDomain 25, `[FN-8]` 2, `[FN-9]` 1, AllocationFit 0,
+SystemRange 0. By what reaches the fact after the deletion, over the 114
+gap-stating claims: **108 bucket P** - a forward publisher over the two-term
+state, which is 3.4 and 3.5 - **4 bucket B**, and **2 bucket R**, plus 21
+fixtures with no gap field.
+
+#### 4.5.2 The twenty named sites, walked
+
+| site | fact | route under this design | evidence |
+| --- | --- | --- | --- |
+| `fir_filter.wf:31` | ring cursor in the delay line | `[ENT-5.R]` **with the ladder** + the `%` image | the drafted candidate rule loses this (A19); `y1`/`y2`/`y3` are the separating evidence |
+| `fir_filter.wf:42` | tap index in taps | `[ENT-5.R]` with the ladder | same; the extent folds to 8, which is exactly the case the ladder recovers |
+| `fir_filter.wf:45` | read cursor in the delay line | `[ENT-5.R]` with the ladder **and the universe iteration** | needs the outer loop's retained fact at the inner preheader (A20) |
+| `utf8parse.wf:18` | `scan < len(source)` across a variable-width step | `[ENT-5.R]` + `[ENT-3.S5.O]`'s `+` row | `L03`/`L15` compile the gap; `L16` compiles the price |
+| `utf8parse.wf:20` | `events <= scan`, coupled counters | `[ENT-5.R]` alone: true at entry (`0 <= 0`), re-derived on every arm | the entry-tight atom **is** the inductive one here |
+| `percent_decode.wf:16` | variable-stride cursor bound | `[ENT-5.R]` + `[ENT-3.S5.O]` | as `utf8parse:18` |
+| `percent_decode.wf:18` | `writes <= scan` | `[ENT-5.R]` alone | as `utf8parse:20` |
+| `percent_decode.wf:28`, `:31` | `input_index + 1 < source_length`, `+2 <` | **the guard rewrite** | `t4` **accepts**, compiled, no new rule (A23) |
+| `wfgrep.wf:434` | `carry < input_room` through a disequality | **the guard respelling** | `t10` **accepts**, compiled |
+| `wfgrep.wf:469`, `:495` | probe index inside the input | `[ENT-5.R]` + the `imin` image | the `imin` row is 3.5.1 |
+| `wfgrep.wf:553` | `source_index < input_room` through two sums | **restructure**: guard `source_index` directly against `input_room` before the read | **the corpus's one true residue.** `[ENT-3.S5.B]` also reaches it; the recommendation is the restructure, and Q1 records why |
+| `wfgrep.wf:556` | `tail <= bounded_available` | the unsigned-subtraction image (bucket P) | 3.5.1 |
+| `ipv4_checksum.wf:19`, `:22` | even-stride offsets in an even-length header | **the pair guard** | `t8` **accepts**, compiled; its false edge is the odd-tail case the RFC specifies, and the artificial even-length `requires` is deleted with the claim |
+| `par_layout.wf:90` | band index in range | `[ENT-5.R]` + the `imin` image | 3.5.1 |
+| `raw_deflate_dynamic_decode.wf:32` | `bounded < 19` where `bounded = index % 19` | the `%` image | **omitted from every part-design's migration table**; recorded here |
+| `x-base64-rfc-vectors-run.wf:16` | `bounded < limit` published onward by an `ensures when Ok` | the `%` image; the `ensures` then verifies from it | the only site in the tree whose `consumers:` line says it feeds a contract, and after this design the function says it with no claim in it |
+| `prv3-neg-read-offset-taint.wf:44` | element content | **case deleted** with `[PRV-3]`'s claim clause | a negative provenance fixture whose subject is the refusal, not the program |
+| the two conformance `[FN-8]` sites | a caller-side residual for an undischarged requirement | the image closure; else `if`/`else` | 4.3 row 5 |
+
+**Score.** Four sites are compiled claim-free today (`percent_decode:28,31`,
+`wfgrep:434`, `ipv4_checksum:19,22`). Twelve are reached by a rule drafted in
+section 3. Three depend on the ladder and the universe iteration this file adds
+(A19, A20) and would have been lost without them. **One - `wfgrep.wf:553` - has
+no compiled route and two ordinary repairs.**
+
+#### 4.5.3 The thirteen codegen bounds fixtures - the clearest vindication in the tree
+
+Twelve in `tests/codegen/cases/bounds/masked-index/` and one in
+`output-capacity-lockstep/`; fifteen claims. `CENSUS.md` measured that **none of
+the thirteen compiles today** - every one is rejected citing `[CLM-1]` - so this
+is a rewrite of stale fixtures rather than an adjustment of a working set, and
+the estimate must say so.
+
+What the claims are doing there decides the rewrite. In
+`masked-index/p01-mask3-table4.wf` the whole claim is:
+
+```whitefoot
+command fn main() -> status: own ExitStatus traps {
+  let value = lookup(x: 7_u64);
+  claim masked_lookup_drift: ieq(value, 40_u8) because "masked lookup drift";
+  return exit_status(code: 0_u8);
+}
+```
+
+That is a **drift oracle** - an executable assertion that `lookup` still returns
+what the fixture expects, placed in `main` so a wrong answer aborts the run. It
+is not a proof residual at all, and `cases.json`'s own note says so. It also
+fails `[CLM-1]` on locality, because `value` is a user-call result, which is why
+none of them compiles. All fifteen claims are deleted and the oracle is respelled
+as ordinary control flow, which is what it always should have been:
+
+```whitefoot
+command fn main() -> status: own ExitStatus pure {
+  let value = lookup(x: 7_u64);
+  let expected = ieq(value, 40_u8);
+  if expected { } else { return exit_status(code: 1_u8); }
+  return exit_status(code: 0_u8);
+}
+```
+
+Same measurement (`proof.sites` counted in `lookup`, untouched), same failure
+signal (nonzero exit instead of abort), one fewer effect category, and - unlike
+today - the fixtures compile. Each `cases.json` `measurement.note` referring to
+the claim check is updated in the same change; the three `False()` preemption
+markers in `output-capacity-lockstep/p08` become an `if False() { ... }` guard or
+are deleted with their case if the preemption they mark no longer exists, and
+that judgment must be written down either way.
+
+**This is the clearest single vindication of the deletion in the corpus.** The
+only place in the tree where a writer used the claim construct as an *assertion*
+rather than as a proof residual is a fixture set that has not compiled for
+months, because `[CLM-1]` correctly refused it. `[ERR-4]` said assertions are not
+a class; the fixtures did not believe it; the compiler enforced it; nobody
+noticed for months. **After the deletion the mistake is unspellable.**
+
+---
+
+## 5. T3 and W3, re-derived
+
+### 5.1 Why T3 must be re-derived at all
+
+`docs/constitution.md` T3 is explicit that it is not an axiom and names its
+premise: *"derived from W3's claim discipline, which is the load-bearing premise:
+a claim is admitted only as a reviewed, independently true, always-true lemma, so
+the retained trap detects a violated approved theorem, an execution that reaches
+it is a defective program whose review was wrong, and a correct program cannot
+reach the trap path at all."* Delete the claim and that premise does not become
+false - it becomes **vacuous**. A theorem resting on a vacuous premise is not
+thereby wrong, but its statement and its derivation both change, and T3's own
+closing sentence ("The theorem stands while that premise stands") requires the
+re-derivation to be written rather than assumed.
+
+The change is a **strengthening**. Under v0.39 T3 said *a correct program cannot
+reach the trap path*. After the deletion **no program can, because there is no
+trap path.**
+
+### 5.2 The new statement
+
+> **T3 - Correct programs are never taxed for defects** (owner rulings
+> 2026-08-23, 2026-08-25; re-derived 0108 on the deletion of `claim`): no
+> permission, optimization, or fast path is withheld from any accepted program to
+> stabilize, reproduce, or make observable the behaviour of an execution that
+> violates a language contract; the trusted base spends nothing on such a path.
+> NOT an axiom - derived from the trap-free core rather than from a review
+> discipline. Its premise is now a property of the accepted set: **an accepted
+> program has no writer-reachable language runtime contract violation**
+> `[SCOPE-4]`. Every partial operation is admitted only by static discharge of
+> its domain before lowering `[ENT-6]`; every writer-stated proof obligation -
+> a `requires`, an `ensures`, a write postcondition, an induction statement - is
+> verified at compile time and never deferred `[FN-8, FN-9, FN-10, IND, ENT-3]`;
+> every proof-bearing construct is erased before lowering and contributes no
+> instruction, no branch, no observable and no schedule-visible event; and no
+> accepted operation carries a retained runtime check `[DIAG-2]`. There is
+> therefore no execution of an accepted program that the language itself deems
+> defective, hence no observable of such an execution for a rule to fix, hence
+> nothing for a permission or fast path to buy by narrowing.
+> What lies outside the guarantee is exactly `[SCOPE-3]`'s trusted computing base
+> - compiler, checker, runtime, allocator, operating system, and, for a program
+> linking gated FFI frames, ABI-well-behaved foreign code - together with
+> resource conditions and `[STOR-6]`/`[QUAL-1]` target failures. No rule of this
+> specification is stated in terms of any of them, and none of them is a language
+> trap.
+> **The condition under which this derivation must be redone** is now sharper
+> than before: any future construct that admits a writer-spelled predicate which
+> is *trusted rather than verified*, or that can fail at runtime on a
+> writer-stated condition - an assertion, an expected failure, an unreviewed
+> condition, an `unreachable`, or a restored `claim` - reinstates the old premise
+> and puts itself outside this theorem until the derivation is redone against it.
+> **A verified induction statement `[IND]` and a write postcondition `[FN-10]`
+> are expressly not such constructs**: each is verified by the checker's own
+> derivation before it is a fact, each is erased before lowering, and each can
+> fail only at compile time.
+> History: the claim-free eligibility gate was removed under the earlier
+> derivation (batch 0078) and independently re-proposed during the I/O design
+> round of 2026-08-25; under the new derivation a claim-free eligibility gate is
+> not merely unnecessary but **unstatable**, because every program is claim-free.
+
+### 5.3 The argument, in five steps
+
+1. **Nothing writer-reachable traps.** By 3.1.1 the only construct that could was
+   `claim_stmt` and it is deleted; by `[EFF-2]` 1372 no operation row carries
+   `traps`; by `[DIAG-3]` 1978 no other construct produced the record; and by
+   `[OP-4]` 876, `[OP-2]`, `[OP-9]` 945 and `[SYS-8]` no accepted proof-required
+   operation retains a runtime check. The set of writer-reachable
+   language-contract violations is empty.
+2. **Therefore the erroneous-execution clauses are vacuously satisfied.**
+   `[PAR-1]` 2011, `[PAR-2]` 2043 and `[PAR-3]` 2074 each open with "An execution
+   in which some executed `claim` is false"; that antecedent is unsatisfiable, so
+   each rule's identity guarantee holds in every execution (3.13).
+3. **Therefore no permission is conditional on a defect's observables.** T3's
+   operative content is a prohibition on narrowing; with nothing to narrow *for*,
+   the prohibition is discharged by construction rather than by rule.
+4. **Therefore the trusted base spends nothing on a trap path.** There is no trap
+   latch to read, no record to write, no abort to sequence, no `[TRAP-1]`
+   resource-teardown ordering to honour, and no `inline-terminal` reaper to
+   provide (3.13).
+5. **The remaining conditionality is `[SCOPE-3]`'s and is unchanged.** T3 was
+   never about the trusted base and still is not; a resource failure or a
+   target-layout failure terminates a process without any language rule being
+   stated in terms of it, exactly as `[PROG-3]` 1488-1490 already says of a start
+   failure.
+
+The contract half of step 1 is worth its own citation, because it is what makes
+"every proof-bearing construct is erased" a quotation rather than an assertion:
+`[FN-8]` 1254 forbids an executable callee prologue; `[FN-9]` 1274 says a
+postcondition "is neither an executable epilogue nor a trusted assertion" and
+1354 forbids it any "runtime operation, hidden check, assume, optimizer license,
+serialized certificate, portable identity, alternate lowering path, or ABI
+field"; 1375 gives a `contract_block` an empty effect contribution; and `[IND-1]`
+says the same of an induction statement in the same words.
+
+### 5.4 W3's clause, and the one sentence to change in it
+
+`docs/constitution.md` W3 currently reads, in part: *"partial operations are
+admitted only by proof; a claim is admitted only as an independently true,
+checker-unknown, load-bearing theorem over the current function's own value and
+control authority, with an exact derivation record; ... accepted claims are never
+removed; expected failures are typed outcomes or ordinary value/control paths
+rather than false claims; ... The retained runtime trap detects a violated
+approved theorem, but it cannot turn a hidden cross-function promise into
+legitimate proof authority, and source cannot intentionally request that abort."*
+
+Replace the claim clauses with one sentence and keep everything else:
+
+> partial operations are admitted only by proof, and **every fact the checker
+> uses is one the checker itself derived or verified - there is no writer-spelled
+> trusted assertion and no writer-reachable runtime boundary**; a cross-function
+> promise becomes proof authority only through a machine-verified callable
+> boundary; expected failures are typed outcomes or ordinary value and control
+> paths; and canonical bytes leave nowhere to hide edits.
+
+That sentence is **stronger** than what it replaces, and 1.2 is its proof: after
+the deletion every fact source `[ENT-3]` admits is something the compiler
+observed or verified. The old W3 had to carve out one exception and then spend
+four clauses fencing it.
+
+---
+
+## 6. Diagnostics and teaching
+
+### 6.1 The rejection payload and the computed gap token
+
+Today, deleting a claim from an accepting program produces exactly one
+diagnostic, and `t9_residue_rejection.wf` (compiled) is it, verbatim:
+
+```text
+whitefootc: Semantics/Source [OP-4]: UndischargedBoundsObligation {
+  residual: "carry < len(deref(input))",
+  mechanical_fix: "establish the residual with a dominating branch, or, only
+    when it is an independently true theorem outside checker rules, add a
+    CLM-2-admissible residual `claim` with a complete exact `because` record" }
+```
+
+After the deletion the residual and the location are unchanged and the
+`mechanical_fix` is replaced. **That one string is the entire writer-facing
+migration channel**, so it is worth drafting exactly.
+
+> **`[DIAG-1]` obligation-rejection payload.** Every rejection of an unproved
+> `[ENT-6]` family, `[FN-8]` call requirement, `[FN-9]` or `[FN-10]`
+> selected-return relation, or `[IND-5]`/`[IND-6]` obligation carries: the owning
+> rule id and source node; the residual rendered exactly as that rule fixes; one
+> `gap` token drawn from the closed set { `guard`, `image`, `flow`, `induction`,
+> `boundary`, `content`, `vocabulary` }; and the one mechanical fix that token
+> selects. The token is a deterministic function of the residual and the closed
+> state, computed by the procedure below. It is published review and teaching
+> data; **no acceptance judgment reads it.**
+
+The 0106 design made the *writer* spell this token in the `because` record's
+`checker gap:` field. With no record there is nobody to write it - so the
+compiler computes it, which is better on every axis: it cannot be wrong about the
+checker, it costs the writer nothing, and it turns every future ceiling raise
+into a grep over diagnostics rather than a grep over source.
+
+**The procedure.** Given an undischarged obligation whose normalized residual is
+one atomic fact over terms `t1`, `t2` (or one signed goal), take the first
+matching clause in this fixed order:
+
+```
+classify(O):                           # first matching clause wins
+  ops := operand_terms(O)
+  1. some a in ops is not an [ENT-2] term because it is or reads an element of
+     an array, slice or buffer                    -> ("content", base place)
+  2. some a in ops has a reaching value-commit whose row publishes the empty
+     image, least NodePath first                  -> ("image", row, binding)
+  3. some a in ops has a reaching definition that is a user- or system-call
+     result binding, and no verified relation of that call mentions a,
+     least call NodePath first                    -> ("boundary", call, callee)
+  4. O's relation names a quantity the innermost enclosing loop's body commits
+     together with that loop's binder or extent, and is NOT derivable in the
+     closed preheader state of that loop
+                                                  -> ("induction", loop label)
+  5. O's relation IS derivable in that loop's closed preheader state and is not
+     in that loop's head state under [ENT-5.R]    -> ("flow", loop label, kill)
+  6. O's relation is derivable at some point that dominates O, least such point
+     in FN-1 order                                -> ("guard", that point)
+  7. otherwise                                    -> ("vocabulary",)
+```
+
+**Clause 4 is A15's repair and it is the token the batch was missing.** In the
+drafted procedure the `flow` clause fired on exactly the candidates retention
+**deleted** - the facts that are *not* inductive - and told the writer to state
+them as an induction statement, whose step would fail on the very path that
+killed the candidate; while the real `bound_stmt` customers (I2, I3, I4, and
+every accumulator whose bound is false at entry) fell through to `vocabulary` and
+were told to restructure. Splitting the clause on **whether the residual is
+derivable before the loop** puts each family on the right side: a fact true
+before the loop and lost at the head is a retention question (`flow`), and a fact
+false before the loop and true one iteration at a time is a statement question
+(`induction`).
+
+Clauses 4, 5 and 6 are decidable with state the checker already computes - the
+preheader state exists at `[ENT-5]` 3120 and dominator queries are ordinary
+`[FN-1]` graph facts; clause 2 needs the image column's "publishes nothing"
+entry, which 3.4 creates anyway. **Because no acceptance judgment reads the
+token, an imprecise clause is a diagnostic defect and never an `[ENT-1]`
+problem** - which is what makes it affordable at all, and why it lives in
+`[DIAG-1]` rather than in `[ENT-6]`.
+
+### 6.2 The mechanical fix channel - one table
+
+One fix per token, fixed by the specification. Today the whole redundancy family
+carries **no mechanical fix at all** (`[DIAG-1]` 1855-1856) and the obligation
+families share one two-clause string; this replaces both with seven.
+
+| token | mechanical fix, as rendered |
+| --- | --- |
+| `guard` | *the residual holds at `<point>` but not here; add a dominating branch on `<residual>` whose false edge does not reach this operation* |
+| `image` | *`<row>` publishes no fact about its result in this version; branch on `<residual>`, or compute the value by a row whose image bounds it* |
+| `flow` | *the residual holds before loop `<label>` and is removed at its head by `<kill>`; re-establish it inside the body by a branch, or state it as `bound @<label>` and let the checker verify base and step* |
+| `induction` | *the residual relates `<term>`, which loop `<label>`'s body writes, to that loop's binder or extent, and is not true before the loop; state the loop's running bound as `bound @<label> <name>: <relation>` - the checker verifies the base case at the preheader and the step on every body path* |
+| `boundary` | *`<callee>` publishes no verified relation about this result; add an exact `ensures` or write postcondition to `<callee>`, use the system operation's specified fact or typed outcome, or branch on the returned value* |
+| `content` | *no term names an element of `<base>`; bound the index instead, or size the indexed object to the value's type* |
+| `vocabulary` | *the residual is not derivable from any two-term fact this version admits; restructure so the operation is guarded by a comparison over the terms it names, or - when the residual is a correlation two values acquired together on one branch - factor the dependent statements into a function whose `requires` states the correlation and call it from each branch* |
+
+Two of the seven are `[DIAG-1]` 1859's existing restructurings, kept verbatim in
+the `boundary` row. The `content` row's second clause is the `s6` finding - sizing
+the fold table to the value's type dissolves the byte-wide half of I5 and is the
+better program. The `vocabulary` row's second clause is 3.10.2's disjunction
+teaching, folded in here rather than drafted as a second selection procedure -
+which is the seam A24 flagged when two parts wrote two `[DIAG-1]` fix-selection
+rules for the same payloads. **There is one procedure and one table.**
+
+A worked rendering, for `t9`'s residual after the deletion:
+
+```text
+whitefootc: Semantics/Source [OP-4]: UndischargedBoundsObligation {
+  residual: "carry < len(deref(input))", gap: "vocabulary",
+  mechanical_fix: "the residual is not derivable from any two-term fact this
+    version admits; restructure so the operation is guarded by a comparison
+    over the terms it names" }
+```
+
+and the writer's edit is `t10_residue_repaired.wf` (compiled, **accepts**):
+`ine(room, 0_u64)` where `room = input_room -wrap carry` becomes
+`ilt(carry, input_room)`. Same condition, same behaviour, one guard, no rule.
+
+### 6.3 `docs/patterns.md`
+
+**P8 "Claims to the boundary" - DELETE.** Its whole subject is where to place a
+claim. Its one surviving sentence - *a fact about a callee result belongs in that
+callee's verified `ensures` and reaches the caller through S12* - moves into P14.
+Its historical speed evidence, the retired `wc` experiment in which "a
+trap-per-increment form produced no vector operations while the semantically
+valid wrapping-counter form reached full SIMD and roughly 2x throughput", moves
+into P19, where it is the *general* argument rather than an argument about claim
+placement. **That number is historical and about a different comparison; it must
+not be re-used as this design's own measured gain.**
+
+**P14 "Claim only the proof residual" - REPLACE ENTIRELY** with:
+
+> **P14. Branch on the term the obligation names.** *Problem:* a partial
+> operation needs a fact the checker does not derive, and the writer already
+> computes a Boolean equivalent to it - `ige(remaining, 3_u64)`,
+> `ine(room, 0_u64)`, `ieq(at, length)`. *Pattern:* rewrite that Boolean so its
+> two operands are exactly the terms the obligation names, and guard on it.
+> `ilt(last_index, source_length)` in place of `ige(remaining, 3_u64)`;
+> `ilt(carry, input_room)` in place of `ine(room, 0_u64)`; `ige(at, length)` as a
+> loop exit test in place of `ieq(at, length)`. The condition is the same
+> condition, the behaviour is the same behaviour, and only the second spelling is
+> a fact `[ENT-3.S1]`. *Why it works:* the entailment state holds two-term
+> difference bounds; a guard whose operands are the obligation's own terms lands
+> as exactly the relation the obligation wants, while a guard over a derived
+> quantity needs the bridge equation - `remaining = source_length - input_index`,
+> three terms - which no difference-bound state can hold in either direction.
+> *Current value:* this single rewrite dissolves the two hardest value-flow
+> claims in the tree and two of the hardest iteration claims with **no rule
+> change** (`t4`, `t8`, `t10`, compiled).
+
+**New P19. Guard in statement position; widen the signature in value position.**
+The else-free `if` is free; a false edge that must produce a value is not. When a
+guard's false edge cannot be taken but a value is required there, prefer widening
+the result to `Result<T, E>` and returning `Err` over inventing a plausible
+ordinary value: the first is honest about the function's domain, the second hides
+a defect in code no test reaches.
+
+**New P20. The loop exit test is the loop's guard.** The exit test of an ordinary
+`loop` is the only fact the head carries about the cursor. Spell it as the
+comparison the body's subscripts need and the body needs no other guard, whatever
+the stride (`t2`, `t4`, `t8`).
+
+**New P21. State the loop's running bound, not the prover's intermediate.** When
+a fact becomes true one iteration at a time - an accumulator's ceiling, a
+counter's relation to the trip count - write it as `bound @l name: relation;` at
+the top of the body, in the arithmetic the fact actually has. Do not introduce
+`let`s to name the prover's intermediate values: the statement is the conclusion,
+and the checker finds the rest. When the fact is *already* true before the loop,
+write nothing - retention carries it.
+
+`docs/patterns.md`'s header paragraph and its "Known gaps" section both need one
+pass for claim references, and P12 ("External constrained subject takes a value
+path") is unchanged and becomes the *only* rule for world values rather than one
+of two.
+
+### 6.4 The redundancy note, and the fence it needs
+
+As the prover grows, guards written against an older ceiling become dead code the
+writer would like to delete. A **verdict** here would reintroduce exactly the
+monotonicity exception this design removes - `t3_redundant_guard.wf` (compiled,
+accepts today) would stop compiling - so it must never be one.
+
+> **`[DIAG-1]` review note (non-blocking).** When the entailment derives an
+> `if_stmt` or `value_if` condition's comparison relation at that node, the
+> compiler may emit, on a separately selected review channel, the note *"the
+> entailment derives `<residual>` here from `<sources>`; this guard's false edge
+> is unreachable and the guard may be deleted."* **No acceptance judgment reads
+> this note, and no configuration of a conforming implementation converts it into
+> a verdict, a warning that fails a build, or any other acceptance-bearing
+> output.** The same applies to a verified `bound_stmt` whose projection the
+> state already derives `[IND-9]`.
+
+The last sentence is A13's fence, and it is deliberately stronger than "gate it
+behind a falsifier": the drafted recommendation homed this note in `[DIAG-3]`
+1985, a rule the same design deletes, and left the "may become a verdict"
+question to a build flag. **A note that can become a verdict by configuration is
+the monotonicity exception with an extra step**, so the prohibition belongs in
+the rule text. This is the only mechanism found that gives `[CLM-2]`'s redundancy
+rule its benefit without any of its cost.
+
+---
+
+## 7. Conformance and activation
+
+### 7.1 What the conformance corpus does
+
+517 cases; **81 have a claim in their source** and **55 cite a `CLM-*` rule** (53
+of those 55 are claim-bearing; `clm3-pos-transitive-value-branch` and
+`clm3-neg-static-conjunction-unproved` cite CLM-3 without writing a claim, which
+is the point of both).
+
+| expect | cases | disposition |
+| --- | --- | --- |
+| `run` (exit 0) | 39 | **rewrite claim-free and keep.** These are executable behaviour cases whose claims are incidental scaffolding for a subscript. Each keeps its id, its `rules` list loses `CLM-*`, and its source gains a guard. Any case that cannot be rewritten without changing what it executes is **retired with an honest technical reason in the same change, never silently** |
+| `accept` | 9 | **rewrite claim-free and keep**, same rule |
+| `reject CLM-1` | 7 | **delete.** Every one asserts a claim-admission refusal; with no claim there is no judgment to test. Two of the seven are the trap cases and go with `[DIAG-3]` |
+| `reject CLM-2` | 4 | **delete**, same reason |
+| `reject CLM-3` | 6 | **delete**, plus the two non-claim-bearing CLM-3 cases: 8 in total |
+| `reject PRV-2` | 6 | **rewrite, do not delete.** These test that external data cannot reach a protected subject; each currently exercises the claim route and must be re-cut against the surviving route so the rule keeps its coverage |
+| `reject PRV-3` | 3 | **rewrite**, same reason; `prv3-neg-read-offset-taint` is deleted, its subject being the claim-only route over element content |
+| `reject EFF-2` | 5 | **rewrite or delete** depending on whether the case is about `traps` (delete with the category) or another row (rewrite) |
+| `reject FN-8`, `reject FN-3` | 1 each | rewrite |
+
+Net: **20 cases deleted, 63 rewritten**, and the manifest's `rules` coverage for
+`CLM-1`, `CLM-2` and `CLM-3` disappears with the rules. The manifest's non-case
+policy rows for `DIAG-3`, `SCOPE-4`, `EFF-4`, `TRAP-1`, `PAR-1`, `PAR-2` and
+`PAR-3` all carry claim-specific `reason` prose today and must be rewritten or
+deleted in the same change; the `SCOPE-4` and `EFF-4` rows lose their
+fault-injection coverage entirely, because there is no fault to inject.
+
+**Two verdict families hold with their prose re-narrated.**
+`fn9-neg-named-outcome-no-publication` holds - a named stored outcome still
+carries no pending summary, and only `propagated` leaves the exclusion list -
+with its `doc` restated to the new list. `fn9-neg-entry-image-kill` keeps verdict
+`reject FN-9` and gains the `entry ` prefix and a killing-edge coordinate; since
+the manifest pins only `{"kind":"reject","rule":"FN-9"}`, the case is unaffected
+mechanically and only its `doc` gains a sentence. All 15 `fn8-neg-*`, all 3
+`fn8-pos-*` and all 3 `fn9-pos-*` are unchanged.
+
+### 7.2 New cases required
+
+Conformance evidence is what `AGENTS.md` rule 4 makes the owner record, so this
+list is the one to get right. Twenty-eight cases, each pinning one sentence of
+new normative text.
+
+| # | case | expect | what it pins |
+| --- | --- | --- | --- |
+| 1 | `scope4-pos-no-writer-trap` | accept | a program exercising every proof-required family, with an empty effect row where v0.39 would have required `traps` |
+| 2 | `eff1-neg-traps-spelling` | reject EFF-1 | `traps` in an effect row is now a syntax error, not an over-declaration |
+| 3 | `gram4-neg-claim-spelling` | reject GRAM-4 | `claim x: c because "...";` no longer parses; the word is retired, not free |
+| 4 | `gram4-neg-deny-claims-spelling` | reject GRAM-4 | same for the `fn_decl` marker |
+| 5 | `ent1-pos-monotone-guard` | accept | the `t3` shape: an `if` on a fact the checker already derives is accepted, so a strengthening cannot reject it |
+| 6 | `ent3-pos-guard-negation-continuation` | accept | the `t2` shape |
+| 7 | `ent3-pos-checked-arm-pair-guard` | accept | the `t4` shape |
+| 8 | `prv3-pos-external-branch-only` | accept | replaces `prv3-pos-internal-claim` |
+| 9 | `prv2-neg-bridge-only` | reject PRV-2 | 3.1.3: the surviving demand kind is `bridge` and a direct demand cannot be constructed |
+| 10 | `sys8-pos-range-guarded-external` | accept | **the `y4` shape**: `[SYS-8]`'s two range goals discharged by guards over an external endpoint |
+| 11 | `op4-neg-residue-gap-token` | reject OP-4 | the `t9` shape, pinning the rendered residual **and** the `gap` token and fix string |
+| 12 | `op4-neg-induction-gap-token` | reject OP-4 | 6.1 clause 4: an accumulator residual is classified `induction`, not `vocabulary` |
+| 13 | `ent5-pos-close-before-kill` | accept | `[ENT-5.P0]`: `r7_closure_vs_kill.wf`'s shape, which rejects under the old order |
+| 14 | `ent3-pos-backward-wrap-reading-point` | accept | `[ENT-3.S5.B]` reads the state after the kill, after the forward image, after one closure, once |
+| 15 | `ent3-neg-backward-wrap-self-destination` | reject OP-4 | `set at = at -wrap 1_u64` publishes no backward fact |
+| 16 | `ent3-pos-shl-attained-maximum` | accept | u8, `ha = 200`, `k = 1`: the image is 254, and a program relying on 255 is refused |
+| 17 | `ent3-neg-mul-box-leaves-type` | reject OP-2 | `[ENT-3.S5.M]` publishes nothing when `ha*hb` exceeds the type |
+| 18 | `ent3-neg-relaxed-mul-needs-positive-b` | reject OP-2 | **`j03`'s shape**: the `*` row is silent without `Z - b <= -1`, so the false fact is not published |
+| 19 | `ent6-pos-defined-two-nonconstant` | accept | `[ENT-6.D]` |
+| 20 | `ent5-pos-retention-constant-ladder` | accept | **`y3`'s shape**: a constant-extent walk compiles because the ladder offers the weakening |
+| 21 | `ent5-neg-retention-nested-simultaneity` | reject OP-4 | `r_p1_nested.wf` must remain a rejection |
+| 22 | `ent5-pos-retention-nested-universe` | accept | `fir_filter.wf:45`'s shape: the inner loop receives the outer's retained fact |
+| 23 | `ent5-pos-counted-false-edge` | accept | `[ENT-5.X]`'s second conjunct under `lower <= upper` |
+| 24 | `ent5-neg-counted-false-edge-descending` | reject OP-4 | **`L23`'s shape**: `for i in 5..3` leaves the binder at 5, so the conjunct is withheld |
+| 25 | `ind-pos-counter-trip-count` | accept | I4 closed (3.9.5) |
+| 26 | `ind-neg-step-frame` | reject IND-6 | **`j3`'s shape**: the statement is refused because the check reads the head state, not the exit state |
+| 27 | `ind-neg-wrap-without-side-condition` | reject IND-4 | **`j01`/`j02`'s shape**: a `-wrap` commit is unsubstitutable without `b - a <= 0` |
+| 28 | `ind-pos-redundant-statement` | accept | `[IND-9]`: a statement the checker could prove without it is verified and kept |
+| 29 | `ind-neg-path-cap`, `ind-neg-magnitude-cap` | reject IND-4 / IND-3 | the two spec-fixed limits and their hard errors |
+| 30 | `fn9-pos-result-len-unrouted`, `-result-field-projection`, `-result-to-result`, `-routed-buffer-payload` | accept | `[FN-9.E1]`'s four widenings |
+| 31 | `gram9-pos-contract-len-atom` | accept | `len(P)` inline in a clause, no `contract_define` |
+| 32 | `fn9-pos-propagate-publishes`, `-arm-set-same-binding`, `-projected-set-receiver` | accept | `[FN-9.E4.a/b/c]`, each a compiled separating pair today |
+| 33 | `fn10-pos-write-postcondition` | accept | 3.10.5's worked example |
+| 34 | `fn10-neg-write-place-not-in-writes-row` | reject FN-10 | admission clause (b) |
+| 35 | `fn10-neg-entry-image-operand` | reject FN-10 | **admission clause (d)**: A7's flagship clause is refused where the writer can see why |
+| 36 | `fn10-neg-overlapping-write-relations` | reject FN-10 | admission clause (e) |
+| 37 | `fn10-neg-err-return-unconstrained` | reject FN-10 | **`j2`'s shape**: a callee leaving the place at 99 on its `Err` return is refused, because every return is selected |
+| 38 | `ent3-pos-sys8-projection-constant`, `ent3-neg-sys8-projection-symbolic` | accept / reject OP-4 | `[ENT-3.S10]`'s arity projection: `next = start + required` publishes two bounds for a constant `required` and nothing otherwise |
+| 39 | `prv3-neg-sys8-external-start` | reject PRV-3 | **the restored provenance sentence**: an external `start` is not laundered into an internal endpoint |
+
+Cases 18, 26, 27, 35, 37 and 39 are the ones that would have been forgotten: each
+pins a repair that turns an admitted memory-unsafe or laundering program back
+into a rejection, and each has a compiled premise in section 12's ledger.
+
+### 7.3 The META-5 delta, summed
+
+A24's D-7: three parts declared three half-deltas and nobody summed them. The
+merged declaration, in the specification's own form, counting `[IND]` as **one**
+numbered rule with ten clauses and `[ENT-5.R]`/`[ENT-5.X]`/`[ENT-5.P0]` as
+clauses of `[ENT-5]` rather than as new rules:
+
+> numbered rules **+2/-5** (135 remain: `[CLM-1]`, `[CLM-2]`, `[CLM-3]`,
+> `[DIAG-3]`, `[TRAP-1]` deleted; `[IND]` and `[FN-10]` added);
+> grammar productions **+3/-2** (76 remain: `bound_stmt`, `rel_term` with its
+> `affine`/`product`/`factor` levels counted as one, and `write_route` added;
+> `claim_stmt` and its `stmt` alternative deleted, and the `deny_claims`
+> terminal removed from `fn_decl`);
+> unique fixed lowercase grammar atoms **+2/-3** (`bound` and `wrote` added;
+> `claim`, `because` and `deny_claims` moved to the retired-spelling reservation
+> list);
+> writer operation spellings **+0/-0**; opaque system nominal spellings
+> **+0/-0**; **runtime-trap families +0/-1 (0 remain)**;
+> entry forms **+0/-0** (the `deny_claims command fn main` prefix is deleted,
+> leaving one form);
+> contract block forms **+0/-0** (the write route is a clause route, not a block
+> form); system operations and declaration records **+0/-0** (203 remain);
+> exception clauses **+0/-3** (`[PAR-1]`, `[PAR-2]` and `[PAR-3]`'s
+> erroneous-execution clauses);
+> effect categories **+0/-1** (`traps`; three remain);
+> fact sources **+1/-1** (eleven remain: S3 retired beside S8, `[IND-8]`'s
+> projection added);
+> proof views **+0/-1** (two remain);
+> PRV demand kinds **+0/-1** (one remains);
+> **deferred amendments +0/-1**: `[TRAP-1]`'s host-surviving in-process trap
+> containment is withdrawn, because the construct it would have contained does
+> not exist.
+
+**The selection ground is owner-directed, not evidence-selected**: the charter of
+2026-08-29 discards the construct. The header must say so in those words rather
+than citing a campaign, because no measurement selected it and pretending
+otherwise is the one thing `META-5` exists to prevent.
+
+**This is a narrowing of the accepted set** - every claim-bearing program is
+rejected - and it is the first such narrowing the project has made deliberately.
+The `[ENT-1]` monotonicity sentence of 3.1.2 is written to hold **from v0.40
+forward**, not across the v0.39-to-v0.40 boundary, and the amendment record in
+`governance/APPROVALS.md` must say so in those words.
+
+### 7.4 Activation mechanics
+
+The mechanism is built and needs no change; this is the exact sequence, so nobody
+has to reverse-engineer the Makefile.
+
+1. **On the work branch the active file becomes a candidate.** Set the header to
+   `Status: CANDIDATE v0.40 supersedes v0.39 <v0.39's recorded digest>`, keep the
+   title token at `v0.40`, and edit `spec/kernel-spec.md` in place.
+   `make spec-candidate-integrity` passes exactly when v0.39 is the one recorded
+   version without an archive, the declared supersedes digest is v0.39's recorded
+   digest, and v0.40 is v0.39's successor. The candidate's own digest is
+   deliberately unchecked, which is what lets several halves land on the same
+   branch independently and be merged before activation.
+2. **Write the META-5 delta (7.3) and the selection ground.**
+3. **At merge time the outgoing bytes are archived.** Copy the v0.39 bytes to
+   `spec/kernel-spec-v0.39.md`, set the active header to `Status: ACTIVE v0.40`,
+   and append to `governance/APPROVALS.md` the `ARCHIVE-SPEC` and `ACTIVE-SPEC`
+   records. `make check`'s `spec-archive-integrity` stage rejects `CANDIDATE`
+   status, so a merge-ready revision must have done exactly this;
+   `spec-append-only` and `spec-digest-sync` then hold the chain.
+4. **Record the conformance content** as `AGENTS.md` rule 4 requires: the exact
+   added, modified, deleted and renamed conformance content and its before/after
+   boundary. For this amendment that is 7.1's table plus 7.2's list, and it is
+   unusually large - **20 deleted cases is the biggest single conformance
+   deletion the project has made.** The record must state, in the owner-approved
+   text, that the deletions are of cases whose subject rules no longer exist, and
+   name each one. Deleting a failing test to go green is a governance breach; the
+   only thing distinguishing this from that is the record.
+5. **Derived material in the same change**, as `AGENTS.md`'s consistency rule
+   requires: the lexer/parser and generated syntax data lose three atoms and two
+   productions and gain two atoms and three productions; `docs/patterns.md` takes
+   6.3; `docs/constitution.md` takes section 5's T3 and W3;
+   `docs/roadmap.md`'s PROOF-* entries lose their claim framing; the compiler
+   deletes `claim_locality.rs` and the CLM-1/2/3 passes and the `Full-minus`
+   scratch machinery; `tests/codegen/cases/bounds/*/cases.json` takes 4.5.3.
+6. **New gate tests wired in the same change**: (a) every operation-table row has
+   an image entry (3.4's totality test); (b) every `[SYS-8]` contract has an
+   admitted projection (3.11.1's enumeration sentence); (c) the `[IND-8]`
+   head-truth assertion of F-I3, in a debug mode.
+
+**The sequencing note that decides the shape of the merge.** The deletion
+narrows the accepted set and the publishers widen it. Landing the deletion first
+leaves every claim-bearing program rejected with no replacement route for the 108
+bucket-P facts, so `make check` cannot be green at that point - which by
+`AGENTS.md` rule 3 means the deletion cannot be merged alone. **The deletion, the
+image closure and its rows, retention, the exit rule and the induction statement
+are one merge.** This is a scheduling fact, not an approval requirement.
+
+---
+
+## 8. The implementation plan
+
+Design only; no code is written here. Sizes are estimates and are the numbers I
+would most expect to be wrong. **Batches B1 through B5 are one merge to `main`**
+by 7.4's sequencing note; they are ordered so that each is independently
+reviewable and each leaves the tree buildable, not so that each is separately
+mergeable. Each carries its own derived material.
+
+**B0 - run the two cheap experiments first. Small (2-3 days, no spec text).**
+Run F-D4 (rewrite `percent_decode.wf`, `ipv4_checksum.wf` and `wfgrep.wf`
+claim-free in full and check the reduced probes survive contact with the whole
+sources) and F-I1 (hand-execute `[IND-7]`'s certificate check against the six
+traces of 3.9). Between them they decide whether 4.5.2's twenty rows come out the
+way this design predicts and whether `[IND-7]`'s fragment is the fragment that
+works. **Neither needs a line of compiler code, and both would move rule text if
+they fail.** Deliverable: a `docs/done/` record with the measured verdicts.
+
+**B1 - the image column and its rows. Large (the biggest batch, ~2 weeks).**
+Enumerate the operation table's image column row by row **and decide each row's
+direction**; write `[ENT-3.S5]`, the corrected shift, `ior`/`maxor` and `*wrap`
+box rows, the relaxed-operand image with its `*` side condition, the saturating
+and `%`/`/`/`imin`/`imax` rows, `[ENT-6.D]`, the generalised `[ENT-3.S10]` with
+its projection, provenance and enumeration sentences, and `[ENT-5.P0]`; delete
+the delivery block, `[GIVE-1]`'s carrier judgment and 3009. Compiler: a new
+`semantic/entailment/image.rs` (~700 lines, table-driven), `flow.rs` loses three
+delivery functions and gains the value-commit dispatch, `state.rs` gains image
+application and the `[ENT-5.P0]` order. Gate additions: 7.4's tests (a) and (b);
+one conformance case per nonempty image row family. **Its own falsifier is F-R2
+and it must be run row by row.**
+
+**B2 - retention and the exit rule. Medium-large (~1.5 weeks).**
+Write `[ENT-5.R1]`-`[ENT-5.R9]` including the ladder and the universe iteration,
+and `[ENT-5.X]`. Compiler: a fixed-point driver around the existing transfer with
+a candidate set - **the transfer itself does not change** - plus the ladder
+computation. Migration: the nine corpus sites 4.5.2 routes through retention.
+Gate additions: cases 20-24 of 7.2. **Its falsifiers are F-L1 through F-L4, and
+F-L2's cost measurement gates whether the ladder needs a spec-fixed round cap.**
+
+**B3 - the induction statement. Medium (~1 week).**
+Write `[IND-1]` through `[IND-10]`, the grammar production and the `[ENT-2]`
+cross-type amendment. Compiler: a new module - a polynomial type, a normalizer, a
+path enumerator, the substitution with its frame discipline, and the certificate
+check. **Neither touches the DBM.** Gate additions: cases 25-29, plus F-I3's
+head-truth assertion in a debug mode. **This is the batch with a soundness bill**
+- `[IND-6]`'s frame and `[IND-4]`'s substitution are where two independent
+memory-unsafety admissions lived - and F-I3 is the assertion that catches a frame
+error nobody thought of.
+
+**B4 - the contract system. Medium (~1 week).**
+Write `[FN-8]`'s contract surface, `[FN-9.E1]`, `[FN-9.E2]`, `[FN-9.E4.a/b/c]`,
+`[GRAM-9.C1]`, `[FN-10]` with its five admission clauses, `[DIAG-2.E1]`, and
+`[FN-9.L1]`. Compiler: `[FN-10]`'s establishment needs a resolved place for a
+write actual's projection at a call site - machinery `[OWN-7]` already has - and a
+second RelationTemplate kind; the selected-return walk, the per-view aggregates
+and the SCC publication are reused unchanged. Three deletions offset it:
+`propagated` from one exclusion list, `projected` from another, and the arm-set
+route's destination-identity test. File the two compiler defects (the projected
+`contract_define`, the `n - n <= 0` rendering) separately and now, because both
+are wrong today and neither needs a spec change.
+
+**B5 - the deletion, the diagnostics, and the corpus pass. Medium (~1.5 weeks).**
+Delete `[CLM-1..3]`, `[DIAG-3]`, `[TRAP-1]`, the `traps` category, S3, the U
+view, `[PRV-2]`'s direct demand, and the claim-authority block; write the
+`[SCOPE-4]`, `[ENT-1]`, `[ERR-4]`, `[SCOPE-2]`, `[PAR-*]` and `[QUAL-3]`
+replacements; write `[DIAG-1]`'s payload, the seven-token classifier, the fix
+table and the review note; take `docs/constitution.md`'s T3 and W3 and
+`docs/patterns.md`'s five entries; rewrite the 135 corpus claims, the 63
+conformance cases and the 13 codegen fixtures; delete the 20 cases with their
+record. Compiler: `claim_locality.rs` (2122 lines) and the CLM passes are
+deleted, `ViewStates` loses a view, and the `Full-minus` scratch discipline goes.
+**This batch is the widest, shallowest diff in the project and it is where the
+approval record is written.**
+
+**B6 - measurement, after the merge. Small.**
+Run F-I5 (the blind-writer trial on the `bound` notation and the three-tier
+redirect) and the P0 measurement the deletion predicts: the staged permission
+judgment loses a read footprint and a non-continuing edge per former claim site
+(3.13), and `docs/patterns.md` P8's retired `wc` number is the only comparable
+figure in the tree and is **historical**. A fresh measurement on one real loop is
+what would let this design claim a P0 gain in its own right.
+
+**What is deliberately not in the plan.** No octagon, no polyhedra, no widening
+operator, no quantifier, no denotation column, no `rev`, no `by k`, no
+congruence, and no restoration of a shape source. Each is priced in 4.4 and each
+is declined with a reason.
+
+---
+
+## 9. Flagged decisions for the owner
+
+Nine. Each is a place where I made a decision the design needed and the owner may
+reverse. **Every recommendation below is ADOPTED IN THIS DESIGN AND FLAGGED FOR
+THE OWNER. None of them is owner-approved, and nothing here records approval of
+anything.** Each states the alternative and what reversing costs.
+
+**D1 - is `[IND-7]`'s certificate check "search-free"?**
+`[ENT-1]`'s law is quoted as *closed, deterministic, search-free*. `[IND-7]`
+(3.9.1) decides an obligation by asking whether **some** assignment of
+hypotheses to elimination terms, drawn from a syntactically fixed list of at most
+16 and applied to at most 4 terms, drives the relaxed residual to zero. Literally
+read, an existential over a finite space is a search.
+*The case for it:* every conforming implementation computes the **identical
+predicate** on identical inputs, which is the property 2836 actually demands; the
+space is spec-fixed with hard errors at its bounds; and there is no
+implementation-chosen strategy anywhere in it.
+*The case against:* it is the first place in the language where acceptance is
+defined by an existential rather than by a procedure.
+*The alternative and its price:* keep the drafted greedy elimination and accept
+that `[ENT-1]`'s monotonicity sentence becomes **conditional** - "strengthening
+preserves acceptance provided it does not change what is derivable at an
+`[IND-7]` check point" - which is not a theorem, and which reintroduces the
+`[CLM-2]` exception in a worse form, because the writer must re-derive a
+statement against an elimination order they cannot see (2.4).
+**ADOPTED AND FLAGGED: the certificate form.** It is the only repair found that
+keeps both laws, and it accepts a superset of the greedy rule so no worked trace
+is lost.
+
+**D2 - ship the local statement `[IND-10]`, or hold it?**
+A23 removed three of its four stated customers: `percent_decode.wf:28,31` and
+`wfgrep.wf:434` all dissolve today with a guard (`t4`, `t10`, compiled), so the
+argument *"these have no `if`/`else` route, their `else` arms are unreachable"* is
+refuted by a compiled sibling probe.
+*What survives:* **I1's midpoint**, where the `else` arm genuinely is a lie about
+the program - *what does a binary search do when its own midpoint is outside its
+own window?* - and `L11_bsearch_ifelse_price.wf` (compiled) prices the branch
+route at one never-taken, perfectly-predicted compare per round plus one invented
+behaviour.
+*The recorded dissent:* one customer is a thin basis for a statement form, and
+stripped of its label and its base/step obligation the construct is a
+writer-spelled predicate at an arbitrary statement position - the deleted claim
+with the trap and the record removed. The owner shelved the I1 dilemma rather
+than asking for it to be closed at any price.
+*The restriction that answers the dissent:* `[IND-10]`'s straight-line-region
+rule. Every term must be committed in the same region or live and uncommitted
+across it, which is exactly what distinguishes I1's locally computed midpoint
+from a claim about loop-carried values, and it also removes the need for any
+depth bound on the substitution.
+**ADOPTED AND FLAGGED: ship it, restricted, in the same change as the labelled
+form.** *If the owner holds it:* I1 goes to `if`/`else` at `L11`'s measured price
+and stays on the irreducible list; nothing else in the design moves, because the
+four bucket-B claims have compiled routes and `[IND-1]`-`[IND-9]` do not depend
+on it.
+
+**D3 - is the `gap` token cross-implementation normative?**
+`[DIAG-1]` 1873 fixes byte identity "only where this specification explicitly
+fixes both selection and encoding", and 6.1's procedure is fully deterministic,
+so it *can* be fixed.
+**ADOPTED AND FLAGGED: fix it.** The token is the whole teaching channel after
+the deletion, and a uniform token is what makes a future ceiling raise a grep
+over diagnostics. The cost is that a second implementation must compute
+dominators and preheader states **on the rejection path**, which it already has,
+and which is the one path where the compiler has already decided to do no more
+work.
+
+**D4 - delete `[PRV-2]`'s `direct` demand kind, or keep it unreachable?**
+**ADOPTED AND FLAGGED: delete it** (3.1.3). Keeping an unreachable case "for a
+future construct" is the accreting-list method the audit struck a proposal for,
+and the derivation that resurrects it is three sentences long if a future
+construct ever needs one. The risk is that someone later re-adds a non-bridge
+route and does not notice the demand kind is gone; case 9 of 7.2
+(`prv2-neg-bridge-only`) is the guard against that, and `[IND-8.V]` is the reason
+the induction statement is not itself such a route.
+
+**D5 - keep `claim`, `because` and `deny_claims` reserved, or free them?**
+**ADOPTED AND FLAGGED: keep them reserved**, on the `[FORM-3]` retired-spelling
+list that already holds `trap`. Freeing them lets a program bind
+`let claim = ...;` and lets an AI writer trained on v0.39 produce source that
+parses into something else entirely. Reserving costs three identifiers.
+
+**D6 - a caller-side snapshot term for `[FN-10]`?**
+`[FN-10.A]` clause (d) refuses a write clause whose other operand is a place the
+call disturbs, which costs the language the sentence *"I never move the cursor
+backwards"* - `ensures wrote(deref(at): next): ige(next, deref(at));` - because
+at the caller the formal and the written datum resolve to the same place and its
+pre-transfer image is dead (A7).
+*The alternative:* let `[FN-10.E]` introduce **one fresh compiler-owned snapshot
+term per established relation**, bound at the call before the callee-effect kill,
+in the same way `[ENT-2]` (d) already admits two compiler-owned capture terms for
+a `for_stmt`, with its own kill rule.
+**ADOPTED AND FLAGGED: refuse at admission for v0.40; record the snapshot term as
+the widening.** The refusal is honest and diagnosable, the widening is a real new
+term kind with its own kill discipline, and it should be bought when a program
+wants it rather than on the strength of one example that does not work.
+
+**D7 - buy the backward `+-wrap` rows, or leave the direction column forward?**
+The audit **demoted** them ("neither necessary nor sufficient"), one part
+re-promoted them to required on a factual claim `t4`/`t8`/`t10` refute, and this
+design keeps them as an ordinary direction decision (3.5.6).
+**ADOPTED AND FLAGGED: keep them, as part of B1's direction enumeration rather
+than as a rule the batch must buy.** They are sound, they are O(1) per commit,
+they reach `wfgrep.wf:553`, and the enumeration has to decide direction for every
+row anyway. *If the owner declines them:* `wfgrep.wf:553` takes the restructure
+Q1 recommends, and nothing else in the design moves.
+
+**D8 - `[ENT-3.S10]`'s widening from five operations to every `[SYS-2]`
+operation.**
+The 0106 design widened both the operation set and the relation set in one
+sentence and argued only the second (S3).
+**ADOPTED AND FLAGGED: keep both widenings, with the enumeration sentence.** The
+accreting-list objection applies to the operation list exactly as it applies to
+the relation list, and the enumeration obligation - each `[SYS-8]` contract's
+admitted projection written beside it, in the same change - is what keeps one
+accreting list from becoming an unenumerated one. *If the owner declines the
+operation widening:* keep the five named operations and the projection sentence;
+the world-value fence and every scenario are unaffected.
+
+**D9 - one contract rule id, or three?**
+**ADOPTED AND FLAGGED: three, with the shared text factored into `[FN-8]`'s
+contract surface** (3.10.6). Collapsing into one id buys legibility at the price
+of every cross-reference in the specification, every `fn9-*` conformance case
+name, every diagnostic a writer reads, and the append-only approval records - and
+the repository's own rule is never to relocate a load-bearing path merely for
+tidiness.
+
+---
+
+## 10. Open questions, each with a recommendation
+
+These are questions the design does not need to answer to be coherent, unlike
+section 9's decisions, which it does.
+
+**Q1 - `wfgrep.wf:553`, the corpus's one true residue.** Its chain is
+`bounded_scan + moved < bounded_scan + tail = bounded_available <= input_room`,
+needing two sums. Options: (a) the backward `+-wrap` rows (D7), which do reach
+this shape; (b) restructure the source to guard `source_index` directly against
+`input_room` before the read, which is P14's rewrite one more time.
+*Recommendation: (b), and do not buy a row rule for one claim.* The audit demoted
+the rows on exactly this reasoning and 4.5.2 shows the same rewrite closing four
+siblings. **If the rewrite turns out to change what `wfgrep` does, that is a
+finding worth more than the rule.**
+
+**Q2 - is the route menu's totality sentence true, or true-but-expensive?**
+3.12.1 says at least one route is always open. For **I5** the guard route exists
+but re-runs a validation the program already performed, and `[ENT-6]` 3172's
+promise it descends from was only ever *"the goal is writable"*, not "cheaply".
+*Recommendation: keep the sentence with the clause it already carries* - "where
+the only open route re-establishes a fact an earlier pass established,
+`[DIAG-1]` names that earlier pass" - and let the experiment test it. Weakening
+it to nothing is worse: an unstated totality promise is a promise nothing checks.
+
+**Q3 - should `[IND-3]`'s three caps be the right three?** Coefficient magnitude
+`2^127`, degree 4, 256 monomials, plus `[IND-4]`'s 64 body paths and
+`[IND-7]`'s 4 elimination terms and 16 hypotheses. *Recommendation: keep all six
+as drafted and measure.* Every one is a spec-fixed limit with a named hard error,
+which is the legal form; none is reached by any example here (the largest is
+degree 2 with five monomials and three hypotheses); and a limit that is never hit
+is cheaper to raise later than a missing limit is to add.
+
+**Q4 - does `[ENT-5.R]`'s ladder need a spec-fixed round cap?** 3.6.4 argues not
+and F-L2 is the measurement. *Recommendation: write none until F-L2 asks for
+one*, and if one is ever needed make it a number in the specification, never an
+implementation choice.
+
+**Q5 - `[IND-10]`'s straight-line region: should a `match` arm count as one?**
+As drafted a region ends at any branch, so a statement inside a `match` arm sees
+only that arm's statements. That is right for the midpoint and might be too tight
+for a decoder that computes a probe inside an arm. *Recommendation: leave it
+tight and widen on a program*, because widening is monotone and narrowing is not.
+
+**Q6 - should `[ENT-3.S9]`'s const-array element range be generalised to a
+runtime-built table (V6)?** *Recommendation: no, and say why in the ceiling text*
+(4.4). The ceiling clause today reads as one gap and is two: S9 already publishes
+half of it, which is why `p_constarr.wf` compiles and `p_content.wf` does not. A
+writer holding those two probes can falsify a ceiling clause that does not say
+which half it means.
+
+**Q7 - does `[ERR-4]` need a fourth class for the `[STOR-6]` target guard?**
+*Recommendation: no.* `[PROG-3]` 1488-1490 already classifies a target failure as
+"a target or environment failure ... not a source-language rejection, not a
+trap", and the new `[SCOPE-4]` names it explicitly. Adding a class would put a
+trusted-base condition into a source-facing vocabulary for the first time.
+
+**Q8 - delete `[DIAG-3]`, or repurpose it for target and resource failures?**
+*Recommendation: delete.* A machine-readable record for a trusted-base failure is
+a different artifact with different consumers, and inheriting the claim record's
+JSON shape would be the specification pretending a continuity that does not
+exist. If a target-failure record is wanted it is a new rule with its own
+derivation.
+
+**Q9 - should the corpus's 132 `contract_define`s that exist only to name a
+`len(...)` be inlined after `[GRAM-9.C1]`?** *Recommendation: change none of
+them.* The define is still the more legible spelling when the length is used
+twice, and inlining 132 of them is exactly the large structural churn no current
+work needs. New contracts written after the change may inline.
+
+**Q10 - does `requires` now need a review discipline, since it is the only place
+a writer can state a premise the callee's own text cannot derive?**
+*Recommendation: no.* A `requires` is discharged by the caller before entry
+(`[FN-8]` 1244-1248), so it is never trusted; it **moves** an obligation rather
+than creating one. The one place this could go wrong is a `requires` no caller
+can satisfy, and 1257's uninhabited disposition already makes that a success with
+metadata rather than a hidden hole. Worth one sentence in `docs/patterns.md`, not
+a rule.
+
+**Q11 - the staged-permission interaction with retention.** `[PAR-3]` constrains
+how a drain loop's body may be arranged, so a loop rule must survive a body the
+writer cannot freely restructure. Retention imposes no arrangement - it is a fact
+rule over whatever graph `[FN-1]` gives - and a `bound_stmt`'s leading position
+is compatible with any body. *Recommendation: no rule change, and add the
+staged-write dual to F-L1's program set*, because it was not compiled and "the
+arrangement does not matter" is a reading.
+
+---
+
+## 11. Honest limits, in red ink
+
+### 11.1 RED INK - the impossible-else bill
+
+**Where a fact is true and underivable, the writer writes a branch no execution
+takes, and in value position invents a value for its false edge.** That is
+3.12.3's problem and it is the only genuine cost of the deletion. Its three tiers
+are zero (statement position, the common case), zero-to-one `break` (loop
+position), and one invented value or one widened signature (value position).
+
+The corpus bounds how often the third tier bites: of 83 claims in accepting
+sources, all 18 real-program claims and 55 of 83 discharge a subscript, and a
+guarded subscript is a statement in every one of them. **No corpus claim was
+found whose successor is a value-position invented return.** That is evidence,
+not proof, and F-D4 is the experiment.
+
+Two things must be said beside it and neither is comfortable. **The dishonest
+successor is accepted by the language**: an `else` that returns a
+plausible-looking wrong value compiles, and it is worse than a claim was, because
+a claim at least announced that the writer believed the case impossible. And the
+third tier's cost is understated by "one widened signature": a result type that
+becomes `Result<T, E>` **propagates a `match` to every caller**, and the drafted
+claim that "there is no case where the deletion adds a runtime check that was not
+there before" is true of the guarded operation and not of the callers.
+
+### 11.2 RED INK - the image column is total by test and strong only by review
+
+3.4's gate test checks that every operation-table row **has** an image entry.
+Nothing checks that a row's entry is **the unique strongest set of `[ENT-2]`
+facts its semantics entail**. A row whose published image is weaker than its
+semantics entail is a defect under `[ENT-1]`, and it shows up as a writer's
+`image` token where the token is wrong - a better failure mode than today's,
+where the same weakness is indistinguishable from a deliberate limit, but not a
+proof.
+
+This design **made that exposure larger, not smaller**, and the honesty demands
+saying so: `[ENT-3.S10]`'s enumeration sentence adds a second per-contract
+review obligation on the `[SYS-8]` list, and `[ENT-3.S5.B]`'s backward rows are
+the only images that are not a pure function of their operands. Two of the rows
+this batch inherited were **wrong when reviewed** - the shift image published 255
+where 254 is attained, and the relaxed-operand `*` row published a false fact
+that a compiled program (`j03`) turns into an unsigned underflow. **Two defects
+in ten rows is the measured error rate of this kind of review**, and B1's F-R2
+must be run row by row rather than sampled.
+
+### 11.3 RED INK - three things this design does not reach, and one it makes worse
+
+**I5, the validated element property.** No term names an element, so no fact can
+be about one, and neither a contract nor an induction statement can state the
+property. The two answers - size the table to the value's type, or guard each use
+- are a real program and a real cost respectively, and Q2 says the totality
+sentence survives only with its qualifier.
+
+**I6, the quantified structure invariant.** Deliberately unreachable, and
+`[IND-3]`'s vocabulary fence says so in rule text rather than leaving a reader to
+derive it from a grammar. This is the one entry on the audit's irreducible list
+that rests on reading alone, and nothing here changes that.
+
+**I7, the runtime-strided walk - and the complaint that is not answered.** The
+audit's sharpest sentence about I7 is that *the family splits on whether the
+count is a compile-time constant, which is not a distinction any writer would
+predict*. `[ENT-3.S5.M]` answers the constant half; `[IND-4]`'s refusal of a term
+divisor leaves the other half where it was; and **the unpredictable split
+remains**. A writer whose stride is a literal compiles and a writer whose stride
+comes from a header does not, with no rule text they can read that explains why.
+That is the least defensible ceiling in the design.
+
+**And one thing this design makes worse.** `[ENT-5.R]`'s ladder has the same
+shape of unpredictability at a smaller scale: whether a loop's inductive bound is
+in `K` depends on which constants the function's own text happens to mention.
+`K` is syntactic and deterministic, so `[ENT-1]` is satisfied - but a writer
+cannot predict from the loop alone whether retention will carry its bound, and
+the answer can change when an unrelated literal is added elsewhere in the
+function. The alternative (a widening ladder over the type's constants) is worse
+on determinism; the honest statement is that **the ladder buys a large family at
+the price of a rule the writer cannot fully predict**, and F-L1's measurement is
+what would tell us whether the price is felt.
+
+### 11.4 What left the red-ink list, and why that is a result
+
+The 0106 design's U1 - *the laundering family is admitted and review is the only
+fence* - **is gone.** There is no construct a laundering argument can inhabit:
+every fact source is something the compiler observed or verified, `[IND-8.V]`
+keeps a statement resting on S4 out of the blinded view, and `[ENT-3.S10]`'s
+restored provenance sentence keeps an external actual from being laundered into
+an internal endpoint. `F2-REVIEW-TRIAL.md` measured whether reviewers catch a
+false laundering claim; it is kept beside this file as the evidence for why the
+model that needed that measurement is the one being deleted.
+
+The 0106 design's U3 - *the loop ceiling is published, and it is low* - is also
+gone, replaced by `[ENT-5.R]` and `[IND]`. What replaced it has its own red ink
+above, which is the honest trade rather than a clean win.
+
+---
+
+## 12. Probe ledger
+
+Every row was run against the gate-profile `whitefootc` built from this tree at
+spec **v0.39 ACTIVE**. Sources live under
+`wf-0108-design/{trap-free-core-probes,loop-system-probes,contract-system-probes,judge1,judge2-probes,synth-probes}/`
+and the audit's own probes under `wf-0107-audit/synth/probe/`. **All 232
+reproduce.** Only the rows that decide something in this file are listed
+individually; the rest are ledgered in the files beside this one.
+
+### 12.1 My own probes, written for this design
+
+| probe | serves | verdict |
+| --- | --- | --- |
+| `y1_entry_tight_step.wf` | **A19** | **rejects** `[FN-9]` Unproved - the step obligation of the entry-tight candidate `tap <= 0` under `tap != cap`, `cap = 8`. The entry-tight atom is **not** inductive |
+| `y2_relaxed_step.wf` | **A19** | **accepts** - the identical function with the head fact weakened to `tap <= cap` and the conclusion to `result <= cap`. **The weakening is inductive**, and the pair is the compiled evidence for `[ENT-5.R2]`'s ladder |
+| `y3_const_extent_loop.wf` | **A19** | **rejects** `[OP-4] residual: tap < len(taps)` - the ordinary constant-extent walk the drafted candidate rule loses |
+| `y4_systemrange_guard.wf` | **A25, claim customer 4** | **accepts** - `[SYS-8]`'s `start <= end` and `end <= len(destination)` discharged by two ordinary guards over an **external** `args_count` endpoint, with `[PRV-3]` satisfied by the real branch. The one customer no part of the batch had witnessed |
+
+### 12.2 The judge probes, re-run
+
+| probe | serves | verdict |
+| --- | --- | --- |
+| `j01_wrap_total.wf` | **A1** | **accepts** - `let room = a -wrap b;` with no guard, no contract and no obligation, so a `wrap` row's `[ENT-6]` proviso is vacuous |
+| `j02_wrap_nonzero_is_false.wf` | **A1** | **rejects** `[OP-4] carry < len(deref(input))` - the shape the drafted substitution would have admitted, with `carry: 9_u64` over a four-byte buffer as the out-of-bounds execution |
+| `j03_poff_mul_unsound.wf` | **A3** | **rejects** `[OP-2] a -defined 10_u64` - exactly the obligation the false `a >= 10` would discharge; `harm(a: 2, b: 0)` satisfies every `requires` |
+| `j1_uniq_len_entry_image.wf` | 3.10.3 | **rejects** `[FN-9]` in the callee - an `ensures` cannot cross the world boundary through an entry-image `len`, so the entry-image rule is right and `[FN-9.E1]` does not reopen it |
+| `j2_fn10_err_hole_shape.wf` | **A18** | **rejects** `[OP-4] cursor < len(values)` - the obligation an `Err`-return write clause would have discharged |
+| `j3_ind6_checkpoint_break.wf` | **A16** | **rejects** `[OP-4] x < len(out)` - the single obligation the false publication would discharge |
+| `j3b_ind6_consumer.wf` | **A16** | **accepts** with that fact supplied as a contract. `j3`/`j3b` together are the break |
+| `j4_mixed_type_compare.wf` | **A24 D-4** | **rejects** `[TYPE-5] TypeMismatch` on `ile(a_u32, b_u64)` - so `[IND-8]` would be the first producer of a cross-type difference bound, which is why `[IND-8.T]` is drafted |
+
+### 12.3 The sibling probes this design's verdicts rest on
+
+| probe | serves | verdict |
+| --- | --- | --- |
+| `t4_percent_escape_free.wf` | **A23**, 3.12.4 | **accepts** - `percent_decode`'s escape claim-free, two `+checked` equalities and one guard, no new rule |
+| `t8_ipv4_parity_free.wf` | **A23**, 4.5.2 | **accepts** - the congruence residue dissolved by one pair guard whose false edge is the odd-tail case |
+| `t9_residue_rejection.wf` | 6.1 | **rejects** `[OP-4] carry < len(deref(input))` - the exact diagnostic a former claim-writer sees |
+| `t10_residue_repaired.wf` | **A23**, 6.2 | **accepts** - `ine(room, 0_u64)` respelled `ilt(carry, input_room)` |
+| `t2`, `t14`, `t1` | 3.2, 3.12.3 | **accept** - the guard-and-exit idiom, the else-free guard, and the value-position widened signature: the three tiers of the impossible-else bill |
+| `t3` / `t3b` | 3.1.2, 6.4 | **accepts** / **rejects `[CLM-2]` "redundant"** - the monotonicity asymmetry, compiled: the same derivable fact is fine as a guard and a hard error as a claim |
+| `t5` | 3.1.1 | **rejects `[EFF-2]` extra: ["traps"]** - a claim-free body may not declare the category |
+| `t11`, `t12`, `t13a`, `t13b` | 4.3, 3.11.2 | AllocationFit and an `[FN-8]` requirement by branches; the `ensures` route; the world-value branch and its claim-written twin |
+| `c08`/`c09` vs `c23` | 3.10.1 | **reject** / **accept** on byte-identical statement sequences whose only difference is a `loop` - the diagnosis that the contract system needs no new loop mechanism |
+| `c14`, `c15`, `c20` | 3.10.5 | the `&uniq` write hole, its branch repair, and the refusal at the result binding that makes `[FN-10]` a route rather than a clause |
+| `c17` / `c18` | 3.10.4 | **rejects** / **accepts** - `propagate` drops the summary that `match` keeps |
+| `c01`, `c03` | 3.10.3 | **reject `[GRAM-9]`** at the same parse offset - `len(result)` is unspellable and unbindable, so `[GRAM-9.C1]` is a hard prerequisite |
+| `c19b`, `c24` | 3.5.1 | **reject `[FN-9]`** on `a - s <= 0` for exact `+` and for `+sat` alike - neither row publishes monotonicity today |
+| `L03` vs `s16` | 3.12.4 | **rejects** / **accepts** on the same shape with a parameter offset versus a literal - `+checked` publishes its arm equality only for a **constant** offset |
+| `L08`, `L09` | 3.9.3, 4.3 | **reject `[OP-2]`** with the published projection already supplied - `[ENT-6.D]` is a hard prerequisite |
+| `L10a` / `L10b` | 3.6.2 | **rejects** / **accepts** - the simultaneity separating pair |
+| `L11` | 3.9.4, D2 | **accepts** - I1 routed to `if`/`else`, compiling today with no rule; the price of the alternative |
+| `L21` / `L22` | 3.5.4 | **accepts** / **rejects** on `igt` versus `ige` - the strictness the relaxed-operand image supplies and P-MONO does not |
+| `L23` | 3.7 | **rejects**, and shows `for i in 5..3` leaves the binder at 5, refuting `binder = upper_capture` |
+| `L24`, `L25` | 3.9.5 | **reject `[OP-4] hits < len(out)`** - I4 with the audit's own out-of-bounds witness repaired |
+| `L12`/`L13`/`L14`, `L17`-`L20`, `L15`/`L16` | 3.6.5, 3.12.4 | the chunked cursor, the capacity-checked worklist and the variable-stride walk: each a rejecting program, its guarded price, and its induction step machine-checked as a contract |
+| `r7_closure_vs_kill.wf` | 3.3 | **rejects** `best < len(data)` under today's kill-then-close order |
+| `s6`, `s7` | 4.2 I5 | **accepts** / **rejects** - the fold table sized to the value's type dissolves the byte-wide half; u32 points validated `< 300` do not |
+| `s11`, `s20`, `s21` | 3.5.5, 3.10.2 | the constant-subtrahend `.defined` route that already works; the factored-`requires` disjunction in both directions |
+| `s22`, `s23` | 3.9.3 | **reject `[OP-2]`** - I2's and I3's consumers, the two constructed witnesses |
+| `b15` / `b15b` | 3.4 | **accepts** / **rejects** on identical arithmetic - the value-commit closure is a hard prerequisite of retention |
+
+### 12.4 What the ledger establishes, and what it does not
+
+**Established by compilation.** Every successor route in section 3.2, 3.12 and
+4.3 works **at v0.39, before any rule lands**: the guard, the guard-and-exit
+idiom, the `+checked` respelling, the `ensures` route, the boundary branch, the
+factored-`requires` disjunction, and now the system-range guard. Every repair in
+section 2 has a compiled premise or a compiled harm. The four claims section 4.5
+disposes of by rewriting are compiled claim-free. And the two separating pairs
+that changed rules in this file - `y1`/`y2` for the retention ladder, `j3`/`j3b`
+for the induction frame - are compiled on both sides.
+
+**Not established by compilation, and offered as such.** Every DISSOLVED-PROPOSED
+verdict is by construction a prediction about a rule that does not exist. The
+strongest ones, marked so they can be attacked first: **retention's reach**
+(eleven scenarios, nine corpus sites) rests on reading, and what is compiled is
+that its *step obligations are answerable by today's checker* (`r13b`, `L14`,
+`L20`, `b16`, `b17`, `y2` all accept); **`[IND-7]`'s certificate check** is hand
+executed on six traces and implemented nowhere; **`[FN-10]`** does not exist, so
+its worked example is a reading; **`[ENT-3.S10]`'s projection and provenance
+sentences** are arguments over quoted rule text; and **3.1.3's `[PRV-2]`
+collapse** is a reading of 3389 and 3397 offered as a proof obligation a reviewer
+can check.
