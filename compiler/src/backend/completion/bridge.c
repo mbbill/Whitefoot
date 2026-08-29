@@ -1237,6 +1237,7 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
     uint64_t seen
 ) {
     wf_retirement_waiter waiter;
+    wf_file_result result;
     wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
     for (;;) {
         uint64_t epoch;
@@ -1284,7 +1285,13 @@ static wf_file_result wf_bridge_retire_and_retry_direct(
         1,
         memory_order_relaxed
     );
-    return wf_file_execute_timed(&wf_bridge_adapter, request);
+    result = wf_file_execute_timed(&wf_bridge_adapter, request);
+    /* Charged for what it took, on the award it was granted or on none, the
+     * same way the bounded adapter's re-attempt is. */
+    if (wf_file_open_took_a_descriptor(&result)) {
+        wf_completion_retirement_open_took_a_descriptor(waiter.awarded);
+    }
+    return result;
 }
 
 /* One blocking direct host call, entered in the process-wide ledger.
@@ -1303,6 +1310,11 @@ static wf_file_result wf_bridge_execute_direct(
     result = wf_file_execute_timed(&wf_bridge_adapter, request);
     if (wf_bridge_open_lacked_a_descriptor(&result)) {
         result = wf_bridge_retire_and_retry_direct(request, seen);
+    } else if (wf_file_open_took_a_descriptor(&result)) {
+        /* This route's non-registered open: satisfied at the first attempt, so
+         * it never became a waiter, and charged here for the descriptor it
+         * took so that no waiter is promised it as well. */
+        wf_completion_retirement_open_took_a_descriptor(0);
     }
     wf_completion_operation_retired(wf_file_returned_a_descriptor(&result));
     /* A direct call publishes nothing, so nothing else tells a scheduler

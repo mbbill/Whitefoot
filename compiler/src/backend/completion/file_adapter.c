@@ -671,6 +671,7 @@ static wf_file_result wf_file_retire_and_retry(
     int may_run_owed_work
 ) {
     wf_retirement_waiter waiter;
+    wf_file_result result;
     wf_completion_retirement_wait_begin(
         &waiter,
         seen,
@@ -715,7 +716,16 @@ static wf_file_result wf_file_retire_and_retry(
         1,
         memory_order_relaxed
     );
-    return wf_file_execute_timed(adapter, &work->request);
+    result = wf_file_execute_timed(adapter, &work->request);
+    /* And if it took a descriptor, the ledger is told so, exactly as a first
+     * attempt is.  `awarded` is what keeps the accounting straight: an attempt
+     * made on an award moved the mark when the ledger granted it, and an
+     * attempt made because nothing was left to wait for moved nothing, so only
+     * the second is charged here. */
+    if (wf_file_open_took_a_descriptor(&result)) {
+        wf_completion_retirement_open_took_a_descriptor(waiter.awarded);
+    }
+    return result;
 }
 
 static void wf_file_run_work(
@@ -739,6 +749,12 @@ static void wf_file_run_work(
             seen,
             may_run_owed_work
         );
+    } else if (wf_file_open_took_a_descriptor(&result)) {
+        /* An open the host satisfied on its first attempt, which is the one
+         * that never becomes a waiter.  If a return of this runtime's was
+         * unspent, this is the open that took it, and the ledger charges it so
+         * that no refused open is promised the same descriptor. */
+        wf_completion_retirement_open_took_a_descriptor(0);
     }
     publication = (wf_completion_publication) {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,

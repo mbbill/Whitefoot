@@ -1514,6 +1514,59 @@ static int wf_retirement_award_locked(
     return 1;
 }
 
+/* One open succeeded on a host attempt, and the descriptor it holds now came
+ * out of the host's table.
+ *
+ * The other half of the award rule, and the half that makes it a promise: a
+ * descriptor this runtime returned is offered to at most one open, and an open
+ * that has taken one is charged for it whether or not it ever waited.  An open
+ * whose *first* attempt succeeds never registers as a waiter and never spends
+ * an award, so without this the mark still offers the return that open
+ * consumed to a refused one, which spends its single re-attempt on a
+ * descriptor that is already gone and publishes a refusal the next close makes
+ * untrue.  Measured before this: 25 lost `Ok`s in 280,000 repetitions of the
+ * interleave shape, every one of them with a descriptor left over at the end.
+ *
+ * `on_an_award` is the attempt a waiter makes with an award already granted to
+ * it.  The mark moved when the award was granted, and moving it again here
+ * would charge one descriptor twice.
+ *
+ * Charged only while the waiter order is not empty and a return is unspent.
+ * With the order empty there is no waiter to deprive and the mark is reset to
+ * the next waiter's own `seen` when one opens the order again; with every
+ * return already spent, the descriptor this open took was not one of this
+ * runtime's returns to give — the host had it for a reason no ledger can see —
+ * and charging it would take from a waiter that is owed one.
+ *
+ * A waiter deprived here by a free that came from outside after all, which no
+ * ledger can tell from its own, still cannot lose an `Ok` it is owed: this
+ * refuses it nothing.  It keeps waiting while anything is in flight, and makes
+ * its one attempt at the moment nothing is left that could bring a descriptor
+ * back — which is the moment source order makes it, with every close the
+ * program wrote before it already run.
+ *
+ * The mark moving can only make another waiter less awardable, so, exactly as
+ * for the award that moves it inside a decision, it can turn no waiter's
+ * `AWAITED` into a terminal answer and owes no announcement (contract.h). */
+void wf_completion_retirement_open_took_a_descriptor(int on_an_award) {
+    uint64_t returns;
+    if (on_an_award != 0) {
+        return;
+    }
+    (void)pthread_mutex_lock(&wf_retirement_lock);
+    if (atomic_load_explicit(&wf_retirement_first, memory_order_seq_cst)
+        != NULL) {
+        returns = atomic_load_explicit(
+            &wf_retirement_returns,
+            memory_order_seq_cst
+        );
+        if (returns > wf_retirement_awarded) {
+            wf_retirement_awarded += 1;
+        }
+    }
+    (void)pthread_mutex_unlock(&wf_retirement_lock);
+}
+
 /* Where this waiter stands, decided under the retirement lock.
  *
  * `returns_before` is the decision's first read of the return count.  The

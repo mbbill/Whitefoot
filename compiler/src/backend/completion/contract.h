@@ -533,9 +533,15 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  *     item's retirement announces when it ends, and until then that waiter is
  *     never asleep — the answer to owing work you can run is to go and run it.
  *   - the award mark and a waiter's `awarded`: moved by an award, inside a
- *     decision.  An award only makes another waiter less awardable, and the
- *     mark is reset only where the order was empty, so no other waiter exists
- *     to hear it.  Silent, and owes nothing.
+ *     decision, and by an open the host satisfied being charged for the
+ *     descriptor it took.  Either movement only makes another waiter less
+ *     awardable — the other inputs of the answer do not read the mark — so it
+ *     can turn no waiter's `AWAITED` into a terminal answer, and the mark is
+ *     reset only where the order was empty, so no other waiter exists to hear
+ *     that.  Silent, and owes nothing.  What a charged open does owe is
+ *     answered by its own ending: the operation retires like any other and
+ *     announces there, so a waiter kept waiting by the charge is told when the
+ *     open that took the descriptor is done.
  *   - a waiter's `seen`: written before that waiter enters the order, so it is
  *     nobody else's input yet.
  *   - a waiter's `aside`: standing aside and coming back.  The flag is read in
@@ -654,6 +660,25 @@ void wf_completion_operation_accepted(void);
  * the operation, because it is a fact about the operation and not about the
  * engine. */
 void wf_completion_operation_retired(int returned_a_descriptor);
+
+/* One open the host has just satisfied, on any route and on any attempt.
+ *
+ * The counterpart of the return above, and what makes the award a promise
+ * rather than an offer: a descriptor this runtime put back is promised to at
+ * most one open, and an open that has taken one is charged for it whether or
+ * not it ever waited for one.  An open whose first attempt succeeds never
+ * registers as a waiter and spends no award, so an unspent return it consumed
+ * would otherwise still be offered to a refused open, which would spend its
+ * single re-attempt on a descriptor that is already gone.
+ *
+ * `on_an_award` says this attempt is the one a waiter makes with an award the
+ * ledger granted it, which moved the mark already; every other attempt says
+ * zero.  An engine calls this exactly once per open the host satisfied,
+ * including an open whose kind check then refuses the descriptor — that one is
+ * charged for the descriptor it took and counted again by the close the
+ * runtime makes for it, which is a return.  A refused open, and every
+ * operation that is not an open, say nothing here. */
+void wf_completion_retirement_open_took_a_descriptor(int on_an_award);
 
 /* Opens this runtime held rather than published, over every route.  A test
  * standing at that moment reads this; nothing in the runtime decides on it. */

@@ -1092,6 +1092,18 @@ static int wf_linux_publish_completion(
             return 0;
         }
         wf_linux_decide_open(entry, completion->res);
+        if (entry->opened_descriptor >= 0) {
+            /* The kernel satisfied this open, so it took a descriptor out of
+             * the host's table, and the ledger is told so before anything else
+             * can be promised that descriptor.  An open the ring satisfied at
+             * its first attempt never became a waiter and spent no award; one
+             * it satisfied on a re-attempt spent the mark when the award was
+             * granted, and `awarded` is what tells the two apart. */
+            wf_completion_retirement_open_took_a_descriptor(
+                entry->exhaustion_retried != 0
+                && entry->retirement_waiter.awarded != 0
+            );
+        }
     }
 
     *terminal_published = 1;

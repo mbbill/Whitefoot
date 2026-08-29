@@ -308,6 +308,21 @@ static inline int wf_file_returned_a_descriptor(const wf_file_result *result) {
         && result->open_outcome != WF_FILE_OPEN_SUCCEEDED;
 }
 
+/* Whether the host satisfied this open, which is the one thing
+ * `wf_completion_retirement_open_took_a_descriptor` asks of it: there is a
+ * descriptor in this open's hand that was in the host's table before it ran.
+ *
+ * The kind check does not come into it.  An open the check refuses held the
+ * descriptor all the same, and the close made for it is reported separately as
+ * the return it is — so such an open is charged once here and counted once
+ * there, and the two cancel exactly as they should. */
+static inline int wf_file_open_took_a_descriptor(
+    const wf_file_result *result
+) {
+    return result != NULL && result->kind == WF_FILE_OPEN_AT
+        && result->value >= 0;
+}
+
 typedef struct wf_file_work {
     wf_completion_token token;
     wf_file_request request;
