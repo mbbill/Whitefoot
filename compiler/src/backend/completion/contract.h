@@ -574,7 +574,8 @@ enum wf_retirement_state {
      * back and an earlier waiter is the one it is awarded to. */
     WF_RETIREMENT_AWAITED = 1,
     /* Nothing is left that could give one back, and this is the earliest
-     * waiter: no later attempt can see more than one made here. */
+     * waiter that is asking: no later attempt can see more than one made
+     * here. */
     WF_RETIREMENT_UNREACHABLE = 2
 };
 
