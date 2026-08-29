@@ -576,10 +576,10 @@ by exempting the carrying block from the rule.
   counted exactly three descriptors back (0 repetitions in the 120,000 that
   counted the delta saw anything else). Every refusal was `EMFILE`, from this
   process's own narrowed table, never `ENFILE`. The machine's file table stood
-  between 97 and 153 open
-  files of 1,644,353 at each loss. And an open made with the table still
-  narrowed, the instant every publication was in, succeeded in every one of
-  them: a descriptor this runtime returned went to no open at all. Contention
+  between 97 and 153 open files of 1,644,353 at each loss. And an open made
+  with the table still narrowed, the instant every publication was in,
+  succeeded in every one of them: a descriptor this runtime returned went to no
+  open at all. Contention
   makes it commoner — about 1 repetition in 7,000 with three probe processes
   and a thread-sanitizer harness loop sharing four cores, against 1 in 60,000
   with the machine to itself — but it is not a load artefact, and it is not the
