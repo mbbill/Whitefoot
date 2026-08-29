@@ -1192,7 +1192,11 @@ verify.
       element the block names, one slot reserves and addresses exactly what an
       unstaged program does, and the three misaddressed descriptors — no
       elements, an index of the wrong type, and a carrying block with no slot —
-      are refused rather than silently sharing one record
+      are refused rather than silently sharing one record. Nothing the compiler
+      builds sets a slot count, so every module is unchanged: the IR-identity
+      oracle over `tests/` and the bench programs against the branch's own
+      pre-ring compiler at `cf60e5e3` reports 1,917 compilations (three modes
+      each), 834 modules, `differ=0 statusdiff=0`
 - [ ] Stage B's driver — the cut, the outlined stages, the ring of replicated
       constructions, the owner-lane driver loop, the fold handed to a compute
       lane, and the runner measurement. Nothing in the compiler builds a
@@ -1204,7 +1208,7 @@ verify.
       revision, with the repetition counts above; green on macOS and in the
       aarch64 container at the previous one
 - [x] canonical `make check` — green at this revision on x86-64 Linux
-      (`conformance adapter: Pass=509  Skip=1`)
+      (`conformance adapter: Pass=509  Skip=1`, `== WHITEFOOT ALL TESTS GREEN ==`)
 - [x] `io-hosts` and `gate` run on the pushed branch. `completion-linux` is
       the one that matters most here: it runs the harness, the sanitizers and
       `completion-tsan` on a real x86-64 Linux kernel with io_uring, so both
