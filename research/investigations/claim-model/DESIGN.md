@@ -13,6 +13,15 @@ Nothing here is implemented and no compiler code was written for it. The
 specification text in section 3 is draft text for a work branch, not an
 amendment.
 
+**The two pre-implementation falsifiers this file named have been run, and this
+revision is their repair.** F-D4 rewrote the three flagship sources claim-free in
+full (**MIXED**: all three compile and are byte-identical over 1,195 differential
+cases, and four of 4.5.2's route assignments were wrong). F-I1 hand-executed
+`[IND-7]`'s certificate check (**FAIL**: every drafted derivation reproduced and
+the rule around them did not - two soundness breaks, the `[ENT-1]` monotonicity
+theorem still false through the caps, and three determinism holes). Section 8's
+B0 records both verdicts; the rule text they moved is marked where it moved.
+
 ## 0. What changed, and the result in one page
 
 ### 0.1 The supersession, stated
@@ -30,7 +39,8 @@ replaced, not a new one:
 | the loop head published as a subtraction; induction deferred to a gated batch B6 | **`[ENT-5.R]` retention plus `[IND]` the induction statement**, both drafted here (3.6, 3.8) |
 | T3 untouched (design section 1.6) | **T3 re-derived**; its premise becomes a property of the accepted set (section 5) |
 | U1 red ink: the laundering family is admitted and review is the only fence | **U1 is gone.** With no claim there is no laundering route and no review obligation; `F2-REVIEW-TRIAL.md` becomes the record of why (11.4) |
-| 12 open questions | 9 flagged decisions (section 9) and 11 open questions (section 10) |
+| 12 open questions | 9 flagged decisions (section 9) and 11 open questions (section 10), of which Q1 is now closed by measurement |
+| the two pre-implementation falsifiers were pending | **both have been run.** F-D4 is MIXED and F-I1 is FAIL; 3.8.2, 3.9, 2.4, 4.4, 4.5.2, 6.2, 8, 10, 11 and 12.4 carry the repairs, and 11.5 is the new red ink they leave |
 
 Section by section, so nothing is lost silently:
 
@@ -49,7 +59,7 @@ Section by section, so nothing is lost silently:
 | 8 Implementation plan | **carried forward** into section 8, re-batched |
 | 9 The attacks the judges landed (on the 0106 drafts) | **superseded** by section 2, which adjudicates the attacks landed on the 0108 drafts |
 | 10 Provenance of the ideas | **dropped**; section 2 records provenance where it decides something, and the audit records the rest |
-| 11 Unsolved problems, in red ink | **carried forward** into section 11; U1 and U3 leave the list (11.4) and three new entries join it |
+| 11 Unsolved problems, in red ink | **carried forward** into section 11; U1 and U3 leave the list (11.4) and four new entries join it, the last (11.5) written after the falsifiers ran |
 | 12 Open questions for the owner | **carried forward**, split into section 9's decisions and section 10's questions |
 | Appendix A, the five holes | **carried forward** into 1.4 |
 | Appendix B, the one-paragraph version | **dropped**; section 0.2 replaces it |
@@ -248,7 +258,7 @@ a compiled separating pair that changes a central rule.
 
 | id | flaw, in one line | verdict | evidence | repair, and where |
 | --- | --- | --- | --- | --- |
-| **A1** | `[IND-4]`'s wrap/sat proviso is vacuous: a `wrap` row has no `[ENT-6]` domain obligation, so `a -wrap b` substitutes to `a - b` unconditionally | **upheld** | `j01_wrap_total.wf` **accepts** (compiled): `let room = a -wrap b;` with no guard and no obligation. `j02` (compiled) rejects the shape the drafted rule would admit | 3.8, `[IND-4]` clause (d): the *corresponding exact row's* `[OP-2]` no-wrap side condition must be derivable at that commit |
+| **A1** | `[IND-4]`'s wrap/sat proviso is vacuous: a `wrap` row has no `[ENT-6]` domain obligation, so `a -wrap b` substitutes to `a - b` unconditionally | **upheld** | `j01_wrap_total.wf` **accepts** (compiled): `let room = a -wrap b;` with no guard and no obligation. `j02` (compiled) rejects the shape the drafted rule would admit | 3.8, `[IND-4]` clause (b): the *corresponding exact row's* `[OP-2]` no-wrap side condition must be derivable at that commit before the commit's exact value is available at all |
 | **A2** | `[IND-4]`'s "substitution applies identically to every hypothesis" makes the step self-cancelling, admitting a false invariant and a silent unsigned overflow | **upheld** | hand arithmetic, reproduced independently: `p := 255*p0 - 255*H1 = -65025`, verified, for a loop whose accumulator grows by 1000 | 3.8, `[IND-6]` the frame rule: statement polynomials are head-frame facts and are never substituted |
 | **A3** | P-OFF's `x` row publishes `r - a >= al*(bl-1)` with no `bl >= 1` condition, so `a in [2,10]`, `b = 0` publishes `a >= 10` | **upheld** | `j03_poff_mul_unsound.wf` (compiled) rejects exactly the obligation the false fact would discharge; `harm(a: 2, b: 0)` satisfies every `requires` and underflows | 3.5, `[ENT-3.S5.O]`: publish the `x` rows only when the state derives `Z - b <= -1` |
 | **A4** | `[IND-7]`'s greedy elimination is non-monotone under prover strengthening, falsifying `[ENT-1]`'s rewritten monotonicity sentence | **upheld** | hand construction over three terms; a new row image inserts a hypothesis earlier in a fixed order and displaces the useful one | 3.9, `[IND-7]` replaced by a **certificate** form; 2.4 is the reasoning |
@@ -256,7 +266,7 @@ a compiled separating pair that changes a central rule.
 | **A6** | three parts, three edge-ordering texts, one of them v0.39's order, which both siblings call mandatory to reverse | **upheld** | spec 3095 quoted: "each taken after that edge's scope-exit kills and then closed"; `r7_closure_vs_kill.wf` (compiled) rejects `best < len(data)` | 3.3, one rule id `[ENT-5.P0]`; `[ENT-5.X1]` is deleted as a duplicate and 3.14's pipeline is rewritten |
 | **A7** | `[FN-10]`'s flagship clause `ensures wrote(deref(at): next): ige(next, deref(at))` cannot be established at the caller: the entry image of the caller's place is dead after the callee-effect kill, and `[ENT-2]` gives no snapshot term | **upheld** | argument over quoted `[FN-10.E]`/`[FN-10.K]`/`[ENT-2]` text; the same defect as D7 in the other direction | 3.10, `[FN-10.A]`: a write clause is admitted only over operands the call does not disturb. The snapshot term is flagged decision D6 |
 | **A8** | the unlabelled induction statement has no rule text: no path, no start, no stop, no depth bound | **upheld** | the sibling file designing the same route fixes a depth of 8 "because `[ENT-1]` forbids an implementation-chosen limit"; the other bounds nothing | 3.9, the **local** form, drafted in full with a straight-line region restriction |
-| **A9** | `[IND]` has no proof-view discipline, so a statement resting on S4 publishes in the S4-blinded view and `[PRV-3]`'s external fence is defeated | **upheld** | `[PRV-3]` 3392 and `[FN-9]`'s per-view aggregates quoted; the drafted `[IND-8]` has no counterpart | 3.9, `[IND-5.V]` and `[IND-8.V]`, mirroring `[FN-9]`'s `Cq`/`Bq` |
+| **A9** | `[IND]` has no proof-view discipline, so a statement resting on S4 publishes in the S4-blinded view and `[PRV-3]`'s external fence is defeated | **upheld** | `[PRV-3]` 3392 and `[FN-9]`'s per-view aggregates quoted; the drafted `[IND-8]` has no counterpart | 3.9, `[IND-8.V]`, mirroring `[FN-9]`'s `Cq`/`Bq` |
 | **A10** | the generalised `[ENT-3.S10]` mandates establishing `next = start + required`, a three-term relation `[ENT-2]` 2901 cannot hold | **upheld** | spec 2577 and 2901 quoted; the escape clause reaches a bad *operand*, not a bad *arity* | 3.11, `[ENT-3.S10]` gains an explicit arity projection |
 | **A11** | the contract part still queries the **U** view the core part deletes | **upheld** | `[PRV-3]` 3404 defines U as the complete state minus S3; with S3 deleted `U == complete` pointwise | 3.10 and 3.14: two views everywhere |
 | **A12** | `[FN-10]`'s disjointness tie-break is a silent-loss rule its own author recommends against | **upheld** | the drafted rule and its own Q3 contradict each other | 3.10, `[FN-10.A]` clause (e): reject at admission |
@@ -264,7 +274,7 @@ a compiled separating pair that changes a central rule.
 | **A14** | deleting `[TRAP-1]` wholesale drops a lowering-shape guarantee `[QUAL-3]` cites, and silently retires a deferred amendment | **upheld** | `[TRAP-1]`'s "no instance resource table, per-instance reaper, or pending-operation transfer ... on an `inline-terminal` transfer path `[QUAL-3]`" is not about the claim's own execution | 3.13: re-derived into `[QUAL-3]` from the new `[SCOPE-4]`; the deferral's withdrawal is a META-5 line |
 | **A15** | the `gap` token table never names the batch's own new construct, and the one token that fires on loops teaches a fix that cannot work | **upheld** | clause 4 fires exactly on the candidates P-LOOP **deleted** - facts that are not inductive - and tells the writer to state them as an induction statement, whose step will fail on the very path that killed the candidate | 6.1: a seventh token `induction`, and clause 4 rewritten |
 | **A16** | `[IND-6]` checks the step in the **body-exit** state while `[IND-4]`'s substitution expresses the polynomial over **head** values, verifying a false invariant and admitting an out-of-bounds write | **upheld** | `j3_ind6_checkpoint_break.wf` (compiled) rejects `x < len(out)`, the single obligation the false publication discharges; `j3b_ind6_consumer.wf` (compiled) **accepts** with that fact supplied. The pair is the break | 3.8, `[IND-6]` the frame rule; and 2.3 |
-| **A17** | `[IND-4]`'s "until no destination written on the path remains" forces re-substitution, a second independent unsoundness and a determinism defect | **upheld** | on the same program it rewrites `p = cursor` to `p = 0` by a different route; and two readings of "until" accept different programs | 3.8, `[IND-4]` clause (a): **one backward pass, no revisiting** |
+| **A17** | `[IND-4]`'s "until no destination written on the path remains" forces re-substitution, a second independent unsoundness and a determinism defect | **upheld** | on the same program it rewrites `p = cursor` to `p = 0` by a different route; and two readings of "until" accept different programs | 3.8, `[IND-4]`'s backward-pass sentence: **one pass, no revisiting** |
 | **A18** | `[FN-10]` verifies a write clause on `Ok` returns and establishes it on **every** normal continuation, so an `Err` return leaves the place unconstrained and the caller reads past the end | **upheld** | `j2_fn10_err_hole_shape.wf` (compiled) is that program minus the clause, rejecting on exactly `cursor < len(values)` | 3.10, `[FN-10.V]`: a write clause selects **every** return |
 | **A19** | P-LOOP's candidate set is the **tightest** entry bound per ordered pair, so it can never retain a weakening - and the inductive bound of an ordinary counting loop is almost always a weakening | **upheld**, and I compiled the separating pair | `[ENT-2]` 2901 and `[ENT-4]` rule (3) quoted: a closed state holds one bound per ordered pair. **`y1_entry_tight_step.wf` rejects** and **`y2_relaxed_step.wf` accepts** (both compiled) on the same step obligation, the only difference being whether the head fact is the entry-tight atom or its weakening. `y3_const_extent_loop.wf` (compiled) is the loop | 3.6, `[ENT-5.R2]`: the **constant ladder**; and 2.6 |
 | **A20** | `[ENT-5.R3]` freezes the candidate universe in the no-retention flow, so an inner loop can never receive a fact only an outer loop's retention makes available | **upheld** | `fir_filter.wf:45` is that program and is in the same file's own migration table; the audit's own P-LOOP text does not freeze the universe | 3.6, `[ENT-5.R3]`: an ascending universe iteration, which **terminates because the ladder makes the universe a subset of a syntactically fixed finite set** |
@@ -365,7 +375,11 @@ read quantities in the wrong frame:
 - `[IND-4]`'s closing sentence substitutes **every** hypothesis, including the
   statement's own polynomial - which is a head-frame fact and needs no
   translation. Substituting it makes the hypothesis equal to the goal modulo the
-  binder shift, and the body's effect cancels. That is A2.
+  binder shift, and the body's effect cancels. That is A2. (The repaired rule
+  draws the line where A2 requires and F-I1's F2 requires: the backward pass
+  rewrites the hypotheses **the pass itself introduced**, which are path-local
+  and must be carried into the head frame, and never a statement polynomial,
+  which is already in it.)
 
 So the repair is one rule and it fixes both: **name the frame, put everything in
 it, and say what happens to a term that has no value in it.** Section 3.8's
@@ -409,7 +423,13 @@ statement against an elimination order they cannot see.
   I1**: the midpoint derivation's second elimination consumes `lo - hi <= -1`
   and depends on the slot `(q, hi)` being *absent*; filled with `max(u64)` it is
   selected instead and the derivation dies. The repair costs the one irreducible
-  the owner asked to be examined.
+  the owner asked to be examined. (F-I1 records that the certificate form
+  dissolves this objection as a side effect: with the `(q, hi)` slot present the
+  midpoint certificate still exists, because nothing forces `sigma` to name it.
+  The option stays unadopted - it is simply no longer the one that costs I1 -
+  and 3.9.1's repaired slot list is syntactically total in exactly this sense,
+  with the slots present and possibly empty rather than filled with a
+  type-implied bound.)
 
 **The repair I adopt: make the check a certificate rather than a sequence.**
 `[IND-7]` stops prescribing *which* hypothesis eliminates each term and instead
@@ -417,18 +437,35 @@ asks whether **some** assignment of hypotheses to terms, drawn from a
 syntactically fixed finite list and bounded by a spec-fixed cap, drives the
 relaxed residual to zero. Section 3.9 gives the text. Four properties decide it:
 
-1. **Monotone, and provably so.** Tightening a hypothesis constant makes
-   `-lambda*h` smaller, so the residual is smaller and a succeeding certificate
-   still succeeds. Adding a hypothesis only enlarges the certificate space and
-   every prior certificate survives with that hypothesis unused. Therefore *no
-   prover strengthening can reject a statement an earlier checker verified*, and
-   `[ENT-1]`'s new sentence holds without exception.
+1. **Monotone, and provably so - but only after F-I1's repair.** Tightening a
+   hypothesis constant makes `-lambda*h` smaller, so the residual is smaller and
+   a succeeding certificate still succeeds. Adding a hypothesis only enlarges the
+   certificate space and every prior certificate survives with that hypothesis
+   unused. **That argument was not enough as drafted**, and F-I1 is where it
+   broke: the two caps that keep the search affordable were hard errors on counts
+   a strengthening can grow - a thirteenth filled ordered-pair slot, or a `wrap`
+   commit whose exact route replaces one witness term with two operand terms - so
+   a v0.40 program could still fail to compile on v0.41. A4 had moved from the
+   elimination order to the caps rather than being closed. 3.9.1 repairs it by
+   making both counts **syntactic**: every ordered-pair slot is present whether or
+   not a bound is derivable, every non-exact commit contributes exactly one
+   witness term whether or not the no-wrap side condition derives, and `[IND-4]`
+   clause (a) is unconditional. With that, *no prover strengthening can reject a
+   statement an earlier checker verified*, and `[ENT-1]`'s new sentence holds
+   without exception - which is the theorem this batch is for, so it is stated
+   there in four parts with the case analysis written out.
 2. **It accepts a superset of the greedy rule.** Every greedy elimination
-   sequence *is* a certificate. So none of the drafted traces - I1's midpoint,
-   I2's accumulator, I3's product, I4's counter, the four bucket-B statements,
-   the counted ipv4 restructure - has to be re-derived. That is not a
-   convenience; it is what makes the repair affordable at this stage of the
-   batch.
+   sequence *is* a certificate, and F-I1 confirms the inclusion and could
+   construct no counterexample. So none of **the derivations this file actually
+   drafts** - the seven of 3.9 (I2's base and step, I3's base and step, I4's base
+   and its two step paths, and I1's midpoint; F-I1 executed six of them, and
+   I3's base is written down here by the same repair) and the two refusal traces
+   of 3.8.3 - has to be re-derived for the change of rule. **The drafted version of
+   this sentence named two more that do not exist**: there is no `[IND-7]`
+   derivation of the four bucket-B statements anywhere in this file, because 2.8
+   routes all four to guard rewrites, and none of the counted ipv4 restructure,
+   which 4.4 now prices as unreachable and 2.8 routes to the pair guard. The
+   superset argument covers the traces that exist and nothing else.
 3. **It dissolves three other defects.** The circular term/hypothesis order
    (A24's D-1 and D-8) has nothing left to be circular about, because no order
    fixes the accepted set. The loop file's own Q4 - "a different order accepts a
@@ -436,7 +473,13 @@ relaxed residual to zero. Section 3.9 gives the text. Four properties decide it:
    would move this" - stops being an open question.
 4. **It is deterministic.** Acceptance is a total predicate over a spec-fixed
    finite space with spec-fixed caps and a hard error beyond them. Two conforming
-   implementations compute the same answer on the same inputs.
+   implementations **that derive the same facts at the check point** compute the
+   same answer on the same inputs, and property 1 is what covers the case where
+   they do not: the slot *positions* are fixed by this rule, the slot *contents*
+   are whatever the ambient prover derives, and a slot that fills or tightens
+   never loses a certificate. F-I1 is why that sentence now carries its
+   qualifier; the unqualified version was false, since group 3 and `RELAX` both
+   read the ambient prover.
 
 **The one thing to flag.** `[ENT-1]`'s law is quoted as *closed, deterministic,
 search-free*, and an existential over a finite space is, literally read, a
@@ -574,8 +617,16 @@ gave them three incompatible routes. The compiler settles it:
 | --- | --- | --- |
 | `percent_decode.wf:28`, `:31` | a guard rewrite; an unlabelled statement; the backward `+-wrap` rows | **the guard rewrite.** `t4_percent_escape_free.wf` **accepts** (re-run, compiled) with no new rule: two `+checked` arm equalities and one guard `ilt(last_index, source_length)` discharge both subscripts |
 | `wfgrep.wf:434` | a guard respelling; an unlabelled statement; the backward rows | **the guard respelling.** `t10_residue_repaired.wf` **accepts** (compiled): `ine(room, 0_u64)` written `ilt(carry, input_room)` |
-| `wfgrep.wf:553` | restructure; an unlabelled statement; the backward rows | **restructure**, guarding `source_index` directly against `input_room`. No route is compiled; 4.5 records it as the corpus's one true residue |
+| `wfgrep.wf:553` | restructure; an unlabelled statement; the backward rows | **restructure**, guarding `source_index` directly against `input_room`. F-D4 compiles it: `probes/p6_shift_restructured.wf` in isolation and `rw/wfgrep.wf` in the whole source. What has no compiled route is the *arithmetic* one (`probes/p1,p2,p4,p5`) |
 | `ipv4_checksum.wf:22` (the congruence residue) | a pair guard; a counted restructure plus a statement | **the pair guard.** `t8_ipv4_parity_free.wf` **accepts** (compiled), and its false edge is the odd-tail case the RFC actually specifies |
+
+**F-D4 confirms all four rows against the whole sources**, not against reduced
+probes: `rw/percent_decode.wf`, `rw/ipv4_checksum.wf` and `rw/wfgrep.wf` compile
+claim-free at v0.39 and are byte-identical to the originals over 1,195
+differential cases. The ipv4 row gains an execution result it did not have: the
+pair guard's false edge, given the RFC 1071 fold rather than t8's plain add,
+agrees with an independent reference on 160 odd-length headers, so "the odd-tail
+case the RFC actually specifies" is now measured rather than read.
 
 Two arguments lose their support and both must be re-priced honestly rather than
 papered over.
@@ -764,6 +815,16 @@ the exception existed, and it is now a checkable property of the rule set - whic
 section 2.4 had to defend against the batch's own new construct, and section
 9's D1 flags.
 
+**"Depends on a fact not being derivable" has to be read to include a limit whose
+count moves with the prover, and F-I1 is why that sentence is written down.** A
+hard error at "more than 16 hypotheses" is not a negative admission condition on
+its face, and it is one in effect: the sixteenth slot filled by a v0.41 row image
+rejects a program v0.40 compiled. Every spec-fixed limit in `[IND]` is therefore
+a limit on a count fixed by the program's own text - body paths, monomials,
+degree, magnitude, elimination terms, hypothesis slots - and none on a count of
+what a prover happens to derive. That is the property `[ENT-1]` needs and the one
+F-D1's mechanical grep should be extended to look for.
+
 The remaining edits are mechanical and are given in spec order so the amendment
 can be executed from this table:
 
@@ -843,7 +904,10 @@ whose acceptance condition is negative in the fact state - a rule that rejects
 when something *is* derivable. The audit is mechanical: grep the amended
 specification for "redundant", "refuted", "vacuous", "already derives",
 "unnecessary". This experiment found `[IND-7]` (section 2.4) and it must be
-re-run after every repair.
+re-run after every repair. **Extend it**: F-I1 showed the second shape of the
+same defect, a hard error on a count a strengthening can grow, which no
+negative-fact grep finds. Grep for every "hard error" and ask, of each, whether
+its count is fixed by the program's text or by what the prover derives.
 
 **F-D2 (`traps` is really empty).** *Refutation:* find any operation-table row,
 system operation, or compiler-derived operation whose selected row includes
@@ -857,11 +921,19 @@ in U. Since `U == complete` this requires the complete state both to discharge
 and not to discharge one leaf, so a refutation is an inconsistency in the reading
 of 3389 and 3397.
 
-**F-D4 (the corpus disposition).** *Refutation:* rewrite `percent_decode.wf`,
-`ipv4_checksum.wf` and `wfgrep.wf` claim-free in full and find that the reduced
-probes do not survive contact with the whole sources - an interaction with an
-effect row, a contract, or another claim in the same function. **Cheap, and it
-must be run before the migration is scheduled rather than after.**
+**F-D4 (the corpus disposition). RUN; verdict MIXED.** The refutation condition
+was that the reduced probes fail to survive contact with the whole sources - an
+interaction with an effect row, a contract, or another claim in the same
+function. All three sources were rewritten claim-free in full, compile at v0.39
+with no diagnostic, and are byte-identical to the originals over 1,195
+differential cases; eleven claims deleted, no rule added, no behaviour changed.
+**The refutation condition fired once, on an effect row**: guarding a `&uniq`
+output parameter against its own `len` reads that parameter and `[EFF-2]` widens
+the function's declared row (11.1, and 6.2's `guard` row now says so). Two of
+4.5.2's route assignments were wrong and two more understated what v0.39 already
+reaches; those four rows are corrected. Nothing found refutes the deletion, the
+principle, or any of the four routes named as compiled - `t4`, `t8`, `t10` and
+Q1's option (b) all held under contact with the whole sources.
 
 ### 3.2 Guard publication - the successor's load-bearing rule
 
@@ -1769,51 +1841,123 @@ retained with the claim gone).
 >
 > Along one body path, the **substituted statement polynomial** is obtained by
 > **one backward pass** over the path, from its end to its entry, replacing, at
-> each `let` or `set` commit whose destination occurs in the polynomial at the
-> moment the pass reaches that commit, that destination by the polynomial of the
-> commit's right-hand side. **The pass visits each commit exactly once and never
-> revisits one**; after it, every occurrence of every term denotes that term's
-> value at the path's entry. The admitted right-hand sides and their polynomials
-> are:
+> each `let` or `set` commit whose destination occurs **in the polynomial or in
+> any hypothesis this pass has already introduced**, at the moment the pass
+> reaches that commit, that destination by the polynomial of the commit's
+> right-hand side. **The pass visits each commit exactly once and never revisits
+> one**; after it, every occurrence of every term, in the polynomial and in every
+> hypothesis alike, denotes that term's value at the path's entry. The admitted
+> right-hand sides and their polynomials are:
 >
 > (a) `a + b`, `a - b`, `a * b`, and the `Ok`-arm binding of `+checked`,
-> `-checked` or `*checked`: the exact polynomial, provided the state at that
-> commit on that path discharges the operation's `[ENT-6]` domain obligation;
+> `-checked` or `*checked`: the exact polynomial, **unconditionally**. The three
+> exact operations carry their own `[ENT-6]` domain obligation at that
+> occurrence, which 3.14 step 5 discharges in every accepted program, so on
+> every program this rule can affect the exact polynomial *is* the operation's
+> value; the `Ok`-arm bindings have **no** domain obligation to discharge and
+> `[ENT-6]` 3143 already fixes the arm's value exactly;
 >
-> (b) `a op b` at a `wrap` or `sat` operation: the exact polynomial **only when
-> the state at that commit derives the corresponding exact row's `[OP-2]`
-> no-wrap side condition** - for `-wrap` and `-sat`, `b - a <= 0`; for `+wrap`
-> and `+sat`, `a - Z <= c1` and `b - Z <= c2` with `c1 + c2 <= max(T)`; for
-> `*wrap` and `*sat`, `c1 * c2 <= max(T)` for the corresponding bounds. When the
-> condition is not derivable the commit is unsubstitutable and clause (e)
-> applies;
+> (b) `a op b` at a `wrap` or `sat` operation: a **fresh opaque witness term**
+> `o` for the destination, together with, as hypotheses, every constant bound on
+> that destination derivable in the state immediately after that commit on that
+> path, and - **when the state at that commit derives the corresponding exact
+> row's `[OP-2]` no-wrap side condition** - the two further hypotheses
+> `o - P <= 0` and `P - o <= 0`, where `P` is the exact polynomial of `a op b`.
+> The side conditions are: for `-wrap` and `-sat`, `b - a <= 0`; for `+wrap` and
+> `+sat`, `a - Z <= c1` and `b - Z <= c2` with `c1 + c2 <= max(T)`; for `*wrap`
+> and `*sat`, `c1 * c2 <= max(T)` for the corresponding bounds. When the side
+> condition does not derive **and** the destination is a `set` destination, the
+> substitution **refuses** the statement, with a diagnostic naming that commit
+> and the checked spelling that would admit it;
 >
 > (c) a `cvt` at a widening conversion: its operand. A copy or literal: that
 > atom;
 >
-> (d) `a / k` for a literal `k >= 1`: a fresh opaque term `q` together with the
-> two hypotheses `k*q - a <= 0` and `a - k*q <= k - 1`;
+> (d) `a / k` for a literal `k >= 1`: a fresh opaque term `q`, together with,
+> as hypotheses, every constant bound on the destination derivable in the state
+> immediately after that commit, and the **witness pair**, which depends on the
+> dividend's sign because 845 fixes exact division as **truncating toward
+> zero**:
+>
+> > (d1) when `Z - a <= 0` is derivable in the state at that commit - which every
+> > unsigned `a` satisfies from `[ENT-2]` 2905's implicit per-term bounds alone -
+> > the pair is `k*q - a <= 0` and `a - k*q <= k - 1`;
+> >
+> > (d2) otherwise the pair is `k*q - a <= k - 1` and `a - k*q <= k - 1`, which
+> > is true of truncation toward zero for either sign of `a`.
 >
 > (e) **any other right-hand side** - a call, a subscript, a construction, a
-> `replace`, a `propagate`, a delivered value, or a wrapping or saturating
-> operation whose side condition (b) does not discharge. If the destination is a
-> `let` binder committed exactly once on the path, the commit contributes a
-> **fresh opaque witness term** `o` for that binder, together with, as
-> hypotheses, every constant bound on that destination derivable in the state
-> immediately after that commit on that path. If the destination is a `set`
-> destination, the substitution **refuses** the statement, with a diagnostic
-> naming that commit and, where the refusal is a wrapping operation, the checked
-> spelling that would admit it.
+> `replace`, a `propagate` or a delivered value. If the destination is a `let`
+> binder committed exactly once on the path, the commit contributes a **fresh
+> opaque witness term** `o` for that binder, together with, as hypotheses, every
+> constant bound on that destination derivable in the state immediately after
+> that commit on that path. If the destination is a `set` destination, the
+> substitution **refuses** the statement, with a diagnostic naming that commit.
 
 Clause (b) is A1's repair; the "one backward pass, never revisits" sentence is
 A17's; clause (e)'s witness half is S1's, and it is what lets the I2 example's
 `let w = deref(weights)[i];` stand as an opaque term with `w <= 255` rather than
 refusing the statement the design was built for.
 
+**Four things in that block are F-I1's repairs, and the last of them is what the
+`[ENT-1]` theorem now rests on.** The hypothesis rewriting in the backward-pass
+sentence is F-I1's F2: I1's midpoint needs `span` rewritten inside the two
+division witnesses, and the sentence as drafted rewrote only "the polynomial", so
+`span` survived into `H`, could not be eliminated, and the midpoint was refused
+(F-I1 `worksheets/T4_i1_midpoint.md`, reading B). **Clause (a)'s proviso is
+deleted**, which is F-I1's F3: a `+checked` has no `[ENT-6]` domain obligation, so
+"provided the state discharges it" had a vacuous reading under which `span` and
+`mid` both fell to clause (e) and I1 died - A1's own vacuity, re-created one
+clause away from where it was repaired. Deleting it rather than splitting it is
+sound because the three exact operations carry the obligation themselves and the
+`Ok`-arm bindings have none, so the proviso was never doing work on a program that
+compiles; and it removes the last prover-dependence from clause (a). Clause (d)'s
+split is F-I1's B2, a **soundness** break: with no restriction on the dividend's
+sign, `a = -5, k = 2` makes `k*q - a <= 0` false (the language's `q` is `-2`), the
+certificate proves `h <= -3` where the truth is `h <= -2`, and
+`probes/f2_sdiv_consumer.wf` (compiled) is the accepted program that divides by
+zero on the strength of it. 3.9.4 re-derives the midpoint under the repaired
+text; 3.9.7 re-derives B2 in both directions, refusing the false bound and keeping
+the true one.
+
+**And clause (b) no longer chooses between two term shapes.** As drafted it
+substituted the exact polynomial when the no-wrap side condition derived and fell
+to clause (e)'s witness when it did not, so the **number of elimination terms**
+`[IND-7]` sees was a function of prover strength: one witness term became two
+operand terms the day a row image made the side condition derivable, and
+`[IND-7]`'s four-term cap is a hard error (F-I1's F7b). Under the text above every
+non-exact commit contributes exactly **one** witness term whatever the prover can
+derive, and the no-wrap side condition adds two *hypotheses* instead of changing
+the polynomial's shape. The elimination-term list is therefore a function of the
+path's text and the statement alone. The same move closes F-I1's F7c, the hazard
+it named without a witness: the witness bounds are read at the commit, where the
+path conditions are in force, and they are now read there on **every** route, so
+no strengthening can trade a tight commit-point bound for a loose check-point one.
+
 > **`[IND-5]` (base).** For a labelled `bound_stmt` on loop `@l`, the base
 > obligation is the statement polynomial checked by `[IND-7]` in the closed state
 > at `@l`'s preheader. For a `for_stmt`, it is checked in the closed post-capture
-> state of 3120, in which `binder = lower_capture` holds.
+> state of 3120, in which `binder = lower_capture` holds. No `[IND-4]`
+> substitution is performed: the preheader state is already the state the
+> polynomial's terms denote.
+>
+> The **statement hypotheses** `[IND-7]` receives for a base obligation are the
+> statement polynomials, as written, of the `bound_stmt`s of `@l` that **precede
+> this one in textual order** - never this statement itself. The loop's
+> statements are checked in textual order and each preceding base has already
+> discharged in the same preheader state, so the set is well founded. **No
+> `[IND-8]` projection of any statement of `@l` is in the preheader state**:
+> `[IND-8]` publishes on the header edges and, for a `loop_stmt`, on the
+> body-entry edge, never on the preheader edge.
+>
+> This is the F-I1 repair B1, and it is a soundness repair. The drafted rule sent
+> the base through `[IND-7]` with `[IND-7]`'s own unrestricted hypothesis list,
+> whose first group was "the statement polynomials of that loop's `bound_stmt`s",
+> so `sigma(t) = H1` with `H1` the statement itself gave `p := |b|*p - |a|*h = 0`
+> and **every labelled `bound_stmt` had a vacuous base**. 3.9.5 works the witness:
+> `bound @spin lie: ile(idx, 0_u64);` with `idx = 9`, whose consumer
+> `j3b_ind6_consumer.wf` (compiled) accepts, writing one byte past a one-byte
+> buffer.
 >
 > **`[IND-6]` (step, and the frame).** The step obligation of a labelled
 > `bound_stmt` is one obligation per body path `[IND-4]`. On each body path, take
@@ -1831,7 +1975,8 @@ refusing the statement the design was built for.
 > from that branch back to the path entry; a path condition whose substitution
 > refuses is dropped rather than refusing the statement; and
 >
-> (ii) the **witness hypotheses** `[IND-4]` clauses (d) and (e) introduced.
+> (ii) the **witness hypotheses** `[IND-4]` clauses (b), (d) and (e) introduced,
+> each carried into the head frame by the same backward pass.
 >
 > No fact read at the body-exit state enters the check, and no state fact is
 > read at any point other than the head. Path-sensitivity is confined to this
@@ -1839,10 +1984,25 @@ refusing the statement the design was built for.
 > checked in the flow at the limit retention family `[ENT-5.R5]`, once, after
 > deletion has ended.
 >
-> The **statement polynomials of that loop's own `bound_stmt`s are head-frame
-> facts and are never substituted**; they enter `[IND-7]` as hypotheses exactly
-> as written. Every other polynomial entering the check is in the head frame by
-> the paragraph above.
+> The **statement hypotheses** `[IND-7]` receives for a step obligation are the
+> statement polynomials, as written, of **every** `bound_stmt` of that loop,
+> including the statement under check. That is the induction hypothesis, and for
+> several statements on one loop it is ordinary mutual induction over iterations:
+> each statement is assumed at the head and each step is proved. They **are
+> head-frame facts and are never substituted**; they enter `[IND-7]` exactly as
+> written, while every other polynomial entering the check is in the head frame
+> by the paragraph above.
+>
+> **The check state is the state 3.14 step 3 built, and it already carries this
+> loop's `[IND-8]` projections.** Step 3's walk applies `[IND-8]` projections as
+> an `[ENT-3]` source; step 4 then verifies every `bound_stmt`. So the head state
+> in which a step obligation is checked, and every state along the body path in
+> which an `[IND-4]` clause (b) side condition or a clause (b)/(d)/(e) witness
+> bound is read, is a state in which this loop's statements are **assumed**. That
+> is sound and it is assume-guarantee, not circularity: the assumption is the
+> induction hypothesis, discharged at the head by `[IND-5]`'s base, which by the
+> paragraph above is checked in a preheader state carrying **no** projection of
+> the statement under check.
 
 `[IND-6]` is A16's and A2's repair together, and its two operative sentences are
 the ones the drafted rules got wrong in opposite directions. Reading the state at
@@ -1852,6 +2012,13 @@ hypothesis equal the goal modulo the binder shift, and the body's effect on the
 accumulator cancels - the silent unsigned overflow of A2's program. **One frame,
 named, with everything translated into it, is the whole content of both
 repairs.**
+
+The closing paragraph is F-I1's F5. The drafted rule said the head state was
+"extended by exactly two sets of hypotheses" and said nothing about the
+projections, which reads *against* the pipeline; and I4's own worked step says
+out loud that its `+wrap` side condition comes "through the published
+`hits - i <= 0`". The dependency is real - `s22`, `s23` and `L08` all reject
+without the projection - so the rule has to say the thing 3.14 was already doing.
 
 #### 3.8.3 The frame, worked against the two breaking programs
 
@@ -1880,6 +2047,18 @@ is false at `i = 1`. Under `[IND-6]` the hypothesis is the statement polynomial
 positive constant, and the statement is **refused**. The published fact that
 would have discharged the exact `+`'s `[OP-2]` obligation never exists.
 
+**Both traces were re-executed against the repaired text and neither moves.**
+A16's path substitutes only by clause (c) - a copy and a literal - which
+introduces no witness and no hypothesis, so `p0 = cursor` stands and `RELAX`
+still reads `cu(cursor) = 7` at the head. A2's `set sum = sum + 1000_u32` is
+clause (a), now unconditional, so `p0` is unchanged and the certificate still
+lands on 190125; the exhaustive search does **not** resurrect FF2, because the
+only hypothesis that would have worked is the substituted polynomial and
+`[IND-6]` removes that from the space entirely - F-I1 enumerates every
+certificate of A2's obligation in `worksheets/T7-T8_refusals.md` and all four
+fail. Clause (a) contributes no carried bounds (it introduces no witness term),
+so the repair adds nothing to either space.
+
 #### 3.8.4 What `[IND-4]`'s refusals cost, stated
 
 Refusing at an unsubstitutable `set` is the conservative half, and it is where a
@@ -1889,6 +2068,12 @@ callee's `ensures` instead - which is the right home, because the callee is what
 knows the step. A body whose accumulator is written by a `replace` of a whole
 place has neither route and goes to `if`/`else` with the price of 3.12. Those are
 honest limits and section 11 keeps them.
+
+The third refusal is clause (b)'s: a `set` written by a `wrap` or `sat` operation
+whose no-wrap side condition does not derive at that commit. That one has a named
+repair - the checked spelling, which the diagnostic prints - and it is the only
+`[IND-4]` refusal a prover strengthening can lift. Lifting a refusal moves a
+program from rejected to accepted, which is the direction `[ENT-1]` permits.
 
 ### 3.9 `[IND]` part two - the check, the publication, and the local form
 
@@ -1905,51 +2090,110 @@ exists.
 > `[IND-6]`. Its **elimination terms** are the degree-1 monomials of `p` with
 > nonzero coefficient, in `[FORM-2]` canonical spelling order with `[IND-4]`'s
 > witness terms first in order of introduction; there are at most **4**, and more
-> is a hard error naming the statement.
+> is a hard error naming the statement. **That count is a function of the path's
+> text and the statement alone**: `[IND-4]` clauses (a) and (c) substitute
+> unconditionally, and clauses (b), (d) and (e) each contribute exactly one
+> witness term whatever the ambient prover derives, so no strengthening can cross
+> the cap.
 >
-> The **hypothesis list** `H` is, in this order: the statement polynomials of
-> that loop's `bound_stmt`s as written `[IND-6]`; the path conditions and witness
-> hypotheses of `[IND-6]` clauses (i) and (ii); and, for each ordered pair of
-> elimination terms, the tightest difference bound `t1 - t2 <= c` derivable at
-> the check point `[ENT-4]`, if any. `H` has at most **16** members, and more is a
-> hard error naming the statement.
+> The **hypothesis list** `H` is an ordered list of **slots**, each either filled
+> with one polynomial `h` known to satisfy `h <= 0`, or **empty**. Its slots are,
+> in this order:
+>
+> (1) one slot for each **statement hypothesis the invoking rule supplies** -
+> `[IND-6]` supplies every `bound_stmt` of that loop, `[IND-5]` supplies the ones
+> textually preceding the statement under check, and `[IND-10]` supplies none -
+> filled with that statement polynomial as written;
+>
+> (2) one slot for each path condition of `[IND-6]` clause (i); and, for each
+> `[IND-4]` commit that introduces a witness term, two slots for that
+> destination's derivable constant bounds, plus the two slots of a clause (d)
+> witness pair or of a clause (b) no-wrap equality pair where that clause
+> applies. A slot whose fact is not derivable at that commit is **empty**;
+>
+> (3) for each **ordered pair of distinct elimination terms** - twelve slots at
+> four terms, six at three, two at two, none at one - the tightest difference
+> bound `t1 - t2 <= c` derivable at the check point `[ENT-4]`, the slot being
+> **empty** when none is.
+>
+> `H` has at most **32 slots**, and more is a hard error naming the statement.
+> **The cap is on the slot count, and the slot count is syntactic**: which slots
+> are filled depends on the ambient prover, how many slots there are does not.
 >
 > A **certificate** is a partial injection `sigma` from the elimination terms to
-> `H`, together with the derived multipliers: processing the elimination terms in
-> order, for a term `t` with current coefficient `a` in `p` and `sigma(t) = h`
-> with coefficient `b` on `t`, the step is admitted only when `a*b > 0`, and sets
-> `p := |b|*p - |a|*h` and `s := s*|b|`; a term outside `sigma`'s domain is
-> skipped; `s` starts at 1. The certificate **succeeds** when
+> the slots of `H`, together with the derived multipliers. Processing the
+> elimination terms in order, for a term `t` with current coefficient `a` in `p`
+> and `sigma(t)` a slot filled with `h` whose coefficient on `t` is `b`: the step
+> is **admitted** when `a*b > 0`, and sets `p := |b|*p - |a|*h` and `s := s*|b|`.
+> If `sigma(t)`'s slot is empty, or `a` is zero, or `a*b <= 0`, **the term is
+> skipped and `p` and `s` are unchanged**; a term outside `sigma`'s domain is
+> likewise skipped. `s` starts at 1. The certificate **succeeds** when
 > `floor(RELAX(p) / s) <= 0` at the end.
 >
 > The obligation is **discharged exactly when some certificate succeeds.** The
 > certificate space is the set of partial injections from at most 4 terms into at
-> most 16 hypotheses; it is finite, fixed by this rule, and enumerated
-> exhaustively. There is no implementation choice: two conforming
-> implementations decide the same predicate on the same inputs.
+> most 32 slots - `sum_k C(4,k)*P(32,k) = 988,161` at the caps, and 1,021 on the
+> largest obligation this design works (I1's midpoint: three terms, ten slots).
+> It is finite and fixed by this rule. Because a skipped step leaves `p` and `s`
+> unchanged, **the certificate that simply omits that term reaches the same
+> residual**, so an implementation may discard any assignment whose first step is
+> skipped without changing the predicate; that, not the raw space, is what makes
+> the enumeration cheap. Two conforming implementations **that derive the same
+> facts at the check point** decide the same predicate on the same inputs, and
+> the *Monotonicity* paragraph below is what covers the case where they do not.
 >
 > `RELAX(p)` is the sum, over the monomials of `p`, of the maximum of that
 > monomial's interval, where a monomial's interval is the product of its factors'
 > intervals **taken as the maximum over the corner products** - for a degree-d
-> monomial the maximum over the `2^d` products of endpoints - each factor's
-> interval being `[cl, cu]` for the tightest constant bounds `Z - t <= -cl` and
-> `t - Z <= cu` derivable at the check point, and the empty product being 1.
-> Every quantity is a mathematical integer and `[IND-3]`'s magnitude limit applies
-> at every step.
+> monomial the maximum over the `2^d` products of endpoints, the monomial's
+> integer coefficient included as a factor - and the empty product being 1. A
+> factor `t`'s interval is `[cl, cu]` for the tightest constant bounds
+> `Z - t <= -cl` and `t - Z <= cu` **derivable at the check point in the state
+> `[IND-6]` or `[IND-10]` extended, or standing in a filled slot of `H`**. Where
+> neither source supplies a bound, the interval is the interval of `t`'s own
+> fragment integer type; a `[IND-4]` witness term takes the type of the
+> destination it stands for. **`RELAX` is total, is defined on every term
+> including every witness term, and raises no hard error.** Every quantity is a
+> mathematical integer and `[IND-3]`'s magnitude limit applies at every step.
 >
 > *Soundness.* Each admitted step replaces `p` by `|b|*p - |a|*h` with `|b| > 0`,
-> `|a| > 0` and `h <= 0`, so the new polynomial is at least `|b|` times the old,
-> and the accumulated `s` satisfies `p_final >= s * p_0`. `RELAX` over-approximates
-> `p_final`, so `s * p_0 <= RELAX(p_final)`; `p_0` takes integer values, so
+> `|a| > 0` and `h <= 0`, so the new polynomial is at least `|b|` times the old;
+> a skipped step changes neither `p` nor `s`. The accumulated `s` therefore
+> satisfies `p_final >= s * p_0`. `RELAX` over-approximates `p_final`, so
+> `s * p_0 <= RELAX(p_final)`; `p_0` takes integer values, so
 > `p_0 <= floor(RELAX(p_final) / s)`. The final test therefore proves `p_0 <= 0`.
 >
-> *Monotonicity.* Tightening the constant of any member of `H` makes that
-> hypothesis polynomial larger, hence `-|a|*h` smaller, hence the residual
-> smaller, hence a succeeding certificate still succeeds; adding a member to `H`
-> only enlarges the certificate space, and every prior certificate survives with
-> the new member outside `sigma`'s image. **No fact-source or closure
-> strengthening can refuse a statement an earlier conforming checker verified**,
-> which is what `[ENT-1]` requires of every construct.
+> *Monotonicity.* Let a **strengthening** be any change to the ambient prover
+> that makes more facts derivable at more points and none fewer. Then:
+>
+> (i) *the obligation is unchanged.* `p` and the elimination-term list are
+> functions of the path's text and the statement alone, by clause (a)'s
+> unconditional exactness and clause (b)'s uniform witness term. The only
+> `[IND-4]` decision a strengthening can flip is clause (b)'s refusal on a `set`
+> destination, which it flips **from refusing to admitting**.
+>
+> (ii) *the slot list is unchanged, and no slot is emptied.* Slot positions are
+> syntactic, so neither cap can be crossed. A strengthening can only fill a slot
+> that was empty or tighten a slot that was filled.
+>
+> (iii) *filling or tightening a slot never loses a certificate.* Tightening the
+> constant of a filled slot makes that hypothesis polynomial larger, hence
+> `-|a|*h` smaller, hence the residual smaller. Filling an empty slot leaves
+> every prior certificate untouched, because a prior certificate that named that
+> slot skipped it, and skipping changes nothing. Clause (d)'s `d1` pair is
+> exactly `d2`'s pair with the constant of one member tightened from `k - 1` to
+> `0`, with the same coefficients, so the `d2` -> `d1` move is case (iii) too.
+>
+> (iv) *tightening a `RELAX` interval never loses a certificate*, because
+> `RELAX(p)` is monotone in each factor interval and the final test is monotone
+> in `RELAX(p)`.
+>
+> **Therefore no fact-source or closure strengthening can refuse a statement an
+> earlier conforming checker verified**, which is what `[ENT-1]` requires of every
+> construct. The theorem is stated over the whole rule, not over one paragraph of
+> it, because F-I1 showed that the drafted version was false: the two caps were
+> hard errors on counts a strengthening could grow, and A4 had merely moved from
+> the elimination order to the caps.
 >
 > *This is a fixed incomplete fragment, and it is meant to be.* `[ENT-1]`
 > 2835-2836 forbids an implementation-chosen strategy, not an incomplete one. A
@@ -1959,17 +2203,49 @@ exists.
 
 **The corner-product sentence is A24's D-2** - the drafted `RELAX` was undefined
 for a mixed-sign degree-2 monomial and two implementations would have differed on
-the first signed accumulator. The two caps (4 elimination terms, 16 hypotheses)
-are what keep the certificate space small: at most `16*15*14*13` orderings, a few
-tens of thousands of tiny polynomial operations per statement per body path,
-which is nothing beside one DBM closure.
+the first signed accumulator. Its type-interval fallback is F-I1's F4/F9: `RELAX`
+as drafted read "the tightest constant bounds derivable at the check point", and
+a clause (d) witness `q` has **no** derivable constant bound at all, so the
+drafted rule was undefined on a term the exhaustive enumeration is guaranteed to
+reach (the empty certificate on I1's own obligation is one). Two readings - treat
+it as unbounded, or raise `[IND-3]`'s hard error - accept different sets, and only
+the first leaves the accepted set alone. The type interval is that first reading,
+written down.
+
+**The caps.** As drafted they were `16` hypotheses and `4` elimination terms,
+both hard errors on counts a prover strengthening can grow, which is exactly the
+`[ENT-1]` break A4 was supposed to have closed. Repaired, both are counts of
+**slots**, fixed by the path's text: twelve ordered-pair slots at four terms
+whether or not any bound is derivable, two constant-bound slots per witness
+commit whether or not a bound is derivable, and one witness term per non-exact
+commit whether or not the no-wrap side condition derives. The slot cap had to
+rise from 16 to **32** as a consequence, because twelve pair slots plus one
+statement plus three witness commits is already nineteen; the corrected space is
+`sum_k C(4,k)*P(32,k) = 988,161` partial injections at the caps. **The drafted
+figure was wrong twice over**: `16*15*14*13` = 43,680 counts only the full-domain
+injections, and the space at sixteen slots is `sum_k C(4,k)*P(16,k)` = **58,625**
+partial injections. What keeps the work small is not the cap but the skip rule -
+an assignment whose step is skipped is equivalent to the certificate that omits
+the term - so an implementation evaluates only the assignments where a slot is
+filled and carries a correctly-signed coefficient on its term. The largest
+obligation in this file is I1's midpoint - three elimination terms and ten slots,
+so 1,021 partial injections, of which only six `(term, slot)` assignments are
+admissible at all - two each for `q`, `hi` and `lo` - because no other filled slot
+carries a correctly-signed coefficient on its term. I2's
+step is nine slots and 748; I4's step is ten slots over two terms and 111.
 
 **The certificate form accepts a superset of the drafted greedy rule**, because
-every greedy elimination sequence is a certificate. That is what makes the repair
-affordable at this point in the batch: none of the worked traces below has to be
-re-derived, and the loop design's own Q4 - *"the order fixes the accepted set; a
-different order accepts a different, incomparable set"* - stops being an open
-question, because no order fixes anything.
+every greedy elimination sequence is a certificate: "unused" makes greedy's
+selection injective, the traversal is the same term order, and a term greedy
+could not match is a term outside `sigma`'s domain. F-I1 confirms the inclusion
+and could construct no counterexample. **What that argument does not do is cover
+a trace that was never drafted**, and the drafted claim that "none of the worked
+traces has to be re-derived" was used to cover two that do not exist anywhere in
+this file (2.4, repaired). It covers the seven derivations of 3.9 and the two
+refusal traces of 3.8.3, and those are the ones F-I1 re-executed. The loop
+design's own Q4 - *"the order fixes the accepted set; a different order accepts a
+different, incomparable set"* - stops being an open question, because no order
+fixes anything.
 
 #### 3.9.2 `[IND-8]` - what a verified statement publishes
 
@@ -1983,9 +2259,19 @@ question, because no order fixes anything.
 > monomial of the normalized `p <= 0` with coefficient `a` in `{+1, -1}`, let
 > `r := p - a*t`; publish `t - Z <= -m` when `a = +1` and `Z - t <= -m` when
 > `a = -1`, where **`m` is the sum over the monomials of `r` of that monomial's
-> minimum**; and when `r` is exactly one degree-1 monomial `b*u` with `b = -a`
-> plus a constant `k`, publish additionally the difference bound
-> `a*t + b*u <= -k` in whichever orientation `[ENT-2]` 2901 admits.
+> minimum, a monomial's minimum being the minimum over its corner products** -
+> for a degree-d monomial the minimum over the `2^d` products of endpoints, the
+> monomial's integer coefficient included as a factor, the empty product being 1,
+> and each factor's interval taken exactly as `[IND-7]`'s `RELAX` takes it,
+> **on that edge's own state**; and when `r` is exactly one degree-1 monomial
+> `b*u` with `b = -a` plus a constant `k`, publish additionally the difference
+> bound `a*t + b*u <= -k` in whichever orientation `[ENT-2]` 2901 admits.
+>
+> The direction matters and is the reason the minimum is named rather than the
+> maximum: `p = a*t + r <= 0` gives `a*t <= -r <= -m`, so `m` must be a lower
+> bound of `r` and the corner minimum is the tightest one this rule can compute.
+> An `m` larger than `r`'s true minimum would publish a bound tighter than the
+> statement entails.
 >
 > Published facts carry the ordinary `[ENT-5]` support of their own terms and are
 > killed ordinarily. **The polynomial itself is never a fact**: no state anywhere
@@ -2016,6 +2302,21 @@ a statement resting on a `requires` would discharge the leaf in B, `[PRV-3]` 339
 would find no demand remaining, and a caller could pass an external value
 straight through. The sum-of-minima reading of `m`, and the magnitude clause, are
 A24's D-3 and A25.
+
+**The corner-minimum sentence is F-I1's F8**, and it was A24's D-2 repaired in
+`[IND-7]` and left open one rule later: `[IND-7]` defined "the maximum over the
+corner products" and `[IND-8]` then said "that monomial's minimum" with no rule
+defining it. **Nothing this repair publishes changes.** I2's projection is
+`r = -255*i` with `i` in `[0, 999]` on the true header edge, corner products `0`
+and `-254745`, minimum `-254745`, so `sum - Z <= 254745` stands, and on the false
+edge `cu(i) = 1000` gives 255000 exactly as before; I3's is `r = -i*factor`,
+corner minimum `-cu(i)*cu(factor)`, so `acc - Z <= cu(i)*cu(factor)` stands; I4's
+`r = -i` is a single degree-1 monomial of opposite sign, so the difference-bound
+clause fires and `hits - i <= 0` is published unchanged. The three consumers walk
+identically: `s22`/`L08` still need `254745 + 255 = 255000 <= max(u32)` through
+`[ENT-6.D]`, `s23` still needs the added `requires ile(n, 1000_u64)` to bring
+`cu(i)*cu(factor)` down to 999000, and I4's exit closure still reaches
+`hits - n <= 0`.
 
 #### 3.9.3 `[IND-9]` redundancy, and the I2 and I3 traces
 
@@ -2050,20 +2351,32 @@ fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32
 ```
 
 *Base* `[IND-5]`: post-capture `sum = 0`, `binder = 0`; polynomial
-`sum - 255*i <= 0`; the empty certificate relaxes with `cu(sum) = cu(i) = 0`,
-`C = 0`, `s = 1`, verified.
+`sum - 255*i <= 0`; no `[IND-4]` substitution; **the supplied statement
+hypotheses are empty**, because `per_byte` is the loop's only `bound_stmt` and
+`[IND-5]` excludes the statement under check. The empty certificate relaxes with
+the monomial `sum` over `[0,0]` and the monomial `-255*i` over `[0,0]`, so
+`C = 0`, `s = 1`, verified - **without touching group 1 at all**, which is the
+point of the B1 repair: the base of this statement is exactly as strong as it was
+and it is no longer able to prove itself.
 
-*Step* `[IND-6]`: one body path. `[IND-4]` replaces `sum` by `sum + wide`; `wide`
-by its `cvt` operand `w`; and `w`'s commit is a subscript, so clause (e) gives a
-witness `o` with the hypothesis `o - Z <= 255` (`w`'s type is u8) read at the
-commit. The binder becomes `i + 1`:
+*Step* `[IND-6]`: one body path. `[IND-4]` replaces `sum` by `sum + wide` under
+clause (a), which is unconditional; `wide` by its `cvt` operand `w` under clause
+(c); and `w`'s commit is a subscript, so clause (e) gives a witness `o` with the
+constant-bound slots on `w` read at the commit, filling `o - Z <= 255` (`w`'s
+type is u8) and `Z - o <= 0`. The binder becomes `i + 1`:
 
 ```
 p0 = (sum + o) - 255*(i + 1)   =  sum + o - 255*i - 255
-H1 =  sum - 255*i                            (the statement AS WRITTEN, [IND-6])
+elimination terms: o (witness, first), i, sum          -- three, <= 4
+H slots: (1) H1 = sum - 255*i        the statement AS WRITTEN, [IND-6]
+         (2) o - 255 <= 0, -o <= 0   the clause (e) constant bounds on w
+         (3) six ordered pairs over {o, i, sum}, filled or empty
+         nine slots, <= 32
 certificate: sigma(i) = H1
+  t = o   : outside sigma's domain -> skipped
   a = -255 on i, b = -255 on i, a*b > 0 -> p := 255*p0 - 255*H1 = 255*o - 65025 ; s := 255
-RELAX: cu(o) = 255  ->  C = 255*255 - 65025 = 0
+  t = sum : coefficient is now 0 -> skipped
+RELAX: cu(o) = 255 from its filled slot  ->  C = 255*255 - 65025 = 0
 floor(0 / 255) = 0 <= 0   ->  verified
 ```
 
@@ -2082,12 +2395,31 @@ exist today**: `L08_i2_consumer.wf` (compiled) supplies exactly those two bounds
 as a contract and still **rejects**. `[ENT-6.D]` (3.5.5) is a hard prerequisite
 of this example, not an optimization, and `L09` says the same for I3.
 
+*What the clause (a) repair removes from this trace.* As drafted, substituting
+`sum + wide` was conditional on the state at that commit discharging the `+`'s
+`[ENT-6]` obligation, and the only source of that fact is the statement's own
+`[IND-8]` projection at the head - so the substitution read a state that assumed
+the statement under check (F-I1's F5). With clause (a) unconditional the I2 and
+I3 steps no longer read the projection at all: the `+`'s obligation is the
+program's own and 3.14 step 5 discharges it or rejects the program. The
+assume-then-verify ordering `[IND-6]` now states is still needed, but its
+customer is narrower - it is clause (b)'s no-wrap side condition, which is
+exactly where I4 uses it.
+
 **I3 - an accumulator bounded by a parameter product.** `s23_accum_param.wf`
 (compiled) rejects today with `[OP-2] residual: acc +defined factor`. The
-statement is `bound @step running: ile(acc, i * factor);` and the whole step is
-one cancellation:
+statement is `bound @step running: ile(acc, i * factor);`; its base is the empty
+certificate and its step is one cancellation:
 
 ```
+BASE [IND-5], post-capture acc = 0, binder = 0, no supplied statement hypothesis
+p0 = acc - i*factor
+elimination terms: acc only  --  i*factor is degree 2, not a degree-1 monomial
+empty certificate: monomial acc over [0,0] -> 0
+                   monomial -i*factor, corner products over i in [0,0] -> 0
+                   C = 0 ; floor(0/1) = 0 <= 0   ->  verified
+
+STEP [IND-6], one body path, clause (a) unconditional on `set acc = acc + factor`
 p0 = (acc + factor) - (i + 1)*factor  =  acc - i*factor
 H1 =  acc - i*factor
 certificate: sigma(acc) = H1;  a = +1, b = +1  ->  p := p0 - H1 = 0 ; s := 1
@@ -2141,6 +2473,20 @@ drafted, with its normalizer power stated exactly and its residue priced.
 > closed state at the region's entry, extended by `[IND-4]`'s witness
 > hypotheses. There is no base and no step. Its projection `[IND-8]` is published
 > on its normal continuation, and `[IND-8.V]` applies unchanged.
+>
+> **The statement hypotheses `[IND-10]` supplies to `[IND-7]` are none.** A local
+> statement has no loop, so "that loop's `bound_stmt`s" names nothing; and with
+> no base and no step, a rule that let the statement's own polynomial into its own
+> hypothesis list would make every local statement true by construction. An
+> enclosing loop's labelled statements are not supplied either: they hold at that
+> loop's head, and the region entry is inside the body, where the body's commits
+> may already have moved their terms. What such a statement contributes reaches
+> this check the ordinary way, as the `[IND-8]` projection standing in the
+> region-entry state.
+>
+> Two local statements in one region do not compose: the second is checked at the
+> region's entry, which precedes the first, so the first's projection is not in
+> that state. Widening this is monotone and can wait for a program that wants it.
 
 **The statement, and the program it stands in:**
 
@@ -2152,25 +2498,59 @@ bound probe_inside: ilt(mid, hi);
 let probe = deref(table)[mid];
 ```
 
-**The trace.** After substitution - `mid <- lo + half`, `half <- q` with the
-division witnesses `2q - span <= 0` and `span - 2q <= 1`, `span <- hi - lo`:
+**The trace.** One backward pass over the region, end to entry. At
+`let mid = lo +checked half` clause (a) applies **unconditionally** - the `Ok`-arm
+binding has no `[ENT-6]` obligation to discharge, which is the F3 repair - giving
+`p = lo + half - hi + 1`. At `let half = span / 2_u64` clause (d) applies, and
+`span` is `u64`, so `Z - span <= 0` holds from `[ENT-2]` 2905's implicit per-term
+bound and the **d1** pair is the one drafted. At `let span = hi -checked lo`,
+clause (a) again, and `span` no longer occurs in the polynomial but **does occur
+in the two witness hypotheses**, which the backward pass now rewrites - the F2
+repair, without which `span` survives into `H`, is not an elimination term, cannot
+be eliminated, and relaxes at a region entry where it is not even in scope:
 
 ```
 p0 = lo + q - hi + 1 <= 0
-H  = { 2q - hi + lo <= 0 , hi - lo - 2q <= 1 }      (division witnesses)
-     u { lo - hi <= -1 }                            (the loop's own settled test)
-elimination terms: q (a witness term, first), then hi, lo
-certificate: sigma(q) = the first witness, sigma(hi) = (lo - hi <= -1)
-  t = q  : a = +1, b = +2, a*b > 0 ->  p := 2*p0 - 1*H = lo - hi + 2 ; s := 2
-  t = hi : a = -1, b = -1, a*b > 0 ->  p := p - (lo - hi + 1) = 1 ; s := 2
+elimination terms: q (a witness term, first), then hi, lo   -- three, <= 4
+H slots: (2) the clause (d) constant bounds on `half`, filled from u64's own
+             implicit bounds: -q <= 0 and q - max(u64) <= 0, neither used
+             the d1 witness pair, rewritten through `span <- hi - lo`:
+               H1 = 2q - hi + lo <= 0 ,  H2 = hi - lo - 2q - 1 <= 0
+         (3) six ordered pairs over {q, hi, lo}: (lo,hi) filled with
+               H3 = lo - hi + 1 <= 0   (the loop's own settled test), rest empty
+         ten slots, <= 32 ; group 1 is empty by [IND-10]
+certificate: sigma(q) = H1, sigma(hi) = H3
+  t = q  : a = +1, b = +2, a*b > 0 ->  p := 2*p0 - 1*H1 = lo - hi + 2 ; s := 2
+  t = hi : a = -1, b = -1, a*b > 0 ->  p := 1*p - 1*H3 = 1 ; s := 2
+  t = lo : outside sigma's domain -> skipped
 RELAX(1) = 1 ;  floor(1 / 2) = 0 <= 0   ->  verified
 ```
+
+Step two in full, because the coefficients are where a reader will want to check:
+`2*p0 = 2lo + 2q - 2hi + 2`, minus `H1 = 2q - hi + lo` leaves `lo - hi + 2`; then
+`(lo - hi + 2) - (lo - hi + 1) = 1`, and `floor(1/2) = 0` is the integer
+tightening the whole derivation turns on.
+
+**And 2.4's third repair option stays dissolved.** The objection to a
+syntactically total hypothesis list was that filling the `(q, hi)` slot with the
+type-implied bound would displace `lo - hi <= -1` and kill this derivation. Under
+the certificate form that slot is present here and empty, and were it filled the
+certificate above still exists with the filled slot outside `sigma`'s image. The
+search, not the emptiness, is what saves I1.
 
 **So the normalizer power I1 needs, exactly, is three things beyond what I2, I3
 and I4 need**, and this is the answer the owner's ruling asked for:
 
 1. **the division witness** - `[IND-4]` clause (d)'s `a / k` for a literal
-   `k >= 1`, introducing one opaque term and two hypotheses;
+   `k >= 1`, introducing one opaque term and two hypotheses, and specifically
+   the **d1** pair, which needs the dividend provably nonnegative. That
+   restriction is F-I1's B2 and it is a soundness repair, not a scruple: 845
+   fixes exact division as truncating toward zero, so for `a = -5, k = 2` the
+   language's `q` is `-2` and the drafted `k*q - a <= 0` is **false**;
+   `probes/f3_sdiv_false_bound.wf` (compiled) shows today's checker refusing
+   exactly the bound the drafted pair would have proved, and
+   `probes/f2_sdiv_consumer.wf` (compiled) accepts the program that then divides
+   by zero. A midpoint over an unsigned window is d1's case for free;
 2. **elimination against ambient difference bounds**, not only against the
    statement's own polynomial - the second step consumes `lo - hi <= -1`, which
    is a bound over two terms *of the statement itself*, so no three-term ambient
@@ -2255,14 +2635,47 @@ for @scan i in 0_u64..n {
 set out[hits] = 1_u8;
 ```
 
-*Base.* `hits = 0`, `binder = 0`: `0 - 0 <= 0`. Verified.
-*Step.* Two body paths. Matching path: substitute `hits <- hits + 1` - the
-`+wrap`'s side condition `[IND-4]` clause (b) requires is `hits - Z <= c1`,
-`1 <= c2`, `c1 + c2 <= max(u64)`, which the head state carries through the
-published `hits - i <= 0` together with `i < n <= max(u64)` - and `i <- i + 1`,
-giving `p0 = (hits + 1) - (i + 1) = hits - i`; the certificate cancels against
-the statement; `0 <= 0`. Non-matching path: `p0 = hits - (i + 1)`; cancel;
-`-1 <= 0`. Both are exactly the obligations `L05_i4_step.wf` and
+*Base* `[IND-5]`. Post-capture `hits = 0`, `binder = 0`; no supplied statement
+hypothesis, since `counted` is the loop's only statement and `[IND-5]` excludes
+it. Empty certificate: monomial `hits` over `[0,0]` and monomial `-i` over
+`[0,0]`, so `C = 0` and `floor(0/1) = 0 <= 0`. Verified, and - the B1 repair
+again - verified from the preheader state rather than from itself.
+
+*Step* `[IND-6]`. Two body paths. The matching path is where clause (b) does its
+work, and the repaired clause changes the shape of the trace without changing its
+outcome: a `wrap` commit contributes a **witness term** whatever the prover can
+derive, and the no-wrap side condition adds two equality hypotheses instead of
+rewriting the polynomial.
+
+```
+matching path: `let value = data[i]; if ieq(value,0) { set hits = hits +wrap 1; }`
+binder shift: P[i := i+1] = hits - i - 1
+backward pass: `set hits = hits +wrap 1_u64`  ->  clause (b): hits <- o,
+   constant-bound slots on `hits` after the commit, and - because the head state
+   derives the +wrap side condition `hits - Z <= c1`, `1 <= c2`,
+   `c1 + c2 <= max(u64)` through the published `hits - i <= 0` with
+   `i < n <= max(u64)` - the two equality slots filled:
+       E1 = o - hits - 1 <= 0 ,  E2 = hits + 1 - o <= 0
+p0 = o - i - 1
+elimination terms: o (witness, first), i        -- two, <= 4
+H slots: (1) H1 = hits - i        the statement as written
+         (2) E1, E2, the two constant bounds on `hits`, the path condition and
+             the clause (e) witness bounds for `value`
+         (3) two ordered pairs over {o, i}
+         ten slots, <= 32
+certificate: sigma(o) = E1, sigma(i) = H1
+  t = o : a = +1, b = +1, a*b > 0 -> p := 1*p0 - 1*E1 = hits - i ; s := 1
+  t = i : a = -1, b = -1, a*b > 0 -> p := 1*p - 1*H1 = 0 ; s := 1
+RELAX(0) = 0 ; floor(0/1) = 0 <= 0   ->  verified
+
+non-matching path: no commit touches `hits`
+p0 = hits - i - 1 ;  sigma(hits) = H1 ;  a = +1, b = +1
+  p := p0 - H1 = -1 ;  RELAX(-1) = -1 ;  floor(-1/1) = -1 <= 0  ->  verified
+```
+
+`hits` enters the matching path's residual through `E1` and leaves it through
+`H1`; it is never an elimination term, because the elimination-term list is fixed
+from `p0`. Both obligations are exactly the ones `L05_i4_step.wf` and
 `L06_i4_step_skip.wf` (compiled) pose as contracts, and **today's checker accepts
 both**.
 *Publication.* `hits` is solitary with `a = +1` and `r = -i` is a single
@@ -2325,17 +2738,102 @@ Section 5 carries that sentence into T3 itself.
 
 #### 3.9.7 Falsifiers for `[IND]`
 
-**F-I1 (the fragment verifies what it claims to).** Implement `[IND-7]` against
-the traces of 3.9.3, 3.9.4 and 3.9.5, plus the counted ipv4 restructure of 4.4.
-*Refuted if* any needs a hypothesis the rule does not name, a fifth elimination
-term, or a certificate outside the space. This is the experiment that must be run
-before the text is fixed.
+**F-I1 (the fragment verifies what it claims to). RUN, AND IT FIRED.** The
+experiment was to hand-execute `[IND-7]`'s certificate check against the
+derivations of 3.9.3, 3.9.4 and 3.9.5, refuted if any needs a hypothesis the rule
+does not name, a fifth elimination term, or a certificate outside the space. Its
+verdict is **FAIL**, and the rule text above is the repair. What it found, in the
+order it matters:
+
+- **Every derivation the file drafts reproduces, digit for digit** - the seven of
+  3.9 and the two refusals of 3.8.3, including `255*o - 65025`, `floor(0/255)`,
+  I3's `p := 0` cancellation and I1's `floor(1/2) = 0`. The certificate form does
+  the arithmetic the file says it does.
+- **Two soundness breaks**, B1 and B2, worked below. Both are repaired above.
+- **`[ENT-1]` monotonicity was not restored**, because the two caps were hard
+  errors on prover-dependent counts (3.9.1's cap paragraph).
+- **Three determinism holes** - the backward pass over witness hypotheses (F2),
+  clause (a)'s vacuous proviso (F3), and `RELAX` over a term with no derivable
+  bound (F4/F9) - plus `[IND-8]`'s undefined monomial minimum (F8), the check
+  state's assume-then-verify ordering (F5), the group-1 reading for a local
+  statement (F10), and the zeroed-coefficient skip (F11).
+- **A trace-set mismatch**: 2.4 and this falsifier both named traces the file
+  never drafted. 2.4 is repaired and the ipv4 row is priced in 4.4.
+- **What holds:** the superset claim over the greedy rule is correct and F-I1
+  could construct no counterexample; FF2 and FATAL-1 are genuinely closed by
+  `[IND-6]`'s frame sentences and the certificate search reopens neither; and
+  2.4's rejected "syntactically total hypothesis list" repair is dissolved, since
+  with the `(q, hi)` slot present the midpoint certificate still exists.
+
+**B1, and the repair executed.** `[IND-5]` sent the base through `[IND-7]` with
+`[IND-7]`'s own first hypothesis group, "the statement polynomials of that loop's
+`bound_stmt`s as written". Taking `sigma(t) = H1` with `H1` the statement itself
+gives `p := |b|*p - |a|*h = 0` for the leading term of **any** statement, so every
+labelled `bound_stmt` had a vacuous base. The witness:
+
+```whitefoot
+let out = buffer_new(1_u64, 0_u8);
+let idx = 9_u64;
+for @spin t in 0_u64..4_u64 { bound @spin lie: ile(idx, 0_u64); }
+set out[idx] = 1_u8;
+```
+
+`P = idx <= 0`. The step is honestly true - no commit touches `idx` - and
+`[IND-8]` publishes `idx - Z <= 0`, which discharges `idx < len(out)` at the
+continuation while `idx` is 9 and `out` is one byte. Under the drafted base:
+`sigma(idx) = H1 = idx`, `a = +1`, `b = +1`, `p := 1*p0 - 1*H1 = 0`, `s = 1`,
+verified. **Under the repaired base it is refused**: `[IND-5]` supplies no
+statement hypothesis, so group 1 is empty; `idx` is the only elimination term, so
+group 3 has no ordered pair of distinct terms; every slot that could carry a
+coefficient on `idx` is absent, so every certificate is the empty one;
+`RELAX(idx) = cu(idx) = 9` at the preheader and `floor(9/1) = 9 > 0`. The
+statement is a hard error at its own node `[IND-1]`, nothing is published, and
+`j3_ind6_checkpoint_break.wf` (compiled) is the rejection that stands -
+`[OP-4] residual: x < len(out)`. Its twin `j3b_ind6_consumer.wf` (compiled)
+**accepts** with that fact supplied as a contract, which is what makes the pair an
+arbitration rather than an assertion: the false publication buys exactly the
+out-of-bounds write and nothing else.
+
+**B2, and the repair executed.** With no restriction on the dividend's sign,
+clause (d)'s pair `k*q - a <= 0`, `a - k*q <= k - 1` is **false** under 845's
+truncation toward zero: `a = -5`, `k = 2` gives `q = -2` and `k*q - a = 1 > 0`.
+The certificate then proved `h <= -3` where the truth is `h <= -2`, and
+`floor(C/s)` - the same integer tightening I1 depends on - is what turned the
+half-integer into an accepted bound:
+
+```
+bound tight: ile(h, -3_i64);   over  let h = a / 2_i64;  with a = -5
+DRAFTED (d):  p0 = q + 3 ; sigma(q) = (2q - a <= 0), a_coef = +1, b = +2
+              p := 2*(q+3) - 1*(2q - a) = a + 6 ; s = 2
+              RELAX = cu(a) + 6 = 1 ; floor(1/2) = 0 <= 0  ->  VERIFIED, and false
+REPAIRED:     `Z - a <= 0` is not derivable, so (d2) applies:
+              H1 = 2q - a - 1 <= 0 ,  H2 = a - 2q - 1 <= 0
+              sigma(q) = H1 : p := 2*(q+3) - 1*(2q - a - 1) = a + 7 ; s = 2
+              RELAX = cu(a) + 7 = 2 ; floor(2/2) = 1 > 0     ->  REFUSED
+              sigma(q) = H2 : b = -2 on q, a_coef = +1, a*b < 0 -> skipped
+              sigma = {} : q has no derivable bound, so RELAX takes i64's
+                           interval and the residual is positive  ->  REFUSED
+```
+
+The honest companion still verifies, which is the point of splitting the clause
+rather than weakening it: `bound low: ige(h, -5_i64)` gives `p0 = -q - 5`, and
+`sigma(q) = H2` with `a_coef = -1`, `b = -2` gives `p := 2*(-q-5) - 1*(a - 2q - 1)
+= -a - 9`, `RELAX = -cl(a) - 9 = -4`, `floor(-4/2) = -2 <= 0`. **Verified.**
+`probes/f3_sdiv_false_bound.wf` (compiled) is the arbitration: today's checker
+refuses precisely `ile(h, -3_i64)`, the bound the drafted pair would have proved.
+`probes/f2_sdiv_consumer.wf` (compiled) **accepts** the consumer that divides by
+`h + 2`, so the false bound is what buys the nonzero divisor, and
+`probes/f4_sdiv_interval.wf` (compiled) rejects `[OP-2] residual: h +defined
+2_i64`, so today's `/` image supplies nothing here and the witness pair was the
+only source. With `k = 1` the two pairs coincide and no repair is needed.
 
 **F-I2 (monotonicity is real).** Take any verified statement, add a row image to
 the checker, and re-verify. *Refuted if* any statement moves from verified to
-refused. Under the certificate form this is impossible by the argument in 3.9.1;
-under the drafted greedy rule it happens, and A4's three-term construction is the
-seed.
+refused. F-I1 refuted this for the drafted text by the caps, not by the
+elimination order; under the repaired rule 3.9.1's four-part *Monotonicity*
+argument is what the experiment tests, and the sharpest seeds are the two the
+repair had to close: a step that crosses twelve filled ordered-pair slots, and a
+`wrap` commit whose no-wrap side condition becomes derivable between versions.
 
 **F-I3 (the frame repair is complete).** Re-run A16's and A2's programs under
 `[IND-6]`. *Refuted if* either verifies. Then generalize: for every accepted
@@ -3239,6 +3737,17 @@ for each concrete function instance F, in stable instance order:
   9. publish the checked program
 ```
 
+**Step 3 before step 4 is normative, not an implementation convenience.** The
+walk applies every `[IND-8]` projection as an `[ENT-3]` source, and step 4 then
+verifies the statements; so a statement's base and step are checked in a state
+that *assumes* the loop's statements. That is the induction hypothesis, and
+`[IND-6]` now says so in rule text rather than leaving it to this diagram, because
+`[IND-4]` clause (b)'s no-wrap side condition depends on it - I4's `+wrap` step is
+licensed by I4's own published `hits - i <= 0`. What keeps it from being circular
+is `[IND-5]`: the base is checked at the preheader, where no projection of the
+statement under check has been published, and with the statement excluded from its
+own supplied hypotheses.
+
 There is no step 10. Under v0.39 there were four more: freeze `Eligible`, run
 `[CLM-2]` component residuality by re-running the walk with one S3 event masked,
 run whole-occurrence residuality the same way, and run `[CLM-3]`'s `MayClaims`
@@ -3249,8 +3758,10 @@ acceptance-bearing.**
 **What a second implementation must reproduce:** the two proof views and the same
 closed state at every point; the edge order of `[ENT-5.P0]`, including the
 per-event reading point; the ladder `K`, the universe iteration and the limit
-retention family; the certificate predicate of `[IND-7]` and the projection of
-`[IND-8]`; the same rejection at the same node with the same rendered residual;
+retention family; the ordering of step 3's projections before step 4's
+verification; the certificate predicate of `[IND-7]`, including its slot list
+with its empty slots in place, and the projection of `[IND-8]`; the same
+rejection at the same node with the same rendered residual;
 and the same `gap` token and fix string (section 6, and flagged decision D3).
 **Nothing about claims, authority, residuality, counterfactuals, ledgers or
 `MayClaims`, because none of it exists.**
@@ -3350,6 +3861,29 @@ disequalities, and signed goals; cost is measured against that.
 | V5 | quantified element facts, `for all e in P: e < K` | I5, I6 | instantiation is a search unless the instantiation set is spec-fixed | very large: every mutation needs re-instantiation | **not bought**, and both audit sides plus the owner asked that no iteration notation swallow I6 |
 | V6 | one conservative value interval per indexable place | *part* of I5 | small: one interval per place, interval join at merges | moderate | **not bought**, and the ceiling text must say **which half of I5 it is**: `[ENT-3.S9]` 2981 **already** publishes the declared element range of a named const array, which is why `p_constarr.wf` compiles and `p_content.wf` does not. V6 generalises S9 to runtime-built tables and still does not close I5, because the fill loop's element write is a continuing kill and the component is top at the head - so V6 needs I4's machinery to be worth anything, and buying it alone buys a program nobody writes |
 
+**V7, the halved-extent relation, is priced here because F-I1 tried to buy it and
+could not.** The counted ipv4 restructure - `let half = length / 2; for @words k
+in 0..half { let offset = k *wrap 2; ... }` - is the shape earlier drafts of this
+file listed among `[IND]`'s worked traces. It has **no `[IND-7]` derivation**, and
+F-I1 constructed and refused four attempts. The fact every route needs is
+`2*half - length <= 0`: a two-term relation with a coefficient of 2. `[IND-4]`
+cannot put it at the check point, because the division is committed in the
+preheader and `[IND-5]` performs no substitution there. `[IND-7]`'s group 3
+cannot, because it enumerates **difference** bounds `t1 - t2 <= c`. And `[IND-8]`
+cannot publish it even when a local statement before the loop proves it - which
+one does, `bound halved: ile(2_u64 * half, len(deref(header)));` verifying by
+`sigma(q) = (2q - length <= 0)` to `p := 0`, `s = 2` - because the projection
+publishes only terms whose coefficient is `+1` or `-1` and difference bounds whose
+two coefficients are `+a` and `-a`. **The proved fact dies at the statement
+boundary.** So the counted restructure is routed away explicitly, and the cost is
+three things worth naming: `ipv4_checksum.wf:22` is closed by the pair guard
+instead (`t8` compiled, and F-D4's `rw/ipv4_checksum.wf` in the whole source), so
+no corpus site is lost; the *general* "walk a halved extent by twos" shape has no
+route in this design at all, and a writer who reaches for it meets a residual
+naming `offset < len(deref(header))` (`L26_ipv4_counted.wf`, compiled) with no
+statement that helps; and `[IND-8]`'s unit-coefficient projection is the reason,
+which is a stated ceiling of the publication language rather than of the check.
+
 **The counted family is declined twice, and both declines are stronger than the
 audit's.** `rev` passes the intent test but no scenario requires it: the
 descending walk dissolves under retention (3.6.5 (a), machine-checked step), and
@@ -3389,6 +3923,13 @@ gap-stating claims: **108 bucket P** - a forward publisher over the two-term
 state, which is 3.4 and 3.5 - **4 bucket B**, and **2 bucket R**, plus 21
 fixtures with no gap field.
 
+Those are census classifications of the gap a claim states, not route
+assignments, and one of them was read as a route assignment and was wrong:
+`wfgrep.wf:556` is bucket P by its gap and is **not** a customer of the
+unsigned-subtraction image, because at v0.39 it needs the same restructure
+`:553` forces (4.5.2, F-D4 `probes/w_nowrite.wf`). A bucket count says what the
+claim was about; it does not say which publisher pays for it.
+
 #### 4.5.2 The twenty named sites, walked
 
 | site | fact | route under this design | evidence |
@@ -3398,13 +3939,13 @@ fixtures with no gap field.
 | `fir_filter.wf:45` | read cursor in the delay line | `[ENT-5.R]` with the ladder **and the universe iteration** | needs the outer loop's retained fact at the inner preheader (A20) |
 | `utf8parse.wf:18` | `scan < len(source)` across a variable-width step | `[ENT-5.R]` + `[ENT-3.S5.O]`'s `+` row | `L03`/`L15` compile the gap; `L16` compiles the price |
 | `utf8parse.wf:20` | `events <= scan`, coupled counters | `[ENT-5.R]` alone: true at entry (`0 <= 0`), re-derived on every arm | the entry-tight atom **is** the inductive one here |
-| `percent_decode.wf:16` | variable-stride cursor bound | `[ENT-5.R]` + `[ENT-3.S5.O]` | as `utf8parse:18` |
-| `percent_decode.wf:18` | `writes <= scan` | `[ENT-5.R]` alone | as `utf8parse:20` |
+| `percent_decode.wf:16` | variable-stride cursor bound | **the loop-exit respelling**: `ieq(input_index, source_length)` written `ilt(...)` with the break on the false edge, which republishes the source bound at every head. **No rule** | F-D4 `rw/percent_decode.wf` compiles it; `t4` is the same shape. The design read this as `[ENT-5.R]` + `[ENT-3.S5.O]`, which **understates** what v0.39 reaches. Does *not* transfer to `utf8parse:18` untested |
+| `percent_decode.wf:18` | `writes <= scan` | **a guard on `source_length`** plus the existing `requires ige(output_length, source_length)`, at the price of one `break`. **No rule** | F-D4 `rw/percent_decode.wf`. The design read this as `[ENT-5.R]` alone, which **understates** it. See 11.1: guarding the *output buffer's own* length instead widens the `[EFF-2]` row |
 | `percent_decode.wf:28`, `:31` | `input_index + 1 < source_length`, `+2 <` | **the guard rewrite** | `t4` **accepts**, compiled, no new rule (A23) |
 | `wfgrep.wf:434` | `carry < input_room` through a disequality | **the guard respelling** | `t10` **accepts**, compiled |
-| `wfgrep.wf:469`, `:495` | probe index inside the input | `[ENT-5.R]` + the `imin` image | the `imin` row is 3.5.1 |
-| `wfgrep.wf:553` | `source_index < input_room` through two sums | **restructure**: guard `source_index` directly against `input_room` before the read | **the corpus's one true residue.** `[ENT-3.S5.B]` also reaches it; the recommendation is the restructure, and Q1 records why |
-| `wfgrep.wf:556` | `tail <= bounded_available` | the unsigned-subtraction image (bucket P) | 3.5.1 |
+| `wfgrep.wf:469`, `:495` | probe index inside the input | **the guard respelling**: `imin(available, input_room)` followed by `ieq(available, bounded_available)` is the long spelling of `ile(available, input_room)`, so the admission test *is* a published guard and both reads discharge by transitivity through the existing loop guards. **No rule, no `imin` image, no added guard, no added branch** | F-D4 `rw/wfgrep.wf`. The design's route - `[ENT-5.R]` + the `imin` image - is **wrong**: the site is easier than it says, and these two claims are simply deleted with their `probe_ok`/`spot_ok` bindings |
+| `wfgrep.wf:553` | `source_index < input_room` through two sums | **restructure**: guard `source_index` directly against `input_room` before the read, on both edges setting `produced = moved` and breaking | **compiled**, in `probes/p6_shift_restructured.wf` and in `rw/wfgrep.wf`. `[ENT-3.S5.B]` also reaches it; Q1 is now closed on the restructure, by proof and by 228 differential cases |
+| `wfgrep.wf:556` | `tail <= bounded_available` | **the same restructure as `:553`**, which `:553` forces anyway: guard `moved` before the write | F-D4 `probes/w_nowrite.wf` is the full rewrite with only that guard removed and it fails with residual `moved < len(deref(input))`, so the respelling does not reach it. The design's route - the unsigned-subtraction image, bucket P - is **wrong at v0.39**, and this site must stop being counted as a bucket-P customer |
 | `ipv4_checksum.wf:19`, `:22` | even-stride offsets in an even-length header | **the pair guard** | `t8` **accepts**, compiled; its false edge is the odd-tail case the RFC specifies, and the artificial even-length `requires` is deleted with the claim |
 | `par_layout.wf:90` | band index in range | `[ENT-5.R]` + the `imin` image | 3.5.1 |
 | `raw_deflate_dynamic_decode.wf:32` | `bounded < 19` where `bounded = index % 19` | the `%` image | **omitted from every part-design's migration table**; recorded here |
@@ -3412,11 +3953,33 @@ fixtures with no gap field.
 | `prv3-neg-read-offset-taint.wf:44` | element content | **case deleted** with `[PRV-3]`'s claim clause | a negative provenance fixture whose subject is the refusal, not the program |
 | the two conformance `[FN-8]` sites | a caller-side residual for an undischarged requirement | the image closure; else `if`/`else` | 4.3 row 5 |
 
-**Score.** Four sites are compiled claim-free today (`percent_decode:28,31`,
-`wfgrep:434`, `ipv4_checksum:19,22`). Twelve are reached by a rule drafted in
-section 3. Three depend on the ladder and the universe iteration this file adds
-(A19, A20) and would have been lost without them. **One - `wfgrep.wf:553` - has
-no compiled route and two ordinary repairs.**
+**Score, after F-D4.** The three flagship sources were rewritten claim-free in
+full, compiled at v0.39 and run differentially, so the eleven named sites in them
+are no longer a prediction: **all eleven are compiled claim-free today** -
+`percent_decode:16,18,28,31`, `wfgrep:434,469,495,553,556`,
+`ipv4_checksum:19,22` - eleven claims deleted, zero rules added, zero behaviour
+changes over 1,195 differential cases (691 for `percent_decode`, 276 even-length
+plus 160 odd-length headers for `ipv4_checksum`, 228 for `wfgrep`). Six of those
+eleven sites the design's own table understated or mis-routed, and the four
+corrected rows above are that finding; F-D4's own score table folds them into
+eight rows.
+
+Of the remaining nine named sites, eight are reached by a rule drafted in section
+3 and one (`prv3-neg-read-offset-taint.wf:44`) is a case deleted with its rule;
+three of the eight depend on the ladder and the universe iteration this file adds
+(A19, A20) and would have been lost without them.
+
+**What survives verbatim from the drafted score is the narrower true statement**:
+`wfgrep.wf:553` has no **arithmetic** route at v0.39. `probes/p1` (the respelling
+alone), `p2` (`+checked` on the offset), `p4` (`-checked` on the tail as well) and
+`p5` (both checked, with the whole loop inside the `Ok` arm so no mutation stands
+between the subtraction and the use) all fail identically with
+`[OP-4] UndischargedBoundsObligation residual: "source_index < len(deref(input))"`.
+The chain needs two sums and v0.39 does not compose them even when every term is
+exact. What the site *does* have is a compiled route - Q1's option (b), in
+`probes/p6_shift_restructured.wf` and shipped in `rw/wfgrep.wf` - so it is no
+longer "the corpus's one true residue"; it is a site whose only route is a
+restructure.
 
 #### 4.5.3 The thirteen codegen bounds fixtures - the clearest vindication in the tree
 
@@ -3679,7 +4242,7 @@ families share one two-clause string; this replaces both with seven.
 
 | token | mechanical fix, as rendered |
 | --- | --- |
-| `guard` | *the residual holds at `<point>` but not here; add a dominating branch on `<residual>` whose false edge does not reach this operation* |
+| `guard` | *the residual holds at `<point>` but not here; add a dominating branch on `<residual>` whose false edge does not reach this operation - and where `<residual>` names `len` of a parameter this function does not otherwise read, branch on a term the contract already relates to that length instead, because reading the parameter widens the function's `[EFF-2]` row* |
 | `image` | *`<row>` publishes no fact about its result in this version; branch on `<residual>`, or compute the value by a row whose image bounds it* |
 | `flow` | *the residual holds before loop `<label>` and is removed at its head by `<kill>`; re-establish it inside the body by a branch, or state it as `bound @<label>` and let the checker verify base and step* |
 | `induction` | *the residual relates `<term>`, which loop `<label>`'s body writes, to that loop's binder or extent, and is not true before the loop; state the loop's running bound as `bound @<label> <name>: <relation>` - the checker verifies the base case at the preheader and the step on every body path* |
@@ -3694,6 +4257,27 @@ better program. The `vocabulary` row's second clause is 3.10.2's disjunction
 teaching, folded in here rather than drafted as a second selection procedure -
 which is the seam A24 flagged when two parts wrote two `[DIAG-1]` fix-selection
 rules for the same payloads. **There is one procedure and one table.**
+
+**The `guard` row's second clause is F-D4's, and without it the channel points a
+writer at a signature change.** F-D4's first rewrite of `percent_decode.wf:18`
+took the obvious route the drafted row hands out - `let output_room =
+len(deref(out)); let room_left = ilt(output_index, output_room);` - and it is
+rejected, not for the bound, which it discharges, but by `[EFF-2]`:
+
+```text
+[EFF-2] EffectMismatch expected_row: "reads(out, src), writes(out)"
+                       found_row:    "reads(src), writes(out)"
+                       missing:      ["reads(out)"]
+```
+
+**Reading `len` of a `&uniq` parameter is a read of it.** The original reached that
+length only through the contract's `define output_length = len(deref(out))`, so
+the guard route on a write-only output parameter widens the published effect row,
+and the widening propagates to every caller that declares one. A mechanical fix
+that changes a signature is not a mechanical fix. The escape is the row's second
+clause - guard `output_index` against `source_length` and let the existing
+`requires ige(output_length, source_length)` carry it - and 11.1 records that the
+escape exists only for a function that already has such a contract.
 
 A worked rendering, for `t9`'s residual after the deletion:
 
@@ -3833,8 +4417,8 @@ mechanically and only its `doc` gains a sentence. All 15 `fn8-neg-*`, all 3
 ### 7.2 New cases required
 
 Conformance evidence is what `AGENTS.md` rule 4 makes the owner record, so this
-list is the one to get right. Twenty-eight cases, each pinning one sentence of
-new normative text.
+list is the one to get right. Each row pins one sentence of new normative text;
+rows 40 to 42 carry F-I1's four cases, added after the falsifier ran.
 
 | # | case | expect | what it pins |
 | --- | --- | --- | --- |
@@ -3864,7 +4448,7 @@ new normative text.
 | 24 | `ent5-neg-counted-false-edge-descending` | reject OP-4 | **`L23`'s shape**: `for i in 5..3` leaves the binder at 5, so the conjunct is withheld |
 | 25 | `ind-pos-counter-trip-count` | accept | I4 closed (3.9.5) |
 | 26 | `ind-neg-step-frame` | reject IND-6 | **`j3`'s shape**: the statement is refused because the check reads the head state, not the exit state |
-| 27 | `ind-neg-wrap-without-side-condition` | reject IND-4 | **`j01`/`j02`'s shape**: a `-wrap` commit is unsubstitutable without `b - a <= 0` |
+| 27 | `ind-neg-wrap-without-side-condition` | reject IND-4 | **`j01`/`j02`'s shape**: without `b - a <= 0` a `-wrap` commit contributes only an opaque witness and its constant bounds, and on a `set` destination it refuses |
 | 28 | `ind-pos-redundant-statement` | accept | `[IND-9]`: a statement the checker could prove without it is verified and kept |
 | 29 | `ind-neg-path-cap`, `ind-neg-magnitude-cap` | reject IND-4 / IND-3 | the two spec-fixed limits and their hard errors |
 | 30 | `fn9-pos-result-len-unrouted`, `-result-field-projection`, `-result-to-result`, `-routed-buffer-payload` | accept | `[FN-9.E1]`'s four widenings |
@@ -3877,10 +4461,16 @@ new normative text.
 | 37 | `fn10-neg-err-return-unconstrained` | reject FN-10 | **`j2`'s shape**: a callee leaving the place at 99 on its `Err` return is refused, because every return is selected |
 | 38 | `ent3-pos-sys8-projection-constant`, `ent3-neg-sys8-projection-symbolic` | accept / reject OP-4 | `[ENT-3.S10]`'s arity projection: `next = start + required` publishes two bounds for a constant `required` and nothing otherwise |
 | 39 | `prv3-neg-sys8-external-start` | reject PRV-3 | **the restored provenance sentence**: an external `start` is not laundered into an internal endpoint |
+| 40 | `ind-neg-base-self-discharge` | reject IND-5 | **F-I1's B1**: `bound @spin lie: ile(idx, 0_u64);` with `idx = 9`; the base may not use its own statement polynomial, and the consumer would write one byte past a one-byte buffer |
+| 41 | `ind-neg-signed-division-witness`, `ind-pos-signed-division-witness` | reject IND-10 / accept | **F-I1's B2**: `ile(h, -3_i64)` over `let h = a / 2_i64;` with `a = -5` is refused under clause (d2), and the true `ige(h, -5_i64)` still verifies. 845 truncates toward zero |
+| 42 | `ind-pos-local-hypothesis-rewrite` | accept | **F-I1's F2**: I1's midpoint, whose certificate exists only because the backward pass rewrites `span` inside the division witnesses |
 
-Cases 18, 26, 27, 35, 37 and 39 are the ones that would have been forgotten: each
-pins a repair that turns an admitted memory-unsafe or laundering program back
-into a rejection, and each has a compiled premise in section 12's ledger.
+Cases 18, 26, 27, 35, 37, 39, 40 and 41 are the ones that would have been
+forgotten: each pins a repair that turns an admitted memory-unsafe or laundering
+program back into a rejection, and each has a compiled premise or a compiled
+arbitration in section 12's ledger. Cases 40 and 41 are F-I1's two soundness
+findings, and 41's accepting half is what keeps the repair from being a blanket
+weakening of the division witness.
 
 ### 7.3 The META-5 delta, summed
 
@@ -3984,14 +4574,30 @@ by 7.4's sequencing note; they are ordered so that each is independently
 reviewable and each leaves the tree buildable, not so that each is separately
 mergeable. Each carries its own derived material.
 
-**B0 - run the two cheap experiments first. Small (2-3 days, no spec text).**
-Run F-D4 (rewrite `percent_decode.wf`, `ipv4_checksum.wf` and `wfgrep.wf`
-claim-free in full and check the reduced probes survive contact with the whole
-sources) and F-I1 (hand-execute `[IND-7]`'s certificate check against the six
-traces of 3.9). Between them they decide whether 4.5.2's twenty rows come out the
-way this design predicts and whether `[IND-7]`'s fragment is the fragment that
-works. **Neither needs a line of compiler code, and both would move rule text if
-they fail.** Deliverable: a `docs/done/` record with the measured verdicts.
+**B0 - the two cheap experiments. DONE, and both moved rule text.** They were the
+first work of this batch precisely because neither needs a line of compiler code
+and both would move rule text if they failed. Both did.
+
+F-D4 rewrote `percent_decode.wf`, `ipv4_checksum.wf` and `wfgrep.wf` claim-free
+in full: **MIXED**. All three compile at v0.39 and are byte-identical to the
+originals over 1,195 differential cases, eleven claims deleted with no new rule;
+the impossible-else bill came out 8 / 3 / 0 with no value-position invented
+return, which is 11.1's load-bearing prediction and it held. Against that, four of
+4.5.2's route assignments were wrong or understated, one `[EFF-2]` interaction was
+missed, and Q1 resolved. 4.5.2, 6.2, 10 and 11.1 carry the corrections.
+
+F-I1 hand-executed `[IND-7]`'s certificate check against the seven derivations of
+3.9 and the two refusals of 3.8.3: **FAIL**. Every drafted derivation reproduced
+digit for digit, and the rule around them did not survive: two soundness breaks
+(the self-discharging base, the signed division witness), the `[ENT-1]`
+monotonicity theorem still false through the two caps, three determinism holes,
+`[IND-8]`'s undefined minimum, and two traces named in 2.4 that the file never
+drafted. 3.8.2, 3.9.1, 3.9.2, 3.9.4, 3.9.5, 3.9.7, 2.4 and 4.4 carry the repairs.
+
+What remains of B0 is the deliverable, not the experiment: a `docs/done/` record
+carrying both verdicts, the rewrites and probes, and the worked certificate
+sheets. **The two experiments have already paid for themselves in rule text and
+neither needs to be re-run except as a regression on the repaired rules.**
 
 **B1 - the image column and its rows. Large (the biggest batch, ~2 weeks).**
 Enumerate the operation table's image column row by row **and decide each row's
@@ -4075,12 +4681,16 @@ anything.** Each states the alternative and what reversing costs.
 `[ENT-1]`'s law is quoted as *closed, deterministic, search-free*. `[IND-7]`
 (3.9.1) decides an obligation by asking whether **some** assignment of
 hypotheses to elimination terms, drawn from a syntactically fixed list of at most
-16 and applied to at most 4 terms, drives the relaxed residual to zero. Literally
-read, an existential over a finite space is a search.
+32 slots and applied to at most 4 terms, drives the relaxed residual to zero -
+`sum_k C(4,k)*P(32,k) = 988,161` partial injections at the caps. Literally read,
+an existential over a finite space is a search.
 *The case for it:* every conforming implementation computes the **identical
 predicate** on identical inputs, which is the property 2836 actually demands; the
-space is spec-fixed with hard errors at its bounds; and there is no
-implementation-chosen strategy anywhere in it.
+space is spec-fixed, its bounds are counts of slots and terms fixed by the
+program's own text rather than by what a prover can derive, and there is no
+implementation-chosen strategy anywhere in it. F-I1 sharpened this: as first
+drafted the caps *were* prover-dependent, so the space was not spec-fixed and the
+case for it did not hold. It holds against the repaired rule.
 *The case against:* it is the first place in the language where acceptance is
 defined by an existential rather than by a procedure.
 *The alternative and its price:* keep the drafted greedy elimination and accept
@@ -4091,7 +4701,9 @@ preserves acceptance provided it does not change what is derivable at an
 statement against an elimination order they cannot see (2.4).
 **ADOPTED AND FLAGGED: the certificate form.** It is the only repair found that
 keeps both laws, and it accepts a superset of the greedy rule so no worked trace
-is lost.
+is lost. The owner should know that the form alone was not enough: F-I1 found the
+theorem still false through the caps, and 3.9.1's syntactic-slot repair is what
+makes the "both laws" claim true. The reversal price is unchanged.
 
 **D2 - ship the local statement `[IND-10]`, or hold it?**
 A23 removed three of its four stated customers: `percent_decode.wf:28,31` and
@@ -4197,15 +4809,32 @@ tidiness.
 These are questions the design does not need to answer to be coherent, unlike
 section 9's decisions, which it does.
 
-**Q1 - `wfgrep.wf:553`, the corpus's one true residue.** Its chain is
+**Q1 - `wfgrep.wf:553`. CLOSED on option (b).** Its chain is
 `bounded_scan + moved < bounded_scan + tail = bounded_available <= input_room`,
-needing two sums. Options: (a) the backward `+-wrap` rows (D7), which do reach
-this shape; (b) restructure the source to guard `source_index` directly against
-`input_room` before the read, which is P14's rewrite one more time.
-*Recommendation: (b), and do not buy a row rule for one claim.* The audit demoted
-the rows on exactly this reasoning and 4.5.2 shows the same rewrite closing four
-siblings. **If the rewrite turns out to change what `wfgrep` does, that is a
-finding worth more than the rule.**
+needing two sums. The options were (a) the backward `+-wrap` rows (D7), which do
+reach this shape, and (b) restructure the source to guard `source_index` directly
+against `input_room` before the read, which is P14's rewrite one more time. The
+recommendation was (b), with the flag that *if the rewrite turns out to change
+what `wfgrep` does, that is a finding worth more than the rule*. **It does not,
+and the finding does not collect.** F-D4 closes it on two independent grounds.
+
+*By proof.* On the guarded path `available <= input_room` and `scan <=
+available`, and the loop guard gives `moved < tail` with `tail = available - scan`
+and no wrap. So `source_index = scan + moved < scan + (available - scan) =
+available <= input_room`. The guard's false edge is unreachable and `produced`
+therefore always equals `tail`; the same argument gives `moved < input_room`.
+
+*By execution.* 228 differential cases against the unmodified build - the test
+suite's own search tree under seven patterns, the 300-level tree, every
+read-boundary offset from 4056 to 4135, lines of 4095, 4096, 4097, 8192 and 12295
+bytes each also unterminated, the empty and error cases, 120 randomised trees, and
+an 80-entry directory past the truncation bound - byte-identical on stdout, stderr
+and exit status, including a 40-buffer file with 42 matches whose output equals
+host `grep -rn`. Those are the shapes that drive `shift_input_tail` at all.
+
+Option (b) compiles in isolation (`probes/p6_shift_restructured.wf`) and in the
+whole source (`rw/wfgrep.wf`). The row rule is not bought, and `:556` rides in on
+the same two lines rather than on bucket P (4.5.2).
 
 **Q2 - is the route menu's totality sentence true, or true-but-expensive?**
 3.12.1 says at least one route is always open. For **I5** the guard route exists
@@ -4216,13 +4845,17 @@ the only open route re-establishes a fact an earlier pass established,
 `[DIAG-1]` names that earlier pass" - and let the experiment test it. Weakening
 it to nothing is worse: an unstated totality promise is a promise nothing checks.
 
-**Q3 - should `[IND-3]`'s three caps be the right three?** Coefficient magnitude
-`2^127`, degree 4, 256 monomials, plus `[IND-4]`'s 64 body paths and
-`[IND-7]`'s 4 elimination terms and 16 hypotheses. *Recommendation: keep all six
-as drafted and measure.* Every one is a spec-fixed limit with a named hard error,
-which is the legal form; none is reached by any example here (the largest is
-degree 2 with five monomials and three hypotheses); and a limit that is never hit
-is cheaper to raise later than a missing limit is to add.
+**Q3 - are `[IND-3]`'s and `[IND-7]`'s caps the right ones?** Coefficient
+magnitude `2^127`, degree 4, 256 monomials, plus `[IND-4]`'s 64 body paths and
+`[IND-7]`'s 4 elimination terms and **32 hypothesis slots**. *Recommendation:
+keep all six and measure.* Every one is a spec-fixed limit with a named hard
+error, which is the legal form, and after F-I1 every one is also a limit on a
+**syntactic** count, which is what makes a hard error legal at all: a cap a prover
+strengthening can cross is an `[ENT-1]` break wearing a limit's clothes, and that
+is exactly what the drafted `16` was. The slot cap is the one with the least
+headroom and the one to measure first: twelve ordered-pair slots at four
+elimination terms leave twenty for the statements, the path conditions and the
+witness commits, and the largest obligation in this file uses ten slots in total.
 
 **Q4 - does `[ENT-5.R]`'s ladder need a spec-fixed round cap?** 3.6.4 argues not
 and F-L2 is the measurement. *Recommendation: write none until F-L2 asks for
@@ -4293,8 +4926,41 @@ position), and one invented value or one widened signature (value position).
 The corpus bounds how often the third tier bites: of 83 claims in accepting
 sources, all 18 real-program claims and 55 of 83 discharge a subscript, and a
 guarded subscript is a statement in every one of them. **No corpus claim was
-found whose successor is a value-position invented return.** That is evidence,
-not proof, and F-D4 is the experiment.
+found whose successor is a value-position invented return.**
+
+**F-D4 has now run that experiment on the three flagships, and the prediction
+held.** Over the eleven claims in `percent_decode.wf`, `ipv4_checksum.wf` and
+`wfgrep.wf`, rewritten claim-free in full and compiled at v0.39, the bill is
+**8 / 3 / 0**: eight tier-zero sites (`percent_decode:16,28,31`,
+`wfgrep:434,469,495`, `ipv4_checksum:19,22`), of which three cost *nothing at
+all* because they are respellings that delete a test rather than add one; three
+tier-one sites, each one `break` (`percent_decode:18`, `wfgrep:553,556`); and
+**zero tier-three sites**. Three false edges are unreachable, and none is a dead
+guard in the dishonest sense this section warns about: each has a true total
+meaning on its own terms - "the output is full, stop", "only this many bytes
+moved, report that" - and none returns a plausible-looking wrong value. That is
+the single most load-bearing prediction in this file and it is a pass.
+
+**And a fourth cost the tier list did not have: a guard on a `&uniq` output
+parameter reads that parameter, so `[EFF-2]` widens the function's declared row,
+and the widening reaches every caller that declares one.** F-D4's first rewrite
+of `percent_decode:18` guarded `output_index` against `len(deref(out))` and was
+rejected `[EFF-2] missing: ["reads(out)"]`, because the original reached that
+length only through a `define` in the contract. The escape is to guard a term the
+contract already relates to the parameter's length - here `source_length`, with
+`requires ige(output_length, source_length)` carrying the rest - and **that escape
+exists only for a function that already has such a contract.** A function guarding
+a `&uniq` output parameter with no length relation in its contract has none, and
+its successor is a signature change: tier three by another door. 6.2's `guard` row
+now says so, because a mechanical fix that changes a signature is not one.
+
+**The interaction also runs the other way, and this file did not count that
+either.** A claim puts `traps` in its function's `[EFF-2]` row and `traps`
+propagates to every transitive caller. Deleting the eleven claims deleted `traps`
+from `decode` and `main` in `percent_decode`, from `checksum` and `main` in
+`ipv4_checksum`, and from `search_file`, `walk` and `main` in `wfgrep` - three
+functions whose own claim count is zero. The deletion is cheaper at the boundary
+than the tier list makes it look.
 
 Two things must be said beside it and neither is comfortable. **The dishonest
 successor is accepted by the language**: an `else` that returns a
@@ -4371,7 +5037,38 @@ model that needed that measurement is the one being deleted.
 
 The 0106 design's U3 - *the loop ceiling is published, and it is low* - is also
 gone, replaced by `[ENT-5.R]` and `[IND]`. What replaced it has its own red ink
-above, which is the honest trade rather than a clean win.
+above and below, which is the honest trade rather than a clean win.
+
+### 11.5 RED INK - what F-I1 left on the list after the repair
+
+The falsifier's headline is that **the `[ENT-1]` theorem was false when it was
+written down**, twice: the elimination order (A4, repaired by the certificate
+form) and then the two caps (F7, repaired in 3.9.1). A theorem that has already
+been false twice in one file's lifetime is one to distrust, and three things
+around it are still worth red ink.
+
+**The publication language is narrower than the check language, and that gap is
+now a named lost program.** `[IND-7]` verifies over polynomials; `[IND-8]`
+publishes unit-coefficient difference bounds. A statement can therefore be
+*proved* and unable to *say* what it proved: `bound halved: ile(2_u64 * half,
+len(deref(header)));` verifies by a two-line certificate and publishes nothing,
+because `half` carries coefficient 2. That is why the counted ipv4 restructure has
+no route (4.4), and it is a ceiling of the projection, not of the check - which
+makes it the cheapest of these three to lift and the one most likely to be asked
+for first.
+
+**Two local statements in one region do not compose** (3.9.4), because the second
+is checked at a region entry that precedes the first. Widening is monotone and can
+wait, but a writer who states two facts about one computation and finds only the
+first usable will not read that as a design.
+
+**The certificate space is bounded and the work is not bounded by the same
+argument.** 988,161 partial injections at the caps is a bound on the space; what
+makes the check cheap is the skip rule, which lets an implementation evaluate only
+assignments whose step is admissible. That is sound - a skipped step changes
+nothing, so the omitting certificate reaches the same residual - but it means the
+affordability claim rests on a pruning argument rather than on the cap, and no
+measurement stands behind it. Q3 says measure the slot cap first.
 
 ---
 
@@ -4437,7 +5134,31 @@ individually; the rest are ledgered in the files beside this one.
 | `s22`, `s23` | 3.9.3 | **reject `[OP-2]`** - I2's and I3's consumers, the two constructed witnesses |
 | `b15` / `b15b` | 3.4 | **accepts** / **rejects** on identical arithmetic - the value-commit closure is a hard prerequisite of retention |
 
-### 12.4 What the ledger establishes, and what it does not
+### 12.4 The two falsifier runs, and the artifacts they leave
+
+B0's experiments produced evidence of their own, and the repairs in 3.8.2, 3.9,
+4.4, 4.5.2, 6.2, 10 and 11 cite it by filename. It lives beside the two run
+records, not in this file.
+
+| artifact | serves | verdict |
+| --- | --- | --- |
+| `rw/percent_decode.wf` | F-D4, 4.5.2, 11.1 | **compiles**; `pd_diff.py` 691 differential cases, 0 divergences; 4 claims deleted |
+| `rw/ipv4_checksum.wf` | F-D4, 2.8, 4.5.2 | **compiles**; 276 even-length cases, 0 divergences and 0 reference mismatches; 160 odd-length headers all match the RFC 1071 reference; 2 claims deleted |
+| `rw/wfgrep.wf` | F-D4, 4.5.2, Q1 | **compiles**; `wfgrep_diff.py` 228 cases, 0 divergences; 5 claims deleted in three functions |
+| `probes/p1`, `p2`, `p4`, `p5` | 4.5.2's score, Q1 | **reject** identically `[OP-4] residual: source_index < len(deref(input))` - there is no arithmetic route to `wfgrep:553` at v0.39 |
+| `probes/p6_shift_restructured.wf` | Q1 option (b), 4.5.2 | **accepts** - the restructure in isolation |
+| `probes/w_nowrite.wf`, `w_noread.wf` | 4.5.2's `:556` row | **reject** `moved < len(deref(input))` and its read twin - both `shift_input_tail` guards are load-bearing, so `:556` is not a bucket-P customer |
+| `rw/percent_decode.wf`, first draft | 6.2, 11.1 | **rejects** `[EFF-2] missing: ["reads(out)"]` - the effect-row widening the mechanical fix channel would have handed the writer |
+| `probes/f3_sdiv_false_bound.wf` | B2, 3.9.4, 3.9.7 | **rejects** `[FN-8] instantiated_goal: "ile(h, -3_i64)"` - today's checker refuses exactly the bound the drafted clause (d) would have proved |
+| `probes/f2_sdiv_consumer.wf` | B2, 3.9.7 | **accepts** - the consumer that divides by `h + 2`, so the false bound is what buys the nonzero divisor |
+| `probes/f4_sdiv_interval.wf` | B2, 3.9.7 | **rejects** `[OP-2] residual: h +defined 2_i64` - today's `/` image supplies nothing, so the witness pair was the only source |
+| `L26_ipv4_counted.wf` | 4.4's V7 | **rejects** `[OP-4] residual: offset < len(deref(header))` - the counted restructure, with no statement that reaches it |
+| the certificate worksheets | 3.8.3, 3.9, 3.9.7 | the six derivations of 3.9 the file then drafted, and the two refusals of 3.8.3, hand-executed digit by digit; all eight reproduce. I3's base is the seventh, added by this repair and derived in 3.9.3 rather than by F-I1 |
+
+`probes/f1_sdiv_trunc_break.wf` rejects earlier than intended, on the `+`
+obligation, and is kept only as the negative control.
+
+### 12.5 What the ledger establishes, and what it does not
 
 **Established by compilation.** Every successor route in section 3.2, 3.12 and
 4.3 works **at v0.39, before any rule lands**: the guard, the guard-and-exit
@@ -4446,7 +5167,10 @@ factored-`requires` disjunction, and now the system-range guard. Every repair in
 section 2 has a compiled premise or a compiled harm. The four claims section 4.5
 disposes of by rewriting are compiled claim-free. And the two separating pairs
 that changed rules in this file - `y1`/`y2` for the retention ladder, `j3`/`j3b`
-for the induction frame - are compiled on both sides.
+for the induction frame - are compiled on both sides. **The three flagship
+sources are compiled claim-free in full and byte-identical to their originals
+over 1,195 differential cases** (12.4), which is a stronger statement than the
+reduced probes it replaces.
 
 **Not established by compilation, and offered as such.** Every DISSOLVED-PROPOSED
 verdict is by construction a prediction about a rule that does not exist. The
@@ -4454,7 +5178,10 @@ strongest ones, marked so they can be attacked first: **retention's reach**
 (eleven scenarios, nine corpus sites) rests on reading, and what is compiled is
 that its *step obligations are answerable by today's checker* (`r13b`, `L14`,
 `L20`, `b16`, `b17`, `y2` all accept); **`[IND-7]`'s certificate check** is hand
-executed on six traces and implemented nowhere; **`[FN-10]`** does not exist, so
+executed on the seven derivations of 3.9 and the two refusals of 3.8.3 and
+implemented nowhere - and the hand execution is the reason the rule around those
+derivations changed, since every derivation reproduced and the rule did not
+survive; **`[FN-10]`** does not exist, so
 its worked example is a reading; **`[ENT-3.S10]`'s projection and provenance
 sentences** are arguments over quoted rule text; and **3.1.3's `[PRV-2]`
 collapse** is a reading of 3389 and 3397 offered as a proof obligation a reviewer
