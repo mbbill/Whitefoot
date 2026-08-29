@@ -2524,7 +2524,15 @@ fn the_block_that_submits(module: &str) -> crate::IrBlockId {
 }
 
 /// A `u64` the submitting block may address a ring through: a parameter of a
-/// block that dominates it, which is where a driver's loop-carried slot lives.
+/// block that dominates it, which is where a driver's loop-carried slot would
+/// live.
+///
+/// Be exact about what that resolves to here. The only such parameter this
+/// probe has is the loop header's carried copy of the caller's `rounds`
+/// argument, which the loop threads around its back edge unchanged. The slot
+/// these tests hand the emitter is therefore a caller-supplied, loop-invariant
+/// `u64`, not an index that advances with the iteration; it exercises the
+/// addressing such an index would take, and nothing more.
 fn a_slot_index_for(function: &crate::IrFunction, block: crate::IrBlockId) -> crate::IrValueId {
     let u64_type = crate::IrType::Integer {
         width: 64,
@@ -2586,6 +2594,32 @@ fn the_unstaged_probe() -> String {
 
 /// Emits the probe with a ring of `slots` records per site, addressed as
 /// `choice` says.
+///
+/// Two things about the module this returns have to be said plainly, because
+/// the five tests below read it and neither is something they check.
+///
+/// The descriptor is one the emitter accepts, not one a driver has been shown
+/// to produce. Its slot is the loop-invariant `rounds` parameter
+/// `a_slot_index_for` resolves, and nothing — here or in the emitter — bounds
+/// that value against the ring width.
+///
+/// And the staged module does not pass `llvm-as`: ten errors, nine of them
+/// `instruction does not dominate all uses` — six for the completion join's
+/// result phi, three for per-operation facts the emitter keeps as SSA names,
+/// the submitted `i1` phi among them — because the carrying block consumes the
+/// operation's result while the join is deferred to the following block. The
+/// one-slot module is byte-identical to what the pre-ring compiler emitted for
+/// the same descriptor, so this is a staged-join defect of section 4 that
+/// these tests are the first to expose rather than anything the ring
+/// introduced — and nothing in the emitter checks that a descriptor it accepts
+/// emits a module that verifies.
+///
+/// What the tests over this helper do establish, and all they establish, is
+/// the storage shape and the refusals: the reservation shape at the handed-out
+/// site, that every element pointer is that ring indexed by the slot its block
+/// names rather than a constant element, that a one-slot region reserves what
+/// the unstaged program reserves and indexes by no run-time value, and that
+/// the three misaddressed descriptors are refused.
 fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendFailure> {
     let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
     let submitting = the_block_that_submits(&the_unstaged_probe());

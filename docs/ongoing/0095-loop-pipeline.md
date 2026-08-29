@@ -664,9 +664,96 @@ submission and a retirement inside the loop:
   `a_carrying_block_with_no_slot_is_refused_rather_than_sharing_one_record`.
 
 The tests compute the dominators of the submitting block themselves and pick
-the slot from a block that dominates it, so the descriptor they hand the
-emitter is one a driver could actually produce rather than one that happens to
-verify.
+the slot from a block that dominates it, so the index they name does dominate
+its use. That is the whole of what the choice earns. The value it resolves to
+in this probe is the loop header's carried copy of the caller's `rounds`
+argument, threaded around the back edge unchanged — a loop-invariant `u64`,
+not an index that advances with the iteration — and the staged module the
+helper emits does not verify. Both of those are recorded in full in the next
+section.
+
+## What the Stage B verifiers established beyond the range
+
+Artifact paths below are relative to this host's scratch root
+`/tmp/claude-0/-home-user-Whitefoot/6a4209eb-2cad-5504-9f06-67307ee32037/scratchpad/`,
+written as `.../`; they are off-repository working evidence, so a reader
+without this host has the reproduction recipe rather than the files.
+
+The branch's adversarial verifier went over `b750a435` after it was written,
+against the branch's own pre-ring compiler at `cf60e5e3` and against `main` at
+`10b76c66`. It confirmed the range's central claim — 2,520 compilations of 630
+sources in four modes, 1,076 emitted modules, `differ=0`, and 234 executions
+across `WF_WORKERS` × `WF_IO_HELPERS` with identical output per program
+(`.../wf-0095-verify/B-skeptic/NOTES.md`, `run/oracle-C.log`, `run/matrix.log`,
+`run/matrix2.log`). It also established four things the record above did not
+say, and the driver work inherits every one of them.
+
+**a. Every staged module the test helper emits fails LLVM verification.** Not
+the ring's doing and not a regression: reproduced here at `b750a435` by dumping
+what the shipped `emit_a_ring` produces and running `llvm-as` over it
+(`.../wf-0095-scratch/r12/r12-staged-4.ll`, `r12-staged-1.ll`, and the
+`*.llvm-as.log` beside each). Both fail with the same ten errors — nine
+`instruction does not dominate all uses`, six of them for the completion join's
+result phi `%v24` and three for per-operation facts held as SSA names, plus one
+`PHI node entries do not match predecessors` — because the carrying block
+consumes the operation's result while the join is deferred to the following
+block. The recipe is four lines: add a `#[test]` that writes
+`emit_a_ring(4, SlotChoice::Carried)` and `emit_a_ring(1, ...)` to files, run
+it with `cargo test --profile gate --lib`, and run `llvm-as` over each. The
+unstaged probe from the same source verifies cleanly (`llvm-as` exit 0 over
+`r12-unstaged.ll`),
+and the one-slot staged module is byte-identical to the pre-ring compiler's
+(`md5 7c12419bc658f97f17461eb7b43eb03d`, the same bytes as the verifier's
+`B-skeptic/run/dump/prering-staged.ll` built at `cf60e5e3`). So this is a
+section-4 staged-join defect that the ring probe is the first to expose, and
+nothing in the compiler checks that a descriptor it accepts emits a module that
+verifies. The driver cannot be run until the deferred join is placed where its
+consumers are dominated by it.
+
+**b. The slot index is unbounded.** The emitter emits no bound, mask, clamp or
+comparison of the slot against the ring width. An out-of-range slot is an
+out-of-range `getelementptr inbounds`, and that pointer is handed to the
+runtime as the token address it writes through
+(`getelementptr inbounds [4 x [2 x i64]], ptr %t23, i64 0, i64 %v6` at
+`r12-staged-4.ll:446`, passed to `wf__completion_file_pread_submit`). Nothing
+above the emitter supplies the missing proof either: the value the tests name
+is the caller's `rounds` argument, which has no relation to the slot count at
+all. The driver owes either a static refusal of an index it cannot bound or a
+proof that the index it threads never reaches K.
+
+**c. Per-operation facts held as SSA names are not ringed.** The ring covers
+the storage a target writes through — token, result slot, raw value and error,
+open outcome, directory position, the open's staged component. It does not
+cover the facts the emitter keeps as SSA values across the same span: the
+submitted `i1`, and the `Transfer` and `DirectoryNext` start and extent. Under
+a driver that retires in a block other than the one that submitted, those names
+cannot dominate their uses; three of the ten verifier errors above are exactly
+that shape — the submitted phi `%t38`, and `%v22` and `%t29` reaching
+`@wf.sys.read.completion` — against six for the join's own result phi.
+
+**d. The submitted open's staged-component ring has no test.** Section 5 above
+asserts that the component buffer is a ring because the adapter's copy happens
+at submission, and the emitter does ring it, but no test in
+`compiler/src/backend/tests/completion.rs` covers it — the probe reads, it does
+not open. The assertion currently rests on the code alone.
+
+### What this range is, measured
+
+Seven commits, `cf60e5e3..b750a435`: 5 files changed, 801 insertions, 73
+deletions (`git diff --shortstat`), of which
+`docs/ongoing/0095-loop-pipeline.md` is 182 changed lines.
+
+The driver is shelved by owner sequencing (2026-08-29): this branch merges into
+the integration branch as it stands, and the induction-design work starts
+before Stage B's driver is written. Nothing in this range changes any emitted
+production byte — the only constructors of a pipeline descriptor are
+`#[cfg(test)]`, and the IR-identity oracle over the corpus reports `differ=0`
+against both the pre-ring compiler and `main` — so there is nothing on this
+range for the io-bench runners to measure. Performance numbers come only from
+the GitHub runners, and there is no number to ask them for until a driver
+changes an emitted byte: the runner measurement the Stage B item names — the
+before/after tables across `WF_WORKERS` × `WF_IO_HELPERS` — transfers whole to
+the driver work.
 
 ## Evidence
 
@@ -1202,7 +1289,11 @@ verify.
       lane, and the runner measurement. Nothing in the compiler builds a
       pipeline descriptor yet; every consumer above is reached from the
       test-only constructor, and the [PAR-3] judgment's `permitted` verdict
-      still changes no emitted byte
+      still changes no emitted byte. **Shelved by owner sequencing on
+      2026-08-29**: this branch merges as it stands and the induction-design
+      work goes first. The four findings under "What the Stage B verifiers
+      established beyond the range" are what the driver work inherits — the
+      staged join that does not verify is a blocker for running one at all
 - [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
       `completion-core-read-tsan` — green on an x86-64 Linux host at this
       revision, with the repetition counts above; green on macOS and in the

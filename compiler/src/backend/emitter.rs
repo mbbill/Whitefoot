@@ -86,13 +86,18 @@ pub enum BackendFailure {
     /// rule [DIAG-1].
     UnretiredCompletionOperation,
     /// A staged loop pipeline's ring cannot be addressed by the blocks that
-    /// reach it: it has no slots at all, a block that starts or retires an
-    /// operation has no slot index, or the index a block names is not one of
-    /// that block's own `u64` parameters. Each of those emits a module that
-    /// does not verify or one whose operations share storage, so the
-    /// descriptor is refused before a line of the function is emitted. Like
-    /// the two refusals above this is an emitter capability limit rather than
-    /// a source-language rejection; it cites no language rule [DIAG-1].
+    /// reach it. Exactly three descriptors raise this: a ring with no slots at
+    /// all; a slot a block names that is not a `u64` *value of the function*;
+    /// and a block that reaches completion storage — reserving a ring or
+    /// addressing an element — while naming no slot, which is refused rather
+    /// than handed element zero, since that is the silent sharing the ring
+    /// exists to prevent. Nothing else is checked. In particular the value's
+    /// *dominance* over the block naming it, and its *range* against the ring
+    /// width, are trusted exactly as every other operand this emitter renders
+    /// is trusted: a driver threads the slot along the edges into its region
+    /// and owes the range a static refusal or a proof of its own. Like the two
+    /// refusals above this is an emitter capability limit rather than a
+    /// source-language rejection; it cites no language rule [DIAG-1].
     MisaddressedCompletionSlot,
     InvalidIr,
     CounterOverflow,
