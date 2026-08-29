@@ -565,6 +565,49 @@ by exempting the carrying block from the rule.
   `RLIMIT_NOFILE`, which the harness process cannot do without changing every
   case that runs after it.
 
+  **This probe reports a shortfall that is real, and rare.** Round 8's
+  verification saw it lose an owed `Ok` under heavy concurrent load — 5 runs in
+  1,050 — and guessed the machine's own file table, not this process's narrowed
+  one, was refusing the open. That guess is wrong, and it was measured out:
+  over 220,000 repetitions at this revision, loaded beside a looping
+  thread-sanitizer harness and unloaded, 24 repetitions lost an owed `Ok`, and
+  every one of them has the same shape. All three closes ran and the ledger
+  counted exactly three descriptors back (0 repetitions in 180,000 counted
+  anything else). Every refusal was `EMFILE`, from this process's own narrowed
+  table, never `ENFILE`. The machine's file table stood between 97 and 153 open
+  files of 1,644,353 at each loss. And an open made with the table still
+  narrowed, the instant every publication was in, succeeded in every one of
+  them: a descriptor this runtime returned went to no open at all. Load makes
+  it commoner — about 1 repetition in 7,000 under the tsan loop against 1 in
+  60,000 unloaded — but it is not a load artefact, and it is not the machine's.
+
+  Where it comes from is the one place the award rule can promise more than the
+  host has. A return is awarded to a waiter, and a waiter spends exactly one
+  re-attempt on the award it is given. But a descriptor that comes back can
+  also be taken by an open whose *first* host attempt lands after the close:
+  that open never registers as a waiter and takes no award, so the ledger still
+  has an award to hand out for a descriptor that is already gone. The waiter
+  that takes it re-attempts, is refused, and publishes — its one re-attempt
+  spent on nothing — and when the returns run out of waiters that way the last
+  descriptor is left with no open to claim it. The measurement says the same
+  thing from outside: in the repetitions where every one of the five opens is
+  refused before any close lands — five re-attempts, so no open outside the
+  award system — not one loss has ever been recorded, though those are about a
+  quarter of all repetitions under load; all 18 losses whose re-attempt count
+  was recorded had four or fewer, which is exactly the shape in which an open
+  took a descriptor without becoming a waiter.
+
+  It is older than the aside work in this batch: the revision before the aside
+  announced loses it too (2 runs in 800 at round 8), a build of this revision
+  with that announcement removed loses none over the same load, and 20,000
+  repetitions at the pre-aside revision here lost none against 1 in 20,000 at
+  this one — none of which separates. It belongs to the award rule, not to the
+  announcement rule, and it is the next thing this record owes. It is left red
+  rather than skipped away: the probe now separates a refusal that is not this
+  process's narrowed table from one that is, and reports the second as the
+  failure it is, with the errno of each open, the descriptors returned, the
+  re-attempts granted, and whether a descriptor was left over.
+
   What that skip costs is worth saying plainly: mounting an `overlayfs` needs a
   privilege, so on a host or a job that lacks it the probe reports the skip and
   the schedule goes untested there. On the host these counts come from it
@@ -870,7 +913,9 @@ by exempting the carrying block from the rule.
   and four helpers, 0 stalls and 0 losses, against 5 stalls in 20 runs at one
   helper and 19 in 20 at four at the revision before the ledger announced on
   both endpoints; and `retirement_interleave_probe` 25 runs at one and four
-  helpers, all passing, plus one run under the thread sanitizer.
+  helpers, all passing, plus one run under the thread sanitizer — the rare
+  shortfall that probe does report, about one repetition in nine thousand, is
+  recorded with its diagnosis where the probe itself is described above.
 
   One nonzero exit of the thread-sanitizer harness is on this record without an
   explanation: it appeared once in an early twenty-run sweep at two helpers
