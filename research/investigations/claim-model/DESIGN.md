@@ -1870,10 +1870,14 @@ belongs to. Dropping, filling and tightening touch **content** only - never the
 measured set, never a limit, never a count.
 
 **L2 - a prover decision fills or tightens content, and does nothing else.** The
-only row of 3.9.1's *reachable-error sweep* a prover decision moves is `[IND-4]`
-clause (b)'s refusal at a `set` destination, and it moves it only from
-**refusing to admitting**. Stated as *the single place a prover decision can
-move acceptance* it would be false, because filling an empty slot moves
+only row of 3.9.1's *reachable-error sweep* where a prover decision moves
+**acceptance** is `[IND-4]` clause (b)'s refusal at a `set` destination (row
+14), and it moves it only from **refusing to admitting**. Exactly one further
+row carries a prover decision at all - clause (d)'s sign test (row 14a), which
+selects which constant fills a slot, moves no acceptance, and by `[IND-3]`'s
+shared-second-member argument moves no measurement either. Stated as *the single
+place a prover decision can move acceptance* the first sentence would be false,
+because filling an empty slot moves
 acceptance too - in the permitted direction, and it is the last sentence of this
 law. That enumeration is complete, it is priced in 3.8.4, and it is safe
 because by L1 admitting submits nothing new to a limit. Every other consultation
@@ -2157,7 +2161,8 @@ retained with the claim gone).
 > and the checked spelling that would admit it. **A refusal never withdraws the
 > witness or the slots.** The witness term `o`, the two constant-bound slots and
 > the pair's two slots are present at every visited clause (b) commit, refusing
-> or not; a refusal met while substituting the statement's own polynomial ends
+> or not; a refusal met while substituting the statement's own polynomial, or a
+> witness hypothesis carried into the head frame, ends
 > the check at `[IND-1]`, and the one route on which a refusing commit reaches
 > `[IND-7]` at all is `[IND-6]` clause (i)'s **dropped path condition**, where
 > the commit is visited, its witness term exists, and its four slots are present
@@ -2289,7 +2294,8 @@ stated there.
 it is the round that stopped patching.** The fourth repair widened `[IND-3]` but
 delimited the widened scope with the phrase *carried into the head frame*, and a
 dropped path condition is not carried into the head frame. That put a hard error
-behind clause (b)'s `set` refusal - the one decision a strengthening can flip and
+behind clause (b)'s `set` refusal - the one decision a strengthening can flip
+that moves **acceptance**, and
 the one the file had already cleared, under the *old* scope, as safe because it
 moved only from refusing to admitting. After the widening, admitting also
 submitted a new polynomial to a hard-error limit, so a strengthening turned an
@@ -2360,7 +2366,8 @@ the per-step test supplies it by construction, and 3.9.1 derives it.
 > condition - the condition's own polynomial after every step, and every pair the
 > commits it reached introduced - was measured against `[IND-3]` at the moment it
 > was produced, so a drop removes content and nothing else. Without that
-> sentence a `set` refusal, which is the one decision a strengthening can flip,
+> sentence a `set` refusal, which is the one decision a strengthening can flip
+> that moves acceptance,
 > would decide whether an over-limit shape is measured, and a strengthening would
 > turn a verified statement into a hard error: 3.9.1's `N5` is that program, and
 > under L1 it is a hard error at every conforming checker. A branch
@@ -2492,8 +2499,8 @@ program from rejected to accepted, which is the direction `[ENT-1]` permits.
 The fifth falsifier run broke it in the gap between the two: with the measured
 set delimited by what is *carried into the head frame*, admitting no longer moved
 only from refusing to admitting - it also submitted a polynomial to a hard-error
-limit that a refusal would have kept out of the measured set, so the one
-prover-flippable decision in the pipeline gated a class-(a) hard error and `N5`
+limit that a refusal would have kept out of the measured set, so the pipeline's
+acceptance-moving prover decision gated a class-(a) hard error and `N5`
 went from verified to hard error under a strengthening. Under L1 there is no such
 gate: the shape was measured when the pass produced it, at both versions, so
 admitting adds content and nothing else. **The clearance below is therefore
@@ -2792,8 +2799,9 @@ the derivation is answerable to, and each is worked under this text.
 > *Monotonicity.* Let a **strengthening** be any change to the ambient prover
 > that makes more facts derivable at more points and none fewer. Then:
 >
-> (i) *the produced shapes, the visit set and the obligation are unchanged, and
-> so is everything measured.* This is **L1**, and it is stated over the pass's
+> (i) *the produced shapes - up to clause (d)'s choice of pair member - the visit
+> set and the obligation are unchanged, and so is every answer measured.* This is
+> **L1**, and it is stated over the pass's
 > output rather than over the visit set alone, because the fifth run broke the
 > narrower version. `[IND-4]`'s term set, the set of commits the pass visits, the
 > sequence of polynomials it carries, `p` and the elimination-term list are
@@ -2808,7 +2816,21 @@ the derivation is answerable to, and each is worked under this text.
 > lengthen under a strengthening either, and by L1 every shape in it is measured
 > against `[IND-3]` whichever way every refusal, drop and fill goes. **So the set
 > of `[IND-3]` tests performed, and their answers, are identical at both
-> versions** - with one carve-out, and it is acceptance-neutral. A refusal met
+> versions** - with one qualification and one carve-out, and both are
+> acceptance-neutral.
+>
+> The qualification is clause (d)'s, and it is why the headline says *up to
+> clause (d)'s choice of pair member*. A strengthening can move that clause's
+> sign test from the `d2` pair to `d1`, and the two pairs differ in one member's
+> **constant** (`C` against `C - j` for `j = k - 1`), so the produced shapes do
+> not coincide symbol for symbol. What coincides is the answers, and **L1 alone
+> does not give that** - the argument is the pairs' **shared second member**,
+> worked in `[IND-3]` and carried in sweep row 14a: because `d1` and `d2` carry
+> one and the same second polynomial, all three of rows 9 to 11 answer alike on
+> either pair, so the test sequence is the same sequence of answers at both
+> versions. Nothing else in the pass selects a symbol.
+>
+> The carve-out is a refusal that ends the check. A refusal met
 > while substituting the statement's own polynomial, or a witness hypothesis
 > carried into the head frame, **ends the check at `[IND-1]`** (`[IND-4]` clauses
 > (b) and (e)); the pass it is in is not truncated, but the pipeline stops, so
@@ -2820,10 +2842,14 @@ the derivation is answerable to, and each is worked under this text.
 > arise. Where the check continues at both versions, which is clause (i)'s
 > dropped condition and the only route on which a refusing commit reaches
 > `[IND-7]` at all, the sequences are identical outright.
-> The only `[IND-4]` decision a strengthening can flip is clause (b)'s
+> A strengthening can flip exactly **two** `[IND-4]` decisions, and part (ii)'s
+> enumeration names both. The first is clause (b)'s
 > refusal on a `set` destination, which it flips **from refusing to admitting**,
 > and by the sentence just given that move changes no measurement - which is
-> exactly what was false before L1 and is what `N5` broke. Clause (e)'s refusal
+> exactly what was false before L1 and is what `N5` broke. The second is clause
+> (d)'s sign test, which it moves from the `d2` pair to `d1`; that one moves no
+> acceptance of its own, and by the qualification above it changes a constant and
+> no measured answer. Clause (e)'s refusal
 > tests only the right-hand side's grammar and the destination's binder kind, at
 > a commit the shape rule has already fixed as visited, so it cannot flip at all.
 >
@@ -2880,9 +2906,10 @@ the derivation is answerable to, and each is worked under this text.
 > step it does run uses a slot filled at both versions, whose content at the
 > stronger version is the same or tighter - and a tightening moves a **constant**
 > only, since a constant-bound slot and a difference-bound slot both carry fixed
-> `+1`/`-1` coefficients and group 1, group 2's pair and the path conditions are
-> fixed polynomials. So by (iii) `sigma'` reaches a residual no larger than
-> `sigma` reached at the weaker version, which was already at most zero.
+> `+1`/`-1` coefficients and group 1, group 2's pair and the path conditions
+> carry fixed coefficients - clause (d)'s `d2` -> `d1` constant included, which
+> (iii) has already read as a tightening. So by (iii) `sigma'` reaches a
+> residual no larger than `sigma` reached at the weaker version, which was already at most zero.
 > **A previously succeeding certificate therefore either still succeeds, or the
 > omitting certificate does**, and `N3` below is the pair this part is answerable
 > to.
@@ -2890,8 +2917,10 @@ the derivation is answerable to, and each is worked under this text.
 > **Therefore no fact-source or closure strengthening can refuse a statement an
 > earlier conforming checker verified**, which is what `[ENT-1]` requires of every
 > construct. The five parts compose in one direction, and the composition is the
-> four laws in order. By **L1**, restated as (i) and (ii): the produced shapes,
-> the measurements taken on them, the visit set, the elimination terms and the
+> four laws in order. By **L1**, restated as (i) and (ii): the produced shapes -
+> up to clause (d)'s choice of pair member, which changes a constant and no
+> term, no slot and no measured answer - the measurements taken on them, the
+> visit set, the elimination terms and the
 > slot positions are one syntactic computation, so the certificate space is
 > *literally the same set* at both versions and every `[IND-3]` test has the same
 > answer at both. By **L4**: a branch condition outside the fragment contributes
@@ -2990,13 +3019,13 @@ with no row, clause (d)'s sign test, now row 14a.
 | 6 | 3.8.1's per-`fn_decl` uniqueness of `bound_stmt` names | admission | (a), L1 | a name comparison over the function's text, `[CLM-1]` 2754's rule retained |
 | 7 | `[IND-3]`'s three limits on the **statement polynomial as written**, and on each group 1 statement hypothesis as written | admission of that statement | (a), L1 | the polynomial the writer wrote. Group 1 is **never substituted** (`[IND-6]`), so this is its only measurement, and the earlier reading that measured it "after the same backward substitution" is withdrawn |
 | 8 | `[IND-4]` 64 body paths | path enumeration | (a), L1 | a count over the `[FN-1]` conservative structural normal-control graph; no derived fact prunes an edge |
-| 9 | `[IND-3]` magnitude `2^127` | **after every substitution step**, on every shape the pass produces: the substituted obligation, clause (b)'s and clause (d)'s pairs, and each clause (i) path condition | (a), L1 | every polynomial in that scope is the shape rule's output: clauses (a)-(e) substitute polynomials fixed by each commit's right-hand side, and the pairs and path conditions are written by the rule itself. **Measured when produced, so a drop, a fill or a refusal cannot move the measured set** - which is what `N5` broke and L1 fixes. The one prover-selected constant in any shape is clause (d)'s `k - 1` against `0`, and both are under `2^64` |
+| 9 | `[IND-3]` magnitude `2^127` | **after every substitution step**, on every shape the pass produces: the substituted obligation, clause (b)'s and clause (d)'s pairs, and each clause (i) path condition | (a), L1 | every polynomial in that scope is the shape rule's output: clauses (a)-(e) substitute polynomials fixed by each commit's right-hand side, and the pairs and path conditions are written by the rule itself. **Measured when produced, so a drop, a fill or a refusal cannot move the measured set** - which is what `N5` broke and L1 fixes. The one constant in any shape that a prover decision selects is clause (d)'s `k - 1` against `0`, and what clears it is **not** the size of `k` but the shared second member of clause (d)'s pair - row 14a below, argued in `[IND-3]` |
 | 10 | `[IND-3]` degree `4` | the same steps and shapes | (a), L1 | a property of the same fixed monomials. `N4`'s degree-8 pair is what this row catches, and it catches it at the step that produces the degree rather than at the end of the pass |
 | 11 | `[IND-3]` 256 monomials | the same steps and shapes | (a), L1 | a count of the same fixed monomials |
 | 12 | `[IND-4]`'s substitution work, and one step's intermediate | substitution | (a), L3 | **no limit of its own and no error of its own**: rows 9 to 11 fire on each step's *result*, and the intermediate one step materializes before that test is derived in `[IND-7]`'s *pass* paragraph from the clause list - at most 4096 monomials, degree at most 8, coefficients under `2^398`. The step count is a count of the path's text. Exact evaluation inside that figure is a conformance requirement, not an implementation's choice. **This is `N6`'s row, and until this round the pass was the one computation in the pipeline with no row and no bound** |
 | 13 | `[IND-4]` clause (e) refusal at a `set` destination | substitution | (a), L1 | tests the right-hand side's grammar and the destination's binder kind, at a commit the shape rule has already fixed as visited. It is the **only** refusal that ends a substitution, and both its inputs are text |
 | 14 | `[IND-4]` clause (b) refusal at a `set` destination | substitution | **one-way**, L2 | content-reachable but not a limit and not inside the check: a strengthening moves it only from refusing to **admitting**, the direction `[ENT-1]` permits (3.8.4). **The only row in this table where a prover decision moves acceptance**, and by L1 both directions measure the same shapes and visit the same commits - the clearance the fourth round left stale, restated on the property that now carries it |
-| 14a | `[IND-4]` clause (d)'s sign test `Z - a <= 0`, selecting the `d1` pair over `d2` | substitution | (b), L1 | **no limit and no error of its own**: it selects one constant in a pair whose slots, terms and degrees are the same either way, and by L1 the pair is measured when the rule produces it. It is the pipeline's **second** class-(b) decision and the only one sitting directly on rows 9 to 11, so it needs the seam argument and not a classification: `d1` and `d2` **share their second member**, `P2 = -P1 - j` for `j = k - 1`, and that shared member makes all three of rows 9 to 11 answer alike - `\|C\| > M` with `\|C - j\| <= M` and `\|C + j\| <= M` is a contradiction, and a monomial-count flip forces `C = j` and `C = -j`, hence `k = 1`, where the two pairs coincide (`[IND-3]`). A strengthening moves `d2` to `d1`, which by *Monotonicity* (iii) is the tightening case. **The fifth round's clearance here - `\|k - 1\| < 2^64`, so the magnitude test cannot differ - was invalid as reasoned**, and this row is the residual pass's replacement for it |
+| 14a | `[IND-4]` clause (d)'s sign test `Z - a <= 0`, selecting the `d1` pair over `d2` | substitution | (b), L1 **and the shared second member** | **no limit and no error of its own**: it selects one constant in a pair whose slots, terms and degrees are the same either way, and by L1 the pair is measured when the rule produces it. It is the pipeline's **second** class-(b) decision and the only one sitting directly on rows 9 to 11, so it needs the seam argument and not a classification: `d1` and `d2` **share their second member**, `P2 = -P1 - j` for `j = k - 1`, and that shared member makes all three of rows 9 to 11 answer alike - `\|C\| > M` with `\|C - j\| <= M` and `\|C + j\| <= M` is a contradiction, and a monomial-count flip forces `C = j` and `C = -j`, hence `k = 1`, where the two pairs coincide (`[IND-3]`). A strengthening moves `d2` to `d1`, which by *Monotonicity* (iii) is the tightening case. **The fifth round's clearance here - `\|k - 1\| < 2^64`, so the magnitude test cannot differ - was invalid as reasoned**, and this row is the residual pass's replacement for it |
 | 15 | `[IND-6]` clause (i) dropping a path condition whose substitution refused | head-frame hypotheses | (b), L1 | **dropped**: the slot is present and empty, the visit set does not move, and **the condition's shapes were measured by rows 9 to 11 when the pass produced them**. Dropping is a content decision only. `N5` is the program that fails if this row is read any other way |
 | 16 | `[IND-7]` 4 elimination terms | the check's entry | (a), L1 | the degree-1 monomials of a syntactic `p`; clauses (b), (d) and (e) each contribute exactly one witness term whatever derives |
 | 17 | `[IND-7]` 32 slots | the check's entry | (a), L1 | one per supplied statement hypothesis, one per governing branch condition - by L4 one per `[IND-3]` polynomial it yields, or one always-empty slot where it yields none - two or four per visited commit by governing clause, one per ordered pair of elimination terms; every count an output of the shape rule |
@@ -3027,8 +3056,9 @@ fact is a discard, and every remaining (b) row already had, or now has,
 
 **Two structural readings of the table are worth stating, because a row-by-row
 reading missed both.** First, the seam: a class-(b) decision may not gate a
-class-(a) hard error. Rows 14 and 14a are the two (b) decisions in the pipeline
-and rows 9 to 11 are the (a) errors nearest both. L1 is exactly the sentence
+class-(a) hard error. Rows 14 and 14a are the pipeline's two prover-touched
+decisions - row 14 in neither class, row 14a in class (b) - and rows 9 to 11 are
+the (a) errors nearest both. L1 is exactly the sentence
 that keeps row 14 apart from them - `N5` is what lives in that seam when it does
 not - and L1 alone does **not** clear row 14a, because the decision there selects
 a constant *inside* a shape L1 measures rather than deciding whether the shape is
@@ -3140,8 +3170,8 @@ different kind - it leaves all five parts standing and attacks the **resource
 figure** the arithmetic's removal is paid for with, and through it the
 determinism half of the same law - **L3**. `N5` is the fifth run's, and it is the
 one L1 exists for: it attacks the **seam** between the two classes, where the
-single prover-flippable decision (row 14) gated a class-(a) hard error (rows 9 to
-11) through row 15's drop. `N6` is the fifth run's second, and it attacks **L3**
+pipeline's acceptance-moving prover decision (row 14) gated a class-(a) hard
+error (rows 9 to 11) through row 15's drop. `N6` is the fifth run's second, and it attacks **L3**
 where no row existed at all - the backward pass's own intermediates.
 
 `N1` **- the visit set drives clause (e)'s refusal.**
@@ -3294,8 +3324,8 @@ every resource figure the check publishes.
 `N4`'s repair widened `[IND-3]` but delimited the widened scope by *carried into
 the head frame*. A **dropped** path condition is not carried into the head frame,
 and whether it is dropped is decided by clause (b)'s `set` refusal - the one
-decision a strengthening can flip. `N5` is the ordinary program that puts a
-degree-8 shape on exactly that gate:
+decision a strengthening can flip that moves acceptance. `N5` is the ordinary
+program that puts a degree-8 shape on exactly that gate:
 
 ```whitefoot
 fn tally(x: own u64, n: own u64) contract { requires ile(x, 1_u64); } {
@@ -4230,6 +4260,30 @@ four laws) rather than as another scope list.
   citations this narrative had kept from the pre-renumbering table: **historical
   prose in this file carries current row numbers**, naming a row as the table
   numbers it today rather than as it was numbered when the run happened.
+  **The opposite convention governs a count a round made.** Where a round
+  narrative here - an F-I1x entry, a decision record, section 11's or 12.4's
+  history - says the pipeline had *the one* or *the single* prover-flippable
+  decision, that is what the round it describes believed, it is true of the text
+  that round was reading, and it is left as written. The current count is
+  **two**: sweep row 14's clause (b) refusal, which moves acceptance, and sweep
+  row 14a's clause (d) sign test, which does not. Every sentence in this file
+  that states a live rule or carries a live argument says it that way, and a
+  sentence that does not is stale rather than historical.
+- **The echo sweep after that pass, and it is why the paragraph above exists.**
+  Adding row 14a made the file's *one flippable decision* count wrong wherever
+  it still stood, and it stood in fourteen live places the pass had not walked:
+  sweep row 9's clearance, which still cleared clause (d) on the size of `k`
+  six lines above the row calling that clearance invalid; *Monotonicity* part
+  (i)'s headline, its identical-answers conclusion and its "only decision"
+  sentence; part (v)'s *fixed polynomials*; L2's opener; the `[ENT-1]`
+  composition's restatement of L1; `[IND-3]`'s and `[IND-6]`'s scope
+  commentary; 3.8.4's clearance; 3.9.2's adversary intro; `N5`'s own write-up;
+  the seam paragraph's class labels; and section 10's Q3 answer. F-I2's L2
+  charter still asked for a *sixth* prover-touched site after part (ii) had
+  closed at six, and clause (b) still named only the statement's own polynomial
+  where clause (e) and part (i) also name a carried witness hypothesis. All are
+  corrected; the round narratives keep the counts they were written with. **No
+  rule's operative content moved and no program changes verdict.**
 
 **F-I2 (monotonicity is real).** Take any verified statement, add a row image to
 the checker, and re-verify. *Refuted if* any statement moves from verified to
@@ -4247,7 +4301,8 @@ the pattern; the fifth found the pattern by attacking the *joins* between rules.
 So: **(L1)** find a quantity `[IND]` limits or counts whose value differs between
 two checkers - and the sharpest form is a decision that happens *after* a
 measurement but changes what was measured, which is precisely what `N5` was.
-**(L2)** find a sixth prover-touched site, or show that clause (b)'s refusal
+**(L2)** find a seventh prover-touched site - part (ii) now closes at six and
+says so in as many words - or show that clause (b)'s refusal
 moves something other than admission - the enumeration in part (ii) is the
 target. **(L3)** find a computation the pipeline performs with no figure in the
 text, or a figure whose derivation has a false premise; the pass, `RELAX`, the
@@ -6429,7 +6484,7 @@ than what is limited**: the three limits are tested **after every substitution
 step**, not only at the end of the pass, which is what gives `[IND-4]`'s
 substitution a figure at all (`N6`); and they are tested on every shape the pass
 **produces**, whether or not the condition it belongs to is later dropped, which
-is what keeps the one prover-flippable decision from gating a hard error (`N5`).
+is what keeps the acceptance-moving prover decision from gating a hard error (`N5`).
 Neither adds a seventh limit, and neither changes a number. The measurement
 question is unchanged; what changed is which polynomials, and at which moments,
 the answer is about.
@@ -6870,7 +6925,7 @@ eight. 2.4's bullet 2 enumerates the same seven.
 | `N6` | F-I1e, 3.9.1's `N6` block, 3.8's L3, 11.5 | hand-derived, not compiled, same reason. Two parallel forty-deep `*checked` `Ok`-arm chains over `a + b`, subtracted at the end under `bound region_zero: ile(z, 0_u64);`. The **output** is `0 <= 0`, inside every limit and verified by the empty certificate; the **intermediate** is `(a+b)^(2^40)`, about `10^12` monomials with coefficients around `10^300000`. Nothing in the fourth round's text bounded it and no implementation may abort early, because cancellation restores legality - so one implementation cannot finish and one that stops early rejects what the first accepts. Under **L3**'s per-step limits it is refused within four substitution steps at every checker, and the pass's own figure - 4096 monomials, degree 8, `2^398` per step - is derived in `[IND-7]` |
 | the F-I1d attacks that failed | F-I1d, 3.9.1, 11.5 | hand-derived: every sweep row classified (a) attacked for a prover-dependent count, every discard row checked in its operative sentence, and part (v)'s covering lemma attacked three ways (move a coefficient, empty a filled slot, make `RELAX` worse). **None moved.** `N1`, `N2`, `N3` and all nine drafted traces re-executed unchanged, `N3` digit for digit at both versions |
 | the F-I1e re-execution | F-I1e, 3.9.7, 3.9.1 | hand-derived: all nine drafted traces - the seven derivations of 3.9 and the two refusals of 3.8.3 - and `N1` through `N4` re-executed against the final text with the per-step limits in force, and **none moves** - I1's midpoint to `floor(1/2) = 0` over ten slots, I2's step to `floor(0/255) = 0`, I3's base and step to `0`, I4's two paths to `0` and `-1` over eleven and six slots, A16 refused at `RELAX = 7`, A2 at `189975`, `B1` at `floor(9/1) = 9`. Every intermediate of every substitution step in them is inside rows 9 to 11 by orders of magnitude, so the per-step form is free on everything the file draws and costs exactly `N5` and `N6` |
-| the residual wording pass | F-I1e's audit, 3.9.1's row 14a, `[IND-3]` | hand-checked, nothing recompiled and no trace re-derived: ten wording residuals from the audit that CONFIRMED the fifth repair, closed in one pass. The load-bearing one is clause (d)'s sign test - a **second** class-(b) decision sitting directly on rows 9 to 11, whose fifth-round clearance (`\|k - 1\| < 2^64`) was invalid as reasoned. The replacement is the auditor's shared-second-member argument: `d1` carries constants `C` and `-C - j`, `d2` carries `C - j` and the same `-C - j`, and that shared member makes magnitude, degree and monomial count answer alike at both. The other nine are enumeration and precision items, listed in 3.9.7's F-I1e entry. **No program in this file changes verdict**, and the sweep gains one lettered row rather than a third renumbering |
+| the residual wording pass | F-I1e's audit, 3.9.1's row 14a, `[IND-3]` | hand-checked, nothing recompiled and no trace re-derived: ten wording residuals from the audit that CONFIRMED the fifth repair, closed in one pass. The load-bearing one is clause (d)'s sign test - a **second** class-(b) decision sitting directly on rows 9 to 11, whose fifth-round clearance (`\|k - 1\| < 2^64`) was invalid as reasoned. The replacement is the auditor's shared-second-member argument: `d1` carries constants `C` and `-C - j`, `d2` carries `C - j` and the same `-C - j`, and that shared member makes magnitude, degree and monomial count answer alike at both. The other nine are enumeration and precision items, listed in 3.9.7's F-I1e entry. **No program in this file changes verdict**, and the sweep gains one lettered row rather than a third renumbering. An **echo sweep** after it found the superseded *one flippable decision* count still standing in fourteen live places - row 9's own clearance among them - plus a stale F-I2 charter and one pre-existing clause (b) gap; all corrected, round narratives left with the counts they were written with, still nothing recompiled and no verdict moved |
 | the three F-I1c attacks on the visit set | F-I1c, 3.9.1 | hand-derived: a destination reached only through an empty slot's terms, the `[IND-6]` clause (i) route with a witness-introducing path condition, and a destination occurring only in a degree-2 monomial. The first two produce identical visit sets, slot counts and verdicts at both provers; the third is the term-set/elimination-term witness worked in 3.9.1 and is a reading defect, now stated, not a monotonicity break |
 
 `probes/f1_sdiv_trunc_break.wf` rejects earlier than intended, on the `+`
