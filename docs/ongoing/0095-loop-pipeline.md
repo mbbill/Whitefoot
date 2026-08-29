@@ -743,9 +743,12 @@ by exempting the carrying block from the rule.
   the waiters that already exist, and standing aside changes an already
   registered waiter's answer too: it hands the earliest deciding place to the
   next waiter in the order, whose answer turns from "keep waiting" into
-  "publish". A scripted two-waiter schedule reads that change in 200 of 200
-  repetitions, and a real refused open parked on the runtime endpoint behind an
-  aside sits through the whole of it, silently, in 20 of 20. So standing aside
+  "publish". At the revision before this one a scripted two-waiter schedule
+  read that change in 200 of 200 repetitions with nothing announced; a second
+  waiter actually asleep on the ledger slept through the aside in 20 of 20; and
+  a real refused open parked on the runtime endpoint behind an aside sat
+  through the whole 300 ms of one, silently, in 20 of 20. Here the sleeping
+  waiter is woken in 200 of 200. So standing aside
   announces, on both endpoints, and it announces exactly where the promotion is
   real and terminal: the waiter standing aside held the earliest deciding place,
   and the waiter it hands that place to now answers `UNREACHABLE`. Coming back
