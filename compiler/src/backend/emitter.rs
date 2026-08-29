@@ -94,14 +94,16 @@ pub enum BackendFailure {
     /// the element pointer refuses whichever block addresses that ring, rather
     /// than handing back element zero, since that is the silent sharing the
     /// ring exists to prevent. With a one-slot descriptor there is no ring
-    /// element at all and a missing slot is refused nowhere. Nothing else is
+    /// element at all and a missing slot is refused nowhere; a non-carrying
+    /// block under a multi-slot descriptor likewise takes its own one-element
+    /// reservation and is refused nowhere. Nothing else is
     /// checked. In particular the value's *dominance* over the block naming
     /// it, and its *range* against the ring width, are trusted exactly as
     /// every other operand this emitter renders is trusted: a driver threads
-    /// the slot along the edges into its region
-    /// and owes the range a static refusal or a proof of its own. Like the two
-    /// refusals above this is an emitter capability limit rather than a
-    /// source-language rejection; it cites no language rule [DIAG-1].
+    /// the slot along the edges into its region and owes the range a static
+    /// refusal or a proof of its own. Like the two refusals above this is an
+    /// emitter capability limit rather than a source-language rejection; it
+    /// cites no language rule [DIAG-1].
     MisaddressedCompletionSlot,
     InvalidIr,
     CounterOverflow,

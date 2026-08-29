@@ -602,11 +602,12 @@ materialized in the block that names it. That is what lets a submission address
 the slot its iteration took while a retirement addresses the slot it is
 retiring, without the two having to be the same block — the loop's exit drains
 the window and is not the block that filled it. The emitter checks the cheap,
-local half of what the index has to be, that it is the `u64` the array is
-indexed with, and trusts dominance exactly as it trusts every other operand it
-renders: a driver threads the slot along the edges into its region, so the
-value reaching a carrying block is the loop-carried parameter that dominates
-it.
+local part of what the index has to be, that it is the `u64` the array is
+indexed with, and trusts dominance and range against the ring width exactly as
+it trusts every other operand it renders: a driver threads the slot along the
+edges into its region, so the value reaching a carrying block is the
+loop-carried parameter that dominates it, and the driver owes the range a
+static refusal or a proof of its own (finding (b) below).
 
 One consequence is worth stating before Stage B trips over it. A block
 retires with the one index it names, so a drain retires *one* element of each
@@ -642,10 +643,14 @@ beside it is an emitter capability limit and cites no language rule [DIAG-1]:
 - a ring with no elements, which would reserve a zero-length array and index
   into it;
 - a slot that is not a `u64`, which emits a module that does not verify;
-- a carrying block that reaches completion storage with no slot named. This is
-  the refusal that matters. Falling back to the first element there is exactly
-  the sharing the ring exists to prevent, and it would show up not as a
-  diagnostic but as two iterations reading one buffer.
+- with a ring in force — a descriptor of more than one slot — a carrying block
+  that reaches completion storage with no slot named. This is the refusal that
+  matters. Falling back to the first element there is exactly the sharing the
+  ring exists to prevent, and it would show up not as a diagnostic but as two
+  iterations reading one buffer. With a one-slot descriptor there is no ring
+  element at all and a missing slot is refused nowhere; a non-carrying block
+  under a multi-slot descriptor likewise takes its own one-element reservation
+  and is refused nowhere.
 
 The tests are in `compiler/src/backend/tests/completion.rs`, over
 `A_STAGED_LOOP_BODY` — the conformance-shaped loop whose [PAR-3] verdict is
@@ -735,7 +740,7 @@ cover the facts the emitter keeps as SSA values across the same span, and that
 list is exhaustive: the submitted `i1`
 (`compiler/src/backend/emitter/completion.rs:84`), the `Transfer` start and
 extent, and the `DirectoryNext` destination, start and extent (`:118-131`, the
-destination at `:126-130`). Under a driver that retires in a block other than
+destination at `:127`). Under a driver that retires in a block other than
 the one that submitted, those names cannot dominate their uses; three of the
 ten verifier errors above are exactly that shape — in the four-slot module
 `r12-staged-4.ll` the submitted phi `%t38`, and `%v22` and `%t29` reaching
