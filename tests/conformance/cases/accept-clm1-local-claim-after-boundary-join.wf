@@ -1,0 +1,19 @@
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
+  doc "The other member of the differential-fuzz pair. It differs from the leaving member by one line: the Err arm falls through instead of returning. Both members were always equally local, and this one was accepted under v0.38 as well; the pair is kept together so the corpus states that one line no longer moves the verdict.";
+  let banner = buffer_new(4_u64, 65_u8);
+  region 'publish {
+    match write_once<'publish, 'publish>(output: &uniq 'publish out, source: &'publish banner, start: 0_u64, end: 4_u64) {
+      Ok(value: reached) => {
+      }
+      Err(error: failure) => {
+        let observed = 0_u8;
+      }
+    }
+  }
+  let table = buffer_new(64_u64, 65_u8);
+  let seed = 3209_u64;
+  let offset = seed % 64_u64;
+  claim guard: ilt(offset, 64_u64) because "premises: seed is the literal 3209_u64 and offset is seed modulo the literal 64_u64\nderivation: a remainder by 64_u64 is below 64_u64, and neither operand reads any value this function received from a callable boundary\nconclusion: ilt(offset, 64_u64) is true\nchecker gap: the entailment state carries no residue for a literal remainder, so the bound is left to this executed check\nconsumers: the following table[offset] write consumes the predicate established at this exact point";
+  set table[offset] = 90_u8;
+  return exit_status(code: 0_u8);
+}
