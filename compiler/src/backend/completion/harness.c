@@ -4357,26 +4357,83 @@ static void *wf_harness_parked_direct_open_main(void *context) {
     return NULL;
 }
 
-static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
-    const char *scratch_directory
+static void wf_harness_parked_direct_open_arm(
+    struct wf_harness_parked_direct_open *call,
+    const char *path
 ) {
-    struct wf_harness_parked_direct_open call;
-    wf_retirement_waiter second;
-    pthread_t opener;
+    call->path = path;
+    call->value = 0;
+    call->error_code = 0;
+    call->outcome = WF_FILE_OPEN_SUCCEEDED;
+    atomic_store_explicit(&call->finished, 0u, memory_order_seq_cst);
+}
+
+static void wf_harness_pause_a_millisecond(void) {
+    struct timespec pause;
+    pause.tv_sec = 0;
+    pause.tv_nsec = 1000L * 1000L;
+    (void)nanosleep(&pause, NULL);
+}
+
+/* Up to four seconds for the waiter order to reach this many. */
+static void wf_harness_wait_for_waiters(size_t wanted) {
+    int attempt;
+    for (attempt = 0;
+         attempt < 4000 && wf_completion_retirement_waiters() < wanted;
+         ++attempt) {
+        wf_harness_pause_a_millisecond();
+    }
+}
+
+/* Long enough that the direct call is asleep in its park rather than on its
+ * way there when the transition below is made. */
+static void wf_harness_settle(void) {
+    struct timespec settle;
+    settle.tv_sec = 0;
+    settle.tv_nsec = 50L * 1000L * 1000L;
+    (void)nanosleep(&settle, NULL);
+}
+
+/* Up to eight seconds for the direct call to publish.  A runtime that leaves
+ * the endpoint out of the announcement never publishes here, and this bound is
+ * what turns that into a failed check rather than a hang. */
+static int wf_harness_the_direct_call_published(
+    struct wf_harness_parked_direct_open *call
+) {
+    int attempt;
+    for (attempt = 0; attempt < 8000; ++attempt) {
+        if (atomic_load_explicit(&call->finished, memory_order_seq_cst)
+            != 0u) {
+            return 1;
+        }
+        wf_harness_pause_a_millisecond();
+    }
+    return 0;
+}
+
+/* Narrows the table, runs one of the two schedules below on it, and restores
+ * the descriptor and the limit on every way out — the ways a broken runtime
+ * takes included, so that a red run reports a failed check and leaves the rest
+ * of the harness able to open files. */
+static int wf_harness_endpoint_wake_test(
+    const char *scratch_directory,
+    const char *name,
+    int (*schedule)(const char *path)
+) {
     struct rlimit saved;
     char path[256];
     int held;
     int writer;
-    int attempt;
-    int finished = 0;
+    int outcome;
 
     CHECK(scratch_directory != NULL);
     CHECK(
         snprintf(
             path,
             sizeof(path),
-            "%s/wf-completion-endpoint-wake-%ld",
+            "%s/wf-completion-%s-%ld",
             scratch_directory,
+            name,
             (long)getpid()
         ) > 0
     );
@@ -4385,19 +4442,38 @@ static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
     CHECK(writer >= 0);
     CHECK(close(writer) == 0);
 
+    /* On its own failure paths this helper holds nothing and has restored the
+     * limit itself, so there is nothing here to undo. */
     held = wf_harness_hold_the_last_descriptor(path, &saved);
-    CHECK(held >= 0);
+    if (held < 0) {
+        (void)unlink(path);
+        CHECK(0);
+    }
+    outcome = schedule(path);
+    (void)close(held);
+    (void)setrlimit(RLIMIT_NOFILE, &saved);
+    (void)unlink(path);
+    return outcome;
+}
+
+static int wf_harness_registration_wake_schedule(const char *path) {
+    struct wf_harness_parked_direct_open call;
+    wf_retirement_waiter second;
+    pthread_t opener;
+    int probe;
+    int finished = 0;
+
     /* The premise: with the table full the host refuses an open outright. */
-    CHECK(open(path, O_RDONLY) < 0);
+    probe = open(path, O_RDONLY);
+    if (probe >= 0) {
+        (void)close(probe);
+    }
+    CHECK(probe < 0);
 
     /* The operation that keeps the refused open waiting.  Entered in the
      * ledger by hand, so it belongs to no engine and blocks no thread. */
     wf_completion_operation_accepted();
-    call.path = path;
-    call.value = 0;
-    call.error_code = 0;
-    call.outcome = WF_FILE_OPEN_SUCCEEDED;
-    atomic_store_explicit(&call.finished, 0u, memory_order_seq_cst);
+    wf_harness_parked_direct_open_arm(&call, path);
     if (pthread_create(
             &opener,
             NULL,
@@ -4405,26 +4481,14 @@ static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
             &call
         ) != 0) {
         wf_completion_operation_retired(0);
-        (void)close(held);
-        (void)setrlimit(RLIMIT_NOFILE, &saved);
         CHECK(0);
     }
 
     /* The first waiter is in the order and has nothing to drive, so it is
      * parked on the endpoint. */
-    for (attempt = 0;
-         attempt < 4000 && wf_completion_retirement_waiters() == 0;
-         ++attempt) {
-        struct timespec pause;
-        pause.tv_sec = 0;
-        pause.tv_nsec = 1000L * 1000L;
-        (void)nanosleep(&pause, NULL);
-    }
+    wf_harness_wait_for_waiters(1u);
     if (wf_completion_retirement_waiters() != 0) {
-        struct timespec settle;
-        settle.tv_sec = 0;
-        settle.tv_nsec = 50L * 1000L * 1000L;
-        (void)nanosleep(&settle, NULL);
+        wf_harness_settle();
         /* The transition.  Now every operation in flight is a waiter, so the
          * earliest of them publishes — if it is told. */
         wf_completion_retirement_wait_begin(
@@ -4434,30 +4498,117 @@ static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
             NULL,
             0
         );
-        for (attempt = 0; attempt < 8000 && finished == 0; ++attempt) {
-            struct timespec pause;
-            finished = atomic_load_explicit(
-                &call.finished,
-                memory_order_seq_cst
-            ) != 0u;
-            pause.tv_sec = 0;
-            pause.tv_nsec = 1000L * 1000L;
-            (void)nanosleep(&pause, NULL);
-        }
+        finished = wf_harness_the_direct_call_published(&call);
         wf_completion_retirement_wait_end(&second);
     }
-    if (finished != 0) {
-        (void)pthread_join(opener, NULL);
-    }
+    /* Release the call and take the thread back before anything is checked:
+     * it holds a pointer into this frame, and on a red run the retirement
+     * below is what lets it answer at all. */
     wf_completion_operation_retired(0);
-    (void)close(held);
-    (void)setrlimit(RLIMIT_NOFILE, &saved);
-    (void)unlink(path);
+    (void)pthread_join(opener, NULL);
     CHECK(finished != 0);
     /* And what it published is the refusal, not a descriptor it never had. */
     CHECK(call.value < 0);
     CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
     return 0;
+}
+
+static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
+    const char *scratch_directory
+) {
+    return wf_harness_endpoint_wake_test(
+        scratch_directory,
+        "endpoint-wake",
+        wf_harness_registration_wake_schedule
+    );
+}
+
+/* A waiter parked on the runtime's endpoint is woken by an earlier waiter
+ * standing aside.
+ *
+ * The other transition that can hand a parked waiter a terminal answer, and
+ * the one the announcement rule was written without.  Standing aside is not
+ * leaving: the waiter keeps its place and its claim on a return, and gives up
+ * only the duty to publish — which hands that duty to the next waiter in the
+ * order, whose answer turns from "keep waiting" into "publish".  That waiter
+ * can be one registered long before the aside began, asleep on the endpoint,
+ * where the ledger's own condition variable is never heard.
+ *
+ * Scripted the same way as the test above and discriminating the same way: the
+ * direct call must still be parked the moment before the aside, and must
+ * publish during it. */
+static int wf_harness_standing_aside_wake_schedule(const char *path) {
+    struct wf_harness_parked_direct_open call;
+    wf_retirement_waiter earlier;
+    pthread_t opener;
+    int probe;
+    int finished = 0;
+    int published_before_the_aside = 1;
+
+    probe = open(path, O_RDONLY);
+    if (probe >= 0) {
+        (void)close(probe);
+    }
+    CHECK(probe < 0);
+
+    /* The waiter that registers first, and the operation it is deciding —
+     * entered by hand, so it belongs to no engine and blocks no thread. */
+    wf_completion_operation_accepted();
+    wf_completion_retirement_wait_begin(
+        &earlier,
+        wf_completion_descriptor_returns(),
+        NULL,
+        NULL,
+        0
+    );
+    wf_harness_parked_direct_open_arm(&call, path);
+    if (pthread_create(
+            &opener,
+            NULL,
+            wf_harness_parked_direct_open_main,
+            &call
+        ) != 0) {
+        wf_completion_retirement_wait_end(&earlier);
+        wf_completion_operation_retired(0);
+        CHECK(0);
+    }
+
+    /* The direct call registers behind it and parks: both operations in
+     * flight are waiters, so nothing can bring a descriptor back — but the
+     * earliest waiter is the other one, so this one keeps waiting. */
+    wf_harness_wait_for_waiters(2u);
+    if (wf_completion_retirement_waiters() >= 2u) {
+        wf_harness_settle();
+        published_before_the_aside = atomic_load_explicit(
+            &call.finished,
+            memory_order_seq_cst
+        ) != 0u;
+        /* The transition: the earlier waiter's thread goes into another
+         * operation, which hands the earliest deciding place — and with it
+         * the answer that nothing can bring a descriptor back — to the call
+         * parked on the endpoint. */
+        wf_completion_retirement_defer_begin(&earlier);
+        finished = wf_harness_the_direct_call_published(&call);
+        wf_completion_retirement_defer_end(&earlier);
+    }
+    wf_completion_retirement_wait_end(&earlier);
+    wf_completion_operation_retired(0);
+    (void)pthread_join(opener, NULL);
+    CHECK(published_before_the_aside == 0);
+    CHECK(finished != 0);
+    CHECK(call.value < 0);
+    CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
+    return 0;
+}
+
+static int test_standing_aside_wakes_a_waiter_parked_on_the_endpoint(
+    const char *scratch_directory
+) {
+    return wf_harness_endpoint_wake_test(
+        scratch_directory,
+        "aside-wake",
+        wf_harness_standing_aside_wake_schedule
+    );
 }
 
 /* An open registered behind a waiter that stands aside can still answer.
@@ -5242,6 +5393,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_waiter_behind_one_that_stands_aside_can_answer());
     RUN_TEST(
         test_a_registration_wakes_a_waiter_parked_on_the_endpoint(argv[1])
+    );
+    RUN_TEST(
+        test_standing_aside_wakes_a_waiter_parked_on_the_endpoint(argv[1])
     );
     RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
     RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
