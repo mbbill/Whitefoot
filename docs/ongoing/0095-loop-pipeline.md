@@ -7,12 +7,16 @@ The design is `research/investigations/io-model/LOOP-PIPELINE.md` §1, §3 and �
 `research/investigations/io-model/FIRST-PRINCIPLES.md` §13-16 as the ownership
 contract the runtime work has to keep.
 
-Stage A lands the four prerequisites §3.9 and §7 name. **None of them changes a
-permission verdict or a published byte**, and no writer-visible surface is
-added anywhere: there is no attribute, environment variable, or source spelling
-for a window, a depth, or a schedule. Stage B lands the judgment ([PAR-3] in
-`compiler/src/semantic/staged_permission.rs`), the lowering, and the
-measurement, and this record moves to `docs/done/` then.
+Stage A lands the five prerequisites §3.9 and §7 name, which between them are
+the design's batch 0 — the batch §7 says every later batch is silently wrong
+without. **None of them changes a permission verdict or a published byte**, and
+no writer-visible surface is added anywhere: there is no attribute, environment
+variable, or source spelling for a window, a depth, or a schedule. The [PAR-3]
+judgment itself landed separately (`docs/done/0091-par3-judgment.md`) and its
+`permitted` verdict still selects no schedule: nothing in the compiler builds a
+pipeline descriptor. Stage B lands the lowering that does — the cut, the
+outlined stages, the driver — and the measurement, and this record moves to
+`docs/done/` then.
 
 ## 1. `wf__completion_window(span, slot_bytes, ceiling)`
 
@@ -36,12 +40,14 @@ query gives can make a correct program fail. That is why the weak fallback a
 link without the completion unit gets returns one.
 
 Stage A does not demonstrate it, and the record earlier said it did. The value
-the emitter binds has no consumer yet: what carries and what drains is decided
-entirely by the pipeline's block set, so answering one restricts nothing and
-reproduces nothing. It is harmless here only because one call site still owns
-one operation record, which keeps at most one operation of a site in flight
-whatever the answer. The claim becomes checkable when Stage B's driver consumes
-the answer, and checking it there is Stage B's evidence to produce.
+the emitter binds still has no consumer at run time: what carries and what
+drains is decided by the pipeline's block set, and how wide the ring §5 below
+reserves is decided by the descriptor's static slot count, so the number the
+runtime answers restricts nothing yet. What §5 adds is the storage that answer
+will index — the ring exists, and the runtime's window is what will decide how
+many of its elements are ever occupied. The claim becomes checkable when Stage
+B's driver cycles the slot and consumes the answer, and checking it there is
+Stage B's evidence to produce.
 
 The fallback is `COMPLETION_WINDOW_FALLBACK` in
 `compiler/src/backend/emitter/completion.rs`, emitted only where a module
@@ -540,19 +546,117 @@ function is emitted:
 and a staged loop has a loop. If Stage B ever widens either side, the two paths
 have to be reconciled rather than left to disagree quietly.
 
-What this does **not** yet carry is the per-slot storage index. One call site
-still owns one operation record, so a site inside a carrying region that
-submits again while its earlier operation is outstanding is refused rather than
-handed the first operation's storage. That is the driver's work (§3.4, §3.6
-item 2), and the driver is Stage B.
+What this does **not** yet carry is the driver. Nothing cycles the slot index,
+and no descriptor the compiler builds sets one: the ring §5 adds is the storage
+a driver will index, and the driver is Stage B.
 
-Neither does it carry the wait a K-slot ring needs. The rule above says a
-carrying block never joins, which is right for the back edge and not enough for
-the body: reusing slot *i* means waiting for exactly the one older operation
-that holds it, and nothing else. Stage B has to add a selective
-single-operation join for that — a primitive the rule admits, since it retires
-one named operation rather than everything outstanding — and must not reach it
-by exempting the carrying block from the rule.
+The wait a K-slot ring needs, on the other hand, turns out to need no new
+primitive, and the record earlier said it did. Reusing slot *i* means retiring
+exactly the one older operation that holds it, and
+`emit_completion_dependencies` already does exactly that — it joins the named
+operations and leaves every other target operation in flight — reached from
+`IrCompletionStep::wait_for`, which the emitter consults for every step. The
+rule above admits it: it retires one named operation rather than everything
+outstanding, so the carrying block is never exempted from "a carrying block
+never joins at its terminator". What Stage B owes is a descriptor that names
+the older operation, not a new way to join one.
+
+## 5. Slot-indexed completion storage
+
+`compiler/src/backend/emitter/completion.rs`, on the same
+`IrFunction::completion_pipeline` opt-in. Design §3.6 item 2, and the last
+unlanded item of the design's batch 0 — the one §7 says every later batch is
+silently wrong without.
+
+Every completion storage element — a token, a result slot, the raw value and
+error, an open's outcome, a directory cursor's position, an open's staged path
+— belongs to one *operation*, not to one written call. The target writes the
+result and reads the staged path while the operation is outstanding. Section 4
+gave a back edge the right to carry work across it; on its own that right is
+not yet safe, because a carrying block is emitted once and reached once per
+iteration, so the straight-line walk sees one hand-out at a site where the
+running program has one per iteration in flight. With a single record the
+second iteration's submission would hand the target a token and a result slot
+the first iteration's operation is still being written into.
+
+So a site inside a carrying region reserves a *ring*: one array of the
+descriptor's slot count, reserved once in the entry block, and the element an
+operation owns is chosen where the operation is started or retired.
+
+```llvm
+  %t23 = alloca [4 x [2 x i64]]                       ; the site's token ring
+  ...
+  %t27 = getelementptr inbounds [4 x [2 x i64]], ptr %t23, i64 0, i64 %v6
+  %t30 = call i32 @wf__completion_file_pread_submit(..., ptr %t27)
+```
+
+Three things about that are the whole of the mechanism.
+
+The count is static because the storage is an entry-block reservation. Which
+element an operation owns is a run-time choice; the runtime's window never
+exceeds the count, so the ring is what the window's answer will index rather
+than something the answer resizes.
+
+The index is a value the descriptor names per block, and the pointer is
+materialized in the block that names it. That is what lets a submission address
+the slot its iteration took while a retirement addresses the slot it is
+retiring, without the two having to be the same block — the loop's exit drains
+the window and is not the block that filled it. The emitter checks the cheap,
+local half of what the index has to be, that it is the `u64` the array is
+indexed with, and trusts dominance exactly as it trusts every other operand it
+renders: a driver threads the slot along the edges into its region, so the
+value reaching a carrying block is the loop-carried parameter that dominates
+it.
+
+And one slot is not a special case that has to be written twice. A site outside
+a carrying region, and every site of a one-slot region, reserves one record and
+names it directly, which is what this emitter has always done — so a module
+that stages no loop, and a region whose window is one, publish the storage they
+published before rings existed.
+
+§3.6 item 2 also names the `%component` buffer `emitter/system.rs` reserves
+inside the `alwaysinline` direct wrapper. That one stays a single buffer and
+does not need to be a ring: the operation it feeds is a blocking direct call
+that consumes the path and returns before the block ends, so no second
+iteration can be in it. What made the *submitted* open's staged path unsafe was
+the adapter retaining the caller's pointer, and that is item 1, which landed
+with `path_storage` — the adapter copies the bytes into the operation record's
+own storage at submission. The submitted open's staged component is a ring here
+all the same, because the copy happens at submit and the element has to be the
+iteration's own until it does.
+
+Three descriptors are refused as
+`BackendFailure::MisaddressedCompletionSlot`, which like the two refusals
+beside it is an emitter capability limit and cites no language rule [DIAG-1]:
+
+- a ring with no elements, which would reserve a zero-length array and index
+  into it;
+- a slot that is not a `u64`, which emits a module that does not verify;
+- a carrying block that reaches completion storage with no slot named. This is
+  the refusal that matters. Falling back to the first element there is exactly
+  the sharing the ring exists to prevent, and it would show up not as a
+  diagnostic but as two iterations reading one buffer.
+
+The tests are in `compiler/src/backend/tests/completion.rs`, over
+`A_STAGED_LOOP_BODY` — the conformance-shaped loop whose [PAR-3] verdict is
+`permitted`, each iteration constructing the buffers it reads into, with a
+submission and a retirement inside the loop:
+
+- `a_staged_region_reserves_one_operation_record_per_slot`: four rings of four
+  for the handed-out site, and six element pointers — the two records the
+  target is handed at submission, and all four at retirement — every one of
+  them indexed by the slot its block names and none by a constant element.
+- `one_slot_reserves_exactly_what_an_unstaged_program_reserves`: the
+  reservations of a one-slot region are the unstaged program's reservations,
+  type for type, and neither module indexes a record by any run-time value.
+- `a_ring_with_no_elements_is_refused`,
+  `a_slot_that_is_not_an_index_is_refused`, and
+  `a_carrying_block_with_no_slot_is_refused_rather_than_sharing_one_record`.
+
+The tests compute the dominators of the submitting block themselves and pick
+the slot from a block that dominates it, so the descriptor they hand the
+emitter is one a driver could actually produce rather than one that happens to
+verify.
 
 ## Evidence
 
@@ -1073,6 +1177,18 @@ by exempting the carrying block from the rule.
       given exactly what the blocks that reach it started, the out-of-order
       descriptor refused, and the IR-identity oracle re-run: 630 sources,
       3 passes, 1,890 compilations, 807 modules, 0 differences
+- [x] item 5 — slot-indexed completion storage: a site inside a carrying
+      region reserves a ring of the descriptor's slot count and addresses the
+      element the block names, one slot reserves and addresses exactly what an
+      unstaged program does, and the three misaddressed descriptors — no
+      elements, an index of the wrong type, and a carrying block with no slot —
+      are refused rather than silently sharing one record
+- [ ] Stage B's driver — the cut, the outlined stages, the ring of replicated
+      constructions, the owner-lane driver loop, the fold handed to a compute
+      lane, and the runner measurement. Nothing in the compiler builds a
+      pipeline descriptor yet; every consumer above is reached from the
+      test-only constructor, and the [PAR-3] judgment's `permitted` verdict
+      still changes no emitted byte
 - [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
       `completion-core-read-tsan` — green on an x86-64 Linux host at this
       revision, with the repetition counts above; green on macOS and in the

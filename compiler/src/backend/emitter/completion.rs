@@ -87,23 +87,24 @@ pub(crate) struct CompletionHandedOut {
 
 /// Where one kind of completion storage belonging to one call site lives.
 ///
-/// The two shapes are the two schedules. Without a ring a site owns exactly
-/// one element, its pointer is an entry-block definition, and it dominates
-/// every block that can reach the operation — which is how this emitter has
-/// always addressed completion storage. With a ring the site owns several, one
-/// per operation the region may have in flight, and which of them an operation
-/// owns is not known until the program runs: the pointer is materialized from
-/// the slot index of whichever block starts or retires the operation, so
-/// it is defined in that block and dominates its uses for the same reason a
-/// block's own phi does.
+/// The two shapes are the two schedules. Without a ring a site owns exactly one
+/// record, its pointer is an entry-block definition, and it dominates every
+/// block that can reach the operation — which is how this emitter has always
+/// addressed completion storage. With a ring the site owns several, one per
+/// operation the region may have in flight, and which of them an operation owns
+/// is not known until the program runs: the pointer is materialized from the
+/// slot index of whichever block starts or retires the operation, so it is
+/// defined in that block and dominates its uses the way a block's own phi
+/// does.
 #[derive(Clone, Debug)]
-enum CompletionStorage {
-    Fixed(String),
-    Ring {
-        array: String,
-        element_type: String,
-        slots: u64,
-    },
+struct CompletionStorage {
+    /// The entry-block reservation: the record itself where the site owns one,
+    /// the whole ring where it owns several.
+    reservation: String,
+    /// The element type, and with it the fact that the reservation is a ring
+    /// to be indexed rather than the record itself. How many elements it holds
+    /// is the pipeline's `slots` and is not repeated here.
+    ring_element: Option<String>,
 }
 
 impl CompletionHandedOut {
@@ -254,17 +255,18 @@ impl FunctionEmitter<'_, '_> {
         }
         let slots = self.pipeline.map_or(1, crate::IrCompletionPipeline::slots);
         if slots > 1 && self.block_carries {
-            let Some(_) = self.block_slot else {
+            if self.block_slot.is_none() {
                 return Err(BackendFailure::MisaddressedCompletionSlot);
-            };
-            let array = self.entry_slot(&format!("[{slots} x {ty}]"))?;
-            return Ok(CompletionStorage::Ring {
-                array,
-                element_type: ty.to_owned(),
-                slots,
+            }
+            return Ok(CompletionStorage {
+                reservation: self.entry_slot(&format!("[{slots} x {ty}]"))?,
+                ring_element: Some(ty.to_owned()),
             });
         }
-        Ok(CompletionStorage::Fixed(self.indexed_entry_slot(ty, 1, 0)?))
+        Ok(CompletionStorage {
+            reservation: self.indexed_entry_slot(ty, 1, 0)?,
+            ring_element: None,
+        })
     }
 
     /// The pointer to the element this operation owns, usable where it is
@@ -281,21 +283,15 @@ impl FunctionEmitter<'_, '_> {
         &mut self,
         storage: &CompletionStorage,
     ) -> Result<String, BackendFailure> {
-        let CompletionStorage::Ring {
-            array,
-            element_type,
-            slots,
-        } = storage
-        else {
-            let CompletionStorage::Fixed(element) = storage else {
-                return Err(BackendFailure::InvalidIr);
-            };
-            return Ok(element.clone());
+        let Some(element_type) = storage.ring_element.as_deref() else {
+            return Ok(storage.reservation.clone());
         };
+        let slots = self.pipeline.map_or(1, crate::IrCompletionPipeline::slots);
         let slot = self
             .block_slot
             .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
         let element = format!("%{}", self.next_temporary()?);
+        let array = &storage.reservation;
         writeln!(
             self.output,
             "  {element} = getelementptr inbounds [{slots} x {element_type}], ptr {array}, \
