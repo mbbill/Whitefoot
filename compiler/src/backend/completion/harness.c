@@ -4309,7 +4309,10 @@ static int test_a_promised_descriptor_is_not_promised_again(void) {
  * return of this runtime's, and the charge falls on it either way.  That can
  * deprive a waiter of an award it was owed, which is the adversarial schedule
  * this stands for — and what it costs that waiter is nothing it is entitled to:
- * being deprived is not being refused.  It keeps waiting while anything is in
+ * being deprived is not being refused.  Raced rather than scripted, on a probe
+ * that arranges exactly this against a raw `close` the runtime never made, the
+ * charge deprived the waiter in every one of 2,000 repetitions and the waiter
+ * published its `Ok` in every one of them.  It keeps waiting while anything is in
  * flight, and its one attempt is then made at the moment nothing is left that
  * could bring a descriptor back, with the return it was deprived of still in
  * the host's table for it to take.  Charging is bounded by the unspent returns

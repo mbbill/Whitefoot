@@ -633,6 +633,22 @@ by exempting the carrying block from the rule.
   and never passes the return count: every descriptor this runtime puts back is
   promised to exactly one consumer.
 
+  The charge's own adversarial schedule was built and measured, because it can
+  fall on the wrong open: a descriptor a thread of the program's own gave back
+  is one no ledger can see, so an open the host satisfies from it is charged
+  against a return of this runtime's and deprives a waiter of an award it was
+  owed. Scripted — a close of this runtime's in flight, a refused open
+  registered behind it, a raw `close` of a descriptor the runtime never held,
+  and a direct open satisfied from that one — the charge fell on the outside
+  free in every one of 2,000 repetitions and the waiter was awarded nothing in
+  any of them, and it published its `Ok` in all 2,000, at one helper and at
+  four alike. That is the shape of the answer as well as its number: being
+  deprived is not being refused. The waiter keeps its place, keeps waiting
+  while anything is in flight, and makes its one attempt when nothing is left
+  that could bring a descriptor back — with the return it was deprived of still
+  in the host's table for it to take. What the charge costs such a waiter is
+  the earlier attempt, not the outcome.
+
   What that leaves is a window the ledger cannot see through, stated plainly
   because it is the next thing here that could lose an `Ok`: an open takes a
   descriptor at the moment the host satisfies it, but this runtime learns of a
@@ -731,7 +747,10 @@ by exempting the carrying block from the rule.
   that kind, and says so: it is the adversarial schedule for the charge rather
   than a defect's test, and what it asserts is that a waiter the charge
   deprives is kept waiting rather than refused, and still makes its one attempt
-  at the moment nothing is left in flight.
+  at the moment nothing is left in flight. The raced version of that same
+  schedule, measured above, is what says the assertion is worth making: the
+  charge deprived the waiter in all 2,000 repetitions and the waiter published
+  its `Ok` in all 2,000.
   `test_a_waiter_that_stands_aside_keeps_its_claim` fails at one and four
   helpers against two different alternatives: a ledger that passes a waiter
   standing aside over for the award, which hands the descriptor to the later
