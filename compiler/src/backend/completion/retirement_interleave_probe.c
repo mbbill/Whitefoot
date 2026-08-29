@@ -478,6 +478,13 @@ static void wf_interleave_unmount_overlay(const char *directory) {
 #endif
 
 int main(int argc, char **argv) {
+#if !defined(__linux__)
+    (void)argc;
+    (void)argv;
+    printf("completion-retirement-interleave: SKIP this target has no kernel"
+           " completion ring, so a close cannot be asynchronous here\n");
+    return WF_INTERLEAVE_SKIP;
+#else
     pthread_t watchdog;
     char directory[320];
     int repetition;
@@ -486,13 +493,6 @@ int main(int argc, char **argv) {
     int miscounted = 0;
     int skipped = 0;
     int created;
-#if !defined(__linux__)
-    (void)argc;
-    (void)argv;
-    printf("completion-retirement-interleave: SKIP this target has no kernel"
-           " completion ring, so a close cannot be asynchronous here\n");
-    return WF_INTERLEAVE_SKIP;
-#else
     if (argc < 2) {
         printf("usage: retirement-interleave-probe SCRATCH_DIRECTORY\n");
         return 2;
