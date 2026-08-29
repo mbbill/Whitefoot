@@ -18,11 +18,14 @@
 #include <pthread.h>
 #include <poll.h>
 #include <sched.h>
+#include <stdarg.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -31,6 +34,10 @@
 /* The bridge's whole process-wide operation capacity. A test which means to
  * reach the capacity boundary must name the same number the bridge does. */
 #define WF_HARNESS_OPERATION_CAPACITY 64u
+/* The private storage the window query affords one loop before the compiler's
+ * ceiling and the loop's own slot size apply.  A test which means to reach
+ * that boundary must name the same number the bridge does. */
+#define WF_HARNESS_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
 
 #define CHECK(condition)                                                      \
     do {                                                                      \
@@ -109,11 +116,131 @@ ssize_t wf_completion_test_getdents64(int descriptor, void *buffer, size_t count
 #endif
 #endif
 
+/* The adapter's own `openat`, observed.
+ *
+ * Retire and retry is decided by what that call answers, and the schedule
+ * worth testing is the one where another engine is mid-operation at the exact
+ * moment it answers `EMFILE`.  A test arms the gate, and the first refusal
+ * after that announces itself, so the thread that gives the descriptor back
+ * acts strictly after the refusal rather than racing it with a delay. */
+static pthread_mutex_t wf_open_gate_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wf_open_gate_signal = PTHREAD_COND_INITIALIZER;
+/* Read without the lock by every refusal, so a build that is only observing
+ * does not serialize the refusals it is observing.  A refused open decides
+ * what it does next against a ledger several threads are moving, and a global
+ * lock taken on the way out of every `openat` narrows that to one thread at a
+ * time — which is exactly the schedule a test of the rule needs to leave
+ * alone. */
+static _Atomic unsigned wf_open_gate_armed;
+static unsigned wf_open_gate_refusals;
+
+int wf_completion_test_openat(
+    int directory,
+    const char *path,
+    int flags,
+    ...
+) {
+    int descriptor;
+    if ((flags & O_CREAT) != 0) {
+        va_list arguments;
+        mode_t mode;
+        va_start(arguments, flags);
+        mode = (mode_t)va_arg(arguments, int);
+        va_end(arguments);
+        descriptor = openat(directory, path, flags, mode);
+    } else {
+        descriptor = openat(directory, path, flags);
+    }
+    if (descriptor < 0 && (errno == EMFILE || errno == ENFILE)
+        && atomic_load_explicit(&wf_open_gate_armed, memory_order_acquire)
+            != 0) {
+        int refusal = errno;
+        (void)pthread_mutex_lock(&wf_open_gate_lock);
+        if (atomic_load_explicit(&wf_open_gate_armed, memory_order_relaxed)
+            != 0) {
+            wf_open_gate_refusals += 1;
+            (void)pthread_cond_broadcast(&wf_open_gate_signal);
+        }
+        (void)pthread_mutex_unlock(&wf_open_gate_lock);
+        errno = refusal;
+    }
+    return descriptor;
+}
+
+/* The readiness wait a parked transfer makes, announced.
+ *
+ * A test that means to stand where one engine is mid-operation while another
+ * is refused an open needs the first operation to be genuinely in flight, not
+ * merely submitted.  The bounded adapter reaches its readiness wait through
+ * this named call, so arming it makes "the read is parked" a fact the test
+ * observes instead of a delay it hopes for. */
+static pthread_mutex_t wf_poll_gate_lock = PTHREAD_MUTEX_INITIALIZER;
+static int wf_poll_gate_descriptor = -1;
+static unsigned wf_poll_gate_entries;
+
+/* The named point inside the ledger's give-up decision, between its read of
+ * the retirement generation and its read of what is still in flight.  Armed,
+ * it retires one operation exactly there, which is the one interleaving that
+ * can hide a retirement from both reads. */
+static pthread_mutex_t wf_retirement_point_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned wf_retirement_point_armed;
+static unsigned wf_retirement_point_fired;
+
+/* What a test standing at the point does there: retire one operation, or
+ * queue one more behind the waiter's own thread. */
+#define WF_HARNESS_POINT_RETIRES 0u
+#define WF_HARNESS_POINT_QUEUES_OWED 1u
+static unsigned wf_retirement_point_mode;
+static _Atomic size_t wf_harness_owed_work;
+
+/* The queue a scripted waiter is answerable for.  The ledger asks for it where
+ * it decides, so a test can make it grow exactly there. */
+static size_t wf_harness_owed(void *context) {
+    (void)context;
+    return atomic_load_explicit(&wf_harness_owed_work, memory_order_seq_cst);
+}
+
+void wf_completion_test_retirement_point(void) {
+    unsigned fire = 0;
+    unsigned mode = WF_HARNESS_POINT_RETIRES;
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    if (wf_retirement_point_armed != 0) {
+        wf_retirement_point_armed = 0;
+        wf_retirement_point_fired = 1;
+        mode = wf_retirement_point_mode;
+        fire = 1;
+    }
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+    if (fire == 0) {
+        return;
+    }
+    if (mode == WF_HARNESS_POINT_QUEUES_OWED) {
+        atomic_fetch_add_explicit(
+            &wf_harness_owed_work,
+            1,
+            memory_order_seq_cst
+        );
+        wf_completion_operation_accepted();
+        return;
+    }
+    /* The retirement a give-up decision is about: one that put a descriptor
+     * back, which is the only kind that grants the re-attempt. */
+    wf_completion_operation_retired(1);
+}
+
 int wf_completion_test_poll(
     struct pollfd *descriptors,
     nfds_t count,
     int timeout
 ) {
+    if (count == 1) {
+        (void)pthread_mutex_lock(&wf_poll_gate_lock);
+        if (wf_poll_gate_descriptor >= 0
+            && descriptors[0].fd == wf_poll_gate_descriptor) {
+            wf_poll_gate_entries += 1;
+        }
+        (void)pthread_mutex_unlock(&wf_poll_gate_lock);
+    }
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     if (wf_directory_host_calls != 0) {
         wf_directory_poll_calls += 1;
@@ -3147,6 +3274,2136 @@ static int test_capacity_release_wakes_before_blocking_work(void) {
     return 0;
 }
 
+/* The runtime's own bound on how many iterations of one loop may be in flight
+ * at once.
+ *
+ * The rules this checks are the only ones a lowering may rely on: every
+ * argument is a bound and none can raise the answer, a zero argument places no
+ * bound, and one is always a legal answer.  That last one is what makes the
+ * query safe to emit at all — a loop whose window came back as zero would have
+ * no legal schedule, and the sequential program is always a legal schedule. */
+static int test_completion_window_answers_at_the_boundaries(void) {
+    uint64_t unconstrained = wf__completion_window(0, 0, 0);
+    uint64_t budget = WF_HARNESS_WINDOW_BYTE_BUDGET;
+    uint64_t two;
+
+    /* The runtime never offers its whole operation capacity to one loop: a
+     * loop holding every record would push the rest of the program onto the
+     * capacity-wait path, where a full ring degrades to a blocking direct
+     * call. */
+    CHECK(unconstrained >= 1u);
+    CHECK(unconstrained <= WF_HARNESS_OPERATION_CAPACITY / 2u);
+
+    /* A trip count of one is a loop with nothing to overlap. */
+    CHECK(wf__completion_window(1, 0, 0) == 1u);
+    /* The compiler's own static cap is honoured exactly. */
+    CHECK(wf__completion_window(0, 0, 1) == 1u);
+    CHECK(wf__completion_window(0, 0, 2) == (unconstrained < 2u ? unconstrained : 2u));
+    CHECK(wf__completion_window(3, 0, 0) == (unconstrained < 3u ? unconstrained : 3u));
+    /* Neither a huge trip count nor a huge ceiling raises the runtime's own
+     * answer: every argument is a minimum with it, never a request. */
+    CHECK(wf__completion_window(UINT64_MAX, 0, 0) == unconstrained);
+    CHECK(wf__completion_window(0, 0, UINT64_MAX) == unconstrained);
+    CHECK(wf__completion_window(UINT64_MAX, 0, UINT64_MAX) == unconstrained);
+
+    /* The byte budget. One slot of the whole budget affords one iteration;
+     * half of it affords two; a slot larger than the budget affords none, and
+     * the floor turns that into the sequential program rather than into a
+     * schedule with no slots. */
+    CHECK(wf__completion_window(0, budget, 0) == 1u);
+    CHECK(wf__completion_window(0, budget + 1u, 0) == 1u);
+    CHECK(wf__completion_window(0, UINT64_MAX, 0) == 1u);
+    /* The design's own example: a loop privatizing a 16 MiB buffer gets one. */
+    CHECK(wf__completion_window(0, 16u * 1024u * 1024u, 0) == 1u);
+    two = budget / 2u;
+    CHECK(wf__completion_window(0, two, 0) == (unconstrained < 2u ? unconstrained : 2u));
+
+    /* The smallest argument decides, whichever one it is. */
+    CHECK(wf__completion_window(2, budget / 8u, 8) == 2u);
+    CHECK(wf__completion_window(8, budget / 2u, 8) == (unconstrained < 2u ? unconstrained : 2u));
+    CHECK(wf__completion_window(8, budget / 8u, 2) == 2u);
+
+    /* One is always legal: no combination of arguments answers zero. */
+    CHECK(wf__completion_window(0, 0, 0) >= 1u);
+    CHECK(wf__completion_window(1, UINT64_MAX, 1) == 1u);
+    CHECK(wf__completion_window(UINT64_MAX, UINT64_MAX, UINT64_MAX) == 1u);
+    return 0;
+}
+
+/* The io_uring doorbell is deferred, and every path that can stop reaches the
+ * kernel before it does.
+ *
+ * Staging a submission-queue entry is a store to a page the kernel already
+ * maps, so it costs no system call; `io_uring_enter` is what tells the kernel
+ * the entry exists. Ringing it once per submission is 15,360 calls on the
+ * eight-wide benchmark and 2,048 when it is deferred (LOOP-PIPELINE.md §9.1).
+ * Deferring is only safe while the two facts below hold, and they are what
+ * this checks: a submission alone rings nothing, and the first thing that
+ * could wait — a join, or a blocking direct host call the completion path
+ * refused to carry — rings it first.
+ *
+ * The enter counter only exists where the ring is the target route, so the
+ * counted half of this test runs there and the functional half runs
+ * everywhere. */
+static int test_a_submitted_operation_is_kicked_before_it_waits(
+    const char *scratch_directory
+) {
+    char path[256];
+    unsigned char first[8];
+    unsigned char second[8];
+    wf_completion_token open_token;
+    wf_completion_token read_token;
+    wf_completion_token other_token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    int descriptor;
+    int writer;
+    uint64_t submissions_before;
+    uint64_t enters;
+    int ring_route;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-doorbell-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(write(writer, "doorbell", 8) == 8);
+    CHECK(close(writer) == 0);
+
+    submissions_before = wf__completion_linux_io_uring_submissions();
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+    wf__completion_file_open_join(
+        &open_token,
+        &value,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    descriptor = (int)value;
+    ring_route =
+        wf__completion_linux_io_uring_submissions() > submissions_before;
+
+    /* A submission alone rings nothing. */
+    enters = wf__completion_linux_io_uring_submission_enters();
+    memset(first, 0, sizeof(first));
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            first,
+            sizeof(first),
+            0,
+            &read_token
+        ) == 1
+    );
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+    }
+
+    /* A blocking direct host call rings it first. This one is refused
+     * immediately by the host, so what it proves is the ordering and not the
+     * waiting: the doorbell rang before the call, not after it. */
+    CHECK(wf__completion_file_close_direct(-1) < 0);
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+    }
+    wf__completion_file_join(&read_token, &value, &error_code);
+    CHECK(value == 8 && error_code == 0);
+    CHECK(memcmp(first, "doorbell", 8) == 0);
+
+    /* Two submissions, one doorbell: the first join carries both, and the
+     * second join needs no further call. This is the whole of what deferring
+     * buys, stated as a count. */
+    enters = wf__completion_linux_io_uring_submission_enters();
+    memset(first, 0, sizeof(first));
+    memset(second, 0, sizeof(second));
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            first,
+            4,
+            0,
+            &read_token
+        ) == 1
+    );
+    CHECK(
+        wf__completion_file_pread_submit(
+            descriptor,
+            second,
+            4,
+            4,
+            &other_token
+        ) == 1
+    );
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+    }
+    wf__completion_file_join(&read_token, &value, &error_code);
+    CHECK(value == 4 && error_code == 0);
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+    }
+    wf__completion_file_join(&other_token, &value, &error_code);
+    CHECK(value == 4 && error_code == 0);
+    if (ring_route) {
+        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+    }
+    CHECK(memcmp(first, "door", 4) == 0);
+    CHECK(memcmp(second, "bell", 4) == 0);
+
+    CHECK(wf__completion_file_close_submit(descriptor, &read_token) == 1);
+    wf__completion_file_join(&read_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* Fills this process's descriptor table exactly: opens `path` at the lowest
+ * free descriptor and lowers the soft limit to one past it, so no further open
+ * can succeed until that one descriptor is given back.  `*saved` carries the
+ * limit the caller must restore.  Returns the held descriptor. */
+static int wf_harness_hold_the_last_descriptor(
+    const char *path,
+    struct rlimit *saved
+) {
+    struct rlimit narrowed;
+    int probe;
+    int held;
+    if (getrlimit(RLIMIT_NOFILE, saved) != 0) {
+        return -1;
+    }
+    probe = open(path, O_RDONLY);
+    if (probe < 0) {
+        return -1;
+    }
+    if (close(probe) != 0) {
+        return -1;
+    }
+    narrowed = *saved;
+    narrowed.rlim_cur = (rlim_t)probe + 1;
+    if (narrowed.rlim_cur > saved->rlim_max) {
+        return -1;
+    }
+    if (setrlimit(RLIMIT_NOFILE, &narrowed) != 0) {
+        return -1;
+    }
+    held = open(path, O_RDONLY);
+    if (held != probe) {
+        if (held >= 0) {
+            (void)close(held);
+        }
+        (void)setrlimit(RLIMIT_NOFILE, saved);
+        return -1;
+    }
+    return held;
+}
+
+/* An open refused for want of a host descriptor retires the work this runtime
+ * still owns and re-attempts once before publishing an outcome.
+ *
+ * Retire and retry (LOOP-PIPELINE.md §2.10).  A schedule that keeps several
+ * iterations of a loop in flight holds several descriptors where source order
+ * holds one, so a host limit the sequential program never reaches could turn a
+ * correct program's `Ok` into an `Err(ResourceExhausted)` — and [SYS-10] is
+ * explicit that a `FilePermit` promises no native descriptor, while [PAR-1]'s
+ * exhaustion clause excuses only what an implementation spends on overlapping.
+ * The descriptors the program's own opens consume are not that.
+ *
+ * The shape here is the smallest one that has the property: a close of the one
+ * held descriptor is submitted, then an open which cannot succeed until that
+ * close runs.  With no helper the scheduler takes the newest request first, so
+ * the open really is attempted while the close is still owed, and only the
+ * retirement makes it succeed.  Both outcomes are published unchanged. */
+static int test_open_exhaustion_retires_owned_work_and_retries(
+    const char *scratch_directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[4];
+    wf_file_adapter adapter;
+    wf_file_work queue[4];
+    wf_completion_token close_token;
+    wf_completion_token open_token;
+    wf_file_request request;
+    wf_file_result result;
+    wf_completion_event events[2];
+    wf_completion_outcome outcome;
+    struct rlimit saved;
+    char path[256];
+    int writer;
+    int held;
+    int opened;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-exhaustion-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Everything that needs a descriptor of its own happens before the limit
+     * narrows. */
+    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 4, NULL, 0, 0) == 0);
+    CHECK(wf_completion_claim(&runtime, &close_token) == WF_COMPLETION_CLAIMED);
+    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_CLOSE;
+    request.operation.close.descriptor = held;
+    CHECK(
+        wf_file_adapter_submit(&adapter, close_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = AT_FDCWD;
+    request.operation.open_at.path = path;
+    request.operation.open_at.flags = O_RDONLY;
+    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
+    CHECK(
+        wf_file_adapter_submit(&adapter, open_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+
+    /* One scheduler visit. It takes the open, is refused, retires the close it
+     * still owed, and re-attempts. */
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(
+        wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
+    );
+
+    CHECK(drain_exact(&runtime, 2, events) == 0);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            close_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_CLOSE);
+    CHECK(result.value == 0 && result.error_code == 0);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            open_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_OPEN_AT);
+    /* The whole point: the outcome the program sees is the one source order
+     * produces, not the exhaustion the schedule caused. */
+    CHECK(result.value >= 0 && result.error_code == 0);
+    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)result.value;
+
+    CHECK(close(opened) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* The same rule on the route generated code takes, whichever target carries
+ * it.
+ *
+ * Here nothing can give a descriptor back, so every open fails — and that is
+ * the outcome the program is entitled to see, because it is the one source
+ * order produces too.  What the count proves is the bound: an exhausted host
+ * cannot turn one `open_file` call into unbounded work, so three refused opens
+ * can produce at most three second attempts however the three are scheduled.
+ *
+ * This test asserted the opposite bound until the rule below was corrected —
+ * that the count had *moved*, that is, that at least one re-attempt was made.
+ * That is not a property of three independent opens.  A re-attempt is owed
+ * only where this runtime is still holding a descriptor it could give back,
+ * and whether it is depends on where the three land: a helper pool that
+ * finishes each open before the next is submitted holds nothing at the moment
+ * of each refusal, so publishing each refusal unchanged is the correct answer
+ * and no re-attempt is owed.  Asserting otherwise made this test fail 13 of
+ * 200 runs at `WF_IO_HELPERS=4` on macOS, inside canonical `make check`.
+ *
+ * The property it was reaching for — that a runtime still holding a descriptor
+ * asks the host again rather than publishing the refusal — is what
+ * `test_open_exhaustion_waits_for_another_engine` and
+ * `test_bridge_open_behind_a_submitted_close_succeeds` establish, each by
+ * arranging that schedule instead of hoping for it, and each failing without
+ * its fix. */
+static int test_bridge_open_exhaustion_is_retried_once(
+    const char *scratch_directory
+) {
+    struct rlimit saved;
+    char path[256];
+    wf_completion_token tokens[3];
+    wf_completion_token token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    uint64_t retries_before;
+    size_t index;
+    int writer;
+    int held;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-bridge-exhaustion-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit narrows:
+     * the ring, its wait set, and any helper the policy asks for are created
+     * on the first submission, not here. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    retries_before = wf__completion_open_exhaustion_retries();
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+
+    for (index = 0; index < 3; ++index) {
+        CHECK(
+            wf__completion_file_open_at_submit(
+                AT_FDCWD,
+                path,
+                O_RDONLY,
+                0u,
+                0u,
+                WF_FILE_EXPECT_REGULAR,
+                &tokens[index]
+            ) == 1
+        );
+    }
+    for (index = 0; index < 3; ++index) {
+        wf__completion_file_open_join(
+            &tokens[index],
+            &value,
+            &error_code,
+            &open_outcome
+        );
+        CHECK(value < 0);
+        CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+        CHECK(error_code == EMFILE || error_code == ENFILE);
+    }
+    CHECK(
+        wf__completion_open_exhaustion_retries() - retries_before
+        <= (uint64_t)3
+    );
+
+    CHECK(close(held) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* What a refused open must retire is not always on this adapter's queue.
+ *
+ * With one engine it is, and draining the queue is the whole of the rule.
+ * With several the same schedule puts it elsewhere: three simultaneous opens
+ * are taken by three different helpers and every one of them looks at an empty
+ * queue.  An adapter that gives up there publishes an exhaustion the
+ * sequential program never produces, because the descriptors are still its
+ * own — held by operations it is running, which is not the same as gone.
+ *
+ * The shape below fixes that schedule rather than racing for it.  A read of an
+ * empty pipe parks the one helper, so exactly one operation is in flight and
+ * nothing at all is queued.  The scheduler then takes an open the host must
+ * refuse, and because the adapter's `openat` is named, the releasing thread
+ * stands exactly at the refusal: only then does it give the held descriptor
+ * back and let the parked read finish.  The open's second attempt is the first
+ * one that could succeed, and the outcome the program sees is the one source
+ * order produces. */
+struct wf_open_release {
+    int held;
+    int pipe_writer;
+    ssize_t released;
+};
+
+static void *wf_open_release_main(void *context) {
+    struct wf_open_release *release = context;
+    (void)pthread_mutex_lock(&wf_open_gate_lock);
+    while (wf_open_gate_refusals == 0) {
+        (void)pthread_cond_wait(&wf_open_gate_signal, &wf_open_gate_lock);
+    }
+    (void)pthread_mutex_unlock(&wf_open_gate_lock);
+    /* The descriptor the refused open needs comes back here, and the parked
+     * read is released so the adapter observes a retirement on its other
+     * engine.  The byte's fate is recorded rather than discarded: a write
+     * that did not land would leave that helper parked, and the test reads
+     * this back before it concludes anything about the schedule. */
+    (void)close(release->held);
+    release->released = write(release->pipe_writer, "x", 1);
+    return NULL;
+}
+
+/* The one question the retirement ledger asks an operation is answered from
+ * the record, and only a host action that actually put a descriptor back may
+ * answer yes: a close the host refused freed nothing, and counting it would
+ * spend a refused open's single re-attempt on a return that never happened. */
+static int test_descriptor_return_follows_the_outcome(void) {
+    wf_file_result result;
+    memset(&result, 0, sizeof(result));
+    result.kind = WF_FILE_CLOSE;
+    result.error_code = 0;
+    CHECK(wf_file_returned_a_descriptor(&result) == 1);
+    result.error_code = EBADF;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    memset(&result, 0, sizeof(result));
+    result.kind = WF_FILE_OPEN_AT;
+    result.value = 7;
+    result.open_outcome = WF_FILE_OPEN_OTHER_KIND;
+    CHECK(wf_file_returned_a_descriptor(&result) == 1);
+    result.open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    result.value = -1;
+    result.open_outcome = WF_FILE_OPEN_FAILED;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    memset(&result, 0, sizeof(result));
+    result.kind = WF_FILE_PREAD;
+    result.value = 4096;
+    CHECK(wf_file_returned_a_descriptor(&result) == 0);
+    CHECK(wf_file_returned_a_descriptor(NULL) == 0);
+    return 0;
+}
+
+/* The same question, asked of the ring, which answers it from its own entry.
+ *
+ * The test above calls the shared inline answer, so it pins the record half of
+ * the predicate and nothing else.  A ring that counted every close it completed
+ * as a descriptor coming back — whatever the kernel said about it — passes that
+ * test and every other one in this file, while a refused close spends a refused
+ * open's single re-attempt on a descriptor that never came back.  Measured on
+ * the shape that submits both, it mis-accounts one return per repetition.
+ *
+ * So this stands where only the ring can answer: two closes, one the kernel
+ * performs and one it refuses, each checked to have gone to the ring, with the
+ * process-wide return count read across each.  The deltas are exact — one and
+ * zero — because nothing else of this runtime's is in flight here. */
+static int test_a_ring_close_counts_a_return_only_when_it_ran(
+    const char *scratch_directory
+) {
+    wf_completion_token token;
+    char path[256];
+    uint64_t ring_before;
+    uint64_t returns_before;
+    int64_t value = -1;
+    int error_code = -1;
+    int held;
+    int writer;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-ring-close-return-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+    held = open(path, O_RDONLY);
+    CHECK(held >= 0);
+
+    /* A close the host performs: one descriptor back. */
+    ring_before = wf__completion_linux_io_uring_submissions();
+    returns_before = wf_completion_descriptor_returns();
+    CHECK(wf__completion_file_close_submit(held, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    if (wf__completion_linux_io_uring_submissions() == ring_before) {
+        /* This host's closes do not take the ring, so the ring's own answer is
+         * not reachable from here.  A run that demanded the ring may not pass
+         * by skipping. */
+        CHECK(getenv("WF_REQUIRE_LINUX_IO_URING") == NULL);
+        CHECK(unlink(path) == 0);
+        return 0;
+    }
+    CHECK(wf_completion_descriptor_returns() == returns_before + 1u);
+
+    /* A close the host refuses: nothing came back, and the count says so. */
+    ring_before = wf__completion_linux_io_uring_submissions();
+    returns_before = wf_completion_descriptor_returns();
+    value = 0;
+    error_code = 0;
+    CHECK(wf__completion_file_close_submit(30000, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value < 0 && error_code == EBADF);
+    CHECK(wf__completion_linux_io_uring_submissions() == ring_before + 1u);
+    CHECK(wf_completion_descriptor_returns() == returns_before);
+
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+static int test_open_exhaustion_waits_for_another_engine(
+    const char *scratch_directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[4];
+    wf_file_adapter adapter;
+    wf_file_work queue[4];
+    pthread_t helpers[1];
+    pthread_t releaser;
+    struct wf_open_release release;
+    wf_completion_token read_token;
+    wf_completion_token open_token;
+    wf_file_request request;
+    wf_file_result result;
+    wf_completion_event events[2];
+    wf_completion_outcome outcome;
+    struct rlimit saved;
+    char path[256];
+    unsigned char received = 0;
+    int pipe_pair[2];
+    int writer;
+    int held;
+    int opened;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-other-engine-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Everything that needs a descriptor of its own happens before the limit
+     * narrows: the runtime, the pipe that parks the helper, and the helper
+     * itself. */
+    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
+    CHECK(pipe(pipe_pair) == 0);
+    CHECK(fcntl(pipe_pair[0], F_SETFL, O_NONBLOCK) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 4, helpers, 1, 1) == 0);
+    CHECK(wf_completion_claim(&runtime, &read_token) == WF_COMPLETION_CLAIMED);
+    CHECK(wf_completion_claim(&runtime, &open_token) == WF_COMPLETION_CLAIMED);
+
+    /* One operation in flight on the helper, waiting for a byte that only the
+     * releasing thread writes. */
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_READ;
+    request.operation.read.descriptor = pipe_pair[0];
+    request.operation.read.buffer = &received;
+    request.operation.read.count = 1;
+    CHECK(
+        wf_file_adapter_submit(&adapter, read_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+    while (wf_file_adapter_queued(&adapter) != 0) {
+        sched_yield();
+    }
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    (void)pthread_mutex_lock(&wf_open_gate_lock);
+    wf_open_gate_refusals = 0;
+    atomic_store_explicit(&wf_open_gate_armed, 1, memory_order_release);
+    (void)pthread_mutex_unlock(&wf_open_gate_lock);
+    release.held = held;
+    release.pipe_writer = pipe_pair[1];
+    release.released = -1;
+    CHECK(pthread_create(&releaser, NULL, wf_open_release_main, &release) == 0);
+
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = AT_FDCWD;
+    request.operation.open_at.path = path;
+    request.operation.open_at.flags = O_RDONLY;
+    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
+    CHECK(
+        wf_file_adapter_submit(&adapter, open_token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+
+    /* One scheduler visit.  It takes the open, is refused, finds nothing
+     * queued to retire, waits for the operation running on the helper, and
+     * re-attempts once. */
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(pthread_join(releaser, NULL) == 0);
+    CHECK(release.released == 1);
+    (void)pthread_mutex_lock(&wf_open_gate_lock);
+    atomic_store_explicit(&wf_open_gate_armed, 0, memory_order_release);
+    (void)pthread_mutex_unlock(&wf_open_gate_lock);
+    CHECK(
+        wf_file_adapter_statistics_snapshot(&adapter).exhaustion_retries == 1
+    );
+
+    CHECK(drain_exact(&runtime, 2, events) == 0);
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            read_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_READ);
+    CHECK(result.value == 1 && result.error_code == 0);
+    CHECK(received == 'x');
+    CHECK(
+        wf_completion_consume(
+            &runtime,
+            open_token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    CHECK(result.kind == WF_FILE_OPEN_AT);
+    /* The whole point: the outcome the program sees is the one source order
+     * produces, not the exhaustion the schedule caused. */
+    CHECK(result.value >= 0 && result.error_code == 0);
+    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)result.value;
+
+    CHECK(close(opened) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    CHECK(close(pipe_pair[0]) == 0);
+    CHECK(close(pipe_pair[1]) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* A close this runtime already owns is a descriptor it has not yet given
+ * back, and an open submitted behind it must not be told the host is out.
+ *
+ * Source order is `close(held); open(path)` and it succeeds: the close returns
+ * the one free descriptor and the open takes it.  A pipeline holds both at
+ * once, so the open can reach the host while the close is still owed and the
+ * host answers `EMFILE` — an outcome the sequential program never produces.
+ *
+ * This is the same rule as the adapter test above, on the route generated code
+ * takes.  On a target with a kernel completion ring both operations sit in one
+ * ring, and the refusal arrives as a completion of its own: re-attempting the
+ * open inside the reap pass that saw the refusal races the close, because that
+ * pass sees only the completions the ring had already posted.  The re-attempt
+ * has to wait for the close's completion to be published, and this test fails
+ * for exactly as long as it does not. */
+static int test_bridge_open_behind_a_submitted_close_succeeds(
+    const char *scratch_directory
+) {
+    struct rlimit saved;
+    char path[256];
+    wf_completion_token close_token;
+    wf_completion_token open_token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    int writer;
+    int held;
+    int opened;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-bridge-close-first-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit narrows:
+     * the ring, its wait set, and any helper the policy asks for are created
+     * on the first submission, not here. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+    wf__completion_file_open_join(&open_token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &open_token) == 1);
+    wf__completion_file_join(&open_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    /* Source order, submitted in source order. */
+    CHECK(wf__completion_file_close_submit(held, &close_token) == 1);
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+
+    wf__completion_file_open_join(&open_token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)value;
+
+    wf__completion_file_join(&close_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    CHECK(wf__completion_file_close_submit(opened, &close_token) == 1);
+    wf__completion_file_join(&close_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* The rule's third answer, at the one moment it is about.
+ *
+ * A give-up decision reads the descriptor-return count, then how many
+ * operations are in flight and how many of those are themselves waiting.  A
+ * returning retirement whose increment lands after the first read and whose
+ * in-flight decrement lands before the second is invisible to both: the
+ * decision sees an unchanged generation and nothing left that could give a
+ * descriptor back, and a rule that stopped there would publish an exhaustion
+ * a descriptor had already answered.
+ *
+ * The ledger's schedule point is named so this test can stand exactly between
+ * those two reads instead of racing for the interleaving. */
+static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+    enum wf_retirement_state state;
+
+    /* Two operations in flight: the refused open this waiter is deciding, and
+     * one other that could still return a descriptor. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_mode = WF_HARNESS_POINT_RETIRES;
+    wf_retirement_point_armed = 1;
+    wf_retirement_point_fired = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+
+    state = wf_completion_retirement_state(&waiter);
+
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_armed = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+
+    CHECK(wf_retirement_point_fired == 1);
+    CHECK(state == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&waiter);
+    /* This waiter's own refused open, publishing: it returns nothing. */
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* The two facts the ledger keeps apart, at the moment they differ.
+ *
+ * A refused open has exactly one re-attempt, and the only thing that can make
+ * a second host attempt answer differently from the first is a descriptor
+ * coming back.  An operation that merely ends — a read on a helper thread, a
+ * write, a directory batch — changes what is in flight and nothing else.  A
+ * ledger that counted it as a descriptor return would send the refused open to
+ * the host once more for nothing and then publish the refusal, while the close
+ * it was waiting for was still in flight: exactly the `Ok` this ledger exists
+ * to keep, since source order runs the read, then the close, then the open,
+ * and the open succeeds.
+ *
+ * The schedule is scripted rather than raced for, because it is the whole
+ * point and it is one schedule for both engines: on Linux the read is on the
+ * bounded adapter while the close and the open are on the kernel ring, and a
+ * host whose ring makes that close asynchronous — an `overlayfs` file, whose
+ * `flush` sends `IORING_OP_CLOSE` to a worker — produces this order by itself
+ * often enough to lose an `Ok` at every helper count.  The record carries the
+ * counts; this test carries the schedule, which is the part that must not
+ * depend on a host reaching it. */
+static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+
+    /* Three operations in flight: the refused open this waiter is deciding, a
+     * read that will end returning nothing, and a close that will return a
+     * descriptor. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The read ends.  Something that can still give a descriptor back is in
+     * flight, so this open keeps waiting — and has spent nothing. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The close ends, returning one.  Now, and only now, the re-attempt. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A returned descriptor goes to the waiter that registered first, and only to
+ * that one.
+ *
+ * Two refused opens waiting, one descriptor coming back, and one re-attempt
+ * each: if both are told a descriptor came back, both spend their re-attempt on
+ * it, one of them takes it and the other publishes a refusal it had a claim on.
+ * Which one takes it is then whichever reaches the host first, and source order
+ * says it is the first open that asked. Measured on the racing shape, the
+ * unordered award published the `Ok` at the wrong call in 963 of 1,000 runs.
+ *
+ * The schedule is scripted rather than raced for, because the rule is about
+ * which waiter is told, not about who wins a race: the second waiter keeps
+ * waiting while the first is owed, and what the first does not consume — here,
+ * a descriptor its re-attempt takes and the kind check disposes of, which is a
+ * return again — falls to the next. */
+static int test_a_returned_descriptor_is_awarded_in_waiter_order(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Four operations in flight: the two refused opens these waiters are
+     * deciding, and two others that can still give a descriptor back. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_AWAITED);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+
+    /* One descriptor comes back.  It is owed to the waiter that registered
+     * first, and the later one may not spend its one re-attempt on it. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    /* Asking again awards nothing a second time. */
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+
+    /* The first waiter leaves to spend it, and its re-attempt takes the
+     * descriptor and gives it straight back — the kind check refused it — so
+     * a return falls to the next waiter, which is now the earliest. */
+    wf_completion_retirement_wait_end(&first);
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&second);
+    /* The second waiter's own refused open, and the operation that never
+     * returned anything: neither of them returns one. */
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A descriptor this runtime returned is promised to one open, and an open that
+ * has taken one is charged for it whether or not it ever waited.
+ *
+ * The award mark is what stops two refused opens spending their one re-attempt
+ * each on the same return.  An open whose *first* host attempt succeeds is
+ * outside that accounting entirely: it never registers as a waiter and takes no
+ * award, so the return it consumed is still on offer, and the refused open the
+ * ledger then hands it to spends its single re-attempt on a descriptor that is
+ * already gone.  Measured on the interleave shape before the charge below: 25
+ * lost `Ok`s in 280,000 repetitions, each with a descriptor left over at the
+ * end and a re-attempt count one short of every open having been refused.
+ *
+ * The schedule is scripted rather than raced for, because it is one moment
+ * between two threads — a close landing, an open taking what it returned, and a
+ * waiter asking — and no host reaches it on demand. */
+static int test_an_open_that_took_a_return_is_charged_for_it(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+
+    /* Three operations in flight: the refused open this waiter is deciding, a
+     * close that will return a descriptor, and an open on another thread whose
+     * first host attempt will take it. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The close ends, returning one — and the other open's first attempt takes
+     * it before this waiter next asks.  That open is charged for it, so what
+     * came back is spent and this waiter is not told it may have it. */
+    wf_completion_operation_retired(1);
+    wf_completion_retirement_open_took_a_descriptor(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The open that took it ends holding its descriptor, so it returns
+     * nothing.  Now nothing is left that could bring one back, and this
+     * waiter's one attempt is made here — the moment source order makes it —
+     * rather than earlier against a descriptor another open already held. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_UNREACHABLE);
+
+    wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A descriptor already promised is not promised again to a waiter that arrives
+ * with an older view of the world.
+ *
+ * A waiter's `seen` is read before its own host attempt, and on the ring that
+ * is the moment of submission — long before the kernel refuses it and longer
+ * still before the refusal is reaped and the waiter registers.  Waiters
+ * therefore arrive with `seen` values older than what the ledger has already
+ * done, and they arrive one at a time: each finds the order empty, because the
+ * one before it left to spend its award.  A mark that re-opened on each of
+ * them promised one returned descriptor to all three, and the two that reached
+ * the host after it was taken published the refusal.  Traced on the interleave
+ * shape under load, that is the whole of the rare shortfall: one return,
+ * three awards, two lost `Ok`s and a descriptor left over. */
+static int test_a_promised_descriptor_is_not_promised_again(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Four in flight: two refused opens whose attempts were made at the same
+     * moment, and two closes that will each return a descriptor. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+
+    /* The first refusal is reaped and registers, and the close ends: it is
+     * awarded the descriptor and leaves the order to spend it. */
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    wf_completion_retirement_wait_end(&first);
+
+    /* Now the second refusal is reaped, with the `seen` its own attempt took
+     * before any of this.  It opens the order again, and what it may not be
+     * told is that a descriptor came back for it: the one that came back is
+     * spent.  Its own open is in flight and so is the first waiter's, so this
+     * is not the moment it answers either. */
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+
+    /* A second descriptor comes back, and that one is this waiter's. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&second);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A free that came from outside this runtime, charged to the open that took it,
+ * refuses no waiter.
+ *
+ * No ledger can see a descriptor a thread of the program's own gave back, so an
+ * open the host satisfies from one looks exactly like an open that took a
+ * return of this runtime's, and the charge falls on it either way.  That can
+ * deprive a waiter of an award it was owed, which is the adversarial schedule
+ * this stands for — and what it costs that waiter is nothing it is entitled to:
+ * being deprived is not being refused.  Raced rather than scripted, on a probe
+ * that arranges exactly this against a raw `close` the runtime never made, the
+ * charge deprived the waiter in every one of 2,000 repetitions and the waiter
+ * published its `Ok` in every one of them.  It keeps waiting while anything is in
+ * flight, and its one attempt is then made at the moment nothing is left that
+ * could bring a descriptor back, with the return it was deprived of still in
+ * the host's table for it to take.  Charging is bounded by the unspent returns
+ * for the same reason: past them there is nothing to deprive anyone of. */
+static int test_an_outside_free_charged_to_an_open_refuses_no_waiter(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+
+    /* Four operations in flight: the refused open this waiter is deciding, a
+     * close that returns a descriptor, an open the host satisfies from a
+     * descriptor a thread of the program's own gave back, and a read. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The close returns one, and the other open takes the outside descriptor.
+     * The ledger charges it against the return it can see, so this waiter is
+     * deprived — and kept waiting, which is the whole of what happens to it. */
+    wf_completion_operation_retired(1);
+    wf_completion_retirement_open_took_a_descriptor(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* That open ends holding its descriptor.  The read is still running and
+     * could still give one back, so this is not the moment to answer either. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_AWAITED);
+
+    /* The read ends returning nothing.  Nothing is left, so the deprived
+     * waiter attempts here, with the runtime's own return still unclaimed. */
+    wf_completion_operation_retired(0);
+    CHECK(wf_completion_retirement_state(&waiter) == WF_RETIREMENT_UNREACHABLE);
+
+    wf_completion_retirement_wait_end(&waiter);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* An attempt made on an award is not charged again for what the award already
+ * spent.
+ *
+ * The mark moves once per descriptor, and there are two places it can move: the
+ * decision that grants an award, and the open that takes a descriptor.  The
+ * re-attempt a waiter makes with an award in hand is both of those at once, so
+ * it says which it is; charging it twice would take a second return out of the
+ * ledger's account and refuse the next waiter the one it is owed. */
+static int test_an_awarded_attempt_is_charged_once(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Four in flight: two refused opens, and two closes that each return a
+     * descriptor — one for each of them. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+
+    /* The first close returns one, awarded to the earliest waiter, which
+     * leaves the order to spend it. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    CHECK(first.awarded != 0);
+    wf_completion_retirement_wait_end(&first);
+
+    /* The second close returns the other one while that re-attempt is being
+     * made, so there is an unspent return for a charge to take. */
+    wf_completion_operation_retired(1);
+
+    /* The re-attempt takes the descriptor it was awarded.  The mark moved when
+     * the award was granted, so this says so and moves nothing — and the
+     * return the second close made is still the second waiter's. */
+    wf_completion_retirement_open_took_a_descriptor(first.awarded);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&second);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* The work a waiter owes is read where the decision is made, never handed to
+ * the ledger as a reading taken before it.
+ *
+ * A refused open on the bounded adapter is answerable for that adapter's
+ * queue: the items behind a suspended caller cannot retire while it waits, and
+ * the items in front of a thread that will run them are the answer rather than
+ * a reason to sleep.  Either way the number is live — a submission lands while
+ * the decision is being made — and the decision is made under the lock every
+ * wake takes.  A ledger handed the count from before that lock sleeps on a
+ * queue that has already grown, and the wake for that growth has already
+ * passed: the process stops with a helper asleep and work in the queue, which
+ * is what a 200-run TSan sweep at one helper caught once.
+ *
+ * The schedule point stands between the ledger's two reads, so this test can
+ * put the submission exactly there instead of racing for it. */
+static int test_the_work_a_waiter_owes_is_read_where_it_decides(void) {
+    wf_retirement_waiter waiter;
+    uint64_t seen;
+    enum wf_retirement_state state;
+
+    /* Three operations in flight: the refused open this waiter is deciding and
+     * two queued behind the caller it suspended, which only that caller can
+     * run. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    atomic_store_explicit(&wf_harness_owed_work, 2, memory_order_seq_cst);
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(
+        &waiter,
+        seen,
+        wf_harness_owed,
+        NULL,
+        0
+    );
+
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_mode = WF_HARNESS_POINT_QUEUES_OWED;
+    wf_retirement_point_armed = 1;
+    wf_retirement_point_fired = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+
+    state = wf_completion_retirement_state(&waiter);
+
+    (void)pthread_mutex_lock(&wf_retirement_point_lock);
+    wf_retirement_point_armed = 0;
+    (void)pthread_mutex_unlock(&wf_retirement_point_lock);
+
+    CHECK(wf_retirement_point_fired == 1);
+    /* Four in flight now, and all four are this waiter or work stuck behind
+     * it: nothing anywhere else can give a descriptor back, so the refusal is
+     * the program's outcome.  Read from before the point, the same ledger says
+     * three of four, concludes something else is running, and waits for a
+     * retirement that nothing will produce. */
+    CHECK(state == WF_RETIREMENT_UNREACHABLE);
+
+    wf_completion_retirement_wait_end(&waiter);
+    atomic_store_explicit(&wf_harness_owed_work, 0, memory_order_seq_cst);
+    /* The refused open and the queue behind it: none of them returned one. */
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A waiter that runs the work it owes keeps its place, and with it the return
+ * that place is owed.
+ *
+ * A refused open on the bounded adapter runs its own queue before it decides,
+ * and an open among that work is one sequential execution runs after it.  A
+ * waiter that left the order to run it and registered again on the way back
+ * would return behind every open refused meanwhile, and the ledger would hand
+ * the descriptor — and with it the program's one `Ok` — to the later call: on a
+ * scripted two-waiter shape, to the later one in 200 runs of 200.
+ *
+ * So running that work costs a waiter its turn to publish and nothing else.
+ * The later open takes the refusal sequential execution gives it, which is what
+ * the second answer below is, and the descriptor stays where registration order
+ * put it. */
+static int test_a_waiter_that_stands_aside_keeps_its_claim(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Three operations in flight: the two refused opens these waiters are
+     * deciding, and one that can still give a descriptor back. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+
+    /* The earlier waiter's thread goes into another operation, and the
+     * descriptor comes back while it is there. */
+    wf_completion_retirement_defer_begin(&first);
+    wf_completion_operation_retired(1);
+    CHECK(
+        wf_completion_retirement_state(&second) == WF_RETIREMENT_UNREACHABLE
+    );
+    wf_completion_retirement_wait_end(&second);
+
+    /* It comes back to the ledger and the return is still its own. */
+    wf_completion_retirement_defer_end(&first);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    wf_completion_retirement_wait_end(&first);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A waiter parked on the runtime's endpoint is woken by a second waiter
+ * registering.
+ *
+ * The two places a refused open can sleep are this ledger's condition variable
+ * and the runtime's park endpoint, and a transition that reaches one of them
+ * stops the process at the other.  This is that transition: one more waiter is
+ * one fewer operation that can retire, so it turns the first waiter's answer
+ * from "keep waiting" into "publish" — and the first waiter is inside a
+ * blocking direct call, parked on the endpoint, where a broadcast on the
+ * condition variable is never heard.
+ *
+ * The schedule is scripted and needs nothing asynchronous from the host, which
+ * is what lets it run everywhere the harness runs rather than only where an
+ * overlay can be mounted.  The table is narrowed until the host refuses an open
+ * outright, one operation is entered in the ledger by hand so that the refused
+ * open waits instead of publishing, and the second waiter is registered from
+ * this thread once the first is in the order.  A runtime that leaves the
+ * endpoint out of that announcement parks the direct call forever; the bound
+ * below makes that a failed check rather than a hang. */
+struct wf_harness_parked_direct_open {
+    const char *path;
+    int value;
+    int error_code;
+    unsigned outcome;
+    _Atomic unsigned finished;
+};
+
+static void *wf_harness_parked_direct_open_main(void *context) {
+    struct wf_harness_parked_direct_open *call = context;
+    call->value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        call->path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &call->error_code,
+        &call->outcome
+    );
+    atomic_store_explicit(&call->finished, 1u, memory_order_seq_cst);
+    return NULL;
+}
+
+static void wf_harness_parked_direct_open_arm(
+    struct wf_harness_parked_direct_open *call,
+    const char *path
+) {
+    call->path = path;
+    call->value = 0;
+    call->error_code = 0;
+    call->outcome = WF_FILE_OPEN_SUCCEEDED;
+    atomic_store_explicit(&call->finished, 0u, memory_order_seq_cst);
+}
+
+static void wf_harness_pause_a_millisecond(void) {
+    struct timespec pause;
+    pause.tv_sec = 0;
+    pause.tv_nsec = 1000L * 1000L;
+    (void)nanosleep(&pause, NULL);
+}
+
+/* Up to four seconds for the waiter order to reach this many. */
+static void wf_harness_wait_for_waiters(size_t wanted) {
+    int attempt;
+    for (attempt = 0;
+         attempt < 4000 && wf_completion_retirement_waiters() < wanted;
+         ++attempt) {
+        wf_harness_pause_a_millisecond();
+    }
+}
+
+/* Long enough that the direct call is asleep in its park rather than on its
+ * way there when the transition below is made. */
+static void wf_harness_settle(void) {
+    struct timespec settle;
+    settle.tv_sec = 0;
+    settle.tv_nsec = 50L * 1000L * 1000L;
+    (void)nanosleep(&settle, NULL);
+}
+
+/* Up to eight seconds for the direct call to publish.  A runtime that leaves
+ * the endpoint out of the announcement never publishes here, and this bound is
+ * what turns that into a failed check rather than a hang. */
+static int wf_harness_the_direct_call_published(
+    struct wf_harness_parked_direct_open *call
+) {
+    int attempt;
+    for (attempt = 0; attempt < 8000; ++attempt) {
+        if (atomic_load_explicit(&call->finished, memory_order_seq_cst)
+            != 0u) {
+            return 1;
+        }
+        wf_harness_pause_a_millisecond();
+    }
+    return 0;
+}
+
+/* Narrows the table, runs one of the two schedules below on it, and restores
+ * the descriptor and the limit on every way out — the ways a broken runtime
+ * takes included, so that a red run reports a failed check and leaves the rest
+ * of the harness able to open files. */
+static int wf_harness_endpoint_wake_test(
+    const char *scratch_directory,
+    const char *name,
+    int (*schedule)(const char *path)
+) {
+    struct rlimit saved;
+    char path[256];
+    int held;
+    int writer;
+    int outcome;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-%s-%ld",
+            scratch_directory,
+            name,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* On its own failure paths this helper holds nothing and has restored the
+     * limit itself, so there is nothing here to undo. */
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    if (held < 0) {
+        (void)unlink(path);
+        CHECK(0);
+    }
+    outcome = schedule(path);
+    (void)close(held);
+    (void)setrlimit(RLIMIT_NOFILE, &saved);
+    (void)unlink(path);
+    return outcome;
+}
+
+static int wf_harness_registration_wake_schedule(const char *path) {
+    struct wf_harness_parked_direct_open call;
+    wf_retirement_waiter second;
+    pthread_t opener;
+    int probe;
+    int finished = 0;
+
+    /* The premise: with the table full the host refuses an open outright. */
+    probe = open(path, O_RDONLY);
+    if (probe >= 0) {
+        (void)close(probe);
+    }
+    CHECK(probe < 0);
+
+    /* The operation that keeps the refused open waiting.  Entered in the
+     * ledger by hand, so it belongs to no engine and blocks no thread. */
+    wf_completion_operation_accepted();
+    wf_harness_parked_direct_open_arm(&call, path);
+    if (pthread_create(
+            &opener,
+            NULL,
+            wf_harness_parked_direct_open_main,
+            &call
+        ) != 0) {
+        wf_completion_operation_retired(0);
+        CHECK(0);
+    }
+
+    /* The first waiter is in the order and has nothing to drive, so it is
+     * parked on the endpoint. */
+    wf_harness_wait_for_waiters(1u);
+    if (wf_completion_retirement_waiters() != 0) {
+        wf_harness_settle();
+        /* The transition.  Now every operation in flight is a waiter, so the
+         * earliest of them publishes — if it is told. */
+        wf_completion_retirement_wait_begin(
+            &second,
+            wf_completion_descriptor_returns(),
+            NULL,
+            NULL,
+            0
+        );
+        finished = wf_harness_the_direct_call_published(&call);
+        wf_completion_retirement_wait_end(&second);
+    }
+    /* Release the call and take the thread back before anything is checked:
+     * it holds a pointer into this frame, and on a red run the retirement
+     * below is what lets it answer at all. */
+    wf_completion_operation_retired(0);
+    (void)pthread_join(opener, NULL);
+    CHECK(finished != 0);
+    /* And what it published is the refusal, not a descriptor it never had. */
+    CHECK(call.value < 0);
+    CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
+    return 0;
+}
+
+static int test_a_registration_wakes_a_waiter_parked_on_the_endpoint(
+    const char *scratch_directory
+) {
+    return wf_harness_endpoint_wake_test(
+        scratch_directory,
+        "endpoint-wake",
+        wf_harness_registration_wake_schedule
+    );
+}
+
+/* A waiter parked on the runtime's endpoint is woken by an earlier waiter
+ * standing aside.
+ *
+ * The other transition that can hand a parked waiter a terminal answer, and
+ * the one the announcement rule was written without.  Standing aside is not
+ * leaving: the waiter keeps its place and its claim on a return, and gives up
+ * only the duty to publish — which hands that duty to the next waiter in the
+ * order, whose answer turns from "keep waiting" into "publish".  That waiter
+ * can be one registered long before the aside began, asleep on the endpoint,
+ * where the ledger's own condition variable is never heard.
+ *
+ * Scripted the same way as the test above and discriminating the same way: the
+ * direct call must still be parked the moment before the aside, and must
+ * publish during it. */
+static int wf_harness_standing_aside_wake_schedule(const char *path) {
+    struct wf_harness_parked_direct_open call;
+    wf_retirement_waiter earlier;
+    pthread_t opener;
+    int probe;
+    int finished = 0;
+    int published_before_the_aside = 1;
+
+    probe = open(path, O_RDONLY);
+    if (probe >= 0) {
+        (void)close(probe);
+    }
+    CHECK(probe < 0);
+
+    /* The waiter that registers first, and the operation it is deciding —
+     * entered by hand, so it belongs to no engine and blocks no thread. */
+    wf_completion_operation_accepted();
+    wf_completion_retirement_wait_begin(
+        &earlier,
+        wf_completion_descriptor_returns(),
+        NULL,
+        NULL,
+        0
+    );
+    wf_harness_parked_direct_open_arm(&call, path);
+    if (pthread_create(
+            &opener,
+            NULL,
+            wf_harness_parked_direct_open_main,
+            &call
+        ) != 0) {
+        wf_completion_retirement_wait_end(&earlier);
+        wf_completion_operation_retired(0);
+        CHECK(0);
+    }
+
+    /* The direct call registers behind it and parks: both operations in
+     * flight are waiters, so nothing can bring a descriptor back — but the
+     * earliest waiter is the other one, so this one keeps waiting. */
+    wf_harness_wait_for_waiters(2u);
+    if (wf_completion_retirement_waiters() >= 2u) {
+        wf_harness_settle();
+        published_before_the_aside = atomic_load_explicit(
+            &call.finished,
+            memory_order_seq_cst
+        ) != 0u;
+        /* The transition: the earlier waiter's thread goes into another
+         * operation, which hands the earliest deciding place — and with it
+         * the answer that nothing can bring a descriptor back — to the call
+         * parked on the endpoint. */
+        wf_completion_retirement_defer_begin(&earlier);
+        finished = wf_harness_the_direct_call_published(&call);
+        wf_completion_retirement_defer_end(&earlier);
+    }
+    wf_completion_retirement_wait_end(&earlier);
+    wf_completion_operation_retired(0);
+    (void)pthread_join(opener, NULL);
+    CHECK(published_before_the_aside == 0);
+    CHECK(finished != 0);
+    CHECK(call.value < 0);
+    CHECK(call.error_code == EMFILE || call.error_code == ENFILE);
+    return 0;
+}
+
+static int test_standing_aside_wakes_a_waiter_parked_on_the_endpoint(
+    const char *scratch_directory
+) {
+    return wf_harness_endpoint_wake_test(
+        scratch_directory,
+        "aside-wake",
+        wf_harness_standing_aside_wake_schedule
+    );
+}
+
+/* An open registered behind a waiter that stands aside can still answer.
+ *
+ * This is why standing aside gives up publishing: the operation that waiter is
+ * running can be an open that is refused in its turn and registers behind it.
+ * A ledger that made that one wait for the earliest waiter in the order would
+ * have it waiting for the thread that is waiting for it, and neither ever
+ * answers. */
+static int test_a_waiter_behind_one_that_stands_aside_can_answer(void) {
+    wf_retirement_waiter running;
+    wf_retirement_waiter behind;
+    uint64_t seen;
+
+    /* Two operations in flight, both of them refused opens: the one whose
+     * thread went on to run the other, and the other. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+    wf_completion_retirement_wait_begin(&running, seen, NULL, NULL, 0);
+    wf_completion_retirement_defer_begin(&running);
+    wf_completion_retirement_wait_begin(&behind, seen, NULL, NULL, 0);
+
+    CHECK(
+        wf_completion_retirement_state(&behind) == WF_RETIREMENT_UNREACHABLE
+    );
+    wf_completion_retirement_wait_end(&behind);
+    wf_completion_operation_retired(0);
+
+    wf_completion_retirement_defer_end(&running);
+    CHECK(
+        wf_completion_retirement_state(&running) == WF_RETIREMENT_UNREACHABLE
+    );
+    wf_completion_retirement_wait_end(&running);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
+/* A refused open must see an operation in flight on the *other* engine.
+ *
+ * This is the shape a program reaches without writing anything unusual: a read
+ * the bounded helper pool carries and an open the target's native ring
+ * carries, in flight together.  Source order runs the read, then the close
+ * that happens inside it, then the open, and the open succeeds.  A pipeline
+ * decides the open's refusal from one engine's own state instead, and the read
+ * running on the other one is invisible there: `wf__completion_file_read_submit`
+ * has no ring route, so on Linux the read is on the helper adapter while the
+ * open is on the ring, and a ring that asks only about itself sees one
+ * operation in flight — the refused open — and publishes an `Err` the
+ * sequential program never produces.
+ *
+ * The schedule is fixed rather than raced for.  The read is not merely
+ * submitted but parked: it reaches the adapter's readiness wait, which is a
+ * named host call, so the test knows it is in flight.  The releasing thread
+ * then stands at the moment the runtime holds the refused open — a count of
+ * its own — and only then gives the descriptor back and lets the read finish.
+ * A runtime that published the refusal instead never reaches that count, and
+ * the bound in the releasing thread turns that into a failed check rather than
+ * a hang. */
+struct wf_harness_parked_read {
+    wf_completion_token token;
+    int64_t value;
+    int error_code;
+};
+
+static void *wf_harness_parked_read_main(void *context) {
+    struct wf_harness_parked_read *parked = context;
+    wf__completion_file_join(
+        &parked->token,
+        &parked->value,
+        &parked->error_code
+    );
+    return NULL;
+}
+
+struct wf_harness_release_after_the_hold {
+    int held;
+    int pipe_writer;
+    uint64_t waits_before;
+    unsigned wait_for_the_hold;
+    ssize_t released;
+    unsigned observed_the_hold;
+};
+
+static void *wf_harness_release_after_the_hold_main(void *context) {
+    struct wf_harness_release_after_the_hold *release = context;
+    int attempt;
+    for (attempt = 0;
+         release->wait_for_the_hold != 0 && attempt < 4000;
+         ++attempt) {
+        struct timespec pause;
+        if (wf__completion_open_exhaustion_waits() != release->waits_before) {
+            release->observed_the_hold = 1;
+            break;
+        }
+        pause.tv_sec = 0;
+        pause.tv_nsec = 1000L * 1000L;
+        (void)nanosleep(&pause, NULL);
+    }
+    (void)close(release->held);
+    release->released = write(release->pipe_writer, "x", 1);
+    return NULL;
+}
+
+static int test_bridge_open_waits_for_the_other_engine(
+    const char *scratch_directory
+) {
+    struct wf_harness_parked_read parked;
+    struct wf_harness_release_after_the_hold release;
+    pthread_t reader;
+    pthread_t releaser;
+    wf_completion_token token;
+    wf_completion_token open_token;
+    struct rlimit saved;
+    char path[256];
+    unsigned char received = 0;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    uint64_t ring_submissions;
+    int pipe_pair[2];
+    int writer;
+    int held;
+    int opened;
+    int attempt;
+    int the_open_has_an_engine_of_its_own;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-other-engine-bridge-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit narrows:
+     * the ring, its wait set, and any helper the policy asks for are created
+     * on the first submission, not here.  The warm open also answers which
+     * engine an open takes on this host. */
+    ring_submissions = wf__completion_linux_io_uring_submissions();
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    /* Whether the schedule this test is about exists at all on this host and
+     * helper count.  It needs a second engine: one carrying the read while
+     * another attempts the open.  A target whose ring carries opens always has
+     * one, and so does a helper pool of any size but exactly one — with a
+     * single pinned helper parked in the read, the open has nowhere to run
+     * until the read finishes and the runtime is never asked the question.
+     * Where it is asked, it must hold; where it is not, the outcome is still
+     * the program's. */
+    the_open_has_an_engine_of_its_own =
+        wf__completion_linux_io_uring_submissions() != ring_submissions
+        || wf__completion_target_helper_count() != 1;
+    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    CHECK(pipe(pipe_pair) == 0);
+    CHECK(fcntl(pipe_pair[0], F_SETFL, O_NONBLOCK) == 0);
+    (void)pthread_mutex_lock(&wf_poll_gate_lock);
+    wf_poll_gate_descriptor = pipe_pair[0];
+    wf_poll_gate_entries = 0;
+    (void)pthread_mutex_unlock(&wf_poll_gate_lock);
+
+    parked.value = -1;
+    parked.error_code = -1;
+    CHECK(
+        wf__completion_file_read_submit(
+            pipe_pair[0],
+            &received,
+            1u,
+            &parked.token
+        ) == 1
+    );
+    CHECK(
+        pthread_create(&reader, NULL, wf_harness_parked_read_main, &parked)
+        == 0
+    );
+    /* The read is in flight once it has reached its readiness wait.  With no
+     * helper the joining thread above is the engine that takes it there. */
+    (void)pthread_mutex_lock(&wf_poll_gate_lock);
+    for (attempt = 0; attempt < 4000 && wf_poll_gate_entries == 0; ++attempt) {
+        struct timespec pause;
+        (void)pthread_mutex_unlock(&wf_poll_gate_lock);
+        pause.tv_sec = 0;
+        pause.tv_nsec = 1000L * 1000L;
+        (void)nanosleep(&pause, NULL);
+        (void)pthread_mutex_lock(&wf_poll_gate_lock);
+    }
+    CHECK(wf_poll_gate_entries != 0);
+    (void)pthread_mutex_unlock(&wf_poll_gate_lock);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    /* The premise: with the table full the host refuses an open outright. */
+    CHECK(open(path, O_RDONLY) < 0);
+
+    release.held = held;
+    release.pipe_writer = pipe_pair[1];
+    release.waits_before = wf__completion_open_exhaustion_waits();
+    release.wait_for_the_hold =
+        the_open_has_an_engine_of_its_own != 0 ? 1u : 0u;
+    release.released = -1;
+    release.observed_the_hold = 0;
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &open_token
+        ) == 1
+    );
+    CHECK(
+        pthread_create(
+            &releaser,
+            NULL,
+            wf_harness_release_after_the_hold_main,
+            &release
+        ) == 0
+    );
+
+    value = -1;
+    error_code = -1;
+    open_outcome = WF_FILE_OPEN_FAILED;
+    wf__completion_file_open_join(
+        &open_token,
+        &value,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(pthread_join(releaser, NULL) == 0);
+    CHECK(pthread_join(reader, NULL) == 0);
+    CHECK(release.released == 1);
+    /* The runtime held the refused open rather than publishing it, which is
+     * the fact the whole rule is about. */
+    if (the_open_has_an_engine_of_its_own != 0) {
+        CHECK(release.observed_the_hold == 1);
+    }
+    /* And the outcome the program sees is the one source order produces. */
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    opened = (int)value;
+    CHECK(parked.value == 1 && parked.error_code == 0);
+    CHECK(received == 'x');
+
+    (void)pthread_mutex_lock(&wf_poll_gate_lock);
+    wf_poll_gate_descriptor = -1;
+    (void)pthread_mutex_unlock(&wf_poll_gate_lock);
+    CHECK(wf__completion_file_close_submit(opened, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(close(pipe_pair[0]) == 0);
+    CHECK(close(pipe_pair[1]) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* One close and two opens, which is the smallest shape a K-slot loop makes.
+ *
+ * Source order closes the one held descriptor, opens with it, and is refused
+ * the second time: exactly one `Ok` and one `Err(ResourceExhausted)`.  A
+ * pipeline holds all three at once, so both opens can reach the host while the
+ * close is still owed and both can be refused — and both refusals published is
+ * an outcome the sequential program never produces.
+ *
+ * What made that reachable was a refused open running a sibling open out of
+ * its own queue and publishing that sibling's refusal with no second attempt
+ * at all, while spending its own on a close that had not finished.  Owed work
+ * now follows the same rule as the operation that ran it: it may wait for a
+ * retirement, and only draining further is denied it, because the caller
+ * suspended inside it is the thread that would run the rest of the queue.
+ *
+ * Repeated, because which thread takes which of the three is the schedule this
+ * is about; one repetition would pass by luck at any helper count. */
+static int test_bridge_one_of_two_opens_behind_a_close_succeeds(
+    const char *scratch_directory
+) {
+    wf_completion_token close_token;
+    wf_completion_token open_tokens[2];
+    struct rlimit saved;
+    char path[256];
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    int writer;
+    int repetition;
+    size_t index;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-two-opens-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit narrows. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &close_token
+        ) == 1
+    );
+    wf__completion_file_open_join(
+        &close_token,
+        &value,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &close_token) == 1);
+    wf__completion_file_join(&close_token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    for (repetition = 0; repetition < 16; ++repetition) {
+        int opened = -1;
+        int successes = 0;
+        int refusals = 0;
+        int held = wf_harness_hold_the_last_descriptor(path, &saved);
+        CHECK(held >= 0);
+        CHECK(open(path, O_RDONLY) < 0);
+
+        CHECK(wf__completion_file_close_submit(held, &close_token) == 1);
+        for (index = 0; index < 2; ++index) {
+            CHECK(
+                wf__completion_file_open_at_submit(
+                    AT_FDCWD,
+                    path,
+                    O_RDONLY,
+                    0u,
+                    0u,
+                    WF_FILE_EXPECT_REGULAR,
+                    &open_tokens[index]
+                ) == 1
+            );
+        }
+        for (index = 0; index < 2; ++index) {
+            value = -1;
+            error_code = -1;
+            open_outcome = 99u;
+            wf__completion_file_open_join(
+                &open_tokens[index],
+                &value,
+                &error_code,
+                &open_outcome
+            );
+            if (value >= 0 && error_code == 0
+                && open_outcome == WF_FILE_OPEN_SUCCEEDED) {
+                successes += 1;
+                opened = (int)value;
+            } else {
+                refusals += 1;
+                CHECK(error_code == EMFILE || error_code == ENFILE);
+                CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+            }
+        }
+        value = -1;
+        error_code = -1;
+        wf__completion_file_join(&close_token, &value, &error_code);
+        CHECK(value == 0 && error_code == 0);
+        CHECK(successes == 1);
+        CHECK(refusals == 1);
+        CHECK(opened >= 0);
+        CHECK(wf__completion_file_close_submit(opened, &close_token) == 1);
+        wf__completion_file_join(&close_token, &value, &error_code);
+        CHECK(value == 0 && error_code == 0);
+        CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    }
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* Every operation record this runtime has, all holding a refused open at once.
+ *
+ * The rule holds an open the host refused while something in flight could
+ * still give a descriptor back, so a program that fills the whole operation
+ * capacity with opens against a full descriptor table makes every record a
+ * held one, and the thread that submits the next is waiting for a record to
+ * come free. Nothing can retire, so every one of them is the program's own
+ * outcome and must be published — the answer source order gives too, since a
+ * sequential execution reaches each of these opens with the table still full.
+ *
+ * What this catches is the shape where waiting does not end. A refused open
+ * that runs the work its own adapter owes is not, meanwhile, an engine for the
+ * work queued behind it, and one that decided that once and then slept is
+ * waiting for an operation only it could have run. This test is the pressure
+ * that makes that difference: it queues far more work than there are threads
+ * to take it, while every thread is inside the rule.
+ */
+static int test_bridge_every_record_holding_a_refused_open_publishes(
+    const char *scratch_directory
+) {
+    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
+    wf_completion_token token;
+    struct rlimit saved;
+    char path[256];
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    size_t submitted = 0;
+    size_t index;
+    int writer;
+    int held;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-every-record-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+
+    /* Warm every descriptor the bridge itself needs before the limit
+     * narrows. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    held = wf_harness_hold_the_last_descriptor(path, &saved);
+    CHECK(held >= 0);
+    CHECK(open(path, O_RDONLY) < 0);
+
+    while (submitted < WF_HARNESS_OPERATION_CAPACITY) {
+        if (wf__completion_file_open_at_submit(
+                AT_FDCWD,
+                path,
+                O_RDONLY,
+                0u,
+                0u,
+                WF_FILE_EXPECT_REGULAR,
+                &tokens[submitted]
+            ) != 1) {
+            break;
+        }
+        submitted += 1;
+    }
+    CHECK(submitted > 0);
+    for (index = 0; index < submitted; ++index) {
+        value = -1;
+        error_code = -1;
+        open_outcome = 99u;
+        wf__completion_file_open_join(
+            &tokens[index],
+            &value,
+            &error_code,
+            &open_outcome
+        );
+        CHECK(value < 0);
+        CHECK(error_code == EMFILE || error_code == ENFILE);
+        CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+    }
+
+    CHECK(close(held) == 0);
+    CHECK(setrlimit(RLIMIT_NOFILE, &saved) == 0);
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
 static int test_native_contract_inventory(void) {
     wf_completion_target_contract darwin = wf_completion_target_contract_for(
         WF_TARGET_DARWIN_FILE_FALLBACK
@@ -3303,11 +5560,45 @@ static int benchmark_core_roundtrip(uint64_t *nanoseconds_per_operation) {
     return 0;
 }
 
+/* The name of the test now running, for the watchdog below.  Written by the
+ * main thread and read by a signal handler, which is why it is a plain
+ * pointer to a string literal: the store is a single aligned word and the
+ * handler only prints it. */
+static const char *volatile wf_harness_running = "startup";
+
+/* A deadlock is now a failure mode of this suite, so it gets a name.
+ *
+ * The rule a refused open follows makes threads wait for each other on
+ * purpose, and a mistake in it does not produce a wrong answer — it produces
+ * no answer, which without this would surface as a build job that never ends
+ * and a log with nothing in it. The bound is three orders of magnitude above
+ * what the whole suite takes, so it can only fire on a schedule that has
+ * genuinely stopped. */
+static void wf_harness_watchdog(int signal_number) {
+    static const char message[] = "completion harness: no progress in test: ";
+    ssize_t ignored;
+    (void)signal_number;
+    ignored = write(2, message, sizeof(message) - 1u);
+    ignored = write(2, wf_harness_running, strlen(wf_harness_running));
+    ignored = write(2, "\n", 1);
+    (void)ignored;
+    _exit(9);
+}
+
 int main(int argc, char **argv) {
     uint64_t roundtrip_ns = 0;
     int trace = getenv("WF_COMPLETION_TRACE") != NULL;
+    struct sigaction watchdog;
+    memset(&watchdog, 0, sizeof(watchdog));
+    watchdog.sa_handler = wf_harness_watchdog;
+    if (sigaction(SIGALRM, &watchdog, NULL) != 0) {
+        fprintf(stderr, "completion harness: no watchdog\n");
+        return 2;
+    }
+    (void)alarm(300u);
 #define RUN_TEST(...)                                                         \
     do {                                                                      \
+        wf_harness_running = #__VA_ARGS__;                                    \
         if (trace) {                                                          \
             fprintf(stderr, "completion harness: begin %s\n", #__VA_ARGS__); \
         }                                                                     \
@@ -3369,6 +5660,33 @@ int main(int argc, char **argv) {
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_capacity_release_wakes_before_blocking_work());
+    RUN_TEST(test_completion_window_answers_at_the_boundaries());
+    RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
+    RUN_TEST(test_descriptor_return_follows_the_outcome());
+    RUN_TEST(test_a_ring_close_counts_a_return_only_when_it_ran(argv[1]));
+    RUN_TEST(test_open_exhaustion_retires_owned_work_and_retries(argv[1]));
+    RUN_TEST(test_open_exhaustion_waits_for_another_engine(argv[1]));
+    RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
+    RUN_TEST(test_bridge_open_behind_a_submitted_close_succeeds(argv[1]));
+    RUN_TEST(test_a_retirement_between_the_ledger_reads_is_not_missed());
+    RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
+    RUN_TEST(test_a_returned_descriptor_is_awarded_in_waiter_order());
+    RUN_TEST(test_an_open_that_took_a_return_is_charged_for_it());
+    RUN_TEST(test_a_promised_descriptor_is_not_promised_again());
+    RUN_TEST(test_an_outside_free_charged_to_an_open_refuses_no_waiter());
+    RUN_TEST(test_an_awarded_attempt_is_charged_once());
+    RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());
+    RUN_TEST(test_a_waiter_that_stands_aside_keeps_its_claim());
+    RUN_TEST(test_a_waiter_behind_one_that_stands_aside_can_answer());
+    RUN_TEST(
+        test_a_registration_wakes_a_waiter_parked_on_the_endpoint(argv[1])
+    );
+    RUN_TEST(
+        test_standing_aside_wakes_a_waiter_parked_on_the_endpoint(argv[1])
+    );
+    RUN_TEST(test_bridge_open_waits_for_the_other_engine(argv[1]));
+    RUN_TEST(test_bridge_one_of_two_opens_behind_a_close_succeeds(argv[1]));
+    RUN_TEST(test_bridge_every_record_holding_a_refused_open_publishes(argv[1]));
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_directory_progress_is_internal());
     RUN_TEST(benchmark_core_roundtrip(&roundtrip_ns));

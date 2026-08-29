@@ -103,6 +103,9 @@ jobs:
           make -C compiler completion-core-read-tsan CC=/usr/bin/clang
           make -C compiler completion-default-route-tsan CC=/usr/bin/clang
 
+      - name: Thread sanitizer over the bridge and the ring
+        run: make -C compiler completion-tsan CC=/usr/bin/clang
+
   completion-windows:
     name: completion-windows (windows-latest)
     runs-on: windows-latest

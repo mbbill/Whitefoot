@@ -75,6 +75,36 @@ pub enum BackendFailure {
     /// a target-layout stop this is an emitter capability limit and not a
     /// source-language rejection; it cites no language rule [DIAG-1].
     SecondOutstandingCompletionOperation,
+    /// A function ended with a target operation still outstanding. A staged
+    /// loop pipeline may leave operations in flight across the blocks it
+    /// names, but every path out of its loop reaches a block it does not name,
+    /// and that block retires them. A pipeline that named a block on every
+    /// exit path would leave an accepted operation owned by nobody — the
+    /// target would still write its result into storage the frame no longer
+    /// exists to hold. Like the refusal above this is an emitter capability
+    /// limit rather than a source-language rejection; it cites no language
+    /// rule [DIAG-1].
+    UnretiredCompletionOperation,
+    /// A staged loop pipeline's ring cannot be addressed by the blocks that
+    /// reach it. Exactly three descriptors raise this: a ring with no slots at
+    /// all; a slot a block names that is not a `u64` *value of the function*;
+    /// and, with a ring in force — a descriptor of more than one slot — a
+    /// block that reaches completion storage while naming no slot: the
+    /// reservation refuses the *carrying* block that starts an operation, and
+    /// the element pointer refuses whichever block addresses that ring, rather
+    /// than handing back element zero, since that is the silent sharing the
+    /// ring exists to prevent. With a one-slot descriptor there is no ring
+    /// element at all and a missing slot is refused nowhere; a non-carrying
+    /// block under a multi-slot descriptor likewise takes its own one-element
+    /// reservation and is refused nowhere. Nothing else is
+    /// checked. In particular the value's *dominance* over the block naming
+    /// it, and its *range* against the ring width, are trusted exactly as
+    /// every other operand this emitter renders is trusted: a driver threads
+    /// the slot along the edges into its region and owes the range a static
+    /// refusal or a proof of its own. Like the two refusals above this is an
+    /// emitter capability limit rather than a source-language rejection; it
+    /// cites no language rule [DIAG-1].
+    MisaddressedCompletionSlot,
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -391,6 +421,12 @@ fn emit_llvm_for(
     if completion_used {
         text.push('\n');
         text.push_str(completion::COMPLETION_RUNTIME_FALLBACK);
+        // Emitted only where a module actually asks for a window, exactly as
+        // the split budget's fallback is, so a module that stages no loop
+        // names no such symbol at all.
+        if functions.contains("@wf__completion_window(") {
+            text.push_str(completion::COMPLETION_WINDOW_FALLBACK);
+        }
     }
     if stackless.is_some() {
         text.push('\n');
@@ -696,8 +732,64 @@ struct FunctionEmitter<'program, 'state> {
     /// step reaches.  Their wait sets contain only ordinary prior result/loan
     /// dependencies retained by lowering.
     completion_steps: HashMap<IrValueId, crate::IrCompletionStep>,
-    /// Hand-outs emitted in the current block and not yet joined.
+    /// Hand-outs emitted and not yet joined.
+    ///
+    /// Ordinarily this is empty at every terminator, because a block joins
+    /// everything it handed out before it ends. A function carrying a staged
+    /// loop pipeline is the exception: a block the pipeline names leaves its
+    /// operations here, and every block it does not name drains them.
     handed_out: Vec<HandedOut>,
+    /// The staged loop pipeline of the function being emitted, or `None`.
+    ///
+    /// `None` is every function today: `lower_checked` grants no pipeline yet.
+    /// It is what keeps the emitted module byte-identical to one built before
+    /// this machinery existed.
+    pipeline: Option<&'program crate::IrCompletionPipeline>,
+    /// The blocks on which the pipeline's carrying region ends: a block the
+    /// pipeline does not name that some block it does name can reach in one
+    /// edge. These are the drains — the loop's normal exit and every typed
+    /// exit out of its prologue — and there is generally more than one.
+    pipeline_drains: HashSet<IrBlockId>,
+    /// For each drain, the carrying blocks that reach it without leaving the
+    /// region first.
+    ///
+    /// This is what decides which operations one drain retires. It is a fact
+    /// about the control-flow graph, so a drain retires the same window
+    /// however the blocks around it happen to be numbered, and a carrying
+    /// block on a path that cannot reach this drain contributes nothing to it.
+    pipeline_feeders: HashMap<IrBlockId, HashSet<IrBlockId>>,
+    /// Every completion hand-out the carrying region made, with the carrying
+    /// block that made it.
+    ///
+    /// [`Self::handed_out`] is a straight-line simulation: it holds what one
+    /// walk through the blocks in index order has outstanding. That is exact
+    /// while every block joins what it handed out, which is every function
+    /// today. A carrying region breaks it, because the region has several
+    /// exits and each of them must retire the same operations — the walk
+    /// reaches the first exit, empties the simulation there, and would leave
+    /// the second exit emitting nothing. This is what each exit is seeded
+    /// from, and the block recorded beside each hand-out is what lets a drain
+    /// take the operations that actually reach it rather than everything the
+    /// walk has seen so far.
+    pipeline_outstanding: Vec<(IrBlockId, completion::CompletionHandedOut)>,
+    /// The slot index the block being emitted addresses its ring through,
+    /// where the pipeline gives it one.
+    ///
+    /// Completion storage addressed while this is `Some` is one element of the
+    /// site's ring, chosen at run time; while it is `None` the site owns one
+    /// element and its pointer is an entry-block definition, which is every
+    /// function emitted before the ring existed and every block of a one-slot
+    /// region.
+    block_slot: Option<IrValueId>,
+    /// Whether the block being emitted is one the pipeline lets end with the
+    /// region's operations still in flight.
+    ///
+    /// It is what decides whether a hand-out emitted here reserves a ring or a
+    /// single element: a carrying block is emitted once and reached once per
+    /// iteration, so a site in it may own one operation per slot; a site
+    /// anywhere else is reached with nothing of its own outstanding and owns
+    /// one element, exactly as it did before rings existed.
+    block_carries: bool,
     /// Whether any function in this module emitted a typed completion handoff.
     completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
@@ -799,6 +891,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             overlap_join_sites,
             completion_steps,
             handed_out: Vec::new(),
+            pipeline: function.completion_pipeline(),
+            pipeline_drains: pipeline_drain_blocks(function),
+            pipeline_feeders: pipeline_feeder_blocks(function),
+            pipeline_outstanding: Vec::new(),
+            block_slot: None,
+            block_carries: false,
             completion_used,
             sequential_clones,
         }
@@ -806,6 +904,218 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn is_overlap_join_site(&self, value: IrValueId) -> bool {
         self.overlap_join_sites.contains(&value)
+    }
+
+    /// Whether this block may end with the pipeline's operations still
+    /// outstanding.
+    ///
+    /// One rule decides both halves of the staged schedule: a block the
+    /// pipeline names never joins, and every other block joins everything
+    /// outstanding before it ends. The first gives the loop's back edge the
+    /// right to carry work across it. The second is the drain — at the loop's
+    /// normal exit and at every typed exit out of the prologue alike — and it
+    /// needs no separate machinery, because retiring every outstanding
+    /// operation in hand-out order is exactly what a block has always done.
+    fn block_carries_completion(&self, block: IrBlockId) -> bool {
+        self.pipeline
+            .is_some_and(|pipeline| pipeline.carries(block))
+    }
+
+    /// Refuses a carrying region no exit leaves.
+    ///
+    /// Every block the pipeline names must reach, in some number of edges, a
+    /// block it does not name. A region without that property has a path on
+    /// which an accepted operation is never joined: the target would still
+    /// write its result into storage the frame no longer exists to hold. It is
+    /// a defect of whatever produced the descriptor, so it is refused before a
+    /// line of the function is emitted rather than diagnosed by its absence.
+    fn validate_pipeline(&self) -> Result<(), BackendFailure> {
+        let Some(pipeline) = self.pipeline else {
+            return Ok(());
+        };
+        let blocks = self.function.blocks();
+        let mut escapes = vec![false; blocks.len()];
+        for (index, escaped) in escapes.iter_mut().enumerate() {
+            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            *escaped = !pipeline.carries(id);
+        }
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (index, block) in blocks.iter().enumerate() {
+                if escapes[index] {
+                    continue;
+                }
+                if block_successors(block)
+                    .iter()
+                    .any(|successor| escapes.get(successor.index()).copied().unwrap_or(false))
+                {
+                    escapes[index] = true;
+                    changed = true;
+                }
+            }
+        }
+        if !escapes.iter().all(|escaped| *escaped) {
+            return Err(BackendFailure::UnretiredCompletionOperation);
+        }
+        // A drain retires what the carrying blocks that reach it handed out,
+        // and a hand-out exists to be retired only once its own block has been
+        // emitted. The walk is in block-index order, so a feeder that hands
+        // out an operation and is numbered at or after its own drain would
+        // leave that drain emitting nothing for it — silently, because a
+        // function with a pipeline is exempt from the straight-line check at
+        // the end of emission, a carrying block being free to be the last one
+        // emitted. That is the same defect as a region with no drain and it is
+        // refused in the same place.
+        //
+        // A feeder that hands nothing out is not that defect: a loop's latch
+        // is numbered after the typed exit its back edge reaches, and where it
+        // starts no operation there is nothing for that exit to be missing.
+        for (drain, feeders) in &self.pipeline_feeders {
+            for feeder in feeders {
+                if feeder.index() >= drain.index() && self.block_hands_out_completion(*feeder) {
+                    return Err(BackendFailure::UnretiredCompletionOperation);
+                }
+            }
+        }
+        self.validate_pipeline_slots(pipeline)
+    }
+
+    /// Refuses a ring whose slots cannot be addressed where they are used.
+    ///
+    /// Two things have to hold here. They are not between them the whole of
+    /// what makes a run-time-chosen element safe: the slot's *range* against
+    /// the ring width is a third thing, and it is trusted rather than checked.
+    ///
+    /// A ring has at least one element. A descriptor claiming none would
+    /// reserve a zero-length array and index into it.
+    ///
+    /// And a slot a block names is a value of the function, of the `u64` the
+    /// array is indexed with. The index is rendered straight into a
+    /// `getelementptr` the block emits, so a name of the wrong width, or of no
+    /// value at all, is a module that does not verify; that is refused here
+    /// rather than left to a linker. Whether the value *dominates* the block
+    /// naming it, and whether it is *in range* of the ring, are trusted
+    /// exactly as every other operand this emitter renders is trusted — a
+    /// driver threads the slot along the edges into its region, so the value
+    /// reaching a carrying block is the loop-carried parameter that dominates
+    /// it, and the driver owes the range a static refusal or a proof of its
+    /// own. An out-of-range slot is an out-of-range `getelementptr inbounds`
+    /// whose pointer is handed to the runtime as an address it writes through.
+    ///
+    /// What is deliberately *not* checked here is which blocks must name a
+    /// slot. A carrying block that starts no operation and retires none needs
+    /// no index, and demanding one would refuse the ordinary shape where a
+    /// loop's comparison and increment blocks carry nothing. The block that
+    /// does reach storage is caught where it reaches it: with a ring in force,
+    /// both the reservation and the element pointer refuse a block that has no
+    /// slot rather than quietly handing back element zero, which is the one
+    /// failure that would let two iterations share one operation record.
+    fn validate_pipeline_slots(
+        &self,
+        pipeline: &crate::IrCompletionPipeline,
+    ) -> Result<(), BackendFailure> {
+        if pipeline.slots() == 0 {
+            return Err(BackendFailure::MisaddressedCompletionSlot);
+        }
+        for index in 0..self.function.blocks().len() {
+            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            let Some(slot) = pipeline.slot_index(id) else {
+                continue;
+            };
+            if self.value_type(slot)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+            {
+                return Err(BackendFailure::MisaddressedCompletionSlot);
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether this block starts an operation a drain would have to retire.
+    ///
+    /// It answers the same question `emit_instruction` answers when it decides
+    /// to hand a system call to a target, read from the same source-ordered
+    /// steps, so the ordering rule above is checked against what the walk will
+    /// actually emit.
+    fn block_hands_out_completion(&self, block: IrBlockId) -> bool {
+        self.function
+            .blocks()
+            .get(block.index())
+            .is_some_and(|block| {
+                block.instructions().iter().any(|instruction| {
+                    matches!(
+                        instruction,
+                        IrInstruction::Define { result, .. }
+                            if self
+                                .completion_steps
+                                .get(result)
+                                .is_some_and(crate::IrCompletionStep::submit)
+                    )
+                })
+            })
+    }
+
+    /// Gives a drain block exactly the operations the carrying region left in
+    /// flight on the paths that reach it.
+    ///
+    /// Which those are is decided by the graph — the carrying blocks that
+    /// reach this drain — and not by how much of the region the walk happens
+    /// to have passed. The walk arrives here with the straight-line
+    /// simulation, which on a branching region is both too little and too
+    /// much: an operation handed out on a branch the walk has not passed is
+    /// missing, and one handed out on a *sibling* branch that cannot reach
+    /// this drain is present. Adding the first without removing the second
+    /// would make this exit join an operation that was never started on any
+    /// path through it, which is a use of storage no target ever wrote.
+    ///
+    /// So both halves are done here, for every drain including the first one
+    /// the walk reaches. The order is the order they were handed out, so each
+    /// exit retires its whole window in that order.
+    fn seed_pipeline_drain(&mut self, block: IrBlockId) {
+        if !self.pipeline_drains.contains(&block) {
+            return;
+        }
+        let Some(feeders) = self.pipeline_feeders.get(&block).cloned() else {
+            return;
+        };
+        let elsewhere: HashSet<IrValueId> = self
+            .pipeline_outstanding
+            .iter()
+            .filter(|(carrying, _)| !feeders.contains(carrying))
+            .map(|(_, carried)| carried.result())
+            .collect();
+        self.handed_out.retain(|pending| match pending {
+            HandedOut::Completion(pending) => !elsewhere.contains(&pending.result()),
+            HandedOut::Compute(_) => true,
+        });
+        for (carrying, pending) in self.pipeline_outstanding.clone() {
+            if feeders.contains(&carrying)
+                && !self.completion_operation_is_outstanding(pending.result())
+            {
+                self.handed_out.push(HandedOut::Completion(pending));
+            }
+        }
+    }
+
+    /// Records what a carrying block handed out, so every exit the block
+    /// reaches can retire it.
+    fn record_pipeline_handouts(&mut self, block: IrBlockId) {
+        for pending in &self.handed_out {
+            let HandedOut::Completion(pending) = pending else {
+                continue;
+            };
+            if !self
+                .pipeline_outstanding
+                .iter()
+                .any(|(_, carried)| carried.result() == pending.result())
+            {
+                self.pipeline_outstanding.push((block, pending.clone()));
+            }
+        }
     }
 
     /// The symbol one call names.
@@ -822,6 +1132,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn emit(mut self) -> Result<String, BackendFailure> {
+        self.validate_pipeline()?;
         self.incoming = self.collect_incoming()?;
         let symbol = match self.sequential_clones {
             Some(_) => sequential_clone_symbol(self.function.name()),
@@ -856,10 +1167,32 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 prelude_anchor = Some(self.output.len());
             }
             self.emit_block_parameters(block_id, block)?;
+            self.block_slot = self
+                .pipeline
+                .and_then(|pipeline| pipeline.slot_index(block_id));
+            self.block_carries = self
+                .pipeline
+                .is_some_and(|pipeline| pipeline.carries(block_id));
+            self.emit_completion_window(block_id)?;
+            self.seed_pipeline_drain(block_id);
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
             self.emit_terminator(block_id, block.terminator())?;
+        }
+        // Every operation this function handed to a target is joined by some
+        // block. Without a pipeline that is the straight-line fact this
+        // emitter has always kept: nothing survives its own block's
+        // terminator. With one it is the reachability fact checked before the
+        // first block was emitted, and the straight-line count says nothing
+        // because a carrying block may well be the last one emitted.
+        if self.pipeline.is_none()
+            && self
+                .handed_out
+                .iter()
+                .any(|pending| matches!(pending, HandedOut::Completion(_)))
+        {
+            return Err(BackendFailure::UnretiredCompletionOperation);
         }
         self.output.push_str("}\n\n");
         if !self.entry_prelude.is_empty() {
@@ -976,7 +1309,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } else {
                 self.emit_definition(*result, *ty, operation)?;
             }
-            if step.finish() {
+            // A carrying block never joins: the schedule's last member ends
+            // it with the operations still owned by the target, and every
+            // block the pipeline does not name retires them.
+            if self.block_carries_completion(block) {
+                self.record_pipeline_handouts(block);
+            } else if step.finish() {
                 self.emit_all_completion_joins()?;
             }
             return Ok(());
@@ -1231,12 +1569,44 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
     }
 
+    /// Asks the runtime for this loop's window, once at its entry block.
+    ///
+    /// The precedent is `wf__par_split_budget`, asked once per loop entry and
+    /// never per iteration. The three arguments are bounds the compiler
+    /// already knows — the trip count where it is known, the private storage
+    /// one in-flight iteration owns, and the compiler's own static cap from
+    /// that storage's cost — and the runtime answers from its own capacity.
+    /// One is always a legal answer and reproduces the sequential program, so
+    /// this query can never make a correct program fail.
+    ///
+    /// There is no environment variable, attribute, or source spelling for the
+    /// answer. The writer never sees it.
+    fn emit_completion_window(&mut self, block: IrBlockId) -> Result<(), BackendFailure> {
+        let Some(pipeline) = self.pipeline.filter(|pipeline| pipeline.entry() == block) else {
+            return Ok(());
+        };
+        let window = pipeline.window();
+        let name = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{name} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})",
+            window.span(),
+            window.slot_bytes(),
+            window.ceiling()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        *self.completion_used = true;
+        Ok(())
+    }
+
     fn emit_terminator(
         &mut self,
         block: IrBlockId,
         terminator: &IrTerminator,
     ) -> Result<(), BackendFailure> {
-        self.emit_all_completion_joins()?;
+        if !self.block_carries_completion(block) {
+            self.emit_all_completion_joins()?;
+        }
         match terminator {
             IrTerminator::Unreachable => {
                 writeln!(self.output, "  unreachable").map_err(|_| BackendFailure::TextEmission)
@@ -1824,6 +2194,93 @@ fn definition_exit_label(
         } => *label = buffer_probe_join_label(*result),
         _ => {}
     }
+}
+
+/// The blocks one block's terminator can transfer control to.
+fn block_successors(block: &IrBlock) -> Vec<IrBlockId> {
+    match block.terminator() {
+        IrTerminator::Jump { target, .. } => vec![*target],
+        IrTerminator::Match { targets, .. } => {
+            targets.iter().map(|target| target.block()).collect()
+        }
+        IrTerminator::Return { .. } | IrTerminator::Unreachable => Vec::new(),
+    }
+}
+
+/// Where a staged loop pipeline's carrying region ends.
+///
+/// A block the pipeline does not name, reached in one edge from a block it
+/// does, is an exit from the region and therefore a drain: it retires every
+/// operation the region left outstanding. The loop's normal exit is one of
+/// these and every typed exit out of the body is another, so this is a set and
+/// not a block.
+fn pipeline_drain_blocks(function: &IrFunction) -> HashSet<IrBlockId> {
+    let Some(pipeline) = function.completion_pipeline() else {
+        return HashSet::new();
+    };
+    function
+        .blocks()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, block)| {
+            let id = IrBlockId::from_index(index).ok()?;
+            pipeline.carries(id).then(|| block_successors(block))
+        })
+        .flatten()
+        .filter(|successor| !pipeline.carries(*successor))
+        .collect()
+}
+
+/// Which carrying blocks each drain retires the work of.
+///
+/// A drain must retire exactly the operations the region can still have in
+/// flight when control arrives there, and those are the ones handed out by the
+/// carrying blocks that reach it without leaving the region on the way — a
+/// fact about the edges, not about the order the blocks are numbered in.
+/// Reading it from the graph is what keeps a drain from retiring work that
+/// cannot reach it and, together with the ordering rule `validate_pipeline`
+/// applies, from missing work that can.
+fn pipeline_feeder_blocks(function: &IrFunction) -> HashMap<IrBlockId, HashSet<IrBlockId>> {
+    let Some(pipeline) = function.completion_pipeline() else {
+        return HashMap::new();
+    };
+    let blocks = function.blocks();
+    let mut predecessors: Vec<Vec<IrBlockId>> = vec![Vec::new(); blocks.len()];
+    for (index, block) in blocks.iter().enumerate() {
+        let Ok(id) = IrBlockId::from_index(index) else {
+            continue;
+        };
+        for successor in block_successors(block) {
+            if let Some(edges) = predecessors.get_mut(successor.index()) {
+                edges.push(id);
+            }
+        }
+    }
+    let carrying_predecessors = |block: IrBlockId| -> Vec<IrBlockId> {
+        predecessors
+            .get(block.index())
+            .map(|edges| {
+                edges
+                    .iter()
+                    .copied()
+                    .filter(|edge| pipeline.carries(*edge))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut feeders = HashMap::new();
+    for drain in pipeline_drain_blocks(function) {
+        let mut reached: HashSet<IrBlockId> = HashSet::new();
+        let mut frontier = carrying_predecessors(drain);
+        while let Some(block) = frontier.pop() {
+            if !reached.insert(block) {
+                continue;
+            }
+            frontier.extend(carrying_predecessors(block));
+        }
+        feeders.insert(drain, reached);
+    }
+    feeders
 }
 
 fn block_label(block: IrBlockId) -> String {
