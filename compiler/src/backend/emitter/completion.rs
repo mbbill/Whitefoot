@@ -77,12 +77,33 @@ pub(crate) struct CompletionHandedOut {
     result: IrValueId,
     result_type: IrType,
     operation: CompletionFileOperation,
-    token: String,
-    result_slot: String,
-    raw_value: String,
-    raw_error: String,
+    token: CompletionStorage,
+    result_slot: CompletionStorage,
+    raw_value: CompletionStorage,
+    raw_error: CompletionStorage,
     submitted: String,
     mapping: CompletionMapping,
+}
+
+/// Where one kind of completion storage belonging to one call site lives.
+///
+/// The two shapes are the two schedules. Without a ring a site owns exactly
+/// one element, its pointer is an entry-block definition, and it dominates
+/// every block that can reach the operation — which is how this emitter has
+/// always addressed completion storage. With a ring the site owns several, one
+/// per operation the region may have in flight, and which of them an operation
+/// owns is not known until the program runs: the pointer is materialized from
+/// the slot index of whichever block starts or retires the operation, so
+/// it is defined in that block and dominates its uses for the same reason a
+/// block's own phi does.
+#[derive(Clone, Debug)]
+enum CompletionStorage {
+    Fixed(String),
+    Ring {
+        array: String,
+        element_type: String,
+        slots: u64,
+    },
 }
 
 impl CompletionHandedOut {
@@ -95,7 +116,7 @@ impl CompletionHandedOut {
 #[derive(Clone, Debug)]
 enum CompletionMapping {
     Open {
-        outcome: String,
+        outcome: CompletionStorage,
     },
     Transfer {
         start: String,
@@ -192,7 +213,7 @@ impl FunctionEmitter<'_, '_> {
     }
 
     /// How many operations one handed-out call site can have outstanding at
-    /// once, and which element of that storage this hand-out owns.
+    /// once, and where the element this hand-out owns is addressed from.
     ///
     /// Every completion storage element — the token, the result slot, the raw
     /// value and error, an open's outcome, a directory cursor's position, an
@@ -202,31 +223,87 @@ impl FunctionEmitter<'_, '_> {
     /// outstanding together need one element each; sharing would let the newer
     /// hand-out overwrite storage the older one is still being read from.
     ///
-    /// Every site the current lowering produces answers one and zero, and that
-    /// is an enforced precondition rather than a written assumption.  A
-    /// completion schedule is submitted and joined inside the block that
-    /// formed it — `emit_terminator` joins everything still outstanding before
-    /// it writes any terminator — so control cannot reach a site again while
-    /// its operation is in flight, and a site never holds a second hand-out.
-    /// A lowering that broke that is refused here rather than handed the first
-    /// operation's element: the count and the index are the whole of what a
-    /// deeper schedule changes, and until it changes them the shared element
-    /// cannot be reached silently.
-    fn completion_storage_element(&self, site: IrValueId) -> Result<(u64, u64), BackendFailure> {
-        if self.completion_operation_is_outstanding(site) {
-            return Err(BackendFailure::SecondOutstandingCompletionOperation);
-        }
-        Ok((1, 0))
-    }
-
-    /// Reserves one completion storage element for the hand-out being emitted.
+    /// Which of the two the block being emitted asks for is decided by the
+    /// pipeline, and it decides it for the reason the two schedules differ.
+    /// A block outside a carrying region reaches its site once with nothing of
+    /// that site's outstanding — `emit_terminator` joins everything still in
+    /// flight before it writes any terminator — so one element is exact, and
+    /// reserving one is what keeps every module this compiler emitted before
+    /// the ring existed byte-identical. A carrying block is emitted once and
+    /// reached once per iteration with the previous iteration's operation
+    /// still owned by the target, so its site needs the whole ring.
+    ///
+    /// A carrying block whose descriptor gives it no slot is refused rather
+    /// than handed element zero. That refusal is the one that matters: falling
+    /// back to a single element there is exactly the silent sharing this whole
+    /// reservation exists to prevent, and it would show up only as two
+    /// iterations reading one buffer.
+    ///
+    /// The straight-line refusal below stays either way, and it is not the
+    /// ring's business: it catches a *walk* that reaches one site twice with a
+    /// hand-out live, which no descriptor makes legal, because the second
+    /// hand-out would be emitted with the same slot index in hand as the
+    /// first and would take the element the first is using.
     fn completion_entry_slot(
         &mut self,
         site: IrValueId,
         ty: &str,
+    ) -> Result<CompletionStorage, BackendFailure> {
+        if self.completion_operation_is_outstanding(site) {
+            return Err(BackendFailure::SecondOutstandingCompletionOperation);
+        }
+        let slots = self.pipeline.map_or(1, crate::IrCompletionPipeline::slots);
+        if slots > 1 && self.block_carries {
+            let Some(_) = self.block_slot else {
+                return Err(BackendFailure::MisaddressedCompletionSlot);
+            };
+            let array = self.entry_slot(&format!("[{slots} x {ty}]"))?;
+            return Ok(CompletionStorage::Ring {
+                array,
+                element_type: ty.to_owned(),
+                slots,
+            });
+        }
+        Ok(CompletionStorage::Fixed(self.indexed_entry_slot(ty, 1, 0)?))
+    }
+
+    /// The pointer to the element this operation owns, usable where it is
+    /// emitted.
+    ///
+    /// A fixed element is an entry-block definition and needs nothing: naming
+    /// it is free and emits no instruction, which is why a function with no
+    /// ring is byte-identical to one emitted before rings existed. A ring
+    /// element is computed here, in the block asking for it, from that block's
+    /// own slot index — so a submission addresses the slot its iteration
+    /// took and a retirement addresses the slot it is retiring, and neither
+    /// has to be the other.
+    fn completion_storage_pointer(
+        &mut self,
+        storage: &CompletionStorage,
     ) -> Result<String, BackendFailure> {
-        let (outstanding, index) = self.completion_storage_element(site)?;
-        self.indexed_entry_slot(ty, outstanding, index)
+        let CompletionStorage::Ring {
+            array,
+            element_type,
+            slots,
+        } = storage
+        else {
+            let CompletionStorage::Fixed(element) = storage else {
+                return Err(BackendFailure::InvalidIr);
+            };
+            return Ok(element.clone());
+        };
+        let slot = self
+            .block_slot
+            .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
+        let element = format!("%{}", self.next_temporary()?);
+        writeln!(
+            self.output,
+            "  {element} = getelementptr inbounds [{slots} x {element_type}], ptr {array}, \
+             i64 0, i64 {}",
+            self.value_name(slot)
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(element)
     }
 
     /// Starts one direct file operation before the remaining independent
@@ -290,6 +367,8 @@ impl FunctionEmitter<'_, '_> {
         let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
         let raw_value = self.completion_entry_slot(result, "i64")?;
         let raw_error = self.completion_entry_slot(result, "i32")?;
+        let token_pointer = self.completion_storage_pointer(&token)?;
+        let result_pointer = self.completion_storage_pointer(&result_slot)?;
         let extent = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
         let offset_too_large = file_offset
@@ -348,13 +427,13 @@ impl FunctionEmitter<'_, '_> {
         };
         let submit_arguments = if let Some(offset) = file_offset {
             format!(
-                "i32 {}, ptr {target}, i64 {extent}, i64 {}, ptr {token}",
+                "i32 {}, ptr {target}, i64 {extent}, i64 {}, ptr {token_pointer}",
                 self.value_name(*resource),
                 self.value_name(*offset)
             )
         } else {
             format!(
-                "i32 {}, ptr {target}, i64 {extent}, ptr {token}",
+                "i32 {}, ptr {target}, i64 {extent}, ptr {token_pointer}",
                 self.value_name(*resource)
             )
         };
@@ -373,7 +452,7 @@ impl FunctionEmitter<'_, '_> {
              br i1 {accepted}, label %{offered_label}, label %{inline_label}\n\
              {inline_label}:\n  \
              {inline_result} = call {rendered_type} @{}({})\n  \
-             store {rendered_type} {inline_result}, ptr {result_slot}\n  \
+             store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
              br label %{offered_label}\n\
              {offered_label}:\n  \
              {submitted} = phi i1 [ true, %{submit_label} ], [ false, %{inline_label} ]",
@@ -473,6 +552,8 @@ impl FunctionEmitter<'_, '_> {
         let raw_value = self.completion_entry_slot(result, "i64")?;
         let raw_error = self.completion_entry_slot(result, "i32")?;
         let open_outcome = self.completion_entry_slot(result, "i32")?;
+        let token_pointer = self.completion_storage_pointer(&token)?;
+        let result_pointer = self.completion_storage_pointer(&result_slot)?;
         let status = format!("%{}", self.next_temporary()?);
         let accepted = format!("%{}", self.next_temporary()?);
         let inline_result = format!("%{}", self.next_temporary()?);
@@ -491,12 +572,12 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  {status} = call i32 @wf__completion_file_open_at_submit(i32 {}, ptr {path}, \
-             i32 {flags}, i32 0, i32 0, i32 {expected_kind}, ptr {token})\n  \
+             i32 {flags}, i32 0, i32 0, i32 {expected_kind}, ptr {token_pointer})\n  \
              {accepted} = icmp eq i32 {status}, 1\n  \
              br i1 {accepted}, label %{offered_label}, label %{inline_label}\n\
              {inline_label}:\n  \
              {inline_result} = call {rendered_type} @{}({})\n  \
-             store {rendered_type} {inline_result}, ptr {result_slot}\n  \
+             store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
              br label %{offered_label}\n\
              {offered_label}:\n  \
              {submitted} = phi i1 [ true, %{request_label} ], [ false, %{inline_label} ]",
@@ -538,7 +619,8 @@ impl FunctionEmitter<'_, '_> {
         let slot = limit
             .checked_add(1)
             .ok_or(BackendFailure::CounterOverflow)?;
-        let component = self.completion_entry_slot(result, &format!("[{slot} x i8]"))?;
+        let staged = self.completion_entry_slot(result, &format!("[{slot} x i8]"))?;
+        let component = self.completion_storage_pointer(&staged)?;
         let extent = format!("%{}", self.next_temporary()?);
         let oversize = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
@@ -631,7 +713,10 @@ impl FunctionEmitter<'_, '_> {
         let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
         let raw_value = self.completion_entry_slot(result, "i64")?;
         let raw_error = self.completion_entry_slot(result, "i32")?;
-        let position = self.completion_entry_slot(result, "i64")?;
+        let cursor = self.completion_entry_slot(result, "i64")?;
+        let token_pointer = self.completion_storage_pointer(&token)?;
+        let result_pointer = self.completion_storage_pointer(&result_slot)?;
+        let position = self.completion_storage_pointer(&cursor)?;
         let extent = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
         let base = format!("%{}", self.next_temporary()?);
@@ -656,12 +741,12 @@ impl FunctionEmitter<'_, '_> {
              {base} = extractvalue {destination_llvm} {}, 0\n  \
              {target} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
              {status} = call i32 @wf__completion_directory_next_submit(i32 {}, ptr {target}, \
-             i64 {extent}, ptr {position}, ptr {token})\n  \
+             i64 {extent}, ptr {position}, ptr {token_pointer})\n  \
              {accepted} = icmp eq i32 {status}, 1\n  \
              br i1 {accepted}, label %{offered_label}, label %{inline_label}\n\
              {inline_label}:\n  \
              {inline_result} = call {rendered_type} @{}({})\n  \
-             store {rendered_type} {inline_result}, ptr {result_slot}\n  \
+             store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
              br label %{offered_label}\n\
              {offered_label}:\n  \
              {submitted} = phi i1 [ true, %{submit_label} ], [ false, %{inline_label} ]",
@@ -709,6 +794,14 @@ impl FunctionEmitter<'_, '_> {
             submitted,
             mapping,
         } = pending;
+        // The element pointers are materialized here rather than carried from
+        // the submission, because a retirement need not be in the block that
+        // submitted and, under a ring, need not mean the same slot: what it
+        // retires is the operation the slot index of *this* block names.
+        let token = self.completion_storage_pointer(&token)?;
+        let result_slot = self.completion_storage_pointer(&result_slot)?;
+        let raw_value = self.completion_storage_pointer(&raw_value)?;
+        let raw_error = self.completion_storage_pointer(&raw_error)?;
         let direct = format!("%{}", self.next_temporary()?);
         let completed_value = format!("%{}", self.next_temporary()?);
         let completed_error = format!("%{}", self.next_temporary()?);
@@ -719,6 +812,7 @@ impl FunctionEmitter<'_, '_> {
         let result_llvm = llvm_type(self.program, result_type)?;
         let (join_call, extra_load, mapper_arguments) = match mapping {
             CompletionMapping::Open { outcome } => {
+                let outcome = self.completion_storage_pointer(&outcome)?;
                 let completed_outcome = format!("%{}", self.next_temporary()?);
                 (
                     format!(

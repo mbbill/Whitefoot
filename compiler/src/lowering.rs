@@ -1195,21 +1195,31 @@ impl IrCompletionWindow {
 /// One function's staged loop pipeline, or nothing where the loop judgment
 /// grants no such schedule.
 ///
-/// Exactly two things about emission change when a function carries this, and
-/// they are the two the design's §3.4 names. The window is asked once at the
-/// loop's entry block, never per iteration, exactly as `wf__par_split_budget`
-/// is asked. And a block named by `carrying` may end with the loop's target
-/// operations still outstanding, which is what makes a back edge legal with
-/// work in flight; every block not named there drains everything outstanding
-/// before its terminator, in hand-out order, which is what makes the loop's
-/// normal exit and every typed exit from the prologue retire the whole window.
+/// Three things about emission change when a function carries this. The window
+/// is asked once at the loop's entry block, never per iteration, exactly as
+/// `wf__par_split_budget` is asked. A block named by `carrying` may end with
+/// the loop's target operations still outstanding, which is what makes a back
+/// edge legal with work in flight; every block not named there drains
+/// everything outstanding before its terminator, in hand-out order, which is
+/// what makes the loop's normal exit and every typed exit from the prologue
+/// retire the whole window. And each call site's completion storage is a ring
+/// of [`Self::slots`] operation records rather than one, addressed through the
+/// slot index whichever block reaches it addresses its ring through.
 ///
-/// What this does *not* yet carry is the per-slot storage index. One call site
-/// still owns one operation record, so a site inside a carrying region that
-/// submits again while its earlier operation is outstanding is refused by
-/// [`crate::backend::BackendFailure::SecondOutstandingCompletionOperation`]
-/// rather than handed the first operation's storage. Lifting that is the
-/// driver's work, and the driver is what fills this in.
+/// The ring is what makes a back edge with work in flight *correct* rather
+/// than merely admitted. A carrying block is emitted once and reached many
+/// times, so the straight-line walk sees one hand-out at a site while the
+/// running program has one per iteration in flight: with one storage element
+/// the second iteration's submission would hand the target a token, a result
+/// slot and a staged path the first iteration's operation is still being read
+/// from and written to. The count is static because the storage is an
+/// entry-block reservation; which element an operation owns is a run-time
+/// choice, and the runtime's window never exceeds the count.
+///
+/// What this does *not* yet carry is the driver. Nothing here cycles the slot
+/// parameter, and no block joins one named older operation while leaving the
+/// rest in flight — a drain still retires everything the region left. Both are
+/// the loop lowering's work.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrCompletionPipeline {
     entry: IrBlockId,
@@ -1242,7 +1252,7 @@ impl IrCompletionPipeline {
     }
 
     /// The same descriptor with a ring of `slots` operation records per site,
-    /// and the parameter each block addresses its slot through.
+    /// and the value each block addresses its slot through.
     #[cfg(test)]
     pub(crate) fn with_slots(
         entry: IrBlockId,
@@ -1276,11 +1286,12 @@ impl IrCompletionPipeline {
     /// The value naming the slot the completion storage addressed in this
     /// block belongs to.
     ///
-    /// It is one of that block's own parameters, which is what makes the
-    /// element pointer materialized inside the block dominate every use of it
-    /// without a dominance query: a parameter is the block's own phi. A block
-    /// with no entry addresses element zero, which is every block of a
-    /// one-slot region.
+    /// It is a `u64` the driver threads into the region along its edges — in
+    /// the ordinary shape the loop-carried parameter of the header, which
+    /// dominates every block of the body — so the element pointer each block
+    /// materializes from it dominates every use of that pointer. A block with
+    /// no entry addresses element zero, which is every block of a one-slot
+    /// region and every block outside a ring.
     pub(crate) fn slot_index(&self, block: IrBlockId) -> Option<IrValueId> {
         self.slot_index
             .iter()

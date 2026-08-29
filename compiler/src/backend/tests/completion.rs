@@ -2411,3 +2411,86 @@ fn a_drain_retires_only_what_the_branches_that_reach_it_started() {
          not the sibling branch's as well: joins {joins:?} at {first_drain}"
     );
 }
+
+/// A loop whose body both submits and joins, and whose [PAR-3] verdict is
+/// `permitted`.
+///
+/// Each iteration constructs the two buffers it reads into, so nothing the
+/// body writes is rooted outside the loop but the total it commits — the
+/// disposition the judgment grants. And the second read is independent work
+/// after the first, which is what makes the first a hand-out: the operation is
+/// started and retired inside the loop body, in blocks the loop reaches once
+/// per iteration, which is exactly where a ring element has to be addressable.
+const A_STAGED_LOOP_BODY: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let left = buffer_new(1_u64, 0_u8);
+    let right = buffer_new(1_u64, 0_u8);
+    region 'file {
+      region 'left {
+        region 'right {
+          let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+          let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+          match move first {
+            ReadBytes(next: produced) => {
+              set total = total +wrap produced;
+            }
+            ReadEnd() => {
+            }
+            ReadFailed(error: problem) => {
+            }
+          }
+          match move second {
+            ReadBytes(next: produced) => {
+              set total = total +wrap produced;
+            }
+            ReadEnd() => {
+            }
+            ReadFailed(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn zz_temp_dump_blocks() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("target");
+    let module = with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
+        let staged = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("probe");
+        println!("carrying {:?}", blocks_that_reach_the_back_edge(staged));
+        for (index, block) in staged.blocks().iter().enumerate() {
+            let u64s: Vec<crate::IrValueId> = block
+                .parameters()
+                .iter()
+                .filter(|(_, ty)| {
+                    *ty == crate::IrType::Integer {
+                        width: 64,
+                        signed: false,
+                    }
+                })
+                .map(|(value, _)| *value)
+                .collect();
+            println!("block {index}: u64 params {u64s:?}");
+        }
+        emit_llvm_for_target(program, target)
+            .expect("emit")
+            .into_string()
+    });
+    let main = emitted_function(&module, "probe");
+    println!("submits {:?}", ir_blocks_containing(main, "_submit("));
+    println!("joins {:?}", ir_blocks_containing(main, "@wf__completion_file_join("));
+    println!("opens {:?}", ir_blocks_containing(main, "@wf__completion_file_open_join("));
+}

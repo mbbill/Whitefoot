@@ -85,6 +85,15 @@ pub enum BackendFailure {
     /// limit rather than a source-language rejection; it cites no language
     /// rule [DIAG-1].
     UnretiredCompletionOperation,
+    /// A staged loop pipeline's ring cannot be addressed by the blocks that
+    /// reach it: it has no slots at all, a block that starts or retires an
+    /// operation has no slot index, or the index a block names is not one of
+    /// that block's own `u64` parameters. Each of those emits a module that
+    /// does not verify or one whose operations share storage, so the
+    /// descriptor is refused before a line of the function is emitted. Like
+    /// the two refusals above this is an emitter capability limit rather than
+    /// a source-language rejection; it cites no language rule [DIAG-1].
+    MisaddressedCompletionSlot,
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -752,6 +761,24 @@ struct FunctionEmitter<'program, 'state> {
     /// take the operations that actually reach it rather than everything the
     /// walk has seen so far.
     pipeline_outstanding: Vec<(IrBlockId, completion::CompletionHandedOut)>,
+    /// The slot index the block being emitted addresses its ring through,
+    /// where the pipeline gives it one.
+    ///
+    /// Completion storage addressed while this is `Some` is one element of the
+    /// site's ring, chosen at run time; while it is `None` the site owns one
+    /// element and its pointer is an entry-block definition, which is every
+    /// function emitted before the ring existed and every block of a one-slot
+    /// region.
+    block_slot: Option<IrValueId>,
+    /// Whether the block being emitted is one the pipeline lets end with the
+    /// region's operations still in flight.
+    ///
+    /// It is what decides whether a hand-out emitted here reserves a ring or a
+    /// single element: a carrying block is emitted once and reached once per
+    /// iteration, so a site in it may own one operation per slot; a site
+    /// anywhere else is reached with nothing of its own outstanding and owns
+    /// one element, exactly as it did before rings existed.
+    block_carries: bool,
     /// Whether any function in this module emitted a typed completion handoff.
     completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
@@ -857,6 +884,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             pipeline_drains: pipeline_drain_blocks(function),
             pipeline_feeders: pipeline_feeder_blocks(function),
             pipeline_outstanding: Vec::new(),
+            block_slot: None,
+            block_carries: false,
             completion_used,
             sequential_clones,
         }
@@ -936,6 +965,56 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 if feeder.index() >= drain.index() && self.block_hands_out_completion(*feeder) {
                     return Err(BackendFailure::UnretiredCompletionOperation);
                 }
+            }
+        }
+        self.validate_pipeline_slots(pipeline)
+    }
+
+    /// Refuses a ring whose slots cannot be addressed where they are used.
+    ///
+    /// Two things have to hold, and between them they are the whole of what
+    /// makes a run-time-chosen element safe.
+    ///
+    /// A ring has at least one element. A descriptor claiming none would
+    /// reserve a zero-length array and index into it.
+    ///
+    /// And a slot a block names is a value of the function, of the `u64` the
+    /// array is indexed with. The index is rendered straight into a
+    /// `getelementptr` the block emits, so a name of the wrong width, or of no
+    /// value at all, is a module that does not verify; that is refused here
+    /// rather than left to a linker. Whether the value *dominates* the block
+    /// naming it is trusted exactly as every other operand this emitter
+    /// renders is trusted — a driver threads the slot along the edges into its
+    /// region, so the value reaching a carrying block is the loop-carried
+    /// parameter that dominates it.
+    ///
+    /// What is deliberately *not* checked here is which blocks must name a
+    /// slot. A carrying block that starts no operation and retires none needs
+    /// no index, and demanding one would refuse the ordinary shape where a
+    /// loop's comparison and increment blocks carry nothing. The block that
+    /// does reach storage is caught where it reaches it: with a ring in force,
+    /// both the reservation and the element pointer refuse a block that has no
+    /// slot rather than quietly handing back element zero, which is the one
+    /// failure that would let two iterations share one operation record.
+    fn validate_pipeline_slots(
+        &self,
+        pipeline: &crate::IrCompletionPipeline,
+    ) -> Result<(), BackendFailure> {
+        if pipeline.slots() == 0 {
+            return Err(BackendFailure::MisaddressedCompletionSlot);
+        }
+        for index in 0..self.function.blocks().len() {
+            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            let Some(slot) = pipeline.slot_index(id) else {
+                continue;
+            };
+            if self.value_type(slot)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+            {
+                return Err(BackendFailure::MisaddressedCompletionSlot);
             }
         }
         Ok(())
@@ -1073,6 +1152,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 prelude_anchor = Some(self.output.len());
             }
             self.emit_block_parameters(block_id, block)?;
+            self.block_slot = self
+                .pipeline
+                .and_then(|pipeline| pipeline.slot_index(block_id));
+            self.block_carries = self
+                .pipeline
+                .is_some_and(|pipeline| pipeline.carries(block_id));
             self.emit_completion_window(block_id)?;
             self.seed_pipeline_drain(block_id);
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
