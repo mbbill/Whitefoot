@@ -219,9 +219,10 @@ host.
   cross-engine read in flight and four opens racing, 1,000 repetitions per
   cell on an x86-64 Linux host with a real io_uring, the scratch file on
   `overlayfs` so that `IORING_OP_CLOSE` has a `flush` to run and is genuinely
-  asynchronous: 7, 16, 3 and 7 lost `Ok`s per thousand at zero, one, two and
-  four helpers, and 0 per thousand in every cell with the read removed — the
-  read is the whole discriminator. On a host whose close runs inline the
+  asynchronous.  Two independent runs of 1,000 repetitions per cell lost 7 and
+  34 `Ok`s at zero helpers, 16 and 21 at one, 3 and 5 at two, and 7 and 28 at
+  four; every cell with the read removed lost none, in both runs — the read is
+  the whole discriminator. On a host whose close runs inline the
   kernel frees the descriptor before the opens it was staged with are
   attempted, so the schedule does not arise and the shape reports nothing;
 - and the first version of *this* rule deadlocked, which is the failure mode a
@@ -509,8 +510,8 @@ by exempting the carrying block from the rule.
   `completion-sanitize` (ASan + UBSan) green; the `WF_REQUIRE_LINUX_IO_URING=1`
   run green; `attack_probe` and `verify_probe` 15 runs each at zero, one, two
   and four helpers, 120 of 120 passing; and the cross-engine-read shape at
-  1,000 repetitions per cell, at the same four helper counts with the read
-  present and absent, 0 lost `Ok`s in all eight cells — against 7, 16, 3 and 7
+  1,000 repetitions per cell, twice, at the same four helper counts with the
+  read present and absent — 0 lost `Ok`s in all sixteen cells, against 7 to 34
   per thousand with the read present before this rule.
 
   Two helpers is in the list because that is where the two-opens defect showed
@@ -559,42 +560,26 @@ by exempting the carrying block from the rule.
       descriptor refused, and the IR-identity oracle re-run: 630 sources,
       3 passes, 1,890 compilations, 807 modules, 0 differences
 - [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
-      `completion-core-read-tsan` — green on macOS and in the Linux container,
-      with the repetition counts above
-- [x] canonical `make check` — green
+      `completion-core-read-tsan` — green on an x86-64 Linux host at this
+      revision, with the repetition counts above; green on macOS and in the
+      aarch64 container at the previous one
+- [x] canonical `make check` — green at this revision on x86-64 Linux
+      (`conformance adapter: Pass=509  Skip=1`)
 - [x] `io-hosts` and `gate` run on the pushed branch. `completion-linux` is
       the one that matters most here: it runs the harness, the sanitizers and
       `completion-tsan` on a real x86-64 Linux kernel with io_uring, so both
       new exhaustion tests are exercised on the ring rather than only in the
-      aarch64 container. `gate-linux` stays red on the six [QUAL-1]
-      conformance cases below and on nothing else
+      aarch64 container. The six [QUAL-1] conformance cases that kept
+      `gate-linux` red are green since the Linux row landed in `main`
 
-## The one red job, and why it is not this branch's
+## The job that was red, and is not any more
 
-`gate-linux` fails on six conformance cases, all with the same reason:
-
-```text
-Fail sys14-list-outcome-exhaustive            want Run(0)
-Fail sys14-list-zero-range                    want Run(0)
-Fail sys14-directory-release                  want Run(0)
-Fail sys14-entry-kind-closed                  want Run(0)
-Fail accept-sysfile-two-permits-shared-directory   want Accept
-Fail accept-par3-staged-denied-opaque-cursor       want Accept
-  TargetQualification(MissingMapping(Operation(12)))
-conformance adapter: Pass=503  Fail=6  Skip=1
-```
-
-That is [QUAL-1]: Linux has no approved [SYS-14] directory-enumeration row, so
-every case that enumerates a directory reaches `Unsupported` rather than its
-declared verdict. It is not a source-language rejection and no verdict was
-touched here.
-
-The discriminating observation, rather than the plausible one: the concurrent
-`batch/0096-darwin-handoff`, which changes the Darwin helper path and nothing
-this branch touches, fails the same six cases with the same counts on the same
-base. And `batch/0094-linux-directory-row` — "io: qualify Linux directory
-enumeration and un-declare its host limits" — is green. This branch adds and
-modifies no conformance content and does not touch
-`compiler/src/backend/qualification.rs`; `git diff main` over that file is
-empty. The row is that other branch's work, and `gate-linux` goes green here
-when it lands.
+`gate-linux` used to fail on six conformance cases, all reaching
+`TargetQualification(MissingMapping(Operation(12)))`: [QUAL-1] gave Linux no
+approved [SYS-14] directory-enumeration row, so every case that enumerates a
+directory answered `Unsupported` rather than its declared verdict. It was never
+this branch's — `git diff main` over `compiler/src/backend/qualification.rs` was
+empty then and is empty now — and it went away when the row landed:
+`batch/0094-linux-directory-row` is in `main` at `10b76c66`, which this branch
+is merged up to. Canonical `make check` on this Linux host reports
+`conformance adapter: Pass=509  Skip=1` and `== WHITEFOOT ALL TESTS GREEN ==`.

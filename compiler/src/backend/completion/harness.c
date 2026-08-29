@@ -4012,8 +4012,10 @@ static int test_a_retirement_between_the_ledger_reads_is_not_missed(void) {
  * point and it is one schedule for both engines: on Linux the read is on the
  * bounded adapter while the close and the open are on the kernel ring, and a
  * host whose ring makes that close asynchronous — an `overlayfs` file, whose
- * `flush` sends `IORING_OP_CLOSE` to a worker — produces this order by
- * itself, 7 to 16 times in a thousand at every helper count. */
+ * `flush` sends `IORING_OP_CLOSE` to a worker — produces this order by itself
+ * often enough to lose an `Ok` at every helper count.  The record carries the
+ * counts; this test carries the schedule, which is the part that must not
+ * depend on a host reaching it. */
 static int test_an_ending_that_returns_nothing_grants_no_reattempt(void) {
     wf_retirement_waiter waiter;
     uint64_t seen;
