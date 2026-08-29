@@ -123,6 +123,23 @@ Every refused open, whichever engine attempted it, then follows four steps:
    moment at which a second attempt could see anything the first did not —
    re-attempt once here too, and publish what it says.
 
+A returned descriptor is awarded in the order the waiters registered, which is
+the order the publication rule already follows. Step 2 is what spends a refused
+open's one re-attempt, so two refused opens must not spend theirs on the same
+returned descriptor: while a waiter registered earlier is owed a re-attempt, a
+later one's step 2 does not fire for that return. The earliest takes it and
+re-attempts first, and only what it does not consume falls to the next — its
+re-attempt fails, or the descriptor it takes is one the kind check refuses,
+which disposes of it and is a return again. Source order gives the `Ok` to the
+first open that asks for it, so an unordered award publishes the program's one
+`Ok` at the wrong call. "Earliest" is registration order into the one ledger,
+whichever route the open took: a ring entry registers where its refusal is
+reaped, an adapter open and a direct call where their own attempt was refused.
+For one program thread those are the opens in submission order, since a route
+does not reorder the refusals it reaps; a schedule that reordered them would
+award by registration order and not by source order, and this record says so
+rather than claiming an identity the ledger does not enforce.
+
 Step 4 attempts rather than publishes because a descriptor can come back from
 outside this runtime: a thread of the program's own closing one while this
 runtime carries the read that thread is answering. No ledger can see that
@@ -133,8 +150,20 @@ Exactly one re-attempt per refused open, so an exhausted host cannot turn one
 `open_file` call into unbounded work; if the second attempt also fails, that is
 the outcome source-order execution produces and the program sees it. A retry is
 counted exactly where the second host attempt is made, so a published refusal
-never reads as one. Cost is paid only on the exhausted path, so nothing on the
-correct path changes and T3 holds.
+never reads as one.
+
+What this costs, stated as it is rather than as it would be convenient: the
+*decision* is paid only on the exhausted path, but the ledger's counts are not.
+`wf_completion_operation_accepted` and `wf_completion_operation_retired` sit on
+every submission and every ending, and each is a sequentially consistent
+read-modify-write plus a sequentially consistent load of the waiter count — two
+atomics per operation on the ordinary path, whether or not an open is ever
+refused. The wake past that load costs nothing where nothing is waiting, and
+the give-up decision, its lock and its waiter order are reached by refused
+opens only. T3 is about claim-related gates and holds unchanged: nothing here
+is a claim and no claim's correct path gained a check. Whether those two
+atomics are measurable beside a host call is not knowable on the host these
+counts were taken on; the runners are what measure it.
 
 Waiting terminates because a waiter counts itself out of "in flight anywhere
 else": when every operation still in flight is a waiter, the earliest of them
@@ -165,14 +194,25 @@ driving the engines and parking on the runtime's own endpoint, because on a
 target with a ring it may be the only thread that can reap the completion it is
 waiting for.
 
+Waiters therefore sleep in two different places, and that is a fact about the
+ledger rather than about a route: every transition that can change any waiter's
+answer — an operation accepted, an operation retired, a waiter registering, a
+waiter leaving, an operation deferred — is announced in both, on the ledger's
+own condition variable and on the runtime endpoint. The ledger is given that
+endpoint by the unit that owns the runtime, which is the bridge, and clears it
+before the runtime is destroyed. A transition announced in one place only is a
+stopped process, not a slow one, and it is recorded below as the fourth
+deadlock.
+
 ### What this record said before, and what was false
 
-Six shapes of this were wrong before the rule was stated that way, and the
-rule then stopped the process three times before it was right. None of the
-nine was caught by a test as written: the first two were found by the Stage A
+Eight shapes of this were wrong before the rule was stated that way, and the
+rule then stopped the process four times before it was right. None of the
+twelve was caught by a test as written: the first two were found by the Stage A
 verification, the next two by re-verification of the repair, the fifth by
 reading the repair for the same class of defect, the sixth by a third
-re-verification, and the three deadlocks by running the suite and the
+re-verification, the seventh and eighth by a fifth adversarial re-verification
+of the fourth repair, and the four deadlocks by running the suite and the
 verifiers' probes to the point where a stall is distinguishable from a slow
 host.
 
@@ -225,6 +265,33 @@ host.
   the whole discriminator. On a host whose close runs inline the
   kernel frees the descriptor before the opens it was staged with are
   attempted, so the schedule does not arise and the shape reports nothing;
+- **"a close ended, so a descriptor came back" was false of a close the host
+  refused.** Both engines answered yes for every close whatever the host said
+  of it, so a close of a descriptor that was not open — `EBADF` — granted a
+  refused open its single re-attempt for a return that never happened, and the
+  refusal that open then published was the program's `Ok`. The shape is a full
+  table with one close the host performs and one it refuses submitted together,
+  four opens, and a second thread opening on the direct route, on `overlayfs`:
+  9 and 10 lost `Ok`s per 2,000 repetitions at one and four helpers at the
+  revision before this one, 13 and 5 per 2,000 at the one before that, and 0
+  and 0 here. The commit that made this repair recorded that earlier revision
+  as losing none on this shape; re-measured at 2,000 repetitions it does not,
+  and this is the corrected count. Both answer sites read the outcome now: the
+  shared predicate accepts a close only with `error_code` zero, and the ring
+  only with a non-negative completion result, which is the fact the ring holds
+  in its own entry;
+- **"a descriptor came back, so this refused open may take it" was true of
+  every waiter at once**, and the descriptor then went to whichever of them
+  reached the host first. That is the earliest *submitted* refused open, and
+  source order owes the `Ok` to the first open in source order that can use it.
+  Three refused opens racing one returned descriptor — a companion whose kind
+  check will refuse it submitted first, then two plain opens — published the
+  `Ok` at the wrong call in 963 of 1,000 repetitions, identically at the three
+  revisions before this one, with the one re-attempt per refused open spent in
+  every case. It is the award that was unordered, not the kind check: the same
+  companion in a shape where it is not itself refused loses nothing. The ledger
+  already ordered *publication*; it orders the award the same way now, and the
+  same shape publishes the owed `Ok` in 1,000 of 1,000;
 - and the first version of *this* rule deadlocked, which is the failure mode a
   rule about waiting has. A refused open running work its own adapter owed read
   the size of that queue once, before it waited. The queue then grew — the
@@ -284,6 +351,27 @@ host.
   sleep while an item is in it, because running the item is the answer. The
   reading passed in as a parameter is gone.
 
+- and it stopped a fourth time, on the half of the wake the ledger could not
+  reach. Waiters sleep in two places, and every ledger transition broadcast on
+  the condition variable only. A direct-route open evaluated its state while
+  one operation was in flight elsewhere, answered "keep waiting", and parked on
+  the runtime endpoint with no bound; a second waiter then registered, which
+  counted one more operation out of "in flight anywhere else" and turned the
+  parked waiter's answer into "attempt and publish", and `wait_begin` said so
+  where that waiter could not hear it. Three threads, no CPU, indefinitely: one
+  observed process sat at 0% for eleven minutes and fifty-eight seconds before
+  it was killed, its ledger reading 102 returns, 2 in flight, 2 waiters, 1
+  deferred, with the parked waiter first in the order and its own `seen` at
+  102 — every input for `UNREACHABLE`, evaluated when the second waiter did not
+  yet exist. `wait_end` and `defer_begin` had the same hole. Four stalls in
+  twenty runs of the shape at one helper, and more at four; the same shape with
+  that one park bounded to five milliseconds stalled none in twenty, which is
+  what makes it a missed wake rather than progress that was genuinely
+  impossible. The bound is not the repair — a rule that needs a timeout to
+  finish is a rule that does not know when it is done. Every transition
+  announces in both places now, and the shape is a probe of its own that the
+  gate runs.
+
 Each of the three routes is covered by a test that fails without the fix, and
 so are the third exit, the deadlocks and the moment the queue is read:
 `test_bridge_open_waits_for_the_other_engine`,
@@ -292,8 +380,21 @@ so are the third exit, the deadlocks and the moment the queue is read:
 `test_open_exhaustion_waits_for_another_engine`,
 `test_a_retirement_between_the_ledger_reads_is_not_missed`,
 `test_the_work_a_waiter_owes_is_read_where_it_decides`,
-`test_an_ending_that_returns_nothing_grants_no_reattempt` and
+`test_an_ending_that_returns_nothing_grants_no_reattempt`,
+`test_descriptor_return_follows_the_outcome`,
+`test_a_ring_close_counts_a_return_only_when_it_ran` and
 `test_bridge_every_record_holding_a_refused_open_publishes`.
+
+Two of those are about the same predicate on the two engines that answer it,
+and one without the other is coverage that looks complete and is not: the first
+calls the shared inline answer, which is the bounded adapter's half, and a ring
+that counted every close it completed passes it — and the whole suite — while
+mis-accounting a return on every refused close. The second stands where only
+the ring can answer, reading the process-wide return count across a close the
+kernel performs and one it refuses. The fourth deadlock has no test of that
+kind, because the schedule needs a process that narrows its own descriptor
+table and a filesystem whose close the ring cannot run inline; it has
+`retirement_interleave_probe.c` instead, which the gate runs.
 
 A deadlock is now a failure mode of this suite, so the harness has a watchdog:
 three hundred seconds, three orders of magnitude above what the whole suite
@@ -395,7 +496,19 @@ by exempting the carrying block from the rule.
   `test_open_exhaustion_retires_owned_work_and_retries`,
   `test_open_exhaustion_waits_for_another_engine`,
   `test_bridge_open_exhaustion_is_retried_once`,
-  `test_bridge_open_behind_a_submitted_close_succeeds`.
+  `test_bridge_open_behind_a_submitted_close_succeeds`,
+  `test_descriptor_return_follows_the_outcome`,
+  `test_a_ring_close_counts_a_return_only_when_it_ran`.
+- `compiler/src/backend/completion/retirement_interleave_probe.c`, run by the
+  same target at one and four helpers: a refused open on every route at once,
+  250 repetitions a run, with a watchdog of its own because the defect it
+  stands for is a stopped process rather than a wrong answer. It mounts an
+  `overlayfs` for its file, because the ring runs a close on an ordinary
+  filesystem inline and the window then never opens, and where it cannot mount
+  one it prints that and exits 77, which the Makefile treats as the skip it is.
+  It is a probe rather than a harness case because it narrows its own
+  `RLIMIT_NOFILE`, which the harness process cannot do without changing every
+  case that runs after it.
 - Backend (`compiler/src/backend/tests/completion.rs`):
   `a_staged_loop_carries_completion_across_its_back_edge`,
   `the_window_fallback_is_emitted_only_where_a_module_asks_for_one`,
@@ -453,6 +566,25 @@ by exempting the carrying block from the rule.
   because the kernel is free to run the submitted close before the open, in
   which case the open is never refused and the old code has nothing to get
   wrong.
+  `test_descriptor_return_follows_the_outcome`, with the close's outcome
+  removed from the shared predicate so that every close answers yes, fails on
+  its second assertion: a close the host refused with `EBADF` answers that a
+  descriptor came back.
+  `test_a_ring_close_counts_a_return_only_when_it_ran`, with the same half
+  removed from the ring's own answer — `completion_result >= 0` deleted, which
+  is byte-identical to the revision before the repair there — fails under
+  `WF_REQUIRE_LINUX_IO_URING=1` on the refused close's return count, where the
+  shipped harness exits 0. That control is what the test exists for: with only
+  the ring's half removed, the harness passes 25 of 25 runs at each of zero,
+  one, two and four helpers and passes the `WF_REQUIRE_LINUX_IO_URING=1` run,
+  while mis-accounting one return per repetition of the shape that submits
+  both. The other test calls the shared inline answer directly, so it cannot
+  see the ring's.
+  `retirement_interleave_probe`, built against the revision before the ledger
+  announced on both endpoints, publishes fewer opens than source order owes in
+  1 of 12 runs at one helper and 7 of 30 at four, where the shipped runtime
+  loses none in 24 of 24; the same shape under the verifiers' own probe stops
+  the process outright, which is the failure the watchdog is for.
   `a_drain_emitted_before_the_hand_out_it_retires_is_refused` emits a module
   with the ordering check removed, and the loop's `break` exit in that module
   carries a bare `ret` with no `wf__completion_file_join` while the
