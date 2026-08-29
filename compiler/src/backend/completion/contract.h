@@ -415,12 +415,14 @@ wf_completion_statistics wf_completion_statistics_snapshot(
  *
  * Deciding that needs one fact no single engine has.  A refused open must ask
  * "is this runtime still holding a descriptor it could give back", and the
- * answer is about the whole process: a read running on a helper thread, a
- * close the kernel ring has not posted yet, and a blocking direct call are all
- * operations that end with a descriptor returned.  An engine that asks only
- * about its own operations answers a different question and publishes an
- * exhaustion that does not exist.  So there is one ledger here, and every
- * target engine reports into it.
+ * answer is about the whole process: a close the kernel ring has not posted
+ * yet and a blocking direct call are both operations that end with a
+ * descriptor returned, and a read running on a helper thread is an operation
+ * whose end is the moment to look again — the thread of the program's own that
+ * the read is waiting on may be the one closing a descriptor.  An engine that
+ * asks only about its own operations answers a different question and
+ * publishes an exhaustion that does not exist.  So there is one ledger here,
+ * and every target engine reports into it.
  *
  * The rule every refused open follows, whichever engine attempted it:
  *   1. read `wf_completion_descriptor_returns` before the host attempt;
