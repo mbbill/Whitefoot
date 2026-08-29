@@ -189,9 +189,15 @@ suspended caller still owes and is nothing at all for a held ring entry, since
 that blocks no thread. The ledger asks the engine for that queue where it
 decides, inside the lock every wake takes, instead of being handed a reading of
 it taken earlier; the queue is a live fact, and a decision made on a stale
-reading of it is the third deadlock recorded below. The other is global: an
-operation whose thread is inside another operation is *deferred* for as long as
-it is.
+reading of it is the third deadlock recorded below. The other is about the
+waiter itself: one whose thread has gone into another operation *stands aside*
+for as long as it is there. It stays a registered waiter, because its operation
+still cannot retire and that is what a registered waiter says; what it gives up
+is the duty to publish, because the operation it is running may be an open
+refused in its turn and registered behind it, which must be able to answer
+rather than wait for the thread that is waiting for it. Its claim on a returned
+descriptor it keeps: that claim is registration order, and standing aside is
+not leaving.
 
 How each route waits is mechanical, and it is the only per-route thing left.
 The ring holds the refused entry — in a state no doorbell may stage — and asks
@@ -208,10 +214,15 @@ target with a ring it may be the only thread that can reap the completion it is
 waiting for.
 
 Waiters therefore sleep in two different places, and that is a fact about the
-ledger rather than about a route: every transition that can change any waiter's
-answer — an operation accepted, an operation retired, a waiter registering, a
-waiter leaving, an operation deferred — is announced in both, on the ledger's
-own condition variable and on the runtime endpoint. The ledger is given that
+ledger rather than about a route: a transition announces where it can leave
+*another* waiter asleep on an answer that is no longer the best one available
+to it — an operation accepted, an operation retired, a waiter registering, a
+waiter leaving — and then in both places, on the ledger's own condition
+variable and on the runtime endpoint. A thread never needs to wake itself, and
+standing aside and coming back are silent: the thread that stands aside is
+running rather than sleeping and comes back here to answer, and the waiter its
+absence exists for registers afterwards and reads the ledger where it
+registers. The ledger is given that
 endpoint by the unit that owns the runtime, which is the bridge, and clears it
 before the runtime is destroyed. A transition announced in one place only is a
 stopped process, not a slow one, and it is recorded below as the fourth
@@ -381,9 +392,12 @@ host.
   that one park bounded to five milliseconds stalled none in twenty, which is
   what makes it a missed wake rather than progress that was genuinely
   impossible. The bound is not the repair — a rule that needs a timeout to
-  finish is a rule that does not know when it is done. Every transition
-  announces in both places now, and the shape is a probe of its own that the
-  gate runs.
+  finish is a rule that does not know when it is done. Every transition that
+  can leave another waiter asleep on a stale answer announces in both places
+  now; the shape is a probe of its own where an overlay can be mounted, and
+  `test_a_registration_wakes_a_waiter_parked_on_the_endpoint` is the same
+  schedule scripted, with nothing asynchronous in it, which the gate runs
+  everywhere.
 
 Each of the three routes is covered by a test that fails without the fix, and
 so are the third exit, the deadlocks and the moment the queue is read:
@@ -395,6 +409,9 @@ so are the third exit, the deadlocks and the moment the queue is read:
 `test_the_work_a_waiter_owes_is_read_where_it_decides`,
 `test_an_ending_that_returns_nothing_grants_no_reattempt`,
 `test_a_returned_descriptor_is_awarded_in_waiter_order`,
+`test_a_waiter_that_stands_aside_keeps_its_claim`,
+`test_a_waiter_behind_one_that_stands_aside_can_answer`,
+`test_a_registration_wakes_a_waiter_parked_on_the_endpoint`,
 `test_descriptor_return_follows_the_outcome`,
 `test_a_ring_close_counts_a_return_only_when_it_ran` and
 `test_bridge_every_record_holding_a_refused_open_publishes`.
@@ -581,6 +598,18 @@ by exempting the carrying block from the rule.
   with the owed queue run once instead of on every pass, the probe passes six
   of six — so the live read is the fix and the other two are the rule it needs
   to stay one.
+  `test_a_waiter_that_stands_aside_keeps_its_claim` fails at one and four
+  helpers against two different alternatives: a ledger that passes a waiter
+  standing aside over for the award, which hands the descriptor to the later
+  open, and one that lets a waiter standing aside keep the duty to publish,
+  which leaves the later open waiting for the thread that is running it.
+  `test_a_waiter_behind_one_that_stands_aside_can_answer` fails against the
+  second of those on its own.
+  `test_a_registration_wakes_a_waiter_parked_on_the_endpoint`, with
+  `wait_begin`'s announcement on the runtime endpoint removed, fails at one and
+  four helpers on `finished != 0`: the direct call is parked with nothing left
+  to wake it, which is the fourth deadlock in a schedule that needs no
+  asynchrony to reach.
   `test_bridge_open_waits_for_the_other_engine`, with the retirement no longer
   announcing itself on the scheduler's endpoint, stops six times in four
   hundred runs at one helper in the Linux container, where the shipped runtime
