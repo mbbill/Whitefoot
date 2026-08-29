@@ -1638,3 +1638,77 @@ ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53
     driver's `HOST_LINK_LIBRARIES` constant, one link recipe with the shipped
     driver; no verdict logic changes).
 ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619
+
+## 2026-08-28 — merge-time approval content: v0.39 claim-authority narrowing ([CLM-1])
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.39 at exact SHA-256
+  `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
+  It supersedes active v0.38 at SHA-256
+  `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.38.md`. Per the specification's own META-5 delta
+  declaration: numbered rules are +0/-0 and remain 138; grammar productions
+  remain 75; and unique fixed lowercase grammar atoms, writer operation
+  spellings, opaque system nominal spellings, runtime-trap families, entry
+  forms, contract block forms, exception clauses, and the 203 system
+  operations and declaration records are all unchanged. The single changed
+  content is one paragraph of [CLM-1]'s claim-authority state. Where v0.38
+  joined a selector's witness into every binder, delivered value, and storage
+  write whose reaching definition was selected by that edge — naming
+  `value_if`, `value_match`, ordinary match, `give`, loop-carried updates, and
+  post-join state — v0.39 joins it into each matching binder that edge's arm
+  introduces, each value `value_if` or `value_match` delivers along it, and,
+  at each ordinary match reconvergence, loop head, and loop exit the selector
+  reaches, exactly those components whose reaching definition on one incoming
+  edge is a different definition occurrence from their reaching definition on
+  another. Standing on a boundary-selected edge is no longer itself a
+  selection: an ordinary binding, computed value, or storage write whose own
+  operands are every one Local is Local, inside the selected arm and in
+  post-join state alike. The clause that a `value_if` or `value_match` delivery is selected in
+  every case is retained verbatim in effect, so selecting constants on the two
+  arms or the same local value on both arms still does not declassify the
+  delivered value. No other [CLM-1] clause changes, no [CLM-2] or [CLM-3]
+  clause changes, and [PRV-1] provenance — which never included control
+  dependence — is untouched, as are the component tree, the unconditional
+  call-result seed, the witness identity and tie-break, the protected
+  families, and the constrained subjects. This is an accepted-set widening:
+  every component keeps at least the authority a previously accepted program
+  gave it, so no accepted program becomes rejected, while a program whose
+  claim was refused only because a boundary result selected the edge reaching
+  a purely local definition is now accepted. The selection ground is
+  evidence-selected: the differential-fuzz campaign recorded in
+  `docs/done/0097-differential-fuzz.md`, all 63 of whose rejections over 2004
+  generated programs were that one shape, and whose minimized pair differs by
+  a single `return` line.
+- CONFORMANCE BOUNDARY: relative to `main` tip
+  `10b76c66a02bfff21d9842fd9b1f35d0b9855ce4`, `tests/conformance` content
+  changes as follows. Added: seven case files under
+  `tests/conformance/cases/`, being
+  `accept-clm1-local-claim-after-boundary-exit.wf`,
+  `accept-clm1-local-claim-after-boundary-join.wf`,
+  `accept-clm1-local-claim-inside-selected-arm.wf`,
+  `reject-clm1-claim-on-selected-payload.wf`,
+  `reject-clm1-claim-on-delivered-selection.wf`,
+  `reject-clm1-claim-on-storage-written-under-selection.wf`, and
+  `reject-clm1-claim-on-loop-carried-update.wf`. Modified: one file,
+  `tests/conformance/manifest.jsonl`. Deleted: none. Renamed: none. Within
+  `tests/conformance/manifest.jsonl`, seven records are added and no record is
+  modified or removed, taking the case-record count from 510 to 517 and
+  leaving the rule-annotation count at 35. No pre-existing `expect` verdict
+  changes, and coverage stays at 138/138 rules. The three added `accept`
+  cases are the verdict the amended [CLM-1] sentence moves: the two members of
+  the differential-fuzz minimized pair, which v0.38 separated by one `return`
+  line, and a claim over a parameter-derived value inside a selected arm. The
+  four added `reject` cases are the selections the amended sentence retains:
+  the matching binder the arm introduces, a `value_if` delivery whose two arms
+  both give a literal below the bound, storage one arm wrote and the other did
+  not, and loop-carried state a boundary-selected counted loop updated. Every
+  pre-existing case was additionally compiled with both the base compiler at
+  `100b37cd` and this revision's compiler: all 510 produce byte-identical LLVM
+  IR apart from the QUAL-1 banner's version token, or byte-identical
+  diagnostics. Outside `tests/conformance`, no conformance-evidence file
+  changes: the adapter, the runners, and the collection wiring are untouched.
+ACTIVE-SPEC: v0.39 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d

@@ -6809,15 +6809,11 @@ impl Analyzer<'_, '_> {
             return None;
         }
         for (index, component) in contribution.components.iter().enumerate() {
-            // Control authority is occurrence-wide and therefore applies even
-            // when this component has no place support (for example a named
-            // const in a boundary-selected arm).  A value support can still
-            // select an earlier introducing call than that control frame.
-            let mut selected = self
-                .context
-                .claim_authority
-                .control_witness(site)
-                .map(|witness| (self.claim_component_rendering(component), witness, true));
+            // A component carries a boundary result only through a support it
+            // reads.  Standing on a boundary-selected edge is not itself a
+            // selection, so a component whose supports are all local — a named
+            // const or a literal among them — is local wherever it is written.
+            let mut selected: Option<(String, &BoundaryWitness)> = None;
             for support in self.claim_component_supports(component) {
                 let Some(witness) = self.context.claim_authority.witness(
                     site,
@@ -6829,15 +6825,12 @@ impl Analyzer<'_, '_> {
                 };
                 if selected
                     .as_ref()
-                    .is_none_or(|(_, current, control_fallback)| {
-                        let ordering = witness.source_cmp(current);
-                        ordering.is_lt() || (ordering.is_eq() && *control_fallback)
-                    })
+                    .is_none_or(|(_, current)| witness.source_cmp(current).is_lt())
                 {
-                    selected = Some((self.render_claim_support(&support), witness, false));
+                    selected = Some((self.render_claim_support(&support), witness));
                 }
             }
-            if let Some((carrier, boundary, _)) = selected {
+            if let Some((carrier, boundary)) = selected {
                 return Some(ClaimLocalityFailure {
                     node_path: site.clone(),
                     name: name.to_owned(),

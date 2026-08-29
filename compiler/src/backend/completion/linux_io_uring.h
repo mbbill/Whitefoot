@@ -69,7 +69,13 @@ enum wf_linux_io_uring_entry_state {
     WF_LINUX_IO_URING_ENTRY_FREE = 0,
     WF_LINUX_IO_URING_ENTRY_RESERVED = 1,
     WF_LINUX_IO_URING_ENTRY_IN_FLIGHT = 2,
-    WF_LINUX_IO_URING_ENTRY_RETRY_PENDING = 3
+    WF_LINUX_IO_URING_ENTRY_RETRY_PENDING = 3,
+    /* An open the host refused for want of a descriptor, waiting for another
+     * operation's completion to be published before it is re-attempted.  It
+     * is deliberately not `RETRY_PENDING`: a pending entry is one any
+     * doorbell may stage, and this one may not be staged until the descriptor
+     * it needs has actually come back. */
+    WF_LINUX_IO_URING_ENTRY_RETRY_HELD = 4
 };
 
 typedef struct wf_linux_io_uring_entry {
@@ -82,6 +88,20 @@ typedef struct wf_linux_io_uring_entry {
      * kernel never reads the caller's buffer. */
     char path_storage[WF_FILE_PATH_CAPACITY];
     unsigned waiting_readiness;
+    /* Set once when an open of this entry was refused for want of a host
+     * descriptor and re-attempted.  It bounds the re-attempt at one, so the
+     * second outcome is the one the program sees. */
+    unsigned exhaustion_retried;
+    /* The refusal a held open is carrying, the process-wide retirement
+     * generation read when the operation was submitted — before the kernel
+     * could run its `openat`, which is the moment the question is about — and
+     * this entry's place in the ledger's waiter order while it is held.  The
+     * re-attempt is staged once the ledger says a descriptor came back; the
+     * refusal itself is published from `retry_result` when the ledger says
+     * none ever can. */
+    int32_t retry_result;
+    uint64_t retirements_seen;
+    wf_retirement_waiter retirement_waiter;
     /* An open's answer, decided when its completion is reaped. The descriptor
      * is named even where the kind check refused and disposed of it, which is
      * what the direct path reports too. */
@@ -92,6 +112,12 @@ typedef struct wf_linux_io_uring_entry {
 
 typedef struct wf_linux_io_uring_statistics {
     uint64_t submissions;
+    /* `io_uring_enter` calls that carried staged submissions to the kernel.
+     * With the doorbell deferred this is far below `submissions`, and the
+     * distance between the two is the whole of what deferring buys. */
+    uint64_t submission_enters;
+    /* Opens refused for want of a host descriptor and re-attempted once. */
+    uint64_t exhaustion_retries;
     uint64_t capacity_waits;
     uint64_t completions;
     uint64_t publication_failures;
@@ -112,6 +138,13 @@ typedef struct wf_linux_io_uring_adapter {
     size_t entry_capacity;
     _Atomic size_t entry_cursor;
     _Atomic size_t in_flight;
+    /* How many of `in_flight` are opens this ring is holding for
+     * retire-and-retry.  It says only whether there is anything to settle;
+     * whether a held open may be re-attempted, must keep waiting, or must
+     * publish its refusal is the process-wide ledger's answer, because the
+     * descriptor it needs may be held by an operation on another engine
+     * entirely. */
+    _Atomic size_t retry_held;
 
     int ring_descriptor;
     int wait_descriptor;
@@ -140,6 +173,8 @@ typedef struct wf_linux_io_uring_adapter {
     unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
+    _Atomic uint64_t stat_submission_enters;
+    _Atomic uint64_t stat_exhaustion_retries;
     _Atomic uint64_t stat_capacity_waits;
     _Atomic uint64_t stat_completions;
     _Atomic uint64_t stat_publication_failures;
@@ -203,6 +238,20 @@ int wf_linux_io_uring_progress_error(
 size_t wf_linux_io_uring_in_flight(
     const wf_linux_io_uring_adapter *adapter
 );
+
+/* How many operations this ring can own at once: the smaller of the entry
+ * array the bridge supplied and the submission queue the kernel gave it.
+ * Zero before initialization succeeds. */
+size_t wf_linux_io_uring_capacity(
+    const wf_linux_io_uring_adapter *adapter
+);
+
+/* Submits every staged entry the deferred doorbell has left in the submission
+ * queue.  Returns zero or an errno value.  A caller that is about to block
+ * outside this adapter — a join, a park, or a blocking direct host call — must
+ * flush first, or the kernel never learns of work it could already be doing.
+ */
+int wf_linux_io_uring_flush(wf_linux_io_uring_adapter *adapter);
 
 /* Refuses with EBUSY until every accepted operation has produced and
  * published its CQE. */

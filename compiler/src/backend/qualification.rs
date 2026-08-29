@@ -131,7 +131,17 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // is the fact both shipped adapters already publish at submission — the POSIX
 // file adapter after `wf_file_work_bind_path`, the io_uring adapter after
 // target acceptance. Every v0.37 mapping therefore stands unchanged.
-const REVIEWED_FOR: &str = "v0.38";
+// v0.39 review (2026-08-28): the single changed paragraph narrows [CLM-1]'s
+// claim-authority control dependence, a front-end source-acceptance judgment
+// over one function's own definitions. It names no target facility: no system
+// operation, opaque resource type, release action, outcome constructor, or
+// entry form is added or removed, no signature, borrow mode, or effect row
+// this table maps changes, and no host guarantee is newly required. A claim
+// this version newly admits lowers to the same executed check-else-trap every
+// admitted claim already lowers to, so the trap and diagnostic surfaces a
+// target must supply are the ones already qualified here. Every v0.38 mapping
+// therefore stands unchanged.
+const REVIEWED_FOR: &str = "v0.39";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

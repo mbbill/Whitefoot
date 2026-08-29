@@ -295,6 +295,23 @@ int main(int argc, char **argv) {
     submitted = atomic_load_explicit(&submitted_route, memory_order_relaxed);
     declined = atomic_load_explicit(&declined_route, memory_order_relaxed);
     helpers = wf__completion_target_helper_count();
+    /* The arm that exists to reach the adapter branch above has to have
+     * reached the adapter.  Without this the Makefile could set
+     * WF_IO_NO_NATIVE_RING, the bridge could ignore it, and the run would pass
+     * as a second copy of the native-ring arm. */
+    {
+        const char *refused = getenv("WF_IO_NO_NATIVE_RING");
+        if (refused != NULL && refused[0] == '1' && refused[1] == 0
+            && ring_submissions != 0) {
+            fprintf(
+                stderr,
+                "bridge default probe: WF_IO_NO_NATIVE_RING is set and the "
+                "run still submitted %llu operations to the native ring\n",
+                (unsigned long long)ring_submissions
+            );
+            failed = 1;
+        }
+    }
     if (submitted == 0) {
         fprintf(
             stderr,

@@ -1,15 +1,14 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 55 (v0.38 adds [PAR-3], the staged loop permission, to the
-language authority, and names the release milestone of the name an open
-borrows in [SYS-2])
+Revision: 56 (v0.39 narrows [CLM-1]'s claim-authority control dependence to
+the definitions a boundary selector actually chooses)
 
-The active language authority is v0.38, SHA-256
-`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`, carried by
+The active language authority is v0.39, SHA-256
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.37 at `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`,
-archived at [`spec/kernel-spec-v0.37.md`](../spec/kernel-spec-v0.37.md). The
+v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`,
+archived at [`spec/kernel-spec-v0.38.md`](../spec/kernel-spec-v0.38.md). The
 merge-time approval record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch
@@ -59,7 +58,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.38]` `[current: safe-Rust compiler]`
+`[current: spec v0.39]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -70,7 +69,7 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.38 is the active
+belong in the [compiler README](../compiler/README.md). v0.39 is the active
 semantic authority. It rebuilds the system interface around formal state paths,
 ordinary ownership, and completion-only lowering, with no separate world
 region, capability class, blocking-call family, or `Ordered` relation.
@@ -443,7 +442,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-10 — Claim residual source canonicality
 
-`[current: active v0.38; introduced by v0.34]` `[terminal]`
+`[current: active v0.39; introduced by v0.34]` `[terminal]`
 
 - **Goal:** make every claim in a successful checker result one mechanically
   qualified, individually necessary runtime-residual candidate, and every
@@ -485,7 +484,7 @@ creating writer trust or weakening the checked safety envelope.
   irredundancy, not a unique proof basis or globally weakest proposition.
   Accepted-claim runtime execution is unchanged, and no optional solver
   participates in ordinary source acceptance.
-- **Current:** v0.34 introduced this direction, and active v0.38 preserves it.
+- **Current:** v0.34 introduced this direction, and active v0.39 preserves it.
   The exact activation identities and conformance boundaries remain in
   `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
   reconstruction, fixed eligible set, component/occurrence necessity, stable
@@ -539,7 +538,7 @@ facts-off evidence rather than trust in the compiler or writer.
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter installed]`
-`[next: publish an exact-revision report for the activated v0.38 revision]`
+`[next: publish an exact-revision report for the activated v0.39 revision]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
@@ -550,7 +549,7 @@ facts-off evidence rather than trust in the compiler or writer.
   ordinary test runs. Historical exact-revision results remain in their batch
   and activation records; this outline carries no floating count of its own.
 - **Missing / next:** publish the next independent pass/fail/skip report for
-  the exact activated v0.38 revision. Any
+  the exact activated v0.39 revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -876,14 +875,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: v0.38 active; unified-state model implemented and validated]`
+`[current: v0.39 active; unified-state model implemented and validated]`
 `[next: wider APIs and target measurements]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** v0.38 is active and carries this model. It uses
+- **Current:** v0.39 is active and carries this model. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration

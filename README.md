@@ -33,17 +33,17 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.38 is the active language authority, SHA-256
-`5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`, carried by
-the stable [specification path](spec/kernel-spec.md). It adds [PAR-3], the
-staged loop permission that cuts a loop body at its first `may-suspend`
-submission, and supersedes v0.37, whose outgoing bytes are
-preserved as [`spec/kernel-spec-v0.37.md`](spec/kernel-spec-v0.37.md). The
+Kernel specification v0.39 is the active language authority, SHA-256
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
+the stable [specification path](spec/kernel-spec.md). It narrows [CLM-1]'s
+claim-authority control dependence to the definitions a boundary selector
+actually chooses, and supersedes v0.38, whose outgoing bytes are
+preserved as [`spec/kernel-spec-v0.38.md`](spec/kernel-spec-v0.38.md). The
 merge-time record for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.
 
-v0.38 uses ordinary opaque values, `own`, `move`, `&`, and
+v0.39 uses ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,

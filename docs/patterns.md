@@ -8,11 +8,12 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.38 guidance, including the unified-state
+This document carries active v0.39 guidance, including the unified-state
 completion-I/O forms activated by v0.37, the per-iteration scratch form
 [PAR-3] admits (P15), and the three forms the 2026-08-28 blind-writer trial
 found a writer lacking: the inline factory reserve inside P15, the hoisted
-length fact (P16), and the subtotal-returning walk (P17).
+length fact (P16), and the subtotal-returning walk (P17). P18 is the explicit
+buffer a loop holds in place of the output resource it may not hold.
 
 Implementation boundary: the current backend emits no effect-derived
 attributes or alias metadata, performs no proof-driven check elision, has no
@@ -32,7 +33,7 @@ Pattern: deep functions are `pure` or `reads(state)`; they compute and RETURN
 write intents as plain values. Exactly one shallow function holds the single
 `&uniq` and applies the intents. Effect rows make the architecture checkable:
 grep the signatures and find one `writes(state)` in the system. The superseded v0.36 wrote those
-subjects as lifetimes; active v0.38 names the formal state directly.
+subjects as lifetimes; active v0.39 names the formal state directly.
 Current value: exact effect rows make scattered writes visible and reject a
 false architectural summary. Potential speed: the retired channel-2 experiment
 mapped read-only/pure code to memory attributes for hoisting, CSE, and call
@@ -256,7 +257,7 @@ one back, but the callable boundary cannot say which one it chose.
 `fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> selected: &uniq 'r Node` is rejected
 at its own `rtype` [FN-1]: two parameters share the result's region and kind,
 so no caller can root the returned claim, and a result no caller can bind is
-the declaration's error rather than the caller's. Pattern status: active v0.38
+the declaration's error rather than the caller's. Pattern status: active v0.39
 guidance, introduced before v0.36 and preserved since.
 
 Decide which fix applies by asking why there are two sources. If the sources
@@ -273,7 +274,7 @@ decision names.
 The worked shape for the data-dependent case is three parts. The callee
 `fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads(a, b)` reads both
 weights through its shared borrows and returns `Left()` or `Right()`. The
-superseded v0.36 spelled that effect `reads('r)`; under active v0.38 `'r`
+superseded v0.36 spelled that effect `reads('r)`; under active v0.39 `'r`
 remains only the shared loan lifetime. Both forms take shared borrows, so the returned owned decision has no
 borrow provenance. The caller binds
 `let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes
@@ -310,6 +311,17 @@ cross-function relation in the callee's verified `ensures` and consume S12
 directly; otherwise use a typed outcome or ordinary control. An `ensures` does
 not make the returned value claim-local, so a caller cannot restate or
 strengthen it with another claim.
+
+Standing after a call is not the same as reading one. Active v0.39 narrowed
+[CLM-1]: a boundary result reaches a claim through a value the selector chose —
+a matching binder, a `value_if` or `value_match` delivery, or a component whose
+reaching definition differs between the incoming edges of a reconvergence, loop
+head, or loop exit — and not through position alone. So a function that takes a
+typed exit on an I/O failure may still claim a theorem about its own later
+arithmetic, and a claim inside the selected arm over a parameter and literals is
+local. Storage one arm wrote and the other did not, and loop-carried state a
+boundary-selected loop updated, stay non-local: there the selector chose which
+definition arrives.
 
 Do not use a claim for a condition that can legitimately be false, an output
 comparison, an impossible-arm sentinel, a test oracle, a deliberate abort, or
@@ -447,14 +459,18 @@ granted says nothing at all — including when its counted [PAR-2] verdict is
 denied, which is the ordinary case for the form above: the counted rule refuses
 the short factory loan the staged rule exists to admit, and that denial is
 deliberately withheld from the default channel rather than telling a writer
-their granted loop was denied. It is in the full report.
+their granted loop was denied. It is in the full report. A `--no-overlap`
+build prints none of these notes: that flag has already said this build takes
+no overlap at all, so a denied loop is the build the writer asked for rather
+than news about the program they wrote.
 
 `whitefootc --par-ledger` is that full report: one `PAR stage` line per loop
 that performs I/O, and one `PAR place` line for every place the judgment
 classified, with its disposition and the reason, plus the `PAR pair`, `PAR
 chain`, and `PAR loop` lines of the other judgments. A denial names the
-offending place, the numbered condition, and the admitted form. Every notice is
-one of those lines, byte for byte.
+offending place, the numbered condition, and the admitted form, and the flag
+prints it under every lowering. Every notice is one of those lines, byte for
+byte.
 
 One remedy the report can print is not one a writer can take, and it says so:
 where a loop's exit is selected by the may-suspend call's own outcome — the
@@ -595,6 +611,67 @@ value field by field" } } at counts.wf:14:7 in line
 
 Replaces: a mutable accumulator parameter threaded by reference, and `+=` into
 a caller's struct.
+
+## P18. The loop's own buffer, published once
+
+Problem: a loop reads a file per iteration and writes one line to an output —
+`command.stdout`, or another positioned write target — from inside the body.
+[PAR-3] denies it: the resource carries one position, so no iteration can be
+given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
+
+```whitefoot
+for @scan index in 0_u64..8_u64 {
+  /* P15's reserve, open, and read; then */
+  region 'say {
+    let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
+  }
+}
+```
+
+```text
+PAR stage  ‹loop›  for  denied  condition 3: a may-suspend call retains a borrow past its own submission
+           on storage the body writes and the iteration does not introduce; instead, give each iteration
+           its own resource; or, where the body only publishes to that storage — an output stream is the
+           pointed case — hoist the per-iteration write out of the loop, folding a total in the body and
+           writing it once after the loop; or leave this loop sequential, because storage that carries
+           one position cannot be held by two iterations at once, at &uniq 'say out
+```
+
+Pattern: **hold no `&uniq` resource inside a loop body; hold a buffer instead,
+and publish it once after the loop.** Each iteration folds its line into the
+loop's own buffer with an element `set` under one length fact above the loop
+(P16); that element is `serialized-E`, the remainder's writes to storage
+outside the loop being taken in index order.
+
+```whitefoot
+let page = buffer_new(8_u64, 0_u8);
+let room = len(page);
+for @scan index in 0_u64..8_u64 {
+  /* reserve, open, and read into the iteration's own data buffer */
+  let writable = ilt(index, room);
+  if writable {
+    set page[index] = data[0_u64];
+  }
+}
+region 'say {
+  let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
+}
+```
+
+```text
+PAR stage  ‹loop›  for  permitted  staged at open_file<'f, 'n>(permit: move permit, root: &'f cwd,
+           name: &'n name, start: 0_u64, end: 2_u64); 6 places classified
+```
+
+Write into the page by element. A helper taking `&uniq` of it costs the loop
+its pipeline under condition 4 instead: `denied  &uniq 'page page  a call of
+the remainder holds an exclusive loan on it, and two remainders coexist`.
+
+Current value: this is the explicit form and today the only one; the implicit
+form — a per-iteration write to a final stage the runtime commits in order — is
+planned, not landed. Output interleaved as produced appears at the end instead.
+
+Replaces: writing each line where it is produced, as every other language does.
 
 ## Known gaps (findings, not yet patterns)
 

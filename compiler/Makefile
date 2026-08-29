@@ -78,12 +78,20 @@ COMPLETION_CFLAGS := $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFINES)
 # named clock answers with the host's own monotonic clock, exactly as the
 # shipped build does.
 #
-# Both defines are named once, here, and used by every build that links the
+# It further names the adapter open so a test can stand at the moment the
+# host refuses one, and the ledger's schedule point so a test can stand
+# between the two reads a give-up decision makes. The named functions
+# perform the same host calls the shipped code performs and the point does
+# nothing at all where it is unnamed, so only the observation is added.
+#
+# The defines are named once, here, and used by every build that links the
 # harness: a sanitizer build that named a different set would run a different
 # runtime from the one the ordinary build runs.
 COMPLETION_HARNESS_DEFINES := \
 	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
-	-DWF_FILE_MONOTONIC_NS=wf_completion_test_monotonic_ns
+	-DWF_FILE_MONOTONIC_NS=wf_completion_test_monotonic_ns \
+	-DWF_FILE_OPENAT=wf_completion_test_openat \
+	-DWF_COMPLETION_RETIREMENT_POINT=wf_completion_test_retirement_point
 COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
 COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
@@ -100,6 +108,12 @@ COMPLETION_SOURCES := \
 COMPLETION_DEFAULT_ROUTE_SOURCES := \
 	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
 	$(COMPLETION_DIR)/bridge_default_probe.c
+# The same runtime again, with the probe that puts a refused open on every
+# route at once. Built without COMPLETION_DEFINES for the same reason as the
+# default-route probe: the schedule it is about is the shipped one.
+COMPLETION_INTERLEAVE_SOURCES := \
+	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
+	$(COMPLETION_DIR)/retirement_interleave_probe.c
 COMPLETION_CORE_READ_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -214,7 +228,8 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test
+completion-test: completion-core-read-test completion-default-route-test \
+		completion-retirement-interleave-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -270,6 +285,34 @@ completion-default-route-test:
 		-o "$(COMPLETION_TMP)/bridge-default-probe"
 	unset WF_IO_HELPERS; \
 		"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"
+	@# The adapter branch of the probe's route assertion -- the demand-driven
+	@# policy declined a read, or grew a helper -- cannot fire on a Linux host
+	@# whose io_uring takes every positioned read, so on Linux the arm above
+	@# covers only the native ring and the negative control was carried by the
+	@# Darwin CI host alone. WF_IO_NO_NATIVE_RING puts this host on the route a
+	@# kernel without io_uring already takes, and the probe refuses to pass if
+	@# the ring answered anyway.
+	@if [ "$$(uname -s)" = Linux ]; then \
+		unset WF_IO_HELPERS; WF_IO_NO_NATIVE_RING=1 \
+			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
+	fi
+
+# A refused open on every route at once, which is the one shape where a ledger
+# transition on one thread has to reach a waiter asleep somewhere else. It runs
+# at the two helper counts either side of the demand-driven pool's own decision
+# and reports its own skip where the host cannot hold the schedule still: a
+# status of 77 is that skip, and the reason is on stdout beside it.
+completion-retirement-interleave-test:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) $(COMPLETION_INTERLEAVE_SOURCES) \
+		-o "$(COMPLETION_TMP)/retirement-interleave-probe"
+	@for helpers in 1 4; do \
+		WF_IO_HELPERS=$$helpers \
+			"$(COMPLETION_TMP)/retirement-interleave-probe" \
+			"$(COMPLETION_TMP)"; \
+		status=$$?; \
+		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
+	done
 
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -346,6 +389,29 @@ completion-core-read-stress: completion-core-read-test
 	done
 	@echo "completion core/read stress: PASS (200 runs)"
 
+# The bridge and the native adapters, under the thread sanitizer.
+#
+# `completion-core-read-tsan` below covers the isolated core and the bounded
+# POSIX adapter and deliberately links neither the bridge nor the ring. Those
+# two carry their own shared state — the deferred doorbell's staging, the
+# retire-and-retry hand-back, the helper policy's readiness flags — and nothing
+# was checking it. This runs the whole harness instead, at the helper counts
+# `completion-test` runs it at, which is where a helper and a joining scheduler
+# actually contend.
+completion-tsan:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		$(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES) \
+		-fsanitize=thread \
+		$(COMPLETION_SOURCES) \
+		-o "$(COMPLETION_TMP)/harness-tsan"
+	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=0 \
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=1 \
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=4 \
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+
 completion-core-read-tsan: completion-core-read-source-boundary
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
@@ -395,7 +461,9 @@ completion-windows-cross:
 .PHONY: check static format lint test test-unit test-sampling test-corpus \
 	test-partition docs spec completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
-	completion-core-read-stress completion-core-read-tsan completion-sanitize \
+	completion-core-read-stress completion-core-read-tsan completion-tsan \
+	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
+	completion-retirement-interleave-test \
 	completion-default-route-sanitize completion-default-route-tsan \
 	completion-windows-cross

@@ -165,6 +165,8 @@ diagnostic and the form it names cannot drift apart.
 `compile_with_io_notices` returns the module beside the ledger lines an
 ordinary compile reports, and `whitefootc` prints them to stderr prefixed
 `whitefootc: note:`, followed by one line saying the compilation succeeded.
+(Narrowed by `docs/done/0103-quiet-no-overlap.md`: a `--no-overlap` build
+prints none of them.)
 `--par-ledger` is unchanged and remains the full report; the notices are a
 marked subset of exactly the same rendered lines, so a notice can never say
 something the report does not.

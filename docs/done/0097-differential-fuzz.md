@@ -276,6 +276,16 @@ change and this batch has none.
 The generator keeps writing the shape. The rejection costs a few percent of the
 compile budget and buys a standing measurement of exactly this boundary.
 
+*Follow-up, 2026-08-28.* The owner answered the question this section left open
+and ruled NARROW. Kernel specification v0.39 amends the quoted [CLM-1]
+paragraph: a selector's witness joins a matching binder its arm introduces, a
+`value_if` or `value_match` delivery, and the components a reconvergence, loop
+head, or loop exit chooses between different reaching definitions — and nothing
+else. The refused member of the pair above is now accepted, and the sentence
+that named "post-join state" is gone. Everything this record says about the
+v0.38 rule remains an accurate account of the rule it was written against.
+Batch record: `docs/done/0102-clm1-narrow.md`.
+
 ## The campaign
 
 One run, `make campaign PROGRAMS=2000 BUDGET=6600 JOBS=5 SEED=1 REPS=2`, at

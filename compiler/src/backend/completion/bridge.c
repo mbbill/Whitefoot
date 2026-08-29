@@ -43,6 +43,13 @@
 #define WF_BRIDGE_QUEUE_COUNT WF_BRIDGE_OPERATION_CAPACITY
 #define WF_BRIDGE_MAX_HELPERS 8u
 #define WF_BRIDGE_DRAIN_BUDGET 16u
+/* Private storage one loop may hold for its in-flight iterations, before the
+ * compiler's own ceiling and the loop's per-iteration size are applied.  It
+ * exists so a loop whose iteration owns a large buffer gets a small window
+ * instead of a large multiple of that buffer: at 64 KiB an iteration this
+ * budget affords 64 of them, and at 16 MiB it affords none, which the K >= 1
+ * floor turns into the sequential program. */
+#define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
 
 static wf_completion_runtime wf_bridge_runtime;
 static wf_completion_slot wf_bridge_slots[WF_BRIDGE_SLOT_COUNT];
@@ -79,10 +86,22 @@ static _Atomic unsigned wf_bridge_file_ready;
  * is otherwise invisible: neither the completion counter nor the fallback
  * adapter's counter moves for an operation that was never submitted. */
 static _Atomic uint64_t wf_bridge_demoted_opens;
+/* Opens a blocking direct call made, which the host refused for want of a
+ * descriptor and which asked it again after this runtime gave one back.  The
+ * two target engines count their own; together the three are what
+ * `wf__completion_open_exhaustion_retries` reports, because the rule they
+ * follow is one rule. */
+static _Atomic uint64_t wf_bridge_direct_exhaustion_retries;
 #if defined(__linux__)
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
 static _Atomic unsigned wf_bridge_linux_ready;
+/* The one piece of bridge readiness a thread may observe without running the
+ * initializer itself.  `wf_bridge_flush_target` must not create a ring for a
+ * program that only ever makes direct calls, so it cannot go through
+ * `pthread_once`; this release/acquire pair is what orders the ring's
+ * construction before another thread's flush of it. */
+static _Atomic unsigned wf_bridge_doorbell_ready;
 #endif
 
 enum wf_bridge_route {
@@ -211,12 +230,19 @@ static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
     }
+    /* Nothing may announce on this runtime once it is being taken down. */
+    wf_completion_retirement_announces_on(NULL);
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
         wf_bridge_file_ready = 0;
     }
 #if defined(__linux__)
     if (wf_bridge_linux_ready != 0) {
+        atomic_store_explicit(
+            &wf_bridge_doorbell_ready,
+            0,
+            memory_order_release
+        );
         (void)wf_linux_io_uring_destroy(&wf_bridge_linux_adapter);
         wf_bridge_linux_ready = 0;
     }
@@ -224,6 +250,31 @@ static void wf_bridge_shutdown(void) {
     (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
     wf_bridge_ready = 0;
 }
+
+#if defined(__linux__)
+/* WF_IO_NO_NATIVE_RING: run this Linux process on the POSIX adapter route.
+ *
+ * Runtime policy of the same class as WF_IO_NOCACHE and WF_IO_HELPERS, and
+ * test-only within that class: no Whitefoot source names it, no accepted
+ * program changes meaning under it, and no byte any operation produces
+ * differs with it set.  Absent -- and any value other than the exact text "1"
+ * -- is today's behaviour exactly.
+ *
+ * It exists because the route a Linux host takes is not a choice a test can
+ * otherwise make.  A kernel with io_uring available takes every positioned
+ * read into the ring, so the adapter branch of `bridge_default_probe`'s route
+ * assertion -- the demand-driven policy declined a read, or grew a helper --
+ * cannot fire there at all, and the negative control it provides was carried
+ * by the Darwin CI host alone.  Skipping the ring init reaches the same state
+ * a kernel without io_uring reaches, which is a path the runtime already has
+ * rather than one this setting adds.
+ *
+ * It is read once, here, before the only call that starts the ring. */
+static int wf_bridge_native_ring_refused(void) {
+    const char *text = getenv("WF_IO_NO_NATIVE_RING");
+    return text != NULL && text[0] == '1' && text[1] == 0;
+}
+#endif
 
 static void wf_bridge_initialize(void) {
     wf_bridge_error = wf_completion_runtime_init(
@@ -234,8 +285,16 @@ static void wf_bridge_initialize(void) {
     if (wf_bridge_error != 0) {
         return;
     }
+    /* The ledger's second endpoint.  A refused open inside a blocking direct
+     * call parks on this runtime rather than sleeping on the ledger, because
+     * it may be the only thread that can reap the completion it is waiting
+     * for; a ledger transition that never reached this endpoint would leave it
+     * parked on an answer that has already changed.  This bridge owns the
+     * runtime, so this is where the ledger is told about it. */
+    wf_completion_retirement_announces_on(&wf_bridge_runtime);
 #if defined(__linux__)
-    if (wf_linux_io_uring_init(
+    if (!wf_bridge_native_ring_refused()
+        && wf_linux_io_uring_init(
             &wf_bridge_linux_adapter,
             &wf_bridge_runtime,
             wf_bridge_linux_entries,
@@ -255,11 +314,23 @@ static void wf_bridge_initialize(void) {
     /* Darwin has no regular-file kernel completion facility in the supported
      * target set, so its qualified path is the bounded typed adapter. */
     if (!wf_bridge_ensure_file()) {
+        /* The endpoint is cleared before the storage it points at is
+         * destroyed, exactly as at shutdown: a ledger left holding this
+         * runtime would announce on freed storage the moment any adapter this
+         * bridge did not build refused an open. */
+        wf_completion_retirement_announces_on(NULL);
         (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
         return;
     }
 #endif
     wf_bridge_ready = 1;
+#if defined(__linux__)
+    atomic_store_explicit(
+        &wf_bridge_doorbell_ready,
+        wf_bridge_linux_ready,
+        memory_order_release
+    );
+#endif
     if (atexit(wf_bridge_shutdown) != 0) {
         /* Registration failure changes cleanup at process exit, not the
          * completion contract of any admitted operation. */
@@ -308,27 +379,31 @@ static int wf_bridge_spin_for_completion(void) {
     uint64_t started = wf_bridge_monotonic_ns();
     uint64_t deadline;
     unsigned turn = 0;
-    /* The bound on this wait is a clock reading, so a clock this thread cannot
-     * read leaves no bound at all: every later sample answers zero and the
-     * deadline is never reached.  What an unbounded spin then costs is a
-     * property of the route the completion is coming from, and the two routes
-     * differ.
+    /* A clock this thread cannot read is bounded by the `now == 0` term of
+     * the periodic sample below, not by this early return.  That sample
+     * treats a zero reading exactly as it treats a passed deadline, so a
+     * failed clock ends the spin within 64 turns whatever happens here; this
+     * early return only skips those 64 reads of a counter the loop would have
+     * read anyway.
      *
-     * On the native ring it is the whole run.  A submitted read becomes a
-     * ready event only when `wf_bridge_progress` reaps the completion queue,
-     * and this spin never calls it, so the loop's other exit cannot fire on
-     * its own and the join never ends.  Measured with `clock_gettime` forced
-     * to fail: the Linux io_uring route makes no progress at all, while the
-     * guarded build finishes the same work in milliseconds.
+     * The term it defers to is load-bearing rather than defensive, because
+     * neither route's other exit is one this thread can cause on its own: a
+     * submitted operation becomes a ready event only when an engine moves --
+     * `wf_bridge_progress` reaping the ring or running a queued adapter
+     * entry, a helper thread publishing -- and this spin never calls the
+     * former, while the demand-driven policy often runs with no helper at
+     * all, executing declined reads inline before anything is queued.
+     * Measured on Linux with `wf_bridge_monotonic_ns` forced to answer
+     * zero, on the four-lane default probe: the shipped spin, and the spin
+     * with only this early return removed, both finish in about 110 ms;
+     * with the `now == 0` term removed as well, runs hang on BOTH routes
+     * (most of one 12-run ring sample; 2 of 44 forced-adapter runs, one
+     * self-reporting STUCK at its 180 s watchdog).  A run that finishes
+     * without the term owes it to another lane's publication or an inline
+     * decline, not to any bound; the counts above are draws, not rates.
      *
-     * On the POSIX adapter the guard is defence rather than rescue.  A helper
-     * thread publishes the completion, so the ready-event count becomes
-     * nonzero without this thread doing anything and the loop leaves by its
-     * other exit.  Measured the same way on macOS: the unguarded build
-     * finishes, at the same wall time as the guarded one.
-     *
-     * A failed clock therefore ends the spin, which costs at worst a park this
-     * thread was about to make anyway. */
+     * Leaving the spin early costs at worst a park this thread was about to
+     * make. */
     if (started == 0) {
         return wf_completion_ready_event_count(&wf_bridge_runtime) != 0;
     }
@@ -715,6 +790,96 @@ static int wf_bridge_submit_linux_close(
 }
 #endif
 
+/* Rings the deferred io_uring doorbell before this thread does something the
+ * ring cannot see through.
+ *
+ * Staging an SQE costs no syscall, so a submission leaves work the kernel has
+ * not been told about.  That is exactly what makes deferring worth 15 % of the
+ * eight-wide benchmark's wall time, and exactly what makes an unguarded
+ * blocking call a hazard: an open the program has already submitted would sit
+ * in the submission queue, untouched, for as long as this thread waits in a
+ * direct `openat` that the completion path refused to carry.  Every entry
+ * point below that can block outside the ring flushes first.  On a target with
+ * no ring this is nothing. */
+static void wf_bridge_flush_target(void) {
+#if defined(__linux__)
+    if (atomic_load_explicit(&wf_bridge_doorbell_ready, memory_order_acquire)
+        != 0) {
+        (void)wf_linux_io_uring_flush(&wf_bridge_linux_adapter);
+    }
+#endif
+}
+
+/* How many iterations of one loop the runtime will carry in flight at once.
+ *
+ * Asked once per loop entry and never per iteration, exactly as
+ * `wf__par_split_budget` is (`par_runtime.c`).  The writer never sees this
+ * number, never spells it, and cannot influence it: there is no attribute, no
+ * environment variable, and no source form for a window.
+ *
+ * `span` is the loop's trip count where it is statically known and zero where
+ * it is not; `slot_bytes` is the private storage one in-flight iteration owns;
+ * `ceiling` is the compiler's own static cap from that storage's cost.  A zero
+ * in any of the three means "this one places no bound", so
+ * `wf__completion_window(0, 0, 0)` is the runtime's unconstrained answer.
+ *
+ * **One is always a legal answer**, and it reproduces the sequential program
+ * exactly, so this query can never make a correct program fail.  That is why
+ * the fallback a link without this unit gets returns one.
+ *
+ * The runtime's own bound is half its process-wide operation capacity.  The
+ * whole capacity is the wrong answer: a loop that owned every record would
+ * push every other operation in the program onto the capacity-wait path, and a
+ * full ring degrades to a blocking direct call rather than to a slower
+ * pipeline (LOOP-PIPELINE.md §3.9 item 6).  Half of 64 is 32, which is also
+ * where the hand-written ceiling program measured its optimum (§9.2).
+ *
+ * Where the ring is the target engine the ring's capacity bounds it as well;
+ * where a bounded helper pool is, the pool's width does. */
+uint64_t wf__completion_window(
+    uint64_t span,
+    uint64_t slot_bytes,
+    uint64_t ceiling
+) {
+    uint64_t window;
+    if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
+        || wf_bridge_ready == 0) {
+        /* With no completion runtime every operation is a blocking direct
+         * call, so depth buys nothing and one is the honest answer. */
+        return 1;
+    }
+    window = (uint64_t)WF_BRIDGE_OPERATION_CAPACITY / 2u;
+#if defined(__linux__)
+    if (wf_bridge_linux_ready != 0) {
+        uint64_t ring =
+            (uint64_t)wf_linux_io_uring_capacity(&wf_bridge_linux_adapter);
+        if (ring < window) {
+            window = ring;
+        }
+    } else if ((uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
+        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
+    }
+#else
+    if ((uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
+        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
+    }
+#endif
+    if (ceiling != 0 && ceiling < window) {
+        window = ceiling;
+    }
+    if (span != 0 && span < window) {
+        window = span;
+    }
+    if (slot_bytes != 0) {
+        uint64_t affordable =
+            (uint64_t)WF_BRIDGE_WINDOW_BYTE_BUDGET / slot_bytes;
+        if (affordable < window) {
+            window = affordable;
+        }
+    }
+    return window == 0 ? 1u : window;
+}
+
 int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
@@ -881,6 +1046,10 @@ int wf__completion_file_open_at_submit(
             1,
             memory_order_relaxed
         );
+        /* The caller answers a refusal with a direct blocking open, so no
+         * already-submitted operation may be left waiting on a doorbell this
+         * thread is about to stop ringing. */
+        wf_bridge_flush_target();
         return 0;
     }
 #if defined(__linux__)
@@ -1071,6 +1240,123 @@ int wf__completion_file_write_submit_writer(
     );
 }
 
+/* True exactly for the result of an open the host refused because it had no
+ * descriptor to give: the process limit and the system limit. */
+static int wf_bridge_open_lacked_a_descriptor(const wf_file_result *result) {
+    return result->kind == WF_FILE_OPEN_AT && result->value < 0
+        && (result->error_code == EMFILE || result->error_code == ENFILE);
+}
+
+/* Waits for this runtime to give a descriptor back, then re-attempts one open
+ * a blocking direct call had refused.
+ *
+ * The rule stated in contract.h, on the third route an open can take.  What is
+ * different here is only how the waiting is done: this thread cannot sleep on
+ * the ledger, because on a target with a kernel completion ring it may be the
+ * only thread that can reap the very completion it is waiting for.  So it
+ * waits by driving the engines and parking on the runtime's own endpoint,
+ * which every publication already wakes.  The epoch is read before the state,
+ * so a retirement that lands between the two makes the park return at once
+ * instead of sleeping through it.
+ *
+ * Exactly one re-attempt, as on either target engine, and made at the same
+ * moment: a descriptor has come back, or nothing is left in this runtime that
+ * could bring one and a later look could see no more than this one. */
+static wf_file_result wf_bridge_retire_and_retry_direct(
+    const wf_file_request *request,
+    uint64_t seen
+) {
+    wf_retirement_waiter waiter;
+    wf_file_result result;
+    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
+    for (;;) {
+        uint64_t epoch;
+        int progressed;
+        if (wf_bridge_ready == 0) {
+            /* No runtime to drive: whatever is in flight belongs to an
+             * adapter this bridge did not build, and the ledger's own wake is
+             * the only one there is. */
+            if (wf_completion_retirement_state(&waiter)
+                != WF_RETIREMENT_AWAITED) {
+                break;
+            }
+            wf_completion_retirement_sleep(&waiter);
+            continue;
+        }
+        /* Driving the engines runs other operations on this thread — with no
+         * helper, a queued adapter request, which can be an open that is
+         * refused in its turn and registers behind this waiter.  So this waiter
+         * stands aside for exactly as long as it is inside one of them, and has
+         * its place back before it decides or sleeps. */
+        wf_completion_retirement_defer_begin(&waiter);
+        progressed = wf_bridge_progress();
+        wf_completion_retirement_defer_end(&waiter);
+        /* The epoch after everything this thread does — the aside above
+         * included, which announces — and before the state it would park on.  A
+         * transition that lands after this read moves the epoch and the park
+         * returns at once; one that landed before it is in the state read
+         * below.  What this order rules out is the thread cancelling its own
+         * park: an announcement of its own between the two reads makes every
+         * park return immediately, which is not a wait but a spin.  Measured at
+         * the revision that read the epoch first, this loop never once reached
+         * a park that slept — tens of thousands of turns across runs, and zero
+         * sleeps in every one of them; here it sleeps. */
+        epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
+        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
+            break;
+        }
+        if (progressed == 0) {
+            wf_bridge_park(epoch);
+        }
+    }
+    wf_completion_retirement_wait_end(&waiter);
+    atomic_fetch_add_explicit(
+        &wf_bridge_direct_exhaustion_retries,
+        1,
+        memory_order_relaxed
+    );
+    result = wf_file_execute_timed(&wf_bridge_adapter, request);
+    /* Charged for what it took, on the award it was granted or on none, the
+     * same way the bounded adapter's re-attempt is. */
+    if (wf_file_open_took_a_descriptor(&result)) {
+        wf_completion_retirement_open_took_a_descriptor(waiter.awarded);
+    }
+    return result;
+}
+
+/* One blocking direct host call, entered in the process-wide ledger.
+ *
+ * A direct call is an operation like any other while it runs: it can be
+ * holding the descriptor a refused open elsewhere is waiting for, and when it
+ * ends it may be giving one back.  Leaving it out of the ledger would make
+ * both facts invisible and let another engine publish an exhaustion that this
+ * call was about to answer. */
+static wf_file_result wf_bridge_execute_direct(
+    const wf_file_request *request
+) {
+    uint64_t seen = wf_completion_descriptor_returns();
+    wf_file_result result;
+    wf_completion_operation_accepted();
+    result = wf_file_execute_timed(&wf_bridge_adapter, request);
+    if (wf_bridge_open_lacked_a_descriptor(&result)) {
+        result = wf_bridge_retire_and_retry_direct(request, seen);
+    } else if (wf_file_open_took_a_descriptor(&result)) {
+        /* This route's non-registered open: satisfied at the first attempt, so
+         * it never became a waiter, and charged here for the descriptor it
+         * took so that no waiter is promised it as well. */
+        wf_completion_retirement_open_took_a_descriptor(0);
+    }
+    wf_completion_operation_retired(wf_file_returned_a_descriptor(&result));
+    /* A direct call publishes nothing, so nothing else tells a scheduler
+     * parked on the completion endpoint that this runtime just gave a
+     * descriptor back.  A held open waiting for exactly that is released by a
+     * scheduler asking the ledger again, and this is what gets it there. */
+    if (wf_bridge_ready != 0 && wf_completion_retirement_waiters() != 0) {
+        wf_completion_notify_capacity(&wf_bridge_runtime);
+    }
+    return result;
+}
+
 static int64_t wf_bridge_return_direct(wf_file_result result) {
     if (result.value < 0) {
         errno = result.error_code;
@@ -1085,6 +1371,9 @@ int64_t wf__completion_file_pread_direct(
     int64_t file_offset
 ) {
     wf_file_request request;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
 #if defined(__linux__)
     if (file_offset >= 0) {
         wf_completion_token token;
@@ -1117,7 +1406,7 @@ int64_t wf__completion_file_pread_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
+    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 }
 
 int64_t wf__completion_file_write_direct(
@@ -1126,6 +1415,9 @@ int64_t wf__completion_file_write_direct(
     uint64_t count
 ) {
     wf_file_request request;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_WRITE;
     request.operation.write.descriptor = descriptor;
@@ -1135,7 +1427,7 @@ int64_t wf__completion_file_write_direct(
         errno = EINVAL;
         return -1;
     }
-    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
+    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 }
 
 int wf__completion_file_open_at_direct(
@@ -1156,6 +1448,9 @@ int wf__completion_file_open_at_direct(
         errno = EINVAL;
         return -1;
     }
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_OPEN_AT;
     request.operation.open_at.directory = directory;
@@ -1165,7 +1460,7 @@ int wf__completion_file_open_at_direct(
     request.operation.open_at.has_mode = has_mode;
     request.operation.open_at.expected_kind =
         (enum wf_file_expected_kind)expected_kind;
-    result = wf_file_execute_timed(&wf_bridge_adapter, &request);
+    result = wf_bridge_execute_direct(&request);
     *error_code = result.error_code;
     *open_outcome = (unsigned)result.open_outcome;
     return (int)wf_bridge_return_direct(result);
@@ -1178,6 +1473,9 @@ int wf__completion_file_status_direct(
 ) {
     wf_file_request request;
     wf_file_result result;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     if (status == NULL
         || (uint64_t)(size_t)status_capacity != status_capacity) {
         errno = EINVAL;
@@ -1186,7 +1484,7 @@ int wf__completion_file_status_direct(
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_STATUS;
     request.operation.status.descriptor = descriptor;
-    result = wf_file_execute_timed(&wf_bridge_adapter, &request);
+    result = wf_bridge_execute_direct(&request);
     if (result.value == 0) {
         if ((uint64_t)result.status_size > status_capacity) {
             errno = EOVERFLOW;
@@ -1199,10 +1497,13 @@ int wf__completion_file_status_direct(
 
 int wf__completion_file_close_direct(int descriptor) {
     wf_file_request request;
+    /* The blocking host call below is outside every path the ring can see
+     * through, so the doorbell rings first. */
+    wf_bridge_flush_target();
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_CLOSE;
     request.operation.close.descriptor = descriptor;
-    return (int)wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
+    return (int)wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 }
 
 
@@ -1225,7 +1526,7 @@ int64_t wf__completion_directory_next_direct(
     request.operation.directory_next.buffer = buffer;
     request.operation.directory_next.count = (size_t)count;
     request.operation.directory_next.position = position;
-    return wf_bridge_return_direct(wf_file_execute_timed(&wf_bridge_adapter, &request));
+    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
 #else
     (void)descriptor;
     (void)buffer;
@@ -1539,6 +1840,48 @@ uint64_t wf__completion_file_fallback_submissions(void) {
     return wf_bridge_file_ready == 0
         ? 0
         : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter).submissions;
+}
+
+/* `io_uring_enter` calls this process made to carry staged submissions.  With
+ * the doorbell deferred this stays far below the submission count, and the
+ * distance between the two is what deferring bought. */
+uint64_t wf__completion_linux_io_uring_submission_enters(void) {
+#if defined(__linux__)
+    if (wf_bridge_linux_ready != 0) {
+        return wf_linux_io_uring_statistics_snapshot(&wf_bridge_linux_adapter)
+            .submission_enters;
+    }
+#endif
+    return 0;
+}
+
+/* Opens the host refused for want of a descriptor that this runtime gave one
+ * back for and re-attempted once, over every route an open can take. */
+uint64_t wf__completion_open_exhaustion_retries(void) {
+    uint64_t retries = atomic_load_explicit(
+        &wf_bridge_direct_exhaustion_retries,
+        memory_order_relaxed
+    );
+    retries += wf_bridge_file_ready == 0
+        ? 0
+        : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter)
+            .exhaustion_retries;
+#if defined(__linux__)
+    if (wf_bridge_linux_ready != 0) {
+        retries += wf_linux_io_uring_statistics_snapshot(
+            &wf_bridge_linux_adapter
+        ).exhaustion_retries;
+    }
+#endif
+    return retries;
+}
+
+/* Opens this runtime held rather than published, over every route, because
+ * something in flight could still give the descriptor they needed back.  A
+ * test that has to stand at exactly that moment reads this; nothing in the
+ * runtime decides anything on it. */
+uint64_t wf__completion_open_exhaustion_waits(void) {
+    return wf_completion_retirement_waits();
 }
 
 uint64_t wf__completion_file_demoted_opens(void) {
