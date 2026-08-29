@@ -3740,6 +3740,79 @@ static int test_descriptor_return_follows_the_outcome(void) {
     return 0;
 }
 
+/* The same question, asked of the ring, which answers it from its own entry.
+ *
+ * The test above calls the shared inline answer, so it pins the record half of
+ * the predicate and nothing else.  A ring that counted every close it completed
+ * as a descriptor coming back — whatever the kernel said about it — passes that
+ * test and every other one in this file, while a refused close spends a refused
+ * open's single re-attempt on a descriptor that never came back.  Measured on
+ * the shape that submits both, it mis-accounts one return per repetition.
+ *
+ * So this stands where only the ring can answer: two closes, one the kernel
+ * performs and one it refuses, each checked to have gone to the ring, with the
+ * process-wide return count read across each.  The deltas are exact — one and
+ * zero — because nothing else of this runtime's is in flight here. */
+static int test_a_ring_close_counts_a_return_only_when_it_ran(
+    const char *scratch_directory
+) {
+    wf_completion_token token;
+    char path[256];
+    uint64_t ring_before;
+    uint64_t returns_before;
+    int64_t value = -1;
+    int error_code = -1;
+    int held;
+    int writer;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-ring-close-return-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    writer = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    CHECK(writer >= 0);
+    CHECK(close(writer) == 0);
+    held = open(path, O_RDONLY);
+    CHECK(held >= 0);
+
+    /* A close the host performs: one descriptor back. */
+    ring_before = wf__completion_linux_io_uring_submissions();
+    returns_before = wf_completion_descriptor_returns();
+    CHECK(wf__completion_file_close_submit(held, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    if (wf__completion_linux_io_uring_submissions() == ring_before) {
+        /* This host's closes do not take the ring, so the ring's own answer is
+         * not reachable from here.  A run that demanded the ring may not pass
+         * by skipping. */
+        CHECK(getenv("WF_REQUIRE_LINUX_IO_URING") == NULL);
+        CHECK(unlink(path) == 0);
+        return 0;
+    }
+    CHECK(wf_completion_descriptor_returns() == returns_before + 1u);
+
+    /* A close the host refuses: nothing came back, and the count says so. */
+    ring_before = wf__completion_linux_io_uring_submissions();
+    returns_before = wf_completion_descriptor_returns();
+    value = 0;
+    error_code = 0;
+    CHECK(wf__completion_file_close_submit(30000, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value < 0 && error_code == EBADF);
+    CHECK(wf__completion_linux_io_uring_submissions() == ring_before + 1u);
+    CHECK(wf_completion_descriptor_returns() == returns_before);
+
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
 static int test_open_exhaustion_waits_for_another_engine(
     const char *scratch_directory
 ) {
@@ -4873,6 +4946,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
     RUN_TEST(test_descriptor_return_follows_the_outcome());
+    RUN_TEST(test_a_ring_close_counts_a_return_only_when_it_ran(argv[1]));
     RUN_TEST(test_open_exhaustion_retires_owned_work_and_retries(argv[1]));
     RUN_TEST(test_open_exhaustion_waits_for_another_engine(argv[1]));
     RUN_TEST(test_bridge_open_exhaustion_is_retried_once(argv[1]));
