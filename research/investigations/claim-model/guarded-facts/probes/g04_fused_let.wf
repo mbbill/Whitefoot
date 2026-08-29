@@ -1,0 +1,20 @@
+fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+  doc "Control for g03: identical arithmetic and read, fused into the one arm, with no join between them. If this accepts, S7's range-guarded wrap image and the [ENT-4] step from n >= 8 are both present today and the only thing g03 loses is the join.";
+  let n = len(deref(data));
+  let have_room = ige(n, 8_u64);
+  let out = 0_u8;
+  if have_room {
+    let back = n -wrap 8_u64;
+    let byte = deref(data)[back];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 7_u8);
+  region 'r {
+    let b = tail_byte<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}

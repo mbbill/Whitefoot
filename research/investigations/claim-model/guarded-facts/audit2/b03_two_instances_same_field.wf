@@ -1,0 +1,29 @@
+struct Head {
+  flag: Bool;
+  at: u64;
+}
+
+fn needs_flag(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(h1: own Head, h2: own Head) -> result: own u64 reads(h1.flag, h2.flag) {
+  doc "TWO STRUCT INSTANCES SHARING A FIELD SPELLING. The key an [ENT-5.G2](a') entry would carry is +h1.flag; the test here is `if h2.flag`, which publishes +h2.flag. If [ENT-2] interned the two by field spelling rather than by resolved place, the key would be satisfied on a path that never touched h1 and a delta about h1.at would be released. REJECT means the two are distinct goals and the release cannot cross instances -- the attack is refused by [ENT-2], not by anything [ENT-5.G] says.";
+  let out = 0_u64;
+  if h2.flag {
+    let r = needs_flag(f: h1.flag, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let f = False();
+  let a = Head(flag: f, at: 50_u64);
+  let b = Head(flag: t, at: 0_u64);
+  let r = drive(h1: move a, h2: move b);
+  return exit_status(code: 0_u8);
+}

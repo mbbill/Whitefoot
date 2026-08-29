@@ -1,0 +1,31 @@
+fn broken['d](data: &'d buffer<u8>, f0: own Bool) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "THE REFUTATION OF ROUND 2. r09's mechanism one nesting level shallower, where round 2's repair does not reach. Nothing is formed inside an arm and nothing is carried out by [ENT-5.G3](d): clause [ENT-5.G2](a) forms the entry AT the value_if continuation, from the arm-EXIT states A and B, and the else arm's `set f = yes;' is a kill event on an edge that precedes formation, so it can never remove an entry that does not yet exist. B therefore does not derive -f, [ENT-5.G6]'s premise `its complement holds on the other reaching edge' is unbacked for clauses (a) and (b) -- only (a') carries that condition explicitly -- and the key [+f] no longer records which arm ran. The delta comes from the value_if delivery clause, so no [ENT-3.S5] prerequisite is in the way and this refutes [ENT-5.G] alone on top of today's checker. Called with f0 = False the else arm runs, x is 50, f becomes true, +f is derivable at the use by S1, and x <= 3 is released against a 4-byte buffer.";
+  let f = f0;
+  let x = if f {
+    let three = 3_u64;
+    give three;
+  } else {
+    let yes = True();
+    set f = yes;
+    let fifty = 50_u64;
+    give fifty;
+  }
+  let out = 0_u8;
+  if f {
+    let b = deref(data)[x];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let no = False();
+  region 'r {
+    let b = broken<'r>(data: &'r input, f0: no);
+  }
+  return exit_status(code: 0_u8);
+}

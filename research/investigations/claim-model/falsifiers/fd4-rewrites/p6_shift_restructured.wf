@@ -1,0 +1,56 @@
+struct ShiftedTail {
+  tail: u64;
+  status: u8;
+}
+
+fn shift_input_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input) {
+  doc "P6: Q1 option (b). source_index is guarded directly against input_room before the read, and the false edge reports the count actually moved, so the returned tail is the truth on every edge.";
+  let input_room = len(deref(input));
+  let available_fits = ile(available, input_room);
+  if available_fits {
+  } else {
+    let rejected = ShiftedTail(tail: 0_u64, status: 6_u8);
+    return move rejected;
+  }
+  let scan_fits = ile(scan, available);
+  if scan_fits {
+  } else {
+    let rejected = ShiftedTail(tail: 0_u64, status: 6_u8);
+    return move rejected;
+  }
+  let tail = available -wrap scan;
+  let moved = 0_u64;
+  let produced = tail;
+  loop @shift_input {
+    let done = ige(moved, tail);
+    if done {
+      break @shift_input;
+    }
+    let source_index = scan +wrap moved;
+    let read_ok = ilt(source_index, input_room);
+    if read_ok {
+    } else {
+      set produced = moved;
+      break @shift_input;
+    }
+    let write_ok = ilt(moved, input_room);
+    if write_ok {
+    } else {
+      set produced = moved;
+      break @shift_input;
+    }
+    let byte = deref(input)[source_index];
+    set deref(input)[moved] = byte;
+    set moved = moved +wrap 1_u64;
+  }
+  let accepted = ShiftedTail(tail: produced, status: 0_u8);
+  return move accepted;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(64_u64, 1_u8);
+  region 'b {
+    let result = shift_input_tail<'b>(input: &uniq 'b buf, available: 40_u64, scan: 8_u64);
+  }
+  return exit_status(code: 0_u8);
+}

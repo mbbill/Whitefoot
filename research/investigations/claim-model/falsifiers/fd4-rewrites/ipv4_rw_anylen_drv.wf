@@ -1,0 +1,180 @@
+const ipv4_header: array<u8, 20> =[69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
+
+fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header) {
+  let length = len(header);
+  let offset = 0_u64;
+  let sum = 0_u32;
+  loop @words {
+    match offset +checked 1_u64 {
+      Ok(value: low_offset) => {
+        let pair_ok = ilt(low_offset, length);
+        if pair_ok {
+          let high_byte = header[offset];
+          let low_byte = header[low_offset];
+          let high_word = cvt<u8, u32>(high_byte);
+          let low_word = cvt<u8, u32>(low_byte);
+          let shifted_high = ishl.wrap(high_word, 8_u32);
+          let word = ior(shifted_high, low_word);
+          let combined = sum +wrap word;
+          let carry = ishr.wrap(combined, 16_u32);
+          let low_sum = iand(combined, 65535_u32);
+          let folded = low_sum +wrap carry;
+          set sum = folded;
+          set offset = low_offset +wrap 1_u64;
+        } else {
+          let tail_ok = ilt(offset, length);
+          if tail_ok {
+            let last_byte = header[offset];
+            let last_word = cvt<u8, u32>(last_byte);
+            let shifted_last = ishl.wrap(last_word, 8_u32);
+            let combined = sum +wrap shifted_last;
+            let carry = ishr.wrap(combined, 16_u32);
+            let low_sum = iand(combined, 65535_u32);
+            let folded = low_sum +wrap carry;
+            set sum = folded;
+          }
+          break @words;
+        }
+      }
+      Err(error: over) => {
+        break @words;
+      }
+    }
+  }
+  let inverted = inot(sum);
+  let checksum_word = iand(inverted, 65535_u32);
+  let narrowed = cvt<u32, u16>(checksum_word);
+  let checksum = match narrowed {
+    Ok(value: checksum_value) => {
+      give checksum_value;
+    }
+    Err(error: failure) => {
+      give 0_u16;
+    }
+  }
+  return checksum;
+}
+
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
+  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  let sent = 0_u64;
+  loop @publish {
+    let pending = ilt(sent, length);
+    if pending {
+    } else {
+      break @publish;
+    }
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+  doc "F-D4 differential driver: checksums argv[1] and publishes the two checksum bytes, so two builds can be compared byte for byte.";
+  let staging = buffer_new(4096_u64, 0_u8);
+  let argument_count = 0_u64;
+  region 'invocation {
+    set argument_count = args_count<'invocation>(args: &'invocation args);
+  }
+  let usable = ige(argument_count, 2_u64);
+  if usable {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let header_length = 0_u64;
+  let startup = 0_u8;
+  region 'lease {
+    match arg_get<'lease>(args: &'lease args, position: 1_u64) {
+      Ok(value: text) => {
+        region 'copy {
+          match host_copy_bytes<'copy, 'copy>(value: &'copy text, destination: &uniq 'copy staging, start: 0_u64, end: 4096_u64) {
+            Ok(value: copied) => {
+              set header_length = copied;
+            }
+            Err(error: too_small) => {
+              set startup = 1_u8;
+            }
+          }
+        }
+      }
+      Err(error: absent) => {
+        set startup = 1_u8;
+      }
+    }
+  }
+  if ieq(startup, 0_u8) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let header = buffer_new(header_length, 0_u8);
+  let cursor = 0_u64;
+  loop @copy_in {
+    let more = ilt(cursor, header_length);
+    if more {
+    } else {
+      break @copy_in;
+    }
+    let staging_room = len(staging);
+    let readable = ilt(cursor, staging_room);
+    if readable {
+      let byte = staging[cursor];
+      let header_room = len(header);
+      let writable = ilt(cursor, header_room);
+      if writable {
+        set header[cursor] = byte;
+      }
+    }
+    set cursor = cursor +wrap 1_u64;
+  }
+  let checksum = 0_u16;
+  region 'view_region {
+    let view = slice_of(&'view_region header);
+    set checksum = ipv4_checksum<'view_region>(header: move view);
+  }
+  let report = buffer_new(2_u64, 0_u8);
+  let low = iand(checksum, 255_u16);
+  let high = ishr.wrap(checksum, 8_u32);
+  let low_narrowed = cvt<u16, u8>(low);
+  let high_narrowed = cvt<u16, u8>(high);
+  let low_byte = match low_narrowed {
+    Ok(value: fitted) => {
+      give fitted;
+    }
+    Err(error: failure) => {
+      give 0_u8;
+    }
+  }
+  let high_byte = match high_narrowed {
+    Ok(value: fitted) => {
+      give fitted;
+    }
+    Err(error: failure) => {
+      give 0_u8;
+    }
+  }
+  set report[0_u64] = low_byte;
+  set report[1_u64] = high_byte;
+  region 'report_write {
+    let report_length = len(report);
+    match publish_all<'report_write, 'report_write>(output: &uniq 'report_write out, source: &'report_write report, length: report_length) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

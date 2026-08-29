@@ -1,0 +1,39 @@
+struct Head {
+  flag: Bool;
+  at: u64;
+}
+
+fn drive['d](data: &'d buffer<u8>, h: own Head) -> result: own u8 reads(data, h.flag, h.at), writes(h.flag, h.at) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "ATTACK (ii): A FLAG FIELD OVERWRITTEN BETWEEN STORE AND TEST, in its sharpest form -- @C1 forms [+h.flag] with delta {h.at <= 3}, @C2 is a second branch on the SAME flag whose else arm CLEARS it, so the entry is present on @C2's then edge only, its key member +h.flag IS the goal S1 establishes there, and [ENT-5.G3](d) is the deciding rule. REFUSED, and the mechanism is one the draft never states: (d) carries the entry as it stands ON e, and @C2's then arm writes h.at, so the stale h.at <= 3 is already dead when (d) reads it. The union at @C2 therefore combines an EMPTY inherited delta with {h.at <= 50, h.at >= 50}, which is true. Had the union seen both, it would have taken the per-pair tighter constant in both directions -- h.at <= 3 AND h.at >= 50 -- an inconsistent delta that [ENT-5.G2]'s Union has no consistency check for and that is not the syntactic bottom. REJECT today with the residual the release would close.";
+  let spare = 0_u64;
+  if h.flag {
+    set h.at = 3_u64;
+  }
+  if h.flag {
+    set h.at = 50_u64;
+  } else {
+    let no = False();
+    set h.flag = no;
+    let pad = 1_u64;
+    set spare = spare +wrap pad;
+  }
+  let out = 0_u8;
+  if h.flag {
+    let b = deref(data)[h.at];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let t = True();
+  let head = Head(flag: t, at: 0_u64);
+  region 'r {
+    let b = drive<'r>(data: &'r input, h: move head);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,185 @@
+struct Style {
+  justify: Bool;
+  hyphenate: Bool;
+  rtl: Bool;
+  columns: u64;
+  indent: u64;
+}
+
+fn fill_span(width: own u64, count: own u64) -> result: own u64 pure contract {
+  requires ile(count, width);
+} {
+  doc "The single-column filler. Its requirement is the negative-key consumer: only the else arm of the multicolumn test establishes that the span covers the whole line.";
+  return width;
+}
+
+fn ink['c](canvas: &uniq 'c buffer<u8>, at: own u64, value: own u8) -> result: own u64 writes(canvas) contract {
+  define room = len(deref(canvas));
+  requires ilt(at, room);
+} {
+  doc "The I/O-shaped sink of the middle phase. Its EFF-2 write row projects onto the canvas actual only, so it kills nothing any guarded set of this function holds.";
+  set deref(canvas)[at] = value;
+  return at;
+}
+
+fn render_line['g, 'c](glyphs: &'g buffer<u8>, canvas: &uniq 'c buffer<u8>, style: own Style, tight: own Bool) -> result: own u64 reads(glyphs, canvas, style.justify, style.hyphenate, style.rtl, style.columns, style.indent), writes(canvas) {
+  doc "One line of a layout engine, written the way layout code is written: a measure phase that computes ten style flags and the offsets that only make sense under them, a middle phase that accumulates and calls the sink, and a render phase that re-tests the flags singly, in conjunction and inside a loop, subscripting with the correlated offsets. No offset is re-tested at its use, no impossible else is written, no enum is invented and no helper function carries the correlation in a `requires`.";
+  let n = len(deref(glyphs));
+  let room = len(deref(canvas));
+  let f01_justify = style.justify;
+  let f02_hyphenate = style.hyphenate;
+  let f03_rtl = style.rtl;
+  let f04_strict = tight;
+  let f05_wide = ige(n, 64_u64);
+  let f06_tail = ige(n, 8_u64);
+  let f07_head = ige(n, 4_u64);
+  let f08_multicol = ige(style.columns, 2_u64);
+  let f09_indented = ine(style.indent, 0_u64);
+  let f10_canvasfit = ige(room, 32_u64);
+  let tail_at = 0_u64;
+  let mark_at = 0_u64;
+  let head_end = 0_u64;
+  let col_at = 0_u64;
+  let hyph_at = 0_u64;
+  let ind_at = 0_u64;
+  let rtl_at = 0_u64;
+  let just_at = n;
+  let col_w = 0_u64;
+  if f06_tail {
+    let t = n -wrap 8_u64;
+    set tail_at = t;
+  }
+  if f05_wide {
+    let t = n -wrap 64_u64;
+    set mark_at = t;
+  }
+  if f07_head {
+    set head_end = 3_u64;
+  }
+  if band(f08_multicol, f06_tail) {
+    let t = n -wrap 2_u64;
+    set col_at = t;
+  }
+  if band(f02_hyphenate, f06_tail) {
+    let t = n -wrap 3_u64;
+    set hyph_at = t;
+  }
+  if band(f09_indented, f07_head) {
+    let t = n -wrap 4_u64;
+    set ind_at = t;
+  }
+  if f10_canvasfit {
+    if f03_rtl {
+      if f06_tail {
+        let t = n -wrap 7_u64;
+        set rtl_at = t;
+      }
+    }
+  }
+  if f06_tail {
+    if band(f04_strict, f01_justify) {
+      let t = n -wrap 5_u64;
+      set just_at = t;
+    }
+  }
+  if f08_multicol {
+    let t = n -wrap 2_u64;
+    set col_w = t;
+  } else {
+    set col_w = n;
+  }
+  let acc = 0_u8;
+  let k = 0_u64;
+  loop @scan {
+    let more = ilt(k, n);
+    if more {
+    } else {
+      break @scan;
+    }
+    let g = deref(glyphs)[k];
+    set acc = acc +wrap g;
+    set k = k +wrap 1_u64;
+  }
+  if f10_canvasfit {
+    region 'sink {
+      let w = ink<'sink>(canvas: &uniq 'sink deref(canvas), at: 1_u64, value: acc);
+    }
+  }
+  let widened = cvt<u8, u64>(acc);
+  set ind_at = widened;
+  if band(f09_indented, f07_head) {
+    let t = n -wrap 4_u64;
+    set ind_at = t;
+  }
+  let out = 0_u64;
+  if f06_tail {
+    let b = 0_u8;
+    set out = out +wrap 1_u64;
+  }
+  if f05_wide {
+    let b = 0_u8;
+    set out = out +wrap 2_u64;
+  }
+  if f08_multicol {
+    if f06_tail {
+      let b = 0_u8;
+      set out = out +wrap 3_u64;
+    }
+  }
+  if band(f02_hyphenate, f06_tail) {
+    let b = 0_u8;
+    set out = out +wrap 4_u64;
+  }
+  if band(f09_indented, f07_head) {
+    let b = 0_u8;
+    set out = out +wrap 5_u64;
+  }
+  if f10_canvasfit {
+    if f03_rtl {
+      if f06_tail {
+        let b = 0_u8;
+        set out = out +wrap 6_u64;
+      }
+    }
+  }
+  if f06_tail {
+    if f04_strict {
+      if f01_justify {
+        let b = 0_u8;
+        set out = out +wrap 7_u64;
+      }
+    }
+  }
+  if f08_multicol {
+  } else {
+    let s = 0_u64;
+    set out = out +wrap s;
+  }
+  let pass = 0_u64;
+  loop @paint {
+    let done = ige(pass, 4_u64);
+    if done {
+      break @paint;
+    }
+    if f07_head {
+      let b = 0_u8;
+      set out = out +wrap 8_u64;
+    }
+    set pass = pass +wrap 1_u64;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let glyphs = buffer_new(4096_u64, 65_u8);
+  let canvas = buffer_new(256_u64, 32_u8);
+  let yes = True();
+  let no = False();
+  let style = Style(justify: yes, hyphenate: yes, rtl: no, columns: 3_u64, indent: 2_u64);
+  region 'g {
+    region 'c {
+      let total = render_line<'g, 'c>(glyphs: &'g glyphs, canvas: &uniq 'c canvas, style: move style, tight: yes);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

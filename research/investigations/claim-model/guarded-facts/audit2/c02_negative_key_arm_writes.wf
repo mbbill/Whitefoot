@@ -1,0 +1,33 @@
+fn broken['d](data: &'d buffer<u8>, f0: own Bool) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "c01 through clause [ENT-5.G2](b), the NEGATIVE branch key: the THEN arm writes the flag false, so the entry keyed [-f] no longer records that the else arm ran. Called with f0 = True the then arm runs, x is 50, f becomes false, -f is derivable at the use by S1's negation on the false edge, and the [-f] entry's `x <= 3' is released against a 4-byte buffer. The pair c01/c02 shows the defect is in the formation clause itself, in both signs, and not in a corner of one clause.";
+  let f = f0;
+  let x = if f {
+    let no = False();
+    set f = no;
+    let fifty = 50_u64;
+    give fifty;
+  } else {
+    let three = 3_u64;
+    give three;
+  }
+  let out = 0_u8;
+  if f {
+    set out = 1_u8;
+  } else {
+    let b = deref(data)[x];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let yes = True();
+  region 'r {
+    let b = broken<'r>(data: &'r input, f0: yes);
+  }
+  return exit_status(code: 0_u8);
+}

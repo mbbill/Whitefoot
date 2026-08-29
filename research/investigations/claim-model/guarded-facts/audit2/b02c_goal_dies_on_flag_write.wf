@@ -1,0 +1,35 @@
+struct Head {
+  flag: Bool;
+  seen: u64;
+}
+
+fn clobber['m](h: &uniq 'm Head, v: own Bool) -> result: own u64 writes(h.flag) {
+  set deref(h).flag = v;
+  return 0_u64;
+}
+
+fn needs_flag(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(h: own Head, w: own Bool) -> result: own u64 reads(h.flag), writes(h.flag) {
+  doc "The negative control that makes b02 mean something. Identical shape, but the callee's EFF-2 write row names the FLAG field. REJECT means kill (b) really does reach the signed goal +h.flag through the &uniq actual, so b02's ACCEPT is a field-granular projection and not an absence of tracking. Together the pair pins DRAFT 3.3.2's three bullets on the goal half.";
+  let out = 0_u64;
+  if h.flag {
+    region 'm {
+      let s = clobber<'m>(h: &uniq 'm h, v: w);
+    }
+    let r = needs_flag(f: h.flag, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let head = Head(flag: t, seen: 0_u64);
+  let a = drive(h: move head, w: t);
+  return exit_status(code: 0_u8);
+}

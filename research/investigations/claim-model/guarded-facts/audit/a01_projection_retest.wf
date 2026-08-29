@@ -1,0 +1,31 @@
+fn broken['d](data: &'d buffer<u8>, small: own u64) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "REFUTATION WITNESS for [ENT-5.G5]'s projection release route. The flag `fits` is bound from a comparison over the mutable local `m`. The value_if delivers 3 under `+fits` and 50 otherwise, so the drafted [ENT-5.G2](a) forms the entry key [+fits], projection `8 - m <= 0`, delta { idx - Z <= 3 }. The entry's support is {idx, Z} union the support of the DIRECT goal `fits`, which [ENT-5.G1] and DRAFT 3.4 fix as the binding - it does NOT contain m. So `set m = 64_u64;` kills no member of the entry. At `if fits_again` the S1 comparison origin publishes `8 - m <= 0`, which is exactly the stored projection, so [ENT-5.G5] declares the key satisfied and step (2') releases `idx - Z <= 3`. With the requires giving `len >= 4` the subscript discharges. Called with small = 0 the execution took the ELSE arm, idx = 50, and the buffer is 4 bytes long.";
+  let m = small;
+  let fits = ige(m, 8_u64);
+  let idx = if fits {
+    let three = 3_u64;
+    give three;
+  } else {
+    let fifty = 50_u64;
+    give fifty;
+  }
+  set m = 64_u64;
+  let out = 0_u8;
+  let fits_again = ige(m, 8_u64);
+  if fits_again {
+    let byte = deref(data)[idx];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  region 'r {
+    let b = broken<'r>(data: &'r input, small: 0_u64);
+  }
+  return exit_status(code: 0_u8);
+}

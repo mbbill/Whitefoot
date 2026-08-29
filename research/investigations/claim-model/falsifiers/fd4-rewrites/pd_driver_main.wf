@@ -1,0 +1,145 @@
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
+  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  let sent = 0_u64;
+  loop @publish {
+    let pending = ilt(sent, length);
+    if pending {
+    } else {
+      break @publish;
+    }
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+  doc "F-D4 differential driver: decodes argv[1] and publishes the produced count and the whole output buffer, sentinel fill included, so two builds can be compared byte for byte.";
+  let staging = buffer_new(4096_u64, 0_u8);
+  let argument_count = 0_u64;
+  region 'invocation {
+    set argument_count = args_count<'invocation>(args: &'invocation args);
+  }
+  let usable = ige(argument_count, 2_u64);
+  if usable {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let source_length = 0_u64;
+  let startup = 0_u8;
+  region 'lease {
+    match arg_get<'lease>(args: &'lease args, position: 1_u64) {
+      Ok(value: text) => {
+        region 'copy {
+          match host_copy_bytes<'copy, 'copy>(value: &'copy text, destination: &uniq 'copy staging, start: 0_u64, end: 4096_u64) {
+            Ok(value: copied) => {
+              set source_length = copied;
+            }
+            Err(error: too_small) => {
+              set startup = 1_u8;
+            }
+          }
+        }
+      }
+      Err(error: absent) => {
+        set startup = 1_u8;
+      }
+    }
+  }
+  if ieq(startup, 0_u8) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let source = buffer_new(source_length, 0_u8);
+  let output = buffer_new(source_length, 204_u8);
+  let cursor = 0_u64;
+  loop @copy_in {
+    let more = ilt(cursor, source_length);
+    if more {
+    } else {
+      break @copy_in;
+    }
+    let staging_room = len(staging);
+    let readable = ilt(cursor, staging_room);
+    if readable {
+      let byte = staging[cursor];
+      let source_room = len(source);
+      let writable = ilt(cursor, source_room);
+      if writable {
+        set source[cursor] = byte;
+      }
+    }
+    set cursor = cursor +wrap 1_u64;
+  }
+  let output_room = len(output);
+  let source_room = len(source);
+  let sufficient = ige(output_room, source_room);
+  if sufficient {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let produced = 0_u64;
+  region 'decode_region {
+    set produced = decode<'decode_region>(out: &uniq 'decode_region output, src: move source);
+  }
+  let head = buffer_new(8_u64, 0_u8);
+  let shift = 0_u32;
+  let head_index = 0_u64;
+  loop @encode {
+    let more = ilt(head_index, 8_u64);
+    if more {
+    } else {
+      break @encode;
+    }
+    let moved = ishr.wrap(produced, shift);
+    let low = iand(moved, 255_u64);
+    let narrowed = cvt<u64, u8>(low);
+    let byte = match narrowed {
+      Ok(value: fitted) => {
+        give fitted;
+      }
+      Err(error: failure) => {
+        give 0_u8;
+      }
+    }
+    let head_room = len(head);
+    let writable = ilt(head_index, head_room);
+    if writable {
+      set head[head_index] = byte;
+    }
+    set shift = shift +wrap 8_u32;
+    set head_index = head_index +wrap 1_u64;
+  }
+  region 'head_write {
+    let head_length = len(head);
+    match publish_all<'head_write, 'head_write>(output: &uniq 'head_write out, source: &'head_write head, length: head_length) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+  region 'body_write {
+    let body_length = len(output);
+    match publish_all<'body_write, 'body_write>(output: &uniq 'body_write out, source: &'body_write output, length: body_length) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

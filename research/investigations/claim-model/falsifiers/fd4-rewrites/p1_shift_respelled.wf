@@ -1,0 +1,43 @@
+struct ShiftedTail {
+  tail: u64;
+  status: u8;
+}
+
+fn shift_input_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input) {
+  doc "P1: the shift loop with imin replaced by the two direct guards the equality tests already mean, and the two sums taken through checked arithmetic so the offsets are exact terms.";
+  let input_room = len(deref(input));
+  let available_fits = ile(available, input_room);
+  if available_fits {
+  } else {
+    let rejected = ShiftedTail(tail: 0_u64, status: 6_u8);
+    return move rejected;
+  }
+  let scan_fits = ile(scan, available);
+  if scan_fits {
+  } else {
+    let rejected = ShiftedTail(tail: 0_u64, status: 6_u8);
+    return move rejected;
+  }
+  let tail = available -wrap scan;
+  let moved = 0_u64;
+  loop @shift_input {
+    let done = ige(moved, tail);
+    if done {
+      break @shift_input;
+    }
+    let source_index = scan +wrap moved;
+    let byte = deref(input)[source_index];
+    set deref(input)[moved] = byte;
+    set moved = moved +wrap 1_u64;
+  }
+  let accepted = ShiftedTail(tail: tail, status: 0_u8);
+  return move accepted;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(64_u64, 1_u8);
+  region 'b {
+    let result = shift_input_tail<'b>(input: &uniq 'b buf, available: 40_u64, scan: 8_u64);
+  }
+  return exit_status(code: 0_u8);
+}

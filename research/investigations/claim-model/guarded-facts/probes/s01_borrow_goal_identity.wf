@@ -1,0 +1,30 @@
+struct Head {
+  flag: Bool;
+  at: u64;
+}
+
+fn needs_flag(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(h: own Head) -> result: own u64 reads(h.flag) {
+  doc "ROUND-3 PRICE PROBE: goal identity is by typed expression, support is by resolved place. The test here is written through a shared borrow of the whole struct, so it publishes +deref(p).flag; the requirement names h.flag. The two are the same proposition over the same resolved place and different [ENT-2] goals. REJECT prices the precision row [ENT-5.G] carries for a record parser that hands the record down and tests through the borrow.";
+  let out = 0_u64;
+  region 'm {
+    let p = &'m h;
+    if deref(p).flag {
+      let r = needs_flag(f: h.flag, v: 5_u64);
+      set out = r;
+    }
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let head = Head(flag: t, at: 0_u64);
+  let a = drive(h: move head);
+  return exit_status(code: 0_u8);
+}

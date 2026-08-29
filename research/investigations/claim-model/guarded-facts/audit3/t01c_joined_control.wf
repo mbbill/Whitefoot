@@ -1,0 +1,38 @@
+fn classify(v: own u64) -> result: own Bool pure {
+  let r = ige(v, 10_u64);
+  return r;
+}
+
+fn ctrl['d](data: &'d buffer<u8>, f0: own Bool, g: own Bool, v: own u64) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "The discharge control for t01: the same shape with x held at 3 unconditionally, so x <= 3 is an ordinary joined fact rather than a guarded delta. ACCEPT confirms that x <= 3 against room >= 4 closes x < len(deref(data)) in one [ENT-4] step, so the only steps t01 lacks are P-S5L's value-commit image and the guarded release -- exactly the pair r09 and b01 lack.";
+  let f = f0;
+  let x = 3_u64;
+  let touched = 0_u64;
+  if f {
+    if classify(v: v) {
+      if g {
+        set touched = 1_u64;
+      }
+    }
+  }
+  let out = 0_u8;
+  if f {
+    if g {
+      let b = deref(data)[x];
+      set out = b;
+    }
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let yes = True();
+  region 'r {
+    let b = ctrl<'r>(data: &'r input, f0: yes, g: yes, v: 0_u64);
+  }
+  return exit_status(code: 0_u8);
+}

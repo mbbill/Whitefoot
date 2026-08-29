@@ -1,0 +1,35 @@
+struct H {
+  flag: Bool;
+}
+
+fn needs_ge4(v: own u64) -> result: own u64 pure contract {
+  requires ige(v, 4_u64);
+} {
+  return v;
+}
+
+fn drive['d](data: &'d buffer<u8>) -> result: own u64 reads(data) {
+  doc "CONTROL for a07: the same program with the use phase testing the comparison flag itself. If this ACCEPTS, the only difference is which proposition the use site names.";
+  let n = len(deref(data));
+  let yes = True();
+  let no = False();
+  let h = H(flag: no);
+  let room4 = ige(n, 4_u64);
+  if room4 {
+    set h.flag = yes;
+  }
+  let out = 0_u64;
+  if room4 {
+    let r = needs_ge4(v: n);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 65_u8);
+  region 'r {
+    let b = drive<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}

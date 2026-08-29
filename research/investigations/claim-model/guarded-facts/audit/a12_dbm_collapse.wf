@@ -1,0 +1,24 @@
+fn needs_le(x: own u64, y: own u64) -> result: own u64 pure contract {
+  requires ile(x, y);
+} {
+  return x;
+}
+
+fn drive(a: own u64, b: own u64, c: own u64) -> result: own u64 pure contract {
+  requires ile(a, b);
+  requires ile(b, c);
+} {
+  doc "Pins the DBM-collapse shape used in the audit's size-bound maximiser. Under the single guard ile(c, a) over a chain a <= b <= c, [ENT-4] closure derives the whole reversed chain - here b <= a - with the arm committing NOTHING. Each such derived pair is a delta member of the guarded entry, so one zero-commit arm contributes T(T-1)/2 facts.";
+  let collapse = ile(c, a);
+  let out = 0_u64;
+  if collapse {
+    let r = needs_le(x: b, y: a);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let x = drive(a: 1_u64, b: 2_u64, c: 3_u64);
+  return exit_status(code: 0_u8);
+}

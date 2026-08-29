@@ -1,0 +1,26 @@
+struct H {
+  flag: Bool;
+}
+
+fn needs_ge4(v: own u64) -> result: own u64 pure contract {
+  requires ige(v, 4_u64);
+} {
+  return v;
+}
+
+fn drive() -> result: own u64 pure {
+  doc "Prerequisite probe for [ENT-5.G2](a'). A struct constructed with the Bool field initialized False: does the false edge of `if h.flag` derive -h.flag? Equivalently, is the then edge contradictory? The consumer discharges only from a contradiction. ACCEPT means a construction publishes a per-field Bool image; REJECT means [ENT-3.S5] must gain one before the committed-flag key can form.";
+  let no = False();
+  let h = H(flag: no);
+  let out = 0_u64;
+  if h.flag {
+    let r = needs_ge4(v: 0_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let x = drive();
+  return exit_status(code: 0_u8);
+}

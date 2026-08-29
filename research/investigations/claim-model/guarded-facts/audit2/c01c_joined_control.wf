@@ -1,0 +1,31 @@
+fn ctrl['d](data: &'d buffer<u8>, f0: own Bool) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "The discharge control for c01. Identical program with the else arm delivering 3 instead of 50, so x <= 3 is an ordinary JOINED fact rather than a guarded delta. ACCEPT confirms the arithmetic of c01's discharge -- x <= 3 against room >= 4 closing x < len(deref(data)) in one [ENT-4] step -- so the only step c01 lacks is [ENT-5.P0] step (2') releasing the [+f] entry. c01 is this program with one literal changed from 3 to 50.";
+  let f = f0;
+  let x = if f {
+    let three = 3_u64;
+    give three;
+  } else {
+    let yes = True();
+    set f = yes;
+    let also = 3_u64;
+    give also;
+  }
+  let out = 0_u8;
+  if f {
+    let b = deref(data)[x];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let no = False();
+  region 'r {
+    let b = ctrl<'r>(data: &'r input, f0: no);
+  }
+  return exit_status(code: 0_u8);
+}

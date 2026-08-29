@@ -1,0 +1,22 @@
+fn needs_one(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(i: own u64, n: own u64) -> result: own u64 pure {
+  doc "Two distinct bindings of the same comparison. The goals differ, but both project to the same L0 relation, so +early is derivable inside the `late` arm. This is why a comparison-origin flag is alias-robust and an opaque one is not.";
+  let early = ilt(i, n);
+  let late = ilt(i, n);
+  let out = 0_u64;
+  if late {
+    let r = needs_one(f: early, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let x = drive(i: 1_u64, n: 9_u64);
+  return exit_status(code: 0_u8);
+}

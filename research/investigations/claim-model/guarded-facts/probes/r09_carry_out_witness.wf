@@ -1,0 +1,34 @@
+fn broken['d](data: &'d buffer<u8>, f0: own Bool, g: own Bool) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "SOUNDNESS WITNESS against round 1's [ENT-5.G2](d) key extension, found while re-deriving [ENT-5.G6] in round 2 and NOT found by the audit. The entry is formed inside the then arm of `if f` and leaves it on the then edge only, so round 1's clause (d) prepends +f and carries it. The ELSE edge writes f, and that write is never applied to the entry because the entry is not present on that edge. On the else path f becomes true, g is true, x is still 50, and both key members are derivable at the use. Round 1 accepts and reads index 50 of a 4-byte buffer. Round 2's carry-out condition applies EVERY reaching edge's kill events to a singly-present entry, so `set f = yes;` kills the key member's support and the entry is not carried.";
+  let f = f0;
+  let x = 50_u64;
+  if f {
+    if g {
+      set x = 3_u64;
+    }
+  } else {
+    let yes = True();
+    set f = yes;
+  }
+  let out = 0_u8;
+  if f {
+    if g {
+      let b = deref(data)[x];
+      set out = b;
+    }
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let no = False();
+  let yes = True();
+  region 'r {
+    let b = broken<'r>(data: &'r input, f0: no, g: yes);
+  }
+  return exit_status(code: 0_u8);
+}

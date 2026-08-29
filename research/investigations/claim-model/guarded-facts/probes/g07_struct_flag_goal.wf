@@ -1,0 +1,27 @@
+struct Style {
+  justify: Bool;
+  columns: u64;
+}
+
+fn needs_flag(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(style: own Style) -> result: own u64 reads(style.justify) {
+  doc "Observes whether S1 publishes the signed goal of a Bool held in a struct field.";
+  let out = 0_u64;
+  if style.justify {
+    let r = needs_flag(f: style.justify, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let s = Style(justify: t, columns: 2_u64);
+  let a = drive(style: move s);
+  return exit_status(code: 0_u8);
+}

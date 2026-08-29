@@ -1,0 +1,31 @@
+fn safe['d](data: &'d buffer<u8>, f0: own Bool) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "THE PRICE OF THE SYNTACTIC FORMATION TEST (round-3 decision P1). The else arm writes the branch flag, so the syntactic kill-event test at formation refuses both branch keys here -- but the write sets f to the value that edge already carries, so the arm-exit states still decide f oppositely and the entry [+f] would be sound. This is the whole family the syntactic test loses that the arm-exit derivability transplant would keep: an arm that writes the flag without changing it. Today it REJECTs for want of the release, and s02c pins that the discharge arithmetic is otherwise present.";
+  let f = f0;
+  let x = if f {
+    let three = 3_u64;
+    give three;
+  } else {
+    let no = False();
+    set f = no;
+    let fifty = 50_u64;
+    give fifty;
+  }
+  let out = 0_u8;
+  if f {
+    let b = deref(data)[x];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let yes = True();
+  region 'r {
+    let b = safe<'r>(data: &'r input, f0: yes);
+  }
+  return exit_status(code: 0_u8);
+}

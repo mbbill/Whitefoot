@@ -1,0 +1,33 @@
+struct Head {
+  has_body: Bool;
+  body_at: u64;
+  seen: u64;
+}
+
+fn bump['m](h: &uniq 'm Head) -> result: own u64 reads(h.seen), writes(h.seen) {
+  let s = deref(h).seen;
+  set deref(h).seen = s +wrap 1_u64;
+  return s;
+}
+
+fn drive['d](data: &'d buffer<u8>) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "Pins the kill granularity both flagships rest on. A fact about h.body_at must survive a call whose EFF-2 write row projects onto the sibling field h.seen. If this ACCEPTS, DRAFT 4.3's claim that the sink call costs the guarded sets nothing is confirmed at field granularity for an ordinary L0 fact, which is the transport a released delta fact receives.";
+  let no = False();
+  let h = Head(has_body: no, body_at: 3_u64, seen: 0_u64);
+  region 'm {
+    let s = bump<'m>(h: &uniq 'm h);
+  }
+  let g = deref(data)[h.body_at];
+  return g;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 65_u8);
+  region 'r {
+    let b = drive<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}

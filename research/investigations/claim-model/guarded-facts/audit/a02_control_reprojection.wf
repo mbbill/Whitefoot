@@ -1,0 +1,23 @@
+fn needs_ge8(v: own u64) -> result: own u64 pure contract {
+  requires ige(v, 8_u64);
+} {
+  return v;
+}
+
+fn ctrl(small: own u64) -> result: own u64 pure {
+  doc "CONTROL for a01's second premise. After `set m = 64_u64;` a fresh binding of the same comparison still publishes the L0 relation `8 - m <= 0` at its then entry, over the same term m. If this ACCEPTS, then at a01's `if fits_again` the stored projection of the key [+fits] is L0-derivable, which is all [ENT-5.G5] asks for.";
+  let m = small;
+  set m = 64_u64;
+  let fits_again = ige(m, 8_u64);
+  let out = 0_u64;
+  if fits_again {
+    let r = needs_ge8(v: m);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let x = ctrl(small: 0_u64);
+  return exit_status(code: 0_u8);
+}

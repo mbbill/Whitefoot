@@ -1,0 +1,21 @@
+fn needs_ge4(v: own u64) -> result: own u64 pure contract {
+  requires ige(v, 4_u64);
+} {
+  return v;
+}
+
+fn drive() -> result: own u64 pure {
+  doc "The complement of r02, to pin what r02's ACCEPT means. Here the tested local is True, so the then edge is satisfiable and the impossible consumer must not discharge. r02 ACCEPT with r08 REJECT means the checker really does know a local Bool literal's value on the branch edges; r02 and r08 both ACCEPT would mean r02 proves nothing.";
+  let yes = True();
+  let out = 0_u64;
+  if yes {
+    let r = needs_ge4(v: 0_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let x = drive();
+  return exit_status(code: 0_u8);
+}

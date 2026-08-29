@@ -1,0 +1,31 @@
+fn joined['d](data: &'d buffer<u8>, f0: own Bool) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "CONTROL for s02: the identical program with the else arm delivering 3, so x <= 3 survives the join and no guarded release is needed. ACCEPT pins that the sole difference between an accepted program and the one the round-3 syntactic formation test refuses is whether the fact is joined or released.";
+  let f = f0;
+  let x = if f {
+    let three = 3_u64;
+    give three;
+  } else {
+    let no = False();
+    set f = no;
+    let fifty = 3_u64;
+    give fifty;
+  }
+  let out = 0_u8;
+  if f {
+    let b = deref(data)[x];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let yes = True();
+  region 'r {
+    let b = joined<'r>(data: &'r input, f0: yes);
+  }
+  return exit_status(code: 0_u8);
+}

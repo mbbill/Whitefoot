@@ -1,0 +1,22 @@
+fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+  doc "Does a `set` from a term publish a commit image today? Everything else here is g04, which accepts.";
+  let n = len(deref(data));
+  let have_room = ige(n, 8_u64);
+  let start = 0_u64;
+  let out = 0_u8;
+  if have_room {
+    let back = n -wrap 8_u64;
+    set start = back;
+    let byte = deref(data)[start];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 7_u8);
+  region 'r {
+    let b = tail_byte<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}

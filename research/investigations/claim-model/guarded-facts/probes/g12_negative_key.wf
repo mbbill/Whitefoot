@@ -1,0 +1,23 @@
+fn needs_not(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires bnot(f);
+} {
+  return v;
+}
+
+fn drive(a: own Bool) -> result: own u64 pure {
+  doc "The else side. -a at the else entry must reconstruct +bnot(a).";
+  let out = 0_u64;
+  if a {
+    set out = 1_u64;
+  } else {
+    let r = needs_not(f: a, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let x = drive(a: t);
+  return exit_status(code: 0_u8);
+}

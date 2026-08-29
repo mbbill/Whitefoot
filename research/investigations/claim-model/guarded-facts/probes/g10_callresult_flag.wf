@@ -1,0 +1,26 @@
+fn classify(v: own u64) -> result: own Bool pure {
+  let r = ige(v, 10_u64);
+  return r;
+}
+
+fn needs_one(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(v: own u64) -> result: own u64 pure {
+  doc "A flag returned from an ordinary function with no ensures. Its truth is opaque, but its identity as a proposition is a place datum, so S1 should publish the signed goal and the FN-8 goal should discharge.";
+  let wide = classify(v: v);
+  let out = 0_u64;
+  if wide {
+    let r = needs_one(f: wide, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let x = drive(v: 42_u64);
+  return exit_status(code: 0_u8);
+}

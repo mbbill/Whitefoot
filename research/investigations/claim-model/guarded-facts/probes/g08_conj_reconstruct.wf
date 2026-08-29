@@ -1,0 +1,23 @@
+fn needs_both(f: own Bool, g: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires band(f, g);
+} {
+  return v;
+}
+
+fn drive(a: own Bool, b: own Bool) -> result: own u64 pure {
+  doc "The release mechanism for a compound key, tested on today's checker. The instantiated FN-8 goal is exactly band(a, b); nested single tests publish +a and +b, and only [ENT-4]'s parent reconstruction can close them into +band(a, b).";
+  let out = 0_u64;
+  if a {
+    if b {
+      let r = needs_both(f: a, g: b, v: 5_u64);
+      set out = r;
+    }
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let x = drive(a: t, b: t);
+  return exit_status(code: 0_u8);
+}

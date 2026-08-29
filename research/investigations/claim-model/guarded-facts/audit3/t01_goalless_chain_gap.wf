@@ -1,0 +1,37 @@
+fn classify(v: own u64) -> result: own Bool pure {
+  let r = ige(v, 10_u64);
+  return r;
+}
+
+fn broken['d](data: &'d buffer<u8>, f0: own Bool, g: own Bool, v: own u64) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "ROUND-3 ATTACK on [ENT-5.G3](d) condition (i). The enclosing `if classify(v: v)` has NO goal origin (a user call, [ENT-3] 2923), so [ENT-5.G2]'s chain(C) contributes no member for it and chain(C) is just [+f]. The entry [+f, +g] is therefore formed inside that arm and is present on exactly one edge at the classify continuation. Condition (i) reads `some member of the key is a signed goal [ENT-3.S1] establishes on e`. Under the STRICT reading -- the goal S1 establishes at THIS branch's arm entry -- S1 establishes nothing there and the entry is not carried. Under the LOOSE reading -- some key member is a signed goal that S1 established somewhere and that is derivable on e -- +f qualifies, the entry is carried out of a branch nothing in its key records, and with v = 0 the classify arm never runs, x is still 50, f and g are both true at the use, and index 50 of a 4-byte buffer is read. Two readings, two accepted sets, one unsound: exactly b01's defect one item over, in the sentence L-G4 exists to disambiguate.";
+  let f = f0;
+  let x = 50_u64;
+  if f {
+    if classify(v: v) {
+      if g {
+        set x = 3_u64;
+      }
+    }
+  }
+  let out = 0_u8;
+  if f {
+    if g {
+      let b = deref(data)[x];
+      set out = b;
+    }
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  let yes = True();
+  region 'r {
+    let b = broken<'r>(data: &'r input, f0: yes, g: yes, v: 0_u64);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,30 @@
+struct Head {
+  flag: Bool;
+  at: u64;
+}
+
+fn needs_flag(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(h: own Head) -> result: own u64 reads(h.flag) {
+  doc "CONTROL for s01, and the isolating half of the pair: the borrow is live at exactly the same point, but the BRANCH names the place directly while the ARGUMENT is written through the borrow. ACCEPT here against s01's REJECT pins that the asymmetry is on the publication side: a call actual rooted at a borrow holder is resolved to its referent when the requirement is instantiated ([ENT-2] 2886), while [ENT-3.S1]'s branch publication keeps the written tree, so `if deref(p).flag` establishes a goal no requirement over h.flag can consume.";
+  let out = 0_u64;
+  region 'm {
+    let p = &'m h;
+    if h.flag {
+      let r = needs_flag(f: deref(p).flag, v: 5_u64);
+      set out = r;
+    }
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let head = Head(flag: t, at: 0_u64);
+  let a = drive(h: move head);
+  return exit_status(code: 0_u8);
+}

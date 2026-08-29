@@ -1,0 +1,24 @@
+struct Head {
+  body_at: u64;
+}
+
+fn drive['d](data: &'d buffer<u8>, h: own Head) -> result: own u8 reads(data, h.body_at) {
+  doc "Is a struct field an [ENT-2] term carrying L0 bounds? Guard on a comparison over the field and subscript with the field.";
+  let n = len(deref(data));
+  let inside = ilt(h.body_at, n);
+  let out = 0_u8;
+  if inside {
+    let g = deref(data)[h.body_at];
+    set out = g;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 65_u8);
+  let head = Head(body_at: 3_u64);
+  region 'r {
+    let b = drive<'r>(data: &'r input, h: move head);
+  }
+  return exit_status(code: 0_u8);
+}

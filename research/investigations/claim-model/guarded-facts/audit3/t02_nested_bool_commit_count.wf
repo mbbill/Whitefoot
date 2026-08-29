@@ -1,0 +1,29 @@
+fn needs_flag(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn count(a: own Bool, b: own Bool) -> result: own u64 pure {
+  doc "ROUND-3 ATTACK on [ENT-5.G7]'s entry bound. `set flag = yes;` is a value commit to a Bool place lying inside BOTH `if a`'s then arm and `if b`'s then arm, so it is in the (a') candidate set of TWO continuations, while sec 3.7's derivation sums 2 keys per if node plus 2 per COMMIT as if each commit belonged to one continuation. The bound survives, but only because (a') additionally requires the two arm-exit states to decide the place oppositely, which cannot hold at two nesting levels without a second commit -- a step sec 3.7's `summing over continuations' does not take.";
+  let no = False();
+  let yes = True();
+  let flag = no;
+  let out = 0_u64;
+  if a {
+    if b {
+      set flag = yes;
+    }
+  }
+  if flag {
+    let r = needs_flag(f: flag, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let yes = True();
+  let x = count(a: yes, b: yes);
+  return exit_status(code: 0_u8);
+}

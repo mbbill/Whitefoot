@@ -1,0 +1,22 @@
+fn needs_one(f: own Bool, v: own u64) -> result: own u64 pure contract {
+  requires f;
+} {
+  return v;
+}
+
+fn drive(a: own Bool) -> result: own u64 pure {
+  doc "The reverse of g11. g11 tests the copy and names the original, which the origin expansion of the condition reaches. This tests the ORIGINAL and names the copy, which the expansion does not reach: expansion replaces a let datum by its own initializer, never a binding by something computed from it. REJECT refutes the round-1 claim that a copy releases in both directions.";
+  let copy = a;
+  let out = 0_u64;
+  if a {
+    let r = needs_one(f: copy, v: 5_u64);
+    set out = r;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let x = drive(a: t);
+  return exit_status(code: 0_u8);
+}

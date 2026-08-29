@@ -1,0 +1,168 @@
+fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 reads(src), writes(out), traps contract {
+  define output_length = len(deref(out));
+  define source_length = len(src);
+  define sufficient = ige(output_length, source_length);
+  requires sufficient;
+} {
+  let source_length = len(src);
+  let input_index = 0_u64;
+  let output_index = 0_u64;
+  loop @decode_loop {
+    let done = ieq(input_index, source_length);
+    if done {
+      break @decode_loop;
+    }
+    let scan_ok = ilt(input_index, source_length);
+    claim scan_in_source: scan_ok because "premises: input_index starts at zero and every path increments it by one or three before the loop exits at source_length\nderivation: every continuing iteration starts at an input position strictly before the source end\nconclusion: input_index is below source_length\nchecker gap: ENT does not derive this variable-stride ordinary-loop invariant\nconsumers: the following source subscript uses input_index";
+    let writes_behind = ile(output_index, input_index);
+    claim writes_behind_scan: writes_behind because "premises: both indices start at zero; a plain byte increments both by one and a valid escape increments input by three and output by one\nderivation: each transition preserves output_index at or behind input_index\nconclusion: output_index is at most input_index\nchecker gap: ENT does not derive this coupled ordinary-loop invariant\nconsumers: every output subscript in the loop uses output_index together with the output-length requirement";
+    let byte = src[input_index];
+    let is_percent = ieq(byte, 37_u8);
+    let remaining = source_length -wrap input_index;
+    let has_pair = ige(remaining, 3_u64);
+    let candidate = band(is_percent, has_pair);
+    if candidate {
+      let next_index = input_index +wrap 1_u64;
+      let last_index = input_index +wrap 2_u64;
+      let high_ok = ilt(next_index, source_length);
+      claim high_in_source: high_ok because "premises: candidate requires at least three source bytes remaining and next_index is input_index plus one\nderivation: at least three remaining bytes place the successor strictly before source_length\nconclusion: next_index is below source_length\nchecker gap: ENT does not normalize the remaining-length guard into this offset bound\nconsumers: the following source subscript uses next_index";
+      let high_byte = src[next_index];
+      let low_ok = ilt(last_index, source_length);
+      claim low_in_source: low_ok because "premises: candidate requires at least three source bytes remaining and last_index is input_index plus two\nderivation: at least three remaining bytes place the second successor strictly before source_length\nconclusion: last_index is below source_length\nchecker gap: ENT does not normalize the remaining-length guard into this offset bound\nconsumers: the following source subscript uses last_index";
+      let low_byte = src[last_index];
+      let high_decimal_low = ige(high_byte, 48_u8);
+      let high_decimal_high = ile(high_byte, 57_u8);
+      let high_decimal = band(high_decimal_low, high_decimal_high);
+      let high_upper_low = ige(high_byte, 65_u8);
+      let high_upper_high = ile(high_byte, 70_u8);
+      let high_upper = band(high_upper_low, high_upper_high);
+      let high_lower_low = ige(high_byte, 97_u8);
+      let high_lower_high = ile(high_byte, 102_u8);
+      let high_lower = band(high_lower_low, high_lower_high);
+      let high_alphabetic = bor(high_upper, high_lower);
+      let high_valid = bor(high_decimal, high_alphabetic);
+      let low_decimal_low = ige(low_byte, 48_u8);
+      let low_decimal_high = ile(low_byte, 57_u8);
+      let low_decimal = band(low_decimal_low, low_decimal_high);
+      let low_upper_low = ige(low_byte, 65_u8);
+      let low_upper_high = ile(low_byte, 70_u8);
+      let low_upper = band(low_upper_low, low_upper_high);
+      let low_lower_low = ige(low_byte, 97_u8);
+      let low_lower_high = ile(low_byte, 102_u8);
+      let low_lower = band(low_lower_low, low_lower_high);
+      let low_alphabetic = bor(low_upper, low_lower);
+      let low_valid = bor(low_decimal, low_alphabetic);
+      let valid = band(high_valid, low_valid);
+      if valid {
+        let high_is_decimal = ile(high_byte, 57_u8);
+        let high = if high_is_decimal {
+          let value = high_byte -wrap 48_u8;
+          give value;
+        } else {
+          let high_is_upper = ile(high_byte, 70_u8);
+          let value = if high_is_upper {
+            let offset = high_byte -wrap 65_u8;
+            give offset +wrap 10_u8;
+          } else {
+            let offset = high_byte -wrap 97_u8;
+            give offset +wrap 10_u8;
+          }
+          give value;
+        }
+        let low_is_decimal = ile(low_byte, 57_u8);
+        let low = if low_is_decimal {
+          let value = low_byte -wrap 48_u8;
+          give value;
+        } else {
+          let low_is_upper = ile(low_byte, 70_u8);
+          let value = if low_is_upper {
+            let offset = low_byte -wrap 65_u8;
+            give offset +wrap 10_u8;
+          } else {
+            let offset = low_byte -wrap 97_u8;
+            give offset +wrap 10_u8;
+          }
+          give value;
+        }
+        let shifted = high *wrap 16_u8;
+        let decoded = shifted +wrap low;
+        set deref(out)[output_index] = decoded;
+        set input_index = input_index +wrap 3_u64;
+        set output_index = output_index +wrap 1_u64;
+      } else {
+        set deref(out)[output_index] = byte;
+        set input_index = input_index +wrap 1_u64;
+        set output_index = output_index +wrap 1_u64;
+      }
+    } else {
+      set deref(out)[output_index] = byte;
+      set input_index = input_index +wrap 1_u64;
+      set output_index = output_index +wrap 1_u64;
+    }
+  }
+  return output_index;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap), traps {
+  let input = buffer_new(11_u64, 0_u8);
+  set input[0_u64] = 65_u8;
+  set input[1_u64] = 37_u8;
+  set input[2_u64] = 52_u8;
+  set input[3_u64] = 50_u8;
+  set input[4_u64] = 37_u8;
+  set input[5_u64] = 52_u8;
+  set input[6_u64] = 97_u8;
+  set input[7_u64] = 37_u8;
+  set input[8_u64] = 122_u8;
+  set input[9_u64] = 122_u8;
+  set input[10_u64] = 37_u8;
+  let output = buffer_new(11_u64, 204_u8);
+  region 'decode_region {
+    let produced = decode<'decode_region>(out: &uniq 'decode_region output, src: move input);
+    if ieq(produced, 7_u64) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let output_zero = output[0_u64];
+  let output_one = output[1_u64];
+  let output_two = output[2_u64];
+  let output_three = output[3_u64];
+  let output_four = output[4_u64];
+  let output_five = output[5_u64];
+  let output_six = output[6_u64];
+  let output_tail = output[7_u64];
+  if ieq(output_zero, 65_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_one, 66_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_two, 74_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_three, 37_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_four, 122_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_five, 122_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_six, 37_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_tail, 204_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

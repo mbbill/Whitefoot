@@ -1,0 +1,29 @@
+fn safe['d](data: &'d buffer<u8>, m0: own u64) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "THE TRUE PRICE OF THE SYNTACTIC FORMATION TEST (round-3 decision D4). The branch condition is a comparison, not a Bool place, so clause (a') cannot rescue it: the then arm writes an OPERAND of the condition while PRESERVING its truth on that edge, so the arm-exit states still decide ige(m, 8) oppositely and the entry [+ige(m, 8_u64)] would be sound. The syntactic arm-write test looks at the write and not at the value, so it refuses. The derivability transplant would form it. Today the program REJECTs for want of the release, and s03c pins that the discharge arithmetic is otherwise present.";
+  let m = m0;
+  let x = if ige(m, 8_u64) {
+    set m = 100_u64;
+    let three = 3_u64;
+    give three;
+  } else {
+    let fifty = 50_u64;
+    give fifty;
+  }
+  let out = 0_u8;
+  if ige(m, 8_u64) {
+    let b = deref(data)[x];
+    set out = b;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  region 'r {
+    let b = safe<'r>(data: &'r input, m0: 9_u64);
+  }
+  return exit_status(code: 0_u8);
+}

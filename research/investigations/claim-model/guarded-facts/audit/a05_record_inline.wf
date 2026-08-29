@@ -1,0 +1,79 @@
+struct Head {
+  has_body: Bool;
+  wide: Bool;
+  body_at: u64;
+  wide_at: u64;
+  seen: u64;
+}
+
+fn bump['m](h: &uniq 'm Head) -> result: own u64 reads(h.seen), writes(h.seen) {
+  doc "The middle-phase mutator. Its EFF-2 write row projects onto the sibling field h.seen only, so under a field-granular projection it must kill no entry keyed on h.has_body or h.wide, and no delta fact over h.body_at or h.wide_at.";
+  let s = deref(h).seen;
+  set deref(h).seen = s +wrap 1_u64;
+  return s;
+}
+
+fn parse_record['d](data: &'d buffer<u8>, tag: own u64) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 1_u64);
+} {
+  doc "SECOND FLAGSHIP, audit-designed. Same family as layout.wf, deliberately different structure: the flags and the offsets they correlate with both live in one struct the function itself writes; an early return sits between the measure phase and the use phase; the struct is handed to a &uniq mutator between them; and one site is under a negative key. No re-test at a use, no impossible else, no helper carrying the correlation in a requires.";
+  let n = len(deref(data));
+  let yes = True();
+  let no = False();
+  let h = Head(has_body: no, wide: no, body_at: 0_u64, wide_at: 0_u64, seen: 0_u64);
+  let room4 = ige(n, 4_u64);
+  if room4 {
+    set h.has_body = yes;
+    let b = n -wrap 4_u64;
+    set h.body_at = b;
+  }
+  let room64 = ige(n, 64_u64);
+  if room64 {
+    set h.wide = yes;
+    let w = n -wrap 64_u64;
+    set h.wide_at = w;
+  } else {
+    set h.wide_at = 0_u64;
+  }
+  let bad = ieq(tag, 0_u64);
+  if bad {
+    return 0_u8;
+  }
+  region 'm {
+    let s = bump<'m>(h: &uniq 'm h);
+  }
+  let out = 0_u8;
+  if h.has_body {
+    let g = deref(data)[h.body_at];
+    set out = out +wrap g;
+  }
+  if h.wide {
+    let g = deref(data)[h.wide_at];
+    set out = out +wrap g;
+  } else {
+    let g0 = deref(data)[h.wide_at];
+    set out = out +wrap g0;
+  }
+  let pass = 0_u64;
+  loop @paint {
+    let done = ige(pass, 3_u64);
+    if done {
+      break @paint;
+    }
+    if h.has_body {
+      let g = deref(data)[h.body_at];
+      set out = out +wrap g;
+    }
+    set pass = pass +wrap 1_u64;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 65_u8);
+  region 'r {
+    let b = parse_record<'r>(data: &'r input, tag: 1_u64);
+  }
+  return exit_status(code: 0_u8);
+}

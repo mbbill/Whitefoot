@@ -1,0 +1,31 @@
+fn ctrl['d](data: &'d buffer<u8>, small: own u64) -> result: own u8 reads(data) contract {
+  define room = len(deref(data));
+  requires ige(room, 4_u64);
+} {
+  doc "CONTROL for a01's first premise. Once the fact `idx - Z <= 3` is present, the requires `room >= 4` closes the subscript. Here idx is delivered as 3 on BOTH arms so the join keeps the bound; in a01 only the `fits` arm delivers 3, so the join loses it and only [ENT-5.G]'s release can put it back. If this ACCEPTS, the arithmetic of a01's discharge is confirmed and the only missing premise there is the guarded release.";
+  let m = small;
+  let fits = ige(m, 8_u64);
+  let idx = if fits {
+    let three = 3_u64;
+    give three;
+  } else {
+    let also = 3_u64;
+    give also;
+  }
+  set m = 64_u64;
+  let out = 0_u8;
+  let fits_again = ige(m, 8_u64);
+  if fits_again {
+    let byte = deref(data)[idx];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4_u64, 7_u8);
+  region 'r {
+    let b = ctrl<'r>(data: &'r input, small: 0_u64);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,28 @@
+fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+  doc "The pure-join probe. Every premise the read needs exists on the have_room side under rules today's checker already has: S6 for n, S7 for back = n - 8 under the guard, GIVE-1 delivery for start. Only the [ENT-5] join of the two give edges destroys the correlation, replacing start - n <= -8 with start - n <= 0.";
+  let n = len(deref(data));
+  let have_room = ige(n, 8_u64);
+  let start = if have_room {
+    let back = n -wrap 8_u64;
+    give back;
+  } else {
+    let zero = 0_u64;
+    give zero;
+  }
+  let checksum = 0_u8;
+  set checksum = checksum +wrap 3_u8;
+  let out = 0_u8;
+  if have_room {
+    let byte = deref(data)[start];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 7_u8);
+  region 'r {
+    let b = tail_byte<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}
