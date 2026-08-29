@@ -1184,9 +1184,11 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
      * is destroyed, not after.
      *
      * Every reader of this adapter passes `wf_file_adapter_initialized` first
-     * and then uses storage this teardown destroys: `queue_lock` itself, or the
-     * queue count beside it, which is what `wf_file_adapter_queued` reads for
-     * the retirement ledger and for the decline check
+     * and then uses storage this teardown destroys: `queue_lock` and the
+     * condition variable beside it.  The queue count is not among them — it is
+     * an atomic this teardown never writes, which is what lets
+     * `wf_file_adapter_queued` be read with no lock at all, for the retirement
+     * ledger and for the decline check
      * `wf_file_adapter_transfer_runs_on_caller`.  Storing zero after the
      * destroys would leave a window in which that
      * guard still answers yes and the mutex it guards no longer exists, so a

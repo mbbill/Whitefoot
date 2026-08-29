@@ -44,7 +44,19 @@
  * gave back during the repetition, how many re-attempts the ledger granted,
  * and whether the host would still hand out a descriptor once every open had
  * published — a shortfall with one left over is a return that this runtime
- * awarded and no open took.
+ * awarded and no open took.  A repetition that meets both at once — a genuine
+ * `EMFILE` shortfall and a refusal from outside the narrowed table — is
+ * dropped as not asked, because the premise it rests on did not hold; that is
+ * the strictest edge of the classification and it is announced per repetition
+ * and counted on the passing line as well as the failing one.
+ *
+ * Beside the count of published opens it checks the ledger's own promise, which
+ * is what the count alone cannot see.  One re-attempt per open is the whole of
+ * the rule, so five opens can be granted at most five; and every refusal that
+ * reached publication was granted one, so more refusals than re-attempts is a
+ * refusal published without the second attempt it was owed.  A repetition that
+ * ends with a spare descriptor beside a published refusal is a lost `Ok`
+ * whatever the count says, and is reported as one.
  *
  * It carries its own watchdog: a stall here is a process that never returns,
  * and a gate that hangs reports nothing.  The watchdog prints what the ledger
@@ -103,6 +115,11 @@ static int wf_interleave_outside_error;
  * of the repetition had published.  A shortfall with a descriptor left over is
  * a return this runtime awarded and no open took. */
 static int wf_interleave_left_over;
+/* How many of the five opens published the refusal this repetition arranges.
+ * Two of them always do — five opens for three descriptors — and every one of
+ * them reached publication through a re-attempt the ledger granted, which is
+ * what the accounting below checks the ledger against. */
+static int wf_interleave_refused;
 static uint64_t wf_interleave_returns_made;
 static uint64_t wf_interleave_retries_made;
 
@@ -251,6 +268,7 @@ static int wf_interleave_once(void) {
     uint64_t retries_before = wf__completion_open_exhaustion_retries();
     wf_interleave_outside_error = 0;
     wf_interleave_left_over = 0;
+    wf_interleave_refused = 0;
     atomic_store(&wf_interleave_direct_error, 0);
     for (index = 0; index < WF_INTERLEAVE_OPENS; ++index) {
         wf_interleave_open_error[index] = 0;
@@ -317,22 +335,34 @@ static int wf_interleave_once(void) {
             ) != 0) {
             wf_interleave_outside_error = wf_interleave_open_error[index];
         }
+        if (wf_interleave_open_error[index] == EMFILE) {
+            wf_interleave_refused += 1;
+        }
     }
     if (wf_interleave_outside_the_narrowed_table(
             atomic_load(&wf_interleave_direct_error)
         ) != 0) {
         wf_interleave_outside_error = atomic_load(&wf_interleave_direct_error);
     }
+    if (atomic_load(&wf_interleave_direct_error) == EMFILE) {
+        wf_interleave_refused += 1;
+    }
     wf_interleave_returns_made =
         wf_completion_descriptor_returns() - returns_before;
     wf_interleave_retries_made =
         wf__completion_open_exhaustion_retries() - retries_before;
-    if (succeeded < WF_INTERLEAVE_HELD && wf_interleave_outside_error == 0) {
+    if ((succeeded < WF_INTERLEAVE_HELD || wf_interleave_refused != 0)
+        && wf_interleave_outside_error == 0) {
         /* Asked while the table is still narrow, so the answer is about the
          * three descriptors this repetition freed and not about the host's
          * table at large: is one of them still there for the taking after
          * every open of this repetition has published?  If it is, a return
-         * this runtime made went to no open at all. */
+         * this runtime made went to no open at all.
+         *
+         * Asked of every repetition that published a refusal, not only of one
+         * whose count already fell short, because it is the second and
+         * independent way this defect shows: a spare descriptor beside a
+         * published refusal is a lost `Ok` however the opens are counted. */
         int spare = open(wf_interleave_path, O_RDONLY);
         if (spare >= 0) {
             wf_interleave_left_over = 1;
@@ -453,6 +483,7 @@ int main(int argc, char **argv) {
     int repetition;
     int attempted = 0;
     int lost = 0;
+    int miscounted = 0;
     int skipped = 0;
     int created;
 #if !defined(__linux__)
@@ -528,6 +559,39 @@ int main(int argc, char **argv) {
                    (unsigned long long)wf_interleave_returns_made,
                    (unsigned long long)wf_interleave_retries_made,
                    wf_interleave_left_over);
+        } else if (wf_interleave_left_over != 0
+                   && wf_interleave_refused != 0) {
+            /* The count says every owed `Ok` was published and the table says
+             * a descriptor this repetition freed went to no open, with a
+             * refusal published against it.  The same loss, seen the other
+             * way. */
+            lost += 1;
+            printf("completion-retirement-interleave: repetition %d published"
+                   " %d of %d owed opens and left a descriptor over with %d"
+                   " refusals published; returned=%llu re-attempts=%llu\n",
+                   repetition, succeeded, WF_INTERLEAVE_HELD,
+                   wf_interleave_refused,
+                   (unsigned long long)wf_interleave_returns_made,
+                   (unsigned long long)wf_interleave_retries_made);
+        }
+        /* What the ledger promised, checked from outside it.  One re-attempt
+         * per open is the whole of the rule, so the repetition's five opens
+         * can be granted at most five; and every refusal that reached
+         * publication was granted one, so a repetition that published more
+         * refusals than the ledger granted re-attempts has published one
+         * without the second attempt it is owed.  Both held at every one of
+         * the 25 losses this probe's diagnosis was built from, so a run where
+         * one of them breaks is a different defect and says so. */
+        if (wf_interleave_retries_made
+                > (uint64_t)(WF_INTERLEAVE_OPENS + 1)
+            || (uint64_t)wf_interleave_refused
+                > wf_interleave_retries_made) {
+            miscounted += 1;
+            printf("completion-retirement-interleave: repetition %d granted"
+                   " %llu re-attempts for %d opens, %d of them refused\n",
+                   repetition,
+                   (unsigned long long)wf_interleave_retries_made,
+                   WF_INTERLEAVE_OPENS + 1, wf_interleave_refused);
         }
     }
     atomic_store(&wf_interleave_finished, 1);
@@ -547,10 +611,18 @@ int main(int argc, char **argv) {
         }
         return WF_INTERLEAVE_SKIP;
     }
+    /* `not-asked` is on the passing line as well as the failing one: a
+     * repetition that met a refusal this process's narrowed table did not
+     * cause is excluded from both counts, and a reader has to be able to see
+     * how much of the run that was — including the case the exclusion is
+     * strictest about, a genuine `EMFILE` shortfall in a repetition that also
+     * met one of those refusals, which is dropped as not asked rather than
+     * counted as a loss. */
     printf("completion-retirement-interleave: %s repetitions=%d lost=%d"
-           " not-asked=%d helpers=%llu\n", lost == 0 ? "PASS" : "FAIL",
-           attempted, lost, skipped,
+           " miscounted=%d not-asked=%d helpers=%llu\n",
+           lost == 0 && miscounted == 0 ? "PASS" : "FAIL",
+           attempted, lost, miscounted, skipped,
            (unsigned long long)wf__completion_target_helper_count());
-    return lost == 0 ? 0 : 1;
+    return lost == 0 && miscounted == 0 ? 0 : 1;
 #endif
 }

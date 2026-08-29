@@ -4250,6 +4250,57 @@ static int test_an_open_that_took_a_return_is_charged_for_it(void) {
     return 0;
 }
 
+/* A descriptor already promised is not promised again to a waiter that arrives
+ * with an older view of the world.
+ *
+ * A waiter's `seen` is read before its own host attempt, and on the ring that
+ * is the moment of submission — long before the kernel refuses it and longer
+ * still before the refusal is reaped and the waiter registers.  Waiters
+ * therefore arrive with `seen` values older than what the ledger has already
+ * done, and they arrive one at a time: each finds the order empty, because the
+ * one before it left to spend its award.  A mark that re-opened on each of
+ * them promised one returned descriptor to all three, and the two that reached
+ * the host after it was taken published the refusal.  Traced on the interleave
+ * shape under load, that is the whole of the rare shortfall: one return,
+ * three awards, two lost `Ok`s and a descriptor left over. */
+static int test_a_promised_descriptor_is_not_promised_again(void) {
+    wf_retirement_waiter first;
+    wf_retirement_waiter second;
+    uint64_t seen;
+
+    /* Four in flight: two refused opens whose attempts were made at the same
+     * moment, and two closes that will each return a descriptor. */
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    wf_completion_operation_accepted();
+    seen = wf_completion_descriptor_returns();
+
+    /* The first refusal is reaped and registers, and the close ends: it is
+     * awarded the descriptor and leaves the order to spend it. */
+    wf_completion_retirement_wait_begin(&first, seen, NULL, NULL, 0);
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&first) == WF_RETIREMENT_HAPPENED);
+    wf_completion_retirement_wait_end(&first);
+
+    /* Now the second refusal is reaped, with the `seen` its own attempt took
+     * before any of this.  It opens the order again, and what it may not be
+     * told is that a descriptor came back for it: the one that came back is
+     * spent.  Its own open is in flight and so is the first waiter's, so this
+     * is not the moment it answers either. */
+    wf_completion_retirement_wait_begin(&second, seen, NULL, NULL, 0);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_AWAITED);
+
+    /* A second descriptor comes back, and that one is this waiter's. */
+    wf_completion_operation_retired(1);
+    CHECK(wf_completion_retirement_state(&second) == WF_RETIREMENT_HAPPENED);
+
+    wf_completion_retirement_wait_end(&second);
+    wf_completion_operation_retired(0);
+    wf_completion_operation_retired(0);
+    return 0;
+}
+
 /* A free that came from outside this runtime, charged to the open that took it,
  * refuses no waiter.
  *
@@ -5533,6 +5584,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_an_ending_that_returns_nothing_grants_no_reattempt());
     RUN_TEST(test_a_returned_descriptor_is_awarded_in_waiter_order());
     RUN_TEST(test_an_open_that_took_a_return_is_charged_for_it());
+    RUN_TEST(test_a_promised_descriptor_is_not_promised_again());
     RUN_TEST(test_an_outside_free_charged_to_an_open_refuses_no_waiter());
     RUN_TEST(test_an_awarded_attempt_is_charged_once());
     RUN_TEST(test_the_work_a_waiter_owes_is_read_where_it_decides());

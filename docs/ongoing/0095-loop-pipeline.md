@@ -776,9 +776,10 @@ by exempting the carrying block from the rule.
   of the interleave and cross-route shapes, the revision before this one reached
   a park with a live epoch **not once**: 0 fresh in every run, and every park it
   reached stale. Turns are not parks — a turn can make progress and never reach
-  one; the same base build turned 88,684 times on one of these cells for 87,735
-  stale parks and 473 turns that went on without parking. How many turns is a
-  draw and varies by an order of magnitude
+  one, and a turn can end the wait instead — the same base build turned 88,684
+  times on one of these cells for 87,735 stale parks, 473 turns that went on
+  without parking, and 476 that left the loop at the state check, which is all
+  88,684 of them. How many turns is a draw and varies by an order of magnitude
   between runs — 21,255, 44,005, 91,900 and 186,692 on the same four cells, and
   17,987 on the smaller sweep quoted below — so no count here is a fixed
   quantity; the fixed thing is the zero. Nothing stalled and nothing was lost;

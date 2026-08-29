@@ -1176,10 +1176,17 @@ static _Atomic uint64_t wf_retirement_wait_starts;
  * come back, and the second question reads the order rather than its head. */
 static _Atomic(wf_retirement_waiter *) wf_retirement_first;
 static wf_retirement_waiter *wf_retirement_last;
-/* The return count as of the last descriptor awarded to a waiter.  Returns
- * past it are unspent, and each award moves it by one, so two refused opens
- * never spend their one re-attempt each on the same returned descriptor.
- * Under the lock. */
+/* How far into the return count this ledger has promised descriptors away.
+ * Returns past it are unspent, and both things that can consume one move it by
+ * one: an award to a waiter, and an open the host satisfied taking a
+ * descriptor.  So a returned descriptor is promised to exactly one consumer,
+ * and two refused opens never spend their one re-attempt each on the same one.
+ *
+ * It never moves backwards and never passes the return count, which is what
+ * makes "unspent" mean the same thing to every waiter however they arrive and
+ * leave: a waiter that opens the awarding raises it to its own `seen` and no
+ * lower, and a charge is dropped rather than pushing it past what has actually
+ * come back.  Under the lock. */
 static uint64_t wf_retirement_awarded;
 /* The runtime endpoint a waiter inside a blocking direct call parks on, told
  * to the ledger by the unit that owns it (contract.h). */
@@ -1349,8 +1356,22 @@ void wf_completion_retirement_wait_begin(
          * that came back before its own host attempt are owed to nobody, and
          * every one that has come back since is unspent.  The mark is what
          * rations them, never what grants one — a waiter still has to have
-         * seen the count move since its own attempt. */
-        wf_retirement_awarded = seen;
+         * seen the count move since its own attempt.
+         *
+         * Forward only.  A waiter's `seen` is read before its own host
+         * attempt, and on the ring that is its submission, so a waiter can
+         * arrive with a `seen` older than a descriptor this ledger has already
+         * promised to somebody — and moving the mark back to it would promise
+         * that descriptor a second time.  Three refused ring opens registering
+         * one after another, each finding the order empty because the last one
+         * had left to spend its award, were awarded one single returned
+         * descriptor three times over; two of them re-attempted against a
+         * descriptor that was gone and published the refusal.  The mark
+         * therefore only ever rises: what it has spent stays spent, and what
+         * this waiter opens the awarding on is whatever is unspent now. */
+        if (seen > wf_retirement_awarded) {
+            wf_retirement_awarded = seen;
+        }
         atomic_store_explicit(
             &wf_retirement_first,
             waiter,
@@ -1531,12 +1552,16 @@ static int wf_retirement_award_locked(
  * it.  The mark moved when the award was granted, and moving it again here
  * would charge one descriptor twice.
  *
- * Charged only while the waiter order is not empty and a return is unspent.
- * With the order empty there is no waiter to deprive and the mark is reset to
- * the next waiter's own `seen` when one opens the order again; with every
- * return already spent, the descriptor this open took was not one of this
- * runtime's returns to give — the host had it for a reason no ledger can see —
- * and charging it would take from a waiter that is owed one.
+ * Charged whenever a return is unspent, and whether or not a waiter is
+ * registered at the time.  The order being empty is no reason to skip it: the
+ * refused open that registers next may have made its own attempt long before
+ * this take — on the ring, before it was even submitted — and the mark is what
+ * carries the take across to it.  What the charge is bounded by is the unspent
+ * returns themselves: with every return already spent, the descriptor this
+ * open took was not one of this runtime's returns to give — the host had it
+ * for a reason no ledger can see — and charging it would take from a waiter
+ * that is owed one.  So the mark never passes the return count, and every
+ * descriptor this runtime put back is promised exactly once.
  *
  * A waiter deprived here by a free that came from outside after all, which no
  * ledger can tell from its own, still cannot lose an `Ok` it is owed: this
@@ -1554,15 +1579,12 @@ void wf_completion_retirement_open_took_a_descriptor(int on_an_award) {
         return;
     }
     (void)pthread_mutex_lock(&wf_retirement_lock);
-    if (atomic_load_explicit(&wf_retirement_first, memory_order_seq_cst)
-        != NULL) {
-        returns = atomic_load_explicit(
-            &wf_retirement_returns,
-            memory_order_seq_cst
-        );
-        if (returns > wf_retirement_awarded) {
-            wf_retirement_awarded += 1;
-        }
+    returns = atomic_load_explicit(
+        &wf_retirement_returns,
+        memory_order_seq_cst
+    );
+    if (returns > wf_retirement_awarded) {
+        wf_retirement_awarded += 1;
     }
     (void)pthread_mutex_unlock(&wf_retirement_lock);
 }
