@@ -744,6 +744,15 @@ by exempting the carrying block from the rule.
   and the same shape with the registrations the other way round holds at 0 of
   200 wrong where it was 9 and 4 wrong before.
 
+  The mis-award is not only a wrong publication. In that same scripted shape at
+  four helpers the previous revision stopped outright in one run of the sweep:
+  its ledger read 154 returns, 2 in flight, 1 waiter and 154 awarded, with the
+  adapter's waiter asleep on the ledger at `seen = 153` — the return it was owed
+  had been spent by the waiter that took its place while it ran the work it
+  owed, and the operation it then waited for was the one the test only releases
+  after that open publishes. A descriptor awarded to the wrong open is a wake
+  nobody is left to give.
+
 - Standing aside is now a fact about the waiter, not a count beside it, and that
   removed a double count. A deferred operation used to be a separate tally that
   a decision subtracted from what is in flight; a blocking direct call was both

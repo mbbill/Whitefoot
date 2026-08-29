@@ -1236,7 +1236,10 @@ static void wf_retirement_announce(void) {
 }
 
 /* The endpoint half of the announcement, for the two transitions that make
- * their change and broadcast under the lock they already hold. */
+ * their change and broadcast under the lock they already hold.  They are
+ * transitions the rule above owes an announcement: a waiter entering or leaving
+ * the order changes what every other waiter is waiting for, and one of those
+ * others may be parked on the endpoint. */
 static void wf_retirement_announce_on_the_endpoint(void) {
     wf_completion_runtime *endpoint = atomic_load_explicit(
         &wf_retirement_endpoint,
