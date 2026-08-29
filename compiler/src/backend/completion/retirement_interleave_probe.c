@@ -96,6 +96,11 @@
 
 #define WF_INTERLEAVE_SKIP 77
 
+/* Everything below through the overlay helpers exists for the Linux run
+ * only: on a host with no kernel completion ring `main` skips before
+ * touching any of it, and a definition it cannot reach is an unused-symbol
+ * error under the gate's -Werror. */
+#if defined(__linux__)
 static char wf_interleave_path[384];
 static _Atomic unsigned wf_interleave_progress;
 static _Atomic int wf_interleave_finished;
@@ -410,7 +415,6 @@ static int wf_interleave_warm(void) {
  * failure here is a skip with its reason, never a quiet pass.
  *
  * Returns 0 having filled `directory`, or the skip status. */
-#if defined(__linux__)
 static char wf_interleave_mount[256];
 
 /* Takes the layer directories back out of the scratch directory, whether they
