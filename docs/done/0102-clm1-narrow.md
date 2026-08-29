@@ -140,12 +140,12 @@ depends on the selector.
 The first attempt deleted discharge outright, on the reasoning that a frame the
 merge's entry state already carries is excluded by `acquired` anyway. That is
 true of merges downstream of the construct and false of an enclosing loop head:
-the program embedded in `compiler/tests/programs/wide_scan.rs` has an
-exhaustive match on an `arg_get` result
-inside a counted loop, and with the frame retained the loop head attributed its
-own selection to that match and refused a claim v0.38 admitted. The canonical
-`make check` caught it, which is why this record's evidence is quoted from the
-run after the repair.
+the program embedded in `compiler/tests/programs/wide_scan.rs` holds exhaustive
+matches on `publish_all` boundary results with no escaping edge inside the
+ordinary loop `@hostile_walk`, and with those frames retained the loop head
+attributed their selection to itself and refused a claim v0.38 admitted. The
+canonical `make check` caught it, which is why this record's evidence is quoted
+from the run after the repair.
 
 `entailment/flow.rs`'s `claim_locality_failure` loses its control-witness
 fallback and the `control_fallback` tie-break bit that existed only to let a
@@ -371,7 +371,8 @@ admits lowers to the ordinary executed check and moves no published byte.
   discharged at the merge that joins every edge their selector produces, but
   in the non-exhaustive cases they live longer than under v0.38, so a
   function with many boundary constructs can carry a longer frame vector,
-  and `acquired` is linear in it. The library suite and the conformance
+  and `acquired` scans the held frame vector once per frame an edge
+  acquired, so its cost grows with the product of the two. The library suite and the conformance
   adapter did not move measurably and no benchmark changed, but no dedicated
   measurement was taken.
 - **`DefinitionId.site` rests on unenforced preconditions.** The identity is a
@@ -380,7 +381,7 @@ admits lowers to the ordinary executed check and moves no published byte.
   reaching definitions of one component, and site 0 is reserved. Nothing in
   the type system or a test enforces those preconditions; a refactor that
   cached or compared identities across allocations could silently equate two
-  distinct definitions and drop a selector's witness. Flagged by the skeptic;
+  distinct definitions and drop a selector's witness. Flagged in the skeptic's report;
   a guard (a fresh-arena identity or a debug assertion) is follow-up work.
 - **The rendered carrier's tie-break is unpinned.** With the control-witness
   seed gone, when two supports share the earliest boundary witness the
