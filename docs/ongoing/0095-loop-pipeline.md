@@ -635,21 +635,44 @@ by exempting the carrying block from the rule.
   deterministic tests above. Its own comment says so.
 
 - Repetition counts. These were measured on an x86-64 Linux host (kernel 6.18,
-  real io_uring, GCC 14) at **this** revision: `completion-test` at zero, one
-  and four helpers plus the `WF_IO_NOCACHE` arm, green; 200 harness runs each
-  at zero, one, two and four helpers, 0 failures and 0 stalls; `completion-tsan`
-  20 runs at each of the same four, 0 failures and 0 stalls;
-  `completion-sanitize` (ASan + UBSan) green; the `WF_REQUIRE_LINUX_IO_URING=1`
-  run green; `attack_probe` and `verify_probe` 15 runs each at zero, one, two
-  and four helpers, 120 of 120 passing; and the cross-engine-read shape at
-  1,000 repetitions per cell, twice, at the same four helper counts with the
-  read present and absent — 0 lost `Ok`s in all sixteen cells, against 7 to 34
-  per thousand with the read present before this rule.
+  real io_uring, GCC 14) at **this** revision, every racy shape with its file on
+  an `overlayfs` so that `IORING_OP_CLOSE` is genuinely asynchronous:
+  `completion-test` at zero, one and four helpers plus the `WF_IO_NOCACHE` arm,
+  green; 200 harness runs each at zero, one, two and four helpers, 0 failures
+  and 0 stalls; `completion-tsan` 20 runs at each of the same four, 0 failures
+  and 0 stalls; `completion-sanitize` (ASan + UBSan) green at zero, one and
+  four; the `WF_REQUIRE_LINUX_IO_URING=1` run green; `attack_probe` and
+  `verify_probe` 25 runs each at zero, one, two and four helpers on both
+  `overlayfs` and the host's own filesystem, 400 of 400 passing; the
+  cross-engine-read shape at 1,000 repetitions per cell at the four helper
+  counts with the read present and absent — 0 lost `Ok`s in all eight cells,
+  against 7 to 34 per thousand with the read present before that rule; the
+  refused-open-on-one-route, refused-close-on-the-other shape at 1,000
+  repetitions at each of the four, 0 lost against 971 and 973 per thousand at
+  the two revisions before the outcome-gated predicate; the failing-close shape
+  at 2,000 repetitions at one and four helpers, 0 lost; the award shape — three
+  refused opens racing one returned descriptor — at 1,000 repetitions at one
+  and four helpers, 1,000 owed `Ok`s of 1,000 in both with 2,994 re-attempts
+  for the 2,994 opens the host refused, against 37 and 44 `Ok`s before the
+  award was ordered; the interleave shape at 50 runs of 50 repetitions at one
+  and four helpers, 0 stalls and 0 losses, against 5 stalls in 20 runs at one
+  helper and 19 in 20 at four at the revision before the ledger announced on
+  both endpoints; and `retirement_interleave_probe` 25 runs at one and four
+  helpers, all passing, plus one run under the thread sanitizer.
+
+  One nonzero exit of the thread-sanitizer harness is on this record without an
+  explanation: it appeared once in an early twenty-run sweep at two helpers
+  during the fifth verification, with three jobs running at once, and never
+  again in 240 further runs across the four helper counts, nor in the 80 runs
+  above. The log was overwritten before it could be read and the sweep that
+  produced it counted a 300-second timeout as a failure, so it cannot be told
+  apart from load. It is recorded as unreproduced rather than as nothing.
 
   Two helpers is in the list because that is where the two-opens defect showed
   at 74 in 200 and the shipped suites do not run it; one helper matters because
-  that is where both missed wakes showed — one twice in four hundred, the other
-  once in twenty under TSan. The earlier counts in this record were measured on
+  that is where three of the four missed wakes showed — one twice in four
+  hundred, one once in twenty under TSan, and the fourth five times in twenty
+  runs of its own shape, where four helpers showed it nineteen times in twenty. The earlier counts in this record were measured on
   macOS and in an aarch64 Linux container at earlier revisions; they are what
   those revisions did, and the macOS half of this revision is `io-hosts`' to
   re-measure, because the host that produced the numbers above has no macOS.
@@ -686,7 +709,11 @@ by exempting the carrying block from the rule.
       counts — descriptors returned, and operations in flight — asked at the
       moment of the host attempt, with the two per-engine gates it replaces
       gone and a deterministic test for each route, for the one exit that could
-      miss a return, and for the ending that returns nothing
+      miss a return, for the ending that returns nothing, and for the outcome
+      each engine answers the return question from; a returned descriptor
+      awarded in waiter order, so source order decides which open publishes the
+      `Ok`; and every ledger transition announced in both the places a waiter
+      can sleep, with the shape that proves it wired in as a probe of its own
 - [x] item 4 — carrying and draining, with every drain including the first
       given exactly what the blocks that reach it started, the out-of-order
       descriptor refused, and the IR-identity oracle re-run: 630 sources,
