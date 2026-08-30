@@ -13,6 +13,9 @@
 /// variable decides which floor a program gets.
 pub const FLOOR_RUNTIME_SOURCE: &str = include_str!("../wf_floor.c");
 
+/// The Windows resource-exhaustion floor carried inside the compiler.
+pub const FLOOR_WINDOWS_RUNTIME_SOURCE: &str = include_str!("../wf_floor_windows.c");
+
 /// The stack every thread that runs Whitefoot code gets, as a number this side
 /// of the link can read.
 ///

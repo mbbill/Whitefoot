@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+struct wf_windows_iocp_adapter;
+
 enum wf_completion_phase {
     WF_COMPLETION_FREE = 0,
     WF_COMPLETION_READY = 1,
@@ -121,9 +123,14 @@ struct wf_completion_runtime {
     volatile LONG64 wake_epoch;
     volatile LONG parked_schedulers;
     volatile LONG iocp_waiters;
+    volatile LONG iocp_wake_packets;
 
-    /* When bound, compute and completion publication place a persistent wake
-     * packet on the same IOCP used by real overlapped operations. */
+    /* When bound, compute and completion publication keep enough persistent
+     * wake packets for every announced IOCP waiter. `iocp_wake_packets` is the
+     * exact count successfully posted but not yet reported consumed by the
+     * adapter; repeated notifications only fill a deficit and therefore
+     * coalesce. A real completion may retire its waiter before an older wake
+     * packet is dequeued; that bounded surplus remains reusable. */
     HANDLE wake_port;
     ULONG_PTR wake_key;
 
@@ -158,19 +165,30 @@ int wf_completion_set_ready_callback(
  * A null-OVERLAPPED packet is a scheduler wake, never an I/O result. */
 int wf_windows_completion_bind_iocp(
     wf_completion_runtime *runtime,
+    struct wf_windows_iocp_adapter *adapter,
     HANDLE port,
     ULONG_PTR wake_key
 );
 
 /* Announce/recheck for a scheduler about to wait in
- * GetQueuedCompletionStatus. Persistent IOCP packets close the final race;
- * compute publication posts a null-OVERLAPPED packet only while such a waiter
- * exists. */
+ * GetQueuedCompletionStatus. A notification fills the outstanding packet
+ * count to the announced waiter count while holding the same lock used here,
+ * closing the final race without accumulating one packet per notification.
+ * A bound adapter's progress call withdraws the announcement automatically on
+ * its first dequeue result. `wait_end` is only for cancelling a successful
+ * announcement before entering progress. */
 enum wf_completion_park_result wf_windows_completion_iocp_wait_begin(
     wf_completion_runtime *runtime,
     uint64_t observed_epoch
 );
 void wf_windows_completion_iocp_wait_end(wf_completion_runtime *runtime);
+
+unsigned wf_windows_completion_iocp_waiter_count(
+    const wf_completion_runtime *runtime
+);
+unsigned wf_windows_completion_iocp_wake_packet_count(
+    const wf_completion_runtime *runtime
+);
 
 enum wf_completion_claim_result wf_completion_claim(
     wf_completion_runtime *runtime,

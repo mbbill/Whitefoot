@@ -1,4 +1,5 @@
 #include "windows_completion.h"
+#include "windows_iocp.h"
 
 #if defined(_WIN32)
 
@@ -15,6 +16,18 @@ static LONG64 wf_windows_load64(const volatile LONG64 *value) {
 static LONG wf_windows_load32(const volatile LONG *value) {
     return InterlockedCompareExchange((volatile LONG *)value, 0, 0);
 }
+
+static int wf_windows_completion_close_iocp(
+    wf_completion_runtime *runtime,
+    HANDLE port,
+    ULONG_PTR wake_key
+);
+static int wf_windows_completion_iocp_wait_finished(
+    wf_completion_runtime *runtime,
+    HANDLE port,
+    ULONG_PTR wake_key,
+    unsigned consumed_wake
+);
 
 /* Keep cursors in [0, modulo) instead of relying on signed LONG64 overflow.
  * The returned value is the caller's scan start and every update is bounded
@@ -94,9 +107,16 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
     if (runtime == NULL || runtime->slots == NULL || runtime->slot_count == 0) {
         return EINVAL;
     }
-    if (wf_windows_load32(&runtime->parked_schedulers) != 0
+    AcquireSRWLockExclusive(&runtime->wake_lock);
+    if (runtime->wake_port != NULL
+        || wf_windows_load32(&runtime->parked_schedulers) != 0
         || wf_windows_load32(&runtime->iocp_waiters) != 0
-        || wf_windows_load64(&runtime->ready_events) != 0) {
+        || wf_windows_load32(&runtime->iocp_wake_packets) != 0) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return EBUSY;
+    }
+    ReleaseSRWLockExclusive(&runtime->wake_lock);
+    if (wf_windows_load64(&runtime->ready_events) != 0) {
         return EBUSY;
     }
     for (index = 0; index < runtime->slot_count; ++index) {
@@ -110,17 +130,23 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
     }
     runtime->slots = NULL;
     runtime->slot_count = 0;
-    runtime->wake_port = NULL;
     return 0;
 }
 
 int wf_windows_completion_bind_iocp(
     wf_completion_runtime *runtime,
+    struct wf_windows_iocp_adapter *adapter,
     HANDLE port,
     ULONG_PTR wake_key
 ) {
-    if (runtime == NULL || runtime->slots == NULL || port == NULL
+    int error;
+    if (runtime == NULL || runtime->slots == NULL || adapter == NULL
+        || port == NULL
         || port == INVALID_HANDLE_VALUE || wake_key == 0) {
+        return EINVAL;
+    }
+    if (wf_windows_iocp_port(adapter) != port
+        || wf_windows_iocp_wake_key(adapter) != wake_key) {
         return EINVAL;
     }
     AcquireSRWLockExclusive(&runtime->wake_lock);
@@ -129,8 +155,58 @@ int wf_windows_completion_bind_iocp(
         ReleaseSRWLockExclusive(&runtime->wake_lock);
         return EBUSY;
     }
+    if (wf_windows_load32(&runtime->iocp_waiters) != 0
+        || wf_windows_load32(&runtime->iocp_wake_packets) != 0) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return EBUSY;
+    }
+    error = wf_windows_iocp_attach_completion(
+        adapter,
+        runtime,
+        wf_windows_completion_iocp_wait_finished,
+        wf_windows_completion_close_iocp
+    );
+    if (error != 0) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return error;
+    }
     runtime->wake_port = port;
     runtime->wake_key = wake_key;
+    ReleaseSRWLockExclusive(&runtime->wake_lock);
+    return 0;
+}
+
+static int wf_windows_completion_close_iocp(
+    wf_completion_runtime *runtime,
+    HANDLE port,
+    ULONG_PTR wake_key
+) {
+    DWORD error;
+    if (runtime == NULL || port == NULL || port == INVALID_HANDLE_VALUE
+        || wake_key == 0) {
+        return EINVAL;
+    }
+    AcquireSRWLockExclusive(&runtime->wake_lock);
+    if (runtime->wake_port == NULL) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return EPROTO;
+    }
+    if (runtime->wake_port != port || runtime->wake_key != wake_key) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return EBUSY;
+    }
+    if (wf_windows_load32(&runtime->iocp_waiters) != 0) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return EBUSY;
+    }
+    if (CloseHandle(port) == FALSE) {
+        error = GetLastError();
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return (int)error;
+    }
+    runtime->wake_port = NULL;
+    runtime->wake_key = 0;
+    InterlockedExchange(&runtime->iocp_wake_packets, 0);
     ReleaseSRWLockExclusive(&runtime->wake_lock);
     return 0;
 }
@@ -293,22 +369,37 @@ enum wf_completion_transition_result wf_completion_set_adapter_tag(
     return WF_COMPLETION_TRANSITIONED;
 }
 
+static void wf_windows_fill_iocp_wakes_locked(
+    wf_completion_runtime *runtime
+) {
+    LONG waiters = wf_windows_load32(&runtime->iocp_waiters);
+    LONG packets = wf_windows_load32(&runtime->iocp_wake_packets);
+    while (runtime->wake_port != NULL && packets < waiters) {
+        if (PostQueuedCompletionStatus(
+                runtime->wake_port,
+                0,
+                runtime->wake_key,
+                NULL
+            ) == FALSE) {
+            /* The caller has already advanced the durable wake epoch, but an
+             * IOCP waiter cannot observe it until GQCS returns. There is no
+             * recoverable state in which dropping this packet preserves the
+             * missed-wake contract. */
+            abort();
+        }
+        packets = InterlockedIncrement(&runtime->iocp_wake_packets);
+        InterlockedIncrement64(&runtime->stat_wake_signals);
+    }
+}
+
 static void wf_windows_notify_scheduler(wf_completion_runtime *runtime) {
-    HANDLE port;
-    ULONG_PTR key;
     InterlockedIncrement64(&runtime->wake_epoch);
     AcquireSRWLockExclusive(&runtime->wake_lock);
-    port = runtime->wake_port;
-    key = runtime->wake_key;
     if (wf_windows_load32(&runtime->parked_schedulers) != 0) {
         WakeConditionVariable(&runtime->wake_condition);
         InterlockedIncrement64(&runtime->stat_wake_signals);
     }
-    if (port != NULL && wf_windows_load32(&runtime->iocp_waiters) != 0) {
-        if (PostQueuedCompletionStatus(port, 0, key, NULL) != FALSE) {
-            InterlockedIncrement64(&runtime->stat_wake_signals);
-        }
-    }
+    wf_windows_fill_iocp_wakes_locked(runtime);
     ReleaseSRWLockExclusive(&runtime->wake_lock);
 }
 
@@ -316,13 +407,21 @@ enum wf_completion_park_result wf_windows_completion_iocp_wait_begin(
     wf_completion_runtime *runtime,
     uint64_t observed_epoch
 ) {
-    if (runtime == NULL || runtime->wake_port == NULL) {
+    if (runtime == NULL) {
         return WF_COMPLETION_PARK_FAILED;
     }
     AcquireSRWLockExclusive(&runtime->wake_lock);
+    if (runtime->wake_port == NULL) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return WF_COMPLETION_PARK_FAILED;
+    }
     if (wf_completion_wake_epoch(runtime) != observed_epoch) {
         ReleaseSRWLockExclusive(&runtime->wake_lock);
         return WF_COMPLETION_PARK_EPOCH_CHANGED;
+    }
+    if (wf_windows_load32(&runtime->iocp_waiters) == LONG_MAX) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return WF_COMPLETION_PARK_FAILED;
     }
     InterlockedIncrement(&runtime->iocp_waiters);
     if (wf_completion_wake_epoch(runtime) != observed_epoch) {
@@ -335,9 +434,64 @@ enum wf_completion_park_result wf_windows_completion_iocp_wait_begin(
 }
 
 void wf_windows_completion_iocp_wait_end(wf_completion_runtime *runtime) {
-    if (runtime != NULL) {
+    if (runtime == NULL) {
+        return;
+    }
+    AcquireSRWLockExclusive(&runtime->wake_lock);
+    if (wf_windows_load32(&runtime->iocp_waiters) != 0) {
         (void)InterlockedDecrement(&runtime->iocp_waiters);
     }
+    ReleaseSRWLockExclusive(&runtime->wake_lock);
+}
+
+/* Withdraw the returned waiter and its optional scheduler packet in one
+ * critical section before the adapter can publish a real completion. */
+static int wf_windows_completion_iocp_wait_finished(
+    wf_completion_runtime *runtime,
+    HANDLE port,
+    ULONG_PTR wake_key,
+    unsigned consumed_wake
+) {
+    int error = 0;
+    if (runtime == NULL || port == NULL || port == INVALID_HANDLE_VALUE
+        || wake_key == 0 || consumed_wake > 1u) {
+        return EINVAL;
+    }
+    AcquireSRWLockExclusive(&runtime->wake_lock);
+    if (runtime->wake_port != port || runtime->wake_key != wake_key) {
+        ReleaseSRWLockExclusive(&runtime->wake_lock);
+        return EPROTO;
+    }
+    if (wf_windows_load32(&runtime->iocp_waiters) == 0) {
+        error = EPROTO;
+    } else {
+        (void)InterlockedDecrement(&runtime->iocp_waiters);
+    }
+    if (consumed_wake != 0u) {
+        if (wf_windows_load32(&runtime->iocp_wake_packets) == 0) {
+            error = EPROTO;
+        } else {
+            (void)InterlockedDecrement(&runtime->iocp_wake_packets);
+        }
+    }
+    ReleaseSRWLockExclusive(&runtime->wake_lock);
+    return error;
+}
+
+unsigned wf_windows_completion_iocp_waiter_count(
+    const wf_completion_runtime *runtime
+) {
+    return runtime == NULL
+        ? 0u
+        : (unsigned)wf_windows_load32(&runtime->iocp_waiters);
+}
+
+unsigned wf_windows_completion_iocp_wake_packet_count(
+    const wf_completion_runtime *runtime
+) {
+    return runtime == NULL
+        ? 0u
+        : (unsigned)wf_windows_load32(&runtime->iocp_wake_packets);
 }
 
 static enum wf_completion_publish_result wf_windows_publish(

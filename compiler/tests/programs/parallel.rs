@@ -238,6 +238,7 @@ fn the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// silently falling behind the corpus it claims to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
     &["byte_string.wf"],
+    &["completion_read_boundary.wf"],
     &["dir_walk.wf"],
     &["feedback_controller.wf"],
     &["fir_filter.wf"],

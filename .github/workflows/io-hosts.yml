@@ -152,3 +152,115 @@ jobs:
         run: |
           "$RUNNER_TEMP/completion/windows-adapter-probe.exe" \
             "$RUNNER_TEMP/completion/adapter.data"
+
+      # This probe proves the namespace facilities the Windows target row
+      # uses. It moves the ambient cwd away after taking its directory
+      # handle, then uses NtCreateFile and NtQueryDirectoryFile through that
+      # handle. A runner unable to create the reparse-point fixture exits 77;
+      # this evidence job treats that as fail-closed rather than a partial pass.
+      - name: Build the Windows native namespace probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/completion"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            compiler/src/backend/windows_namespace_probe.c \
+            -o "$RUNNER_TEMP/completion/windows-namespace-probe.exe"
+
+      - name: Run the Windows native namespace probe
+        run: |
+          set +e
+          "$RUNNER_TEMP/completion/windows-namespace-probe.exe"
+          status=$?
+          set -e
+          if [ "$status" -eq 77 ]; then
+            echo "the runner could not create the reparse-point fixture; Windows namespace qualification remains fail-closed" >&2
+            exit 1
+          fi
+          exit "$status"
+
+      - name: Strict-check the complete Windows runtime
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -fsyntax-only \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            compiler/src/backend/windows_runtime.c \
+            compiler/src/backend/wf_floor_windows.c \
+            compiler/src/backend/completion/windows_completion.c \
+            compiler/src/backend/completion/windows_iocp.c \
+            compiler/src/backend/completion/windows_bridge.c \
+            compiler/src/backend/completion/writer_scheduler_windows.c
+
+      # Terminal IOCP packets do not free compiler core slots; source joins do.
+      # Fill all 64 slots without joining, then require the 65th submit to
+      # return its direct-fallback verdict within five seconds. The probe then
+      # joins every admitted read and closes the submission/publication ledger.
+      - name: Build the Windows bridge capacity probe
+        run: |
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            compiler/src/backend/windows_runtime.c \
+            compiler/src/backend/completion/windows_completion.c \
+            compiler/src/backend/completion/windows_iocp.c \
+            compiler/src/backend/completion/windows_bridge.c \
+            compiler/src/backend/completion/writer_scheduler_windows.c \
+            compiler/src/backend/completion/windows_bridge_capacity_probe.c \
+            -o "$RUNNER_TEMP/completion/windows-bridge-capacity-probe.exe"
+
+      - name: Run the Windows bridge capacity probe
+        run: |
+          WF_REQUIRE_WINDOWS_IOCP=1 \
+            "$RUNNER_TEMP/completion/windows-bridge-capacity-probe.exe" \
+            "$RUNNER_TEMP/completion/windows-bridge-capacity.data"
+
+      # A native adapter probe can pass while the compiler still emits a Unix
+      # bootstrap or the shipped driver forgets one Windows runtime unit. This
+      # is the production boundary: native whitefootc emits and links a real
+      # .wf program, whose two argument paths are UTF-16, whose files are
+      # opened relative to command.cwd, whose first independent read_at must
+      # submit to IOCP, and whose bytes leave through Output.write_once. The
+      # opt-in runtime assertion aborts at process exit unless at least one
+      # IOCP submission was also reaped, so a silent direct fallback cannot
+      # satisfy this step.
+      - name: Compile and run a real Whitefoot program through IOCP
+        run: |
+          cargo build --manifest-path compiler/Cargo.toml --locked --bin whitefootc
+          mkdir -p "$RUNNER_TEMP/whitefoot-e2e"
+          compiler/target/debug/whitefootc.exe \
+            tests/programs/completion_read_boundary.wf \
+            -o "$RUNNER_TEMP/whitefoot-e2e/completion-read-boundary.exe"
+          printf 'A' > "$RUNNER_TEMP/whitefoot-e2e/first.bin"
+          printf 'B' > "$RUNNER_TEMP/whitefoot-e2e/second.bin"
+          printf 'AB' > "$RUNNER_TEMP/whitefoot-e2e/expected.txt"
+          (
+            cd "$RUNNER_TEMP/whitefoot-e2e"
+            WF_REQUIRE_WINDOWS_IOCP=1 ./completion-read-boundary.exe \
+              first.bin second.bin \
+              > actual.txt 2> diagnostics.txt
+          )
+          cmp "$RUNNER_TEMP/whitefoot-e2e/expected.txt" \
+            "$RUNNER_TEMP/whitefoot-e2e/actual.txt"
+          test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt"
+
+      # Windows does not yet ship a compute worker pool. A module whose
+      # permission lowering contains real hand-outs must therefore link its
+      # emitted weak sequential world through COFF and preserve the reference
+      # program's exact bytes; this executes that boundary instead of inferring
+      # it from the LLVM module.
+      - name: Run a --par program through the Windows sequential world
+        run: |
+          compiler/target/debug/whitefootc.exe \
+            tests/programs/par_layout.wf \
+            -o "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.exe"
+          compiler/target/debug/whitefootc.exe --par \
+            tests/programs/par_layout.wf \
+            -o "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.exe"
+          "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.exe" \
+            > "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.txt" \
+            2> "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.err"
+          "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.exe" \
+            > "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.txt" \
+            2> "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.err"
+          cmp "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.txt" \
+            "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.txt"
+          test ! -s "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.err"
+          test ! -s "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.err"

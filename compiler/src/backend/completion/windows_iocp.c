@@ -17,6 +17,9 @@ _Static_assert(
     "completion result cell must hold a Windows file result"
 );
 
+#define WF_WINDOWS_IOCP_PROGRESS_CLOSED (SIZE_MAX - 1u)
+#define WF_WINDOWS_IOCP_PROGRESS_CLOSING SIZE_MAX
+
 static void wf_windows_init_statistics(wf_windows_iocp_adapter *adapter) {
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
@@ -39,6 +42,10 @@ int wf_windows_iocp_init(
         return EINVAL;
     }
     memset(adapter, 0, sizeof(*adapter));
+    atomic_init(
+        &adapter->progress_gate,
+        WF_WINDOWS_IOCP_PROGRESS_CLOSED
+    );
     port = CreateIoCompletionPort(
         INVALID_HANDLE_VALUE,
         NULL,
@@ -64,6 +71,33 @@ int wf_windows_iocp_init(
         );
     }
     adapter->initialized = 1;
+    atomic_store_explicit(
+        &adapter->progress_gate,
+        0,
+        memory_order_release
+    );
+    return 0;
+}
+
+int wf_windows_iocp_attach_completion(
+    wf_windows_iocp_adapter *adapter,
+    wf_completion_runtime *runtime,
+    wf_windows_iocp_wait_finished_hook wait_finished,
+    wf_windows_iocp_close_hook close_bound_port
+) {
+    if (adapter == NULL || adapter->initialized == 0
+        || adapter->runtime != runtime || wait_finished == NULL
+        || close_bound_port == NULL) {
+        return EINVAL;
+    }
+    if ((adapter->wait_finished != NULL
+         && adapter->wait_finished != wait_finished)
+        || (adapter->close_bound_port != NULL
+            && adapter->close_bound_port != close_bound_port)) {
+        return EBUSY;
+    }
+    adapter->wait_finished = wait_finished;
+    adapter->close_bound_port = close_bound_port;
     return 0;
 }
 
@@ -335,20 +369,72 @@ int wf_windows_iocp_progress(
 ) {
     size_t processed = 0;
     size_t total = 0;
+    size_t gate;
     int first_error = 0;
+    int enter_error = 0;
+    HANDLE port;
+    ULONG_PTR wake_key;
+    wf_completion_runtime *runtime;
+    wf_windows_iocp_wait_finished_hook wait_finished;
     if (published != NULL) {
         *published = 0;
     }
-    if (adapter == NULL || adapter->initialized == 0 || published == NULL
-        || budget == 0) {
+    if (adapter == NULL || published == NULL || budget == 0) {
         return EINVAL;
     }
+    gate = atomic_load_explicit(
+        &adapter->progress_gate,
+        memory_order_acquire
+    );
+    for (;;) {
+        if (gate == WF_WINDOWS_IOCP_PROGRESS_CLOSED) {
+            return EINVAL;
+        }
+        if (gate == WF_WINDOWS_IOCP_PROGRESS_CLOSING) {
+            /* A bound destroy which races an announced waiter must fail its
+             * core close check and reopen this gate. Wait for that decision so
+             * the caller does not have to cancel an untouched announcement. */
+            (void)SwitchToThread();
+            gate = atomic_load_explicit(
+                &adapter->progress_gate,
+                memory_order_acquire
+            );
+            continue;
+        }
+        if (gate + 1u >= WF_WINDOWS_IOCP_PROGRESS_CLOSED) {
+            return EOVERFLOW;
+        }
+        if (atomic_compare_exchange_weak_explicit(
+                &adapter->progress_gate,
+                &gate,
+                gate + 1u,
+                memory_order_acq_rel,
+                memory_order_acquire
+            )) {
+            break;
+        }
+    }
+    if (adapter->initialized == 0) {
+        enter_error = EINVAL;
+    }
+    if (enter_error != 0) {
+        (void)atomic_fetch_sub_explicit(
+            &adapter->progress_gate,
+            1,
+            memory_order_release
+        );
+        return enter_error;
+    }
+    port = adapter->port;
+    wake_key = adapter->wake_key;
+    runtime = adapter->runtime;
+    wait_finished = adapter->wait_finished;
     while (processed < budget) {
         DWORD transferred = 0;
         ULONG_PTR completion_key = 0;
         OVERLAPPED *overlapped = NULL;
         BOOL succeeded = GetQueuedCompletionStatus(
-            adapter->port,
+            port,
             &transferred,
             &completion_key,
             &overlapped,
@@ -357,27 +443,49 @@ int wf_windows_iocp_progress(
         DWORD error_code = succeeded != FALSE ? 0 : GetLastError();
         wf_windows_iocp_entry *entry;
         int error;
+        unsigned legal_wake = overlapped == NULL && succeeded != FALSE
+            && completion_key == wake_key;
+        if (wait_finished != NULL) {
+            error = wait_finished(
+                runtime,
+                port,
+                wake_key,
+                legal_wake
+            );
+            if (first_error == 0 && error != 0) {
+                first_error = error;
+            }
+        }
         if (overlapped == NULL) {
             if (error_code == WAIT_TIMEOUT) {
                 break;
             }
             if (succeeded == FALSE) {
-                first_error = (int)error_code;
+                if (first_error == 0) {
+                    first_error = (int)error_code;
+                }
                 break;
             }
-            if (completion_key != adapter->wake_key) {
-                first_error = EPROTO;
+            if (completion_key != wake_key) {
+                if (first_error == 0) {
+                    first_error = EPROTO;
+                }
                 break;
             }
             /* Scheduler wake packets share the port with target completions,
-             * but they carry no operation and publish no terminal.  They
-             * still consume dequeue budget so a wake flood cannot turn one
-             * progress call into an unbounded loop. */
+             * but they carry no operation and publish no terminal. The bound
+             * core has already withdrawn this waiter and consumed the exact
+             * packet in one lock critical section. */
             processed += 1;
+            if (wait_finished != NULL) {
+                break;
+            }
             continue;
         }
         if (completion_key != (ULONG_PTR)adapter) {
-            first_error = EPROTO;
+            if (first_error == 0) {
+                first_error = EPROTO;
+            }
             break;
         }
         entry = wf_windows_entry_from_overlapped(adapter, overlapped);
@@ -400,8 +508,16 @@ int wf_windows_iocp_progress(
         if (error == 0) {
             total += 1;
         }
+        if (wait_finished != NULL) {
+            break;
+        }
     }
     *published = total;
+    (void)atomic_fetch_sub_explicit(
+        &adapter->progress_gate,
+        1,
+        memory_order_release
+    );
     return first_error;
 }
 
@@ -420,18 +536,85 @@ size_t wf_windows_iocp_in_flight(const wf_windows_iocp_adapter *adapter) {
     return atomic_load_explicit(&adapter->in_flight, memory_order_acquire);
 }
 
+size_t wf_windows_iocp_active_progress(
+    const wf_windows_iocp_adapter *adapter
+) {
+    size_t gate;
+    if (adapter == NULL) {
+        return 0;
+    }
+    gate = atomic_load_explicit(
+        &adapter->progress_gate,
+        memory_order_acquire
+    );
+    return gate >= WF_WINDOWS_IOCP_PROGRESS_CLOSED ? 0 : gate;
+}
+
 int wf_windows_iocp_destroy(wf_windows_iocp_adapter *adapter) {
-    if (adapter == NULL || adapter->initialized == 0) {
+    int error;
+    size_t expected = 0;
+    if (adapter == NULL) {
+        return EINVAL;
+    }
+    if (!atomic_compare_exchange_strong_explicit(
+            &adapter->progress_gate,
+            &expected,
+            WF_WINDOWS_IOCP_PROGRESS_CLOSING,
+            memory_order_acq_rel,
+            memory_order_acquire
+        )) {
+        return expected == WF_WINDOWS_IOCP_PROGRESS_CLOSED
+            ? EINVAL
+            : EBUSY;
+    }
+    if (adapter->initialized == 0) {
+        atomic_store_explicit(
+            &adapter->progress_gate,
+            WF_WINDOWS_IOCP_PROGRESS_CLOSED,
+            memory_order_release
+        );
         return EINVAL;
     }
     if (wf_windows_iocp_in_flight(adapter) != 0) {
+        atomic_store_explicit(
+            &adapter->progress_gate,
+            0,
+            memory_order_release
+        );
         return EBUSY;
     }
-    if (CloseHandle(adapter->port) == FALSE) {
-        return (int)GetLastError();
+    if (adapter->close_bound_port != NULL) {
+        error = adapter->close_bound_port(
+            adapter->runtime,
+            adapter->port,
+            adapter->wake_key
+        );
+        if (error != 0) {
+            atomic_store_explicit(
+                &adapter->progress_gate,
+                0,
+                memory_order_release
+            );
+            return error;
+        }
+    } else if (CloseHandle(adapter->port) == FALSE) {
+        error = (int)GetLastError();
+        atomic_store_explicit(
+            &adapter->progress_gate,
+            0,
+            memory_order_release
+        );
+        return error;
     }
+    adapter->wait_finished = NULL;
+    adapter->close_bound_port = NULL;
     adapter->port = NULL;
     adapter->initialized = 0;
+    atomic_store_explicit(
+        &adapter->progress_gate,
+        WF_WINDOWS_IOCP_PROGRESS_CLOSED,
+        memory_order_release
+    );
     return 0;
 }
 

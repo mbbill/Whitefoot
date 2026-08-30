@@ -810,6 +810,7 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
             "x86_64-apple-darwin",
             "aarch64-unknown-linux-gnu",
             "x86_64-unknown-linux-gnu",
+            "x86_64-pc-windows-msvc",
         ] {
             let target = SystemTarget::for_triple(triple).expect("a recognized system target");
             qualify_program(target, program)
@@ -901,6 +902,16 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             "wf__completion_file_status_direct",
             144,
             24,
+        ),
+        (
+            "x86_64-pc-windows-msvc",
+            510,
+            0,
+            1,
+            1,
+            "wf__completion_file_status_direct",
+            8,
+            0,
         ),
     ];
     for (

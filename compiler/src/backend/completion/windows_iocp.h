@@ -21,6 +21,19 @@ enum wf_windows_file_operation_kind {
 
 struct wf_windows_iocp_adapter;
 
+typedef int (*wf_windows_iocp_wait_finished_hook)(
+    wf_completion_runtime *runtime,
+    HANDLE port,
+    ULONG_PTR wake_key,
+    unsigned consumed_wake
+);
+
+typedef int (*wf_windows_iocp_close_hook)(
+    wf_completion_runtime *runtime,
+    HANDLE port,
+    ULONG_PTR wake_key
+);
+
 /* Only the adapter association function can mint this internal handle.  The
  * underlying file must have been opened with FILE_FLAG_OVERLAPPED and must
  * remain adapter-owned until every operation using it is terminal. */
@@ -84,10 +97,15 @@ typedef struct wf_windows_iocp_adapter {
     wf_completion_runtime *runtime;
     HANDLE port;
     ULONG_PTR wake_key;
+    wf_windows_iocp_wait_finished_hook wait_finished;
+    wf_windows_iocp_close_hook close_bound_port;
     wf_windows_iocp_entry *entries;
     size_t entry_capacity;
     _Atomic size_t entry_cursor;
     _Atomic size_t in_flight;
+    /* Ordinary values count active progress calls. Two high sentinels close
+     * entry atomically during and after destroy. */
+    _Atomic size_t progress_gate;
     unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
@@ -107,6 +125,16 @@ int wf_windows_iocp_init(
     DWORD concurrency
 );
 
+/* Installs the completion core's wait-accounting and lifecycle hooks before
+ * any scheduler announces an IOCP wait. The standalone adapter probe leaves
+ * them absent because it never announces or consumes scheduler waits. */
+int wf_windows_iocp_attach_completion(
+    wf_windows_iocp_adapter *adapter,
+    wf_completion_runtime *runtime,
+    wf_windows_iocp_wait_finished_hook wait_finished,
+    wf_windows_iocp_close_hook close_bound_port
+);
+
 /* Associates an overlapped file with this adapter's shared port before any
  * completion token changes ownership. */
 int wf_windows_iocp_associate_file(
@@ -122,9 +150,15 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
 );
 
 /* Dequeues at most `budget` packets and reports only successfully published
- * terminal operations.  The first dequeue may wait for
- * `timeout_milliseconds`; subsequent dequeues are nonblocking.  A validated
- * null-OVERLAPPED scheduler wake consumes budget but is not a terminal. */
+ * terminal operations. The first dequeue may wait for
+ * `timeout_milliseconds`; subsequent dequeues are nonblocking. Once attached
+ * to the completion core, each call must follow one successful IOCP wait-begin
+ * announcement. Its first dequeue result atomically withdraws that announcement
+ * before any terminal publication and ends the call, so a returned scheduler
+ * cannot consume wake packets reserved for its peers. An unattached standalone
+ * adapter retains the ordinary multi-packet budget behavior. Destroy returns
+ * EBUSY while any progress call remains active; other adapter operations still
+ * require external lifecycle coordination. */
 int wf_windows_iocp_progress(
     wf_windows_iocp_adapter *adapter,
     size_t budget,
@@ -135,6 +169,9 @@ int wf_windows_iocp_progress(
 HANDLE wf_windows_iocp_port(const wf_windows_iocp_adapter *adapter);
 ULONG_PTR wf_windows_iocp_wake_key(const wf_windows_iocp_adapter *adapter);
 size_t wf_windows_iocp_in_flight(const wf_windows_iocp_adapter *adapter);
+size_t wf_windows_iocp_active_progress(
+    const wf_windows_iocp_adapter *adapter
+);
 int wf_windows_iocp_destroy(wf_windows_iocp_adapter *adapter);
 
 wf_windows_iocp_statistics wf_windows_iocp_statistics_snapshot(

@@ -18,9 +18,95 @@
 static unsigned ready_count;
 static void *last_ready_frame;
 
+#define PROBE_IOCP_WAITERS 4u
+#define PROBE_IOCP_NOTIFY_STORM 4096u
+#define PROBE_IOCP_TIMEOUT_MILLISECONDS 10000u
+
+typedef struct probe_iocp_waiter {
+    wf_completion_runtime *runtime;
+    wf_windows_iocp_adapter *adapter;
+    HANDLE release;
+    enum wf_completion_park_result begin_result;
+    int progress_error;
+    size_t published;
+} probe_iocp_waiter;
+
+typedef struct probe_iocp_progress {
+    wf_windows_iocp_adapter *adapter;
+    int error;
+    size_t published;
+} probe_iocp_progress;
+
 static void record_ready_frame(void *frame) {
     ready_count += 1;
     last_ready_frame = frame;
+}
+
+static DWORD WINAPI probe_iocp_waiter_main(void *opaque) {
+    probe_iocp_waiter *waiter = (probe_iocp_waiter *)opaque;
+    uint64_t epoch = wf_completion_wake_epoch(waiter->runtime);
+    DWORD released;
+    waiter->begin_result = wf_windows_completion_iocp_wait_begin(
+        waiter->runtime,
+        epoch
+    );
+    if (waiter->begin_result != WF_COMPLETION_PARK_WOKEN) {
+        return 1;
+    }
+    released = WaitForSingleObject(
+        waiter->release,
+        PROBE_IOCP_TIMEOUT_MILLISECONDS
+    );
+    if (released != WAIT_OBJECT_0) {
+        wf_windows_completion_iocp_wait_end(waiter->runtime);
+        return 2;
+    }
+    waiter->progress_error = wf_windows_iocp_progress(
+        waiter->adapter,
+        PROBE_IOCP_WAITERS,
+        PROBE_IOCP_TIMEOUT_MILLISECONDS,
+        &waiter->published
+    );
+    return waiter->progress_error == 0 && waiter->published == 0 ? 0 : 3;
+}
+
+static DWORD WINAPI probe_iocp_progress_main(void *opaque) {
+    probe_iocp_progress *progress = (probe_iocp_progress *)opaque;
+    progress->error = wf_windows_iocp_progress(
+        progress->adapter,
+        1,
+        INFINITE,
+        &progress->published
+    );
+    return progress->error == 0 && progress->published == 0 ? 0 : 1;
+}
+
+static int probe_wait_for_iocp_waiters(
+    const wf_completion_runtime *runtime,
+    unsigned expected
+) {
+    ULONGLONG deadline = GetTickCount64() + PROBE_IOCP_TIMEOUT_MILLISECONDS;
+    while (wf_windows_completion_iocp_waiter_count(runtime) != expected) {
+        if (GetTickCount64() >= deadline) {
+            return 1;
+        }
+        Sleep(1);
+    }
+    return 0;
+}
+
+static int probe_wait_for_active_progress(
+    const wf_windows_iocp_adapter *adapter,
+    size_t expected
+) {
+    ULONGLONG deadline = GetTickCount64() + PROBE_IOCP_TIMEOUT_MILLISECONDS;
+    while (wf_windows_iocp_active_progress(adapter) != expected) {
+        if (GetTickCount64() >= deadline) {
+            return 1;
+        }
+        Sleep(1);
+    }
+    return 0;
 }
 
 static wf_completion_publication value_publication(uint64_t *value) {
@@ -276,11 +362,10 @@ static int drain_file_result(
     return 0;
 }
 
-/* The target terminal posts one scheduler wake and freeing the bounded IOCP
- * entry posts one capacity wake. Receiving the real packet followed by both
- * null-OVERLAPPED packets in one call is the regression case where an early
- * return used to erase an already accumulated terminal count. */
-static int progress_real_and_trailing_wakes(
+/* The adapter withdraws the announced waiter before publishing the first real
+ * completion. The publication and capacity notifications must therefore not
+ * enqueue a self-wake which survives after progress returns. */
+static int progress_one_real_completion(
     wf_completion_runtime *runtime,
     wf_windows_iocp_adapter *adapter
 ) {
@@ -292,9 +377,171 @@ static int progress_real_and_trailing_wakes(
     if (park != WF_COMPLETION_PARK_WOKEN) {
         return 1;
     }
-    error = wf_windows_iocp_progress(adapter, 3, INFINITE, &published);
-    wf_windows_completion_iocp_wait_end(runtime);
-    return error == 0 && published == 1 ? 0 : 1;
+    error = wf_windows_iocp_progress(adapter, 1, INFINITE, &published);
+    return error == 0 && published == 1
+            && wf_windows_completion_iocp_waiter_count(runtime) == 0
+            && wf_windows_completion_iocp_wake_packet_count(runtime) == 0
+        ? 0
+        : 1;
+}
+
+static int test_iocp_waiter_broadcast(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[1];
+    wf_windows_iocp_adapter adapter;
+    wf_windows_iocp_entry entries[1];
+    probe_iocp_waiter waiters[PROBE_IOCP_WAITERS];
+    HANDLE threads[PROBE_IOCP_WAITERS] = {0};
+    HANDLE release;
+    wf_completion_statistics before;
+    wf_completion_statistics after;
+    DWORD joined;
+    size_t index;
+
+    PROBE_CHECK(wf_completion_runtime_init(&runtime, slots, 1) == 0, 89);
+    /* One active IOCP thread makes the anti-drain assertion deterministic: an
+     * adapter which continued after its first wake could consume all four
+     * packets before Windows released a peer. The fixed adapter returns after
+     * one, letting each announced real thread receive its own persistent wake. */
+    PROBE_CHECK(
+        wf_windows_iocp_init(&adapter, &runtime, entries, 1, 1) == 0,
+        90
+    );
+    PROBE_CHECK(
+        wf_windows_completion_bind_iocp(
+            &runtime,
+            &adapter,
+            wf_windows_iocp_port(&adapter),
+            wf_windows_iocp_wake_key(&adapter)
+        ) == 0,
+        91
+    );
+    release = CreateEventA(NULL, TRUE, FALSE, NULL);
+    PROBE_CHECK(release != NULL, 92);
+    memset(waiters, 0, sizeof(waiters));
+    for (index = 0; index < PROBE_IOCP_WAITERS; ++index) {
+        waiters[index].runtime = &runtime;
+        waiters[index].adapter = &adapter;
+        waiters[index].release = release;
+        threads[index] = CreateThread(
+            NULL,
+            0,
+            probe_iocp_waiter_main,
+            &waiters[index],
+            0,
+            NULL
+        );
+        PROBE_CHECK(threads[index] != NULL, 93);
+    }
+    PROBE_CHECK(
+        probe_wait_for_iocp_waiters(&runtime, PROBE_IOCP_WAITERS) == 0,
+        94
+    );
+
+    before = wf_completion_statistics_snapshot(&runtime);
+    wf_completion_notify_compute(&runtime);
+    PROBE_CHECK(
+        wf_windows_completion_iocp_wake_packet_count(&runtime)
+            == PROBE_IOCP_WAITERS,
+        95
+    );
+    for (index = 0; index < PROBE_IOCP_NOTIFY_STORM; ++index) {
+        wf_completion_notify_compute(&runtime);
+    }
+    after = wf_completion_statistics_snapshot(&runtime);
+    PROBE_CHECK(
+        wf_windows_completion_iocp_wake_packet_count(&runtime)
+                == PROBE_IOCP_WAITERS
+            && after.wake_signals - before.wake_signals
+                == PROBE_IOCP_WAITERS
+            && after.compute_notifications - before.compute_notifications
+                == PROBE_IOCP_NOTIFY_STORM + 1u,
+        96
+    );
+
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == EBUSY, 97);
+    PROBE_CHECK(SetEvent(release) != FALSE, 98);
+    joined = WaitForMultipleObjects(
+        PROBE_IOCP_WAITERS,
+        threads,
+        TRUE,
+        PROBE_IOCP_TIMEOUT_MILLISECONDS
+    );
+    PROBE_CHECK(joined == WAIT_OBJECT_0, 99);
+    for (index = 0; index < PROBE_IOCP_WAITERS; ++index) {
+        DWORD exit_code = UINT32_MAX;
+        PROBE_CHECK(
+            GetExitCodeThread(threads[index], &exit_code) != FALSE
+                && exit_code == 0,
+            100
+        );
+        PROBE_CHECK(CloseHandle(threads[index]) != FALSE, 101);
+    }
+    PROBE_CHECK(
+        wf_windows_completion_iocp_waiter_count(&runtime) == 0
+            && wf_windows_completion_iocp_wake_packet_count(&runtime) == 0,
+        102
+    );
+
+    /* The runtime must not forget a still-live port. The adapter owns and
+     * detaches it first; only then may the core's storage disappear. */
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == EBUSY, 103);
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0, 104);
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0, 105);
+    PROBE_CHECK(CloseHandle(release) != FALSE, 106);
+    return 0;
+}
+
+static int test_iocp_progress_lifetime(void) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[1];
+    wf_windows_iocp_adapter adapter;
+    wf_windows_iocp_entry entries[1];
+    probe_iocp_progress progress = {0};
+    HANDLE thread;
+    DWORD joined;
+    DWORD exit_code = UINT32_MAX;
+
+    PROBE_CHECK(wf_completion_runtime_init(&runtime, slots, 1) == 0, 107);
+    PROBE_CHECK(
+        wf_windows_iocp_init(&adapter, &runtime, entries, 1, 1) == 0,
+        108
+    );
+    progress.adapter = &adapter;
+    thread = CreateThread(
+        NULL,
+        0,
+        probe_iocp_progress_main,
+        &progress,
+        0,
+        NULL
+    );
+    PROBE_CHECK(thread != NULL, 109);
+    PROBE_CHECK(probe_wait_for_active_progress(&adapter, 1) == 0, 110);
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == EBUSY, 111);
+    PROBE_CHECK(
+        PostQueuedCompletionStatus(
+            wf_windows_iocp_port(&adapter),
+            0,
+            wf_windows_iocp_wake_key(&adapter),
+            NULL
+        ) != FALSE,
+        112
+    );
+    joined = WaitForSingleObject(thread, PROBE_IOCP_TIMEOUT_MILLISECONDS);
+    PROBE_CHECK(joined == WAIT_OBJECT_0, 113);
+    PROBE_CHECK(
+        GetExitCodeThread(thread, &exit_code) != FALSE && exit_code == 0,
+        114
+    );
+    PROBE_CHECK(CloseHandle(thread) != FALSE, 115);
+    PROBE_CHECK(
+        wf_windows_iocp_active_progress(&adapter) == 0
+            && wf_windows_iocp_destroy(&adapter) == 0
+            && wf_completion_runtime_destroy(&runtime) == 0,
+        116
+    );
+    return 0;
 }
 
 static int test_real_iocp(const char *path) {
@@ -325,6 +572,7 @@ static int test_real_iocp(const char *path) {
     PROBE_CHECK(
         wf_windows_completion_bind_iocp(
             &runtime,
+            &adapter,
             wf_windows_iocp_port(&adapter),
             wf_windows_iocp_wake_key(&adapter)
         ) == 0,
@@ -377,7 +625,7 @@ static int test_real_iocp(const char *path) {
         67
     );
     PROBE_CHECK(
-        progress_real_and_trailing_wakes(&runtime, &adapter) == 0,
+        progress_one_real_completion(&runtime, &adapter) == 0,
         68
     );
     PROBE_CHECK(
@@ -393,7 +641,7 @@ static int test_real_iocp(const char *path) {
 
     /* Queue a compute wake before the second real operation. The first
      * bounded progress step must consume only that wake; the next one receives
-     * the real completion and its trailing publication/capacity wakes. */
+     * the real completion after withdrawing its own waiter announcement. */
     epoch = wf_completion_wake_epoch(&runtime);
     PROBE_CHECK(
         wf_windows_completion_iocp_wait_begin(&runtime, epoch)
@@ -408,10 +656,9 @@ static int test_real_iocp(const char *path) {
     );
     published = SIZE_MAX;
     error = wf_windows_iocp_progress(&adapter, 1, INFINITE, &published);
-    wf_windows_completion_iocp_wait_end(&runtime);
     PROBE_CHECK(error == 0 && published == 0, 72);
     PROBE_CHECK(
-        progress_real_and_trailing_wakes(&runtime, &adapter) == 0,
+        progress_one_real_completion(&runtime, &adapter) == 0,
         73
     );
     PROBE_CHECK(
@@ -441,7 +688,7 @@ static int test_real_iocp(const char *path) {
         76
     );
     PROBE_CHECK(
-        progress_real_and_trailing_wakes(&runtime, &adapter) == 0,
+        progress_one_real_completion(&runtime, &adapter) == 0,
         77
     );
     PROBE_CHECK(
@@ -478,7 +725,7 @@ static int test_real_iocp(const char *path) {
      * completion packet to wait for. Otherwise drive the pending request. */
     if (wf_completion_ready_event_count(&runtime) == 0) {
         PROBE_CHECK(
-            progress_real_and_trailing_wakes(&runtime, &adapter) == 0,
+            progress_one_real_completion(&runtime, &adapter) == 0,
             81
         );
     }
@@ -505,11 +752,17 @@ static int test_real_iocp(const char *path) {
         ) != FALSE,
         83
     );
+    epoch = wf_completion_wake_epoch(&runtime);
+    PROBE_CHECK(
+        wf_windows_completion_iocp_wait_begin(&runtime, epoch)
+            == WF_COMPLETION_PARK_WOKEN,
+        84
+    );
     published = SIZE_MAX;
     PROBE_CHECK(
         wf_windows_iocp_progress(&adapter, 1, 0, &published) == EPROTO
             && published == 0,
-        84
+        85
     );
 
     adapter_statistics = wf_windows_iocp_statistics_snapshot(&adapter);
@@ -523,11 +776,11 @@ static int test_real_iocp(const char *path) {
             && core_statistics.target_capacity_waits == 1
             && core_statistics.compute_notifications == 1
             && wf_windows_iocp_in_flight(&adapter) == 0,
-        85
+        86
     );
-    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0, 86);
-    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0, 87);
-    PROBE_CHECK(CloseHandle(handle) != FALSE, 88);
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0, 87);
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0, 88);
+    PROBE_CHECK(CloseHandle(handle) != FALSE, 117);
     return 0;
 }
 
@@ -537,6 +790,14 @@ int main(int argc, char **argv) {
         return 2;
     }
     error = test_core_product_and_generation();
+    if (error != 0) {
+        return error;
+    }
+    error = test_iocp_waiter_broadcast();
+    if (error != 0) {
+        return error;
+    }
+    error = test_iocp_progress_lifetime();
     if (error != 0) {
         return error;
     }

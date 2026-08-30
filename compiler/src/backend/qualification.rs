@@ -158,6 +158,10 @@ pub(crate) enum CodeUnitFamily {
     /// One 8-bit code unit in `0x01..0xff`: every non-NUL byte sequence is
     /// representable and preserved exactly.
     Unix,
+    /// One native little-endian 16-bit code unit.  The lossless byte route
+    /// exposes the complete two-byte representation of every code unit, while
+    /// the text route validates UTF-16 and encodes it as UTF-8.
+    Windows,
 }
 
 /// The set of host facilities one qualified target's approved
@@ -175,6 +179,10 @@ pub(crate) enum CodeUnitFamily {
 pub(crate) enum HostFacilities {
     /// The target's own native facilities.
     Native,
+    /// The compiler-owned Windows runtime ABI.  Its resource values are CRT
+    /// descriptors, and the runtime obtains their native HANDLE only inside
+    /// the statically selected operation implementation.
+    Windows,
     /// The deterministic test host: the same operations answered from
     /// scripted in-process state instead of real operating-system objects, so
     /// a contract test can force a condition — a close that fails, a read that
@@ -194,6 +202,7 @@ impl HostFacilities {
     const fn directory_open(self) -> &'static str {
         match self {
             Self::Native => "open",
+            Self::Windows => "wf__windows_open_cwd",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_open",
         }
@@ -205,6 +214,7 @@ impl HostFacilities {
     const fn close(self) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_close_direct",
+            Self::Windows => "wf__completion_file_close_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_close",
         }
@@ -215,6 +225,7 @@ impl HostFacilities {
     const fn file_open(self) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_open_at_direct",
+            Self::Windows => "wf__completion_file_open_at_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_openat",
         }
@@ -225,6 +236,7 @@ impl HostFacilities {
     const fn file_status(self, _native: &'static str) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_status_direct",
+            Self::Windows => "wf__completion_file_status_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_fstat",
         }
@@ -233,6 +245,7 @@ impl HostFacilities {
     const fn uses_typed_completion_file_adapter(self) -> bool {
         match self {
             Self::Native => true,
+            Self::Windows => true,
             #[cfg(test)]
             Self::DeterministicTest => false,
         }
@@ -242,6 +255,7 @@ impl HostFacilities {
     const fn pread(self) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_pread_direct",
+            Self::Windows => "wf__completion_file_pread_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_pread",
         }
@@ -251,6 +265,7 @@ impl HostFacilities {
     const fn write(self) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_write_direct",
+            Self::Windows => "wf__completion_file_write_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_write",
         }
@@ -354,6 +369,40 @@ const LINUX_ERROR_CLASSES: [PortableErrorClass; 28] = [
     class("QuotaExceeded", &[122]),
     class("CrossDevice", &[18]),
     class("DeviceFailure", &[5, 6, 19]),
+    class("Other", &[]),
+];
+
+/// The Win32 error-code mapping used by the compiler-owned Windows runtime.
+/// Winsock values are included because the closed source vocabulary already
+/// contains those classes even though v0.39 exposes no network operation.
+const WINDOWS_ERROR_CLASSES: [PortableErrorClass; 28] = [
+    class("NotFound", &[2, 3]),
+    class("PermissionDenied", &[5, 65, 1314]),
+    class("AlreadyExists", &[80, 183]),
+    class("NotDirectory", &[267]),
+    class("IsDirectory", &[]),
+    class("DirectoryNotEmpty", &[145]),
+    class("ReadOnly", &[19]),
+    class("ResourceBusy", &[32, 33, 170]),
+    class("InvalidInput", &[87]),
+    class("InvalidPath", &[123, 161, 206]),
+    class("Unsupported", &[1, 50, 120]),
+    class("TimedOut", &[121, 1460]),
+    class("BrokenPipe", &[109, 232, 233]),
+    class("WriteZero", &[]),
+    class("UnexpectedEnd", &[]),
+    class("ConnectionRefused", &[1225]),
+    class("ConnectionReset", &[64, 1236]),
+    class("ConnectionAborted", &[1235]),
+    class("NotConnected", &[2250]),
+    class("AddressInUse", &[10048]),
+    class("AddressUnavailable", &[10049]),
+    class("ResourceExhausted", &[4, 8, 14, 1450]),
+    class("FileTooLarge", &[223]),
+    class("NoSpace", &[39, 112]),
+    class("QuotaExceeded", &[1816]),
+    class("CrossDevice", &[17]),
+    class("DeviceFailure", &[21, 23, 31, 1117]),
     class("Other", &[]),
 ];
 
@@ -558,6 +607,24 @@ const LINUX_ENUMERATION: DirectoryEnumeration = DirectoryEnumeration {
     native_regular: 8,
     native_directory: 4,
     native_symlink: 10,
+    native_unknown: 0,
+};
+
+/// The bounded batch record produced by the compiler-owned Windows namespace
+/// runtime.  Each name is the lossless little-endian byte representation of
+/// its UTF-16 code units.  The five-byte private header is compacted in place
+/// to the three-byte portable header by the same checked normalizer used for
+/// Darwin and Linux.
+const WINDOWS_ENUMERATION: DirectoryEnumeration = DirectoryEnumeration {
+    symbol: "wf__windows_directory_batch",
+    declaration: "declare i64 @wf__windows_directory_batch(i32, ptr, i64, ptr)",
+    record_length_offset: 0,
+    name_length: EntryNameLength::Field { offset: 2 },
+    entry_type_offset: 4,
+    name_offset: 5,
+    native_regular: 1,
+    native_directory: 2,
+    native_symlink: 3,
     native_unknown: 0,
 };
 
@@ -766,7 +833,12 @@ impl SystemTarget {
     /// adapter.  Scripted deterministic targets keep their own direct
     /// implementation and therefore never enter the native adapter.
     pub(crate) const fn supports_posix_file_completion(self) -> bool {
-        matches!(self.host, HostFacilities::Native)
+        matches!(self.host, HostFacilities::Native | HostFacilities::Windows)
+    }
+
+    /// Whether this is the compiler-owned Windows target column.
+    pub(crate) const fn is_windows(self) -> bool {
+        matches!(self.host, HostFacilities::Windows)
     }
 
     /// The single code unit sequence a Unix-family target resolves against a
@@ -910,6 +982,42 @@ impl SystemTarget {
     /// outlives the invocation, the Unix code-unit family, and `openat`-style
     /// directory-relative resolution.
     pub(crate) fn for_triple(triple: &str) -> Option<Self> {
+        if triple == "x86_64-pc-windows-msvc" {
+            return Some(Self {
+                family: Some(CodeUnitFamily::Windows),
+                argument_backing: true,
+                directory_relative: true,
+                directory_enumeration_facility: true,
+                directory_enumeration: Some(WINDOWS_ENUMERATION),
+                host: HostFacilities::Windows,
+                // Windows path and component checks use their dedicated
+                // UTF-16 target predicates.  This byte remains the primary
+                // separator for generic inventory diagnostics only.
+                root_prefix: b'\\',
+                // 255 UTF-16 code units, exposed losslessly as bytes.
+                component_limit: 510,
+                // These private bits are interpreted only by
+                // wf__completion_file_open_at_direct on Windows.
+                directory_open_flags: 0,
+                file_open_flags: 0,
+                component_directory_open_flags: 1,
+                component_file_open_flags: 1,
+                // The typed Windows open route performs classification before
+                // publication.  The status ABI is retained for the shared
+                // completion contract and uses this private eight-byte cell.
+                file_status_size: 8,
+                file_status_mode_offset: 0,
+                native_file_status_symbol: "wf__completion_file_status_direct",
+                errno_location: "wf__windows_error_location",
+                errno_declaration: "declare ptr @wf__windows_error_location()",
+                error_classes: &WINDOWS_ERROR_CLASSES,
+                // Windows has no SIGPIPE disposition.  Its bootstrap and
+                // WriteFile wrapper supply the equivalent broken-pipe result.
+                broken_pipe_signal: 0,
+                ignored_disposition: 0,
+                invalid_disposition: 0,
+            });
+        }
         let (
             component_limit,
             directory_open_flags,

@@ -34,46 +34,82 @@ pub(super) struct TargetLayout {
 }
 
 impl TargetLayout {
-    pub(super) fn host() -> Result<Self, TargetLayoutFailure> {
-        #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-        {
-            return Ok(Self {
+    /// The closed set of target ABI records the backend can describe.
+    ///
+    /// Keeping selection explicit lets tests inspect a target which is not the
+    /// machine running them. A spelling not listed here is unsupported rather
+    /// than being approximated by a nearby ABI: in particular, the Windows GNU
+    /// and MSVC targets do not share a mangling or runtime contract.
+    pub(super) fn for_triple(triple: &str) -> Result<Self, TargetLayoutFailure> {
+        match triple {
+            "aarch64-apple-darwin" => Ok(Self {
                 triple: "aarch64-apple-darwin",
                 stack_probe: "__chkstk_darwin",
                 data_layout: "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
-            });
-        }
-        #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
-        {
-            return Ok(Self {
+            }),
+            "x86_64-apple-darwin" => Ok(Self {
                 triple: "x86_64-apple-darwin",
                 stack_probe: "__chkstk_darwin",
                 data_layout: "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
-            });
-        }
-        #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
-        {
-            return Ok(Self {
+            }),
+            "aarch64-unknown-linux-gnu" => Ok(Self {
                 triple: "aarch64-unknown-linux-gnu",
                 stack_probe: "inline-asm",
                 data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
-            });
-        }
-        #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-        {
-            return Ok(Self {
+            }),
+            "x86_64-unknown-linux-gnu" => Ok(Self {
                 triple: "x86_64-unknown-linux-gnu",
                 stack_probe: "inline-asm",
                 data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
-            });
+            }),
+            "x86_64-pc-windows-msvc" => Ok(Self {
+                triple: "x86_64-pc-windows-msvc",
+                // The x86-64 MSVC ABI probes a large downward-growing frame
+                // through __chkstk before adjusting RSP. This is the symbol
+                // clang emits for the target, and the MSVC runtime supplies it;
+                // the GNU target's differently named helper is not compatible.
+                stack_probe: "__chkstk",
+                data_layout: "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+                address_index_max: i64::MAX as u64,
+                allocator_parameter_max: u64::MAX,
+            }),
+            _ => Err(TargetLayoutFailure::UnsupportedHost),
+        }
+    }
+
+    pub(super) fn host() -> Result<Self, TargetLayoutFailure> {
+        #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+        {
+            return Self::for_triple("aarch64-apple-darwin");
+        }
+        #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
+        {
+            return Self::for_triple("x86_64-apple-darwin");
+        }
+        #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
+        {
+            return Self::for_triple("aarch64-unknown-linux-gnu");
+        }
+        #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+        {
+            return Self::for_triple("x86_64-unknown-linux-gnu");
+        }
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_os = "windows",
+            target_env = "msvc",
+            target_vendor = "pc"
+        ))]
+        {
+            return Self::for_triple("x86_64-pc-windows-msvc");
         }
         #[allow(unreachable_code)]
         Err(TargetLayoutFailure::UnsupportedHost)
@@ -88,9 +124,9 @@ impl TargetLayout {
     }
 
     /// The `probe-stack` value every generated function carries: the
-    /// ABI-mandated helper an Apple target already names from its own C
-    /// translation units, and the target-independent spelling — an inline
-    /// page walk — anywhere else.
+    /// ABI-mandated helper an Apple or Windows target already names from its
+    /// own C translation units, and the target-independent spelling — an
+    /// inline page walk — on the supported Linux targets.
     ///
     /// A frame larger than the guard region must touch each page on its way
     /// down. Without that, the frame's first store can land past the guard in

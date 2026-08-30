@@ -20,6 +20,7 @@ use std::process::Output;
 
 use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::SystemTarget;
+use crate::backend::target::{TargetLayout, TargetLayoutFailure};
 
 use super::system::with_ir;
 // The same contract programs task 0012 exercises against real files and
@@ -568,6 +569,75 @@ fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
 }}
 "#
     )
+}
+
+#[test]
+fn every_explicit_target_layout_pins_its_exact_abi_bytes() {
+    let cases = [
+        (
+            "aarch64-apple-darwin",
+            "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
+            "__chkstk_darwin",
+        ),
+        (
+            "x86_64-apple-darwin",
+            "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+            "__chkstk_darwin",
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
+            "inline-asm",
+        ),
+        (
+            "x86_64-unknown-linux-gnu",
+            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+            "inline-asm",
+        ),
+        (
+            "x86_64-pc-windows-msvc",
+            "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+            "__chkstk",
+        ),
+    ];
+
+    for (triple, data_layout, stack_probe) in cases {
+        let target = TargetLayout::for_triple(triple).expect("an explicit target ABI row");
+        assert_eq!(target.triple().as_bytes(), triple.as_bytes(), "{triple}");
+        assert_eq!(
+            target.data_layout().as_bytes(),
+            data_layout.as_bytes(),
+            "{triple}"
+        );
+        assert_eq!(target.stack_probe(), stack_probe, "{triple}");
+        assert_eq!(target.address_index_max(), i64::MAX as u64, "{triple}");
+        assert_eq!(target.runtime_allocation_max(), i64::MAX as u64, "{triple}");
+    }
+}
+
+#[test]
+fn explicit_target_selection_is_exact_and_fail_closed() {
+    for unsupported in [
+        "",
+        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc19.33.0",
+        "aarch64-pc-windows-msvc",
+        "x86_64-unknown-windows-msvc",
+        "X86_64-pc-windows-msvc",
+        "x86_64-pc-windows-msvc ",
+    ] {
+        assert_eq!(
+            TargetLayout::for_triple(unsupported),
+            Err(TargetLayoutFailure::UnsupportedHost),
+            "{unsupported:?}"
+        );
+    }
+}
+
+#[test]
+fn host_selection_uses_one_exact_explicit_target_row() {
+    let host = TargetLayout::host().expect("the test host is supported");
+    assert_eq!(TargetLayout::for_triple(host.triple()), Ok(host));
 }
 
 #[test]

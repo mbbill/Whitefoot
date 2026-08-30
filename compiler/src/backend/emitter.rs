@@ -42,11 +42,14 @@ pub use completion::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, module_requires_completion_runtime,
+    COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER,
+    COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
+    COMPLETION_WINDOWS_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
+    WRITER_SCHEDULER_WINDOWS_SOURCE, module_requires_completion_runtime,
 };
 use floor::FLOOR_RUNTIME_FALLBACK;
-pub use floor::FLOOR_RUNTIME_SOURCE;
 pub use floor::FLOOR_STACK_BYTES;
+pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK,
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
@@ -55,6 +58,7 @@ use parallel::{
 pub use parallel::{
     PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime,
 };
+pub use system::{WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
@@ -331,8 +335,13 @@ fn emit_llvm_for(
     let mut system_declarations = system.declarations;
     if writes_a_record {
         text.push('\n');
-        text.push_str("declare i64 @write(i32, ptr, i64)\n");
-        system_declarations.remove("declare i64 @write(i32, ptr, i64)");
+        if system_target.is_windows() {
+            text.push_str("declare i64 @wf__windows_diagnostic_write(ptr, i64)\n");
+            system_declarations.remove("declare i64 @wf__windows_diagnostic_write(ptr, i64)");
+        } else {
+            text.push_str("declare i64 @write(i32, ptr, i64)\n");
+            system_declarations.remove("declare i64 @write(i32, ptr, i64)");
+        }
     }
     if writes_a_record || has_matches {
         text.push_str("declare void @abort() noreturn\n");
@@ -347,9 +356,17 @@ fn emit_llvm_for(
     }
     if latched_trap {
         text.push_str(TRAP_LATCH_FALLBACK);
-        text.push_str(LATCHED_TRAP_WRITER);
+        text.push_str(if system_target.is_windows() {
+            WINDOWS_LATCHED_TRAP_WRITER
+        } else {
+            LATCHED_TRAP_WRITER
+        });
     } else if writes_a_record {
-        text.push_str(SEQUENTIAL_TRAP_WRITER);
+        text.push_str(if system_target.is_windows() {
+            WINDOWS_SEQUENTIAL_TRAP_WRITER
+        } else {
+            SEQUENTIAL_TRAP_WRITER
+        });
     } else if has_matches {
         text.push('\n');
     }
@@ -2372,6 +2389,11 @@ pub(crate) fn overlapped_clone_symbol(sequential: &str) -> Option<String> {
 /// overlapped world existed, and they are what a default build still gets.
 const SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
 
+/// Windows twin of [`SEQUENTIAL_TRAP_WRITER`].  The private runtime call is
+/// the raw `WriteFile` channel; it neither reaches a source `Output` nor
+/// depends on the CRT's text mode.
+const WINDOWS_SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
+
 /// The module's own answer for the shared record latch, and the only state the
 /// trap path carries.
 ///
@@ -2420,6 +2442,10 @@ const TRAP_LATCH_FALLBACK: &str =
 /// optimizer may delete the loop and let a losing thread fall through into a
 /// second record.
 const LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %claimed = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
+
+/// Windows twin of [`LATCHED_TRAP_WRITER`], sharing the same floor latch and
+/// differing only in the raw diagnostic facility selected at build time.
+const WINDOWS_LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %claimed = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
 
 pub(super) fn trap_record(site: &IrClaimSite) -> Vec<u8> {
     let components = site

@@ -5,18 +5,39 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
+    Architecture, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    SourceInput, compile_with_io_notices, compile_with_permission_ledger, stack_ledger,
+};
+
+#[cfg(not(target_os = "windows"))]
+use whitefoot::{
+    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
-    PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime, stack_ledger,
+    FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, PARALLEL_COMPLETION_RUNTIME_SOURCE,
+    PARALLEL_RUNTIME_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
+};
+
+#[cfg(target_os = "windows")]
+use whitefoot::{
+    COMPLETION_BRIDGE_HEADER, COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER,
+    COMPLETION_WINDOWS_IOCP_HEADER, COMPLETION_WINDOWS_IOCP_SOURCE,
+    COMPLETION_WINDOWS_NATIVE_API_HEADER, COMPLETION_WINDOWS_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE,
+    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, WRITER_SCHEDULER_HEADER,
+    WRITER_SCHEDULER_WINDOWS_SOURCE,
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
+
+fn clang_executable() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "clang"
+    } else {
+        "/usr/bin/clang"
+    }
+}
 
 fn main() {
     if let Err(message) = run() {
@@ -146,7 +167,7 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
     let result = (|| {
         std::fs::write(&module, llvm)
             .map_err(|error| format!("cannot write the ledger module: {error}"))?;
-        let status = Command::new("/usr/bin/clang")
+        let status = Command::new(clang_executable())
             .arg("-x")
             .arg("ir")
             .arg(&module)
@@ -157,7 +178,7 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
             .arg("-Wno-override-module")
             .args(HOST_OPTIMIZATION_ARGUMENTS)
             .status()
-            .map_err(|error| format!("cannot start /usr/bin/clang: {error}"))?;
+            .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
         if !status.success() {
             return Err(format!("clang exited with {status}"));
         }
@@ -176,6 +197,7 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
     result
 }
 
+#[cfg(not(target_os = "windows"))]
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     let completion_required = module_requires_completion_runtime(llvm);
     // The parallel runtime joins the link only when the module hands work to
@@ -202,7 +224,7 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     let floor = std::env::temp_dir().join(format!("whitefootc-floor-{}.c", std::process::id()));
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE)
         .map_err(|error| format!("cannot write the floor runtime: {error}"))?;
-    let mut command = Command::new("/usr/bin/clang");
+    let mut command = Command::new(clang_executable());
     // The compiler-owned C units are written to C11 and the repository gate
     // compiles them as `-std=c11`. Naming the dialect here too is what makes
     // that gate a statement about this link: clang's default is a GNU dialect,
@@ -270,6 +292,7 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     outcome
 }
 
+#[cfg(not(target_os = "windows"))]
 fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
     let mut child = command
         .arg("-x")
@@ -282,7 +305,84 @@ fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> 
         .arg(output)
         .stdin(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("cannot start /usr/bin/clang: {error}"))?;
+        .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "clang stdin was not available".to_owned())?
+        .write_all(llvm.as_bytes())
+        .map_err(|error| format!("cannot send LLVM to clang: {error}"))?;
+    let status = child
+        .wait()
+        .map_err(|error| format!("cannot wait for clang: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("clang exited with {status}"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
+    let directory = std::env::temp_dir().join(format!("whitefootc-windows-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("cannot create Windows runtime directory: {error}"))?;
+    let result = (|| {
+        for (name, source) in [
+            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+            (
+                "native_completion_api.h",
+                COMPLETION_WINDOWS_NATIVE_API_HEADER,
+            ),
+            ("windows_completion.h", COMPLETION_WINDOWS_HEADER),
+            ("windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+            ("windows_runtime.c", WINDOWS_RUNTIME_SOURCE),
+            ("wf_floor_windows.c", FLOOR_WINDOWS_RUNTIME_SOURCE),
+            ("windows_completion.c", COMPLETION_WINDOWS_SOURCE),
+            ("windows_iocp.c", COMPLETION_WINDOWS_IOCP_SOURCE),
+            ("windows_bridge.c", COMPLETION_WINDOWS_BRIDGE_SOURCE),
+            (
+                "writer_scheduler_windows.c",
+                WRITER_SCHEDULER_WINDOWS_SOURCE,
+            ),
+        ] {
+            std::fs::write(directory.join(name), source)
+                .map_err(|error| format!("cannot write Windows runtime {name}: {error}"))?;
+        }
+
+        let mut command = Command::new(clang_executable());
+        command
+            .arg("-std=c11")
+            .arg("-municode")
+            .arg("-I")
+            .arg(&directory)
+            .arg(directory.join("windows_runtime.c"))
+            .arg(directory.join("wf_floor_windows.c"))
+            .arg(directory.join("windows_completion.c"))
+            .arg(directory.join("windows_iocp.c"))
+            .arg(directory.join("windows_bridge.c"))
+            .arg(directory.join("writer_scheduler_windows.c"));
+        link_windows(&mut command, llvm, output)
+    })();
+    let _ = std::fs::remove_dir_all(&directory);
+    result
+}
+
+#[cfg(target_os = "windows")]
+fn link_windows(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
+    let mut child = command
+        .arg("-x")
+        .arg("ir")
+        .arg("-")
+        .arg("-Wno-override-module")
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .arg("-o")
+        .arg(output)
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
     child
         .stdin
         .take()

@@ -446,6 +446,41 @@ completion-windows-cross:
 		$(COMPLETION_DIR)/windows_iocp.c \
 		$(COMPLETION_DIR)/native_adapter_probe.c \
 		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-I$(COMPLETION_DIR) -Isrc/backend \
+		src/backend/windows_runtime.c \
+		$(COMPLETION_DIR)/windows_completion.c \
+		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_bridge.c \
+		$(COMPLETION_DIR)/writer_scheduler_windows.c \
+		-shared -o "$(COMPLETION_TMP)/windows-runtime.dll"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-I$(COMPLETION_DIR) -Isrc/backend \
+		src/backend/windows_runtime.c \
+		$(COMPLETION_DIR)/windows_completion.c \
+		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_bridge.c \
+		$(COMPLETION_DIR)/writer_scheduler_windows.c \
+		$(COMPLETION_DIR)/windows_bridge_capacity_probe.c \
+		-o "$(COMPLETION_TMP)/windows-bridge-capacity-probe.exe"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-c src/backend/wf_floor_windows.c \
+		-o "$(COMPLETION_TMP)/wf-floor-windows.o"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		src/backend/windows_namespace_probe.c \
+		-o "$(COMPLETION_TMP)/windows-namespace-probe.exe"
 	@imports="$$($(WINDOWS_OBJDUMP) -p \
 		"$(COMPLETION_TMP)/windows-completion-probe.exe")"; \
 	for symbol in CreateIoCompletionPort GetQueuedCompletionStatus \

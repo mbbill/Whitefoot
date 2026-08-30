@@ -22,6 +22,13 @@ pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h"
 pub const WRITER_SCHEDULER_HEADER: &str = include_str!("../completion/writer_scheduler.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
+/// The target-private completion ABI shared by the Windows core and IOCP adapter.
+pub const COMPLETION_WINDOWS_NATIVE_API_HEADER: &str =
+    include_str!("../completion/native_completion_api.h");
+/// The Windows completion core contract embedded in the compiler.
+pub const COMPLETION_WINDOWS_HEADER: &str = include_str!("../completion/windows_completion.h");
+/// The Windows IOCP adapter contract embedded in the compiler.
+pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
 /// The finite completion core implementation embedded in the compiler.
 pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.c");
 /// The typed file-adapter implementation embedded in the compiler.
@@ -32,6 +39,15 @@ pub const COMPLETION_BRIDGE_SOURCE: &str = include_str!("../completion/bridge.c"
 pub const WRITER_SCHEDULER_SOURCE: &str = include_str!("../completion/writer_scheduler.c");
 /// The target-guarded Linux io_uring adapter embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/linux_io_uring.c");
+/// The Windows completion core embedded in the compiler.
+pub const COMPLETION_WINDOWS_SOURCE: &str = include_str!("../completion/windows_completion.c");
+/// The Windows IOCP adapter embedded in the compiler.
+pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("../completion/windows_iocp.c");
+/// The compiler-owned Windows completion bridge embedded in the compiler.
+pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/windows_bridge.c");
+/// The Windows bounded ready-frame scheduler embedded in the compiler.
+pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
+    include_str!("../completion/writer_scheduler_windows.c");
 
 /// The marker definition carried only by a module that actualizes a typed
 /// target operation through completion.
