@@ -443,6 +443,7 @@ completion-windows-cross:
 	$(WINDOWS_CC) -target x86_64-windows-gnu \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-I$(COMPLETION_DIR) \
+		$(COMPLETION_DIR)/native_contract.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
 		$(COMPLETION_DIR)/native_adapter_probe.c \
 		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe"

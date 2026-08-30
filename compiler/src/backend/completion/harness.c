@@ -5428,7 +5428,11 @@ static int test_native_contract_inventory(void) {
     CHECK(linux.implemented == 0);
 #endif
     CHECK(linux.native_completion == 1);
+#if defined(_WIN32)
+    CHECK(windows.implemented == 1);
+#else
     CHECK(windows.implemented == 0);
+#endif
     CHECK(windows.native_completion == 1);
     return 0;
 }

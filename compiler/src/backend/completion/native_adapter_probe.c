@@ -989,6 +989,7 @@ int main(int argc, char **argv) {
 
 #elif defined(_WIN32)
 
+#include "native_contract.h"
 #include "windows_iocp.h"
 
 #include <stdint.h>
@@ -1046,6 +1047,9 @@ void wf_completion_notify_capacity(wf_completion_runtime *runtime) {
 
 int main(int argc, char **argv) {
     wf_completion_runtime runtime = {0};
+    wf_completion_target_contract contract = wf_completion_target_contract_for(
+        WF_TARGET_WINDOWS_IOCP
+    );
     wf_windows_iocp_adapter adapter;
     wf_windows_iocp_entry entries[2];
     wf_windows_iocp_file file;
@@ -1057,6 +1061,12 @@ int main(int argc, char **argv) {
 
     if (argc != 2) {
         return 2;
+    }
+    if (contract.implemented != 1
+        || contract.native_completion != 1
+        || contract.may_use_blocking_helpers != 0
+        || contract.supports_scheduler_progress != 1) {
+        return 8;
     }
     if (wf_windows_iocp_init(&adapter, &runtime, entries, 2, 0) != 0) {
         return 3;

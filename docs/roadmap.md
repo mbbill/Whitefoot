@@ -1,8 +1,8 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 56 (v0.39 narrows [CLM-1]'s claim-authority control dependence to
-the definitions a boundary selector actually chooses)
+Revision: 57 (the x86-64 MSVC Windows command and IOCP runtime row is
+native-qualified for the current file-operation slice)
 
 The active language authority is v0.39, SHA-256
 `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
@@ -63,8 +63,9 @@ inventories remain in their canonical owners and are linked rather than copied.
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
 qualification, LLVM, and host execution on supported aarch64 and x86-64
-macOS/Linux targets. Valid language the compiler has not implemented stops as
-unsupported rather than invalid source.
+macOS/Linux targets and the exact `x86_64-pc-windows-msvc` row. Valid language
+the compiler has not implemented stops as unsupported rather than invalid
+source.
 
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
@@ -855,16 +856,16 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   The I/O rebuild separately retains bounded generation-checked completion
   records, exact result and loan-release milestones, one
   compute/target/completion wake decision, typed target-only helpers, real
-  Linux io_uring positioned I/O, and the Windows IOCP foundation. The rejected
-  root/family/Ordered group layer has been removed. Completion drain still
+  Linux io_uring positioned I/O, and the native-qualified x86-64 MSVC Windows
+  direct runtime and IOCP bridge for the current file-operation slice. The
+  rejected root/family/Ordered group layer has been removed. Completion drain still
   precedes dependent-frame readiness, the first tail-wrapper stackless slice
   can resume on any scheduler lane, and pure compute links no completion
   runtime.
 - **Missing / next:** generalize selective stackless continuation lowering to
-  branches, loops, multiple suspension points, and non-tail children;
-  measure cold/high-latency and native target workloads; and execute the
-  Windows probe before qualification. Any widening keeps the same bounded
-  ownership and hostile soundness gates.
+  branches, loops, multiple suspension points, and non-tail children; and
+  measure cold/high-latency and native target workloads, including Windows.
+  Any widening keeps the same bounded ownership and hostile soundness gates.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
   [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
 
@@ -895,7 +896,8 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   `DirectoryRead` is a shared selector, host exhaustion remains a typed open
   result, and the permit is erased before the native ABI. Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
-  io_uring work, Windows IOCP foundation, selective stackless slice, and
+  io_uring work, the native-qualified x86-64 MSVC Windows direct runtime and
+  IOCP bridge, selective stackless slice, and
   component measurements were retained while the rejected group machinery was
   removed. The activated revision passes compiler, program, conformance,
   sanitizer, native helper, stress, and cross-link gates. Whole programs have
@@ -915,11 +917,20 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   conformance cases now pass at their existing verdicts, both
   directory-walking corpus programs compile and run there, and every host limit
   0090 declared for the missing row is removed.
+  The exact `x86_64-pc-windows-msvc` row now also executes the compiler-owned
+  UTF-16 command bootstrap, cwd-relative no-follow namespace operations,
+  direct file operations, IOCP bridge and bounded wake/capacity protocol, the
+  production compiler link, and the emitted sequential `--par` world. Native
+  run [33304333316](https://github.com/mbbill/Whitefoot/actions/runs/33304333316)
+  passed that boundary on `1f05c392`. The maintained workflow additionally
+  carries the raw wider-code-unit HostString boundary; none of this is a
+  Windows compute-pool or performance claim.
 - **Missing / next:** widen stackless lowering beyond single-instruction tail
-  chains; execute and qualify Windows; add a clock reading, keyed directory
-  places, namespace mutation, and network, timer, cancellation, deadline, and
-  finish-required output APIs only with complete ordinary ownership and target
-  contracts. The performance question that remains is width, not protocol:
+  chains; measure the qualified Windows row; add a clock reading, keyed
+  directory places, namespace mutation, and network, timer, cancellation,
+  deadline, and finish-required output APIs only with complete ordinary
+  ownership and target contracts. The performance question that remains is
+  width, not protocol:
   overlap groups are runs of consecutive calls in one basic block, so a loop
   with one I/O call per iteration overlaps nothing, and whether the language,
   the lowering, or neither should widen that is undecided. The open items are
@@ -929,6 +940,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [batch record 0084](done/0084-io-performance.md) ·
   [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
   [batch record 0094](done/0094-linux-directory-row.md) ·
+  [Windows native qualification](../research/investigations/io-model/RESULTS.md#windows-native-qualification-2026-08-30) ·
   [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·

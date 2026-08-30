@@ -247,6 +247,7 @@ const CORPUS_UNITS: &[&[&str]] = &[
     &["geometry_vectors.wf"],
     &["grayscale_pixels.wf"],
     &["growable_vec.wf"],
+    &["host_string_bytes.wf"],
     &["ipv4_checksum.wf"],
     &["mandelbrot_grid.wf"],
     &["option_slots.wf"],

@@ -119,12 +119,16 @@ not v0.39 authority. Advancing sources and outputs use `own` or `&uniq`.
 The macOS/Linux command bootstrap owns the process before entry: it establishes
 the QUAL-2 argument backing from the native vector, installs the selected
 write-to-closed-pipe disposition once, opens `command.cwd`, supplies the two
-ordinary `Output` owners and the proof-only `command.files` factory, invokes the entry once, and maps the returned
-`ExitStatus` onto the process status. It evaluates no entry contract because
-main cannot carry one. QUAL-3 verifies the emitted wrappers and direct target
-shape on the optimized module. The completion path may add qualified
-submission and drain work, but source transfer still performs no hidden data
-copy or writer callback.
+ordinary `Output` owners and the proof-only `command.files` factory, invokes
+the entry once, and maps the returned `ExitStatus` onto the process status.
+The exact `x86_64-pc-windows-msvc` row supplies the same language boundary
+through `wmain`: UTF-16 argument backing, compiler-owned cwd/stdout/stderr CRT
+descriptors, Win32 error mapping, and raw `WriteFile` output, without a POSIX
+signal assumption. Neither bootstrap evaluates an entry contract because main
+cannot carry one. QUAL-3 verifies the emitted wrappers and direct target shape
+on the optimized module. The completion path may add qualified submission and
+drain work, but source transfer still performs no hidden data copy or writer
+callback.
 
 FN-7 entry validation reads finalized syntax and admits exactly one
 `command fn main`: it is nongeneric, source-uncallable, contract-free, returns
@@ -372,9 +376,16 @@ requalified under an ordinary uniquely borrowed Source before it can re-enter
 the catalog. Linux `read_at` prefers real io_uring and falls back only before
 target ownership; its scheduler parks on an epoll set containing the ring fd
 and a broadcast eventfd, with no millisecond polling.
-The Windows core plus IOCP adapter strict-cross-links and remains fail-closed
-pending an actual Windows execution. No operation path reads a trap latch or
-carries trap-specific state.
+The x86-64 MSVC Windows row is native-qualified for the current file-operation
+slice. Its descriptor-to-capability bridge associates each handle once, its
+bounded persistent wake packets cover all announced waiters, and its IOCP
+submission/publication ledger closes across normal and full-capacity paths.
+The production driver links every Windows runtime unit and executes a real
+`.wf` program under the IOCP-required assertion. A separate native program
+qualifies the raw UTF-16 HostString route by measuring and copying one code
+unit's exact in-memory bytes. Emitted `--par` modules link and execute the
+sequential COFF world because Windows does not yet ship a compute worker pool.
+No operation path reads a trap latch or carries trap-specific state.
 
 Native rings, IOCP ports, and helper mailboxes are target-private protocol
 state. The target side may coordinate them through qualified atomics or typed
@@ -383,16 +394,17 @@ exposed as ordinary shared Whitefoot storage, and target publication never
 executes writer code.
 
 Target qualification is one private stage immediately before LLVM emission.
-The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple and
-DataLayout, checks concrete representations, statics, source-call ABI objects,
-actual emitted stack slots, and complete frames with checked arithmetic, and
-reports unrepresentable materialization as a target failure without a source
-rule. The checked program and IR retain allocation and element-address
-obligations. Fixed-array bounds plus static layout discharge address
-representability; buffer bounds plus the successful allocation invariant do
-the same; buffer allocation retains an exact non-language guard before
-`malloc`. This is not a language array limit, stack-capacity prediction, hidden
-heap fallback, or optimizer fact.
+The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple,
+or the exact `x86_64-pc-windows-msvc` triple, and its DataLayout; checks
+concrete representations, statics, source-call ABI objects, actual emitted
+stack slots, and complete frames with checked arithmetic; and reports
+unrepresentable materialization as a target failure without a source rule. The
+checked program and IR retain allocation and element-address obligations.
+Fixed-array bounds plus static layout discharge address representability;
+buffer bounds plus the successful allocation invariant do the same; buffer
+allocation retains an exact non-language guard before `malloc`. This is not a
+language array limit, stack-capacity prediction, hidden heap fallback, or
+optimizer fact.
 
 An admitted `contract` block contains erased declaration-before-use `define`
 abbreviations followed by independent `requires` and `ensures` clauses. The

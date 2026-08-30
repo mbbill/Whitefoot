@@ -398,7 +398,8 @@ Retain from the current candidate:
 - completion-only calls and typed outcomes;
 - finite operation records, generation checks, milestones, drain, and wake;
 - selective stackless lowering and direct/inline specialization;
-- Linux io_uring, macOS typed fallback, and Windows IOCP foundations;
+- Linux io_uring, macOS typed fallback, and the native-qualified x86-64 MSVC
+  Windows direct runtime and IOCP bridge for the current file-operation slice;
 - target code which receives typed operation bundles rather than writer code;
 - correctness, hostile-race, sanitizer, and performance harnesses.
 

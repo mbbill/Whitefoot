@@ -2,17 +2,14 @@
 # a real Linux kernel on real hardware, Windows at all, and an ordinary macOS
 # system without a corporate endpoint-security stack in the I/O path.
 #
-# Everything the repository knew about Linux io_uring came from a container on
-# an aarch64 virtual machine, everything it knew about Windows IOCP came from
-# a cross-link that was never executed, and every macOS number it had was
-# taken on a machine that charges 116 us for an `openat`. These jobs close
-# those gaps with runs rather than with builds. A correctness job here fails
-# loudly rather than recording a fallback: `completion-linux` requires
-# io_uring, and `completion-windows` reports the exact failure instead of
-# being marked expected-to-fail. The bench jobs that record performance live
-# in `io-bench.yml`: they run on demand and when the runtime or the bench
-# bundle changes, so a push is never waiting on a fifteen-minute measurement
-# that judges nothing.
+# These jobs retain execution evidence rather than relying on cross-builds.
+# A correctness job here fails loudly rather than recording a fallback:
+# `completion-linux` requires io_uring, and `completion-windows` exercises the
+# IOCP runtime through the production compiler and reports the exact failure
+# instead of being marked expected-to-fail. The bench jobs that record
+# performance live in `io-bench.yml`: they run on demand and when the runtime
+# or the bench bundle changes, so a push is never waiting on a fifteen-minute
+# measurement that judges nothing.
 name: io-hosts
 
 on:
@@ -121,10 +118,9 @@ jobs:
           clang --version
           systeminfo | grep -E '^(OS Name|OS Version|System Type|Total Physical Memory)' || true
 
-      # The first execution of the Windows completion path anywhere. Until
-      # now `make -C compiler completion-windows-cross` proved only that these
-      # units link into a PE that imports the IOCP entries; whether the
-      # adapter drives a real completion port was unknown.
+      # The cross target proves that these units link into a PE importing the
+      # IOCP entries. This native probe additionally proves that the adapter
+      # drives a real completion port.
       - name: Build the Windows completion probe
         run: |
           mkdir -p "$RUNNER_TEMP/completion"
@@ -144,6 +140,7 @@ jobs:
         run: |
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
             -I compiler/src/backend/completion \
+            compiler/src/backend/completion/native_contract.c \
             compiler/src/backend/completion/windows_iocp.c \
             compiler/src/backend/completion/native_adapter_probe.c \
             -o "$RUNNER_TEMP/completion/windows-adapter-probe.exe"
@@ -259,6 +256,21 @@ jobs:
             fail_e2e "the compiled program produced the wrong bytes" "$?"
           test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt" || \
             fail_e2e "the compiled program wrote diagnostics" "$?"
+
+      # U+4241 is one native UTF-16 code unit whose little-endian memory bytes
+      # are 0x41, 0x42. The program measures the HostString, copies its complete
+      # lossless route, and requires bytes 0x41, 0x42. This is the native
+      # qualification record for the wider-code-unit [SYS-9] target row.
+      - name: Run the Windows HostString raw-code-unit boundary
+        run: |
+          compiler/target/debug/whitefootc.exe \
+            tests/programs/host_string_bytes.wf \
+            -o "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.exe"
+          "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.exe" $'\u4241' \
+            > "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.out" \
+            2> "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.err"
+          test ! -s "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.out"
+          test ! -s "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.err"
 
       # Windows does not yet ship a compute worker pool. A module whose
       # permission lowering contains real hand-outs must therefore link its
