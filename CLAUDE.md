@@ -1,10 +1,18 @@
 # Whitefoot — agent instructions
 
-Whitefoot is a systems language for AI-written, human-approved code. Accepted
-programs must make memory corruption, data races, uninitialized reads, and
-silent overflow unrepresentable. There is no writer-accessible unsafe escape.
-Every partial operation is admitted only after machine proof of its domain; a
-written claim is the sole writer-reachable runtime trap and is never removed.
+Whitefoot is a proof-carrying systems language for AI-written, human-approved
+code. Accepted programs must make memory corruption, data races, uninitialized
+reads, silent overflow, and every other unproved partial operation
+unrepresentable. There is no writer-accessible unsafe escape or runtime trap.
+Every partial operation is admitted only after machine proof of its domain.
+The official compiler uses no SMT for acceptance: automatic derivation is
+specification-fixed, deterministic, terminating, and work-bounded, while
+harder proofs arrive as explicit finite certificates that the compiler checks
+without rediscovering them. Proofs are erased before lowering and may authorize
+check removal, optimization, and parallel independence without adding runtime
+branches, locks, dependencies, or scheduling edges. The active specification's
+remaining `claim` trap is transitional technical debt to remove, never a target
+to preserve or a fallback for an unproved operation.
 
 ## Project goal
 

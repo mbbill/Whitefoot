@@ -141,7 +141,14 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // admitted claim already lowers to, so the trap and diagnostic surfaces a
 // target must supply are the ones already qualified here. Every v0.38 mapping
 // therefore stands unchanged.
-const REVIEWED_FOR: &str = "v0.39";
+// v0.40 review (2026-08-30): S5's post-SET-1 value image and ENT-5's
+// close-before-lexical-kill order are front-end proof rules. They add no
+// system operation, resource type, release action, outcome constructor,
+// entry form, target guarantee, signature, borrow mode, effect row, or host
+// ABI. Both rules erase before lowering; they can only admit the same raw
+// partial-operation instruction after its existing static obligation has a
+// derivation. Every v0.39 target mapping therefore stands unchanged.
+const REVIEWED_FOR: &str = "v0.40";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

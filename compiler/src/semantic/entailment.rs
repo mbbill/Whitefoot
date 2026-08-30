@@ -16,7 +16,7 @@
 //!
 //! Implemented fact sources: S1 branch and match facts with both
 //! comparison-origin shapes, S3 claim facts, S4 requires
-//! facts, S5 copy and conversion equalities, S6 length facts, S7
+//! facts, S5 binding and post-SET-1 copy/conversion equalities, S6 length facts, S7
 //! constant-offset arithmetic, S9 const-array element ranges, and S10
 //! boundary count facts; the label S8 is retired, not reused [ENT-3]. An
 //! absent source only under-derives, which is the version-monotone

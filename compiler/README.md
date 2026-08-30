@@ -23,11 +23,13 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.39 bytes at `../spec/kernel-spec.md`,
-SHA-256 `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
-v0.39 narrows [CLM-1]'s claim-authority control dependence and supersedes v0.38
-at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.38.md`.
+The frontend targets the exact v0.40 candidate bytes at
+`../spec/kernel-spec.md`, SHA-256
+`3c58f67b436c0a066e4c2ea8b523ffbb3e297268fd2cbb158fa50848f899bacc`, in this
+revision. The candidate supersedes the exact v0.39 bytes active at
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
+The compiler's merge authority remains the exact v0.39 bytes until activation.
+It is valid work-branch authority, not a merge-ready ACTIVE identity.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler

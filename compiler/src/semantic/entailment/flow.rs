@@ -3032,6 +3032,16 @@ impl Analyzer<'_, '_> {
             .retain(|binding| !exited.contains(binding));
     }
 
+    /// Applies only the lexical support kills. Delivery images call this
+    /// directly because they were already constructed from a closed source
+    /// state and must retain only their explicit PostconditionGive roots.
+    fn kill_scopes_to(&mut self, states: &mut ViewStates, depth: usize) {
+        self.promote_view_contradictions(states);
+        self.exit_scopes_to_one(&mut states.complete, depth);
+        self.exit_scopes_to_one(&mut states.unasserted, depth);
+        self.exit_scopes_to_one(&mut states.s4_blinded, depth);
+    }
+
     fn exit_scopes_to(&mut self, states: &mut ViewStates, depth: usize) {
         let has_exited_bindings = self
             .scopes
@@ -3041,7 +3051,37 @@ impl Analyzer<'_, '_> {
         if !has_exited_bindings {
             return;
         }
-        self.promote_view_contradictions(states);
+        // [ENT-4, ENT-5]: a local term may be the middle vertex of a proof
+        // whose conclusion names only values that remain live. Fix the least
+        // closure while that vertex still exists, then let the ordinary scope
+        // kill remove every materialized fact whose own support still names
+        // the exiting scope. One structural event is shared by all views.
+        let snapshot = self.derivations.event(FlowEventKind::Snapshot, None);
+        states.complete = materialize_closure_at(
+            &states.complete,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+            snapshot,
+        );
+        states.unasserted = materialize_closure_at(
+            &states.unasserted,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+            snapshot,
+        );
+        states.s4_blinded = materialize_closure_at(
+            &states.s4_blinded,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+            snapshot,
+        );
+        // Each materialization has already promoted any relation or goal
+        // contradiction. Apply only the endpoint projection here; routing
+        // through `kill_scopes_to` would close all three views a second time
+        // immediately after their complete closures were fixed.
         self.exit_scopes_to_one(&mut states.complete, depth);
         self.exit_scopes_to_one(&mut states.unasserted, depth);
         self.exit_scopes_to_one(&mut states.s4_blinded, depth);
@@ -6465,7 +6505,7 @@ impl Analyzer<'_, '_> {
         };
         // The forward substitution happens above before the ordinary edge
         // kills, so the carrier's own branch scope cannot delete the image.
-        self.exit_scopes_to(&mut image, context.scope_depth);
+        self.kill_scopes_to(&mut image, context.scope_depth);
         self.exit_counted_loops_from(&mut image, context.loop_depth);
         image
     }
@@ -6994,6 +7034,31 @@ impl Analyzer<'_, '_> {
         } else {
             self.apply_kills(state, &target_kills);
         }
+        // [ENT-3.S5, ENT-5]: the committed value exists only after the old
+        // target facts have died. Publish the same finite value image in all
+        // proof views; an unsupported RHS shape simply contributes no fact.
+        let mut set_image_event = None;
+        self.establish_set_copy_fact(
+            node_path,
+            target,
+            value,
+            &mut state.complete,
+            &mut set_image_event,
+        );
+        self.establish_set_copy_fact(
+            node_path,
+            target,
+            value,
+            &mut state.unasserted,
+            &mut set_image_event,
+        );
+        self.establish_set_copy_fact(
+            node_path,
+            target,
+            value,
+            &mut state.s4_blinded,
+            &mut set_image_event,
+        );
         if let (Some(prepared), Some(target_event)) = (&prepared, target_event) {
             for receiver in &receivers {
                 self.establish_direct_receiver(node_path, receiver, prepared, target_event, state);

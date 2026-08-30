@@ -15,8 +15,8 @@
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
-    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedType,
-    CheckedValue, IntegerType,
+    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSetTarget,
+    CheckedSliceSource, CheckedType, CheckedValue, IntegerType,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -24,7 +24,8 @@ use super::super::state::{
     OutcomeRelation, Relation, close,
 };
 use super::super::term::{
-    CountedCaptureSide, PlaceRoot, PlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
+    CountedCaptureSide, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId,
+    TermKind, ZERO, integer_value, type_range,
 };
 use super::super::{
     ClaimComponentEvidence, ClaimImageEvidence, ClaimProofEvidence, ClaimReconstructionEvidence,
@@ -458,16 +459,80 @@ impl Analyzer<'_, '_> {
         id
     }
 
+    /// The exact term named by one writable fragment place. A borrow holder
+    /// keeps its canonical deref projection so the post-write destination is
+    /// identical to a later read of that same place [ENT-2].
+    fn writable_place_term(
+        &mut self,
+        binding: BindingId,
+        fields: &[u32],
+        ty: CheckedType,
+    ) -> Option<TermId> {
+        let fragment = fragment_type(ty)?;
+        let kind = if self.needs_implicit_deref(binding) {
+            TermKind::ProjectedPlace(
+                ProjectedPlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    projections: std::iter::once(PlaceProjection::Deref)
+                        .chain(fields.iter().copied().map(PlaceProjection::Field))
+                        .collect(),
+                },
+                fragment,
+            )
+        } else {
+            TermKind::Place(
+                PlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    deref: false,
+                    fields: fields.to_vec(),
+                },
+                fragment,
+            )
+        };
+        Some(self.terms.intern(kind))
+    }
+
     /// The term of a freshly bound integer place, when its type is one
     /// fragment type.
     fn bound_term(&mut self, binding: BindingId, value: &CheckedExpression) -> Option<TermId> {
-        let fragment = fragment_type(value.ty())?;
-        let place = PlaceTerm {
-            root: PlaceRoot::Binding(binding),
-            deref: false,
-            fields: Vec::new(),
-        };
-        Some(self.terms.intern(TermKind::Place(place, fragment)))
+        self.writable_place_term(binding, &[], value.ty())
+    }
+
+    /// The value image shared by an ordinary let and a direct-place SET-1
+    /// commit. A narrowing conversion and every computed expression outside
+    /// this finite S5 table have no image.
+    fn copy_source(&mut self, value: &CheckedExpression) -> Option<TermId> {
+        match value {
+            CheckedExpression::NumericConversion {
+                source,
+                destination,
+                value: operand,
+                ..
+            } => source
+                .converts_totally_to(*destination)
+                .then(|| self.read_operand(operand))
+                .flatten(),
+            _ => self.read_operand(value),
+        }
+    }
+
+    fn establish_copy_equality(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: TermId,
+        source: TermId,
+        state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) {
+        let event = self.binding_event(event, FlowEventKind::S5, node_path);
+        state.establish(
+            &Relation::Equal {
+                left: destination,
+                right: source,
+            },
+            &mut self.derivations,
+            event,
+        );
     }
 
     /// The place term a binding names directly, for length facts over an
@@ -492,35 +557,38 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
-        let source = match value {
-            CheckedExpression::NumericConversion {
-                source,
-                destination,
-                value: operand,
-                ..
-            } => {
-                if !source.converts_totally_to(*destination) {
-                    return;
-                }
-                self.read_operand(operand)
-            }
-            _ => self.read_operand(value),
-        };
-        let Some(source) = source else {
+        let Some(source) = self.copy_source(value) else {
             return;
         };
         let Some(bound) = self.bound_term(binding, value) else {
             return;
         };
-        let event = self.binding_event(event, FlowEventKind::S5, node_path);
-        state.establish(
-            &Relation::Equal {
-                left: bound,
-                right: source,
-            },
-            &mut self.derivations,
-            event,
-        );
+        self.establish_copy_equality(node_path, bound, source, state, event);
+    }
+
+    /// [ENT-3] S5 at a SET-1 value commit. The caller has already evaluated
+    /// the RHS and killed every fact about the old target value. Only a
+    /// direct fragment place receives the finite literal/term/total-cvt image;
+    /// indexed storage and all other RHS shapes establish nothing.
+    pub(super) fn establish_set_copy_fact(
+        &mut self,
+        node_path: &crate::NodePath,
+        target: &CheckedSetTarget,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) {
+        let CheckedSetTarget::Place(target) = target else {
+            return;
+        };
+        let Some(source) = self.copy_source(value) else {
+            return;
+        };
+        let Some(destination) = self.writable_place_term(target.binding, &target.fields, target.ty)
+        else {
+            return;
+        };
+        self.establish_copy_equality(node_path, destination, source, state, event);
     }
 
     /// [ENT-3] S6: `buffer_new<T>(n, v)` establishes len(b) = n;

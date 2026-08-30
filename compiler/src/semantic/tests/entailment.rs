@@ -5964,6 +5964,132 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
+    // The RHS value is read before the write. After the target's stale facts
+    // are killed, S5 publishes `start = back`; no runtime check is needed.
+    let source = br#"fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+  let n = len(deref(data));
+  let have_room = ige(n, 8_u64);
+  let start = 0_u64;
+  let out = 0_u8;
+  if have_room {
+    let back = n -wrap 8_u64;
+    set start = back;
+    let byte = deref(data)[start];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 7_u8);
+  region 'r {
+    let byte = tail_byte<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "tail_byte");
+    validate_derivations(&summary);
+    assert_eq!(
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true]
+    );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S5);
+}
+
+#[test]
+fn a_scope_exit_keeps_a_closed_consequence_that_does_not_name_the_local() {
+    // `next` cannot survive its arm. The mathematical consequence
+    // `out = i + 1`, and therefore `out < 4`, does not name `next` and must be
+    // materialized before the arm-local binding is killed.
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
+  let out = 0_u64;
+  if ilt(i, 3_u64) {
+    let next = i +wrap 1_u64;
+    set out = next;
+  } else {
+    return 0_i32;
+  }
+  return values[out];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "read");
+    validate_derivations(&summary);
+    assert_eq!(
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true]
+    );
+    let root = obligation_root(&summary, 0);
+    assert_root_has_event_kind(&summary, root, FlowEventKind::S5);
+    assert_root_has_event_kind(&summary, root, FlowEventKind::Snapshot);
+}
+
+#[test]
+fn a_set_commit_kills_the_old_target_fact_before_publishing_the_new_copy() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  let offset = 0_u64;
+  if ilt(offset, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  set offset = replacement;
+  return values[offset];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "offset = replacement cannot preserve the killed fact offset < 4"
+    );
+}
+
+#[test]
+fn a_computed_set_rhs_outside_the_fixed_s5_table_publishes_no_image() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    set offset = replacement +wrap 0_u64;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "the compiler does not search for an unlisted operation image"
+    );
+}
+
+#[test]
 fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     // [OP-6] narrowing is not a total pair, so [ENT-3] S5 does not apply and
     // the `Ok` binder inherits only its own type range.
@@ -9434,7 +9560,11 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(outcomes.len(), 2);
     assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
-    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+    assert_eq!(
+        outcomes[1].disposition,
+        CallGoalDisposition::Refuted,
+        "the set commit kills the old comparison origin, then S5 establishes value = 20"
+    );
 }
 
 #[test]

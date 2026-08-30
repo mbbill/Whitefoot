@@ -767,14 +767,10 @@ fn enum_equality_exclusions_reach_the_intended_rule() {
 
 #[test]
 fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
-    // The TYPE-5 set-field control is written inline rather than read from
-    // `x-struct-set-field.wf`: that case's `c.n + 1_i32` is a v0.31
-    // constant-operand-class site whose overflow obligation nothing
-    // discharges, so the case now rejects on OP-2 with residual
-    // `c.n <= 2147483646`; keep that independent corpus result out of this
-    // capability control. The capability this
-    // control exists to demonstrate — set a struct field, read it back — is
-    // unaffected.
+    // Keep the capability control smaller than the conformance program: this
+    // test isolates set-field construction and read-back, while
+    // `x-struct-set-field.wf` additionally proves its exact increment from
+    // the S5 post-write image.
     with_semantics(
         b"struct Counter {\n  n: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),

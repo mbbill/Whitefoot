@@ -1,14 +1,35 @@
 # Whitefoot
 
-Whitefoot is a systems language for AI-written, human-approved code. It is
-designed so that memory corruption, data races, uninitialized reads, and silent
-overflow are unrepresentable in accepted source. There is no writer-accessible
-unsafe escape. Every partial operation is admitted only after machine proof of
-its domain; a written claim is the sole writer-reachable runtime trap and is
-never removed. A claim is only an independently true theorem that the
-normative checker cannot derive and a later admission root genuinely needs;
-it is never an assertion, test oracle, intentional abort, or substitute for
-ordinary control flow, and its `because` record states the complete derivation.
+Whitefoot is a proof-carrying systems language for AI-written, human-approved
+code. Here, proof-carrying means that source and its canonical artifacts carry
+the machine-checkable facts and explicit evidence needed to justify every
+partial operation and every performance fact the optimizer is allowed to
+trust. The normative checker, not the writer, an AI, or an external prover,
+decides whether that evidence is sufficient.
+
+The extra evidence is intended to buy safety and speed from the same
+mechanism. The target is that an accepted program may contain a logic error,
+but cannot execute memory corruption, a data race, an uninitialized read,
+silent overflow, or another unproved partial operation. The same checked
+ownership, aliasing, effect, bounds, and algebraic facts can remove runtime
+checks, authorize optimizations, and prove that parallel tasks are independent
+without `unsafe`, speculation, or later rediscovery. Evidence is erased before
+execution and creates no runtime branch, lock, dependency, or scheduling edge.
+
+The official compiler does not use SMT to decide acceptance. Its automatic
+core runs only specification-fixed, deterministic derivations with a
+syntactically computable work bound. Harder reasoning is carried as an explicit
+finite certificate: producing that certificate may require AI, an external
+tool, or substantial search, but the compiler only checks the committed steps.
+No solver seed, heuristic order, timeout, machine load, or success in
+rediscovering a proof may change whether the same complete input is accepted.
+
+The price is authoring difficulty: programs are more explicit, valid programs
+may need proof structure, and safe code without sufficient evidence is
+rejected. Whitefoot deliberately spends human ergonomics because its intended
+writer is AI. AI may search for programs and proofs and repair checker
+failures, but it is never trusted; humans approve the requirements and
+resulting changes, and the checker decides what has actually been proved.
 
 ## Project goal
 
@@ -33,15 +54,25 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.39 is the active language authority, SHA-256
+Kernel specification v0.39 remains the active released language authority,
+SHA-256
 `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
-the stable [specification path](spec/kernel-spec.md). It narrows [CLM-1]'s
-claim-authority control dependence to the definitions a boundary selector
-actually chooses, and supersedes v0.38, whose outgoing bytes are
+its immutable archive. It narrows [CLM-1]'s claim-authority control dependence
+to the definitions a boundary selector actually chooses, and supersedes v0.38,
+whose outgoing bytes are
 preserved as [`spec/kernel-spec-v0.38.md`](spec/kernel-spec-v0.38.md). The
 merge-time record for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.
+
+This work branch carries candidate v0.40 at the stable
+[specification path](spec/kernel-spec.md), SHA-256
+`3c58f67b436c0a066e4c2ea8b523ffbb3e297268fd2cbb158fa50848f899bacc`.
+It is the first implementation slice of the proof-carrying transition: direct
+`set` operations publish fixed value images, and entailment closes before a
+local scope is forgotten. It does not yet remove `claim` or implement the
+explicit certificate language, cross-function proof summaries, or the planned
+parallel proof composition. Candidate status grants no merge authority.
 
 v0.39 uses ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
@@ -127,8 +158,8 @@ maintained research fixtures, and verifies the specification/archive identity
 chain. Gate results are revision-specific, so this overview carries no floating
 pass count. Canonical `make check` deliberately rejects `CANDIDATE` status at
 the archive-identity step: a merge revision must carry the exact ACTIVE
-identity and the outgoing archive, as this revision does. A work branch
-drafting the next version uses `make spec-candidate-integrity` instead. A green
+identity and the outgoing archive. A work branch drafting the next version,
+including this revision, uses `make spec-candidate-integrity` instead. A green
 result states only what the selected gate exercises and is not a completeness
 claim.
 

@@ -13,6 +13,12 @@ derived, directly or indirectly, from the constitution — or flagged. Statuses:
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
+The stable work path also carries the v0.40 candidate at SHA-256
+`3c58f67b436c0a066e4c2ea8b523ffbb3e297268fd2cbb158fa50848f899bacc`,
+superseding the active v0.39 bytes named above. The candidate amendment at the
+end of this file binds its changed derivations. It is review evidence only and
+does not grant merge authority or change which released archive is active.
+
 **Statistics: 86 derived · 52 existence-only · 0 underived**
 (138 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
 additions; v0.33 and v0.34 add no numbered rule and change no status; the
@@ -1649,3 +1655,49 @@ derivation row; the component tree, the unconditional call-result seed, the
 witness identity and its tie-break, the protected families, and the constrained
 subjects are all untouched, as is PRV-1 provenance, which never included
 control dependence. No other rule's derivation moves.
+
+## v0.40 candidate amendment — post-write value images and proof-preserving scope exit
+
+**No added rule and no added search.** This candidate completes two transfers
+that the existing ENT-3 and ENT-5 rules already require. It does not enlarge the
+fact language, add a template, add a fixed-point round, or authorize a runtime
+check. A direct SET-1 write whose right-hand side is already a fixed S5 copy
+source publishes the same equality that the corresponding `let` publishes:
+
+```whitefoot
+set x = 41_i32;       // publish x = 41
+set x = y;            // publish x = y
+set x = cvt<u8, u32>(byte); // total conversion: publish x = byte
+```
+
+The target is killed before the new equality is published. Consequently an old
+fact about `x` cannot cross the write and combine with the new value. Indexed
+targets, narrowing conversions, computed right-hand sides outside the fixed S5
+table, and every other unsupported shape publish no image. This is the finite
+operation-image discipline already selected by ENT-3, not a request for the
+checker to discover an algebraic relation.
+
+**Closure precedes lexical forgetting.** Consider a scope that contains
+`next = i + 1`, proves `i < 3`, and copies `next` into an outer `out`. Before
+leaving the scope the fixed entailment closure can derive `out < 4`. Killing
+`next` first would discard the only path that justifies that surviving
+conclusion. ENT-5 therefore closes the already finite state first, then removes
+the lexical roots, and retains only conclusions whose support no longer names a
+killed root. Conclusions that still mention `next` disappear. Contradiction,
+when present, survives forgetting because no assignment to a forgotten local
+can make an inconsistent predecessor state reachable.
+
+**Derivation status.** ENT-3's S5 copy-image row is derived from the same
+assignment semantics and target-kill law as its existing `let` image; ENT-4 is
+unchanged because no checked-program proof object or runtime effect is added;
+ENT-5's ordering is derived from its stated requirement that every surviving
+fact be a logical consequence of the predecessor state rather than merely a
+fact textually present before a scope boundary. The positive conformance cases
+exercise both transfers. The existing kill-on-write negative case remains a
+canary that the new image cannot resurrect stale target facts.
+
+**Runtime and parallelism are unchanged.** Both transfers exist only in the
+checker. They emit no instruction, branch, check, trap, lock, schedule edge, or
+task dependency. Proof information is erased before lowering, so this candidate
+cannot serialize PAR-1, PAR-2, or PAR-3 code or change their generated runtime
+shape.
