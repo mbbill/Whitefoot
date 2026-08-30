@@ -1286,8 +1286,9 @@ only completion semantics does not predetermine the winning target mechanism.
    protocol while deleting the rejected bridge machinery.
 9. Qualify Linux and macOS paths, then execute and finish the x86-64 MSVC
    Windows row. Native run
-   [33304333316](https://github.com/mbbill/Whitefoot/actions/runs/33304333316)
-   closes that row for the current file-operation slice; it does not claim a
+   [33305475906](https://github.com/mbbill/Whitefoot/actions/runs/33305475906)
+   on `f04e15c9` closes that row for the current file-operation slice and the
+   target's wider-code-unit HostString raw-byte route; it does not claim a
    Windows compute pool or performance result.
 10. Complete functional matrices, hostile schedules, stress, sanitizers,
     maintained programs, and native performance comparisons.

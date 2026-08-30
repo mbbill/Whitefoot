@@ -193,11 +193,10 @@ The activated revision proves:
 - macOS executes its qualified fallback path; the retained Linux io_uring path
   has its existing native evidence but was not re-executed on this Mac; and the
   x86-64 MSVC Windows row executes its completion, adapter, namespace,
-  64-operation capacity, production `.wf`/driver, and emitted sequential
-  `--par` boundaries in native run
-  [33304333316](https://github.com/mbbill/Whitefoot/actions/runs/33304333316)
-  on `1f05c392`; the maintained native workflow also carries the wider-code-unit
-  HostString raw-byte boundary;
+  64-operation capacity, wider-code-unit HostString raw-byte route, production
+  `.wf`/driver, and emitted sequential `--par` boundaries in native run
+  [33305475906](https://github.com/mbbill/Whitefoot/actions/runs/33305475906)
+  on `f04e15c9`;
 - focused tests, maintained programs, conformance, sanitizers, stress, and
   every independently runnable component behind the specification archive
   gate pass; and

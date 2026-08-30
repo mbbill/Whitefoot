@@ -1916,12 +1916,14 @@ implementation or test failure.
 ### Windows native qualification, 2026-08-30
 
 The later `x86_64-pc-windows-msvc` implementation closes that production
-execution gap for the current file-operation slice. Commit `1f05c392` passed
+execution gap for the current file-operation slice. Commit `f04e15c9` passed
 native `io-hosts` run
-[33304333316](https://github.com/mbbill/Whitefoot/actions/runs/33304333316).
+[33305475906](https://github.com/mbbill/Whitefoot/actions/runs/33305475906).
 The Windows job executed all of these boundaries on `windows-latest`:
 
-- the completion core's multi-waiter protocol and the real IOCP adapter;
+- the completion core's multi-waiter protocol, the real IOCP adapter, and the
+  Windows target-inventory contract marked implemented with native completion,
+  no blocking helpers, and scheduler progress;
 - cwd-relative, no-follow namespace open and directory enumeration;
 - strict compilation of every runtime unit and a linked bridge-capacity probe
   that admits 64 asynchronous reads, returns the 65th to direct fallback
@@ -1929,7 +1931,10 @@ The Windows job executed all of these boundaries on `windows-latest`:
 - the production `whitefootc.exe` compiling, linking, and running
   `completion_read_boundary.wf`, with UTF-16 arguments, two cwd-relative file
   opens, output `AB`, and `WF_REQUIRE_WINDOWS_IOCP=1` requiring at least one
-  accepted IOCP submission and exact submission/publication closure; and
+  accepted IOCP submission and exact submission/publication closure;
+- `host_string_bytes.wf` receiving one U+4241 UTF-16 code unit through the
+  native `wmain` boundary and requiring `host_bytes_len == 2`, copy endpoint
+  `2`, and the exact little-endian bytes `41 42`; and
 - reference and `--par` builds of `par_layout.wf` producing identical bytes
   through the emitted COFF sequential world.
 

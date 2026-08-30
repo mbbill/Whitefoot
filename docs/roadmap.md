@@ -919,12 +919,12 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   0090 declared for the missing row is removed.
   The exact `x86_64-pc-windows-msvc` row now also executes the compiler-owned
   UTF-16 command bootstrap, cwd-relative no-follow namespace operations,
-  direct file operations, IOCP bridge and bounded wake/capacity protocol, the
-  production compiler link, and the emitted sequential `--par` world. Native
-  run [33304333316](https://github.com/mbbill/Whitefoot/actions/runs/33304333316)
-  passed that boundary on `1f05c392`. The maintained workflow additionally
-  carries the raw wider-code-unit HostString boundary; none of this is a
-  Windows compute-pool or performance claim.
+  raw wider-code-unit HostString route, direct file operations, IOCP bridge and
+  bounded wake/capacity protocol, the production compiler link, and the
+  emitted sequential `--par` world. Native run
+  [33305475906](https://github.com/mbbill/Whitefoot/actions/runs/33305475906)
+  passed that boundary on `f04e15c9`; it is not a Windows compute-pool or
+  performance claim.
 - **Missing / next:** widen stackless lowering beyond single-instruction tail
   chains; measure the qualified Windows row; add a clock reading, keyed
   directory places, namespace mutation, and network, timer, cancellation,
