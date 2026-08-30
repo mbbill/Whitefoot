@@ -223,11 +223,19 @@ jobs:
       # satisfy this step.
       - name: Compile and run a real Whitefoot program through IOCP
         run: |
-          cargo build --manifest-path compiler/Cargo.toml --locked --bin whitefootc
+          fail_e2e() {
+            local stage="$1"
+            local status="$2"
+            echo "::error title=Windows Whitefoot IOCP E2E::${stage} (exit ${status})"
+            exit "$status"
+          }
+          cargo build --manifest-path compiler/Cargo.toml --locked --bin whitefootc || \
+            fail_e2e "building whitefootc failed" "$?"
           mkdir -p "$RUNNER_TEMP/whitefoot-e2e"
           compiler/target/debug/whitefootc.exe \
             tests/programs/completion_read_boundary.wf \
-            -o "$RUNNER_TEMP/whitefoot-e2e/completion-read-boundary.exe"
+            -o "$RUNNER_TEMP/whitefoot-e2e/completion-read-boundary.exe" || \
+            fail_e2e "whitefootc failed to compile or link the program" "$?"
           printf 'A' > "$RUNNER_TEMP/whitefoot-e2e/first.bin"
           printf 'B' > "$RUNNER_TEMP/whitefoot-e2e/second.bin"
           printf 'AB' > "$RUNNER_TEMP/whitefoot-e2e/expected.txt"
@@ -236,10 +244,12 @@ jobs:
             WF_REQUIRE_WINDOWS_IOCP=1 ./completion-read-boundary.exe \
               first.bin second.bin \
               > actual.txt 2> diagnostics.txt
-          )
+          ) || fail_e2e "the compiled program failed under the IOCP requirement" "$?"
           cmp "$RUNNER_TEMP/whitefoot-e2e/expected.txt" \
-            "$RUNNER_TEMP/whitefoot-e2e/actual.txt"
-          test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt"
+            "$RUNNER_TEMP/whitefoot-e2e/actual.txt" || \
+            fail_e2e "the compiled program produced the wrong bytes" "$?"
+          test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt" || \
+            fail_e2e "the compiled program wrote diagnostics" "$?"
 
       # Windows does not yet ship a compute worker pool. A module whose
       # permission lowering contains real hand-outs must therefore link its
