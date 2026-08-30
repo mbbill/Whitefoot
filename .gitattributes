@@ -2,5 +2,9 @@
 research/experiments/data-layout-owning-sequence/DETACHED_CANDIDATE.patch whitespace=-blank-at-eol,-blank-at-eof
 governance/spec-evolution/grammar/evidence/*.patch whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 
+# Whitefoot source identity is byte-exact. In particular, a Windows checkout
+# must not rewrite canonical LF bytes to CRLF before the compiler reads them.
+*.wf -text
+
 # Generated TSV rows may end with an empty final field represented by a terminal tab.
 research/implementation/minimal-systems-capability/RUST-1.97.0-API-INVENTORY.tsv whitespace=-blank-at-eol
