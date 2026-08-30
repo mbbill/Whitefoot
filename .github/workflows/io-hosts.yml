@@ -232,10 +232,19 @@ jobs:
           cargo build --manifest-path compiler/Cargo.toml --locked --bin whitefootc || \
             fail_e2e "building whitefootc failed" "$?"
           mkdir -p "$RUNNER_TEMP/whitefoot-e2e"
+          driver_diagnostics="$RUNNER_TEMP/whitefoot-e2e/whitefootc-diagnostics.txt"
           compiler/target/debug/whitefootc.exe \
             tests/programs/completion_read_boundary.wf \
-            -o "$RUNNER_TEMP/whitefoot-e2e/completion-read-boundary.exe" || \
-            fail_e2e "whitefootc failed to compile or link the program" "$?"
+            -o "$RUNNER_TEMP/whitefoot-e2e/completion-read-boundary.exe" \
+            2> "$driver_diagnostics" || {
+              status="$?"
+              while IFS= read -r line; do
+                line="${line//%/%25}"
+                line="${line//$'\r'/%0D}"
+                echo "::error title=Windows whitefootc diagnostic::${line}"
+              done < "$driver_diagnostics"
+              fail_e2e "whitefootc failed to compile or link the program" "$status"
+            }
           printf 'A' > "$RUNNER_TEMP/whitefoot-e2e/first.bin"
           printf 'B' > "$RUNNER_TEMP/whitefoot-e2e/second.bin"
           printf 'AB' > "$RUNNER_TEMP/whitefoot-e2e/expected.txt"
