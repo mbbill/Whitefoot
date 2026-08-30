@@ -262,15 +262,22 @@ jobs:
       # lossless route, and requires bytes 0x41, 0x42. This is the native
       # qualification record for the wider-code-unit [SYS-9] target row.
       - name: Run the Windows HostString raw-code-unit boundary
+        shell: pwsh
         run: |
-          compiler/target/debug/whitefootc.exe \
-            tests/programs/host_string_bytes.wf \
-            -o "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.exe"
-          "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.exe" $'\u4241' \
-            > "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.out" \
-            2> "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.err"
-          test ! -s "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.out"
-          test ! -s "$RUNNER_TEMP/whitefoot-e2e/host-string-bytes.err"
+          $program = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/host-string-bytes.exe"
+          $stdout = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/host-string-bytes.out"
+          $stderr = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/host-string-bytes.err"
+          & ".\compiler\target\debug\whitefootc.exe" "tests/programs/host_string_bytes.wf" -o $program
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $argument = [string][char]0x4241
+          & $program $argument > $stdout 2> $stderr
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item $stdout).Length -ne 0) {
+            throw "the HostString boundary wrote stdout"
+          }
+          if ((Get-Item $stderr).Length -ne 0) {
+            throw "the HostString boundary wrote stderr"
+          }
 
       # Windows does not yet ship a compute worker pool. A module whose
       # permission lowering contains real hand-outs must therefore link its
