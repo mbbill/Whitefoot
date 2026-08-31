@@ -54,7 +54,8 @@ use crate::{
     TerminalOutcome, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical,
     check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
+    module_requires_writer_scheduler, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -469,10 +470,9 @@ fn build_linked_executable(
     // uses: the emitted module names its entry point. A test therefore cannot
     // link a runtime a shipped build would not, and a module that overlaps
     // nothing is linked here with nothing extra at all.
-    let completion_required = module_requires_completion_runtime(llvm);
     let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
         let path = directory.join("par_runtime.c");
-        let source = if completion_required {
+        let source = if module_requires_writer_scheduler(llvm) {
             PARALLEL_COMPLETION_RUNTIME_SOURCE
         } else {
             PARALLEL_RUNTIME_SOURCE

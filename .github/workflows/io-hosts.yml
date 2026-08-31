@@ -4,12 +4,12 @@
 #
 # These jobs retain execution evidence rather than relying on cross-builds.
 # A correctness job here fails loudly rather than recording a fallback:
-# `completion-linux` requires io_uring, and `completion-windows` exercises the
-# IOCP runtime through the production compiler and reports the exact failure
-# instead of being marked expected-to-fail. The bench jobs that record
-# performance live in `io-bench.yml`: they run on demand and when the runtime
-# or the bench bundle changes, so a push is never waiting on a fifteen-minute
-# measurement that judges nothing.
+# `completion-linux` requires io_uring, and `completion-windows` exercises both
+# IOCP and the native compute pool through the production compiler, reporting
+# exact backend failures instead of marking them expected-to-fail. The bench
+# jobs that record performance live in `io-bench.yml`: they run on demand and
+# when the runtime or the bench bundle changes, so a push is never waiting on a
+# fifteen-minute measurement that judges nothing.
 name: io-hosts
 
 on:
@@ -177,8 +177,10 @@ jobs:
       - name: Strict-check the complete Windows runtime
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -fsyntax-only \
+            -DWF_PAR_WITH_WRITER_SCHEDULER=1 \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
+            compiler/src/backend/par_runtime_windows.c \
             compiler/src/backend/windows_runtime.c \
             compiler/src/backend/wf_floor_windows.c \
             compiler/src/backend/completion/windows_completion.c \
@@ -279,26 +281,91 @@ jobs:
             throw "the HostString boundary wrote stderr"
           }
 
-      # Windows does not yet ship a compute worker pool. A module whose
-      # permission lowering contains real hand-outs must therefore link its
-      # emitted weak sequential world through COFF and preserve the reference
-      # program's exact bytes; this executes that boundary instead of inferring
-      # it from the LLVM module.
-      - name: Run a --par program through the Windows sequential world
+      # Correct bytes alone would also be produced by a sequential fallback.
+      # The production driver must preserve those bytes and reject malformed
+      # pool configuration. Then the same real Whitefoot module is linked with
+      # a test-only identity observer. Its counters are compiled out of every
+      # production binary; this observed build requires a started non-owner
+      # worker to have executed and stolen at least one source task.
+      - name: Require native workers for a real --par program
         run: |
+          fail_par() {
+            local stage="$1"
+            local status="${2:-1}"
+            echo "::error title=Windows native parallel runtime::${stage}"
+            exit "$status"
+          }
+          par_dir="$RUNNER_TEMP/whitefoot-e2e/windows-par"
+          mkdir -p "$par_dir"
           compiler/target/debug/whitefootc.exe \
             tests/programs/par_layout.wf \
-            -o "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.exe"
+            -o "$par_dir/par-layout-reference.exe" || \
+            fail_par "the sequential reference did not link" "$?"
           compiler/target/debug/whitefootc.exe --par \
             tests/programs/par_layout.wf \
-            -o "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.exe"
-          "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.exe" \
-            > "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.txt" \
-            2> "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.err"
-          "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.exe" \
-            > "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.txt" \
-            2> "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.err"
-          cmp "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.txt" \
-            "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.txt"
-          test ! -s "$RUNNER_TEMP/whitefoot-e2e/par-layout-reference.err"
-          test ! -s "$RUNNER_TEMP/whitefoot-e2e/par-layout-overlap.err"
+            -o "$par_dir/par-layout-production.exe" || \
+            fail_par "the production --par executable did not link" "$?"
+          compiler/target/debug/whitefootc.exe --par --emit-llvm \
+            tests/programs/par_layout.wf \
+            -o "$par_dir/par-layout.ll" || \
+            fail_par "the observed --par module did not emit" "$?"
+
+          "$par_dir/par-layout-reference.exe" \
+            > "$par_dir/reference.txt" 2> "$par_dir/reference.err" || \
+            fail_par "the sequential reference failed" "$?"
+          WF_WORKERS=4 \
+            "$par_dir/par-layout-production.exe" \
+            > "$par_dir/production.txt" 2> "$par_dir/production.err" || \
+            fail_par "the production --par executable failed" "$?"
+          cmp "$par_dir/reference.txt" "$par_dir/production.txt" || \
+            fail_par "native workers changed the program bytes" "$?"
+          test ! -s "$par_dir/reference.err" || \
+            fail_par "the sequential reference wrote diagnostics"
+          test ! -s "$par_dir/production.err" || \
+            fail_par "the native worker run wrote diagnostics"
+
+          set +e
+          WF_WORKERS=not-a-count "$par_dir/par-layout-production.exe" \
+            > "$par_dir/invalid.txt" 2> "$par_dir/invalid.err"
+          invalid_status="$?"
+          set -e
+          test "$invalid_status" -ne 0 || \
+            fail_par "malformed WF_WORKERS silently selected a fallback"
+          test ! -s "$par_dir/invalid.txt" || \
+            fail_par "the rejected configuration entered the Whitefoot program"
+          grep -Fx \
+            'whitefoot parallel runtime: WF_WORKERS must be an integer from 2 through 64' \
+            "$par_dir/invalid.err" > /dev/null || \
+            fail_par "the configuration failure did not identify the runtime cause"
+
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -DWF_PAR_IDENTITY_PROBE=1 \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            compiler/src/backend/par_runtime_windows.c \
+            compiler/src/backend/windows_runtime.c \
+            compiler/src/backend/wf_floor_windows.c \
+            compiler/src/backend/completion/windows_completion.c \
+            compiler/src/backend/completion/windows_iocp.c \
+            compiler/src/backend/completion/windows_bridge.c \
+            compiler/src/backend/completion/writer_scheduler_windows.c \
+            compiler/src/backend/par_runtime_windows_probe.c \
+            -x ir "$par_dir/par-layout.ll" \
+            -Wno-override-module \
+            -o "$par_dir/par-layout-observed.exe" || \
+            fail_par "the native identity executable did not link" "$?"
+          WF_WORKERS=4 "$par_dir/par-layout-observed.exe" \
+            > "$par_dir/observed.txt" 2> "$par_dir/observed.err" || {
+              status="$?"
+              sed 's/^/native parallel observer: /' "$par_dir/observed.err" >&2
+              fail_par "no non-owner worker executed source work" "$status"
+            }
+          cmp "$par_dir/reference.txt" "$par_dir/observed.txt" || \
+            fail_par "the observed native run changed the program bytes" "$?"
+          tr -d $'\r' < "$par_dir/observed.err" > "$par_dir/observed.normalized"
+          test "$(wc -l < "$par_dir/observed.normalized")" -eq 1 || \
+            fail_par "the identity run wrote unexpected diagnostics"
+          grep -E \
+            '^windows-native-par-probe status=pass started=[1-9][0-9]* executed=[1-9][0-9]* grants=[1-9][0-9]*$' \
+            "$par_dir/observed.normalized" > /dev/null || \
+            fail_par "the identity record did not prove native worker execution"

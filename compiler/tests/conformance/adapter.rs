@@ -45,6 +45,7 @@ use whitefoot::{
     HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
     SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile,
     module_requires_completion_runtime, module_requires_parallel_runtime,
+    module_requires_writer_scheduler,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -218,7 +219,7 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     let completion = module_requires_completion_runtime(module);
     if module_requires_parallel_runtime(module) {
         let runtime = directory.join("par_runtime.c");
-        let source = if completion {
+        let source = if module_requires_writer_scheduler(module) {
             PARALLEL_COMPLETION_RUNTIME_SOURCE
         } else {
             PARALLEL_RUNTIME_SOURCE

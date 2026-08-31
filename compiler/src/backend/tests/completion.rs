@@ -385,6 +385,9 @@ fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     assert!(crate::module_requires_completion_runtime(&sequential));
     assert!(crate::module_requires_completion_runtime(&completion));
     assert!(!crate::module_requires_completion_runtime(&pure));
+    assert!(!crate::module_requires_writer_scheduler(&sequential));
+    assert!(!crate::module_requires_writer_scheduler(&completion));
+    assert!(!crate::module_requires_writer_scheduler(&pure));
     assert!(sequential.contains("@wf__completion_file_write_direct"));
     assert!(!sequential.contains("call i32 @wf__completion_file_write_submit"));
     assert!(!pure.contains("wf__completion_"));

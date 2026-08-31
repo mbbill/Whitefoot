@@ -88,6 +88,18 @@ pub fn module_requires_completion_runtime(module: &str) -> bool {
         || module.contains("@wf__completion_directory_next_direct")
 }
 
+/// True exactly when this emitted module can publish a stackless writer frame.
+///
+/// Direct completion calls still need the completion runtime, but they never
+/// enqueue a continuation for a compute worker to resume.  Testing the actual
+/// submit calls, rather than any completion symbol or the weak definitions a
+/// stackless module carries, keeps the parallel runtime's hot steal loop free
+/// of an empty writer-queue probe for an ordinary direct I/O module.
+pub fn module_requires_writer_scheduler(module: &str) -> bool {
+    module.contains("call i32 @wf__completion_file_pread_submit_writer(")
+        || module.contains("call i32 @wf__completion_file_write_submit_writer(")
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct CompletionHandedOut {
     result: IrValueId,

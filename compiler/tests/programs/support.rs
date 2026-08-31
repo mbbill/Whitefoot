@@ -14,6 +14,7 @@ use whitefoot::{
     PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
     compile, compile_with_overlap, compile_with_permission_ledger,
     module_requires_completion_runtime, module_requires_parallel_runtime,
+    module_requires_writer_scheduler,
 };
 // Read by the superseded-inventory rejection in the directory-walking cases.
 use whitefoot::{Inventory, compile_with_inventory};
@@ -38,7 +39,7 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let completion_required = module_requires_completion_runtime(llvm);
     let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
         let path = directory.join("par_runtime.c");
-        let source = if completion_required {
+        let source = if module_requires_writer_scheduler(llvm) {
             PARALLEL_COMPLETION_RUNTIME_SOURCE
         } else {
             PARALLEL_RUNTIME_SOURCE
@@ -303,7 +304,7 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&module, llvm).expect("write the module");
-    let parallel_source = if module_requires_completion_runtime(llvm) {
+    let parallel_source = if module_requires_writer_scheduler(llvm) {
         PARALLEL_COMPLETION_RUNTIME_SOURCE
     } else {
         PARALLEL_RUNTIME_SOURCE

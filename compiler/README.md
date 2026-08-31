@@ -384,7 +384,14 @@ The production driver links every Windows runtime unit and executes a real
 `.wf` program under the IOCP-required assertion. A separate native program
 qualifies the raw UTF-16 HostString route by measuring and copying one code
 unit's exact in-memory bytes. Emitted `--par` modules link and execute the
-sequential COFF world because Windows does not yet ship a compute worker pool.
+native Windows compute pool through hard external ABI obligations: omitting
+the compiler-owned runtime is a link failure, and invalid worker configuration
+or partial pool startup is a runtime failure rather than a sequential
+downgrade. The native gate requires a non-owner worker to execute and steal
+source work while preserving the sequential build's exact bytes. The current
+pool still has explicit 64-lane and 256-byte-frame ceilings and does not yet
+select lanes from Windows CPU sets or processor groups; no Windows performance
+result has been recorded.
 No operation path reads a trap latch or carries trap-specific state.
 
 Native rings, IOCP ports, and helper mailboxes are target-private protocol

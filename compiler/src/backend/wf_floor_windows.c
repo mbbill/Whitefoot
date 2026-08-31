@@ -20,7 +20,9 @@
 
 #include <windows.h>
 
+#include <process.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 extern int wf__main_body(int argc, void *argv);
@@ -89,6 +91,7 @@ static LONG CALLBACK wf__floor_exception_handler(
 }
 
 static INIT_ONCE wf__floor_install_once = INIT_ONCE_STATIC_INIT;
+static PVOID wf__floor_handler;
 
 static BOOL CALLBACK wf__floor_install_handler(
     PINIT_ONCE once,
@@ -98,21 +101,30 @@ static BOOL CALLBACK wf__floor_install_handler(
     (void)once;
     (void)parameter;
     (void)context;
-    (void)AddVectoredExceptionHandler(1u, wf__floor_exception_handler);
-    return TRUE;
+    wf__floor_handler = AddVectoredExceptionHandler(
+        1u,
+        wf__floor_exception_handler
+    );
+    return wf__floor_handler != NULL;
 }
 
 /* The handler is process-wide. The guarantee is per-thread, so every runtime
  * thread that can execute Whitefoot code calls this function on itself. */
 void wf__floor_attach_thread(void) {
     ULONG stack_guarantee = WF_FLOOR_EXCEPTION_STACK_BYTES;
-    (void)InitOnceExecuteOnce(
-        &wf__floor_install_once,
-        wf__floor_install_handler,
-        NULL,
-        NULL
-    );
-    (void)SetThreadStackGuarantee(&stack_guarantee);
+    if (InitOnceExecuteOnce(
+            &wf__floor_install_once,
+            wf__floor_install_handler,
+            NULL,
+            NULL
+        ) == FALSE
+        || SetThreadStackGuarantee(&stack_guarantee) == FALSE) {
+        /* A runtime thread without the process handler or its emergency stack
+         * cannot preserve Whitefoot's one classified exhaustion boundary.
+         * Continuing would be a silent change of runtime semantics, so the
+         * native backend is unavailable rather than degraded. */
+        abort();
+    }
 }
 
 typedef struct wf__floor_call {
@@ -121,7 +133,7 @@ typedef struct wf__floor_call {
     int status;
 } wf__floor_call;
 
-static DWORD WINAPI wf__floor_entry(LPVOID opaque) {
+static unsigned __stdcall wf__floor_entry(void *opaque) {
     wf__floor_call *call = (wf__floor_call *)opaque;
     wf__floor_attach_thread();
     call->status = wf__main_body(call->argc, call->argv);
@@ -130,28 +142,34 @@ static DWORD WINAPI wf__floor_entry(LPVOID opaque) {
 
 int wf__floor_run(int argc, void *argv) {
     wf__floor_call call;
+    uintptr_t thread_value;
     HANDLE thread;
 
     call.argc = argc;
     call.argv = argv;
     call.status = 0;
 
-    /* This also gives the host-created thread the same precise classification
-     * if reserving the dedicated entry stack fails and execution falls back. */
+    /* The host-created thread is armed too because it owns runtime startup and
+     * the failure path. The Whitefoot body itself never falls back to this
+     * inherited stack: failure to reserve its specified stack makes the
+     * native backend unavailable. */
     wf__floor_attach_thread();
-    thread = CreateThread(
+    thread_value = _beginthreadex(
         NULL,
-        WF_FLOOR_STACK_BYTES,
+        (unsigned)WF_FLOOR_STACK_BYTES,
         wf__floor_entry,
         &call,
         STACK_SIZE_PARAM_IS_A_RESERVATION,
         NULL
     );
-    if (thread == NULL) {
-        return wf__main_body(argc, argv);
+    if (thread_value == 0) {
+        abort();
     }
+    thread = (HANDLE)thread_value;
 
-    (void)WaitForSingleObject(thread, INFINITE);
+    if (WaitForSingleObject(thread, INFINITE) != WAIT_OBJECT_0) {
+        abort();
+    }
     (void)CloseHandle(thread);
     return call.status;
 }

@@ -85,6 +85,24 @@ pub(super) fn with_mutated_completion_ir<ResultValue>(
     )
 }
 
+/// [`with_ir`] under the opt-in compute overlap lowering.
+///
+/// Target-shape tests use this to inspect the same handed-out IR that
+/// `whitefootc --par` emits without changing the shared host-target helpers.
+pub(super) fn with_parallel_ir<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_mutated_ir_for_overlap(
+        source,
+        crate::Inventory::ACTIVE,
+        OverlapLowering::On,
+        |program| run(program),
+    )
+}
+
 fn with_mutated_ir_for_overlap<ResultValue>(
     source: &[u8],
     inventory: crate::Inventory,

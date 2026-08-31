@@ -82,65 +82,102 @@ pub(super) struct LoopSplitSite<'ir> {
 pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
 
 /// The same runtime with stackless writer-frame stealing compiled in. Link
-/// paths select these bytes only when the emitted module also selects the
-/// completion runtime, so pure compute pays no completion queue probe.
+/// paths select these bytes only when the emitted module can publish a writer
+/// frame, so pure compute and ordinary direct completion pay no empty queue
+/// probe.
 pub const PARALLEL_COMPLETION_RUNTIME_SOURCE: &str = concat!(
     "#define WF_PAR_WITH_WRITER_SCHEDULER 1\n",
     include_str!("../par_runtime.c")
 );
 
-/// The module's own definition of the lane protocol: claim no lane, ever.
+/// The native Windows worker-pool runtime for a pure-compute module.
 ///
-/// A module that hands work out carries a *weak* sequential answer to every
-/// runtime entry point, so it is a complete program on its own: with no
-/// runtime linked, every claim is refused, so no frame is ever built, no task
-/// is ever published, and every handed-out call runs on its own thread at its
-/// own fallback edge — exactly today's schedule. Linking the runtime replaces
-/// all four with its strong definitions, and only then can a lane be granted.
+/// Although the Windows driver currently links the completion units in every
+/// executable, this form does not probe their empty writer queue in the hot
+/// steal loop.
+pub const PARALLEL_WINDOWS_RUNTIME_SOURCE: &str = include_str!("../par_runtime_windows.c");
+
+/// The native Windows worker-pool runtime with writer-frame helping enabled.
+/// A module that actualizes compute work and can suspend a stackless writer
+/// selects these bytes so ready writers run on the same scheduler lanes.
+pub const PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE: &str = concat!(
+    "#define WF_PAR_WITH_WRITER_SCHEDULER 1\n",
+    include_str!("../par_runtime_windows.c")
+);
+
+/// The Windows parallel ABI as external obligations.
 ///
-/// The alternative — plain declarations — would make the runtime a link
-/// obligation of every path that ever builds a Whitefoot program rather than
-/// an option of the paths that want lanes, and would turn a program that
-/// merely *could* overlap into one that cannot be linked without it. The
-/// permission is never an obligation, so neither is its runtime.
+/// COFF modules do not carry the sequential weak definitions below.  A
+/// Windows module that hands out work therefore cannot link unless the native
+/// runtime supplies the strong protocol; this is the compile-time half of the
+/// fail-closed backend contract.
+pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_claim(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
+
+/// The fail-closed Windows declaration of the once-per-process backend query.
+pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_pool_active()\n";
+
+/// The fail-closed Windows declaration of the loop split budget query.
+pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
+    "declare i64 @wf__par_split_budget(i64, i64)\n";
+
+/// A non-Windows module's own definition of the lane protocol: claim no lane,
+/// ever.
+///
+/// A non-Windows module that hands work out carries a *weak* sequential answer
+/// to every runtime entry point, so it is a complete program on its own: with
+/// no runtime linked, every claim is refused, so no frame is ever built, no
+/// task is ever published, and every handed-out call runs on its own thread at
+/// its own fallback edge — exactly today's schedule. Linking the runtime
+/// replaces all four with its strong definitions, and only then can a lane be
+/// granted. Windows deliberately takes the external declarations above and
+/// cannot link without its native pool.
+///
+/// On the optional-runtime targets, the alternative — plain declarations —
+/// would make the runtime a link obligation of every path that ever builds a
+/// Whitefoot program rather than an option of the paths that want lanes. The
+/// Windows production contract deliberately chooses that obligation.
 pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_claim(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
-/// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a link
-/// path reads: one definition, so the text a module carries and the text a
-/// linker looks for cannot drift apart.
+/// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a
+/// non-Windows link path reads.
 pub(crate) const PARALLEL_CLAIM_SYMBOL: &str = "define weak ptr @wf__par_claim(i64 %bytes)";
+
+/// The first Windows declaration of the same ABI, used as that target's link
+/// marker.
+pub(crate) const PARALLEL_CLAIM_DECLARATION: &str = "declare ptr @wf__par_claim(i64)";
 
 /// True when this emitted module hands work out, so linking the parallel
 /// runtime would let it take lanes.
 ///
 /// A module with no permitted overlap group names none of the runtime's
 /// symbols, so nothing of the runtime — not one thread, not one atomic —
-/// reaches a program that has no use for it. A module that does hand work out
-/// still links and still runs correctly without the runtime; this only says
-/// that linking it is what makes the lanes reachable.
+/// reaches a program that has no use for it. On the optional POSIX path, a
+/// module that does hand work out still links and runs sequentially without
+/// the runtime. On Windows, the same predicate recognizes external
+/// declarations and is a hard link obligation.
 pub fn module_requires_parallel_runtime(module: &str) -> bool {
-    module.contains(PARALLEL_CLAIM_SYMBOL)
+    module.contains(PARALLEL_CLAIM_SYMBOL) || module.contains(PARALLEL_CLAIM_DECLARATION)
 }
 
 /// The runtime's answer to "was this run asked for a pool", put once per
-/// process, and the module's own weak answer of "no".
+/// process, and a non-Windows module's own weak answer of "no".
 ///
-/// A module carries this for the same reason it carries the four entry points:
-/// with no runtime linked, no pool can ever start, so the honest answer is a
-/// constant zero and the program is complete on its own. The query is not part
+/// The optional-runtime path carries this for the same reason it carries the
+/// four entry points: with no runtime linked, no pool can ever start, so the
+/// honest answer is a constant zero and the program is complete on its own.
+/// Windows emits the external declaration above instead. The query is not part
 /// of the lane protocol — it takes no frame, moves no work, and starts nothing
-/// — so it is a separate definition rather than a fifth entry point, and the
-/// four signatures above are exactly the bytes they were.
+/// — so it remains separate from the four protocol signatures.
 pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
     "define weak i32 @wf__par_pool_active() {\nentry:\n  ret i32 0\n}\n\n";
 
 /// The runtime's answer to "how many times may a split of this span halve",
-/// and the module's own weak answer of "not at all".
+/// and a non-Windows module's own weak answer of "not at all".
 ///
-/// Carried for the same reason as the query above: with no runtime linked there
-/// are no lanes, so the honest allowance is zero and a splitter that gets it
-/// descends straight to its leaf — one call, then the loop. That is the
-/// sequential schedule, reached through the overlapped world's code.
+/// Carried by the optional-runtime path for the same reason as the query above:
+/// with no runtime linked there are no lanes, so the honest allowance is zero
+/// and a splitter that gets it descends straight to its leaf — one call, then
+/// the loop. Windows leaves the external query unresolved until native link.
 ///
 /// It is a separate definition rather than a fifth lane-protocol entry point
 /// because it takes no frame, publishes nothing, and moves no work; keeping it
@@ -174,14 +211,17 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// **Why the selection is safe.** It is made once per process, from whether the
 /// run asked for a pool, and never again. Without one every claim is refused for
 /// the whole process, so the two worlds compute on exactly the same schedule and
-/// the choice between them is a choice of machine code, not of semantics. A run
-/// that asks for a pool and cannot start one takes the overlapped world and has
-/// every claim refused, which is the schedule such a run always had. A
-/// *per-task* demand signal would be a different thing entirely,
-/// and was measured killing the scheduler it was meant to help: the shared
-/// word it needs costs two contended read-modify-writes per task, which took
-/// the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads a
-/// per-task signal, and the two worlds never call each other.
+/// the choice between them is a choice of machine code, not of semantics. On
+/// the optional-runtime path, a run that asks for a pool and cannot start one
+/// has every claim refused; Windows instead terminates when the native pool is
+/// first required. A *per-task* demand signal would be a different thing
+/// entirely, and was measured killing the scheduler it was meant to help: the
+/// shared word it needs costs two contended read-modify-writes per task, which
+/// took the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads
+/// a per-task signal, and the two worlds never call each other. The optional
+/// runtime path may answer that no pool started; a Windows parallel binary is
+/// instead required to initialize its linked native pool or terminate at its
+/// first pool operation.
 ///
 /// **Why this set and not another.** A function outside it has the same body
 /// in both worlds — no hand-out is reachable from it, so nothing about its

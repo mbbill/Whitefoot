@@ -79,6 +79,7 @@ fn may_suspend_tail_wrappers_release_the_writer_stack_and_resume_on_a_scheduler_
     assert!(llvm.contains("@wf__stackless_start_"));
     assert!(llvm.contains("@wf__completion_file_write_submit_writer"));
     assert!(llvm.contains("call void @wf__writer_run_root"));
+    assert!(crate::module_requires_writer_scheduler(&llvm));
     assert!(llvm.contains("alloca { [64 x i8], [2 x i64]"));
     assert!(!llvm.contains("setjmp"));
     assert!(!llvm.contains("fiber"));
@@ -200,6 +201,7 @@ fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
     );
     assert!(!llvm.contains("wf__stackless"));
     assert!(!llvm.contains("wf__writer_frame_init"));
+    assert!(!crate::module_requires_writer_scheduler(&llvm));
     assert!(llvm.contains("@wf_main("));
 }
 

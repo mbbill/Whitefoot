@@ -46,17 +46,21 @@ pub use completion::{
     COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
     COMPLETION_WINDOWS_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
     WRITER_SCHEDULER_WINDOWS_SOURCE, module_requires_completion_runtime,
+    module_requires_writer_scheduler,
 };
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
 pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
 use parallel::{
-    HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK,
+    HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
+    PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
     sequential_clone_symbol,
 };
 pub use parallel::{
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime,
+    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
+    PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE,
+    module_requires_parallel_runtime,
 };
 pub use system::{WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE};
 
@@ -426,12 +430,24 @@ fn emit_llvm_for(
     // a module that overlaps nothing names no runtime symbol at all.
     if thunks.requires_runtime() {
         text.push('\n');
-        text.push_str(PARALLEL_RUNTIME_FALLBACK);
+        text.push_str(if system_target.is_windows() {
+            PARALLEL_RUNTIME_DECLARATIONS
+        } else {
+            PARALLEL_RUNTIME_FALLBACK
+        });
         if !clones.is_empty() {
-            text.push_str(PARALLEL_POOL_QUERY_FALLBACK);
+            text.push_str(if system_target.is_windows() {
+                PARALLEL_POOL_QUERY_DECLARATION
+            } else {
+                PARALLEL_POOL_QUERY_FALLBACK
+            });
         }
         if thunks.queries_split_budget() {
-            text.push_str(PARALLEL_SPLIT_BUDGET_FALLBACK);
+            text.push_str(if system_target.is_windows() {
+                PARALLEL_SPLIT_BUDGET_DECLARATION
+            } else {
+                PARALLEL_SPLIT_BUDGET_FALLBACK
+            });
         }
         text.push_str(thunks.definitions());
     }
