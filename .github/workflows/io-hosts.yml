@@ -313,10 +313,19 @@ jobs:
           "$par_dir/par-layout-reference.exe" \
             > "$par_dir/reference.txt" 2> "$par_dir/reference.err" || \
             fail_par "the sequential reference failed" "$?"
+          set +e
           WF_WORKERS=4 \
             "$par_dir/par-layout-production.exe" \
-            > "$par_dir/production.txt" 2> "$par_dir/production.err" || \
-            fail_par "the production --par executable failed" "$?"
+            > "$par_dir/production.txt" 2> "$par_dir/production.err"
+          production_status="$?"
+          set -e
+          if test "$production_status" -ne 0; then
+            sed 's/^/native parallel production: /' \
+              "$par_dir/production.err" >&2
+            fail_par \
+              "the production --par executable failed" \
+              "$production_status"
+          fi
           cmp "$par_dir/reference.txt" "$par_dir/production.txt" || \
             fail_par "native workers changed the program bytes" "$?"
           test ! -s "$par_dir/reference.err" || \
