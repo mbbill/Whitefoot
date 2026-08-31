@@ -408,28 +408,34 @@ static void wf__par_copy_procedure(
 }
 
 static void wf__par_load_address_wait_api(void) {
-    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+    HMODULE synchronization = LoadLibraryW(
+        L"api-ms-win-core-synch-l1-2-0.dll"
+    );
     FARPROC procedure;
     wf__par_wait_on_address_fn wait_on_address = NULL;
     wf__par_wake_by_address_single_fn wake_by_address_single = NULL;
     wf__par_wake_by_address_all_fn wake_by_address_all = NULL;
 
-    if (kernel32 == NULL) {
+    /* This API-set contract is the documented DLL boundary for all three
+     * functions.  The Windows loader redirects its virtual name to the host
+     * binary used by the current Windows edition.  Keep the reference for the
+     * process lifetime because the cached procedures remain live forever. */
+    if (synchronization == NULL) {
         wf__par_fatal("Windows address-wait API is unavailable");
     }
-    procedure = GetProcAddress(kernel32, "WaitOnAddress");
+    procedure = GetProcAddress(synchronization, "WaitOnAddress");
     wf__par_copy_procedure(
         &wait_on_address,
         sizeof(wait_on_address),
         procedure
     );
-    procedure = GetProcAddress(kernel32, "WakeByAddressSingle");
+    procedure = GetProcAddress(synchronization, "WakeByAddressSingle");
     wf__par_copy_procedure(
         &wake_by_address_single,
         sizeof(wake_by_address_single),
         procedure
     );
-    procedure = GetProcAddress(kernel32, "WakeByAddressAll");
+    procedure = GetProcAddress(synchronization, "WakeByAddressAll");
     wf__par_copy_procedure(
         &wake_by_address_all,
         sizeof(wake_by_address_all),
