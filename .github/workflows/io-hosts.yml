@@ -350,6 +350,7 @@ jobs:
             compiler/src/backend/completion/windows_bridge.c \
             compiler/src/backend/completion/writer_scheduler_windows.c \
             compiler/src/backend/par_runtime_windows_probe.c \
+            Synchronization.lib \
             -x ir "$par_dir/par-layout.ll" \
             -Wno-override-module \
             -o "$par_dir/par-layout-observed.exe" || \

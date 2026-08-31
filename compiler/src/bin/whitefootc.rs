@@ -32,6 +32,9 @@ use whitefoot::{
 #[cfg(any(target_os = "windows", test))]
 use whitefoot::{PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE};
 
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_PARALLEL_LINK_LIBRARIES: &[&str] = &["Synchronization.lib"];
+
 #[cfg(target_os = "windows")]
 use whitefoot::{module_requires_parallel_runtime, module_requires_writer_scheduler};
 
@@ -377,7 +380,9 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
             .arg(directory.join("windows_bridge.c"))
             .arg(directory.join("writer_scheduler_windows.c"));
         if let Some((name, _)) = parallel_runtime {
-            command.arg(directory.join(name));
+            command
+                .arg(directory.join(name))
+                .args(WINDOWS_PARALLEL_LINK_LIBRARIES);
         }
         link_windows(&mut command, llvm, output)
     })();
@@ -639,9 +644,10 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
-        compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
-        module_requires_writer_scheduler, source_names, windows_parallel_runtime_unit,
+        CompilerLimits, Options, OverlapLowering, SourceInput, WINDOWS_PARALLEL_LINK_LIBRARIES,
+        compile_with_io_notices, compile_with_permission_ledger, io_notice_report,
+        module_requires_parallel_runtime, module_requires_writer_scheduler, source_names,
+        windows_parallel_runtime_unit,
     };
     use whitefoot::module_requires_completion_runtime;
 
@@ -714,6 +720,11 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
         let (name, source) = windows_parallel_runtime_unit(&layout)
             .expect("par_layout hand-outs must require the native unit");
         assert_eq!(name, "par_runtime_windows.c");
+        assert_eq!(
+            WINDOWS_PARALLEL_LINK_LIBRARIES,
+            &["Synchronization.lib"],
+            "WaitOnAddress and WakeByAddress* need the Windows synchronization import library"
+        );
         assert!(
             !source.starts_with("#define WF_PAR_WITH_WRITER_SCHEDULER 1\n"),
             "direct write_once must not put an empty writer probe in the compute steal loop"
