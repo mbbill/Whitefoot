@@ -687,11 +687,26 @@ static int wf__par_default_lanes(void) {
 }
 
 static int wf__par_requested_lanes(void) {
-    const char *setting = getenv("WF_WORKERS");
+    char setting[64];
     char *end = NULL;
+    DWORD length;
     long requested;
-    if (setting == NULL) {
+
+    /* Use the Windows environment API directly.  Besides avoiding the MSVC
+     * CRT's deprecated getenv surface, the fixed buffer makes an oversized
+     * configuration an explicit failure instead of allocating during runtime
+     * selection. */
+    SetLastError(ERROR_SUCCESS);
+    length = GetEnvironmentVariableA(
+        "WF_WORKERS",
+        setting,
+        (DWORD)sizeof(setting)
+    );
+    if (length == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
         return wf__par_default_lanes();
+    }
+    if (length == 0 || length >= (DWORD)sizeof(setting)) {
+        wf__par_fatal("WF_WORKERS must be an integer from 2 through 64");
     }
     errno = 0;
     requested = strtol(setting, &end, 10);
