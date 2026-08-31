@@ -123,6 +123,20 @@ extern int wf__writer_scheduler_help_once(void);
 extern size_t wf__floor_stack_bytes(void);
 extern void wf__floor_attach_thread(void);
 
+typedef BOOL (WINAPI *wf__par_wait_on_address_fn)(
+    volatile VOID *,
+    PVOID,
+    SIZE_T,
+    DWORD
+);
+typedef VOID (WINAPI *wf__par_wake_by_address_single_fn)(PVOID);
+typedef VOID (WINAPI *wf__par_wake_by_address_all_fn)(PVOID);
+
+static wf__par_wait_on_address_fn wf__par_wait_on_address_api;
+static wf__par_wake_by_address_single_fn
+    wf__par_wake_by_address_single_api;
+static wf__par_wake_by_address_all_fn wf__par_wake_by_address_all_api;
+
 /* ---------------------------------------------------------------- atomics */
 
 /* The shipped driver compiles this source with Clang for the MSVC ABI. Clang's
@@ -376,11 +390,64 @@ __declspec(noreturn) static void wf__par_fatal(const char *reason) {
     abort();
 }
 
+/* --------------------------------------------- address-wait API resolution */
+
+/* Windows guarantees one procedure-pointer representation for exports, while
+ * ISO C does not define a cast from FARPROC to a differently-typed function
+ * pointer.  Copying the checked pointer representation avoids that conversion
+ * and keeps strict -Wpedantic builds clean. */
+static void wf__par_copy_procedure(
+    void *destination,
+    size_t destination_size,
+    FARPROC procedure
+) {
+    if (procedure == NULL || destination_size != sizeof(procedure)) {
+        wf__par_fatal("Windows address-wait API is unavailable");
+    }
+    memcpy(destination, &procedure, sizeof(procedure));
+}
+
+static void wf__par_load_address_wait_api(void) {
+    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+    FARPROC procedure;
+    wf__par_wait_on_address_fn wait_on_address = NULL;
+    wf__par_wake_by_address_single_fn wake_by_address_single = NULL;
+    wf__par_wake_by_address_all_fn wake_by_address_all = NULL;
+
+    if (kernel32 == NULL) {
+        wf__par_fatal("Windows address-wait API is unavailable");
+    }
+    procedure = GetProcAddress(kernel32, "WaitOnAddress");
+    wf__par_copy_procedure(
+        &wait_on_address,
+        sizeof(wait_on_address),
+        procedure
+    );
+    procedure = GetProcAddress(kernel32, "WakeByAddressSingle");
+    wf__par_copy_procedure(
+        &wake_by_address_single,
+        sizeof(wake_by_address_single),
+        procedure
+    );
+    procedure = GetProcAddress(kernel32, "WakeByAddressAll");
+    wf__par_copy_procedure(
+        &wake_by_address_all,
+        sizeof(wake_by_address_all),
+        procedure
+    );
+
+    /* Publish only after every required symbol has been resolved.  This runs
+     * inside the pool's INIT_ONCE callback before the first worker starts. */
+    wf__par_wait_on_address_api = wait_on_address;
+    wf__par_wake_by_address_single_api = wake_by_address_single;
+    wf__par_wake_by_address_all_api = wake_by_address_all;
+}
+
 /* --------------------------------------------------------------- sleeping */
 
 static void wf__par_signal(struct wf__par_lane *lane) {
     (void)wf__par_increment32(&lane->wake_generation);
-    WakeByAddressSingle((PVOID)&lane->wake_generation);
+    wf__par_wake_by_address_single_api((PVOID)&lane->wake_generation);
 }
 
 static void wf__par_wake_one(void) {
@@ -409,7 +476,7 @@ static void wf__par_park(
     struct wf__par_lane *lane,
     LONG observed_generation
 ) {
-    if (WaitOnAddress(
+    if (wf__par_wait_on_address_api(
             (volatile VOID *)&lane->wake_generation,
             &observed_generation,
             sizeof(observed_generation),
@@ -533,7 +600,7 @@ static void wf__par_execute(struct wf__par_slot *slot) {
     }
 #endif
     wf__par_store32_seq(&slot->state, WF_PAR_SLOT_DONE);
-    WakeByAddressAll((PVOID)&slot->state);
+    wf__par_wake_by_address_all_api((PVOID)&slot->state);
 }
 
 /* ---------------------------------------------------------------- waiting */
@@ -572,7 +639,7 @@ static void wf__par_wait(
             (void)SwitchToThread();
             continue;
         }
-        if (WaitOnAddress(
+        if (wf__par_wait_on_address_api(
                 (volatile VOID *)&target->state,
                 &pending,
                 sizeof(pending),
@@ -594,7 +661,7 @@ static unsigned __stdcall wf__par_worker_main(void *opaque) {
     wf__floor_attach_thread();
 
     (void)wf__par_increment32(&wf__par_ready_workers);
-    WakeByAddressAll((PVOID)&wf__par_ready_workers);
+    wf__par_wake_by_address_all_api((PVOID)&wf__par_ready_workers);
 
     for (;;) {
         struct wf__par_slot *slot;
@@ -722,12 +789,16 @@ static BOOL CALLBACK wf__par_start_once(
     PVOID parameter,
     PVOID *context
 ) {
-    int requested = wf__par_requested_lanes();
-    size_t stack_bytes = wf__floor_stack_bytes();
+    int requested;
+    size_t stack_bytes;
     int index;
     (void)once;
     (void)parameter;
     (void)context;
+
+    wf__par_load_address_wait_api();
+    requested = wf__par_requested_lanes();
+    stack_bytes = wf__floor_stack_bytes();
 
     if (stack_bytes == 0 || stack_bytes > (size_t)UINT_MAX) {
         wf__par_fatal("worker stack reservation does not fit _beginthreadex");
@@ -760,7 +831,7 @@ static BOOL CALLBACK wf__par_start_once(
         LONG target = (LONG)(requested - 1);
         LONG observed = wf__par_load32_acquire(&wf__par_ready_workers);
         while (observed != target) {
-            if (WaitOnAddress(
+            if (wf__par_wait_on_address_api(
                     (volatile VOID *)&wf__par_ready_workers,
                     &observed,
                     sizeof(observed),
