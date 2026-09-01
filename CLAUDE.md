@@ -10,9 +10,7 @@ specification-fixed, deterministic, terminating, and work-bounded, while
 harder proofs arrive as explicit finite certificates that the compiler checks
 without rediscovering them. Proofs are erased before lowering and may authorize
 check removal, optimization, and parallel independence without adding runtime
-branches, locks, dependencies, or scheduling edges. The active specification's
-remaining `claim` trap is transitional technical debt to remove, never a target
-to preserve or a fallback for an unproved operation.
+branches, locks, dependencies, or scheduling edges.
 
 ## Project goal
 
