@@ -28,7 +28,7 @@ use crate::{
 /// emitted module, so no path can silently link an unoptimized binary while
 /// another links an optimized one. There is no writer-facing switch: the
 /// optimization level cannot change which programs are accepted, discharge a
-/// static source obligation, or make a potentially failing claim disappear,
+/// static source obligation, or insert a runtime proof fallback,
 /// so no writer decision exists and the default shape is the only shape. The
 /// level is provisional and may move once a measurement asks for it.
 pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = &["-O2"];
@@ -1074,10 +1074,10 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
 
 ";
 
-    /// The ledger states an eligible pair and the chain it composes into, and
-    /// says the same of a pair whose recursive closure carries a `claim` —
-    /// which is the redirect made visible on the developer channel: the claim
-    /// used to produce a `not-actualizable` line here and now produces none.
+    /// The ledger states an eligible pair and the chain it composes into, then
+    /// says the same of a pair whose recursive closure carries an erased
+    /// source proof. Proof syntax changes no runtime footprint and therefore
+    /// produces no separate `not-actualizable` class.
     #[test]
     fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
@@ -1121,22 +1121,20 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "PAR chain       fold.wf:22  run(fold, fold)  2 members through line 23"
         );
 
-        // The same tree fold with one claim in the recursive closure. It reads
-        // exactly like the fold above: the claim is the writer's lemma, not a
-        // reason to sequentialize a correct program. The claim sits in
-        // `scaled`, which the leaf arm calls, because v0.34 admits only a
-        // local non-derivable residual -- and depth is the point anyway, since
-        // the retired gate walked exactly this reachability.
-        let claiming = format!(
-            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 traps {{
+        // The same tree fold with one checked proof in the recursive closure.
+        // `scaled` makes the fact explicit, the semantic checker verifies it,
+        // and lowering erases it before the permission table is consumed.
+        let proved = format!(
+            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
   let size = len(values);
-  let bounded = imin(index, 7_u64);
-  let inside = ilt(bounded, size);
-  claim index_in_range: inside because \"premises: bounded is the minimum of the parameter index and seven, and values has length eight\\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\\nconclusion: ilt(bounded, size) is true\\nchecker gap: ENT does not publish the result range of imin\\nconsumers: the following length-eight array subscript uses bounded\";
+  let bounded = iand(index, 7_u64);
+  prove index_in_range: ile(bounded, 7_u64) {{
+    use ile(bounded, 7_u64);
+  }}
   return values[bounded];
 }}
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {{
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
@@ -1154,7 +1152,7 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
   }}
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {{
+command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1169,14 +1167,14 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
 }}
 "
         );
-        let ledger = ledger_of("bubble.wf", claiming.as_bytes());
+        let ledger = ledger_of("bubble.wf", proved.as_bytes());
         assert_eq!(
             ledger[0],
-            "PAR permitted   bubble.wf:33  pair(bubble, bubble)  eligible"
+            "PAR permitted   bubble.wf:34  pair(bubble, bubble)  eligible"
         );
         assert_eq!(
             ledger[1],
-            "PAR chain       bubble.wf:33  run(bubble, bubble)  2 members through line 34"
+            "PAR chain       bubble.wf:34  run(bubble, bubble)  2 members through line 35"
         );
         assert!(
             !ledger.iter().any(|line| line.contains("not-actualizable")),
@@ -1191,15 +1189,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
         // reported.
         assert_eq!(
             ledger[2],
-            "PAR permitted   bubble.wf:43  pair(boxed_leaf, boxed_leaf)  eligible"
+            "PAR permitted   bubble.wf:44  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
             ledger[3],
-            "PAR chain       bubble.wf:43  run(boxed_leaf, boxed_leaf)  2 members through line 44"
+            "PAR chain       bubble.wf:44  run(boxed_leaf, boxed_leaf)  2 members through line 45"
         );
         assert_eq!(
             ledger[4],
-            "PAR denied      bubble.wf:44  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
+            "PAR denied      bubble.wf:45  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
         );
         assert_eq!(ledger.len(), 5);
     }
@@ -1300,7 +1298,7 @@ command fn main() -> status: own ExitStatus pure {
     /// This is the shape the pair judgment can never reach: two iterations of
     /// one statement are not a pair, so before the loop rule the compiler
     /// reported the most parallel loop in a program by saying nothing about
-    /// it. The callee is a real `pure`, claim-free function with a loop of its
+    /// it. The callee is a real `pure` function with a loop of its
     /// own, so the case is about the writer's loop rather than about a body
     /// small enough to be uninteresting.
     #[test]
@@ -1390,15 +1388,10 @@ command fn main() -> status: own ExitStatus pure {
         );
     }
 
-    /// A counted loop that writes into a buffer is refused by condition 2.
-    ///
-    /// Two iterations write two elements of one buffer, and a resolved place
-    /// carries no index segment [ENT-2], so the judgment reads them as one
-    /// place and fails closed. The parallel map is the deferred capability,
-    /// and the line says which write costs the overlap rather than leaving the
-    /// loop unreported.
+    /// A counted loop whose proved index is exactly its binder is reported as
+    /// an eligible map with no accumulator.
     #[test]
-    fn a_counted_loop_writing_into_a_buffer_is_denied_by_condition_two() {
+    fn a_proven_counted_binder_buffer_map_is_permitted() {
         let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
   for @fill i in 0_u64..64_u64 {
@@ -1410,9 +1403,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("mapping.wf", source),
             vec![
-                "PAR loop        mapping.wf:3  loop  denied      condition 2: the body writes \
-                 storage that is neither introduced by the iteration nor the accumulator, \
-                 at set out[i] = i *wrap i;"
+                "PAR loop        mapping.wf:3  loop  permitted   eligible; no accumulator"
                     .to_owned()
             ]
         );
@@ -1819,7 +1810,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// same hazard as the hoisted destination above — one buffer the body
     /// writes and a `may-suspend` call retains a borrow of — so both carry that
     /// denial's own advice, and the one whose write is a node of its own names
-    /// that node under a phrase that is not an overlap claim.
+    /// that node under a phrase that does not assert self-overlap.
     #[test]
     fn a_retained_borrow_denial_names_a_write_and_never_an_overlap_with_itself() {
         let read_first = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
@@ -2035,7 +2026,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "the default module must name no runtime symbol"
         );
         assert!(
-            requested.contains("wf__par_claim"),
+            requested.contains("wf__par_acquire_lane"),
             "the requested module must offer a lane"
         );
     }
@@ -2146,6 +2137,39 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
         assert_eq!(failure.rule_id(), None);
         assert!(failure.detail().contains("Unrepresentable"));
+    }
+
+    #[test]
+    fn u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure() {
+        let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+  ensures ile(result, 5000000000000000000_u64);
+} {
+  if ile(n, 5000000000000000000_u64) {
+    return n;
+  } else {
+    return 5000000000000000000_u64;
+  }
+}
+
+fn make(n: own u64) -> result: own buffer<u16> allocates(heap) {
+  let bounded = bounded_count(n: n);
+  return buffer_new(bounded, 0_u16);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let values = make(n: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::new("value.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect_err("the proved u16 byte ceiling exceeds the selected target domain");
+        assert_eq!(failure.stage(), CompilationStage::TargetLayout);
+        assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
+        assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("RuntimeSizedAllocation"));
     }
 
     #[test]
@@ -2574,13 +2598,13 @@ command fn main() -> status: own ExitStatus pure {
         assert!(detail.contains("[EFF-1]"), "{detail}");
         assert!(
             detail.contains(
-                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps""#
+                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates""#
             ),
             "{detail}"
         );
         assert!(
             detail.contains(
-                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps""#
+                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates""#
             ),
             "{detail}"
         );

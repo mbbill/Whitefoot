@@ -1,14 +1,137 @@
+use crate::backend::qualification::{SystemTarget, qualify_program};
+use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+
+use super::system::with_ir;
 use super::*;
+
+const AFFINE_PROOF_BOUNDED_ALLOCATION: &[u8] =
+    br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
+  requires ile(half, 500_u64);
+} {
+  let doubled = half * 2_u64;
+  let within = ile(n, doubled);
+  if within {
+    prove tight: ile(n, 1000_u64) {
+      use ile(n, doubled);
+      use ile(doubled, 2_u64 * half);
+      use ile(2_u64 * half, 1000_u64);
+    }
+    let values = buffer_new(n, 0_u16);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const U64_BUFFER_ALLOCATION: &[u8] =
+    br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let values = buffer_new(1_u64, 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn affine_source_proof_ceiling_controls_the_exact_selected_target_boundary() {
+    with_ir(AFFINE_PROOF_BOUNDED_ALLOCATION, |program| {
+        let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+        let system_target = SystemTarget::for_triple(host.triple())
+            .expect("the host triple has one qualified system target");
+        let qualification = qualify_program(system_target, program)
+            .expect("the source-proof allocation fixture must qualify");
+
+        let exact = host.with_runtime_allocation_limits_for_test(2000, 8);
+        assert_eq!(validate_program(exact, &qualification, program), Ok(()));
+
+        let one_byte_short = host.with_runtime_allocation_limits_for_test(1999, 8);
+        assert_eq!(
+            validate_program(one_byte_short, &qualification, program),
+            Err(TargetLayoutFailure::Unrepresentable(
+                TargetObject::RuntimeSizedAllocation
+            ))
+        );
+    });
+}
+
+#[test]
+fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
+    with_ir(U64_BUFFER_ALLOCATION, |program| {
+        let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+        let system_target = SystemTarget::for_triple(host.triple())
+            .expect("the host triple has one qualified system target");
+        let qualification = qualify_program(system_target, program)
+            .expect("the buffer-alignment fixture must qualify");
+
+        let exact = host.with_runtime_allocation_limits_for_test(8, 8);
+        assert_eq!(validate_program(exact, &qualification, program), Ok(()));
+
+        let one_alignment_step_short = host.with_runtime_allocation_limits_for_test(8, 4);
+        assert_eq!(
+            validate_program(one_alignment_step_short, &qualification, program),
+            Err(TargetLayoutFailure::Unrepresentable(
+                TargetObject::RuntimeSizedAllocation
+            ))
+        );
+    });
+}
+
+#[test]
+fn weigh_invariant_proves_domains_then_erases_before_llvm() {
+    let source = br#"fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
+  define capacity = len(deref(weights));
+  requires ile(count, capacity);
+  requires ile(count, 1000_u64);
+  ensures ile(total, 255000_u32);
+} {
+  let sum = 0_u32;
+  for i in 0_u64..count {
+    invariant per_byte: ile(sum, 255_u32 * i);
+    let w = deref(weights)[i];
+    let wide = cvt<u8, u32>(w);
+    set sum = sum + wide;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let weights = buffer_new(4_u64, 7_u8);
+  let code = 0_u8;
+  region 'read {
+    let total = weigh<'read>(weights: &'read weights, count: 4_u64);
+    if ine(total, 28_u32) {
+      set code = 1_u8;
+    }
+  }
+  return exit_status(code: code);
+}
+"#;
+    let llvm = compile(source);
+    let weigh = emitted_function(&llvm, "weigh");
+
+    // INV-1 and OP-2 discharge before lowering. The loop therefore contains
+    // one plain integer addition and no runtime representation of `per_byte`.
+    assert!(weigh.contains("add i32"));
+    assert!(!weigh.contains(".with.overflow."));
+    assert!(!weigh.contains("call void @wf_trap"));
+    assert!(!llvm.contains("per_byte"));
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
 
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
     let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
-  ensures ile(result, 9223372036854775807_u64);
+  ensures ile(result, 4611686018427387903_u64);
 } {
-  if ile(n, 9223372036854775807_u64) {
+  if ile(n, 4611686018427387903_u64) {
     return n;
   } else {
-    return 9223372036854775807_u64;
+    return 4611686018427387903_u64;
   }
 }
 
@@ -45,9 +168,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
+    let make = emitted_function(&llvm, "make");
     // The verified scalar normalizer summary discharges allocation, while a
     // local length branch discharges both indexed sites. The RHS is evaluated
-    // once before the target commits one store, with no claim trap.
+    // once before the target commits one store, with no runtime proof fallback.
     let rhs = main
         .find("call i16 @wf_replacement")
         .expect("SET-1 must evaluate its RHS once");
@@ -57,7 +181,62 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     assert!(rhs < store);
     assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call void @free").count(), 1);
-    assert!(!emitted_function(&llvm, "make").contains("call void @free"));
+    assert!(!make.contains("call void @free"));
+
+    // The proved count ceiling times the u16 stride fits the selected target's
+    // byte domain. Target layout therefore admits the dynamic allocation and
+    // the emitter needs only the allocator's null-result edge.
+    assert!(make.contains("call ptr @malloc"));
+    assert!(make.contains("icmp ne ptr"));
+    assert!(make.contains("buffer.fill.oom."));
+    assert!(make.contains("call void @wf_resource_abort()"));
+    for absent in [
+        "buffer.fill.target.",
+        "@wf_target_domain_abort",
+        "@.wf_resource.target_domain",
+    ] {
+        assert!(
+            !llvm.contains(absent),
+            "a target-qualified allocation must not emit {absent}:\n{llvm}"
+        );
+    }
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn buffer_length_qualifies_same_element_reallocation_without_a_target_guard() {
+    let source = br#"fn refill(source: own buffer<u8>) -> result: own buffer<u8> reads(source), allocates(heap) {
+  let length = len(source);
+  return buffer_new(length, 0_u8);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let initial = buffer_new(4_u64, 7_u8);
+  let copied = refill(source: move initial);
+  let length = len(copied);
+  if ine(length, 4_u64) {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let refill = emitted_function(&llvm, "refill");
+    assert!(refill.contains("call ptr @malloc"));
+    for absent in [
+        "buffer.fill.target.",
+        "@wf_target_domain_abort",
+        "@.wf_resource.target_domain",
+    ] {
+        assert!(
+            !llvm.contains(absent),
+            "a buffer-length target invariant must not emit {absent}:\n{llvm}"
+        );
+    }
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -79,49 +258,6 @@ fn op9_overflow_is_rejected_before_lowering() {
             .detail()
             .contains("UndischargedAllocationFitObligation")
     );
-}
-
-/// The guard is still not a language trap, and it now says which resource it
-/// refused.
-///
-/// "Without a language record" is the claim under test and it has not moved:
-/// the bytes on standard error name a resource class and nothing a [DIAG-3]
-/// record names. What moved is that there are bytes at all. This edge used to
-/// call `@abort` directly and die with an empty stderr, which made it
-/// indistinguishable from an allocator refusal, from a false claim, and from a
-/// corrupted heap.
-#[test]
-fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let values = buffer_new(18446744073709551615_u64, 0_u8);
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = compile(source);
-    let main = emitted_function(&llvm, "main");
-    let target_check = main
-        .find("icmp ule i64")
-        .expect("STOR-6 must retain its target-domain guard");
-    let target_failure = main
-        .find("buffer.fill.target.failure")
-        .expect("the target-domain guard needs a non-continuing edge");
-    let allocation = main
-        .find("call ptr @malloc")
-        .expect("allocation must follow both guards");
-    assert!(target_check < target_failure && target_failure < allocation);
-    assert!(!main.contains("@llvm.umul.with.overflow.i64"));
-    assert!(main[target_failure..allocation].contains("call void @wf_target_domain_abort()"));
-
-    let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "{\"resource\":\"target-domain\"}\n"
-    );
-    for language_field in ["rule_id", "function", "node_path", "message"] {
-        assert!(!String::from_utf8_lossy(&output.stderr).contains(language_field));
-    }
 }
 
 #[test]
@@ -213,14 +349,19 @@ fn borrowed_columns_cross_helpers_without_transferring_ownership() {
     assert!(fold.contains("load i64"));
     assert!(!fill.contains("call void @free"));
     assert!(!fold.contains("call void @free"));
-    // Each helper retains one range claim per borrowed column. The terminal
-    // checksum comparison is ordinary control flow, and both its failure and
-    // success exits must release both buffers.
-    assert_eq!(fill.matches("call void @wf_trap").count(), 2);
-    assert_eq!(fold.matches("call void @wf_trap").count(), 2);
+    // Both declared length requirements and the counted-range binder facts are
+    // checked before lowering. Neither helper retains a runtime proof check.
+    assert_eq!(fill.matches("call void @wf_trap").count(), 0);
+    assert_eq!(fold.matches("call void @wf_trap").count(), 0);
+    // Each counted loop retains exactly its own continuation comparison. No
+    // second comparison remains for either proved buffer bound.
+    assert_eq!(fill.matches("icmp ult i64").count(), 1);
+    assert_eq!(fold.matches("icmp ult i64").count(), 1);
+    // Four ordinary requirement branches plus the terminal checksum branch
+    // give six exits. Every exit releases both owned buffers.
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 2);
-    assert_eq!(main.matches("call void @free").count(), 4);
+    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 6);
+    assert_eq!(main.matches("call void @free").count(), 12);
     assert!(main.contains("call i8 @wf_fill"));
     assert!(main.contains("call i64 @wf_fold"));
 
@@ -312,7 +453,7 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     assert!(checksum.contains(", i64 "));
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));
-    // Bounds and arithmetic failures are typed results rather than claims.
+    // Bounds and arithmetic failures are typed results rather than written proofs.
     // Build and checksum therefore contain no trap edge, and each of main's
     // five status exits still releases both pool buffers.
     assert!(!build.contains("call void @wf_trap"));

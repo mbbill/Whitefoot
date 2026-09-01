@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 
 mod loops;
 mod matches;
+mod proofs;
 mod results;
 
 use crate::syntax::NodeId;
-use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
     SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule,
@@ -14,9 +14,8 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedBooleanOperation, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode,
-    CheckedSetTarget, CheckedStatement, CheckedType, ClaimJustification, ClaimSite,
-    ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedSetTarget,
+    CheckedStatement, CheckedType, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -73,9 +72,9 @@ pub(super) struct ControlCounters<'state> {
     /// kept only to render the owner in a release-attributed EFF-2
     /// diagnostic. Every allocation site pushes exactly one name.
     pub(super) binding_names: &'state mut Vec<String>,
-    /// Claim names already written in this function, for CLM-1's
-    /// per-function uniqueness judgment.
-    pub(super) claim_names: &'state mut Vec<String>,
+    /// PRF-1 proof labels already written in this function. Labels are
+    /// diagnostic identities, not lexical declarations or premise selectors.
+    pub(super) proof_names: &'state mut Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -175,6 +174,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(Self::continuing_statement(statement, value.effects))
             }
+            Production::InvariantStmt => self.invalid_loop_invariant(
+                node,
+                "an invariant is not in the direct prefix of a counted-loop body",
+                "move the invariant to the beginning of the directly enclosing for body",
+            ),
+            Production::ProofStmt => self.check_source_proof(node, bindings, counters),
             Production::ReturnStmt => {
                 let expression_node = self
                     .tree
@@ -412,66 +417,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     value.effects.union(target_effects),
                 ))
             }
-            Production::ClaimStmt => {
-                let name_token = self
-                    .tree
-                    .direct_token_with(node, TerminalPredicate::Identifier)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let name = String::from_utf8(self.tree.token_bytes(name_token)?.to_vec())
-                    .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?;
-                // CLM-1: within one `fn_decl` every claim name is unique;
-                // the later `claim_stmt` node carries the rejection.
-                if counters.claim_names.contains(&name) {
-                    return self.issue_node(
-                        SemanticRule::Clm1,
-                        node,
-                        SemanticIssueKind::DuplicateClaimName { name },
-                    );
-                }
-                counters.claim_names.push(name.clone());
-                let expression_node = self
-                    .tree
-                    .first_child_with(node, Production::Expr)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let condition =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
-                // The condition judgment is exactly [OP-5]'s, cited as CLM-1
-                // at the selected expression node.
-                if condition.expression.ty() != CheckedType::Bool
-                    || condition.mode != CheckedMode::Own
-                {
-                    return Err(CheckStop::source_issue(SemanticIssue {
-                        rule: SemanticRule::Clm1,
-                        location: SemanticLocation::SourceNode(
-                            self.tree.path(node)?.clone(),
-                            self.tree.coordinate(expression_node)?,
-                        ),
-                        kind: SemanticIssueKind::InvalidPredicateCondition,
-                    }));
-                }
-                self.check_claim_proof_predicate(
-                    expression_node,
-                    &condition.expression,
-                    &condition.effects,
-                )?;
-                let justification = self.check_claim_justification(node)?;
-                let predicate = self.tree.source_spelling(expression_node)?;
-                Ok(Self::continuing_statement(
-                    CheckedStatement::Claim {
-                        site: ClaimSite {
-                            rule_id: "CLM-1",
-                            message: name.clone(),
-                            function: function.name.clone(),
-                            node_path: self.tree.path(node)?.clone(),
-                        },
-                        name,
-                        predicate,
-                        justification,
-                        condition: condition.expression,
-                    },
-                    condition.effects.union(EffectSet::TRAPS),
-                ))
-            }
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
             Production::ForStmt => {
                 self.check_counted_range(function, node, bindings, counters, scope)
@@ -656,7 +601,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // every boundary whose borrow result has no signature-determined
         // source at its own `rtype`, so a bound result is either usable or
         // its declaration is already gone — bindable iff usable. What
-        // reaches here is the const-storage disposition, whose claim needs a
+        // reaches here is the const-storage disposition, whose validity needs a
         // const-rooted holder the checker does not represent: an explicit
         // capability stop, never an invalid-source verdict [OWN-6, OWN-8].
         if self.reborrow_extension
@@ -1005,201 +950,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .checked_add(1)
             .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         Ok(binding)
-    }
-
-    fn check_claim_justification(&self, node: NodeId) -> Result<ClaimJustification, CheckStop> {
-        const LABELS: [&str; 5] = [
-            "premises: ",
-            "derivation: ",
-            "conclusion: ",
-            "checker gap: ",
-            "consumers: ",
-        ];
-        const EXPECTED: &str = "exactly five LF-separated nonempty fields: premises, derivation, conclusion, checker gap, consumers";
-        let raw = self.check_message(node)?;
-        let lines = raw.split('\n').collect::<Vec<_>>();
-        if lines.len() != LABELS.len() {
-            return self.issue_node(
-                SemanticRule::Clm1,
-                node,
-                SemanticIssueKind::InvalidClaimJustification { expected: EXPECTED },
-            );
-        }
-        let mut values = Vec::with_capacity(LABELS.len());
-        for (line, label) in lines.into_iter().zip(LABELS) {
-            let Some(value) = line.strip_prefix(label) else {
-                return self.issue_node(
-                    SemanticRule::Clm1,
-                    node,
-                    SemanticIssueKind::InvalidClaimJustification { expected: EXPECTED },
-                );
-            };
-            let value = value.trim_matches(' ');
-            if value.is_empty() {
-                return self.issue_node(
-                    SemanticRule::Clm1,
-                    node,
-                    SemanticIssueKind::InvalidClaimJustification { expected: EXPECTED },
-                );
-            }
-            values.push(value.to_owned());
-        }
-        let [premises, derivation, conclusion, checker_gap, consumers]: [String; 5] = values
-            .try_into()
-            .map_err(|_| SemanticCompilerFailure::InvalidResolution)?;
-        Ok(ClaimJustification {
-            raw,
-            premises,
-            derivation,
-            conclusion,
-            checker_gap,
-            consumers,
-        })
-    }
-
-    fn check_claim_proof_predicate(
-        &self,
-        expression_node: NodeId,
-        expression: &CheckedExpression,
-        effects: &EffectSet,
-    ) -> Result<(), CheckStop> {
-        let effectful = !effects.writes.is_empty()
-            || effects.allocates_heap
-            || !effects.allocates_arenas.is_empty()
-            || effects.traps;
-        let invalid = if effectful {
-            Some("the predicate has a forbidden effect")
-        } else {
-            self.invalid_claim_expression(expression, false)?
-        };
-        if let Some(reason) = invalid {
-            return self.issue_node(
-                SemanticRule::Clm1,
-                expression_node,
-                SemanticIssueKind::InvalidClaimProofPredicate { reason },
-            );
-        }
-        Ok(())
-    }
-
-    /// Returns the first reason an expression falls outside CLM-1's proof
-    /// subset. `holder` admits an affine owner only while an explicit deref
-    /// reads copy content; it never admits the owner as a proof datum.
-    fn invalid_claim_expression(
-        &self,
-        expression: &CheckedExpression,
-        holder: bool,
-    ) -> Result<Option<&'static str>, CheckStop> {
-        let recurse = |this: &Self,
-                       arguments: &[CheckedExpression]|
-         -> Result<Option<&'static str>, CheckStop> {
-            for argument in arguments {
-                if let Some(reason) = this.invalid_claim_expression(argument, false)? {
-                    return Ok(Some(reason));
-                }
-            }
-            Ok(None)
-        };
-        Ok(match expression {
-            CheckedExpression::Constant(_) | CheckedExpression::NamedConstant { .. } => None,
-            CheckedExpression::Binding {
-                ty, consume_root, ..
-            } => {
-                if *consume_root {
-                    Some("the predicate consumes a binding")
-                } else if holder || self.is_copy_type(*ty)? {
-                    None
-                } else {
-                    Some("the predicate reads an affine value rather than copy data")
-                }
-            }
-            CheckedExpression::IntegerOperation {
-                operation,
-                arguments,
-                ..
-            } => {
-                if operation.is_exact() {
-                    Some("the predicate contains a proof-required exact operation")
-                } else if operation.checked_error().is_some() {
-                    Some("the predicate contains a checked-result operation")
-                } else {
-                    recurse(self, arguments)?
-                }
-            }
-            CheckedExpression::FloatOperation { arguments, .. }
-            | CheckedExpression::EnumEquality { arguments, .. } => recurse(self, arguments)?,
-            CheckedExpression::BooleanOperation {
-                operation,
-                arguments,
-                ..
-            } => {
-                if *operation == CheckedBooleanOperation::ExclusiveOr {
-                    // Evaluation is a valid proof expression; CLM-1 later
-                    // rejects its unsupported canonical contribution form.
-                }
-                recurse(self, arguments)?
-            }
-            CheckedExpression::NumericConversion { value, .. }
-            | CheckedExpression::Reinterpret { value, .. } => {
-                self.invalid_claim_expression(value, false)?
-            }
-            CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
-            | CheckedExpression::SliceLength { .. }
-            | CheckedExpression::DerefAddressed { .. } => None,
-            CheckedExpression::BufferFits { length, .. } => {
-                self.invalid_claim_expression(length, false)?
-            }
-            CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. } => {
-                self.invalid_claim_expression(value, true)?
-            }
-            CheckedExpression::Project {
-                ty,
-                consume_root,
-                residual_drops,
-                ..
-            } => {
-                if *consume_root || !residual_drops.is_empty() {
-                    Some("the predicate contains a consuming projection or residual cleanup")
-                } else if holder || self.is_copy_type(*ty)? {
-                    None
-                } else {
-                    Some("the predicate projects affine data")
-                }
-            }
-            CheckedExpression::ProjectValue { value, ty, .. } => {
-                if holder || self.is_copy_type(*ty)? {
-                    self.invalid_claim_expression(value, true)?
-                } else {
-                    Some("the predicate projects affine data")
-                }
-            }
-            CheckedExpression::UserCall { .. } => {
-                Some("the predicate contains a user call that may not terminate")
-            }
-            CheckedExpression::SystemCall { .. } => Some("the predicate contains a system call"),
-            CheckedExpression::ArrayIndex { .. }
-            | CheckedExpression::BufferIndex { .. }
-            | CheckedExpression::SliceIndex { .. } => Some("the predicate contains a subscript"),
-            CheckedExpression::ArrayFill { .. }
-            | CheckedExpression::BufferFill { .. }
-            | CheckedExpression::BufferVacant { .. }
-            | CheckedExpression::BoxNew { .. }
-            | CheckedExpression::ArenaNew { .. }
-            | CheckedExpression::ConstructStruct { .. }
-            | CheckedExpression::ConstructEnum { .. } => {
-                Some("the predicate contains construction or allocation")
-            }
-            CheckedExpression::SliceOf { .. }
-            | CheckedExpression::BorrowBuffer { .. }
-            | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
-            | CheckedExpression::ReborrowAddressed { .. } => {
-                Some("the predicate changes borrowing or ownership")
-            }
-        })
     }
 
     fn continuing_statement(statement: CheckedStatement, effects: EffectSet) -> StatementResult {

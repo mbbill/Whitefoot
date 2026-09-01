@@ -3,7 +3,7 @@
 //! Every normative production lives in a fenced block whose info string is
 //! `wf-ebnf` followed by the id of the rule that owns it, so extraction keys
 //! on the info string and never on a prose anchor. Seven such fences define
-//! seventy-three productions: GRAM-2..GRAM-5 carry the source grammar, and
+//! source productions: GRAM-2..GRAM-5 carry the source grammar, and
 //! CONST-1, CONST-2, and EFF-1 carry `const`, `cvalue`, `effects`, and
 //! `effect`, which were written inline in prose before v0.30.
 
@@ -133,8 +133,8 @@ pub fn productions(spec: &str) -> Vec<RawProduction> {
     }
     assert_eq!(
         out.len(),
-        75,
-        "the seven wf-ebnf fences define 75 productions"
+        81,
+        "the seven wf-ebnf fences define 81 productions"
     );
     out
 }

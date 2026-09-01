@@ -1,0 +1,19 @@
+fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+  ensures ile(result, 254_u8);
+} {
+  prove upper_bound: ile(x, 254_u8) {
+    use ile(x, middle);
+    use ile(middle, 254_u8);
+  }
+  set middle = replacement;
+  return x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = increment(x: 2_u8, middle: 10_u8, replacement: 0_u8);
+  let incremented = result + 1_u8;
+  let code = incremented -wrap 3_u8;
+  return exit_status(code: code);
+}

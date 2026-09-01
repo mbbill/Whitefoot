@@ -78,7 +78,7 @@ fn replace_of_a_copy_place_rejects_citing_set2() {
 #[test]
 fn set_of_an_affine_place_still_rejects_and_names_replace() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(1_u64, 0_u8);
@@ -186,7 +186,7 @@ fn replace_of_a_dead_root_rejects_citing_own1() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let gone = sink(h: move holder);
@@ -207,7 +207,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 #[test]
 fn replace_through_a_shared_borrow_rejects() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   region 'r {
@@ -329,7 +329,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn element_replacement_rhs_must_be_the_exact_element_type() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   let taken = replace slots[0_u64] = 3_u32;
   return exit_status(code: 0_u8);
@@ -347,7 +347,7 @@ fn element_replacement_rhs_must_be_the_exact_element_type() {
 fn affine_elements_leave_their_slots_only_through_replace() {
     // SET-1 on an affine element names replace [STOR-1].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   set slots[0_u64] = None<u32>();
   return exit_status(code: 0_u8);
@@ -361,7 +361,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // A bare element read would mint a second owner [OWN-1].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   let observed = slots[0_u64];
   return exit_status(code: 0_u8);
@@ -374,7 +374,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // `move` out of a slot is not an admitted element exit [TYPE-2].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   let observed = move slots[0_u64];
   return exit_status(code: 0_u8);
@@ -390,7 +390,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
 #[test]
 fn element_position_replace_rejects_while_every_element_is_copy() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(2_u64, 1_u8);
   let old = replace first[0_u64] = 3_u8;
   return exit_status(code: 0_u8);
@@ -410,7 +410,7 @@ fn element_position_replace_rejects_while_every_element_is_copy() {
 #[test]
 fn replace_rhs_type_mismatch_rejects_citing_type5() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(1_u64, 0_u16);

@@ -1,5 +1,5 @@
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  doc "`directory_next` carries SYS-8's two static range goals. End 4104 exceeds this 4096-byte destination, so compilation rejects the call before any host enumeration or runtime trap.";
+  doc "`directory_next` carries SYS-8's two static range goals. End 4104 exceeds this 4096-byte destination, so compilation rejects the call before any host enumeration or runtime fallback.";
   let entries = buffer_new(4096_u64, 0_u8);
   region 'c {
     let permit = reserve_file<'c>(factory: &uniq 'c files);

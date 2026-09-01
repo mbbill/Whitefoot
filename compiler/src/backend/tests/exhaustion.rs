@@ -1,10 +1,9 @@
 //! The resource-exhaustion floor: what an execution does when it runs out.
 //!
-//! Exhaustion is the one abnormal end a *correct* program can reach. A false
-//! `claim` cannot happen in a reviewed program and yet gets a byte-exact
-//! [DIAG-3] record; running out of stack or heap needs no source defect at all
-//! and, before this floor, produced zero bytes and a bare host signal. These
-//! cases pin the floor that closes that asymmetry.
+//! Running out of stack or heap needs no source defect at all and, before this
+//! floor, produced zero bytes and a bare host signal. These cases pin the
+//! deliberately deferred resource-availability behavior without turning it
+//! into a source proof obligation.
 //!
 //! Two separate obligations live here and must not be confused:
 //!
@@ -16,8 +15,7 @@
 //!   case.
 //! - *reporting* — exhaustion ends the process by a defined abort that first
 //!   writes one fixed record naming only the resource class. The record
-//!   carries no `rule_id`, no function, and no node path, and that absence is
-//!   what mechanically distinguishes it from a [DIAG-3] record.
+//!   carries no `rule_id`, no function, and no node path.
 //!
 //! The record's bytes are fixed by two independent constraints that happen to
 //! agree. A signal handler may only reach async-signal-safe facilities, which
@@ -28,7 +26,7 @@
 
 use std::process::Command;
 
-use super::{build_executable, compile, test_directory};
+use super::{build_executable, compile, emitted_function, test_directory};
 
 /// The attribute group [`crate::backend::emitter`] gives every definition, and
 /// the value it carries on this host.
@@ -196,12 +194,10 @@ const RUNAWAY_DEPTH: u64 = 100_000_000;
 
 /// The record is the resource class and nothing else.
 ///
-/// The absent fields carry the whole distinction. A [DIAG-3] trap record names
-/// a `rule_id`, the function, and the node path, because a false claim is
-/// something the writer did. Exhaustion is not: no operation in the program
-/// has "runs out of stack" in its meaning, and the same source on the same
-/// input succeeds or fails depending on the environment. A record that
-/// attributed it to source would be claiming something untrue.
+/// Exhaustion is external to source proof: no operation in the program has
+/// "runs out of stack" in its meaning, and the same source on the same input
+/// succeeds or fails depending on the environment. The record therefore names
+/// only the unavailable resource.
 pub(super) fn assert_resource_record(stderr: &[u8], resource: &str) {
     let text = String::from_utf8_lossy(stderr);
     assert_eq!(
@@ -214,7 +210,7 @@ pub(super) fn assert_resource_record(stderr: &[u8], resource: &str) {
         assert!(
             !text.contains(absent),
             "a resource record must not carry {absent}, which would make it \
-             indistinguishable from a [DIAG-3] trap record: {text:?}"
+             a source location rather than the external resource: {text:?}"
         );
     }
 }
@@ -698,7 +694,7 @@ fn an_externally_delivered_signal_does_not_disarm_the_floor() {
 /// the word was taken. The alarm is what keeps the case terminating — a loser
 /// parks until the winner's abort takes the process down, and here there is no
 /// winner to do it, so the test's own clock ends the run.
-const CLAIMED_LATCH_BODY: &str = r#"#include <signal.h>
+const PREACQUIRED_LATCH_BODY: &str = r#"#include <signal.h>
 #include <unistd.h>
 
 extern volatile int *wf__floor_record_latch(void);
@@ -730,12 +726,10 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 ///
 /// This is the mechanism behind "exactly one record", and it needs saying with
 /// a case because the two writers live in different languages. The floor's
-/// signal handler writes the stack record; the module writes the [DIAG-3] trap
-/// record and the heap and target-domain ones. A latch each serializes each
-/// writer against itself and neither against the other, so two threads dying
-/// of different resources at once each win their own latch and interleave two
-/// records on one channel — and every case in the tree still passes, because
-/// each class on its own is fine.
+/// signal handler writes the stack record; the module writes the heap record.
+/// Separate latches would serialize each writer only against itself, allowing
+/// two threads exhausting different resources to interleave records on one
+/// channel.
 ///
 /// Here the latch is already taken when the stack runs out. Shared, the
 /// handler finds it taken and writes nothing. Separate, it writes the stack
@@ -743,10 +737,10 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 #[test]
 fn the_floor_and_the_module_share_one_record_latch() {
     let directory = test_directory();
-    let executable = build_floor_fixture(CLAIMED_LATCH_BODY, &directory);
+    let executable = build_floor_fixture(PREACQUIRED_LATCH_BODY, &directory);
     let output = Command::new(&executable)
         .output()
-        .expect("run the pre-claimed latch fixture");
+        .expect("run the pre-acquired latch fixture");
     assert!(
         output.stderr.is_empty(),
         "a record was already claimed, so the floor must write none: {:?}",
@@ -761,13 +755,10 @@ fn the_floor_and_the_module_share_one_record_latch() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
-/// A `--par` module that writes a resource record but contains no `claim`.
+/// A `--par` module that can write a heap-resource record.
 ///
-/// The latch is emitted for a module that writes *any* record and hands a call
-/// out, not only for one that contains a `claim`. Narrowing that condition
-/// back to claims would put every `--par` heap-only module on the unlatched
-/// writer, where two lanes whose allocations are both refused interleave two
-/// records — and until this case existed nothing in the tree noticed.
+/// Handing a call out makes concurrent allocation refusal possible, so this
+/// module must use the shared first-record latch.
 const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 pure {
   return v *wrap 3_u64;
 }
@@ -802,11 +793,7 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
         "the fixture must hand a call out, or the latch is not the question: \
          {module}"
     );
-    assert!(
-        !module.contains("@.wf_trap.0"),
-        "the fixture must contain no claim, so the latch cannot be there for \
-         one: {module}"
-    );
+    assert!(module.contains("@.wf_resource_record.latch"));
     assert!(
         module.contains("call void @wf_resource_abort()"),
         "the fixture must reach a resource record: {module}"
@@ -862,39 +849,6 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 }
 "#;
 
-/// A module carrying both a claim and heap storage, so one writer serves both
-/// record classes and the case can show they do not bleed into each other.
-///
-/// The claim is true and the source is accepted; the falsehood is injected
-/// into the checked IR after acceptance, the same way the trap-latch cases do
-/// it, because the language admits no source that states a false claim. The
-/// unused `False()` binding is what the injection redirects the claim's
-/// condition to, so the defect is a property of the run rather than of the
-/// source.
-const CLAIM_AND_HEAP: &[u8] = br#"fn pick(seed: own u64) -> result: own u64 allocates(heap), traps {
-  let scratch = buffer_new(4_u64, 0_u8);
-  let values = array_new<u64, 8>(1_u64);
-  let bounded = imin(seed, 7_u64);
-  let in_range = ilt(bounded, 8_u64);
-  let injected_false = False();
-  claim index_in_range: in_range because "premises: bounded is the minimum of the parameter seed and seven, and values has length eight\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\nconclusion: ilt(bounded, 8_u64) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following length-eight array subscript uses bounded";
-  let picked = values[bounded];
-  return picked;
-}
-
-command fn main() -> status: own ExitStatus allocates(heap), traps {
-  let value = pick(seed: 3_u64);
-  match cvt<u64, u8>(value) {
-    Ok(value: byte) => {
-      return exit_status(code: byte);
-    }
-    Err(error: wide) => {
-      return exit_status(code: 9_u8);
-    }
-  }
-}
-"#;
-
 /// One program reaching every allocation form the emitter lowers: a filled
 /// buffer, a vacant one, a heap box, and an arena node.
 ///
@@ -935,9 +889,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// stack does: one record naming the resource, then a defined abort.
 ///
 /// Before this, a refused allocation was a bare `abort()` with zero bytes —
-/// the same observable event as a false claim and as a corrupted-heap abort
-/// inside the allocator itself, with nothing to tell a reader which had
-/// happened.
+/// indistinguishable from an internal allocator abort, with nothing to tell a
+/// reader which resource was unavailable.
 #[test]
 fn an_allocation_the_host_refuses_writes_one_resource_record() {
     let directory = test_directory();
@@ -954,85 +907,42 @@ fn an_allocation_the_host_refuses_writes_one_resource_record() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
-/// A byte count past the target's representable maximum, kept alive the same
-/// way the refusal case is.
-///
-/// Ten quintillion `u8` elements is inside the language ceiling `buffer_fits`
-/// checks — `n <= (2^64 - 1) / 1` — and outside the target's, which is
-/// `i64::MAX`. That band is the whole reachable domain of the dynamic
-/// target-domain guard, and a program in it never reaches the allocator at
-/// all: the guard fires first, on a machine that had memory to spare.
-const PAST_THE_TARGET_CEILING: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allocates(heap) {
-  let b = buffer_new(10000000000000000000_u64, 7_u8);
-  let wide = cvt<u8, u64>(i);
-  let element = b[wide];
-  return element;
-}
-
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  let count = 0_u64;
-  region 'invocation {
-    set count = args_count<'invocation>(args: &'invocation args);
-  }
-  match cvt<u64, u8>(count) {
-    Ok(value: v) => {
-      let r = giant(i: v);
-      return exit_status(code: r);
-    }
-    Err(error: e) => {
-      return exit_status(code: 9_u8);
-    }
-  }
-}
-"#;
-
-/// A request past the target's domain names its own resource, not the heap's.
-///
-/// The two conditions share a death and nothing else. This one is a byte count
-/// the target cannot represent, which no amount of memory would fix; the
-/// heap's is memory the host would not give. A record that called both `heap`
-/// would send a reader to the machine's memory for a failure that was never
-/// about memory, so the class is the one thing the record says and it has to
-/// be the true one.
+/// Filled and vacant buffers whose proved byte ceilings fit the selected
+/// target carry no runtime target-domain path. The allocator can still return
+/// null, so each operation keeps its ordinary heap-resource failure edge.
 #[test]
-fn a_request_past_the_target_ceiling_writes_its_own_resource_record() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(PAST_THE_TARGET_CEILING), &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the over-ceiling allocation");
-    assert_eq!(
-        output.status.code(),
-        None,
-        "a refused target-domain guard ends by abort, not by a returned status"
-    );
-    assert_resource_record(&output.stderr, "target-domain");
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// Both target-domain guards reach the record, for the same completeness
-/// reason the refusal edges do: one edge left calling `@abort` directly still
-/// dies with zero bytes, and it is the edge nobody was looking at.
-#[test]
-fn every_target_domain_guard_reaches_the_target_domain_abort() {
+fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
     let module = compile(ALL_HEAP_FORMS);
-    let lines: Vec<&str> = module.lines().collect();
-    for guard in ["buffer.fill.target.", "buffer.vacant.target."] {
-        let mut found = 0;
-        for (index, line) in lines.iter().enumerate() {
-            if !line.starts_with(guard) || !line.ends_with(':') {
-                continue;
-            }
-            found += 1;
-            assert_eq!(
-                lines.get(index + 1).copied().unwrap_or_default(),
-                "  call void @wf_target_domain_abort()",
-                "the {line} guard must reach the target-domain abort, not a bare one"
-            );
-        }
+    for absent in [
+        "buffer.fill.target.",
+        "buffer.vacant.target.",
+        "@wf_target_domain_abort",
+        "@.wf_resource.target_domain",
+    ] {
         assert!(
-            found > 0,
-            "the fixture must reach a {guard} edge:\n{module}"
+            !module.contains(absent),
+            "a target-qualified buffer must not emit {absent}:\n{module}"
+        );
+    }
+
+    let shapes = emitted_function(&module, "shapes");
+    let lines: Vec<&str> = shapes.lines().collect();
+    for operation in ["buffer.fill", "buffer.vacant"] {
+        let allocation = lines
+            .iter()
+            .position(|line| line.starts_with(&format!("{operation}.allocate.")))
+            .expect("the fixture must reach the buffer allocation block");
+        let refusal = lines
+            .iter()
+            .position(|line| line.starts_with(&format!("{operation}.oom.")))
+            .expect("the allocator's null result must retain a refusal block");
+        assert!(allocation < refusal);
+        let allocation_path = lines[allocation + 1..refusal].join("\n");
+        assert!(allocation_path.contains("call ptr @malloc"));
+        assert!(allocation_path.contains("icmp ne ptr"));
+        assert_eq!(
+            lines.get(refusal + 1).copied(),
+            Some("  call void @wf_resource_abort()")
         );
     }
 }
@@ -1070,43 +980,6 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
             "the fixture must reach a {refusal} edge:\n{module}"
         );
     }
-}
-
-/// A claim trap still writes exactly its own record, and nothing else.
-///
-/// The two classes share one writer and one latch, which is what makes "no
-/// execution produces both records" a mechanism rather than a hope. This case
-/// is the other half of that: sharing the writer must not let the resource
-/// record leak into a trap's output. The distinction lives in the bytes — a
-/// [DIAG-3] record names a rule, a function, and a node path; a resource
-/// record names a resource class and nothing else — so the check is on the
-/// bytes.
-#[test]
-fn a_claim_trap_still_writes_only_its_own_record() {
-    let module =
-        super::emit_with_overlap_and_false_claims(CLAIM_AND_HEAP, &[("pick", "index_in_range")]);
-    assert!(
-        module.contains("@.wf_resource.heap"),
-        "the fixture must carry heap storage, or it shows nothing:\n{module}"
-    );
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-    let output = Command::new(&executable)
-        .env("WF_WORKERS", "1")
-        .output()
-        .expect("run the defective program");
-    let text = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(output.status.code(), None, "a trap aborts");
-    assert_eq!(text.lines().count(), 1, "exactly one record: {text:?}");
-    assert!(
-        text.starts_with("{\"rule_id\":\"CLM-1\",\"message\":\"index_in_range\""),
-        "the trap must write its own [DIAG-3] record: {text:?}"
-    );
-    assert!(
-        !text.contains("\"resource\""),
-        "a claim trap must not carry a resource record: {text:?}"
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// A recursion whose every activation carries an array far larger than a
@@ -1482,6 +1355,37 @@ fn an_ownership_chain_keeps_its_straight_line_drop() {
         !module.contains("@wf.drop.push"),
         "a drop whose depth the type bounds must not pay for a worklist: \
          {module}"
+    );
+}
+
+/// Every address formed by the recursive-drop worklist is dominated by a
+/// finite selected-target capacity check. The three `nuw` operations are
+/// justified by that check: doubling stays below the maximum entry count,
+/// byte scaling stays below the allocator/address ceiling, and incrementing a
+/// non-full count stays within the allocated capacity.
+#[test]
+fn recursive_drop_worklist_growth_proves_each_address_domain() {
+    let module = compile(&boxed_spine_source(1));
+    let push = definition_body(&module, "define private void @wf.drop.push");
+    assert!(
+        push.contains("%count.in.range = icmp ule i64 %count, %capacity")
+            && push.contains("%maximum.entries = udiv i64 ")
+            && push.contains("%growth.fits = select i1 %fresh")
+            && push.contains("br i1 %growth.fits, label %grow, label %exhausted"),
+        "worklist growth must establish count and selected-target capacity before addressing: \
+         {push}"
+    );
+    assert!(
+        push.contains("%doubled = shl nuw i64 %capacity, 1")
+            && push.contains("%bytes = mul nuw i64 %wanted, %entry.bytes")
+            && push.contains("%after = add nuw i64 %count, 1"),
+        "only arithmetic dominated by the finite range checks may carry no-wrap facts: {push}"
+    );
+    assert!(
+        !push.contains("%doubled = shl i64")
+            && !push.contains("%bytes = mul i64")
+            && !push.contains("%after = add i64"),
+        "the worklist must not retain unchecked growth arithmetic: {push}"
     );
 }
 

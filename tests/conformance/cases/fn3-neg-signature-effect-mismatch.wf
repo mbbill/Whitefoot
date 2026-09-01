@@ -2,18 +2,13 @@ contract PureMember {
   fn apply(x: own i32) -> result: own i32 pure;
 }
 
-fn trapping_apply(x: own i32) -> result: own i32 traps {
-  let values = array_new<u8, 4>(0_u8);
-  let seed = 9_u64;
-  let bounded = seed % 4_u64;
-  let inside = ilt(bounded, 4_u64);
-  claim retained_explicit_claim: inside because "premises: values has length 4 and bounded is seed remainder 4_u64 computed in this function\nderivation: unsigned remainder by 4_u64 is at most 3_u64 and therefore strictly less than the array length\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following values[bounded] subscript requires this exact bound";
-  let selected = values[bounded];
+fn allocating_apply(x: own i32) -> result: own i32 allocates(heap) {
+  let scratch = buffer_new(1_u64, 0_u8);
   return x;
 }
 
 conform i32: PureMember {
-  apply = trapping_apply;
+  apply = allocating_apply;
 }
 
 command fn main() -> status: own ExitStatus pure {

@@ -1,7 +1,0 @@
-command fn main() -> status: own ExitStatus traps {
-  doc "Claim names are unique per function [CLM-1]; the later of two claims named `held` is a hard error citing CLM-1 at that claim.";
-  let flag = True();
-  claim held: flag because "premises: flag is initialized by True immediately before this statement\nderivation: the direct initializer makes flag true on every path reaching the first claim\nconclusion: flag is true\nchecker gap: none; ordinary entailment would classify this predicate as redundant if uniqueness validation did not reject first\nconsumers: no proof-required consumer exists because this negative fixture tests the later duplicate name";
-  claim held: flag because "premises: flag remains unchanged after its True initializer and the preceding claim\nderivation: the direct initializer makes flag true on every path reaching the second claim\nconclusion: flag is true\nchecker gap: none; claim-name uniqueness rejects this statement before residual classification\nconsumers: no proof-required consumer exists because this statement is the duplicate-name rejection target";
-  return exit_status(code: 0_u8);
-}

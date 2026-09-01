@@ -1,7 +1,7 @@
 //! Actualization of a permitted counted loop [PAR-2 candidate]: what a split
 //! loop emits, what each world runs, and what the program observes.
 //!
-//! The claim this module exists to check is the same one the pair path makes —
+//! The property this module exists to check is the same one the pair path makes —
 //! overlapping changes nothing observable — with one thing added that the pair
 //! path never does: the *shape* of the combination tree is chosen by the
 //! runtime rather than written in the source. So the byte comparisons here span
@@ -43,7 +43,7 @@ use super::{
 const GRANT_RUNS: usize = 4;
 
 /// A counted `for` the judgment permits: one accumulator under `+wrap`, a
-/// claim-free pure body doing real arithmetic per iteration, no write to
+/// pure body doing real arithmetic per iteration, no write to
 /// anything the iteration did not introduce, and no edge leaving the loop.
 ///
 /// The body is an iterated integer mix rather than two operations, because the
@@ -53,7 +53,7 @@ const GRANT_RUNS: usize = 4;
 /// output as eight bytes, so a difference anywhere in the fold is a difference
 /// in the bytes.
 const PERMITTED_FOLD: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
-  doc "A claim-free pure mix with enough arithmetic that splitting the range around it pays.";
+  doc "A pure mix with enough arithmetic that splitting the range around it pays.";
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -192,7 +192,7 @@ command fn main() -> status: own ExitStatus pure {
 /// the splitter's lane frame cannot hold them.
 ///
 /// The frame is bounded by the runtime, and a split whose frame exceeds it
-/// would have every claim refused forever: the program would pay for the
+/// would have every lane acquisition refused forever: the program would pay for the
 /// splitter and never overlap. So the bound is applied at compile time and the
 /// loop declines with a line naming the width.
 const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
@@ -352,13 +352,101 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 }
 "#;
 
+/// A map whose only carried effect is one already-proved write through a
+/// copied and affinely transformed counted binder. The mapped buffer is returned, borrowed by
+/// `write_once`, and then dropped by its one outer owner, so the observable
+/// bytes cover capture, store, join, post-loop use, and cleanup together.
+const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+  let state = seed;
+  let round = 0_u64;
+  loop @rounds {
+    let done = ieq(round, 24_u64);
+    if done {
+      break @rounds;
+    }
+    let shifted = irotl(state, 27_u32);
+    let scaled = state *wrap 6364136223846793005_u64;
+    set state = ixor(shifted, scaled);
+    set state = state +wrap 1442695040888963407_u64;
+    set round = round +wrap 1_u64;
+  }
+  return state;
+}
+
+fn low_byte(v: own u64) -> result: own u8 pure {
+  let low = iand(v, 255_u64);
+  match cvt<u64, u8>(low) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: problem) => {
+      return 0_u8;
+    }
+  }
+}
+
+fn mapped() -> result: own buffer<u8> allocates(heap) {
+  let out = buffer_new(400000_u64, 0_u8);
+  for @fill i in 0_u64..400000_u64 {
+    let copied = i;
+    let slot = copied * 1_u64;
+    let mixed = mix(seed: i);
+    let byte = low_byte(v: mixed);
+    set out[slot] = byte;
+  }
+  return move out;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let report = mapped();
+  let size = len(report);
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: size) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// Adds one genuine reduction to [`INDEPENDENT_MAP`] while leaving the exact
+/// element map unchanged. Keeping this as an exact edit of the map fixture
+/// makes the regression answer one question: does selecting Reduction still
+/// preserve the buffer side effect that travels as a capture?
+fn map_and_reduction_source() -> Vec<u8> {
+    let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
+    source
+        .replacen(
+            "  for @fill i in 0_u64..400000_u64 {\n",
+            "  let checksum = 0_u64;\n  for @fill i in 0_u64..400000_u64 {\n",
+            1,
+        )
+        .replacen(
+            "    set out[slot] = byte;\n",
+            "    set out[slot] = byte;\n    set checksum = checksum +wrap mixed;\n",
+            1,
+        )
+        .replacen(
+            "  return move out;\n",
+            "  let first = low_byte(v: checksum);\n  set out[0_u64] = first;\n  return move out;\n",
+            1,
+        )
+        .into_bytes()
+}
+
 /// A permitted loop is emitted as a chunk, a splitter, and one ordinary
 /// hand-out of the splitter's left half.
 ///
 /// The whole design is in this shape: the leaf is the *loop*, never one
 /// iteration, so the body keeps the vectorization and unrolling the loop gave
 /// it; and the splitter's two halves are an ordinary overlap group, so the
-/// claim, the frame, the thunk, and the join are the machinery a permitted pair
+/// lane acquisition, the frame, the thunk, and the join are the machinery a permitted pair
 /// already uses rather than a second one.
 #[test]
 fn a_permitted_loop_is_outlined_split_and_joined() {
@@ -376,7 +464,7 @@ fn a_permitted_loop_is_outlined_split_and_joined() {
     let chunk_symbol = synthesized(&module, "@wf__par_chunk_");
     let splitter = function_body(&module, &splitter_symbol);
     for step in [
-        "call ptr @wf__par_claim(",
+        "call ptr @wf__par_acquire_lane(",
         "call void @wf__par_publish(",
         "call void @wf__par_join(",
         "call void @wf__par_release(",
@@ -435,7 +523,7 @@ fn the_default_compilation_of_a_permitted_loop_splits_nothing() {
 /// The sequential world of a split loop is the loop.
 ///
 /// Two things carry that. The enclosing function's clone calls the chunk's
-/// clone and reaches no runtime entry point — no claim, no allowance query, no
+/// clone and reaches no runtime entry point — no lane acquisition, no allowance query, no
 /// join — so nothing about a split is executed there. And the chunk's clone is
 /// the chunk, byte for byte once its own symbols are restored, so the loop the
 /// sequential world runs is not merely similar to the one the overlapped world
@@ -471,7 +559,7 @@ fn the_sequential_world_of_a_split_loop_is_the_loop() {
         "the sequential world must call the chunk's own clone:\n{clone}"
     );
     for absent in [
-        "@wf__par_claim",
+        "@wf__par_acquire_lane",
         "@wf__par_publish",
         "@wf__par_join",
         "@wf__par_split_budget",
@@ -672,6 +760,167 @@ fn a_split_loop_agrees_with_the_lowering_that_splits_nothing() {
         runs.push((format!("WF_WORKERS={workers}"), output.stdout));
     }
     identical(&runs).expect("splitting a range must not move one byte of the result");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A proved single-binder affine map uses the same split machinery without inventing
+/// a source accumulator: Unit carries the worker join, while the captured
+/// buffer carries the only observable result.
+#[test]
+fn an_independent_map_joins_and_preserves_its_outer_buffer() {
+    let unsplit = emit(INDEPENDENT_MAP);
+    assert!(
+        !module_requires_parallel_runtime(&unsplit),
+        "the default map lowering must remain the ordinary loop"
+    );
+    let split = emit_with_overlap(INDEPENDENT_MAP);
+    assert!(
+        module_requires_parallel_runtime(&split),
+        "the proved map must actualize when overlap lowering is requested:\n{split}"
+    );
+
+    let splitter_symbol = synthesized(&split, "@wf__par_split_");
+    let chunk_symbol = synthesized(&split, "@wf__par_chunk_");
+    let splitter = function_body(&split, &splitter_symbol);
+    let chunk = function_body(&split, &chunk_symbol);
+    assert!(
+        chunk.starts_with("define internal i8 "),
+        "an independent map chunk must return the Unit token:\n{chunk}"
+    );
+    assert!(
+        splitter.starts_with("define internal i8 "),
+        "an independent map splitter must return the Unit token:\n{splitter}"
+    );
+    assert!(
+        chunk
+            .lines()
+            .next()
+            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
+        "the mapped buffer descriptor must be captured by the chunk:\n{chunk}"
+    );
+    for step in [
+        "call ptr @wf__par_acquire_lane(",
+        "call void @wf__par_publish(",
+        "call void @wf__par_join(",
+        "call void @wf__par_release(",
+    ] {
+        assert!(
+            splitter.contains(step),
+            "the independent map must retain the worker join, missing {step}:\n{splitter}"
+        );
+    }
+    assert!(
+        splitter.contains(&format!("call i8 {chunk_symbol}(")),
+        "the map splitter's leaf must be the Unit-returning loop chunk:\n{splitter}"
+    );
+
+    // Captures are proof-scoped aliases, not source owners. Neither helper may
+    // release the captured descriptor, while each selectable outer main owns
+    // and frees exactly the buffer returned after the joined loop.
+    assert!(!chunk.contains("call void @free("), "{chunk}");
+    assert!(!splitter.contains("call void @free("), "{splitter}");
+    for outer in ["@wf_main", "@wf__par_seq_main"] {
+        let body = function_body(&split, outer);
+        let mut releases_in_block = 0;
+        let mut returning_blocks = 0;
+        for line in body.lines() {
+            if line.ends_with(':') {
+                releases_in_block = 0;
+            }
+            releases_in_block += usize::from(line.contains("call void @free("));
+            if line.trim_start().starts_with("ret ") {
+                returning_blocks += 1;
+                assert_eq!(
+                    releases_in_block, 1,
+                    "each {outer} return path must release its one source-owned buffer once:\n{body}"
+                );
+            }
+        }
+        assert_eq!(returning_blocks, 2, "the fixture has two result arms");
+    }
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the map that splits nothing");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(reference.stdout.len(), 400000);
+
+    let executable = build_executable(&split, &directory);
+    let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
+    for workers in ["1", "2", "4", "8"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split map");
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+        assert_eq!(output.stdout.len(), 400000, "WF_WORKERS={workers}");
+        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+    }
+    identical(&runs).expect("splitting an independent map must not move one output byte");
+
+    let counted = CountedProgram::link(&split, &directory);
+    for workers in ["4", "8"] {
+        let lanes: usize = workers.parse().expect("the worker setting is a number");
+        if !super::parallel::a_steal_is_observable(lanes) {
+            continue;
+        }
+        assert!(
+            counted.grants_over_runs(Some(workers), GRANT_RUNS) > 0,
+            "WF_WORKERS={workers} granted no map lane in {GRANT_RUNS} runs"
+        );
+    }
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A loop that maps and reduces still selects the Reduction result path. The
+/// byte at index zero depends on the returned fold; every other byte depends on
+/// the captured map storage, so the differential checks both at once.
+#[test]
+fn a_map_and_reduction_preserves_both_results() {
+    let source = map_and_reduction_source();
+    let unsplit = emit(&source);
+    let split = emit_with_overlap(&source);
+    assert!(module_requires_parallel_runtime(&split));
+
+    let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
+    let splitter = function_body(&split, &synthesized(&split, "@wf__par_split_"));
+    assert!(
+        chunk.starts_with("define internal i64 "),
+        "the combined loop must retain its real reduction result:\n{chunk}"
+    );
+    assert!(
+        splitter.starts_with("define internal i64 "),
+        "the combined loop must retain its real reduction result:\n{splitter}"
+    );
+    assert!(
+        chunk
+            .lines()
+            .next()
+            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
+        "the reduction chunk must also capture its mapped buffer:\n{chunk}"
+    );
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the combined loop that splits nothing");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(reference.stdout.len(), 400000);
+
+    let executable = build_executable(&split, &directory);
+    let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
+    for workers in ["1", "4", "8"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the combined split loop");
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+    }
+    identical(&runs).expect("the combined map and reduction must preserve every byte");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -908,7 +1157,7 @@ const COMBINE_SPAN: u64 = 200_000;
 /// body enough weight to be worth splitting, the narrowing to a byte, and the
 /// eight-byte spelling each row publishes through.
 const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
-  doc "A claim-free pure mix with enough arithmetic that splitting the range around it pays.";
+  doc "A pure mix with enough arithmetic that splitting the range around it pays.";
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -1144,8 +1393,9 @@ fn assert_combine_rows(reference: &[u8], published: &[u8], setting: &str) {
 /// The inverted case is the one with teeth. A splitter that computed `hi - lo`
 /// before testing the endpoints wraps an inverted range to something near 2^64
 /// and then descends into a range the loop never had; the loop it stands for
-/// runs zero iterations. The program carries the comparison in its own claims,
-/// so it fails here rather than somewhere downstream.
+/// runs zero iterations. The command returns a nonzero status when the folded
+/// value differs from the sequential result, so the disagreement is reported
+/// here rather than somewhere downstream.
 #[test]
 fn a_degenerate_range_folds_to_the_accumulator_it_arrived_with() {
     let module = emit_with_overlap(EDGE_RANGES);
@@ -1163,7 +1413,7 @@ fn a_degenerate_range_folds_to_the_accumulator_it_arrived_with() {
         assert_eq!(
             output.status.code(),
             Some(0),
-            "WF_WORKERS={workers} failed a range claim: {}",
+            "WF_WORKERS={workers} failed the degenerate-range check: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
@@ -1172,7 +1422,7 @@ fn a_degenerate_range_folds_to_the_accumulator_it_arrived_with() {
 
 /// A loop whose lane frame would not fit declines at compile time, and says so.
 ///
-/// The runtime refuses a claim whose frame is over the bound, so a split
+/// The runtime refuses an acquisition whose frame is over the bound, so a split
 /// emitted anyway would descend, be refused every lane, and run the whole range
 /// on one thread having paid for the splitter — a sequentialization with no
 /// report. Declining here converts that into a line naming the width.
@@ -1204,7 +1454,7 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
 /// The compile-time frame bound is the runtime's own.
 ///
 /// Two numbers that have to agree and live in two languages: the lowering
-/// decides whether to emit a split from one, and the runtime refuses a claim
+/// decides whether to emit a split from one, and the runtime refuses an acquisition
 /// from the other. If they drifted apart the decline above would fire on loops
 /// that fit, or — the direction that matters — not fire on loops that do not.
 #[test]

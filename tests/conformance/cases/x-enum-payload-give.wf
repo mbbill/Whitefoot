@@ -3,14 +3,12 @@ enum Box {
   Empty();
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "A payload-carrying variant is constructed, matched, and its bound payload feeds arithmetic delivered by give; the value-match round-trips the payload through codegen [TYPE-2, GRAM-8, GRAM-10, GIVE-1].";
   let b = Item(n: 7_i32);
   let r = match b {
     Item(n: v) => {
-      let v_in_range = ile(v, 2147483612_i32);
-      claim payload_below_max: v_in_range because "premises: the matched Item is constructed with payload 7_i32\nderivation: 7_i32 is at most i32 maximum minus 35_i32\nconclusion: v_in_range is true\nchecker gap: ENT does not retain a nominal payload literal through value match\nconsumers: the following exact addition needs this upper IntegerDomain component";
-      give v + 35_i32;
+      give v +wrap 35_i32;
     }
     Empty() => {
       give 0_i32;

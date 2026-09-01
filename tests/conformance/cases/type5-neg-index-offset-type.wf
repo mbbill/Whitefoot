@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   doc "TYPE-5: an index offset has the required type u64; a u32 atom is not accepted implicitly.";
   let items = buffer_new(2_u64, 0_u8);
   let value = items[0_u32];

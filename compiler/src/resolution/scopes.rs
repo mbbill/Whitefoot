@@ -122,11 +122,11 @@ impl ScopeBuild {
                     )?;
                     let body =
                         build.push_scope(Some(range), ScopeKind::NestedBody, path.clone())?;
-                    // The direct LABEL and IDENT declarations map to `range`,
-                    // while both endpoint atoms deliberately stay in the
-                    // enclosing scope. Only statements enter the body scope,
-                    // making both declarations body-only without a second
-                    // grammar production or a multi-scope owner table.
+                    // The optional direct LABEL and mandatory IDENT declaration
+                    // map to `range`, while both endpoint atoms deliberately
+                    // stay in the enclosing scope. Only statements enter the
+                    // body scope, making either declaration body-only without a
+                    // second grammar production or a multi-scope owner table.
                     build.declaration_scopes[node_id.index()] = Some(range);
                     assign_counted_range_scopes(
                         topology,

@@ -10,13 +10,12 @@ use whitefoot::{
     classify_terminals, diagnostic_terminal_order, grammar_node, lex, parse, productions,
 };
 
-/// Minimal marked and unmarked entries plus counted-range and postcondition bodies.
-const PARSER_PROBES: [&[u8]; 6] = [
+/// Minimal ordinary and command entries plus counted-range, proof, and postcondition bodies.
+const PARSER_PROBES: [&[u8]; 5] = [
     b"fn probe() -> result: own unit pure {\n  return unit;\n}\n",
     b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n",
-    b"deny_claims fn probe() -> result: own unit pure {\n  return unit;\n}\n",
-    b"deny_claims command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n",
-    b"fn range(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n",
+    b"fn range() -> result: own unit pure {\n  for @range index in 0_u64..1_u64 {\n    invariant limit: ile(index, 1_u64);\n    break @range;\n  }\n  return unit;\n}\n",
+    b"fn proof(left: own i32, right: own i32) -> result: own unit pure contract {\n  requires ile(left, right);\n} {\n  prove ordered: ile(left + 1_i32, right + 1_i32) {\n    use ile(left, right);\n    use ile(0_i32, 0_i32);\n  }\n  return unit;\n}\n",
     b"fn checked(value: own i32) -> result: own Result<i32, i32> pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures when Ok(value: returned): ieq(returned, value);\n} {\n  return Ok<i32, i32>(value: value);\n}\n",
 ];
 
@@ -390,9 +389,9 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 75);
-        assert_eq!(report.decisions, 94);
-        assert_eq!(report.terminals, 103);
+        assert_eq!(report.productions, 81);
+        assert_eq!(report.decisions, 101);
+        assert_eq!(report.terminals, 102);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 

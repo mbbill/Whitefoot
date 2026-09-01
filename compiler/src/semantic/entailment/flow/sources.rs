@@ -8,9 +8,8 @@
 //! source's stated form contributes nothing, which only under-derives, the
 //! version-monotone direction [ENT-1].
 //!
-//! Implemented here: S1 (through the parent's arm entry), S3 (a passed claim
-//! condition), S4, S5, S6, S7, S9, and S10. Retired labels are not reused
-//! [ENT-3].
+//! Implemented here: S1 (through the parent's arm entry), S4, S5, S6, S7,
+//! S9, and S10. Retired labels are not reused [ENT-3].
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
@@ -20,17 +19,17 @@ use super::super::super::model::{
 };
 use super::super::fragment_type;
 use super::super::state::{
-    DerivationLedger, DerivationRootKind, FactState, FlowEventId, FlowEventKind, OutcomeFact,
-    OutcomeRelation, Relation, close,
+    DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact, OutcomeRelation,
+    Relation, close,
 };
 use super::super::term::{
     CountedCaptureSide, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId,
     TermKind, ZERO, integer_value, type_range,
 };
 use super::super::{
-    ClaimComponentEvidence, ClaimImageEvidence, ClaimProofEvidence, ClaimReconstructionEvidence,
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
-    CountedEqualityDerivation, CountedProofPoint, S7Derivation, S7DerivationKind, ShiftOneIdentity,
+    CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
+    S7DerivationKind, ShiftOneIdentity,
 };
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
@@ -237,146 +236,6 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // S3 claim facts
-    // ------------------------------------------------------------------
-
-    /// [ENT-3] S3 establishes the canonical contribution components, never
-    /// the parent first. The direct ordinary-let image is materialized only
-    /// after ordinary ENT-4 reconstruction proves the expanded predicate.
-    pub(super) fn establish_claim_contribution(
-        &mut self,
-        node_path: &crate::NodePath,
-        contribution: &super::ClaimContribution,
-        renderings: &[String],
-        occurrence: u32,
-        state: &mut FactState,
-    ) -> Option<ClaimProofEvidence> {
-        if contribution.components.len() != renderings.len()
-            || contribution.exact_goals.is_empty()
-            || contribution.exact_goals.len() > 2
-        {
-            return None;
-        }
-        let active_mask = self
-            .claim_mask
-            .filter(|mask| mask.function == self.function.id && mask.node_path == *node_path);
-        let mut component_evidence = Vec::with_capacity(contribution.components.len());
-        for (index, component) in contribution.components.iter().enumerate() {
-            let ordinal = u32::try_from(index)
-                .expect("claim contribution component count exceeds the u32 identity space");
-            if active_mask
-                .is_some_and(|mask| mask.component.is_none() || mask.component == Some(ordinal))
-            {
-                continue;
-            }
-            let event = self.derivations.claim_event(node_path.clone(), ordinal);
-            let source = match component {
-                super::ClaimComponentFact::Goal { goal, sign } => {
-                    state.establish_goal_with_proof(*goal, *sign, &mut self.derivations, event)
-                }
-                super::ClaimComponentFact::Relation(Relation::Bound { left, right, bound }) => {
-                    state.establish_bound_with_proof(
-                        *left,
-                        *right,
-                        *bound,
-                        &mut self.derivations,
-                        event,
-                    )
-                }
-                super::ClaimComponentFact::Relation(Relation::Distinct { left, right }) => {
-                    state.establish_distinct_with_proof(*left, *right, &mut self.derivations, event)
-                }
-                super::ClaimComponentFact::Relation(Relation::Equal { .. }) => return None,
-            };
-            self.derivations.add_root(
-                DerivationRootKind::ClaimComponent {
-                    occurrence,
-                    component: ordinal,
-                },
-                source,
-            );
-            component_evidence.push(ClaimComponentEvidence {
-                ordinal,
-                fact: component.clone(),
-                rendering: renderings[index].clone(),
-                source,
-            });
-        }
-        if active_mask.is_some_and(|mask| mask.component.is_none()) {
-            return None;
-        }
-        let canonical = contribution.exact_goals.last().copied()?;
-        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-        if closed.contradictory()
-            || !closed.derives_goal(
-                canonical,
-                super::super::state::GoalSign::Positive,
-                &self.goals,
-            )
-            || closed.derives_goal(
-                canonical,
-                super::super::state::GoalSign::Negative,
-                &self.goals,
-            )
-        {
-            return None;
-        }
-        let parent = closed.goal_proof(
-            canonical,
-            super::super::state::GoalSign::Positive,
-            &self.goals,
-            &mut self.derivations,
-        )?;
-        self.derivations.add_root(
-            DerivationRootKind::ClaimReconstruction {
-                occurrence,
-                direct: false,
-            },
-            parent,
-        );
-        let direct_goal = contribution.exact_goals[0];
-        let mut direct_proof = (direct_goal == canonical).then_some(parent);
-        for direct in contribution
-            .exact_goals
-            .iter()
-            .copied()
-            .filter(|goal| *goal != canonical)
-        {
-            let event = self.proof_event(FlowEventKind::ClaimReconstruction, Some(node_path));
-            let proof = state.establish_goal_from_proof(
-                direct,
-                super::super::state::GoalSign::Positive,
-                parent,
-                &mut self.derivations,
-                event,
-            )?;
-            if direct == direct_goal {
-                direct_proof = Some(proof);
-            }
-        }
-        let direct_proof = direct_proof?;
-        self.derivations.add_root(
-            DerivationRootKind::ClaimReconstruction {
-                occurrence,
-                direct: true,
-            },
-            direct_proof,
-        );
-        Some(ClaimProofEvidence {
-            images: ClaimImageEvidence {
-                direct: direct_goal,
-                expanded: canonical,
-                complete: contribution.lifecycle_complete,
-            },
-            components: component_evidence,
-            reconstructions: ClaimReconstructionEvidence {
-                expanded: parent,
-                direct: direct_proof,
-            },
-        })
-    }
-
-    // ------------------------------------------------------------------
     // S4 requires facts
     // ------------------------------------------------------------------
 
@@ -402,19 +261,13 @@ impl Analyzer<'_, '_> {
             state.establish(&relation, &mut self.derivations, event);
         }
         // [ENT-3] Signed Boolean decomposition of the established body goal.
-        let view = state.proof_view();
         self.establish_boolean_decomposition(
             goal,
             super::super::state::GoalSign::Positive,
             state,
             event,
         );
-        self.record_boolean_decomposition(
-            goal,
-            super::super::state::GoalSign::Positive,
-            view,
-            state,
-        );
+        self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, state);
     }
 
     // ------------------------------------------------------------------
@@ -732,7 +585,8 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        if self.establish_bit_and_bounds(node_path, binding, value, state, event)
+        if self.establish_remainder_bounds(node_path, binding, value, state, event)
+            || self.establish_bit_and_bounds(node_path, binding, value, state, event)
             || self.establish_shift_one_nonzero(node_path, binding, value, state, event)
         {
             return true;
@@ -759,6 +613,97 @@ impl Analyzer<'_, '_> {
         }
         let event = self.binding_event(event, FlowEventKind::S7, node_path);
         establish_shifted(state, bound, base, delta, &mut self.derivations, event);
+        true
+    }
+
+    /// [ENT-3] S7: an admitted unsigned exact remainder publishes
+    /// `result < divisor`. A signed remainder by a written constant `d`
+    /// publishes the closed interval `-(|d| - 1) <= result <= |d| - 1`.
+    /// The operation's ordinary IntegerDomain judgment has already proved its
+    /// domain before acceptance; this transfer performs no proof search.
+    fn establish_remainder_bounds(
+        &mut self,
+        node_path: &crate::NodePath,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> bool {
+        let CheckedExpression::IntegerOperation {
+            operation: CheckedIntegerOperation::RemainderExact,
+            operand_type: CheckedType::Integer(row),
+            arguments,
+            ..
+        } = value
+        else {
+            return false;
+        };
+        let [_dividend, divisor] = arguments.as_slice() else {
+            return true;
+        };
+        let Some(result) = self.bound_term(binding, value) else {
+            return true;
+        };
+        let Some(divisor) = self.read_operand(divisor) else {
+            return true;
+        };
+        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        if !row.signed() {
+            let relation = Relation::Bound {
+                left: result,
+                right: divisor,
+                bound: -1,
+            };
+            let parent =
+                state.establish_bound_with_proof(result, divisor, -1, &mut self.derivations, event);
+            self.retain_s7_derivation(S7Derivation {
+                source: node_path.clone(),
+                row: *row,
+                binding,
+                kind: S7DerivationKind::UnsignedRemainderBound { divisor },
+                relation,
+                event,
+                parent,
+            });
+            return true;
+        }
+
+        let Some(divisor_value) = self
+            .constant_term_value(divisor)
+            .filter(|value| *value != 0)
+        else {
+            return true;
+        };
+        let Some(limit) = divisor_value
+            .checked_abs()
+            .and_then(|value| value.checked_sub(1))
+        else {
+            return true;
+        };
+        for (endpoint, left, right) in [
+            (RemainderEndpoint::Minimum, ZERO, result),
+            (RemainderEndpoint::Maximum, result, ZERO),
+        ] {
+            let relation = Relation::Bound {
+                left,
+                right,
+                bound: limit,
+            };
+            let parent =
+                state.establish_bound_with_proof(left, right, limit, &mut self.derivations, event);
+            self.retain_s7_derivation(S7Derivation {
+                source: node_path.clone(),
+                row: *row,
+                binding,
+                kind: S7DerivationKind::SignedRemainderBound {
+                    divisor: divisor_value,
+                    endpoint,
+                },
+                relation,
+                event,
+                parent,
+            });
+        }
         true
     }
 
@@ -799,7 +744,6 @@ impl Analyzer<'_, '_> {
                 state.establish_bound_with_proof(result, admitted, 0, &mut self.derivations, event);
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
-                view: state.proof_view(),
                 row: *row,
                 binding,
                 kind: S7DerivationKind::BitAndBound {
@@ -879,7 +823,6 @@ impl Analyzer<'_, '_> {
             state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
-            view: state.proof_view(),
             row: *row,
             binding,
             kind: S7DerivationKind::ShiftOneNonzero {

@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "Wrapping overflow is total and produces the specified negative value. Ordinary control observes that expected result.";
+  let hi = 2147483647_i32;
+  let w = hi +wrap 1_i32;
+  let wrapped_negative = ilt(w, 0_i32);
+  if wrapped_negative {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

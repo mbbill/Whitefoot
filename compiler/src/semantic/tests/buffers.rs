@@ -1,6 +1,6 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
-use super::super::entailment::{DerivationNode, GoalSign, ObligationFamily};
+use super::super::entailment::{DerivationNode, GoalSign, ObligationFamily, SourceAffineFactRef};
 use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
@@ -143,6 +143,230 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn allocation_fit_retains_and_installs_the_proved_source_length_ceiling() {
+    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) contract {
+  requires ile(n, 1000_u64);
+} {
+  let values = buffer_new(n, 0_u16);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  allocate(n: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the source requirement must bound the allocation: {outcome:?}");
+        };
+        let allocate = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "allocate")
+            .expect("allocate function exists");
+        let allocation_ordinal = allocate
+            .entailment
+            .obligations
+            .iter()
+            .position(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the buffer allocation retains OP-9");
+        let allocation = &allocate.entailment.obligations[allocation_ordinal];
+        assert!(allocation.discharged);
+        assert_eq!(allocation.allocation_length_upper_bound, Some(1000));
+        let CheckedStatement::Let {
+            value: CheckedExpression::BufferFill { target_domains, .. },
+            ..
+        } = &allocate.body[0]
+        else {
+            panic!("the first statement is the checked buffer allocation");
+        };
+        assert_eq!(target_domains.source_length_upper_bound(), Some(1000));
+    });
+}
+
+#[test]
+fn a_source_proof_allocation_ceiling_is_installed_in_the_target_domain() {
+    let source =
+        br#"fn allocate(n: own u64, middle: own u64) -> result: own unit allocates(heap) contract {
+  requires ile(n, middle);
+  requires ile(middle, 1000_u64);
+} {
+  prove bounded: ile(n, 1000_u64) {
+    use ile(n, middle);
+    use ile(middle, 1000_u64);
+  }
+  let values = buffer_new(n, 0_u16);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  allocate(n: 4_u64, middle: 5_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the checked source proof must bound the allocation: {outcome:?}");
+        };
+        let allocate = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "allocate")
+            .expect("allocate function exists");
+        let ordinal = allocate
+            .entailment
+            .obligations
+            .iter()
+            .position(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the buffer allocation retains OP-9");
+        let allocation = &allocate.entailment.obligations[ordinal];
+        assert!(allocation.discharged);
+        assert_eq!(allocation.allocation_length_upper_bound, Some(1000));
+        let CheckedStatement::Let {
+            value: CheckedExpression::BufferFill { target_domains, .. },
+            ..
+        } = &allocate.body[1]
+        else {
+            panic!("the second statement is the checked buffer allocation");
+        };
+        assert_eq!(target_domains.source_length_upper_bound(), Some(1000));
+    });
+}
+
+#[test]
+fn an_affine_source_proof_supplies_the_only_tight_allocation_ceiling() {
+    let source =
+        br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
+  requires ile(half, 500_u64);
+} {
+  let doubled = half * 2_u64;
+  let within = ile(n, doubled);
+  if within {
+    prove tight: ile(n, 1000_u64) {
+      use ile(n, doubled);
+      use ile(doubled, 2_u64 * half);
+      use ile(2_u64 * half, 1000_u64);
+    }
+    let values = buffer_new(n, 0_u16);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the checked affine source proof must bound the allocation: {outcome:?}");
+        };
+        let allocate = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "allocate")
+            .expect("allocate function exists");
+        super::entailment::validate_derivations(&allocate.entailment);
+        let allocation = allocate
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the buffer allocation retains OP-9");
+        assert!(allocation.discharged);
+        assert_eq!(allocation.allocation_length_upper_bound, Some(1000));
+        let ceiling = allocation
+            .allocation_length_upper_bound_derivation
+            .expect("the target ceiling retains its own derivation");
+        assert!(matches!(
+            allocate.entailment.derivations.nodes[ceiling.0 as usize],
+            DerivationNode::AffineConsequence {
+                premise: Some(SourceAffineFactRef::SourceProof { source_ordinal: 0 }),
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn an_ordinary_branch_fact_gives_the_allocation_ceiling() {
+    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
+  let within = ile(n, 777_u64);
+  if within {
+    let values = buffer_new(n, 0_u16);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the ordinary branch fact must bound the allocation: {outcome:?}");
+        };
+        let allocate = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "allocate")
+            .expect("allocate function exists");
+        let ordinal = allocate
+            .entailment
+            .obligations
+            .iter()
+            .position(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the buffer allocation retains OP-9");
+        let allocation = &allocate.entailment.obligations[ordinal];
+        assert!(allocation.discharged);
+        assert_eq!(allocation.allocation_length_upper_bound, Some(777));
+    });
+}
+
+#[test]
+fn an_exact_buffer_fits_fact_retains_its_language_ceiling_when_no_tighter_bound_exists() {
+    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
+  let fits = buffer_fits<u16>(n);
+  if fits {
+    let values = buffer_new(n, 0_u16);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  allocate(n: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the exact predicate must authorize its matching allocation: {outcome:?}");
+        };
+        let allocate = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "allocate")
+            .expect("allocate function exists");
+        let allocation = allocate
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the branch allocation retains OP-9");
+        assert_eq!(
+            allocation.allocation_length_upper_bound,
+            Some(u64::MAX / 2),
+            "u16 has a two-byte source stride ceiling"
+        );
+    });
+}
+
+#[test]
 fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let array_fit = buffer_fits<array<u8, 4>>(0_u64);
@@ -247,7 +471,6 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         };
         let make = &checked.data.functions[0];
         assert!(make.declared_allocates_heap);
-        assert!(!make.declared_traps);
         assert!(matches!(
             &make.body[0],
             CheckedStatement::Return {
@@ -267,7 +490,6 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
         let main = &checked.data.functions[1];
         assert!(main.declared_allocates_heap);
-        assert!(!main.declared_traps);
 
         let CheckedStatement::Set { target, .. } = &main.body[4] else {
             panic!("the statement after the dominating length branch must be indexed SET-1");
@@ -325,7 +547,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn buffer_effect_rows_are_checked_both_ways() {
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus traps {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -334,7 +556,7 @@ fn buffer_effect_rows_are_checked_both_ways() {
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -385,7 +607,7 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
             }
         );
         // The [ENT-5] length fact from the allocation discharges the ieq
-        // check's operands without a claim, which acceptance already proves.
+        // check's operands directly, which acceptance already proves.
         assert!(matches!(
             &main.body[1],
             CheckedStatement::Let {
@@ -400,13 +622,13 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
 fn buffer_vacant_requires_its_written_payload_and_effect_row() {
     // [TYPE-5]: the element payload type is a retained written argument.
     assert_rule(
-        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let slots = buffer_vacant(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
     // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -416,7 +638,7 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
     );
     // [TYPE-5]: the one operand is the own u64 length.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let slots = buffer_vacant<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -425,7 +647,7 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
 #[test]
 fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap), traps {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
   let slots = buffer_vacant<slice<'r, u8>>(2_u64);
   return unit;
 }
@@ -446,7 +668,7 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     // A slice over an affine-element buffer has no implemented in-place
     // read; it stops as capability, not as a source rejection.
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   region 'v {
     let view = slice_of(&'v slots);
@@ -494,7 +716,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
-        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -507,16 +729,17 @@ fn struct_buffer_paths_and_reverse_cleanup_are_explicit() {
   right: buffer<u64>;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(4_u64, 0_u64);
   let right = buffer_new(4_u64, 0_u64);
   let columns = Columns(left: move left, right: move right);
   let left_room = len(columns.left);
   let ok = ilt(2_u64, left_room);
-  claim left_sized: ok because "premises: columns.left is the buffer created by buffer_new(4_u64, 0_u64), so left_room is 4_u64\nderivation: 2_u64 is strictly less than 4_u64\nconclusion: 2_u64 is strictly less than left_room\nchecker gap: ENT does not retain the allocation length through nominal construction and projected buffer length\nconsumers: the following projected set and read operations require this exact index bound";
-  set columns.left[2_u64] = 7_u64;
+  if ok {
+    set columns.left[2_u64] = 7_u64;
+    let value = columns.left[2_u64];
+  }
   let length = len(columns.right);
-  let value = columns.left[2_u64];
   return exit_status(code: 0_u8);
 }
 "#;
@@ -525,28 +748,31 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
             panic!("struct-of-buffers must check: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let CheckedStatement::Set { target, .. } = &main.body[6] else {
-            panic!("the statement after the discharging claim must be projected indexed SET-1");
+        let CheckedStatement::Match { arms, .. } = &main.body[5] else {
+            panic!("the proved branch must retain its checked control-flow statement");
+        };
+        let CheckedStatement::Set { target, .. } = &arms[0].body[0] else {
+            panic!("the true branch must contain projected indexed SET-1");
         };
         let CheckedSetTarget::BufferIndex(target) = target else {
             panic!("SET-1 must retain a projected buffer root");
         };
         assert_eq!(target.root.fields, [0]);
         assert!(matches!(
-            &main.body[7],
-            CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { root, .. },
-                ..
-            } if root.fields == [1]
-        ));
-        assert!(matches!(
-            &main.body[8],
+            &arms[0].body[1],
             CheckedStatement::Let {
                 value: CheckedExpression::BufferIndex { root, .. },
                 ..
             } if root.fields == [0]
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[9] else {
+        assert!(matches!(
+            &main.body[6],
+            CheckedStatement::Let {
+                value: CheckedExpression::BufferLength { root, .. },
+                ..
+            } if root.fields == [1]
+        ));
+        let CheckedStatement::Return { drops, .. } = &main.body[7] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 3);
@@ -648,7 +874,7 @@ command fn main() -> status: own ExitStatus pure {
     // derived from its operand [STOR-2, OP-2], so that is where the recorded
     // rule and kind still fire, at the operand atom the rule names.
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap), traps {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
   box_new(move value);
   return unit;
 }

@@ -1,10 +1,10 @@
 # Kernel Specification v0.40
 
-Status: CANDIDATE v0.40 supersedes v0.39 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516
+Status: ACTIVE v0.40
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (138 remain); grammar productions +0/-0 (75 remain); unique fixed lowercase grammar atoms +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0; entry forms +0/-0; contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. This candidate begins the proof-carrying safety replacement without adding a proof surface yet. [ENT-3.S5] now gives a successful direct-place [SET-1] value commit the same finite literal, term-copy, and total-conversion image as an ordinary binding, strictly after the old target value has been killed. [ENT-5] now closes a reaching state before lexical support is forgotten, so a conclusion whose own support is entirely outside the exiting scope survives even when an exiting local was an intermediate proof term; any conclusion still naming the local or one of its holders dies normally. Both changes only add machine-derived facts, add no search, runtime operation, check, trap, branch, or optimizer authority, and cannot turn a formerly discharged obligation into an undischarged one. No grammar production, keyword, operation, type, outcome, diagnostic family, or writer-visible surface is added or removed.
-Selection ground for the [CLM-1] narrowing: evidence-selected, by the differential-fuzz campaign recorded in `docs/done/0097-differential-fuzz.md`. Every one of that campaign's 63 rejections over 2004 generated programs was this shape, and the minimized pair differs by one line: with an early `return` in the `Err` arm of a `match` on a system-call result, a following `let seed = 3209_u64; let offset = seed % 64_u64;` was post-join state selected by the `Err` edge and `claim guard: ilt(offset, 64_u64)` was refused as non-local with carrier `offset`, although the claim's truth reads nothing the system returned; with an empty `Err` arm the identical claim was admitted. The refused member is now accepted. The rejected wider alternative was to drop control dependence from claim authority entirely, which would admit a claim over a binder a boundary selector chose between two arms; the narrowing keeps that selection and removes only the part that selects nothing. Prior selection ground for [PAR-3]: the staged-pipeline design derived against the completion model and the io-completion benchmark's own measurements; first-principles derivation recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
+META-5 delta declaration: numbered rules +2/-9 (131 remain); grammar productions +7/-1 (81 remain); unique fixed lowercase grammar atoms +3/-4; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-1; entry forms +0/-1; contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. This version completes the proof-carrying safety replacement with INV-1's proof-only counted-loop invariant surface and PRF-1's explicit finite affine proof surface, and removes the writer-spelled runtime assertion boundary. Neither proof surface grants authority from its written conclusion alone: the normal semantic checker proves INV-1's base case, every arbitrary reachable backedge step, and any exhaustion export, while PRF-1 independently proves every written `use` relation in the same pre-proof context and accepts only an exact source-order coefficient-one sum. [ENT-3.S5] gives a successful direct-place [SET-1] value commit the same finite literal, term-copy, and total-conversion image as an ordinary binding, strictly after the old target value has been killed. [ENT-5] closes a reaching state before lexical support is forgotten, so a conclusion whose own support is entirely outside the exiting scope survives even when an exiting local was an intermediate proof term; any conclusion still naming the local or one of its holders dies normally. These entailment changes use no solver, heuristic search, runtime operation, fallback check, branch, or optimizer authority. INV-1 adds one reserved statement keyword and five grammar productions; PRF-1 adds the two reserved statement keywords `prove` and `use` and two grammar productions. The retired assertion statement, its justification keyword, its function marker, and its effect category return to IDENT and remove one grammar production. GRAM-4 also makes loop and break LABEL operands optional without adding a production or atom: each loop keeps a compiler-owned structural identity, `break;` selects the nearest enclosing identity, and a written label remains available only for an explicit cross-level exit. STOR-6 requires every runtime allocation byte ceiling to be proved against the selected target before emission and removes the former target-domain runtime guard; an exact `len(buffer)` SSA result and the `host_bytes_len` semantic record may supply their respective qualified target ceilings only to that target-stage proof, without narrowing a source `u64` type or publishing an ambient source relation. PAR-2 consumes a discharged OP-4 result's retained exact single-binder affine value `a*i+b`, rather than recognizing a bare-binder spelling, and uses the fixed nonzero-coefficient and one-map-per-owned-root rule without adding proof search.
+Selection ground: every writer-reachable partial operation must be proved before execution, while resource availability remains the explicitly deferred boundary [SCOPE-3]. The removed runtime assertion path could terminate an otherwise accepted program and made safety depend on execution rather than compilation; source control flow, contracts, machine-proved invariants, and explicit finite proofs now form the complete writer proof surface. Prior selection ground for [PAR-3] remains the staged-pipeline design derived against the completion model and the io-completion benchmark's own measurements; first-principles derivation is recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
@@ -16,18 +16,19 @@ R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimal
 The gated family's members (unsafe regions, FFI extern frames, trusted primitive imports) are not writable by the steady-state writer; a kernel program contains no gated constructs.
 
 [SCOPE-2] A program is checker-accepted iff it parses under the canonical grammar and satisfies every machine judgment in this document.
-An owner-approved program additionally has every retained claim's review record validated under [CLM-1]; that approval status is an external review judgment over the exact checker-accepted source and claim inventory, not another compiler fact source or a way to admit checker-rejected source.
-Every proof-required hazardous operation is statically discharged by the deterministic checker before lowering; a writer may establish a missing fact with executed control flow or with one retained named [CLM-1]-local claim, but no operation receives an implicit runtime fallback.
-There is no writer-emittable unchecked state: nothing writer-stated is trusted without either machine derivation or the executed claim boundary.
-The sole trusted-assertion class is toolchain-gated ledger entries (§14), which the writer cannot author or edit.
+Every proof-required partial operation is statically discharged by the deterministic checker before lowering; a writer may expose a missing fact with executed control flow, provide a machine-proved counted-loop invariant [INV-1], derive it with one machine-checked [PRF-1] source proof, or publish it across a function boundary through verified contracts [FN-8, FN-9].
+Failure to discharge any such obligation rejects compilation; no operation receives an implicit runtime fallback and no writer statement can request one.
+There is no writer-emittable unchecked state and nothing writer-stated is trusted without machine derivation.
+Runtime-origin values — parameters, system results, loaded storage, and values derived from them — enter the proof context only as typed symbolic terms; their origin neither grants nor removes proof authority.
+A proposition enters the context only from a selected ordinary control-flow edge, a declaration or type fact fixed by this specification, a verified callee postcondition, a machine-proved loop invariant, or a [PRF-1] step whose premises and exact finite combination the checker has independently discharged.
+No written conclusion, origin annotation, trusted-value mark, runtime observation outside executed source control, compiler-generated record, or optimizer result is a fact source.
+The gated toolchain family may implement specification-fixed primitives, but it cannot inject a writer-program fact or bypass an obligation [GATE-1, LEDGER-1].
 
 [SCOPE-3] Accepted programs have no undefined behavior, conditional on: (a) the declared trusted computing base (compiler, checker, runtime, allocator, OS), and (b) when a program links gated FFI frames, ABI-well-behaved foreign code.
 This is the Layer-4 envelope statement; violations of (a)/(b) are outside the language's guarantee.
-
-[SCOPE-4] A false executed `claim` is the sole writer-reachable language runtime contract violation and traps [CLM-1].
-Before aborting, the runtime attempts to write the exact [DIAG-3] trap record for that claim to standard error.
-If control returns from that attempt, it then aborts without unwinding and without performing language cleanup after the violation.
-Failure of the external output sink may terminate the process before that explicit abort, but it never permits execution to continue.
+This version temporarily leaves only external resource availability outside the source outcome model: heap exhaustion, stack exhaustion, operating-system quotas, and runtime-start resources may stop execution at the host boundary without a Whitefoot value, status, or cleanup guarantee.
+That temporary scope cut does not defer static layout, stride, allocation-ceiling, address, target qualification, target-domain, parallel-independence, or bounded queue/completion proof; every one of those obligations still succeeds before the governed operation is emitted.
+External resource failure establishes no source fact, grants no fallback path, and cannot turn an unproved operation into an accepted one.
 
 ## 2. Canonical form
 
@@ -58,10 +59,10 @@ Every nonempty physical line begins with exactly two ASCII spaces for each enclo
 A closing brace is rendered after reducing the depth for the block it closes.
 A match-arm header is therefore one level inside its match, and statements in the arm body are two levels inside it.
 
-The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `break_stmt`, `claim_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs`.
+The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `invariant_stmt`, `proof_premise`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs`.
 Each renders completely on one line, including its final semicolon.
 
-The block-bearing productions are `struct_decl`, `enum_decl`, `contract_decl`, `conform_decl`, the body of `fn_decl`, `contract_block`, `loop_stmt`, `for_stmt`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
+The block-bearing productions are `struct_decl`, `enum_decl`, `contract_decl`, `conform_decl`, the body of `fn_decl`, `contract_block`, `loop_stmt`, `for_stmt`, `proof_stmt`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
 Their introducer through `{` is one line; their children render on following lines at depth plus one; and `}` renders on its own line at the original depth.
 Empty blocks still use an opening line followed by a closing-brace line.
 An `if_stmt` or `value_if` is rendered solely by this sentence, the generic block-bearing rendering notwithstanding: its introducer through the then-block `{` is one line; then-children render at depth plus one; an `else` renders as the join line `} else {` at the original depth, and a chained `else if` as the join line `} else if` through that `if`'s `{` at the original depth, never as a nested introducer line; else-children render at depth plus one; and the final `}` renders on its own line at the original depth.
@@ -76,11 +77,11 @@ Every production not listed as line-bearing or block-bearing introduces no forma
 Its terminals stay on the current line unless a descendant line-bearing or block-bearing production introduces one of the boundaries prescribed above.
 No other LF or blank line is emitted.
 
-[FORM-3] Lexical classes: IDENT `[a-z][a-z0-9_]*` excluding every lowercase token spelling produced by exact fixed grammar atoms in the complete grammar and the retired spelling `trap`; TYPEID `[A-Z][A-Za-z0-9]*`; REGIONID `'[a-z][a-z0-9_]*` (apostrophe-prefixed, the only region spelling); LABEL `@[a-z][a-z0-9_]*`; OPNAME `[a-z][a-z0-9_]*\.(wrap|defined|checked|sat|strict)` (single token; the base has the raw lowercase-word shape used by IDENT and the mode suffix is a closed word set, so an OPNAME can never maximal-munch a valid field-access place `p.field`: all five suffix words are reserved from field binding [OP-1, GRAM-5]; e.g. `ineg.checked`).
+[FORM-3] Lexical classes: IDENT `[a-z][a-z0-9_]*` excluding every lowercase token spelling produced by exact fixed grammar atoms in the complete grammar; TYPEID `[A-Z][A-Za-z0-9]*`; REGIONID `'[a-z][a-z0-9_]*` (apostrophe-prefixed, the only region spelling); LABEL `@[a-z][a-z0-9_]*`; OPNAME `[a-z][a-z0-9_]*\.(wrap|defined|checked|sat|strict)` (single token; the base has the raw lowercase-word shape used by IDENT and the mode suffix is a closed word set, so an OPNAME can never maximal-munch a valid field-access place `p.field`: all five suffix words are reserved from field binding [OP-1, GRAM-5]; e.g. `ineg.checked`).
 
 [FORM-4] There are no comments.
 Documentation is the `doc` field of declarations [GRAM-2].
-Provenance lives in toolchain records.
+Source coordinates and diagnostic derivations live in toolchain records.
 
 [FORM-5] Literals, exhaustively: integers `-?[0-9]+_TYPE` (decimal only, mandatory suffix; a leading `-` is legal for signed TYPE, and the signed value must lie in TYPE's range [FORM-7]; e.g. `42_i32`, `-2147483648_i32`); finite floats use the grammar `-?(0|[1-9][0-9]*)\.[0-9]+(e-?(0|[1-9][0-9]*))?_TYPE`, where TYPE is `f32` (IEEE 754 binary32) or `f64` (IEEE 754 binary64), positive exponents carry no sign, negative exponents carry one `-`, and only the integer and exponent components have the stated no-leading-zero form.
 Let C be the nonnegative integer formed by concatenating the integer and fraction digits, let F be the number of fraction digits, and let E be the signed integer formed by the exponent digits and their optional `-`; when the exponent is absent E is zero, and `e-0` also gives E zero.
@@ -91,7 +92,7 @@ Its canonical spelling is the candidate with the fewest ASCII bytes before `_TYP
 This selection is total, host-independent, and unique; in particular `0.0` and `-0.0` remain distinct.
 Other examples are `1.5_f64` and `6.022e23_f64`.
 `unit`; STRING `"..."` whose interior is a sequence of items, each one raw ASCII-printable byte in U+0020..U+007E other than `"` and `\`, or one of exactly three escapes `\\ \" \n`; no other byte is legal, and each character has exactly one spelling (the escape where one is defined, the raw byte otherwise).
-STRING appears only in `doc` entries and `claim` justifications; non-ASCII diagnostic text is DEFERRED.
+STRING appears only in `doc` entries; non-ASCII diagnostic text is DEFERRED.
 There are no boolean literals: `Bool` is a prelude enum (§15).
 Generic-numeric literals `0_T` and `1_T` are legal where `T` is a gparam bound by a numeric contract (`Int` or `Float`, §15), denoting T's additive and multiplicative identity; a concrete type uses `0_i32` and the like, so there is no dual spelling.
 NaN and the infinities are not literals; they are the nullary ops `fnan` and `finf` [OP-1].
@@ -163,7 +164,7 @@ enum_decl    := "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
 vfield       := IDENT ":" type
-fn_decl      := "deny_claims"? program_kind? "fn" IDENT generics? region_params? "(" param_list? ")"
+fn_decl      := program_kind? "fn" IDENT generics? region_params? "(" param_list? ")"
                 "->" result_binding effects contract_block? "{" doc? stmt* "}"
 program_kind := "command"
 result_binding:= IDENT ":" rtype
@@ -205,8 +206,8 @@ targ   := type | REGIONID | const
 
 ```wf-ebnf GRAM-4
 stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
-             | for_stmt | break_stmt | region_stmt | claim_stmt
-             | if_stmt | match_stmt | give_stmt
+             | for_stmt | invariant_stmt | break_stmt | region_stmt
+             | proof_stmt | if_stmt | match_stmt | give_stmt
 let_stmt    := "let" IDENT "="
                ( ordinary_let_rhs | propagate_let_rhs | replace_let_rhs
                | value_match | value_if )
@@ -218,11 +219,18 @@ replace_let_rhs := "replace" place "=" expr ";"
 set_stmt    := "set" place "=" expr ";"
 expr_stmt   := call ";"
 return_stmt := "return" expr ";"
-loop_stmt   := "loop" LABEL "{" stmt* "}"
-for_stmt    := "for" LABEL IDENT "in" atom ".." atom "{" stmt* "}"
-break_stmt  := "break" LABEL ";"
+loop_stmt   := "loop" LABEL? "{" stmt* "}"
+for_stmt    := "for" LABEL? IDENT "in" atom ".." atom "{" stmt* "}"
+invariant_stmt := "invariant" IDENT ":" IDENT "(" affine_expr "," affine_expr ")" ";"
+proof_stmt := "prove" IDENT ":" IDENT "(" affine_expr "," affine_expr ")"
+              "{" proof_premise+ "}"
+proof_premise := "use" IDENT "(" affine_expr "," affine_expr ")" ";"
+affine_expr := affine_term (affine_add_op affine_term)*
+affine_term := affine_factor ("*" affine_factor)?
+affine_factor := literal | IDENT | "(" affine_expr ")"
+affine_add_op := "+" | "-"
+break_stmt  := "break" LABEL? ";"
 region_stmt := "region" REGIONID "{" stmt* "}"
-claim_stmt  := "claim" IDENT ":" expr "because" STRING ";"
 give_stmt   := "give" expr ";"
 match_stmt  := "match" expr "{" arm+ "}"
 value_match := "match" expr "{" arm+ "}"
@@ -279,7 +287,7 @@ A value initializer whose delivery set is empty — every arm or branch leaves b
 On every control path an arm or branch terminates in exactly one `give e;` or cannot reach the initializer's continuation; a give-free continuing path, a statement following a `give` in the same block, and a second `give` on one path are each a hard error citing GIVE-1 — the value analog of match exhaustiveness [ERR-2].
 Give-completeness is a structural last-statement recursion: an arm or branch delivers when its final statement is a `give_stmt`, a `return_stmt`, a `break_stmt` whose resolved target loop lexically encloses the same value initializer, a `match_stmt` every arm of which delivers, or an `if_stmt` with `else` both branches of which deliver, relative to that same value initializer; an else-free `if_stmt` has a continuing false edge and never delivers.
 A final nested value initializer bound by its own `let` delivers only to its own inner let and therefore does not make the outer arm or branch deliver.
-A `claim` or call that may trap also has a normally continuing edge and does not count as delivery or must-divergence.
+A call with a normal result edge does not itself count as delivery or must-divergence.
 No `loop_stmt` or `for_stmt` is assumed to diverge.
 This recursion is strictly simpler than the ownership checker.
 `give e;` moves or copies `e` per [OWN-1]; a borrow-typed `e` is judged for regions exactly as a returned borrow of the same mode [OWN-4].
@@ -377,7 +385,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; admitted system constructors [SYS-1], classified as struct-constructor or enum-variant | the leading TYPEID of `construct` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
 | contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the optional bound TYPEID of a type `gparam` and the contract TYPEID of `conform_decl` |
 | REGIONID | `region_params` and `region_stmt` | every REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` |
-| LABEL | `loop_stmt`; `for_stmt` | `break_stmt` |
+| LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
 Those entries do not collide because the grammar distinguishes a `type` role from a `construct` or `arm` role.
@@ -417,7 +425,12 @@ Different ensures clauses have disjoint result-datum scopes and may reuse one ro
 Neither kind of result datum has runtime storage or ownership state, and neither is visible in the function body.
 A match binder becomes visible in its arm body only after the complete fieldbind list and only after GRAM-10 has established that it differs from its paired field label, every earlier binder in that arm list, and every lexical-IDENT declaration live on arm entry.
 A `for_stmt` binder becomes visible only after its complete header, including both endpoint atoms, and only within that counted body.
-An ordinary or counted loop label and a local region are visible only in their respective bodies; neither a counted label nor its binder is visible in either endpoint.
+An ordinary or counted loop label, when written, and a local region are visible only in their respective bodies; neither a counted label nor its binder is visible in either endpoint.
+A loop label is an optional lexical name, never the identity of the loop: every `loop_stmt` and `for_stmt` has one distinct compiler-owned structural loop identity whether or not it writes a LABEL.
+An unlabeled `break;` must be lexically inside at least one ordinary or counted loop and resolves to the nearest such enclosing loop.
+A labeled `break @name;` performs the ordinary LABEL-domain lookup below and may therefore resolve past one or more inner loops to an enclosing loop carrying that spelling.
+The resolved loop's structural identity, not a LABEL declaration, is the target retained by the semantic checker.
+A source invariant has no LABEL operand and binds only to its direct parent `for_stmt` under [INV-1]; adding, removing, or changing a loop label cannot change that binding.
 A named const becomes visible only after its complete `const_decl`, preserving CONST-2's explicitly-earlier rule.
 
 Within one domain, two declarations in the compilation-unit root or in the same lexical scope are a redeclaration attributed to the later declaration event.
@@ -460,7 +473,7 @@ These specific rules own their stated violations; every other failure of this cl
 
 T must be copy under [OWN-1].
 Setting a place whose final selected type is affine remains a hard error under [STOR-1]; `set` does not mean take, replace, reinitialize, or implicit destruction.
-The right-hand side is then checked under [TYPE-5] and evaluated under its ordinary expression, ownership, effect, and trap rules.
+The right-hand side is then checked under [TYPE-5] and evaluated under its ordinary expression, ownership, effect, and partial-operation domain rules.
 The checker analyzes the normal continuation of `e` and re-establishes there that the same target root is live and that the resolved target remains writable under the resulting loan state.
 If the right-hand side moved the target root, the commit is a later write of a dead root under OWN-1.
 If it created or changed a loan that conflicts with the commit, OWN-5 rejects the commit.
@@ -470,7 +483,7 @@ No root-liveness or writability fact from before the right-hand side bypasses th
 On successful revalidation, assignment performs exactly one write of the resulting copy value into `p`.
 The previous copy value ceases to occupy `p` and requires no drop, release, finalizer, or cleanup edge [STOR-3].
 The new value occupies the same place and the target root remains live.
-If right-hand-side evaluation traps, no store occurs; preceding right-hand-side effects are not rolled back, and trap-abort behavior remains [EFF-4].
+The store occurs only after right-hand-side evaluation completes; until that commit point the target retains its previous value.
 The checked program retains the exact target path, each required target check, the right-hand-side value, the post-right-hand-side liveness and writability judgments, and the single store before lowering [DIAG-2].
 
 [SET-2] Affine-place replacement.
@@ -486,7 +499,7 @@ Through a live usable `&uniq` holder the commit is the sole exception to [OWN-5]
 A commit through a shared holder is never admitted, and a suspended holder is not usable [OWN-5].
 Under [EFF-2]'s attribution the commit is one read and one write of the target's ultimate storage origin.
 A successful commit derives no drop, release, finalizer, or cleanup edge [STOR-3]: nothing is destroyed, and the previous value's later release, if x is abandoned, is x's ordinary compiler-derived scope-exit action.
-If right-hand-side evaluation traps, no commit occurs and x is never initialized; the place still holds the previous value, preceding right-hand-side effects are not rolled back, and trap-abort behavior remains [EFF-4].
+The exchange commits only after right-hand-side evaluation completes; before that point x is uninitialized and the target retains its previous value.
 The commit is an [ENT-5] kill event exactly as stated there; it establishes no fact.
 The checked program retains the exact target path, each discharged target check, the right-hand-side value, the post-right-hand-side liveness and writability judgments, the read-out, the write-in, and the binding initialization before lowering [DIAG-2].
 
@@ -502,7 +515,7 @@ The tail reuses `infix_op`, and its spelling must be one of the five bare operat
 Constant-expressions are evaluated at monomorphization [FN-2].
 An IDENT resolving to a non-integer or array-typed const is a compile-time rejection [DIAG-1].
 Const evaluation is exact in the unsigned 64-bit domain under the const-eval overflow policy named `const-reject`: an operation whose mathematical result lies outside that domain, or whose divisor is zero, is a compile-time rejection citing CONST-1 at the complete `const` node.
-`const-reject` is disjoint from runtime proof-required exact arithmetic: it never creates an [ENT-6] operation obligation or admits a `.defined` spelling, an accepted const-expression executes no runtime check and cannot trap, and a const-expression never enters EFF-2's exhibits-traps relation.
+`const-reject` is disjoint from runtime proof-required exact arithmetic: it never creates an [ENT-6] operation obligation or admits a `.defined` spelling, an accepted const-expression executes no runtime check, and a const-expression contributes no runtime effect.
 Inside a generic template an unevaluated const-expression is symbolic; two symbolic const-expressions are identical exactly when their operation and ordered terms are identical, with no commutation, constant folding, or reassociation, exactly as [FN-8] fixes goal identity.
 This keeps the const-generic forwarding path closed under the one operation: `const N` is usable as an `array<T, N>` size, and a derived expression such as `N * 2` is usable there and forwardable as a `const` targ, with each concrete instantiation evaluating it to one u64 value.
 
@@ -547,7 +560,7 @@ It may be stored into a destination of declared region `'b`, passed to a paramet
 
 [OWN-5] Resolved-place exclusivity.
 While `&uniq 'a p` is live and its holder is not suspended [OWN-6]: no place overlapping resolved(`p`) may be read, written, moved, or borrowed, except reads/writes through that borrow's holder and except the creation of a statement-scoped child reborrow, an arm-scoped child reborrow, a candidate-position child reborrow, or a returned reborrow of that holder [OWN-6, OWN-13, OWN-14].
-While a holder is suspended (a live statement-scoped child, arm-scoped child, candidate-position child, or returned reborrow of it exists), its own read/write allowance is withdrawn: no read, write, move, copy, `set` commit, or call-transfer through it is admitted until its last child ends; a `&uniq` holder suspended by candidate-position child creation does not resume — its claim may survive in the bound call result [OWN-6].
+While a holder is suspended (a live statement-scoped child, arm-scoped child, candidate-position child, or returned reborrow of it exists), its own read/write allowance is withdrawn: no read, write, move, copy, `set` commit, or call-transfer through it is admitted until its last child ends; a `&uniq` holder suspended by candidate-position child creation does not resume because the child loan may survive in the bound call result [OWN-6].
 While any `&'a p` is live: no place overlapping resolved(`p`) may be written, moved, uniq-borrowed, or committed by `set`; reads are permitted.
 A SET-1 commit is one write to resolved(target), and a [SET-2] commit is one read and one write to resolved(target); each is judged against the complete loan state after right-hand-side evaluation.
 A commit through a live usable `&uniq` holder is a write through that holder; a commit through a shared holder is never admitted.
@@ -571,28 +584,28 @@ A write, move, or unique borrow of an ordinary place conflicts when that place o
 A formal-slice origin has no directly writable storage path inside its callee; overlap with the caller's other actual arguments is checked after substitution under [OWN-12].
 No traversal order or chosen runtime arm may narrow the static set.
 Each runtime slice still has exactly one actual storage origin, and that origin is always a member of the static set after complete call substitution.
-Under this specification's named-region liveness, moving or returning a descriptor neither shortens nor extends the shared claim established by its source.
+Under this specification's named-region liveness, moving or returning a descriptor neither shortens nor extends the shared loan established by its source.
 
 [OWN-6] Holder, resolution, and statement-scoped child reborrow.
 The holder of a borrow is the binding its `borrow_expr` initializes (a borrow not bound by `let` is a call-scoped temporary, live until the end of the enclosing statement). resolved(place) rewrites a place rooted at a holder binding to the borrowed place plus the appended suffix, recursively.
 All OWN-5/OWN-7 judgments use resolved places.
 A statement-scoped child reborrow is the written form `&uniq 'c` or `&'c` over `deref(h)` followed by any written suffix chain, occurring as an argument atom of a `call` expression [GRAM-9], admitted only when: the receiving call's result mode is `own` or `unit`, never a borrow — except in the receiving call's provenance-candidate position, where a borrow result is admitted; `'c` is a locally-introduced region [OWN-3] whose block does not extend beyond the enclosing statement, and a caller-supplied region parameter is not admitted — except in the provenance-candidate position, where `'c` is any live region that resolved(`h`)'s region outlives-or-equals, caller-supplied included; the eligible holder `h` is a function parameter or a `let`-bound borrow, never a `match` binder; and a `uniq` child has a `uniq` parent, while a `shared` child is admitted from either [OWN-5]. resolved(child) = resolved(`h`) ++ suffix.
 Creating a child suspends `h` for the enclosing statement [OWN-5]; while a holder is suspended by this statement-scoped creation, the sole operation admitted through a place overlapping resolved(`h`) is creating a further sibling child, siblings judged by OWN-7 with any overlapping pair containing a `uniq` child an error, and `h` resumes at the end of the statement after its last child ends.
-Creating a candidate-position child through a `&uniq` holder suspends that holder for the remainder of its life; there is no statement-end resumption, because the child's claim may survive in the bound call result.
+Creating a candidate-position child through a `&uniq` holder suspends that holder for the remainder of its life; there is no statement-end resumption, because the child's loan may survive in the bound call result.
 A shared holder needs no suspension: it admits no write through itself.
 A child is never bound, returned, `give`n, stored, or the whole call result, and its `'c` cannot outlive the statement, so no borrow derived from a child outlives its statement; with borrow-free storage [STOR-5] the child is non-escaping.
 
 A `let` whose ordinary right-hand side is a user call with borrow-mode result is a borrow holder rooted at the callee's provenance candidate [FN-1], and every accepted callee has one or has none.
 resolved(result holder) = the candidate actual's complete resolved place, even when the callee delivered a narrower suffix of it; the holder's borrow is otherwise ordinary — OWN-4 liveness in the substituted result region, OWN-5 exclusivity, OWN-6 child admission, OWN-14 returned reborrow.
 Nothing here narrows FN-1: the caller still judges the call by the signature alone.
-A borrow-mode call result with no candidate is rooted in named `const` storage [FN-1, CONST-2], which no accepted write or unique borrow reaches [OWN-5, OWN-7]; its holder claims no caller place and conflicts with nothing.
+A borrow-mode call result with no candidate is rooted in named `const` storage [FN-1, CONST-2], which no accepted write or unique borrow reaches [OWN-5, OWN-7]; its holder borrows no caller place and conflicts with nothing.
 
 Bound children, result-carrying children (reference-result provenance), `uniq`-to-`shared` downgrade, `match`-binder parents, and written grandchild chains through a bound direct reborrow are DEFERRED with recorded delta; every written reborrow form outside this argument-atom position is dispositioned by [OWN-14], and the derived match-payload binder is [OWN-13]'s arm-scoped child reborrow.
 
 [OWN-7] Overlap: resolved `p` overlaps resolved `q` iff one is a prefix of the other.
 Two subscripted places with the same resolved base overlap iff their offsets are not both literals with unequal values.
 Two slice values in a fully substituted caller context overlap conservatively iff at least one pair of their resolved-place [OWN-5] origins overlaps.
-`immutable-const` needs no overlap claim because no accepted write or unique borrow of const storage exists.
+`immutable-const` needs no overlap proof because no accepted write or unique borrow of const storage exists.
 Formal-slice origins are substituted before caller overlap checking [FN-1, OWN-12]; they never establish that two actual sources are disjoint.
 
 [OWN-8] Reject-when-unsure: the checker rejects any program it cannot prove conformant.
@@ -611,7 +624,7 @@ A counted binder may be copied and may be shared-borrowed only into a region int
 These restrictions are checked for each enclosing loop, so nesting never grants an outer binding or region to an inner body.
 
 [OWN-12] Calls (OWN-CALL cluster): at a call, declared region parameters are substituted with the caller's region arguments, which must be live; argument borrows are live accesses of their resolved places for the duration of the call and are judged under OWN-5 (two `&uniq` arguments whose resolved places overlap are an error); the callee's effect paths are projected through the corresponding actual places under [EFF-2] and checked against the caller's live borrows under OWN-5. Region substitution controls loan liveness and type equality only; it never supplies effect identity.
-When an argument is a statement-scoped or candidate-position child reborrow [OWN-6], its suspended ancestor holder is excluded from this effect-row overlap check, since the child, not the ancestor, holds the claim for the call; every non-ancestor live borrow is still checked.
+When an argument is a statement-scoped or candidate-position child reborrow [OWN-6], its suspended ancestor holder is excluded from this effect-row overlap check, since the child, not the ancestor, holds the loan for the call; every non-ancestor live borrow is still checked.
 
 [OWN-13] Match ownership: a non-place expression scrutinee is an owned temporary (moved into the match).
 Matching a place of own mode moves it (the binding dies; binders receive `own` payloads); matching through `&'r` / `&uniq 'r` leaves the scrutinee live and binds payloads as `&'r` / `&uniq 'r` respectively.
@@ -650,13 +663,14 @@ Content access is through `deref`.
 
 [STOR-3] Deallocation and resource release are compiler-derived and explicit in the checked program [DIAG-2]: every drop and every release is represented before lowering.
 Every control-flow edge leaving a region block (fallthrough, `break`, `return`) carries that region's releases and drops in reverse declaration order.
-Release actions run only on normal control-flow edges; a trap runs none [EFF-4].
+Release actions run on every source control-flow edge that leaves their owner scope.
+Host termination caused solely by unavailable external resources under [SCOPE-3] is not a Whitefoot control-flow edge, and this specification makes no source-level cleanup promise for that deferred case.
 No reference counting.
 
-Every edge that leaves one entered `for_stmt` body normally — its fallthrough, a `break` naming that counted loop or an enclosing loop, a `return`, or a `propagate` error edge — carries exactly once every compiler-derived drop and release for the body scopes that edge leaves, innermost scope first and in reverse declaration order within each scope.
+Every edge that leaves one entered `for_stmt` body normally — its fallthrough, a `break` resolved to that counted loop or an enclosing loop, a `return`, or a `propagate` error edge — carries exactly once every compiler-derived drop and release for the body scopes that edge leaves, innermost scope first and in reverse declaration order within each scope.
 On body fallthrough those actions complete before the hidden counted update [FN-1].
 The header's false edge never enters the body and therefore carries no body-scope cleanup.
-A trap retains [EFF-4]'s no-release behavior.
+An external-resource termination under [SCOPE-3] likewise creates no source edge on which these actions could run.
 No exit duplicates an action already carried by an inner scope edge.
 
 The release action of a type is compiler-owned semantic data selected by that type, not a fixed enumeration of memory-reclamation actions.
@@ -713,18 +727,20 @@ This stop is a target-layout failure under [DIAG-1], not a source-language rejec
 
 For a runtime-sized allocation, the concrete descriptor and element layout are checked statically as above.
 For every type materialized by `buffer_new` or `buffer_vacant`, target qualification additionally verifies the actual size, alignment, and element stride against [OP-9]'s language ceilings before lowering the operation.
-The source `buffer_fits` proof and this target qualification jointly establish that the u64 byte-count multiplication cannot overflow; neither alone authorizes emission.
-Before the allocator is called, generated code checks or otherwise establishes that the complete runtime byte count has an exact value-preserving representation in the target allocator-parameter domain, and the allocator receives exactly that value.
-Every emitted target address computation must likewise be valid for every runtime value that reaches it: generated code checks or otherwise establishes that each runtime index and each mathematically scaled byte offset actually used by the computation has an exact value-preserving representation in the applicable target address-index domain, and that scaling and offset addition do not wrap.
+The accepted [OP-9] judgment retains a numeric upper bound for the source length at that allocation site; target qualification multiplies that bound by the actual target stride using checked mathematical arithmetic and requires the result to fit both the allocator-parameter and address-index domains before lowering the operation.
+At this target stage, the exact SSA result of `len(buffer)` additionally carries the selected target's runtime-allocation byte maximum divided by that buffer's actual element stride, because every materialized buffer already satisfies the successful-allocation representation invariant.
+Qualification may intersect this target bound with the retained source bound only for that exact SSA result; it does not publish a Whitefoot comparison fact or transfer the bound through a block parameter, storage load, conversion, user call, or another value merely because its source spelling or type is similar.
+The source allocation proof and this target qualification jointly establish that every reachable runtime byte count has one exact value-preserving target representation; neither alone authorizes emission, and the allocator receives exactly that value.
+Every emitted target address computation must likewise be proved valid for every runtime value that reaches it: the compiler establishes before emission that each runtime index and each mathematically scaled byte offset actually used by the computation has an exact value-preserving representation in the applicable target address-index domain, and that scaling and offset addition do not wrap.
 An [OP-4] bounds judgment together with an established complete-object-layout or successful-allocation invariant may discharge these obligations; a backend's implicit narrowing does not.
-A failed dynamic target-domain guard follows a non-continuing TCB/resource-failure path before allocator invocation or address formation.
-It is not a source rejection, [OP-4] bounds failure, new language trap, or [DIAG-3] event.
+If target qualification cannot establish one of these facts, target compilation stops before emitting the governed allocation or address operation.
+This stop is a target-layout failure, not a source rejection, [OP-4] bounds failure, runtime proof outcome, or resource-availability failure; no target-domain runtime guard is emitted.
 
 Complete generated frames remain subject to the mandatory checked-representability judgment above.
 That judgment does not predict available stack capacity: available capacity depends on dynamic call depth, recursion, the caller, and the execution environment.
 The language therefore defines no numeric per-array, per-object, or per-function frame ceiling.
 A tool or selected target may stop compilation for its own conservative frame-capacity or resource limit as a non-language target/resource failure [DIAG-1], but that optional limit does not replace the mandatory representability judgment.
-Exhaustion during execution is inside the compiler/runtime/OS TCB boundary [SCOPE-3], not a language trap: it adds no source effect, produces no mandatory [DIAG-3] record, and authorizes no hidden heap promotion.
+Exhaustion during execution is inside the compiler/runtime/OS TCB boundary [SCOPE-3]: it adds no source effect or proof fact and authorizes no hidden heap promotion.
 
 ## 7. Operations
 
@@ -837,7 +853,7 @@ ishr.defined(x, k) iff k < K
 ```
 
 Each domain query is pure, total, and returns `own Bool`; it does not execute the corresponding exact operation.
-An executed branch condition, requirement, or retained claim continuation may establish its canonical goal through [ENT-3].
+An executed branch condition, proved requirement, proved invariant, verified postcondition, or successful source proof may establish its canonical goal through [ENT-3].
 Merely computing the Bool value without an admitted fact source establishes nothing.
 The former `.trap` spellings and hidden named aliases such as `iadd.trap` do not derive and are not compatibility names.
 
@@ -874,22 +890,20 @@ Approximation/fast-math modes remain an OPEN numeric-semantics question; a relax
 [OP-4] A subscript `p[i]` selects one element place of an indexable base: the base place `p`'s final selected type must be `array<T, N>`, `slice<'r, T>`, or `buffer<T>`, and the subscripted place's selected type is exactly that element type T — derived from the base place's already-fixed type [TYPE-5] — written where the binding carries an annotation, derived at a body `let` — by the same declared-type selection that types a field suffix, never from expected type or cross-statement inference; a subscript whose base's final selected type is not one of the three indexable types is a hard error citing OP-4 at that subscript's `psuffix` node.
 The subscript carries the bounds obligation `i < len(p)` [ENT-6].
 A discharged subscript reads or writes with no runtime bounds check in every build mode, and its checked-program disposition records the discharging derivation [DIAG-2].
-Base discharge is judged before provenance: a subscript whose obligation the complete fact state does not discharge is a compile-time rejection citing OP-4 at that subscript's `psuffix` node, carrying the residual obligation rendered exactly per [ENT-6]; it forms no [PRV-2] or [PRV-3] candidate and publishes no checked program.
-Its mechanical fix is a dominating branch establishing the residual [ENT-3], or, only when the residual is an independently true theorem outside the normative checker, a CLM-2-admissible residual `claim` with a complete exact `because` record [CLM-1].
-Only after complete-state discharge succeeds may the constrained-subject gate replace that success with a [PRV-3] local-leaf rejection or retain a downstream demand for [PRV-2].
+A subscript whose current ProofContext does not discharge the obligation is a compile-time rejection citing OP-4 at that subscript's `psuffix` node, carrying the residual obligation rendered exactly per [ENT-6], and publishes no checked program.
+Its mechanical fix is a dominating branch establishing the residual [ENT-3], a proved loop invariant [INV-1], a [PRF-1] proof step naming sufficient premises, or a verified callee relation [FN-9].
 Discharge is a deterministic checker derivation [ENT-1]; a solver result never participates.
 A `buffer<T>` obligation is over the runtime length term.
 The offset atom has exact value mode and type `own u64`; after the [TYPE-7] implicit-read exclusivity, any other offset mode or type is a hard error citing OP-4 at the offset `atom` node, with `SourceCoordinate` equal to that atom's complete checked half-open source extent.
 A subscript in a [SET-1] target forms the selected place without reading its stored value; its base and offset are evaluated during target evaluation, and its discharge judgment is identical in target position.
 A successful bounds judgment neither narrows nor authorizes narrowing the offset or its scaled byte offset; target address formation additionally obeys [STOR-6].
 System range calls carry their own static [SYS-8] obligations through the same [ENT-6] framework; no operation-internal range check is retained.
-The [CLM-3] judgment reads successful U-view obligation metadata for consistency and postcondition premises but adds no separate strict subscript judgment or repair after the ordinary and provenance judgments have succeeded.
 
 [OP-5] Every source condition and contract predicate requires its selected expression to have exact value mode and type `own Bool`, where `Bool` is the PRE-1 nominal type.
 No integer, other enum, borrowed `Bool`, or implicit truthiness conversion is admitted [TYPE-4].
 The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a borrow-mode or box/arena binding where its referent `Bool` value would be required, that use is rejected citing TYPE-7 and OP-5 forms no candidate.
 Every other exact-mode or exact-type failure is a hard error citing OP-5 at the selected `expr` node, with `SourceCoordinate` equal to that expression node's complete checked half-open source extent.
-An `if` condition is executed control flow [GRAM-6], a `claim` condition is the one writer-authored runtime checked site [CLM-1], and a contract predicate is erased proof syntax [FN-8, FN-9].
+An `if` condition is executed control flow [GRAM-6], while a contract predicate, loop invariant, and source-proof relation are erased proof syntax [FN-8, FN-9, INV-1, PRF-1].
 This judgment alone creates no runtime check or effect.
 
 [OP-6] cvt partition and semantics (cross-reference TYPE-4).
@@ -941,8 +955,8 @@ It returns `own Bool`, exposes no target ABI value, and has the same result for 
 Each is accepted only when [ENT-6] discharges that exact goal; its sole normalized component is the defining comparison above, which may supply an alternate L0 derivation of the same root.
 The root does not project a new general L0 fact in the other direction.
 A refuted or unproved goal is a static OP-9 rejection; a contradictory state discharges it under [ENT-4].
-The length n is a protected subject under [PRV-2, PRV-3], so a claim about an unconditionally external n cannot launder it past the required real branch.
-No runtime multiplication check, trap site, or fallback is retained.
+When n comes from runtime input, it remains an ordinary symbolic term; only an enumerated fact constructor such as a selected real branch, proved invariant, PRF-1 step, or verified postcondition may discharge this goal [SCOPE-2, ENT-3, ENT-6].
+No written conclusion alone, runtime multiplication guard, or fallback is retained.
 
 All layout-ceiling arithmetic is over unbounded mathematical integers.
 Let `round_up(x,a) = ceil(x/a) * a`.
@@ -963,15 +977,14 @@ The language defines no numeric frame limit, and `array_new` remains pure becaus
 
 ## 8. Functions, generics, contracts
 
-[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the named result's mode and type, one formal-path state-effect row, region parameters, the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates with their complete/unasserted/S4-blinded dispositions, the derived [PRV-2] provenance column, one compiler-derived result-state routing summary, and one compiler-derived target summary.
+[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the named result's mode and type, one formal-path state-effect row, region parameters, the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates, one compiler-derived result-state routing summary, and one compiler-derived target summary.
 The result binder's spelling is mandatory but ignored by callable-signature equality and denotes no runtime storage.
-The written templates are checked interface claims rather than trusted declarations; a caller consults only their verified finite summaries and never a callee body.
-The provenance column is derived from the checked body and closed-unit fixed point, never written.
+The written templates are checked interface propositions rather than trusted declarations; a caller consults only their verified finite summaries and never a callee body.
 The written effect paths state which parameter-supplied state the function observes or changes. The checker derives the exact same set from body accesses, direct system contracts, releases, and calls and checks it in both directions under [EFF-2].
 The result-state routing summary records, for each ordinary owned state leaf the result may carry, whether that value is fresh or is the same value supplied by one or more formal parameter leaves. It is derived from existing move, construction, match, return, and ownership flow; it adds no source syntax, identity, parent relation, permission, or runtime field. A caller uses it only to preserve those existing value identities when a later effect or compiler-derived release acts through the returned owner. A result with no state leaf has the empty summary.
 The target summary states `never-suspends` or `may-suspend` and, for each reachable suspending action, the applicable `result-ready` components, `loan-released(formal path)` facts, and `terminal`; a release with no writer result has no `result-ready` milestone.
 That summary is derived from exact system contracts and the finite concrete call graph, never written, inferred from a spelling, or weakened by a declaration. It describes suspension and ownership handoff only; it grants no access and supplies no concurrency or alias judgment.
-Adding a protected parameter datum or payload projection to that column is a caller-visible interface change, exactly as strengthening the requirement GoalTemplate or RelationTemplate is.
+Strengthening a requirement GoalTemplate or RelationTemplate is a caller-visible interface change.
 A generic function carries the same boundary with its written type and const parameters, and each concrete [FN-2] instance substitutes them before its calls and body are re-checked.
 A `fn_sig` has neither kind of template.
 Function-signature visibility is the [TYPE-6] table.
@@ -992,7 +1005,7 @@ A function whose written result mode is `&'d` or `&uniq 'd` and whose direct res
 This specification has no signature summary that carries both the returned descriptor's source-place provenance and the underlying slice value's complete origin set.
 This rejection does not change any other returned-borrow judgment.
 A function whose written result mode is `&'b` or `&uniq 'b` determines the result's provenance from its written parameters alone: a parameter is a provenance candidate iff its written mode is a borrow of the result's kind in the result's formal region `'b` [OWN-6].
-Exactly one candidate is the result's debtor, and zero candidates is legal — OWN-10 admits no `'b`-region borrow rooted in callee-local storage, so the only remaining source is named `const` storage, whose immutable program-lifetime extent needs no claim [CONST-2].
+Exactly one candidate is the result's debtor, and zero candidates is legal — OWN-10 admits no `'b`-region borrow rooted in callee-local storage, so the only remaining source is named `const` storage, whose immutable program-lifetime extent needs no caller loan [CONST-2].
 The provenance judgment applies to a result whose written type is region-free; a region-bearing result type is rejected before it — a direct slice by this rule's slice sentence and an arena, in either result mode, by [STOR-4].
 Two or more candidates, a same-region parameter of the other borrow kind, or any parameter whose written type names `'b` leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
 The declaration is the error and no call is required to reach it: [GRAM-9] admits a computed value only through a preceding `let`, so a result no caller can bind is unusable by construction.
@@ -1018,14 +1031,14 @@ Thus lower greater than or equal to upper executes zero iterations after still e
 On normal body fallthrough, body-scope cleanup completes first [STOR-3], then the compiler updates the binder exactly once to its mathematical value plus one and returns to the header.
 The true guard proves the old binder is less than the u64 upper capture, so that increment is representable; it is a pure compiler operation with no hidden trap, wrap, saturation, operation-table call, or effect, including when the upper capture is max(u64).
 An edge leaving the counted body by `break` to that loop or an enclosing loop, `return`, or `propagate`'s `Err` path performs its ordinary cleanup exactly once and performs no hidden update.
-The counted header's carried-identity set is exactly the bindings carried into the construct plus both captures and the binder; the continuation interface and a break naming the counted label carry only the incoming identities after their path-specific ownership, cleanup, and effect judgments, with the counted label, binder, and captures all out of scope.
+The counted header's carried-identity set is exactly the bindings carried into the construct plus both captures and the binder; the continuation interface and a break resolved to that counted loop carry only the incoming identities after their path-specific ownership, cleanup, and effect judgments, with any counted label, the binder, and captures all out of scope.
 Ordinary `loop_stmt` execution is unchanged.
 
 Function completion and statement reachability use one conservative structural normal-control graph over the resolved function body.
 For any statement s, `normal_successor(s)` is the entry of s's next sibling statement in the same block when one exists, and otherwise that containing block's normal exit.
 A block entry reaches its first statement, or its normal block exit when it contains no statement.
-An ordinary `let`, a `let` selecting `replace_let_rhs`, `set`, an expression statement, and a passed `claim` have a normal edge to `normal_successor(s)`.
-A call or operation with a trapping effect also retains that normal edge; a possible trap never proves divergence.
+An ordinary `let`, a `let` selecting `replace_let_rhs`, `set`, an expression statement, and a proof statement have a normal edge to `normal_successor(s)`; a proof statement is then erased before lowering.
+A call with a normal result edge never proves divergence merely because external resource availability is outside this cycle's guarantee [SCOPE-3].
 A `return_stmt` has an edge only to the function-return sink.
 A `region_stmt` enters its body, and that body's normal exit reaches `normal_successor(region_stmt)`.
 A `match_stmt` enters every arm body, using an arm's normal exit when that body contains no statement, and each arm's normal exit reaches `normal_successor(match_stmt)`.
@@ -1038,7 +1051,7 @@ A `loop_stmt` reaches its body entry, or its body's normal exit when the body co
 For this conservative judgment every `loop_stmt` also has an edge to `normal_successor(loop_stmt)`; no ordinary loop is assumed to diverge [GIVE-1].
 A `for_stmt` reaches its compiler-owned preheader, the preheader reaches its header after both endpoint evaluations and binder initialization, and the header has both a true edge to its body entry (or the body's normal exit when empty) and a false edge to `normal_successor(for_stmt)`.
 Its body normal exit reaches the compiler-owned update, and that update reaches the header.
-A `break` naming the counted label reaches `normal_successor(for_stmt)` without the update.
+A `break` resolved to the counted loop reaches `normal_successor(for_stmt)` without the update.
 Every counted header retains both structural edges even when its captured endpoints are constant, so no counted loop is assumed to execute or to diverge [GIVE-1].
 The function-body normal exit has no successor.
 These edges are structural and are not removed by constant evaluation, a proof, or backend reachability.
@@ -1048,15 +1061,9 @@ When more than one statement establishes that premise, the reported one follows 
 The function body's normal exit must be unreachable.
 If it is reachable, the function falls through and is rejected citing FN-1 at the `fn_decl` node, with `SourceCoordinate` equal to the complete source interval of the body-closing `}` token.
 This requirement applies to `own unit` as well as every other result: successful completion is written `return unit;`; there is no implicit return.
-A possible trap, a call with no termination proof, or a loop does not satisfy the return requirement.
-This complete structural graph, its statement reachability, and every source call and claim identity are retained for source audit even when [FN-8] later proves one concrete instance uninhabited.
+A call with no termination proof or a loop does not satisfy the return requirement.
+This complete structural graph, its statement reachability, and every source call and proof-statement identity are retained for source audit even when [FN-8] later proves one concrete instance uninhabited.
 That proof changes only its checked body disposition and lowering authority; it never erases a source node or narrows the written effect row.
-
-The optional `deny_claims` terminal is one caller-visible compile-time policy on each concrete function boundary.
-It changes no parameter mode or type, return, effect, region, requirement, postcondition, provenance column, runtime body, or lowering, and it is absent from `fn_sig` and [FN-3] signature equality.
-One concrete body may serve both ordinary and strict callers.
-The derived strict summary reuses the finite concrete ordinary-call graph and SCC condensation already required by [FN-9], retains no foreign function-local derivation identity, and never creates a second graph or body.
-A call consults this policy only where [FN-8] and [CLM-3] require the existing U judgment.
 
 [FN-2] Function and nominal generics are monomorphization-only; instantiation arguments are always explicit; expansion is compiler-side, pre-IR; instantiations are re-checked as concrete code.
 Every contract definition and requirement or postcondition template is substituted separately for each concrete function instance.
@@ -1091,12 +1098,12 @@ Region parameters are permitted and are not a `generics` child.
 Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, result mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals.
 The two mandatory result-binder spellings are ignored by that equality.
 This replacement applies inside modes, types, and arena-allocation payloads; type components then use the preceding exact concrete-type identity recursively.
-After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to four components: the set of declared read paths, the set of declared write paths, the allocation set whose members are `heap` and each alpha-mapped `arena` region, and the presence or absence of `traps`; `pure` is four empty components.
+After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to three components: the set of declared read paths, the set of declared write paths, and the allocation set whose members are `heap` and each alpha-mapped `arena` region; `pure` is three empty components.
 An effect path uses its root parameter's zero-based ordinal followed by its static source-struct field ordinals. Parameter and field spellings do not create signature identity.
-Equality requires all four components to be equal.
+Equality requires all three components to be equal.
 A `fn_sig` has no body and no compiler-derived release, so it declares these components without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a path the bound function contributes only through release.
 The compiler-derived target summary is not a writer declaration and does not participate in source contract equality. After a conformance selects a concrete bound function, ordinary closed-world propagation uses that function's derived summary at every call.
-Source occurrence order and repeated occurrences do not affect this equality, but no path, allocation, or trap component may be omitted or added; there is no effect subtyping or semantic implication.
+Source occurrence order and repeated occurrences do not affect this equality, but no path or allocation component may be omitted or added; there is no effect subtyping or semantic implication.
 Parameter identifiers and region identifiers themselves need not have equal spellings.
 There is no parameter or result variance, mode coercion, effect subtyping, omitted effect, default, receiver, implicit subject parameter, or `Self` substitution.
 Any mismatch is an FN-3 rejection.
@@ -1148,17 +1155,17 @@ Unsigned saturating addition is `min(2^K-1, x+y)`, which makes the three `holds`
 The signed associativity cell is refuted for every listed width by taking x as `MAX`, y as `1`, and z as `-1`: the left association is `MAX-1` and the right association is `MAX`.
 Every operation, domain, law, or identity absent from a `holds` cell is unavailable for source discharge; a `refuted` or unavailable requested law, or a member function outside the exact discharge shape, is a hard error citing FN-4.
 This deliberately bounded calculus is part of language acceptance and is identical in every conforming compiler; a compiler's optional prover strength cannot accept more source.
-Each successfully discharged `(contract-law node, concrete-conformance node)` pair contributes exactly one base derivation record to the checked program [DIAG-2].
-The record references its conformance, contract law, bound function, operation row, concrete domain, law, and optional identity; no pair is omitted, shared, or deduplicated.
-This record participates in source acceptance only and grants no lowering or optimization consequence.
-The originating semantic check constructs it directly; no serialization or replay step is required.
+Each successfully discharged `(contract-law node, concrete-conformance node)` pair contributes exactly one checked law fact and its base diagnostic derivation to the checked program [DIAG-2].
+They reference the conformance, contract law, bound function, operation row, concrete domain, law, and optional identity; no pair is omitted, shared, or deduplicated.
+Source acceptance is the result of that originating semantic check itself.
+The checked fact may be consumed later, while its diagnostic derivation only explains that originating semantic decision and grants no independent authority.
 
-A law may affect optimization only through a separately approved optional fact family whose verifier binds the exact checked-program instance, target, backend, proposition, and authorized consequence.
-For a source law, that verifier independently rederives the complete contract/member/body/table/identity relation from the bound canonical syntax and checked semantic state; it does not trust the stored base derivation record.
-For a gated law, it validates the exact ledger-entry identity and scope in addition to the proposition.
-Absence, rejection, or resource failure in that optional path leaves source acceptance, semantic identity, explicit checks, and facts-off lowering unchanged.
-A pre-approved opaque gated-family signature may separately carry a candidate law proposition through its soundness-obligation ledger [LEDGER-1], but that proposition is not a source `conform` discharge and reaches no optimizer without the same independently verified optional-fact boundary.
-General source proof artifacts, additional operation rows, and other complete-domain proof calculi are DEFERRED specification additions.
+A checked law fact may affect optimization only through a specification-fixed transformation rule that binds the exact checked-program instance, target, backend, proposition, and authorized consequence.
+That rule checks whether the current transformation site has the required IR and target shape, then consumes the law fact produced by the source semantic check; it does not independently rederive the contract/member/body/table/identity relation.
+For a gated law, the checked fact also carries the exact ledger-entry identity and scope required by [LEDGER-1].
+Absence of the checked fact, an inapplicable transformation site, or resource failure leaves source acceptance, semantic identity, explicit checks, and facts-off lowering unchanged.
+A pre-approved opaque gated-family signature may separately contribute a checked law fact through its soundness-obligation ledger [LEDGER-1], but that proposition is not a source `conform` discharge and reaches an optimizer only through the same fixed transformation-applicability boundary.
+Additional operation rows and other complete-domain source proof calculi are DEFERRED specification additions.
 Sampling, bounded testing, runtime enumeration, and the non-normative law-test harness may prioritize a future gate review but never license optimizer use.
 
 The grammar accepts an IDENT law name and zero or more `law_arg` nodes so that syntax formation does not encode a semantic name, arity, or argument-role table.
@@ -1174,7 +1181,7 @@ Closed-set dispatch is `match`.
 This specification has no source grammar or semantic operation that calls a contract member, selects a bound function through a generic parameter, or turns a validated conformance into callable behavior.
 In particular, a contract member is not a `callee`, source-contract bounds are not admitted, and FN-3 metadata cannot select an ordinary user call.
 Env-struct behavior parameterization, its explicit member-call form, source-contract bounds, substitution and direct-call proof, and their exact diagnostics are DEFERRED constructs with recorded deltas.
-When such a form is proposed, monomorphized direct calls rather than function-pointer or dictionary dispatch remain the performance candidate to test; this specification does not claim that unavailable mechanism.
+When such a form is proposed, monomorphized direct calls rather than function-pointer or dictionary dispatch remain the performance candidate to test; this specification does not define that unavailable mechanism.
 
 [FN-6] Recursion is permitted.
 Polymorphic recursion is rejected by a syntactic rule: in any call cycle among generic functions, every call instantiates the callee at exactly the caller's own type parameters.
@@ -1185,7 +1192,7 @@ Rejection-rate measurement is a registered experiment.
 That declaration is the unit's sole entry and must carry the exact fixed `command` program-kind marker.
 It is nongeneric, declares no region parameters, and has no `contract_block`.
 Its mandatory result binder is writer-named and its written result is exactly `own ExitStatus`.
-Its written effect row is any subset of `reads` and `writes` paths rooted in its own labelled inputs, `allocates(heap)`, and `traps`, in [EFF-1] canonical order; `pure` is the empty subset and no arena allocation is admitted.
+Its written effect row is any subset of `reads` and `writes` paths rooted in its own labelled inputs and `allocates(heap)`, in [EFF-1] canonical order; `pure` is the empty subset and no arena allocation is admitted.
 The entry is invoked exactly once by program start [PROG-3].
 A source `call` whose callee resolves to it is a hard FN-7 rejection: its standard inputs are supplied only at start and source has no second entry route.
 No other `fn_decl` may carry `program_kind` or `input_label`, and a main without `command` is not an alternate entry form.
@@ -1222,9 +1229,6 @@ A missing entry is an FN-7 rejection at `BundleRoot` [DIAG-1].
 A duplicate `main` spelling remains the later-source [TYPE-6] duplicate.
 Every other FN-7 rejection uses `SourceNode` with the complete checked extent of the named node: a missing command marker or contract-bearing main at the `fn_decl`; a `program_kind` on another declaration at that node; an unknown, repeated, or out-of-order label or one outside main at the `input_label`; a wrong mode/type or unlabelled main parameter at the `param`; a wrong result at the `rtype`; a wrong effect row at `effects`; generic or region parameters at their child; and a source call to main at the `call`.
 
-The optional [CLM-3] marker may prefix the entry as `deny_claims command fn main(...)`.
-It creates no second form or invocation path; a marked entry is one strict root while every FN-7 judgment remains in force.
-
 [FN-8] Every non-entry source `fn_decl`, generic or nongeneric, may carry one optional `contract_block`; [FN-7] forbids it on main and `fn_sig` has no such production.
 A present block must contain at least one `requires_clause` or `ensures_clause`; an empty or define-only block is an FN-8 rejection at `contract_block`.
 Grammar fixes all definitions before all requirements and all requirements before all postconditions.
@@ -1247,8 +1251,8 @@ For every GoalTemplate in requires-clause source order, substitute each formal w
 A literal, named const, or place with field and `deref` projections remains an ordinary datum.
 A subscripted actual uses the existing ephemeral identity `(concrete caller instance, call NodePath, argument ordinal, exact checked type)` and cannot be named as a source fact.
 Every instantiated goal is judged independently in that unchanged state; a discharged clause adds no fact for a later clause.
-The first refuted or unproved clause is the FN-8 call-site rejection and forms no provenance target or checked program.
-Only total success reaches [PRV-2], then ordinary transfer, effects, and normal return; no call receives a runtime fallback, alternate entry, or body clone.
+The first refuted or unproved clause is the FN-8 call-site rejection and forms no checked program.
+Only total success reaches ordinary transfer, effects, and normal return; no call receives a runtime fallback, alternate entry, or body clone.
 Main is not source-callable [FN-7].
 
 At concrete body entry, every requirement goal is established independently as an [ENT-3] S4 source, in source order, with its own signed decomposition and exact L0 projection.
@@ -1258,20 +1262,13 @@ Direct and mutual recursion, forward calls, and every concrete generic instance 
 
 After all S4 sources and implicit parameter/type facts are closed under [ENT-4], a contradictory entry state makes that concrete instance legally uninhabited.
 The checked body disposition is `Uninhabited { contradiction: DerivationId }`; it is success metadata, not a source rejection, and the derivation survives final identity remapping.
-Syntax, resolution, type, ownership, effect, return-shape, statement reachability, call, and claim audits still inspect the complete source body, while proof obligations discharge under the contradictory state.
+Syntax, resolution, type, ownership, effect, return-shape, statement reachability, call, and proof-form checks still inspect the complete source body, while proof obligations discharge under the contradictory state.
 An uninhabited instance publishes no postcondition summary.
 Lowering must preserve its ordinary ABI and symbol but emit exactly one empty entry block terminated by `unreachable`, without traversing or lowering any source statement.
 A source call must still prove every contradictory requirement, which no reachable non-contradictory caller state can do.
 
-When provenance retains an S4-dependent bridge, its requirement identity is the complete ordered set of that instance's requires-clause NodePaths, never one arbitrarily selected clause.
-U keeps every S4 source and B removes them all; an upstream call rejudges every member of that ordered set in one unchanged pre-transfer view.
-
-After ordinary complete-state and provenance success, [CLM-3] judges every required call in a demanded strict component, and a call from outside directly into a marked strict root, against all instantiated clauses in caller U at that same pre-transfer point.
-Imported claims are tested first; otherwise the first refuted or unproved clause in source order owns the FN-8 rejection.
-There is no marked-program-entry requirement query because main has no contract.
-
 [FN-9] Each `ensures_clause` in a [FN-8] `contract_block` declares one independent verified normal-return relation.
-It is neither an executable epilogue nor a trusted assertion; no contract definition or clause contributes an effect, runtime operation, storage slot, or [DIAG-3] record.
+It is neither an executable epilogue nor a trusted assertion; no contract definition or clause contributes an effect, runtime operation, storage slot, or runtime report.
 
 An unrouted clause is admitted only when the written result is `own T` and T is one [ENT-2] fragment integer after concrete [FN-2] substitution.
 Its symbolic whole-result datum is the header `result_binding`.
@@ -1302,28 +1299,23 @@ An element write does not invalidate `len(P)`, while killing P's root or holder 
 
 For each clause in source order and then each selected return in NodePath order, the checker first completes ordinary return typing, obligations, calls, effects, and pre-return kills.
 If an entry image is unavailable, the relation is unproved; otherwise substitute the result datum and query immediately before return transfer and edge cleanup.
-Complete, U, then B is the fixed view order at that return.
-Every complete query must discharge; the first clause/return failure rejects with no runtime fallback.
-For each clause, its U and B aggregates discharge exactly when all selected returns discharge in that view; their failure is metadata, not declaration rejection.
-A complete-only relation may depend on a claim, and U-but-not-B on one or more requirements.
+The relation is queried once in the current ProofContext at that return.
+Every query must discharge; the first clause/return failure rejects with no runtime fallback.
 
 Postcondition verification has no summary fixed point.
 Form the concrete ordinary-call graph, its SCCs, and the callee-before-caller condensation.
 While verifying a component, all same-component S12 summaries are unavailable; previously completed callee components remain available.
-Only after every relation of every inhabited instance in the component has mandatory complete success are all its relation summaries published atomically; any failure publishes none.
+Only after every relation of every inhabited instance in the component succeeds are all its relation summaries published atomically; any failure publishes none.
 Uninhabited instances contribute no summary.
 Declaration or worklist order and iteration cannot change the result.
 
-For one ordinary call c, `A0(c)` means resolution, concrete instantiation, named arguments, exact types, borrow feasibility, every actual-expression obligation, exact formal substitution, and complete success of every FN-8 requirement have all occurred in that order at the same pre-transfer point.
-Failure forms no postcondition candidate and this predicate remains independent of the later provenance verdict.
+For one ordinary call c, `A0(c)` means resolution, concrete instantiation, named arguments, exact types, borrow feasibility, every actual-expression obligation, exact formal substitution, and success of every FN-8 requirement have all occurred in that order at the same pre-transfer point.
+Failure forms no postcondition candidate.
 For one relation q, `M(c,q)` holds only when q's route matches that exact establishment event, result and referenced formals substitute independently to live [ENT-2] terms or constants after ordinary kills, and no referenced actual is FN-8-ephemeral.
 A discarded or nested result, stored or propagated whole outcome, unsupported or unselected route, killed support, or nonterm actual makes only that M false.
 
-Let Cq, Uq, and Bq name q's per-view aggregates.
-`Gv(c)` means every actual obligation and every instantiated requirement clause discharges in caller view v at the unchanged pre-transfer point; an empty set succeeds trivially.
-Subject to A0 and M, failure-atomic scratch establishes q after transfer, consumes, borrow commits, callee-effect kills, and target kills: in complete iff Cq; in U first when Bq, otherwise only when `Uq and GU(c)`; and in B first when Bq, otherwise only when `Uq and GB(c)`.
-Every establishment retains all complete actual-obligation and requirement parents; the Bq branch adds its B aggregate, while the Uq branch adds its U aggregate and exact same-view Gv parents.
-No view borrows evidence from another.
+Subject to A0 and M, failure-atomic scratch establishes q after transfer, consumes, borrow commits, callee-effect kills, and target kills.
+Every establishment retains the selected-return proof plus all actual-obligation and requirement parents from A0.
 
 All matching verified relations are established together on the admitted result route.
 An unrouted fragment result establishes onto the fresh binding of a direct ordinary-let call.
@@ -1335,23 +1327,21 @@ For `set x = user_call(...)`, x is a live bare own fragment of the exact result 
 For a selected payload, the first arm statement may be exactly `set outer = payload;`; after the ordinary commit and kill, replace only result-payload occurrences in each established relation with post-write outer when every other support remains live.
 These routes establish no equality and every projected, consuming, repeated, aliased, nonfirst, wrong-type, wrong-binder, or unsupported form establishes nothing.
 
-All candidate S12 and delivery facts remain in one complete/U/B scratch while PRV-1 converges and PRV-2/PRV-3 finalize.
-Any provenance event publishes neither a candidate fact nor a checked program.
-Otherwise the full batch remains unpublished until [CLM-3] total success; any CLM-3 or strict FN-8 rejection discards it, and only total success commits once.
+All candidate S12 and delivery facts remain in one failure-atomic scratch batch until the current statement's ordinary transfer, effects, ownership commits, and kills succeed; then the whole batch commits once.
 No candidate is individually committed or retracted and no second flow walk or negative fixed point exists.
 
 Every successful selected-return proof and caller establishment extends [DIAG-2]'s one derivation DAG.
-Postconditions add no runtime operation, hidden check, assume, optimizer license, serialized certificate, portable identity, alternate lowering path, or ABI field.
+Postconditions add no runtime operation, hidden check, assume, optimizer license, alternate lowering path, or ABI field.
 
-## 9. Effects (candidate unified-state revision)
+## 9. Effects (unified-state revision)
 
-[EFF-1] Row grammar: the `effects` and `effect` productions of the fence below, in exactly this canonical order (reads, writes, allocates, traps).
+[EFF-1] Row grammar: the `effects` and `effect` productions of the fence below, in exactly this canonical order (reads, writes, allocates).
 
 ```wf-ebnf EFF-1
 effects := "pure" | effect ("," effect)*
 effect := "reads" "(" effect_path ("," effect_path)* ")"
         | "writes" "(" effect_path ("," effect_path)* ")"
-        | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "traps"
+        | "allocates" "(" ("heap" | "arena" REGIONID)+ ")"
 effect_path := IDENT ("." IDENT)*
 ```
 
@@ -1364,19 +1354,19 @@ Every `effect_path` is rooted at one formal value parameter of the same callable
 
 For a borrow parameter, its effect path names the borrowed referent rather than the local reference representation. For a direct `slice<'r, T>` parameter, it names the viewed backing state rather than the descriptor. For an `own` parameter, the path names the incoming owned state. Merely moving, returning, or structurally repacking that value does not observe or change it; an operation which reads or changes its contents exhibits the corresponding path. A REGIONID never names effect identity: regions state loan liveness and outlives relations only.
 
-The row describes observations and changes of ordinary Whitefoot state, allocation, and the sole writer-reachable trap. It does not distinguish memory from outside state and does not describe a host scheduling mechanism. Opaque system resources, buffers, aggregates, factories, permits, clocks, and Sources all use the same path, exactness, call-substitution, and ownership rules. No type or path carries a writer-visible capability category.
+The row describes observations and changes of ordinary Whitefoot state and allocation. It does not distinguish memory from outside state and does not describe a host scheduling mechanism. Opaque system resources, buffers, aggregates, factories, permits, clocks, and Sources all use the same path, exactness, call-substitution, and ownership rules. No type or path carries a writer-visible capability category.
 `reads(path)` means the operation observes that state. `writes(path)` means the operation replaces or advances that state. They remain independent exact facts: an operation which observes prior state while changing it names the path in both categories, while a complete overwrite need only write it.
 Whether a target uses a native completion queue, readiness, polling, a bounded blocking helper, an interrupt, or inline completion is target data [QUAL-1], not a source effect.
 
 [EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its body-syntactic contribution and its release contribution.
-The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains a `claim` or a call to an operation or function whose selected row includes `traps`; it exhibits reads, writes, and allocations from the resolved accesses, calls, and allocation operations the body uses.
-Proof-required exact integer operations, integer domain queries, proved allocation operations, and proved system-range operations contribute no `traps`, because source acceptance precedes lowering and admits no runtime fallback.
-A bare operator inside a `const` [CONST-1] is const evaluation under `const-reject`, not a trapping-mode operation, and contributes nothing to any effect row.
-An optional `contract_block` consists only of erased definitions and proof clauses [FN-8, FN-9]; it contributes no read, write, allocation, or trapping category.
+The body-syntactic contribution is syntactic over the complete function body: it exhibits reads, writes, and allocations from the resolved accesses, calls, and allocation operations the body uses.
+Proof-required exact integer operations, integer domain queries, proved allocation operations, and proved system-range operations contribute no runtime fallback and no extra effect, because source acceptance precedes lowering.
+A bare operator inside a `const` [CONST-1] is const evaluation under `const-reject`: an unproved domain rejects the declaration during compilation and contributes nothing to any effect row or runtime path.
+An optional `contract_block` consists only of erased definitions and proof clauses [FN-8, FN-9]; it contributes no read, write, or allocation category.
 An [FN-8] uninhabited instance still derives and checks this contribution from its complete source body; the unreachable lowering stub never narrows its written callable row.
 The release contribution is defined below and has no syntactic occurrence anywhere in the declaration.
 A `for_stmt` endpoint and body contribute their ordinary source occurrences under these same clauses, and its body-exit cleanup contributes under the release rule below.
-Its compiler-owned captures, binder initialization, header comparison, and representable hidden update contribute no read, write, allocation, or trapping effect.
+Its compiler-owned captures, binder initialization, header comparison, and representable hidden update contribute no read, write, or allocation effect.
 Function-body attribution and call-boundary projection are separate judgments.
 
 While one function body is checked, every exhibited read or write is attributed after ordinary place resolution, holder resolution, and [OWN-5] slice-view provenance.
@@ -1399,7 +1389,7 @@ For the function being checked, the release contribution is the union of the eff
 A release contributes when it may run on at least one such edge; running on only some paths never weakens it, and no path condition, constant evaluation, discharged law, optimizer fact, or backend reachability judgment removes an edge from that graph.
 An owner moved or returned on one `match` arm and released on another therefore contributes its release row to the enclosing function, and so does a release derived on only one arm of any other branch, one `give` edge, one propagation edge, or one loop exit.
 On each normal edge every owner has exactly one disposition — moved or returned, consumed by an explicit consuming operation, or released by exactly one compiler-derived release action — so one owner contributes at most one release per edge, and an owner consumed on that edge contributes no release there.
-Release actions run only on normal edges; a trap runs none and contributes nothing [EFF-4].
+Release actions run only on the normal edges fixed by the source control-flow rules.
 A release action substitutes its released owner's resolved identity for the type contract's table-local `owner` path. Releasing an incoming owner, including one first moved through local bindings, therefore reaches that incoming formal path; releasing a fresh local owner frames out. A release-derived effect inside a callee belongs to that callee's row and reaches the caller only through the ordinary call-boundary projection of the callee's declared row; it is never attributed to two functions. The release's suspension and milestone summary propagates separately under [FN-1].
 
 This attribution reads only the release rows [STOR-3] fixes, and it does not retrofit memory reclamation into effect rows.
@@ -1407,12 +1397,11 @@ A `box<T>` drop, a `buffer<T>` drop, an `arena<'r, T>` region release, and the a
 
 A [SET-1] commit is one write under this attribution, and a [SET-2] commit is one read and one write of the same target origin.
 A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment.
-Effects exhibited while evaluating the target and right-hand side contribute normally; an accepted target subscript is discharged [OP-4] and contributes no `traps`.
+Effects exhibited while evaluating the target and right-hand side contribute normally; an accepted target subscript is discharged [OP-4] and contributes no extra effect.
 Rows are checked both ways against the exhibited row defined above: undeclared-but-exhibited and declared-but-unexhibited are both errors, and an entry contributed only by the release contribution is checked exactly like one written in the body.
 A mismatch involving the release contribution has no offending source occurrence, so it is a hard error citing EFF-2 using `SourceNode` at that function's `effects` node, with `SourceCoordinate` equal to that node's complete checked half-open source extent; the diagnostic additionally renders the parameter or binding whose release contributed the category, and the restructuring `declare the release effects of every resource this function may release, or move the owner out`.
 When more than one owner establishes that premise, the reported one follows DIAG-1's implementation-defined deterministic traversal.
 A function whose body and release contribution are empty may therefore declare `pure` while carrying an erased contract.
-An explicit body `claim` still contributes `traps` to that caller.
 
 Canonically, a nongeneric function whose only parameter is `own ReadFile` and whose complete body is exactly `return unit;` declares `writes(file)`.
 Its compiler-derived release contributes that state write and a `may-suspend` target action on the function-return edge. Declaring `pure` is an undeclared-but-exhibited EFF-2 rejection.
@@ -1420,11 +1409,12 @@ This shape cannot be reduced further: [FN-1] requires the body's normal exit to 
 
 [EFF-3] A call whose row is `pure` and whose derived target summary is `never-suspends` licenses deduplication and reordering with equal arguments.
 Elimination of an unused such call additionally requires a termination proof; v0 provides no termination checker, so unused calls are not eliminated.
-The source spelling `pure` excludes traps, state reads, state writes, and allocations; it does not promise termination.
+The source spelling `pure` excludes state reads, state writes, and allocations; it does not promise termination.
 A call that exhibits `writes(path)` may remain observable even when its result is unused. A call on fresh local state retains that instantiated effect even though it frames out of the enclosing signature. No optimization may erase, duplicate, speculate, or reorder either call unless ordinary effect-path overlap, closed-state, escape, ownership, control, result, release, and surviving-observer proofs establish the exact transformation; system state receives no separate effect category or observability tag.
 
-[EFF-4] Trap is abort: there is no unwinding and no post-violation language cleanup.
-The exact [DIAG-3] trap record is the sole mandatory post-violation language output.
+[EFF-4] Accepted source has no writer-reachable abort effect, exception, unwinding edge, or hidden runtime proof fallback.
+Every proof failure rejects the source before lowering.
+Target qualification failure, unavailable external resources, and a trusted-computing-base failure remain outside the source effect system under [SCOPE-3]; none creates a writer-visible effect spelling or an alternate successful source judgment.
 
 [EFF-5] Every Whitefoot-observable system interaction is one ordinary state access under [EFF-1] and ordinary ownership under [OWN-1] through [OWN-12]. There is no second outside-state permission, root, fragment, coexistence relation, or global world object.
 
@@ -1460,7 +1450,8 @@ For an enclosing FN-9 `Ok` route, that automatic error return is unselected and 
 This is Result propagation, not an exception construct or a region in which an exception may be thrown.
 Derivation: R4 (keeps recoverable errors shift-left; manual re-match boilerplate invites silent context loss), W1 (one mechanical pattern), W3 (propagation cannot drop the error).
 
-[ERR-4] Classification: expected environment and input failures are values (`Result`); unproved function, operation-domain, allocation-fit, bounds, and system-range obligations are source rejections; a false executed `claim` traps [SCOPE-4].
+[ERR-4] Classification: expected environment and input failures represented by an operation contract are values (`Result`); unproved function, operation-domain, allocation-fit, bounds, system-range, layout, address, target-domain, parallel-independence, and bounded-completion obligations are source rejections.
+Unavailable external resources and trusted-computing-base failures remain outside the source outcome model under [SCOPE-3].
 An operation's classification is fixed by its table row and attached static obligations, never by call-site preference.
 
 ## 11. Programs, closed world
@@ -1482,20 +1473,18 @@ Within that bound unit, a source record is identified by its zero-based ordinal,
 No source body statement executes during that setup, and no source construct observes, names, or reconstructs the private start-time aggregate through which a target may deliver those inputs.
 After successful setup, the implementation transfers each declared standard-input owner exactly once into one invocation of the entry body.
 There is no source contract on main [FN-7], entry-goal evaluation, runtime wrapper condition, helper function, duplicate body, or second external entry.
-The optional `deny_claims` marker changes only the compile-time [CLM-3] closure and creates no start-time operation.
 
 Supplying each declared standard input is a start-time obligation of the selected target.
 When the selected target cannot supply one, start fails before the body is invoked: no source statement executes, no owner comes into existence, no language cleanup runs, and no `ExitStatus` is produced.
 A start failure is a target or environment failure.
-It is not a source-language rejection [DIAG-1], not a trap [SCOPE-4], and never rewrites a source acceptance judgment.
+It is not a source-language rejection [DIAG-1], produces no source result, and never rewrites a source acceptance judgment.
 
 A `command` entry that completes normally returns exactly one `own ExitStatus` [FN-1].
 Compiler-derived release for every owner live on that return edge runs before the instance terminates [STOR-3].
 The selected target then maps that returned value to the process status exactly.
 No other source value, written output, effect, release result, or target condition contributes to that status, and the language defines no second normal status channel.
 
-A failing executed claim terminates the instance abnormally [SCOPE-4]: the entry's return edge is not taken, no release action runs, and no `ExitStatus` is produced or mapped.
-Start failure and traps are therefore both outside the returned status, and `ExitStatus` carries normal command status only.
+External start-resource failure and trusted-computing-base termination are outside the returned status, and `ExitStatus` carries normal command status only.
 
 Every record is parsed as an independent [GRAM-2] `item*` sequence and audited as an independent [FORM-2] source.
 A zero-byte source is a valid input record whose empty `item*` derivation fails [FORM-2]; the sole canonical zero-item source is exactly one LF byte.
@@ -1757,8 +1746,8 @@ The header candidate is available only to an admitted unrouted ensures clause; a
 No result datum is visible in a contract definition, requirement, function body, or different ensures clause.
 The table-checked carriers are exactly the `program_kind` IDENT and both IDENTs of an `input_label`.
 Each produces one record for later [FN-7] table checking; none produces a declaration, lexical-use, dependent-declaration, or deferred-use record, none enters or queries a lexical name domain, and none participates in FORM-3's reservation inventory.
-The claim-name carrier is exactly the IDENT of a `claim_stmt` [CLM-1].
-It produces one record for CLM-1's per-function uniqueness judgment; it produces no declaration, lexical-use, dependent-declaration, deferred-use, or table-checked record, enters and queries no lexical name domain, and does not participate in FORM-3's reservation inventory.
+The invariant name of an `invariant_stmt` and the proof name of a `proof_stmt` are rule-local identifiers checked by INV-1 and PRF-1 respectively.
+They produce no declaration, lexical-use, dependent-declaration, deferred-use, or table-checked record, enter and query no lexical name domain, and do not participate in FORM-3's reservation inventory.
 The lexical generic suffix inside a deferred literal law argument additionally receives its ordinary lexical-use record; this X09/U18 pair is the only same-token overlap and produces two distinct role records.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
 Later typed checking compares that variant's owner with the scrutinee enum for an arm; a foreign arm variant cites TYPE-6.
@@ -1818,7 +1807,7 @@ A result mismatch is located and attributed only by the consuming construct as s
 An [FN-8] ordinary-call requirement judgment begins only after every earlier callee, concrete-instantiation, argument, type, borrow-feasibility, and actual-expression-obligation judgment named by FN-8 succeeds.
 An unproved or refuted instantiated goal is one hard rejection citing FN-8 with `SourceNode` at that existing `call` node and `SourceCoordinate` equal to the call node's complete checked half-open source extent.
 Its deterministic payload contains the concrete callee instance, the failing `requires_clause` NodePath, the complete instantiated typed goal, and exactly one disposition, `unproved` or `refuted`.
-The required restructuring is `establish the complete callee requirement with one dominating branch, or with one CLM-2-admissible residual candidate whose theorem is separately validated before owner approval, before the call`.
+The required restructuring is `establish the complete callee requirement with one dominating branch, a proved loop invariant, or an explicit source proof before the call`.
 When the payload contains an ephemeral actual-value datum, it additionally renders that datum as `argument #N pre-transfer value`, with N the zero-based argument ordinal, and replaces the restructuring with `bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow`.
 A concrete generic instance that changes a substituted type, const, or datum changes the payload goal and is judged independently.
 This rejection is never replaced with a runtime fallback or reported at the callee declaration.
@@ -1837,71 +1826,52 @@ After result-datum admission, an inadmissible clause computation uses its offend
 A concrete instance with no selected normal exit uses the `ensures_clause` and residual exactly `no selected normal exit`.
 An unsupported selected return expression, unavailable entry image, or complete relation failure uses `SourceNode` at that existing `return_stmt` and its complete checked extent.
 The deterministic relation payload is `(concrete function instance, postcondition occurrence, route identity or unrouted, instantiated normalized relation, disposition)`, with disposition exactly `unproved` or `refuted`; entry-image unavailability fixes `unproved`.
-Instances use DIAG-1's stable concrete-instance order, selected returns use NodePath order, and the first complete-view failure wins.
-U and B are then computed in that order as metadata and form no rejection event.
-A later PRV rejection is owned only by PRV-2 or PRV-3; it does not relocate to the FN-9 declaration or publication event.
+Instances use DIAG-1's stable concrete-instance order, selected returns use NodePath order, and the first relation failure wins.
 No FN-9 failure fabricates an executable epilogue, runtime fallback, optimizer assumption, pending named-outcome fact, or caller-side rejection.
 An excluded caller route, including a named or pending outcome, is not itself a rejection: it establishes no S12 fact or metadata, and any later query that needed that absent relation is diagnosed only at that later node by its ordinary owning rule.
 
-Claim diagnostics use this fixed semantic schedule.
-FN-1 first rejects every structurally unreachable statement; only a claim occurrence with a structurally reachable normal entry enters the CLM-1/CLM-2 schedule below.
-CLM-1 predicate type, proof-predicate shape, per-function name uniqueness, and five-field structure are checked first.
-CLM-1 next performs fact-free D/S/F and `Contrib(P)` formation; an ambiguous or unsupported origin, normalization, support, component negation, reconstruction, or materialization reports its existing formation error before locality, and no component ordinal is fabricated when formation fails.
-For every successfully formed source schema and concrete instance, CLM-1 then checks component authority in source-occurrence then stable-instance order; source-schema reports precede reports from the same occurrence's concrete instances, and the least non-local component ordinal wins.
-Only the resulting admitted inventory records contradiction-first D/S/F exact lifecycle, component lifecycle, consistency, and S-to-D reconstruction; the first invalid claim in source occurrence then stable instance order rejects before any counterfactual run.
-Complete OP-2/OP-4/OP-9/SYS-8, FN-8, FN-9, PRV-2, and PRV-3 judgments then select their ordinary errors.
-Only an otherwise-successful unit freezes Eligible and runs CLM-2 component and whole-occurrence residuality; the first non-residual occurrence owns that rejection, component failures precede a whole-occurrence failure, and component failures use the least component ordinal.
-This schedule prevents an invalid candidate from supplying another candidate's baseline and prevents a premature unused-claim error from hiding an ordinary proof or provenance defect.
-All claim source errors cite CLM-1 for predicate, justification, canonical, or locality admission and CLM-2 for vacuous, redundant, refuted, overlapping, inconsistent, reconstruction, or non-residual lifecycle, using `SourceNode` at the `claim_stmt` and its complete extent unless CLM-1 already selects its `expr`.
-Their payload retains name, exact predicate, classification, and the deterministic concrete instance, component when applicable, and terminal-root witness when one exists; a whole-occurrence failure has no component ordinal.
-One locality payload instead retains the claim name and NodePath, least failing component ordinal, earliest boundary-call NodePath, boundary kind, the first source-ordered support carrier that observes that same earliest witness with its canonical source spelling, and the callee's stable identity: source declaration origin and source name for a user call, or [SYS-2]'s `system_declaration_ordinal` and operation spelling for a system call.
-It never publishes a scratch `FunctionId`, `NominalId`, dense instance number, `$instance$N` spelling, or traversal-order identity.
-For a user result its restructuring is `publish the required cross-function relation as an exact verified ensures clause on the callee and remove this caller claim`; for a system result it is `use the system operation's specified fact or typed outcome, or branch on the returned value; do not claim an unstated system-result property`.
-The both-sign case, an unavailable required source-schema judgment, or an inconsistent counterfactual result is a compiler failure or explicit unsupported capability rather than a guessed source rejection.
-
-The [CLM-3] stage begins only after every ordinary source, provenance, and CLM-2 residual judgment has succeeded.
-Validate marked roots in the stable concrete-instance order.
-If the root SCC has a direct claim, cite CLM-3 at the first claim in stable member-instance then claim-NodePath order and retain `(strict root, concrete claim owner, claim NodePath, name, predicate, justification, retained disposition)`.
-Otherwise cite CLM-3 at the first call in stable caller-instance then call-NodePath order within the root SCC whose strictly outgoing callee component has a nonempty `MayClaims` set, retaining `(strict root, concrete caller, call NodePath, concrete callee, least downstream claim identity)`.
-A component summary is silent: a claim reached only below that boundary is reported at the importing call, not duplicated at its declaration.
-If the root shares an SCC with that claim, the claim is direct and the claim node wins.
-At one importing call, CLM-3 is selected before a strict FN-8 U failure; a non-claim strict FN-8 failure is emitted only at its actual call, and no caller-side summary failure is fabricated.
-All these candidates use existing source nodes and the complete extents stated by their owning rules, obey semantic failure atomicity, and publish no checked program or derived ClaimLedger.
+Invariant and source-proof diagnostics use their ordinary semantic schedule.
+FN-1 first rejects every structurally unreachable statement; only a reachable `invariant_stmt` or `proof_stmt` enters the schedule below.
+For one counted loop, INV-1 checks placement and name uniqueness, affine formation, the simultaneous base batch, the arbitrary reachable backedge batch, and then any exact-exhaustion export, in that order.
+For one `proof_stmt`, PRF-1 checks its name and affine forms first, proves each written `use` premise independently against the one pre-proof context in source order, and finally checks the exact coefficient-one sum against the target.
+The first failed premise or target owns the rejection at the smallest source node fixed by INV-1 or PRF-1.
+No written invariant or proof conclusion enters the context before that complete owning judgment succeeds, and no later proof may supply evidence to an earlier one.
+Complete OP-2, OP-4, OP-9, SYS-8, FN-8, FN-9, layout, address, target-domain, parallel-independence, and bounded-completion judgments select their own ordinary errors.
+An unavailable semantic judgment or inconsistent internal derivation is a compiler failure or explicit unsupported capability, not a guessed source rejection.
 
 A mechanical fix or restructuring is included exactly where the owning rule requires one.
 Every published static diagnostic is deterministic for one compiler executable under the conditions above.
-Cross-implementation byte identity is required only where this specification explicitly fixes both selection and encoding; the runtime trap record [DIAG-3] is such a case.
+Cross-implementation byte identity is required only where this specification explicitly fixes both selection and encoding.
 
 [DIAG-2] Successful semantic checking produces one private checked-program value bound to the exact canonical compilation unit.
 It is the only input that may grant lowering authority.
 
-The checked program explicitly represents every source operation and every compiler-derived operation required for execution, including drops, arena releases, monomorphized instances, propagation edges, retained runtime checks, every direct slice value's finite origin set, every `own slice` result's FN-1 formal return-origin ceiling and call-site substitution, and one abstract target-domain representability obligation at every runtime-sized allocation and element-address operation governed by [STOR-6].
-It additionally retains every [FN-8] GoalTemplate, its requirement occurrence `(concrete callee instance, requires_clause NodePath)`, every concrete call substitution and independently discharged-goal derivation, every S4 body-entry axiom, and each inhabited or `Uninhabited { contradiction: DerivationId }` body disposition.
-It retains every proof-required integer-domain, allocation-fit, subscript-bounds, and system-range obligation occurrence, its complete/U/B dispositions where applicable, and the exact derivation authorizing its accepted source node.
-It also retains the converged [PRV-1] component summaries, every [PRV-2] result, write, direct-demand, and bridge column, the complete/U/B outcomes and successful no-event disposition of each accepted call argument, every [PRV-3] local-leaf disposition, and the post-convergence deterministic predecessor choices.
-A rejecting PRV-2 target set or PRV-3 witness exists only in failure-atomic diagnostic scratch and is never published as checked-program or lowering authority.
-Target lowering must discharge each target-domain obligation from the selected target plus already-checked layout, allocation, and bounds facts, or materialize its exact non-continuing guard before the governed allocation or address operation.
-Every writer-reachable source-language runtime check is one [CLM-1] claim with disposition `retained`.
+The checked program explicitly represents every source operation and every compiler-derived operation required for execution, including drops, arena releases, monomorphized instances, propagation edges, every direct slice value's finite ownership-origin set, every `own slice` result's FN-1 formal return-origin ceiling and call-site substitution, and one abstract target-domain representability obligation at every runtime-sized allocation and element-address operation governed by [STOR-6].
+It retains every [FN-8] GoalTemplate, its requirement occurrence `(concrete callee instance, requires_clause NodePath)`, every concrete call substitution and discharged-goal derivation, every proved body-entry requirement, and each inhabited or contradiction-proved body disposition.
+It retains every proof-required integer-domain, allocation-fit, subscript-bounds, system-range, layout, address, target-domain, parallel-independence, and bounded-completion obligation occurrence together with the exact derivation authorizing its accepted source node.
+It also retains every proved loop-invariant base and arbitrary-backedge judgment, each permitted exhaustion export, and every PRF-1 premise and exact-combination judgment.
+Target lowering must discharge each target-domain obligation from the selected target plus already-checked layout, allocation, and bounds facts before emitting the governed allocation or address operation; it may not replace a missing proof with a runtime guard.
 No accepted proof-required operation carries an implicit runtime check or elimination disposition: a subscript, exact integer operation, buffer allocation, or system range is `discharged` at its owning source node, and the checked program retains its exact [ENT-4] or [ENT-6] derivation there.
-Every accepted [CLM-1] claim is `retained`; the checked program retains its source occurrence and concrete-instance identities, name, exact D, S, and F predicate images, five parsed justification fields, ordered structured `Contrib(P)`, each component S3 source derivation, the retained S reconstruction and D materialization derivations, every successful component and whole counterfactual witness, the closed terminal-root inventory, and each witness's non-contradictory and non-explosive ancestry disposition.
 A concrete terminal-root identity uses the owning function instance plus the operation NodePath/family/conjunct, the call NodePath/callee/requirement NodePath, or the complete-postcondition block/relation ordinal; display symbols are never identity.
-A generic source occurrence additionally retains one source-stable schema report owned by its declaration, with rendered D, S, and F predicate images, ordered contribution descriptions, local-authority success, S-to-D reconstruction success, stable counterfactual witness summaries, and ordered inhabited concrete-instance report links.
-The schema report contains no monomorphized display symbol or symbolic-scratch `FunctionId`, `GoalId`, `TermId`, or `DerivationId`; only concrete reports may retain finalized function-local proof identifiers.
-Malformed, non-local, redundant, refuted, vacuous, overlapping, inconsistent, reconstruction-failed, or non-residual candidates publish no claim metadata or checked program.
-A `requires_clause` is represented only by its GoalTemplate, call-site derivations, and S4 source; an `ensures_clause` only by its verified RelationTemplate, selected-exit judgments, and derivations.
+A `requires_clause` is represented only by its GoalTemplate, call-site derivations, and proved body-entry fact; an `ensures_clause` only by its verified RelationTemplate, selected-exit judgments, and derivations.
 Neither contract clause has executable checked-program form.
-In facts-off compilation every claim remains `retained`, and all [ENT-1] source-acceptance and call-goal judgments are identical in facts-on and facts-off compilation.
-Neither a discharged call goal nor S4 authorizes `llvm.assume`, an optimizer fact, or a second lowering path.
-STOR-6 target-domain obligations instead follow the target-stage discharge-or-guard judgment above identically in facts-on and facts-off compilation; an optional optimizer fact supplies no target-layout discharge.
+Facts-off compilation preserves every source-acceptance and call-goal judgment and erases the same proof-only syntax before lowering.
+Neither a discharged call goal nor a proved body-entry fact authorizes `llvm.assume`, an optimizer fact, or a second lowering path.
+STOR-6 target-domain obligations instead follow the target-stage discharge judgment above identically in facts-on and facts-off compilation; an optional optimizer fact supplies no target-layout discharge.
 
-The complete, U, and B analyses of one concrete function extend one function-local derivation DAG and one event stream; a view tag distinguishes their nodes, and every S3 event additionally retains its source claim and component ordinal.
-This is the same authority that already proves accepted obligations, discharged call goals, and S11 facts.
-Every parent precedes its child, every retained node is reachable from a required root, and finalization performs one reachability traversal and one identity remap.
-An implementation may choose its private Rust layout, but it may not build a postcondition-only proof graph, merge separately authoritative view ledgers, reconstruct a missing root after publication, or consult another checker.
-CLM-2's specified pre-publication `Full-minus` analyses are fresh runs of this same flow over failure-atomic scratch and are the sole permitted acceptance-bearing rewalks; each repeats entailment and verifies the provenance-invariance condition below, then publishes only its stable witness summary after every claim succeeds.
-A masked witness records its component-or-whole mask, stable terminal-root identity, and exactly one masked disposition: missing or ordinarily undischarged operation root, refuted or unproved call root, or failed complete postcondition.
-Masked derivation identifiers are never published; a masked contradictory, all-derivable, or explosive result is an inconsistent counterfactual and therefore a compiler failure rather than a residual witness.
-A callee summary is referenced by checked-program-private `(concrete callee instance, postcondition occurrence, view)` identity; a caller never imports a callee's local node identity.
+The one current ProofContext is failure-atomic.
+No fact, postcondition summary, loop invariant, source-proof target, partial-operation discharge, checked function, or lowering input leaves semantic scratch until every premise of its originating judgment has succeeded.
+Every `requires` fact enters a callee only after the caller has discharged that concrete call's complete instantiated requirements; runtime argument values establish nothing by themselves.
+Every `ensures` summary of one call-graph strongly connected component is withheld until every selected return of every concrete member has been proved from its own entry facts and body flow, after which the component publishes its complete summaries atomically.
+No member of that component may use a summary withheld by this rule, so recursive postconditions cannot bootstrap one another without an independently established source fact.
+An INV-1 conclusion enters only after the simultaneous base and arbitrary-reachable-backedge batches succeed; a PRF-1 conclusion enters only after every named premise and the exact written combination succeed.
+Any failure discards the complete prospective checked program and every unpublished derivation root.
+
+The current ProofContext and its diagnostic derivations are produced by the same source-semantic walk.
+Every accepted fact has one specification-enumerated constructor and the direct parents used by that constructor; no runtime-value origin, compiler-generated record, optimizer result, or written conclusion supplies an alternate route into the context.
+Every parent precedes its child, every retained node is reachable from a required accepted root, and finalization performs one reachability traversal and one identity remap.
+An implementation may choose its private Rust layout, but it may not create another acceptance-bearing fact view, omit a source fact and reconstruct it after publication, re-run the function under a mask, or consult a second checker.
+A callee summary is referenced by checked-program-private `(concrete callee instance, postcondition occurrence)` identity; a caller never imports a callee's local node identity.
 
 Every new S7 fact is retained even when no later query consumes it.
 `BitAndBound` roots the exact direct `iand` result relation at its binding and carries the selected unsigned operation row, result binding, operand ordinal, admitted operand term or constant, and source event.
@@ -1909,20 +1879,19 @@ Every new S7 fact is retained even when no later query consumes it.
 A signed row, non-direct result, nonterm operand, or non-one source forms no such root.
 These are ordinary source roots in the same DAG, not trusted optimizer facts.
 
-For every concrete FN-9 declaration, `PostconditionExit` roots each discharged selected-return relation in each view on the exact local [ENT-4] derivation after result substitution and before return transfer or cleanup.
-It also retains the view-independent entry-image-stability disposition and ordered invalidating event when unavailable; successful absence of an invalidating event is validation metadata, not a fabricated positive parent.
+For every concrete FN-9 declaration, `PostconditionExit` roots each discharged selected-return relation on the exact local [ENT-4] derivation after result substitution and before return transfer or cleanup.
+It also retains the entry-image-stability disposition and ordered invalidating event when unavailable; successful absence of an invalidating event is diagnostic metadata, not a fabricated positive parent.
 `PostconditionAggregate` has the nonempty selected-exit roots as parents in return-NodePath order.
-A non-discharged view retains its ordered dispositions and residual but no success aggregate root.
+A non-discharged declaration retains its ordered dispositions and residual but no success aggregate root.
 Component summaries become referenceable together only after the SCC schedule validates that every summary reference points strictly from a caller component to an earlier callee component.
 
 Every S12 fact actually established in accepted semantic flow is a required caller-local root even when no later query consumes it.
-`PostconditionCall` carries q, the caller proof view, the checked aggregate summary reference selected as C in the complete view, otherwise B when Bq holds, and otherwise U only under the exact Uq-and-Gv branch, exact per-formal pre-transfer substitution, A0's complete actual-obligation and FN-8 goal roots in every view, and the ordered transfer/consume/borrow/effect/kill event prefix.
-A Bq branch additionally carries the B aggregate parent and no same-view Gv parent; a Uq branch additionally carries the U aggregate and every exact same-view Gv actual-obligation and FN-8 goal parent.
+`PostconditionCall` carries q, the checked aggregate summary reference, exact per-formal pre-transfer substitution, A0's complete actual-obligation and FN-8 goal roots, and the ordered transfer/consume/borrow/effect/kill event prefix.
 `PostconditionDirectResult` adds the fresh ordinary-let binding substitution.
 `PostconditionDirectMatch` adds the direct-call scrutinee, selected `Ok` variant and `value` field identities, and payload substitution at arm entry.
 `PostconditionDirectReceiver` adds the direct-set target kill and result-only post-write substitution.
 `PostconditionSelectedReceiver` adds the selected arm's immediate payload read, target kill, and result-payload-only outer substitution.
-A named or pending outcome, false `M(c,q)`, unavailable view, rejected call, killed support, or excluded receiver creates no fact root or pending metadata.
+A named or pending outcome, false `M(c,q)`, rejected call, killed support, or excluded receiver creates no fact root or pending metadata.
 
 For bounded `value_if` delivery, `PostconditionGive` records one eligible reaching edge, the already evaluated source value and relation root, then the forward `d ↦ x` substitution, then that edge's ordinary scope and event kills applied to every other support in that order.
 `PostconditionDeliveryJoin` orders all non-contradictory reaching delivery images by edge NodePath and applies exactly the ordinary [ENT-5] L0 delivery join.
@@ -1931,58 +1900,25 @@ Contradictory inputs use the existing contradiction root and are neutral when a 
 Missing edge evidence, a `value_match`, or no common joined relation creates no delivery root.
 Kill events never become invented positive evidence.
 
-Candidate S12 and delivery nodes live only in failure-atomic semantic scratch while FN-9's one PRV validation batch and [CLM-3] run.
-On any PRV-2 or PRV-3 event the whole candidate root set is discarded with the unpublished checked program.
-A PRV no-event verdict leaves the identical candidate S12 and delivery root set unfinalized; CLM-3 adds none of those roots.
-After total strict success, that root set and the strict metadata below enter the sole reachability walk and identity remap, with no candidate S12 or delivery root added, removed, or rebuilt between the PRV verdict and finalization.
-A CLM-3 or strict FN-8 event instead discards them.
-This preserves A0/A atomicity and makes the derivation DAG evidence for the accepted semantic flow rather than a second acceptance path.
+Candidate S12 and delivery nodes live only in failure-atomic semantic scratch until the current source judgment and its ordinary ownership, effect, and kill events all succeed.
+Any failure discards the whole candidate root set with the unpublished checked program; success commits that set once, without a provenance batch, masked rerun, strict gate, or reconstructed root.
+This preserves A0 and S12 atomicity and makes the derivation DAG an explanation of the accepted semantic flow rather than a second acceptance path.
 
-For [CLM-3], the successful checked program additionally retains each declaration marker, each concrete strict root, its outgoing SCC membership, each component `DirectClaims` and `MayClaims` set, every source-ordered call occurrence used by the summary, the successful component and root disposition, the marked command-entry disposition, and the exact existing U derivation root for every demanded protected obligation and call requirement.
-The claim and call graph is formed in private semantic scratch from checked claim occurrences and the ordinary concrete call inventory; the checked-program `ClaimLedger` is derived only after success and is never read back as acceptance authority.
-Strict roots extend the same function-local view-tagged derivation DAG and event stream; they are registered before the sole reachability walk and identity remap, import no foreign `DerivationId`, and create no copied graph or second semantic flow.
-On any CLM-3 or strict FN-8 event, all strict metadata, candidate S12 and delivery roots, the prospective checked program, and every checked-program-derived tool projection are discarded together.
-On success, lowering consumes the same checked functions and executable operations as the unmarked unit and reads none of this metadata.
-
-For every `for_stmt`, the checked program additionally represents its source label and binder, the two source endpoint atoms in evaluation order, the two immutable compiler-owned captures with their identities, binder initialization, the pure header comparison, both header edges, the exact normal-body cleanup and update order, every no-update exit edge, the distinct header and continuation carried-binding sets, every hidden scope kill, and the complete [ENT-4] derivation of each S11 fact.
+For every `for_stmt`, the checked program additionally represents its optional source label and mandatory binder, the two source endpoint atoms in evaluation order, the two immutable compiler-owned captures with their identities, binder initialization, the pure header comparison, both header edges, the exact normal-body cleanup and update order, every no-update exit edge, the distinct header and continuation carried-binding sets, every hidden scope kill, and the complete [ENT-4] derivation of each S11 fact.
 These are checked semantic operations and facts, not a source desugaring or an optimizer reconstruction.
 
 The checked program also retains one complete source-ordered contract table, one validated conformance record per source `conform_decl`, each conformance's member-order binding vector, and every FN-4 base law derivation.
 Those records are semantic evidence, not executable operations.
 Ordinary lowering consumes the same checked functions and operations it would consume if those metadata tables were empty; it emits no contract or conformance object and obtains no dispatch target, check elimination, reassociation, or other optimization consequence from either a written law or a base derivation.
-Any future optional law-fact family remains subject to FN-4's independent rederivation boundary and facts-off identity.
+Any future law-driven transformation remains subject to FN-4's checked-fact and fixed transformation-applicability boundary, and to facts-off identity.
 
 The checked-program representation is private compiler state.
 Its Rust layout, allocation strategy, dense identities, instruction grouping, and internal ordering where this specification defines no semantic order are implementation-defined.
-This specification defines no checked-program byte encoding, portable identity, cache format, deserialization authority, artifact hash, or replay step.
-Emitting diagnostic, debug, or experimental files from it grants no authority to reload those files for lowering.
+Any diagnostic or debug projection is explanatory only: it establishes no source fact and grants no lowering authority.
 
-[DIAG-3] The sole mandatory language runtime report is one trap record for a failing executed [CLM-1] claim.
-Its exact UTF-8 bytes are:
-
-```text
-{"rule_id":RULE,"message":MESSAGE,"function":FUNCTION,"node_path":[COMPONENTS]}
-```
-
-The displayed line excludes its Markdown line ending.
-The record bytes are the displayed JSON object followed by exactly one byte `0x0A`; no `0x5C 0x6E` suffix is present.
-
-`RULE`, `MESSAGE`, and `FUNCTION` are JSON strings.
-Fields occur in exactly the written order with no extra whitespace or fields.
-`COMPONENTS` is the source node's zero-based `NodePath`, written as comma-separated unsigned decimal integers with no leading zeros; the empty path is `[]`.
-
-`rule_id` is the JSON string `CLM-1`.
-`function` is the exact enclosing source function IDENT.
-`node_path` identifies that `claim_stmt` production.
-`message` is the claim's exact IDENT spelling; the justification STRING is compile-time data and does not appear in the record.
-No contract clause, exact operation, allocation, subscript, system range, typed expected failure, resource failure, target-qualification failure, or compiler/runtime invariant failure produces a DIAG-3 record.
-
-JSON string encoding is canonical for the complete character set defined here: `"` becomes `\"`, `\` becomes `\\`, LF becomes `\n`, and every other permitted ASCII byte is emitted unchanged.
-A final single LF terminates the record.
-
-Identical bound source bytes reaching the same failing claim site produce byte-identical report bytes in every conforming implementation.
-Dynamic call-stack attribution, artifact identity, successful-check reports, lifetime reports, check-density reports, and optimizer-development reports are not normative outputs.
-An implementation may provide additional developer output only on a separately selected channel that cannot alter, prefix, suffix, or replace the mandatory trap record.
+The language defines no writer-reachable runtime proof-failure report, because every writer-visible proof obligation is discharged before lowering or rejects the source.
+Static source diagnostics follow [DIAG-1]. Diagnostic derivations follow [DIAG-2] and explain the source semantic decision; they are never reloaded or checked as a second acceptance step.
+An implementation may report target qualification, unavailable external resources, trusted-computing-base failures, or compiler failures on implementation-defined channels, but none is a source-language outcome and none may be mistaken for a successful source judgment.
 
 ## 13. Execution overlap
 
@@ -2007,31 +1943,34 @@ Permission for a chain of three or more statements is exactly permission for eve
 
 Under a permitted overlap, bindings and every Whitefoot state place equal the source-order result. Writes to distinct places have no additional cross-place order merely because their target implementations are externally observable [EFF-5]. Target completion order, the lane that harvests a completion, and writer resumption order are not observations unless an ordinary dependency exposes their results in that order.
 That identity is conditional on contract compliance, exactly as [SCOPE-3]'s freedom from undefined behavior is conditional on its trusted computing base.
-For an execution in which no executed `claim` is false it holds in every execution, not in a typical execution or in some execution.
-An execution in which some executed `claim` is false is erroneous: the program has violated the sole writer-reachable language runtime contract [SCOPE-4], and this rule then requires exactly the following of that execution.
-The process writes exactly one complete [DIAG-3] record, naming one `claim` whose predicate evaluated false, and then aborts the whole process without unwinding and without language cleanup [TRAP-1].
-No second record, and no partial or interleaved record, is written.
-Which such `claim` that record names may depend on the schedule. The schedule may also select which already permitted state transitions became visible before process termination; those transitions retain their system operation contracts and are not rolled back.
-Nothing else narrows for an erroneous execution: it has no undefined behavior [SCOPE-3], and no overlapped pair reaches one state place or violates one ordinary loan except as the conditions above admit.
-No permission, submission, completion, or fast path reads a trap latch or pays any other cost whose purpose is to stabilize this erroneous execution. A correct program executes no false `claim`, so the impossible branch cannot narrow or surcharge its execution [SCOPE-4].
+It holds in every source execution, not in a typical execution or in some execution: accepted source contains no writer-reachable proof-failure branch, and every partial operation in the window has already been discharged by its owning static Goal.
+No overlapped pair reaches one state place or violates one ordinary loan except as the permission conditions above admit.
+Target-resource exhaustion and trusted-computing-base termination remain outside the source execution model under [SCOPE-3] and grant no overlap permission.
+No permission, submission, completion, or fast path reads a proof-failure latch or pays any other cost for a writer-reachable runtime proof fallback.
 The number of workers, the identity of the host thread that executes a statement, the schedule, and whether an overlap was performed at all are not observable, and no rule of this specification is stated in terms of them.
 An implementation that overlaps nothing therefore conforms: this permission is never an obligation, and no program depends on it being taken.
-When an execution of s1 or s2 reaches a false-claim trap instead of its continuation, what survives is exactly what the erroneous-execution clauses above fix: one complete [DIAG-3] record, abort without unwinding or cleanup, unconditional memory safety, and only system-contract-valid state transitions. This rule does not promise source-order intermediate values or a deterministic partial outside trace for the defective execution.
 Exhaustion of the execution resources an implementation spends on overlapping is a resource condition under [SCOPE-3] and is not an observable of this rule.
-This rule depends on [DIAG-3]'s record shape: that record names no worker, host thread, or dynamic call stack, so a permitted overlap cannot change its bytes.
 Every construct of this specification defines one total sequential order over its operand evaluations, and this rule is a consumer of that order rather than a relaxation of it.
 This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no additional sharing classification.
 The counted permission [PAR-2] and the staged permission [PAR-3] each form every footprint and every loan of a statement exactly as this rule forms one.
 
 [PAR-2] An implementation may execute two iterations of one `for_stmt` body with overlapping execution, and may recombine that loop's accumulator across them, only when the permission this rule defines holds for that counted loop.
 Permission holds for a `for_stmt` L exactly when all of the following hold, writing B for L's body and forming every written, read, and operand-read footprint of a statement of B exactly as [PAR-1] forms one.
-A footprint of B writes at most one place rooted in a binding declared outside L; that binding is L's accumulator, and every occurrence of it in B is one operand of one `set` statement whose target is that whole binding and whose right-hand side is one operation applied to that operand and to a second operand reaching the accumulator nowhere.
+Among whole-place writes of B, at most one place is rooted in a binding declared outside L; that binding is L's accumulator, and every occurrence of it in B is one operand of one `set` statement whose target is that whole binding and whose right-hand side is one operation applied to that operand and to a second operand reaching the accumulator nowhere.
 That operation is one operation fixed for the accumulator across the whole of B, and is exactly one of `+wrap`, `*wrap`, `iand`, `ior`, `ixor`, `imin`, `imax`, `band`, `bor`, and `bxor` [OP-1].
-Every place a footprint of B writes is either that accumulator's whole place or is rooted in a binding B itself introduces, so no two iterations write one place except through that accumulator.
-Every place a footprint of B holds an exclusive loan on — its statements' argument borrows holding loans exactly as [PAR-1]'s do — is rooted in a binding B itself introduces, so no two iterations hold exclusive loans on one place; a shared loan needs no condition of its own, because the written condition above leaves the accumulator as the one enclosing place any iteration writes and an accumulator any borrow reaches is refused by the accumulator condition; and a non-call statement of B that forms a borrow denies permission, exactly as one denies a [PAR-1] window.
+Every place a footprint of B writes is either that accumulator's whole place, is rooted in a binding B itself introduces, or is one proved single-binder affine element write defined below.
+A proved single-binder affine element write is exactly a `set_stmt` whose target is one direct array or buffer subscript rooted in an own binding declared outside L, not a borrow holder, whose exact [OP-4] bounds obligation at that subscript is discharged in the current ProofContext and retains the offset's canonical exact value `a*i + b`: i is L's compiler-owned binder, a and b are mathematical integer constants, a is nonzero, and no other symbolic term occurs.
+The retained [OP-4] result and affine value are consumed from the same source semantic check. The value may have been carried through copies and checked affine operations; PAR-2 neither repeats the bounds proof, reconstructs the value from parser shape, nor trusts a runtime check, optimizer fact, or backend result.
+For permission only, this fixed form refines the ordinary whole-collection write footprint to the single-element range `[a*i + b, a*i + b + 1)`.
+The counted recurrence of [FN-1] gives distinct binder values to distinct iterations, and multiplication by the same nonzero integer a preserves distinctness, so their refined ranges do not overlap; statement order within one iteration is unchanged.
+This refinement proves only the source element-range and cross-iteration disjointness. The selected-target [STOR-6] check must still prove the concrete element stride, layout, and address domain before emission; that later target check consumes the already-permitted source access and never grants PAR-2 permission retroactively.
+Every write by B to one mapped root must be another proved single-binder affine element write carrying exactly the same a and b; different owned roots may carry different maps. No footprint or operand evaluation of B may read a mapped root, hold any shared or exclusive loan overlapping it, or reach it through an unresolved place.
+Thus this version admits only a direct-owned, write-only, one-map-per-root form. A constant image, a borrowed root, a `replace_stmt`, a same-index read, a stencil, a whole-root write, a callee-projected write, two different affine maps of one root, and every other range or injectivity argument deny permission rather than starting proof search.
+Every place a footprint of B holds an exclusive loan on — its statements' argument borrows holding loans exactly as [PAR-1]'s do — is rooted in a binding B itself introduces, so no two iterations hold exclusive loans on one place.
+Apart from the mapped-root prohibition above, a shared loan needs no condition of its own, because the accumulator is the only other enclosing place any iteration writes and an accumulator any borrow reaches is refused by the accumulator condition; a non-call statement of B that forms a borrow denies permission, exactly as one denies a [PAR-1] window.
 A footprint element whose caller place the implementation does not resolve overlaps every place, so an unresolved element denies permission rather than granting it.
 Every call and compiler-derived release in B has a complete target summary. Effects and ordinary loans decide interference between iterations exactly as they do between [PAR-1] calls. A `may-suspend` action requires a completion lowering that retains every iteration's argument loans until its declared milestones; an implementation without that lowering executes the loop sequentially.
-Every normal continuation of every statement of B reaches L's compiler-owned binder update, so no statement of B is a `return_stmt`, a `give_stmt`, a `break_stmt` naming L or a loop enclosing L, or a `let_stmt` selecting `propagate_let_rhs` [FN-1, GIVE-1, ERR-3].
+Every normal continuation of every statement of B reaches L's compiler-owned binder update, so no statement of B is a `return_stmt`, a `give_stmt`, a `break_stmt` resolved to L or a loop enclosing L, or a `let_stmt` selecting `propagate_let_rhs` [FN-1, GIVE-1, ERR-3].
 
 Under a permitted overlap every state-place observable is the one produced by executing L's iterations in index order. Distinct places gain no extra cross-place order from the target mechanism [EFF-5].
 Write a0 for the accumulator's value on the true header edge entering the first executed iteration, and t0 through tm for the values the second operand of its writes evaluates to, in the order those writes execute across L's iterations taken in index order.
@@ -2040,7 +1979,7 @@ An implementation may instead apply that operation over any binary tree whose le
 Every admitted operation is a total function on the complete value set of its type, carries no domain obligation, and is associative and commutative on that set with a two-sided identity element — `+wrap` and `*wrap` are the ring operations of the integers modulo two to the width, with identities zero and one; `iand`, `ior`, and `ixor` are the meet, join, and group operations of the bit vector, with identities the all-ones vector, zero, and zero; `imin` and `imax` are the meet and join of that type's total order, with identities the type's greatest and least values; and `band`, `bor`, and `bxor` are the two-element cases of the same three, with identities `true`, `false`, and `false` — so every such tree denotes one value of that type and the accumulator's value at L's continuation is that one value in every execution.
 No further operation is admitted: `+`, `+defined`, and `+checked` each attach a domain obligation or a `Result` route to every application, `+sat` is not associative, and no float operation of [OP-1] is associative, so recombining a `fadd.strict` or `fmul.strict` fold could change published bytes.
 This rule uses associativity, commutativity, and the identity together: commutativity is what admits any leaf order and the fold of the second operand position, and the identity is what lets an implementation seed a subrange of iterations before knowing whether that subrange writes, so a range of iterations that writes the accumulator not at all contributes either nothing or identity leaves that change nothing.
-That identity is conditional on contract compliance exactly as [PAR-1]'s is, and an erroneous execution of L — one in which some executed `claim` is false — receives exactly the guarantee [PAR-1] states for one, with the `claim` the single [DIAG-3] record names selected from among those whose predicates evaluated false.
+That identity is conditional on contract compliance exactly as [PAR-1]'s is; every partial operation in the admitted loop has already been discharged before lowering.
 Both endpoint atoms are still evaluated exactly once each in [FN-1]'s order before any iteration begins, and the binder still takes each value of the half-open range exactly once; this rule relaxes only the order in which iterations execute and the shape of the accumulator's combination, never the set of iterations, the values the binder takes, or either endpoint evaluation.
 The number of workers, the identity of the host thread that executes an iteration, the schedule, how the index range is divided, and whether any overlap or recombination was performed at all are not observable, and no rule of this specification is stated in terms of them.
 An implementation that overlaps nothing therefore conforms: this permission is never an obligation, and no program depends on it being taken.
@@ -2054,7 +1993,7 @@ A separate staged permission [PAR-3] cuts the body of any `for_stmt` or `loop_st
 This permission is distinct from [PAR-2]'s counted permission, requires none of its accumulator, combination, or index conditions, and grants a different overlap; a loop may hold either, both, or neither.
 Permission holds for a loop L exactly when all of the following hold, writing B for L's body and forming every written, read, and operand-read footprint and every loan of a statement of B exactly as [PAR-1] forms one.
 There is one program point c of B such that every statement of B either executes before c on every path through B or is reached only through c, and c is the argument evaluation and submission of the first `may-suspend` action of B in program order. Write P for the statements up to and including c and E for the rest.
-Every edge that leaves B — a `return_stmt`, a `give_stmt` delivering outside B, a `break_stmt` naming L or a loop enclosing L, and a `let_stmt` selecting `propagate_let_rhs` [FN-1, GIVE-1, ERR-3] — occurs in P.
+Every edge that leaves B — a `return_stmt`, a `give_stmt` delivering outside B, a `break_stmt` resolved to L or a loop enclosing L, and a `let_stmt` selecting `propagate_let_rhs` [FN-1, GIVE-1, ERR-3] — occurs in P.
 An edge the statement performing c takes on the outcome of that submission, which is the edge a `let_stmt` selecting `propagate_let_rhs` at c takes, is an edge of E and not of P.
 Every borrow a `may-suspend` call of B retains past its own submission is on a place rooted in a binding B itself introduces, on a place this rule replicates, or on a place no footprint of B writes. Every exclusive loan a call of E holds is on a place rooted in a binding B itself introduces or on a place this rule replicates.
 Every place rooted in a binding declared outside L that a footprint of B reaches satisfies one of exactly three conditions, and a place satisfying none denies permission. Either no footprint of B writes it and every loan on it is shared; or every footprint element and every loan touching it belongs to one of P and E alone and no loan on it is retained past c; or this rule replicates it.
@@ -2063,7 +2002,7 @@ Under the staged permission an implementation may execute the segment E of one i
 The executions of P for the iterations taken in index order do not overlap one another, and no execution of P begins before the execution of P of every earlier iteration has completed.
 Every write E performs to a place rooted outside B occurs in the order of the iterations that perform it.
 Every read E performs of a place rooted outside B that a footprint of B writes likewise occurs in the order of the iterations that perform it.
-Under a permitted staged overlap, bindings and every Whitefoot state place equal the source-order result, on exactly the terms [PAR-2] states for its own permitted overlap, including its erroneous-execution clauses.
+Under a permitted staged overlap, bindings and every Whitefoot state place equal the source-order result, on exactly the terms [PAR-2] states for its own permitted overlap.
 An implementation may replicate a place, giving each concurrently executing iteration its own storage of the same length, only when that place's element type is copy [OWN-1], when no statement L's continuation reaches reads it, and when on every path through B every byte of it a footprint of B reads was written by an earlier footprint of B on that path.
 The bytes one footprint reads, and the bytes it may write, are exactly those its operation contract fixes for a system operation [SYS-8], those the callee's own summary fixes for a user call after the [EFF-2] boundary projection, and the exact subscripted position for a direct element access; observing a place's length reads no byte of it.
 A byte counts as written by a footprint, for the coverage condition above, only where that contract fixes that the footprint changes it: a contract stating only which bytes of a buffer may have changed [SYS-8] establishes no written byte, and a range the coverage condition needs must come from a contract that states the change exactly.
@@ -2071,11 +2010,8 @@ An extent the implementation does not resolve is the whole place for a read and 
 When an execution of one iteration leaves L through an edge of P, the overlapped execution produces exactly the observables the source-order execution produces before that point and produces none after it; every operation of an earlier iteration still outstanding is completed and its segment E performed before that edge is taken.
 The host resources a system operation of L creates are not execution resources an implementation spends on overlapping. An overlapped execution delivers for each operation of L an outcome that operation could deliver in the source-order execution at that point, so an implementation whose overlap holds more such resources at once than the source-order execution holds completes the earlier iterations and performs the operation again at the source-order resource footprint before delivering any outcome.
 Exhaustion of the execution resources an implementation spends on overlapping is a resource condition under [SCOPE-3] and is not an observable of this rule.
-An execution in which some executed `claim` is false is erroneous: the program has violated the sole writer-reachable language runtime contract [SCOPE-4], and this rule then requires exactly the following of that execution.
-The process writes exactly one complete [DIAG-3] record, naming one `claim` whose predicate evaluated false, and then aborts the whole process without unwinding and without language cleanup [TRAP-1].
-No second record, and no partial or interleaved record, is written.
-Which such `claim` that record names may depend on the schedule. The schedule may also select which already permitted state transitions became visible before process termination; those transitions retain their system operation contracts and are not rolled back.
-No permission, submission, completion, or fast path reads a trap latch or pays any other cost whose purpose is to stabilize this erroneous execution. A correct program executes no false `claim`, so the impossible branch cannot narrow or surcharge its execution [SCOPE-4].
+Every partial operation in P and E has already been discharged before staged permission can be retained.
+No permission, submission, completion, or fast path reads a proof-failure latch or pays any other cost for a writer-reachable runtime proof fallback.
 The number of operations an implementation keeps outstanding, the identity of the host thread that executes a segment, whether any overlap was performed at all, the storage an implementation gives a replicated place, and the storage an implementation reuses across iterations for a construction whose value the body releases without observing it, are not observable, and no rule of this specification is stated in terms of them.
 An implementation that overlaps nothing therefore conforms: this permission is never an obligation, and no program depends on it being taken.
 Permission over the iterations of a loop written inside B is exactly this rule applied to that loop; no rule of this specification joins two iteration spaces into one.
@@ -2286,7 +2222,8 @@ The inventory is therefore exactly eighteen nominal types, forty enum-variant co
 
 Each operation's state access is fixed by its own signature. Immutable invocation and host-string state is observed through shared parameters and contributes `reads(parameter)`. Every buffer or system resource the operation changes is supplied through `&uniq` and contributes `writes(parameter)`. The lifetime on each borrow states only how long that loan lives and never appears in the row.
 The rows above are exactly those state accesses; a system operation's row is declaration data and is never derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
-Each operation's result components and writable `&uniq` parameter components additionally carry the following closed [PRV-1] provenance classes as declaration data; these classes do not add to or modify an operation signature or effect row.
+System results and written parameter components carry no proof-authority class.
+A returned or loaded runtime value enters the caller only as a typed symbolic term; it establishes no proposition merely because of its producer, value, storage, or origin [SCOPE-2, ENT-3].
 No system operation allocates.
 
 Each operation additionally carries one compiler-owned target contract. This record is not source syntax and does not change contract equality.
@@ -2298,36 +2235,12 @@ Every borrow keeps its ordinary [OWN-5] loan until the target contract releases 
 
 Submission has exactly three internal outcomes. `inline-terminal` publishes every promised milestone and guarantees that no later completion can arrive. `target-owned` transfers the complete operation bundle to the qualified adapter. `wait-capacity` transfers nothing to the target and retains the bundle in the runtime so another ready frame can run until bounded target capacity is available. No source value observes which outcome occurred.
 A qualified target may implement this contract with native completion, readiness plus a nonblocking attempt, polling, interrupts, or a bounded blocking helper. A helper executes only the typed target adapter and publishes milestones; it never executes a writer function or writer continuation. Target completion publication may make a stackless writer frame runnable, but target code never invokes that frame directly.
-No submission, completion, or target path tests a trap latch or records trap-specific state [SCOPE-4].
+No submission, completion, or target path tests a proof-failure latch or records proof-specific runtime state [EFF-4].
 
-```wf-prov
-| operation | result component class | written parameter component class |
-|---|---|---|
-| `args_count` | plain result external | — |
-| `arg_get` | `Ok(value:)` external; `Err(error:)` external | — |
-| `host_bytes_len` | plain result external | — |
-| `host_copy_bytes` | `Ok(value:)` dependent; `Err(error:)` external | `destination` external |
-| `host_utf8_len` | `Ok(value:)` external; `Err(error:)` external | — |
-| `host_copy_utf8` | `Ok(value:)` dependent; `Err(error:)` external | `destination` external |
-| `relative_path` | `Ok(value:)` external; `Err(error:)` external | — |
-| `open_read` | `Ok(value:)` external; `Err(error:)` external | — |
-| `read_at` | `ReadBytes(next:)` dependent; `ReadFailed(error:)` external; `ReadEnd()` carries no result component | `destination` external |
-| `write_once` | `Ok(value:)` dependent; `Err(error:)` external | `output` external |
-| `exit_status` | plain result internal | — |
-| `open_directory` | `Ok(value:)` external; `Err(error:)` external | — |
-| `open_directory_source` | `Ok(value:)` external; `Err(error:)` external | — |
-| `directory_next` | `ListBytes(next:)` dependent; `ListBytes(entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component | `destination` external |
-| `open_file` | `Ok(value:)` external; `Err(error:)` external | — |
-| `reserve_file` | plain result internal | `factory` internal |
-```
-
-A plain-result cell fixes that result's sole aggregate component.
-A named payload cell fixes exactly that direct variant-field projection; a payload-carrying result's aggregate is the join of its projections, while a nullary variant and the control choice of a variant carry no component of their own.
-An external class seeds the unconditional-external bit; an internal class seeds no bit.
-A dependent class denotes the join of the concrete call's `start` actual and one sanitized internal host count, as fixed by [SYS-9]; it seeds exactly that instantiated join rather than a declaration-global bit.
-No unlisted result, projection, parameter, field, or component inherits an external class by association.
-The third column is provenance only. The boundary action gives that formally written component an unconditional external origin for PRV-1 composition; the same ordinary effect paths and loans already describe interference [EFF-2, EFF-5].
-The internal success components are exactly the program-bounded entry counts fixed by [SYS-9].
+The only system-result propositions available to source proof are the exact relations enumerated by [SYS-9] and the ordinary facts established by selecting one typed outcome branch.
+Each such relation names its concrete call, selected outcome component, and every source actual on which the relation depends; no declaration-global fact or implicit producer class exists.
+No unlisted result, projection, written parameter, field, storage value, or component establishes any relation.
+Ordinary effect paths and loans describe interference independently [EFF-2, EFF-5].
 
 Every system operation is nongeneric: it declares no type parameter and no const parameter, so no `targ` in a system-operation call is a `type` or a `const`.
 A call whose callee resolves to a system operation writes its region arguments as `targs` in declared region-parameter order and its value arguments as a `fieldinit_list` [GRAM-5] whose IDENTs equal the declared parameter names in declared order, under the same discipline [GRAM-11] applies to a user function.
@@ -2394,13 +2307,13 @@ The first slice constructs one relative path from one host string and supplies i
 [PATH-2] A `DirectoryRead` state value names one directory object, and a directory-relative operation resolves a relative path against it through the target's own directory-relative resolution.
 A directory-relative operation resolves either one relative path value or one caller-supplied single path component [SYS-14]; both are resolved through the target's own directory-relative facility and neither is concatenated onto a prefix.
 The value bound to the command's working-directory entry input is process-equivalent: resolution follows `.` and `..` components, symbolic links, reparse points, and mount transitions exactly as the surrounding process namespace does, so a resolved object may lie outside the directory that value names.
-That is the complete promise this type makes, and it is not a confinement claim.
+That is the complete promise this type makes, and it is not a confinement guarantee.
 An implementation presents no stronger one: a target implements directory-relative resolution with its own directory-relative facility, never by concatenating a prefix onto a path and resolving the result against an ambient working directory, and a target with no directory-relative facility fails qualification for the directory-relative semantic IDs [QUAL-1] rather than emulating them.
 A confined directory state type, one guaranteeing that lexical traversal, links, mount transitions, and rename races cannot escape a granted root, is a DEFERRED addition with its own distinct contract [META-5]; a value's confinement promise is fixed by its type and never changes at runtime.
 Absolute paths, cross-root operations, and target-root prefixes require their own inputs and operations, and `DirectoryRead` admits none of them [PATH-1].
 
 [QUAL-1] Every system operation has exactly one target-independent semantic ID owned by this specification.
-That ID's record binds the operation's signature, complete outcome set, ownership transitions, state effects [EFF-1], capacity behavior, completion milestones, compiler-derived cleanup [STOR-3], target action, and required target guarantees [QUAL-2].
+That ID's record binds the operation's signature, complete outcome set, ownership transitions, state effects [EFF-1], capacity behavior, completion milestones, compiler-derived cleanup [STOR-3], target action, required target guarantees [QUAL-2], and any selected-target integer-result ceiling that later target proof may consume.
 The checked program carries only the semantic ID [DIAG-2]: an operation's identity comes from resolution in the system declaration domain, and no source function name or spelling, logical path [PROG-2], project, corpus, test, or signature lookalike ever selects, adds, or removes one.
 A separate target-qualification table maps each `(specification version, semantic ID, target, program kind)` to exactly one approved implementation version and one private ABI symbol.
 The compiler consults that table after selecting the exact target and ABI [STOR-6] and before emitting any use of the operation.
@@ -2411,7 +2324,7 @@ An approved implementation may be replaced only within one semantic identity: a 
 The table is compiler-internal data; the language defines no registry, negotiation protocol, dynamic loading, or plugin interface [PROG-1].
 
 [QUAL-2] A target qualifies for a semantic ID exactly when it supplies every target guarantee that ID's record requires; when it cannot supply one, it fails qualification for that ID and compilation stops [QUAL-1] rather than admitting the operation under a weaker guarantee.
-Four guarantees are stated here because each is a property of the target with nothing in a program to check.
+Five guarantees are stated here because each is a property of the target with nothing in a program to check.
 The first is command-lifetime argument backing: a target qualified for the command entry and for argument access supplies immutable backing for every argument code unit that is valid from before entry until the command invocation ends, either as stable native argument backing or as one complete snapshot taken before any Whitefoot code runs.
 A target that can supply neither fails qualification for both IDs; a qualified target that cannot establish the backing for one invocation refuses startup before entry rather than entering with backing that does not meet this guarantee.
 The second is a lossless host-string code-unit family [HOST-1] for the host-string and path semantic IDs.
@@ -2419,8 +2332,11 @@ The third is the target's own directory-relative resolution facility [PATH-2] fo
 A target with no such facility fails qualification for those IDs rather than concatenating a prefix or resolving against an ambient working directory.
 The fourth is a directory-enumeration facility for the enumeration semantic IDs [SYS-14]: one host call that reports a bounded batch of the entries of an open directory and advances that directory's own enumeration position.
 A target with no such facility fails qualification for those IDs rather than emulating them, and in particular never substitutes a scan built out of other operations.
-A target that has such a facility but for which the table [QUAL-1] holds no approved implementation is a different stop with the same effect: compilation stops for an absent mapping, the target is not thereby declared unqualified, and no implementation is improvised for it in either case.
-Qualification failure and startup refusal both occur before entry [PROG-3], so neither is a source-returned status, a recoverable outcome, or a trap [TRAP-1].
+A fifth guarantee belongs to `host_bytes_len`: every `HostString` lease admitted by the selected implementation has a native-byte extent no greater than that target's address-index maximum, and the operation returns exactly that extent as `u64` [SYS-9].
+The target stage may attach this ceiling only to the exact SSA result of the qualified semantic ID and may combine it with already-proved source bounds for layout, allocation, or address qualification [STOR-6].
+It is not a target-independent source relation, does not narrow the source result type, and grants no fact to another system operation or to a value whose dataflow from this exact result is not established.
+A target that supplies every required facility and guarantee but for which the table [QUAL-1] holds no approved implementation is a different stop with the same effect: compilation stops for an absent mapping, the target is not thereby declared unqualified, and no implementation is improvised for it in either case.
+Qualification failure and startup refusal both occur before entry [PROG-3], so neither is a source-returned status or a recoverable outcome.
 
 [QUAL-3] For a natively compiled command, selection is static for the whole build: [QUAL-1] fixes the approved implementation of each semantic ID at compile time, and the emitted program contains no runtime operation-ID switch, target tag, per-call dispatch table, instance handle table, or handle lookup that selects among implementations.
 An `inline-terminal` transfer lowers to its required source and target checks [STOR-6], at most one direct host attempt, one count or outcome check, and a cold outcome mapper reached only on failure; it remains one completion-contract outcome rather than a second blocking source mode.
@@ -2428,14 +2344,6 @@ That path performs no heap allocation, no copy of the transferred data, no globa
 The compiler wrapper is inlined, or any remaining call is shown to be immaterial, as a condition of qualification.
 One-time per-invocation normalization belongs to the command bootstrap before entry rather than to any transfer: on the first native command targets that bootstrap owns the process and installs the ignored disposition for the write-to-closed-pipe signal, so a closed output destination reaches source as a recoverable outcome [ERR-4].
 This rule fixes the required emitted shape; the evidence establishing it is inspection of emitted code and symbols, not a machine-checked language judgment.
-
-[TRAP-1] A failing executed claim in a program holding system resources retains [SCOPE-4] and [EFF-4] exactly: the runtime attempts the mandatory [DIAG-3] record and then aborts the whole process without unwinding and without running language cleanup; no status is produced [PROG-3].
-No release, close, flush, detach, or completion action fixed by a system resource contract [STOR-3] runs after a failed claim, and no source-visible cleanup, handler, or recovery point exists.
-Process-local memory, native descriptors, and every other process-local system object held at that moment are reclaimed by operating-system process teardown, which is a property of the host inside the [SCOPE-3] trusted computing base rather than a language cleanup guarantee.
-State transitions already performed are not rolled back: bytes already written remain written, an object already created remains created, and a persistent object or already-started target operation retains its own system contract.
-A host that requires a Whitefoot instance to fail without ending its process runs that instance in a separate process.
-Because a trap ends the owning process, no instance resource table, per-instance reaper, or pending-operation transfer is required, and none appears on an `inline-terminal` transfer path [QUAL-3].
-Host-surviving in-process trap containment is a DEFERRED language amendment with its own delta [META-5].
 
 [SYS-4] System types introduce no state-kind or capability classification.
 Every operation signature directly states its ordinary parameter modes and exact state effects, which are the complete source facts used by ownership, effect checking, and overlap. A stable observation may use `&` plus `reads(path)`; an operation which advances, consumes, acknowledges, clears, or otherwise changes state uses `&uniq` or `own` and declares `writes(path)`. These are ordinary [OWN-2, EFF-1] judgments rather than properties inferred from the nominal type name.
@@ -2478,7 +2386,7 @@ Release of an outcome value is release of its components: `ArgError`, `Utf8Error
 
 A release action is compiler-derived and explicit in the checked program [STOR-3, DIAG-2].
 `flush`, `sync`, directory sync, atomic commit, and final handle release are different semantic operations; this specification declares none of them, and release is never a substitute for one.
-Whole-process abort performs no release: a trap runs no language cleanup and returns no status [PROG-3, EFF-4, SCOPE-4], and the operating system reclaims process-local memory and handles while completed system-state writes are not rolled back.
+Every source-language exit follows the release table. If the host terminates execution at the external resource boundary of [SCOPE-3], Whitefoot promises neither language cleanup nor rollback of already completed system transitions.
 
 [SYS-6] Each system operation declares its own outcome type; there is no shared outcome union.
 An operation with exactly two outcomes returns a [PRE-1] `Result<T, E>` instantiation and declares no new constructor spelling.
@@ -2588,6 +2496,7 @@ It reads them by exactly the two routes [HOST-2] fixes: the lossless route is `h
 
 The lossless route's contract is [HOST-2]; it is defined here over a target family whose native code unit is exactly one byte.
 On such a family `host_bytes_len` returns the exact count of the host string's native bytes, and `host_copy_bytes` transfers exactly those bytes with no validation and no Unicode restriction, so a host string that is not valid UTF-8 reaches source exactly as given.
+The selected implementation additionally establishes [QUAL-2]'s target address-index ceiling for that returned count; this target-stage guarantee is not an ambient Whitefoot comparison fact.
 That count is exactly the `required` length a `host_copy_bytes` on the same host string reports, so a `host_copy_bytes` whose `end - start` is at least that count returns `Ok(start + required)`, and the checked program retains that relation [DIAG-2].
 For a target family whose native code unit is wider than one byte, what these two operations count and transfer is fixed by that family's target qualification; this specification defines it for no such family.
 A qualification that narrows the result to what one string domain can carry, or that transcodes it silently, does not satisfy the lossless contract these two operations state.
@@ -2630,7 +2539,7 @@ Several reads through the same `ReadFile` may overlap when their destination loa
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about bytes already observed and no durability guarantee.
 This specification declares no separate explicit-close operation.
 A later consuming close may expose that diagnostic, but it must consume the owner on every outcome and may not change derived-release semantics.
-Whole-process abort relies on operating-system teardown [SYS-5].
+If the host terminates the process because an external resource is unavailable under [SCOPE-3], native descriptor reclamation is host behavior rather than a Whitefoot release edge [SYS-5].
 
 [SYS-12] `Output` is a state resource with one live state.
 The standard output and standard error entry bindings supply separate affine owners. Host redirection may make them contact one physical sink, but environment aliasing does not merge their Whitefoot places or introduce a cross-value order [EFF-5].
@@ -2648,7 +2557,7 @@ Strengthening it is a later buffered or durable output type, which is completion
 A broken pipe reaches `write_once` as `BrokenPipe` through the bootstrap signal normalization [QUAL-3] fixes; a deployment the bootstrap does not own obtains an equivalent guarantee under its own qualification [QUAL-3].
 
 Terminal control, color, and console mode require separate system state types that this specification does not declare.
-The mandatory trap record uses its own runtime channel [SCOPE-4, DIAG-3]; it never flushes an `Output` and source code cannot reach it.
+Static proof diagnostics use compiler output [DIAG-1]; the source runtime has no proof-reporting channel and never flushes an `Output` for a proof failure.
 
 [SYS-13] `ExitStatus` is an opaque immutable value carrying one portable command code.
 `exit_status(code)` is its one constructor: it is total and pure, every `u8` is a valid command code, so the closed code range is 0 through 255 and there is no failure outcome, no allocation, no host call, and no state effect.
@@ -2658,7 +2567,7 @@ The type is opaque rather than an alias for `u8`.
 There are no implicit conversions [TYPE-4] and every value's type is exactly what its producer fixes [TYPE-5], so without a stated constructor the command entry's returned value would be unwritable; keeping the type distinct also keeps an arbitrary integer from being returned as a command status, and matches how every other system type is fixed [SYS-2].
 
 The target maps the returned code exactly onto the host process status.
-Startup failure before entry and a trap are outside this mapping [PROG-3]: a trap performs no language cleanup and returns no status [EFF-4, SCOPE-4].
+Startup or external-resource failure before entry is outside this mapping [PROG-3, SCOPE-3] and returns no Whitefoot status.
 
 [SYS-14] `DirectorySource` is a state resource with one live enumeration state.
 `open_directory_source` consumes one `FilePermit`, takes `&DirectoryRead`, exhibits `reads(permit, directory), writes(permit)`, and on success returns one fresh `DirectorySource` over the directory object the supplied value names. A separate call with a separate permit returns a separate ordinary owner. Environment aliasing may make two Sources enumerate the same physical directory, but it does not merge their Whitefoot places [EFF-5].
@@ -2679,7 +2588,7 @@ The component limit used by this version's Darwin-family approved implementation
 An entry name reaches source only as those bytes.
 This specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] and a path value is an inline lease over that snapshot [PATH-1].
 `open_directory` and `open_file` therefore take a caller-owned name range rather than a path value, and path composition remains the DEFERRED addition [PATH-1] states.
-Each call first discharges [SYS-8]'s two static range obligations; neither operation has a runtime range check or `traps` effect.
+Each call first discharges [SYS-8]'s two static range obligations; neither operation has a runtime range check or extra effect for proof failure.
 Each then validates `[start, end)` as one component before any host call: a component that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `Err(InvalidPath(code: 0_u32, origin: 0_u8))`, no host call, and no resource value.
 A valid range for which the directory-relative open itself fails yields the target-mapped [SYS-7] error, as `open_read` does.
 After `open_file` obtains a provisional descriptor, descriptor-status inspection is required before publication: inspection failure returns its target-mapped [SYS-7] error, a successfully inspected directory returns `Err(IsDirectory(code: 0_u32, origin: 0_u8))`, and every other successfully inspected non-regular object returns `Err(Other(code: 0_u32, origin: 0_u8))`.
@@ -2689,181 +2598,36 @@ On success `open_directory` returns an independent `DirectoryRead` for the named
 `DirectorySource` is release-complete [SYS-5].
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about entries already observed.
 This specification declares no separate explicit-close operation, and a deep traversal therefore holds one descriptor per live level.
-Whole-process abort relies on operating-system teardown [SYS-5].
+If the host terminates the process because an external resource is unavailable under [SCOPE-3], native descriptor reclamation is host behavior rather than a Whitefoot release edge [SYS-5].
 
-## 18. Obligation discharge: claims, entailment, and provenance (normative)
-
-[CLM-1] `claim name: e because "text";` is the sole writer-spelled runtime boundary for a proof residual which the normative checker cannot derive.
-It is not an assertion, abort, conditional, test oracle, debug check, or general invariant facility.
-The author asserts that `e` is true on every execution reaching the statement; if it may legitimately be false, source must instead use ordinary `if`, `match`, loop transfer, typed result, return, or command status.
-`e` must have exact value mode and type `own Bool` under the [OP-5] condition judgment, including TYPE-7 implicit-read exclusivity, and must additionally satisfy the claim-proof-predicate judgment below.
-An exact-mode or exact-type failure cites CLM-1 at the selected `expr` node and its complete checked half-open extent.
-
-A claim proof predicate is one finite direct goal [ENT-2] whose evaluation is total, deterministic, observational, non-consuming, and ownership-neutral.
-It may contain typed literals, named constants, non-consuming reads of live copy places, fixed-length observations, and compiler-known total non-trapping integer, float, Boolean, conversion, reinterpretation, enum-equality, and allocation-fit predicate rows, recursively under the same restriction.
-It may not contain a user or system call, subscript, proof-required exact operation, checked-result operation, allocation, construction, write, move, borrow or reborrow, consuming projection, residual drop or cleanup, release, block, external operation, nested claim or trap, or any other partial, effectful, ownership-changing, or potentially nonterminating computation.
-A rejected shape cites CLM-1 at the predicate `expr`; the checker never accepts it merely because its inferred effect row is `pure`.
-
-The decoded `because` STRING is exactly five LF-separated lines, with no leading or trailing extra line, in this order:
-
-```
-premises: nonempty text
-derivation: nonempty text
-conclusion: nonempty text
-checker gap: nonempty text
-consumers: nonempty text
-```
-
-Each fixed label and following ASCII space is exact and each value remains nonempty after removing leading and trailing ASCII spaces.
-The five fields are retained review data [DIAG-2].
-This structural check does not prove their prose true: owner approval of the checker-accepted source requires human, AI-assisted, or offline-proof review to validate the stated premises, derivation, exact conclusion, checker gap, and one or more authentic terminal consumers.
-Such review may use only facts valid before this claim, including explicitly named earlier reviewed claims; it may not use this claim's own successful execution, a later fact, an unstated caller or environment promise, a user callee's body or unstated system behavior in place of a verified or specification-fixed callable-boundary fact, or a circular occurrence of the same dynamic claim.
-An optional solver result never changes ordinary source acceptance or runtime execution [ENT-1].
-
-After its type, proof-shape, per-function name, and five-field formation judgments succeed, CLM-1 performs one fact-free canonical-formation subjudgment before any claim truth, contradiction, provenance, or residuality query.
-Let `D(P)`, `S(P)`, and `F(P)` be three exact typed goal images of predicate P.
-`D(P)` is the direct GoalExpression of the evaluated written predicate.
-`F(P)` is the unique complete still-valid ordinary-let origin expansion of `D(P)` under the ordinary goal-origin rule below.
-`S(P)` is the support-canonical snapshot-frontier expansion: starting from `D(P)`, perform the same unique still-valid ordinary-let replacement as `F(P)`, except that when the current subtree already has an exact L0 projection or one fixed normalization, retain that subtree unchanged and do not expand any datum below it; expansion continues everywhere else.
-Thus S preserves the support of each checker fact the claim actually reads, while F records the fully structural origin.
-The ordered exact-image inventory keeps the first occurrence of each distinct identity in D, S, F order; equal images collapse and do not create duplicate queries.
-
-Canonical formation constructs the unique ordered `Contrib(P)` from positive S in the finite [ENT-2] fact vocabulary.
-The recursive walk visits operation arguments left to right, fixed normalizations visit components in their rule-defined order, and the result keeps only the first occurrence of each exact signed-goal or normalized-relation identity; duplicate identities never create duplicate component ordinals.
-Difference-bound identities retain ordered endpoints; disequality identities are unordered, so `a != b` and `b != a` deduplicate, while the first left-to-right source occurrence fixes the retained rendering and ordinal.
-Positive `band`, negative `bor`, and either sign of `bnot` recursively contribute their sound signed conjuncts.
-Positive `bor` and negative `band`, whose truth is disjunctive, remain one exact signed-goal component.
-An integer inequality contributes its one normalized bound; positive integer equality contributes its two directed zero bounds, negative equality its disequality, with `ine` dual; a representable positive `.defined` or allocation-fit predicate contributes the relations of its one fixed conjunction normalization.
-D is a reconstruction target, not a contribution basis; F is a lifecycle image, not an S3 contribution or reconstruction target.
-An otherwise proof-pure exact goal for which the checker has no finer conjunctive fact vocabulary is one opaque component.
-`bxor`, Boolean equivalence, a normalization with alternative positive clauses such as signed division/remainder, an ambiguous origin, or any shape for which normalization, support, component negation, S reconstruction, or D materialization is not unique is not an admitted claim predicate in this version and rejects under CLM-1 before a component ordinal is published.
-Formation alone assigns the finite component ordinals; it establishes no fact and makes no lifecycle classification.
-
-At the claim point, CLM-1 then queries every component's ordinary S-derived support [ENT-5] in component-ordinal order against [ENT-6]'s frozen claim-authority state.
-Every runtime value component and holder read by that support must be `Local` to the current function.
-If any support member is `BoundaryResult`, the whole claim is non-local and rejects under CLM-1 using [DIAG-1]'s least component, earliest boundary witness, and first canonical support carrier that observes that witness; no S3 source, lifecycle query, `Eligible` member, counterfactual run, ClaimLedger record, or lowering authority is formed for that occurrence.
-A verified `ensures` and its S12 publication never make the returned value local: the caller consumes the verified relation directly and cannot restate or strengthen it with a claim.
-This authority admission is independent of truth and of [PRV-1] provenance; a `Local` component is not thereby true or internal, and a PRV-internal call result is still `BoundaryResult`.
-
-Every claim accepted by [CLM-2] is retained as one runtime check in every build mode, is never elided, and evaluates `e` exactly once at every dynamic reach.
-False evaluation emits the required record [DIAG-3] and aborts [SCOPE-4, EFF-4] before S3 can authorize a later operation; true evaluation continues and establishes only [ENT-3]'s canonical claim contribution.
-A `claim_stmt` syntactically exhibits `traps` [EFF-2] and does not count as delivery or must-divergence [GIVE-1].
-
-The claim name is one IDENT and is not a declaration: it enters no [TYPE-6] domain, no [OP-1] reservation inventory, and no lexical lookup, and no source construct references it; its [DIAG-1] carrier classification is the claim-name carrier.
-Because the name is outside the reservation inventory, a claim may be named `len` or `wrap`, while the retired spelling `trap`, `claim`, and every exact fixed lowercase grammar atom remain unwritable as IDENT [FORM-3] — a chosen asymmetry (owner ruling 2026-08-07), not an accident.
-Within one `fn_decl` every claim name is unique; a repeated spelling is a hard error citing CLM-1 at the later `claim_stmt` node.
-The required labels and nonempty values select source formation, but the fields are absent from runtime behavior and their prose truth establishes no checker fact.
-A claim is legal in exactly the statement positions [GRAM-4] admits; a `contract_block` contains only `contract_define`, `requires_clause`, and `ensures_clause` productions, so no claim or other statement can appear there.
-Operand provenance does not by itself prove a claim true: [PRV-2] and [PRV-3] still reject claim-only authorization of an unconditionally external constrained subject, while CLM-1 independently requires local authority and [CLM-2] independently requires a genuine admission consumer.
-
-[CLM-2] One FN-1-reachable concrete claim occurrence c is judged only after CLM-1 has admitted its predicate, canonical D/S/F images, ordered `Contrib(P)`, and local authority, and after evaluating its predicate but before its own S3 source.
-If the pre-S3 combined state is contradictory, c is vacuous and rejects; contradiction is tested first among lifecycle truth queries, after CLM-1 admission and before either predicate sign, and ex-falso never proves claim truth or erases a locality failure.
-Otherwise query both signs of every image in that ordered inventory.
-Both signs at one image are a compiler consistency failure, not a source classification.
-A positive sign at one image and a negative sign at a distinct image, with no one image deriving both, make the source vacuous because its support-correct exact images conflict.
-Otherwise deriving any positive sign rejects c as redundant and deriving any negative sign rejects it as refuted.
-Thus `claim True()` is redundant and `claim False()` is refuted on every reachable path.
-Checker strengthening may and must turn a formerly unknown claim into this source-upgrade error; the author removes or restructures the source and recompiles, and no compiler or optimizer silently elides the written check.
-
-For a remaining unknown predicate P, component lifecycle consumes CLM-1's already formed `Contrib(P)` and walks S and F in lockstep through the same signed conjunctive Boolean structure.
-At one S snapshot-frontier leaf, the ordered components extracted from S are the contribution identities.
-When F has the same ordered component cardinality, the corresponding F component is an equivalent manifestation of the S component.
-When the S leaf contributes exactly one component, the exact signed F leaf is also an equivalent manifestation.
-When the S leaf contributes more than one component, positive proof of the exact signed F leaf is a positive-only manifestation of each component: it proves every conjunct, but the opposite sign of the whole F leaf refutes no particular conjunct.
-For one component, either sign of an equivalent manifestation participates in lifecycle classification, while a positive-only manifestation participates only positively.
-Both signs at one manifestation are a compiler consistency failure; positive and negative results obtained only across distinct equivalent manifestations make the source vacuous.
-Every component must otherwise be unknown on both signs in the non-contradictory pre-S3 state.
-A pre-proved component rejects c for overlap even when no complete predicate image was derivable; a pre-refuted component rejects it as inconsistent.
-Tentatively adding every component must remain non-contradictory, derive positive S, and not derive negative S through [ENT-4]'s retained ordinary derivation.
-Retain that positive S proof; when D differs from S, materialize positive D from it under D's own ordinary support and require the resulting trial to remain non-contradictory.
-CLM-2 neither requires nor performs reconstruction of F.
-S3 establishes the contribution components directly, not P followed by a decomposition.
-
-Let `Eligible` be the fixed source-ordered set of concrete occurrences that passed FN-1 reachability, every CLM-1 formation and locality judgment, exact lifecycle, component lifecycle, consistency, and reconstruction.
-If any occurrence fails one of those earlier judgments, the unit reports the deterministic earlier error and residuality does not run; an invalid occurrence never supplies another candidate's baseline S3.
-For each c and each component a, `Full-minus(c,a)` repeats the same whole-program proof analysis with every other Eligible S3 source and c's other components unchanged, while c still evaluates, exhibits the same effects, and retains its runtime statement, but a's one component-specific S3 source event is withheld.
-Closure is recomputed from unmasked sources, so every fact depending only on a disappears and an independently rederived identical fact remains.
-`Full-minus(c)` analogously withholds all of c's S3 contribution.
-When `Contrib(P)` has exactly one component, `Full-minus(c,a)` and `Full-minus(c)` suppress the identical one-event source set and are definitionally the same fresh analysis; an implementation performs that analysis once and records the same stable result under both the component and whole-occurrence evidence roles.
-
-The terminal admission roots are exactly the four proof-required operation families [ENT-6], ordinary [FN-8] call requirements, and mandatory complete [FN-9] selected-return aggregate proofs.
-A protected operation or call root is eligible only after its attached ordinary provenance gate succeeds in Full; that gate is retained audit data, not an independent counterfactual root.
-Optimizer or observational S7/S11/S12 metadata, effect exhibition, CLM-3 structure, another claim's lifecycle, a test oracle, or a fact with no such terminal root is not a consumer.
-Every component a must have at least one terminal root that succeeds in Full and fails in `Full-minus(c,a)`, and at least one terminal root must likewise fail in `Full-minus(c)`.
-The Full proof must reach a's exact S3 event and contain no contradictory or ex-falso predecessor; its query state must be non-contradictory.
-At a join, every reachable predecessor contributing proof support must independently be legal and non-explosive, while c need dominate only the c-dependent lineage rather than a mutually exclusive sibling route.
-
-Residuality is one simultaneous classification over fixed Eligible, never a fixed point selecting a survivor among alternatives.
-It proves checker-relative component and occurrence irredundancy, not a unique proof basis, minimum claim count, mathematical weakest theorem, or authentic author intent; the latter two remain mandatory five-field review duties [CLM-1].
-A component or occurrence with no qualifying root rejects as non-residual.
-Only occurrences passing every judgment have disposition `retained`, contribute S3, enter CLM-3 and the ClaimLedger, and lower through the unchanged runtime path.
-
-[CLM-3] Any source `fn_decl`, generic or nongeneric, may carry the one optional fixed terminal `deny_claims` before its optional `program_kind`.
-That terminal is ineligible for IDENT under [FORM-3].
-Each marked concrete [FN-2] instance is one strict root.
-The marker is compile-time policy only: it adds no effect, trap, runtime check, fact, type, mode, region, call convention, body, or lowering, and it neither removes nor changes any [CLM-1] claim.
-A declaration without the marker is no strict root.
-
-After every ordinary semantic, provenance, and CLM-2 residual judgment succeeds, form the finite concrete ordinary-user-call graph already used by [FN-9], retaining every checked call occurrence in source NodePath order, including calls and retained claims in structurally checked arms irrespective of optimization.
-Take the same SCCs and callee-before-caller condensation.
-One direct claim identity is exactly `(concrete function instance, claim_stmt NodePath, claim name)` for a CLM-2-retained residual occurrence.
-`DirectClaims(K)` is the union of all such identities in component K.
-In callee-before-caller order, `MayClaims(K)` is `DirectClaims(K)` union the `MayClaims` set of every strictly outgoing callee component.
-Sets are ordered by stable concrete-instance order, then NodePath, then name.
-The closure of one strict root is exactly its root component plus every component reachable along outgoing edges; it includes the whole of each reached SCC and never follows an incoming edge into an unrelated caller.
-
-A demanded component succeeds strictly exactly when its `MayClaims` set is empty, every ordinary user-call requirement owned by the component discharges at that call in caller U [FN-8], and every strictly outgoing demanded callee component has a successful strict summary.
-No separate operation-obligation query is a source judgment: U differs from the complete state only by S3 [ENT-6], a complete-only callee summary is exactly a claim-dependent one [FN-9], and an empty `MayClaims` set therefore already implies that every obligation this component's complete-state judgment discharged also discharges in U.
-Calls inside one SCC consume no same-SCC summary; all members succeed or fail atomically.
-These are finite queries over the already-produced view and DAG, not a body rewalk or another fixed point.
-Component summaries are silent.
-For one marked root, a nonempty `DirectClaims` set in its own SCC rejects at the least direct claim node; otherwise the first call in stable caller-instance then call-NodePath order within that SCC whose strictly outgoing callee component has nonempty `MayClaims` rejects there as an imported-claim event.
-A direct claim in a reached unmarked component is therefore reported at the root-facing importing call, while a claim in the marked root SCC is reported at its own node.
-When a downstream component instead fails a non-claim U judgment, only the actual FN-8 call is reported; no caller-side summary event is created.
-Multiple roots use the stable concrete-instance order fixed by [DIAG-1].
-
-An ordinary caller outside the closure that calls a marked root remains ordinary but must also discharge every requirement of that root in its own U state [FN-8].
-A marked command entry has no contract [FN-7], so its strict judgment consists only of its own and its reachable callees' claim and call-requirement judgments; this specification defines no foreign adapter.
-Claim import is tested before a strict FN-8 judgment at the same call.
-All strict roots and candidate S12 or delivery facts remain unpublished in one failure-atomic batch; any CLM-3 or strict FN-8 event discards that batch and the prospective checked program.
-Strict acceptance reads valid retained claim occurrences and call metadata directly from semantic scratch, never the checked-program `ClaimLedger` [DIAG-2], which is constructed only after successful finalization.
+## 18. Obligation discharge: deterministic facts, invariants, and source proofs (normative)
 
 [ENT-1] The entailment fragment is a closed, deterministic, search-free derivation system fixed completely by this specification.
-Its state is the L0 relation state plus [ENT-2]'s finite signed opaque goals.
-The fixed judgments in this section are source-acceptance judgments: complete-state obligation discharge [ENT-6], claim proof-predicate and canonical formation, claim-authority admission, exact and component lifecycle, contribution reconstruction, and individual residuality [CLM-1, CLM-2], ordinary-call requirement discharge [FN-8], verified normal-return proof and view classification [FN-9], provenance classification [PRV-1], the call-argument gate [PRV-2], and the local constrained-subject gate [PRV-3] are post-resolution semantic judgments under [DIAG-1], identical in facts-on and facts-off compilation, and are not an optional optimizer-fact family. [SCOPE-2] is unchanged: every fact source [ENT-3] is an executed control condition, an executed retained residual claim, a requirement statically proved by every ordinary caller before S4 admits it to a body, a declared allocation or type property, a constant, S11's compiler-owned structural consequence, or S12's machine-verified normal-result publication.
-No source postcondition is trusted: FN-9 proves every selected exit, requires a nonempty selected-exit set, withholds same-SCC summaries, and subjects every candidate caller fact to the ordinary FN-8 and PRV gates before atomic publication.
-The fragment is the deterministic checker derivation of [OP-4], [FN-8], [FN-9], and [DIAG-2] for the judgments this version attaches; a solver result never participates, and no implementation may strengthen, weaken, time-bound, or randomize the derivable set.
-Two conforming implementations derive the same complete, unasserted, and S4-blinded fact states at every applicable point; the same FN-9 selected exits, aggregate dispositions, concrete-SCC order, and S12 establishment set; the same claim-authority component tree, reaching state, support carrier, and boundary witness at every claim; the same [PRV-1] class and symbolic dependency for every component; the same [PRV-2] result, write, demand, target, and event sets; and the same disposition for every obligation, claim, call goal, postcondition relation, local leaf, and call argument.
+Its state is the L0 relation state, [ENT-2]'s finite signed opaque goals, and the finite affine facts admitted by [INV-1] and [PRF-1].
+Complete-state obligation discharge [ENT-6], ordinary-call requirement discharge [FN-8], verified normal-return proof [FN-9], loop induction [INV-1], and source-proof checking [PRF-1] are post-resolution source-acceptance judgments under [DIAG-1].
+They are identical in facts-on and facts-off compilation and are not an optimizer-fact family.
+
+The fact sources are exactly the executed control-flow edges, independently proved function requirements at callee entry, declaration and type properties fixed by this specification, constants, compiler-owned structural consequences enumerated by [ENT-3], verified earlier-SCC normal-result publications [FN-9], machine-proved loop invariants, and successful [PRF-1] targets.
+A runtime-origin value is an ordinary typed term in those judgments; its origin is neither a fact source nor a reason to discard an otherwise derived fact [SCOPE-2].
+Only the fact sources enumerated above establish propositions; a written conclusion, unselected condition, diagnostic record, or optimizer result does not.
+
+No source postcondition is trusted: FN-9 proves every selected exit, requires a nonempty selected-exit set, and withholds same-SCC summaries before atomic publication.
+The fragment is the deterministic checker derivation of [OP-2], [OP-4], [OP-9], [FN-8], [FN-9], [INV-1], [PRF-1], [STOR-6], [SYS-8], and [DIAG-2] for the judgments this version attaches.
+A solver result never participates, and no implementation may strengthen, weaken, time-bound, or randomize the derivable set.
+Two conforming implementations derive the same fact state at every applicable program point; the same FN-9 selected exits, concrete-SCC order, and established result relations; the same source-proof premise, combination, and target dispositions; and the same disposition for every operation obligation, call goal, postcondition relation, invariant, and source proof.
+
 Every nongeneric source body receives this judgment whether or not `main` reaches it.
 Every generic source body additionally receives one source-schema judgment under the one source-canonical symbolic substitution formed during generic-body validation, even when it has no concrete instantiation.
-That symbolic inventory includes the declaration's complete source body and recursively installed source-canonical call requirements.
-Before residuality, it performs every ordinary OP-2/OP-4/OP-9/SYS-8, FN-8, and expressible FN-9 admission judgment that the schema vocabulary can represent; an unproved ordinary source-body operation is not accepted merely because no concrete instance is reachable from `main`.
-It constructs and deduplicates D, S, and F by the same rules, derives `Contrib(P)` only from S, and performs the same component-authority admission before it queries either predicate sign; only an admitted schema then queries D-S-F in order, applies the same equivalent and positive-only F manifestation rules, and reconstructs S then D exactly as a concrete inventory does.
-It freezes its own schema-Eligible set after the same CLM-1 formation and locality, contradiction-first lifecycle, component lifecycle, consistency, reconstruction, ordinary-admission, and provenance judgments, then runs the same simultaneous `Full-minus(c,a)` and `Full-minus(c)` analysis against source-schema terminal roots expressible in that symbolic goal vocabulary, with the same component ordering, ancestry, non-explosion, provenance-invariance, and individual-necessity requirements as a concrete inventory.
-Its only vocabulary differences are the explicitly specified symbolic datum restrictions; claim authority uses resolved source components and therefore has no generic L0-type exception, and the schema may not collapse the three-image judgment, use F as contribution authority, approximate an unavailable symbolic relation, omit locality, or omit an ordinary judgment that its vocabulary can form.
-Generic integer and float type parameters are copy datums only for exact opaque goals in this schema; they are not [ENT-2] L0 fragment types, while a const-generic parameter whose written type is one concrete integer fragment remains the symbolic constant term fixed below.
-An FN-8 source-call requirement over those exact datums is a schema terminal root.
-An FN-9 source-schema terminal root exists only when its result datum, selected return, and normalized relation are already expressible over concrete integer fragment types; a postcondition whose result or relation depends on a generic integer or float type parameter is rechecked only in inhabited concrete instances and is not silently approximated by an opaque schema root.
-The schema judgment publishes no executable function, ordinary summary, or lowering authority, and its stable source-only report is ordered before the same source occurrence's inhabited concrete reports and contains no generated instance, scratch function, or scratch nominal identity.
-Every inhabited concrete [FN-2] instance is then rechecked independently after substitution; an entry-uninhabited concrete instance still performs CLM-1 formation and locality but produces no CLM-2 residual report or terminal witness.
-A contradictory local path in either schema or concrete flow never supplies a residual witness and never bypasses CLM-1 locality.
-If concrete instances disagree, the first invalid concrete instance in stable instance order rejects the shared source occurrence; no instance-specific claim elision exists.
-A type or const generic in an ordinary requirement or postcondition is otherwise substituted as its owning rules require, and concrete const-generic terms retain their concrete values.
-The fragment joins the trusted computing base exactly as the type and ownership checkers do [SCOPE-3]; a wrong derivation is a compiler defect class, owned by testing, not a language hedge.
-Version monotonicity of fact-source and closure strengthening preserves every already-discharged operation, call goal, or selected-return relation, but claims deliberately sit at the proof frontier.
-A later normative checker may newly derive a claim predicate, its negation, or one contribution component, or may make its S3 contribution unnecessary; CLM-2 must then reject that source as redundant, refuted, overlapping, or non-residual so the author removes or restructures it.
-This is an explicit source-upgrade rule, never authority for compiler or optimizer elision.
-Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to external, adding or removing a `BoundaryResult` seed or declassification, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
-Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, [ENT-6]'s exact integer-domain, allocation-fit, subscript-bounds, and system-range obligation families, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
-No implementation may activate, expand, or reclassify any such judgment independently, and apart from an explicit specification amendment of those kinds no other entailment-fragment judgment may tighten acceptance across versions.
+That schema checks every OP-2/OP-4/OP-9/SYS-8, FN-8, and expressible FN-9 judgment its symbolic vocabulary can represent; an unproved operation is not accepted merely because no concrete instance is reachable.
+Generic integer and float type parameters are copy datums only for exact opaque goals in this schema and are not [ENT-2] L0 fragment types, while an integer-typed const generic remains the symbolic constant term [ENT-2] fixes.
+An FN-9 schema goal exists only when its result datum, selected return, and normalized relation are expressible in the finite schema vocabulary; otherwise it is rechecked in every inhabited concrete instance and is never approximated.
+The schema publishes no executable function, callable summary, or lowering authority.
+Every inhabited concrete [FN-2] instance is rechecked independently after substitution; a contradictory path discharges only by [ENT-4] and never bypasses an ordinary formation check.
+If concrete instances disagree, the first invalid concrete instance in stable instance order rejects the shared source occurrence.
 
-The [CLM-3] strict partition is one additional fixed source-acceptance judgment over the same finite semantic result, not a fact source or optimizer family.
-Conforming implementations compute the same concrete ordinary-call occurrences, SCC condensation and callee-before-caller order, declaration markers, strict-root outgoing closures, direct claim identities, `DirectClaims` and `MayClaims` sets, demanded components, existing-U protected-obligation and call-goal dispositions, marked command-entry disposition, and strict success summaries.
-The judgment is per concrete [FN-2] instance, uses the already-produced U view and the same function-local derivation DAG, and introduces no solver, flow rewalk, second closure, negative fixed point, or new relation.
-Facts-on and facts-off acceptance remains identical.
-This partition is an explicit opt-in accepted-set tightening only for marker-bearing roots, plus the FORM-3 reservation of `deny_claims`; it changes no unmarked judgment and is the sole additional tightening authorized beyond the amendment classes enumerated above.
-
-[ENT-2] The fragment constructs one flow state for one concrete function body and proof view at a time.
+The fragment joins the trusted computing base exactly as the type and ownership checkers do [SCOPE-3]; a wrong derivation is a compiler defect owned by implementation repair and tests, not a second runtime validation layer.
+Adding a fact source, relation family, closure rule, proof rule, protected operation family, or callable publication surface is an explicit specification amendment [META-5], never implementation strengthening.
+[ENT-2] The fragment constructs one ProofContext for one concrete function body at a time.
 No caller fact is copied into a callee: an ordinary call judges its instantiated [FN-8] goal in the caller's entering state, the callee body begins with its own proved requirement as [ENT-3] source S4, and only a separately FN-9-verified earlier-SCC summary may establish its instantiated normal-result relation back in the caller.
 A fragment type is one member of the closed integer set [OP-2]; relations are over mathematical values, so relations between terms of different fragment types are well-formed and are created only by the sources and flow transports [ENT-3, ENT-5] admit.
 
@@ -2880,7 +2644,7 @@ Their scope begins after their respective once-only endpoint captures and ends o
 The counted binder's compiler fact scope begins at its initialization and ends on every edge leaving the counted construct, even though [TYPE-6] makes its source name visible only in the body.
 
 An FN-9 parameter datum denotes its function-entry image in the RelationTemplate but creates no snapshot term.
-Local proof may reuse the ordinary parameter term only while FN-9's view-independent entry-image stability remains live; caller publication substitutes the corresponding pre-transfer actual image independently for each referenced formal.
+Local proof may reuse the ordinary parameter term only while FN-9's entry-image stability remains live; caller publication substitutes the corresponding pre-transfer actual image independently for each referenced formal.
 
 A concrete goal is one finite typed expression tree with exact result `own Bool` formed under [FN-8]'s structural identity, either by concrete substitution of a GoalTemplate or by [ENT-3]'s goal-origin judgment in the current function.
 A concrete place datum retains the resolved root declaration event and its ordered field and `deref` projections; an actual substituted for a borrow formal uses the resolved referent datum, while an own actual uses its pre-transfer datum.
@@ -2888,15 +2652,13 @@ Named consts and typed literals retain the identities FN-8 fixes.
 The compiler-owned ephemeral actual-value datum of FN-8 may occur only in the instantiated goal of its one ordinary call.
 It has the finite structural identity fixed there, is neither a place nor an L0 term, has no direct or complete ordinary source goal origin, and therefore cannot be established by naming the original subscript again.
 Goal equality is exact tree equality and therefore may hold across two requirement occurrences or concrete callee instances only when their substituted typed trees are identical.
-The finite goal universe of one concrete function is exactly the goals formed from its written Bool conditions, claims, requirement S4 sources, proof-required operation obligations, ordinary-call requirements, and every canonical CLM-2 contribution child and reconstruction parent after the finite expansions [ENT-3] admits.
-Contribution construction may intern only subexpressions, exact signed disjunctive roots already present in a claim predicate, and the claim's D/S/F origin images and manifestations; it synthesizes no arbitrary formula or unbounded algebraic search.
+The finite goal universe of one concrete function is exactly the goals formed from its written Bool conditions, requirement S4 sources, proof-required operation obligations, ordinary-call requirements, invariant obligations, and source-proof premises and targets after the finite expansions [ENT-3], INV-1, and PRF-1 admit.
+Goal construction may intern only written subexpressions and the exact normalized components fixed by their owning rules; it synthesizes no arbitrary formula or unbounded algebraic search.
 
 A signed opaque fact is exactly `+G` or `-G` for one concrete goal G, meaning that exact whole expression evaluated respectively true or false.
 It carries no child facts merely by existing; [ENT-3] fact sources establish their selected signed contribution and [ENT-4] alone performs the finite parent reconstruction below.
 If G's complete root is exactly one comparison origin relation R under [ENT-3], `+G` has the exact L0 projection R and `-G` has R's exact negation; a non-comparison root has no L0 projection.
 The signed fact and its projection are distinct manifestations in one combined state and have the supports [ENT-5] fixes.
-For CLM-2, all lifecycle manifestations mapped to one canonical S-derived component share one `(claim occurrence, component ordinal)` contribution identity for evidence and ancestry.
-Only the component's S3 source event is maskable; F is never sourced, and masking never suppresses an independently established equal relation or goal.
 
 An atomic fact is one difference bound `t1 - t2 <= c` (t1, t2 terms, c a mathematical integer) or one disequality `t1 != t2`.
 Difference-bound identity preserves the ordered term pair; disequality identity is the unordered endpoint pair, although the first source-normalization encounter preserves its written orientation for rendering and component order.
@@ -2907,9 +2669,9 @@ Implicit facts hold at every program point: every term t carries the reflexive b
 [ENT-3] The fact state is defined constructively over the conservative structural normal-control graph [FN-1]: each source below establishes its L0 and signed-goal facts at its stated point; facts flow forward along normal edges; kill events apply on the edges where [ENT-5] places them, with scope-exit kills applied before any join; merge points take the [ENT-5] join and loop heads the [ENT-5] loop rule; and the state queried at any point is the [ENT-4] closure of that flow.
 retired: S8
 Dominated straight-line establishment is a consequence of this construction, not a second definition.
-Nothing else is a fact: an `ensures_clause` is only an FN-9 proof obligation, never a trusted source; no struct invariant, writer-stated or inferred loop induction, inferred summary, or unverified user-function result exists.
+Nothing else is a fact: an `ensures_clause` is only an FN-9 proof obligation, never a trusted source; the written conclusion of an `invariant_stmt` or `proof_stmt` has no authority until INV-1 or PRF-1 respectively proves it; no struct invariant, inferred loop induction, inferred summary, or unverified user-function result exists.
 S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from a separately verified earlier-SCC summary under the publication formula below.
-Provenance [PRV-1] is a separate judgment over finite value and storage components, not a fact: it establishes and kills no relation or signed goal, and no [ENT-4] answer depends on it.
+Each accepted fact retains the constructor identity and direct parents that already produced it; this diagnostic information establishes and kills no additional relation or signed goal, and no [ENT-4] answer depends on a second provenance state.
 
 A comparison origin is defined first.
 An expression has comparison origin R when (a) it is a call to one of `ieq`, `ine`, `ilt`, `ile`, `igt`, `ige` [OP-2] whose two operands are each a term or constant, R the corresponding relation over them; or (b) it is a bare IDENT naming a `let` binding of type `own Bool` whose initializer right-hand side satisfies (a) with relation R, no [ENT-5] kill event (a)–(d) applies to a fact supported by an operand term of R on any path from that initializer to the use, and the binding is the target of no `set` on any such path.
@@ -2919,25 +2681,19 @@ An expression has integer-domain-predicate origin G when (a) it is one total `+d
 This origin is one ordinary exact goal, not a second fact channel.
 Its support, expansion, kills, scope exit, joins, and signed establishment are the ordinary goal rules below.
 
-A Bool expression has a direct goal origin G when its completely typed expression consists only of non-consuming place datums, typed literals, named const datums, and calls to or infix spellings of pure, total, non-trapping operation-table rows, with exact tree identity as [FN-8] fixes.
-Construction, a user-function or system call, a subscript, a move or borrow, a trapping or partial operation, and any other expression shape has no goal origin.
+A Bool expression has a direct goal origin G when its completely typed expression consists only of non-consuming place datums, typed literals, named const datums, and calls to or infix spellings of pure, total operation-table rows, with exact tree identity as [FN-8] fixes.
+Construction, a user-function or system call, a subscript, a move or borrow, a partial operation, and any other expression shape has no goal origin.
 Starting from a direct goal, its complete origin expansion recursively replaces an ordinary-let datum by that binding's unique defining right-hand side exactly when the right-hand side itself has such a typed pure/total origin, the binding is no `set` target on any path from that initializer to this use, and no [ENT-5] kill event applies to the replacement's support on any such path.
 Expansion continues to a fixed point and is all-or-nothing for every eligible leaf; it never performs an algebraic rewrite.
 The goal-origin set is the direct goal plus that one complete valid expansion when it differs.
 Thus a condition binding's own Bool value and its still-valid computation origin are both retained: a later write to an origin place kills the expanded goal but not the already-computed binding goal, while a write to the binding kills the latter normally.
 Definition expansion in FN-8 is unconditional because every `contract_define` is erased pure proof syntax and the admitted block contains no mutation.
 
-Signed Boolean decomposition applies at every ordinary non-claim establishment of a signed goal fact by the sources below.
+Signed Boolean decomposition applies at every ordinary establishment of a signed goal fact by the sources below.
 The decomposition set of `+G` whose complete root is `band(A, B)` is `+A` and `+B` together with each member's own decomposition set; the decomposition set of `-G` whose complete root is `bor(A, B)` is `-A` and `-B` together with each member's own decomposition set; the decomposition set of either sign of `bnot(A)` is the opposite sign of A and its recursive decomposition; `-band` and `+bor` remain exact disjunctive roots and have no child member.
 Every admitted member whose root has an exact comparison projection also establishes that signed projection.
 Each member has its own [ENT-5] support, kills, joins, and loop treatment.
 This is a finite structural walk with no algebraic rewrite.
-
-CLM-1's `Contrib(P)` formation applies the same signed walk to S, but is a source-admission basis rather than an automatic parent establishment.
-It replaces a projected positive equality with its two directed bounds and a projected negative equality with its disequality; it similarly expands one available fixed positive conjunction normalization into its ordered relations.
-An exact disjunctive or otherwise opaque residual remains one signed-goal component only when CLM-1 admits that root class.
-S3 establishes these components directly under separate contribution identities.
-ENT-4 reconstructs S from its components and then materializes D when distinct; F remains lifecycle-only, so ordinary proof consumers receive no claim-specific shortcut.
 
 The sources are:
 
@@ -2946,13 +2702,6 @@ The sources are:
 At an `if_stmt` or `value_if`, each goal G in the condition's goal-origin set is established as `+G` at the then-block's entry and `-G` at the else-block's entry; for an else-free `if_stmt`, `-G` is established on the false edge, which joins the then exit at the continuation [ENT-5].
 Independently, when the condition has comparison origin R, R is established at the then entry and R's exact negation at the else entry or false edge.
 L0 negation is exact over mathematical integers: the negation of `a - b <= c` is `b - a <= -c - 1`; the negation of `a = b` is `a != b` and conversely.
-[ENT-3.S3]
-- S3 (claim facts).
-After one CLM-2-retained `claim n: e because "…";` evaluates true [CLM-1], establish each ordered component of `Contrib(e)` directly on the normal continuation, with its exact signed-goal or L0 relation manifestation and one component-specific S3 event.
-Do not establish D, S, or F before the components.
-After all components are established, close under [ENT-4], retain the reconstructed positive S proof, and when D differs from S materialize positive D from that proof under D's own support.
-F remains lifecycle-only and receives no S3 source or reconstruction event.
-No S3 source exists for an early-invalid or non-residual claim.
 [ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
@@ -2988,7 +2737,7 @@ Deeper const shapes establish nothing in this version.
 - S10 (boundary endpoint facts).
 For a `match_stmt` or `value_match` whose scrutinee is directly a call to `read_at`, `write_once`, `directory_next`, `host_copy_bytes`, or `host_copy_utf8` [SYS-2, SYS-8], or a bare IDENT naming a `let` binding of that call's outcome type under the same no-kill, no-`set` path discipline as S7's checked-arithmetic origin: let s and e be the exact actuals bound to `start` and `end`, each read as a term or constant and still live at the match.
 The `ReadBytes(next: w)` arm of `read_at`, the `ListBytes(next: w, entries: n)` arm of `directory_next`, and the `Ok(value: w)` arm of the other three independently establish `s <= w` and `w <= e` at arm entry; every other arm establishes neither endpoint fact.
-Each result endpoint's [PRV-1] dependency additionally includes the concrete start actual, so this relation never launders an external start into an internal result.
+Each result endpoint relation is derived from the operation contract with the concrete start actual as an explicit parent, so a runtime-origin start creates no unstated fact.
 These facts carry the same trust class as S6's allocation-length equality — a declared operation contract, never a writer statement.
 The remaining [SYS-9] relations are retained checked-program facts and are not L0 fact sources in this version.
 [ENT-3.S11]
@@ -2997,17 +2746,22 @@ In a `for_stmt` preheader, immediately after the lower and upper endpoint values
 Close that post-capture state under [ENT-4] before [ENT-5] forms the counted head state.
 On every true header edge that actually enters the body, establish `lower_capture <= binder` and `binder < upper_capture`; the first follows from initialization plus the exact representable compiler updates, and the second from the header comparison just executed.
 The capture-to-endpoint equalities are established once in the preheader only: no later header or body entry rereads an endpoint or reasserts a capture equal to the current value of a mutable endpoint source.
-The false header edge, every `break` edge, and the counted continuation establish no S11 fact and in particular no `binder = upper_capture` postcondition.
+The false header edge, every `break` edge, and the counted continuation establish no S11 fact and in particular no raw `binder = upper_capture` postcondition.
+Before the binder and captures leave scope, [INV-1]'s separately proved exact-exhaustion rule may use the false guard to form a binder-free affine conclusion; that conclusion is an INV-1 fact, not S11 and not a retained binder equality.
 [ENT-3.S12]
 - S12 (verified user normal results).
-For one call c and verified relation q, use exactly FN-9's `A0(c)`, per-relation `M(c,q)`, nonempty aggregate booleans Cq/Uq/Bq, and same-view call premise Gv(c).
-Candidate scratch establishes q in each proof view exactly as [FN-9] fixes, after ordinary transfer and every applicable consume, borrow, callee-effect, and target kill.
-This is FN-9's Bq-first evidence order, not a nondeterministic Boolean-parent choice.
+S12 has one owning `CallResultPublication(c,q)` judgment in the ordinary semantic flow.
+That judgment succeeds only when q belongs to a summary atomically published by a strictly earlier call-graph component; every actual-expression obligation and instantiated FN-8 requirement of c is discharged in the caller before transfer; every referenced formal has its exact pre-transfer substitution; ordinary consumes, borrow commits, projected effects, writes, target commits, and kills have run in the fixed order below; and every support of the substituted result relation remains live.
+The candidate relation and all of those parent derivations remain private until every source-semantic judgment in the compilation unit succeeds, then enter the checked program in the same failure-atomic publication as their call and function.
+Failure of any premise or any later source-semantic judgment discards the candidate and the complete prospective checked program.
+This is the original construction of S12, not a second provenance pass or a check of compiler-generated data.
+For one call c and verified relation q, use exactly FN-9's `A0(c)` and per-relation `M(c,q)`.
+Candidate scratch establishes q once in the current ProofContext exactly as [FN-9] fixes, after ordinary transfer and every applicable consume, borrow, callee-effect, and target kill.
 Each substituted formal is independent: a referenced actual that has no ENT-2 image makes only that q unavailable, while an unreferenced non-ENT-2 actual has no effect on q.
 FN-8 ephemeral actual-value datums never enter q.
 The only destinations are the fresh direct ordinary-let binding, direct-call selected `Ok` payload, narrow direct-set receiver, and narrow selected-payload outer receiver [FN-9, ENT-5].
-A named or pending outcome, stored or propagated whole outcome, false matching predicate, unavailable view, killed support, or rejected call establishes nothing.
-After the one PRV batch succeeds, A(c) retains exactly these candidate facts unchanged in failure-atomic scratch; on any PRV event none is published, and only total [CLM-3] success makes them authoritative atomically.
+A named or pending outcome, stored or propagated whole outcome, false matching predicate, killed support, or rejected call establishes nothing.
+The complete candidate set stays unchanged in failure-atomic scratch until the owning source judgment succeeds; any failure publishes none, and success commits all of them atomically.
 
 The label S8 is retired, not reused: its midpoint family was struck as an owner-approved version amendment and may return as a later version's monotone addition the day a corpus program writes the shape.
 
@@ -3023,12 +2777,11 @@ Exact signed-goal identity includes every selected operation-table row, concrete
 `+G` is derivable when that exact positive fact is present, when G has an exact comparison projection R and L0 derives R, or when G is an integer-domain predicate whose fixed [ENT-6] component normalization proves true.
 `-G` is derivable when that exact negative fact is present, when G has a comparison projection and L0 derives R's exact negation, or when G is an integer-domain predicate whose fixed normalization proves false.
 Integer-domain component relations are only an alternate derivation route into that same exact signed goal; they establish no second source goal and receive no source-obligation identity of their own.
-Derivability never decomposes a merely derived parent: [ENT-3] decomposes only source establishments, and S3 establishes its basis directly.
+Derivability never decomposes a merely derived parent: [ENT-3] decomposes only the specification-enumerated source establishments.
 One retained proof never uses a parent-to-child source derivation and then that child solely to reconstruct the same parent; deterministic minimum-depth selection therefore contains no parent-child-parent cycle.
 
 The combined state is contradictory when L0 derives `t - t <= -1` for any t or when both signs of one exact goal are derivable.
 At a contradictory point every L0 relation and both signs of every goal in the finite universe are derivable and every ordinary obligation, call goal, and FN-9 selected-return relation is discharged.
-CLM-2 checks contradiction before signs and therefore classifies no claim by this explosion.
 At a non-contradictory query point, an instantiated goal G is `discharged` when `+G` is derivable, `refuted` when `+G` is absent and `-G` is derivable, and `unproved` otherwise.
 An instantiated L0 relation R is `discharged` when every normalized conjunct of R is derivable, `refuted` when R is not discharged and R's exact negation is derivable, and `unproved` otherwise.
 A one-bound negation is S1's reversed strict bound, an equality relation's negation is its disequality, and a disequality's negation is the equality's two-bound relation.
@@ -3048,16 +2801,11 @@ An ephemeral actual-value datum adds no support: it denotes an already evaluated
 Every borrow or box/arena holder used by a goal's resolved place is also a support member.
 The two signs of one goal have identical support.
 
-One CLM-2 contribution component has the ordinary support of its exact S-derived signed goal or relation.
-An F manifestation is queried with its own fully structural support but is never established by S3; a materialized D snapshot has D's direct support.
-`Full-minus(c,a)` and `Full-minus(c)` change no evaluation, effect, ownership, cleanup, scope, join, loop, or runtime statement.
-They suppress only the selected component-specific S3 source event or all S3 source events of c, then rerun the same source, kill, join, closure, and FN-9 publication from scratch.
-No descendant, S reconstruction, D materialization, or cached proof depending solely on a masked source survives; an independently established equal D, S, F, relation, or goal remains available.
-U already suppresses every S3 source, B differs from U only by suppressing S4, and claims change no PRV-1 value or storage flow.
-Therefore every Full-minus run must produce exactly the same provenance-failure set as Full, independently of whether a terminal entailment root changes; any new or removed PRV-2/PRV-3 event is a compiler consistency failure, never a residual witness.
+An invariant, source-proof target, requirement, or verified postcondition fact has exactly the ordinary support of its normalized relation after the rule's stated substitutions.
+The compiler neither removes one constructor and reruns the body nor computes a masked fact state to decide whether that fact was necessary.
 
 An S12 relation, a narrow-receiver relation, and a relation transported through `value_if` have exactly the ordinary L0 support of their terms after the route's stated substitutions.
-The callee summary reference, proof view, call or delivery edge, pre-transfer substitution record, and a result or payload binder already replaced by its receiver are checked metadata, not additional support.
+The callee summary reference, call or delivery edge, pre-transfer substitution record, and a result or payload binder already replaced by its receiver are checked metadata, not additional support.
 A route whose substitution leaves a non-[ENT-2] operand never creates an L0 fact.
 
 Independently of relation flow, FN-9 entry-image stability begins live for each referenced parameter datum at function-body entry.
@@ -3070,8 +2818,8 @@ A fact dies at the earliest of: (a) a [SET-1] `set` or [SET-2] `replace` commit 
 Scope exits are edge events. After every earlier event and its stated post-event image on that edge, first close the reaching state under [ENT-4] while all lexical terms remain available; then apply kills (c) and (d); then close the surviving state before any query or join at the target.
 A materialized conclusion survives exactly when its own support survives. Thus an arm-local term may be an intermediate vertex proving a relation among outer values, but no fact or goal whose conclusion still names that local, its holder, or its storage survives the scope into a join.
 
-An ordinary user-call boundary has one order in every proof view.
-First, at the pre-transfer point, complete the A0 judgments, retain each referenced formal's exact pre-transfer substitution, and judge that view's actual obligations and FN-8 goal.
+An ordinary user-call boundary has one order in the current ProofContext.
+First, at the pre-transfer point, complete the A0 judgments, retain each referenced formal's exact pre-transfer substitution, and judge the actual obligations and FN-8 goal.
 Second, apply argument consumes and borrow commits, the callee's projected effect and write kills, and any route-specific target commit and kill.
 Third, and only when `M(c,q)` still holds after those events, establish an eligible S12 relation with its result destination substituted.
 A fresh direct ordinary-let result is introduced only after the call kills; a direct-call match result is introduced only after dispatch enters the exact selected `Ok(value:)` arm; no relation or pending token exists on the intervening whole outcome.
@@ -3103,26 +2851,28 @@ The join of closed states is closed.
 A nonempty join whose every input is contradictory, and an empty join with no reaching edge, are each the contradictory all-derivable state.
 At the continuation of an `if_stmt` or `value_if`, this same join is taken over every branch exit edge reaching that continuation — for an else-free `if_stmt`, the false edge is such an edge — each after its pre-exit closure, scope-exit kills, and surviving-state closure; a branch every path of which leaves by `return`, `break` to an enclosing loop, or `propagate`'s error edge contributes nothing there.
 The continuation of a `loop_stmt` uses the same join over its `break` edges.
-A `loop_stmt` with no `break` naming its label has an empty join and therefore the contradictory state, consistent with that continuation being unreachable in truth while the conservative graph keeps it reachable.
+A `loop_stmt` with no `break` resolved to it has an empty join and therefore the contradictory state, consistent with that continuation being unreachable in truth while the conservative graph keeps it reachable.
 A `propagate` right-hand side's `Err` edge leaves the function; its normal continuation keeps the preceding state subject to the initializer call's own kill events (b) and (c), and its binder gains no fact.
 
-The continuation of a `for_stmt` is the join of its structural false-header edge and every `break` edge naming that counted label, each taken after the applicable pre-exit closure, all binder, capture, and body-scope exit kills, and surviving-state closure.
+The continuation of a `for_stmt` is the join of its structural false-header edge and every `break` edge resolved to that counted loop, each taken after the applicable pre-exit closure, all binder, capture, and body-scope exit kills, and surviving-state closure.
 The false edge always exists in the conservative graph [FN-1], so this join is never empty.
-A `break` naming an enclosing loop, a `return`, or a `propagate` error edge contributes nothing there.
-Because the counted binder and both captures are out of scope before the join, no S11 body fact, capture fact, or claimed `binder = upper_capture` fact reaches the continuation.
+A `break` resolved to an enclosing loop, a `return`, or a `propagate` error edge contributes nothing there.
+Because the counted binder and both captures are out of scope before the join, no S11 body fact, capture fact, or raw `binder = upper_capture` fact reaches the continuation.
+An [INV-1] exact-exhaustion conclusion reaches the continuation only when the identical outer-value conclusion is present on every reaching input of this join; in particular, a `break` edge receives no conclusion from the false header and therefore removes a conclusion not independently true on that edge.
 
-Ordinary loops carry no induction in this version: the fact state at the head of each iteration of `loop @l { … }` is the state before the loop minus every fact having a support member that a continuing kill event of `@l` may kill.
-A kill event (a)–(d) placed inside `@l`'s body, at any nesting depth, is continuing for `@l` exactly when some path of the conservative structural normal-control graph [FN-1] leads from the edge carrying that event to `@l`'s body entry without leaving `@l`'s body — that is, exactly when an execution taking that edge can reach a later iteration head of the same loop.
-Every other kill event inside the body is not continuing and is not scanned: an event on or reachable only through a `break` edge naming `@l` or any enclosing loop, a `return` edge, or a `propagate` error edge leaves `@l` for the loop's continuation or the function-return sink [FN-1, ERR-3], and no iteration head of `@l` is reached from it without first re-entering `@l` from outside, where the enclosing flow supplies the state.
-A kill inside a nested ordinary or counted loop whose continuation lies inside `@l`'s body is continuing for `@l`, including the kills carried on that nested loop's own `break` edges, because `@l`'s body entry is reached from that nested loop's continuation without leaving `@l`.
+Ordinary loops carry no induction in this version: for an ordinary loop L, the fact state at the head of each iteration is the state before L minus every fact having a support member that a continuing kill event of L may kill.
+A kill event (a)–(d) placed inside L's body, at any nesting depth, is continuing for L exactly when some path of the conservative structural normal-control graph [FN-1] leads from the edge carrying that event to L's body entry without leaving L's body — that is, exactly when an execution taking that edge can reach a later iteration head of the same loop.
+Every other kill event inside the body is not continuing and is not scanned: an event on or reachable only through a `break` edge resolved to L or any enclosing loop, a `return` edge, or a `propagate` error edge leaves L for the loop's continuation or the function-return sink [FN-1, ERR-3], and no iteration head of L is reached from it without first re-entering L from outside, where the enclosing flow supplies the state.
+A kill inside a nested ordinary or counted loop whose continuation lies inside L's body is continuing for L, including the kills carried on that nested loop's own `break` edges, because L's body entry is reached from that nested loop's continuation without leaving L.
 The surviving facts hold at every iteration head; establishment and kills then proceed ordinarily within the iteration, and no fact established inside an iteration survives to the next iteration's head.
 A fact a non-continuing edge kills is still removed on that edge: the continuation join above takes each `break` edge after that edge's scope-exit kills, and an edge to the function-return sink reaches no queried program point, so narrowing this scan opens no path on which a dead fact is read.
 Loop induction is a later version's [ENT-1]-monotone extension.
 
-A counted `for_stmt` uses one compiler-owned structural recurrence, not writer-supplied induction.
+A counted `for_stmt` uses one compiler-owned structural binder recurrence.
+An [INV-1] source invariant changes no runtime edge or recurrence: the writer supplies the proposition, while the checker proves its base and arbitrary-backedge obligations against this fixed recurrence rather than inventing an induction hypothesis.
 First its preheader establishes the S11 capture equalities and binder initialization and closes that complete post-capture state under [ENT-4].
 Second, its head state is that one closed post-capture state minus every fact having a support member that a continuing kill event of this counted loop may kill.
-An event in the body, including the hidden normal-fallthrough binder update and body-scope cleanup, is continuing exactly when some path of the conservative structural normal-control graph [FN-1] leads from its edge through the counted header to a later entry of that same body without leaving the counted body; an event on or reachable only through a `break` naming that counted loop or an enclosing loop, a `return`, or a `propagate` error edge is not continuing.
+An event in the body, including the hidden normal-fallthrough binder update and body-scope cleanup, is continuing exactly when some path of the conservative structural normal-control graph [FN-1] leads from its edge through the counted header to a later entry of that same body without leaving the counted body; an event on or reachable only through a `break` resolved to that counted loop or an enclosing loop, a `return`, or a `propagate` error edge is not continuing.
 Kills inside a nested ordinary or counted loop are classified by that same positive reachability predicate.
 Third, on each true header edge, S11 adds the two structural body-entry bounds to that head state.
 The hidden binder update kills every fact supported by the binder before a later header, while S11 re-establishes only its two stated bounds after the next true guard.
@@ -3131,289 +2881,137 @@ Neither endpoint is evaluated again and neither capture-to-endpoint equality is 
 Therefore a continuing write to a mutable endpoint source kills the direct capture-to-source equality, while a consequence already closed in the preheader whose support contains only immutable captures and other still-live terms may soundly survive.
 No other fact established inside one counted iteration survives to a later counted head.
 
-[ENT-6] An obligation is one normalized relation attached by a numbered rule to one source node, instantiated with that node's exact operands read as terms or constants; an operand that is not a term or constant leaves the relation underivable, never ill-formed.
-This version attaches exactly four obligation families.
-The first family: for every source subscript `P[i]` — read, write, and [SET-1] target position alike — the bounds obligation `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node, one obligation per subscript in a chain, where `i` is the offset atom whose exact type [OP-4] fixes as `own u64`, so both sides are u64-typed and the relation is over their mathematical values.
-The second family is IntegerDomain.
-Every proof-required exact integer occurrence [OP-2] has exactly one obligation at its `infix` or `call` node.
-Its canonical goal is the corresponding total `.defined` operation with the same selected concrete type and complete ordered operand-expression identities.
-The disposition order in each complete, U, or B view is fixed: a contradictory state discharges; an exact positive canonical goal discharges; a complete fixed normalization proving true discharges; an exact negative canonical goal or fixed normalization proving false refutes; otherwise the goal is unproved.
-One `IntegerDomainProof` root aggregates the selected route's parents in the fixed component order below.
-Components are derivation-internal and are not separate obligations or protected-leaf identities.
+[ENT-6] Every proof-required partial operation and callable contract creates one typed Goal at the source node that would otherwise perform it.
+A Goal is normalized by its owning rule from that node's exact operands, types, layout, target, ownership state, effects, and completion contract.
+The checker submits the Goal with the current [ENT-3] ProofContext to one fixed deterministic domain checker; a consumer never selects a checker, retries another route, or treats a diagnostic derivation as a second acceptance pass.
+A Goal that no fixed domain discharges is rejected by its owning source rule before lowering.
+No runtime guard, trap, fallback operation, optimizer assumption, timeout result, or writer-stated conclusion can replace discharge.
 
-For exact add, subtract, and multiply with at least one constant operand, the fixed normalization is the existing two-bound proof over mathematical integers, upper component then lower component.
+The numeric relation domain attaches exactly four normalized families in this version.
+For every source subscript `P[i]` — read, write, and [SET-1] target position alike — SubscriptBounds is `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node.
+There is one obligation per subscript in a chain.
+The offset has exact type `own u64` [OP-4], so the relation is over the two u64 mathematical values.
+A contradictory state discharges it; an exact positive signed goal or canonical L0 projection discharges it; an exact negative goal or derived opposite relation refutes it; otherwise it is unproved.
+A refuted or unproved occurrence is an OP-4 rejection and publishes no checked program.
+
+IntegerDomain attaches one obligation to every proof-required exact integer occurrence [OP-2] at its `infix` or `call` node.
+Its canonical goal is the corresponding total `.defined` operation with the same selected concrete type and complete ordered operand identities.
+The fixed disposition order is: contradiction; exact positive goal; fixed normalization proving true; exact negative goal or fixed normalization proving false; otherwise unproved.
+One derivation root aggregates a successful route's parents in the fixed component order below; components are internal derivation nodes, not separate obligations.
+
+For exact add, subtract, and multiply with at least one constant operand, normalization is the following two-bound proof over mathematical integers, upper component before lower component.
 For `t + c` and `c + t`: `t - Z <= max(T) - c`, then `Z - t <= c - min(T)`.
 For `t - c`: `t - Z <= max(T) + c`, then `Z - t <= -min(T) - c`.
 For `c - t`: `t - Z <= c - min(T)`, then `Z - t <= max(T) - c`.
 For `t * c` with c > 0: `t - Z <= floor(max(T)/c)`, then `Z - t <= -ceil(min(T)/c)`; with c = 0 both components are `Z - Z <= 0`; with c < 0: `t - Z <= floor(min(T)/c)`, then `Z - t <= -ceil(max(T)/c)`.
 For two constants, normalization is ground true exactly when the mathematical result belongs to T and ground false otherwise.
-Two nonconstant add, subtract, or multiply operands have no L0 normalization route; their exact canonical goal remains writable and sufficient.
+Two nonconstant add, subtract, or multiply operands have no automatic L0 normalization route; their exact canonical Goal remains writable for [PRF-1] or a future explicitly specified finite rule.
 
 For exact division and remainder, normalization first requires `d != Z`.
 For unsigned T the second component is ground true.
 For signed T it succeeds when either `n != min(T)` or `d != -1` is derived, testing the dividend witness before the divisor witness; it is false exactly when `n = min(T)` and `d = -1` are both derived.
 For exact negate and absolute, normalization is `x != min(T)`.
-For exact shift, normalization is `k < K`, or `k - Z <= K - 1`, with K the selected value type's bit width.
-For every IntegerDomain occurrence, failure is an OP-2 rejection carrying its canonical `.defined` goal and `unproved` or `refuted` disposition.
-The family creates no provenance demand and no runtime operation.
+For exact shift, normalization is `k < K`, equivalently `k - Z <= K - 1`, where K is the selected value type's bit width.
+A refuted or unproved IntegerDomain Goal is an OP-2 rejection carrying its canonical `.defined` spelling.
 
-The third family is AllocationFit.
-Every `buffer_new(n, v)` has one canonical `buffer_fits<T>(n)` goal, and every `buffer_vacant<T>(n)` one `buffer_fits<Option<T>>(n)` goal, at that `call` node [OP-9].
-An exact positive goal discharges first; otherwise its sole normalization component is `n <= floor((2^64 - 1) / stride_ceiling(S))` for the selected stored type S.
-An exact negative goal or a derived false comparison refutes; absence of either proof is unproved.
-The occurrence is protected with constrained subject n [PRV-2, PRV-3].
-Failure is an OP-9 rejection and creates no allocation or runtime operation.
+AllocationFit attaches one canonical `buffer_fits<T>(n)` Goal to every `buffer_new(n, v)`, and `buffer_fits<Option<T>>(n)` to every `buffer_vacant<T>(n)`, at that `call` node [OP-9].
+An exact positive Goal discharges first; otherwise its normalization is `n <= floor((2^64 - 1) / stride_ceiling(S))` for the selected stored type S.
+An exact negative Goal or a derived false comparison refutes; absence of either proof is unproved.
+A refuted or unproved occurrence is an OP-9 rejection and creates no allocation or runtime operation.
 
-The fourth family is SystemRange.
-Every call to one of [SYS-8]'s seven range-bearing operations has two independent goals in declared order at that `call`: ordinal zero is the exact `ile(start, end)` goal, with constrained subjects start and end; ordinal one is the exact `ile(end, len(buffer))` goal, with constrained subject end, where buffer is that operation's declared buffer parameter.
-Each goal may discharge through its exact positive signed fact or its canonical L0 comparison projection; each exact negative fact or derived opposite comparison refutes; neither goal supplies a premise for the other.
-Both complete-state goals must succeed before their protected-subject judgments [PRV-2, PRV-3].
-The first refuted or unproved goal is a SYS-8 rejection and creates no host call, runtime condition, effect, or trap.
-Failure of the first family's base judgment is the [OP-4] rejection, forms no provenance demand or event, and publishes no checked program; its diagnostic renders the residual as exactly: the offset atom's canonical source bytes, then ` < len(`, then the base place's canonical source bytes, then `)`.
-The mechanical fix for any unproved family is one dominating branch establishing its canonical goal, or a CLM-2-admissible residual claim only when the predicate is a universally true current-function-local theorem the normative checker cannot derive — for a subscript in canonical ANF, one `let` binding `len(P)` followed by one such local claim on, or `if` over, the admitted comparison [CLM-1, ENT-3].
-After complete-state success for a protected family, a [PRV-2] or [PRV-3] rejection makes the assertion-only route unavailable: the writer uses a dominating value branch whose false edge takes the domain outcome, or restructures so the external value no longer occupies the constrained-subject position.
-For an offset atom that is itself a subscripted place — legal under [GRAM-5]'s place grammar but no term under [ENT-2] — the base fix first rebinds that inner read through one ordinary `let` (and, where the element type is narrower than u64, one total `cvt` [OP-6], both S5-tracked), making the offset a term whose own inner obligation is discharged the same way.
-With at most that one rebinding step per nested offset, the fallback makes the goal writable, at a per-site cost from zero where facts already prove the bound to one retained claim where the missing theorem is CLM-1-local; rebinding a user-call or system-call result never makes it local, and cross-function behavior instead requires a verified FN-9/S12 relation or ordinary control.
-The fallback does not by itself satisfy the provenance gate.
+SystemRange attaches two independent Goals in declared order to each [SYS-8] range-bearing call: ordinal zero is `ile(start, end)`; ordinal one is `ile(end, len(buffer))`.
+Each discharges through its exact positive signed fact or canonical L0 projection, refutes through an exact negative fact or derived opposite comparison, and supplies no premise to the other.
+The first refuted or unproved Goal is a SYS-8 rejection and creates no host call, runtime condition, effect, or trap.
 
-For checked metadata, each concrete obligation has identity `(concrete function instance, exact obligation-occurrence NodePath, family ordinal)`.
-SubscriptBounds, IntegerDomain, and AllocationFit each use family ordinal zero; SystemRange uses zero for `start <= end` and one for `end <= len(buffer)`.
-Only the protected families' identities are protected-leaf identities.
-A requirement occurrence has identity `(the same form of concrete function instance, requires_clause NodePath)` [DIAG-2].
-These occurrence identities do not participate in goal equality [FN-8].
-The finite requirement-to-leaf bridge retained here is consumed by the active [PRV-2] and [PRV-3] judgments.
-Those judgments attach derived provenance classes and source-acceptance dispositions to the same identities without changing goal equality, adding an optimizer consequence, or adding a runtime operation.
+Initialization, ownership and loans, state effects, layout and address formation, selected-target integer domains, and bounded parallel queue/completion protocols keep their own finite proposition and checker domains under their owning numbered rules.
+They use the same ProofContext entry and the same fail-closed acceptance rule; they are not encoded as numeric L0 relations merely to make one universal solver.
+Each checker has a specification-fixed algorithm, input-size work bound, unique closure or result, deterministic diagnostic order, and no timeout-selected acceptance.
 
-A parameter datum is `(zero-based value-parameter ordinal, selector)`.
-A non-payload value has the sole selector `plain`.
-For an enum carrying payload, the selectors are its exact `(variant declaration ordinal, payload-field declaration ordinal)` projections; the enum aggregate denotes the union of those projections and is not another selector.
-Dependency is retained per value binding and per whole resolved storage root, with direct enum-payload projections only for value bindings and no field, element, variant, or path projection for storage.
-It is flow-insensitive: one binding or root receives the union of its initializer and every `set` or call write whose resolved target overlaps that root, independent of branch order; joins do not subtract an edge.
-Each ordinary parameter component is seeded with its own parameter datum.
-Every other finite dependency is the least union generated below.
+The mechanical repairs for an unproved Goal are a dominating source branch whose false edge handles the domain outcome, a proved loop invariant [INV-1], a [PRF-1] step naming sufficient premises, or a verified callee relation [FN-9].
+For a subscripted offset that is not itself an [ENT-2] term, first bind the inner read with one ordinary `let` and, where required, one total `cvt`; its own inner obligation is discharged independently.
+Writing a proposition without one of these derivations establishes nothing.
 
-A literal or named const has empty dependency.
-Ordinary copy, `move`, borrow, `deref`, and `reinterpret` preserve dependency.
-A place read unions its whole storage root with every subscript-offset atom used to select the value; a write unions its right-hand-side dependency into the whole written root, while its target address contributes none.
-A plain table-operation result unions its value operands, except that `len(P)` is empty.
-For checked integer arithmetic and `cvt`, the `Ok(value:)` projection unions the value operands and the tag-only `Err(error:)` projection is empty; a total `cvt` preserves its operand.
-A non-enum construction unions its field atoms.
-An enum construction carries each field atom only into its exact direct payload projection and derives its aggregate by union; a nullary variant adds no payload edge.
-A matching binder receives only its selected direct projection.
-Whenever a payload-enum value binding is initialized or delivered, a source already carrying corresponding direct projections transfers them componentwise; a source carrying only one aggregate dependency — including a whole-storage read or one outer payload — conservatively seeds every direct projection of that binding rather than forming a recursive selector path.
-This rule applies identically to ordinary initialization, match binding, propagation, `give`, return, and a user-call result.
-`value_match` and `value_if` union corresponding `give` components, while their scrutinee or condition contributes no dependency merely by selecting a path.
-`propagate` carries only `Ok(value:)` to its binding and the selected `Err(error:)` component to the enclosing result.
-A counted binder receives its lower endpoint's dependency at initialization and the compiler-owned unit increment preserves that dependency; the upper guard contributes none merely by controlling iteration.
+Each concrete obligation identity is `(concrete function instance, exact source NodePath, family ordinal)`.
+SubscriptBounds, IntegerDomain, and AllocationFit use ordinal zero; SystemRange uses zero for `start <= end` and one for `end <= len(buffer)`.
+A requirement occurrence is `(concrete function instance, requires_clause NodePath)` [DIAG-2].
+These identities do not participate in Goal equality [FN-8].
+The checked program retains the accepted Goal, its deterministic derivation root, and its erased disposition for diagnostics and proof consumers.
+Internal derivation metadata is only the diagnostic explanation of that acceptance decision and establishes nothing independently.
+[INV-1] An `invariant_stmt` is a proof-only invariant declaration for exactly one counted range.
+It must be a direct `stmt` child of that counted body, not a statement nested in an arm, conditional, ordinary loop, region, or inner counted range; this structural parent is its loop and the invariant has no loop-label operand of its own.
+All invariant statements of one counted body form one contiguous prefix before its first executable statement; an invariant after any executable statement rejects.
+Its first IDENT is an invariant name, is not a declaration or lexical use, and must be unique among the invariant statements of that one `for_stmt`.
+Its second IDENT must be exactly `ile`; it selects the sole relation admitted by this version and does not perform an [OP-1] call.
 
-Each concrete function retains a result component and one write component per `&uniq` parameter in addition to the requirement-to-leaf relation below.
-Explicit returns union their plain or direct payload dependencies componentwise into the result, and a propagation error contributes its selected error component.
-A write component unions every right-hand side written to a root overlapping that formal, together with each callee write component whose [EFF-2] projection reaches it; a system write adds no parameter datum and seeds the destination component's unconditional-external bit exactly when [SYS-2]'s closed table classifies that writable parameter external.
-An ordinary user call substitutes the actual component dependencies into the callee's result and write components.
-A system result adds no formal parameter datum and seeds each plain or direct payload component's unconditional-external bit exactly as [SYS-2]'s closed table fixes; an internal component seeds no bit, while a dependent endpoint component additionally unions the concrete call's `start` actual dependency.
-Storage, result, write, and user-call component propagation are solved first to a least fixed point over the finite concrete instances and then frozen.
-Recursion and mutual recursion in this component stratum therefore use that fixed point, not traversal order or a stored witness path.
-Only after the component pairs freeze does the direct-demand and requirement-bridge stratum below inspect them; that second stratum never feeds a bit or datum back into a component pair.
-The ephemeral actual-value datum of FN-8 is separate from this dependency judgment: its originating checked actual still carries the ordinary root, offset, and operand dependencies defined here.
+An `affine_expr` denotes a mathematical integer expression and never a runtime evaluation.
+Every IDENT in it must resolve either to the current `for_stmt` binder or to a live, own-mode local integer value already live in that loop's preheader state.
+A value declared by any statement in the counted body is never an invariant input, even if a later invariant could otherwise see it lexically; named constants, function and system results not first bound before the loop, borrow holders, moved values, calls, construction, dereference, subscript, field selection, allocation, mutation, and every other runtime expression form are not admitted.
+Every literal and local value must have its own exact closed source integer type.
+Each such typed atom is lifted exactly into the mathematical integers: an unsigned atom denotes its nonnegative value and a signed atom denotes its signed value.
+Atoms of different widths and signedness may occur in one invariant, including in one addition, subtraction, multiplication, or on opposite sides of `ile`; this is proof-domain interpretation, not an implicit source conversion, and creates no runtime widening, narrowing, reinterpretation, or other operation.
+The checked metadata retains the source `IntegerType` of every literal and local atom so later compiler-owned range axioms can use its exact source domain.
+`+` and `-` form mathematical addition and subtraction and associate from left to right in source order.
+`*` is admitted only when at least one direct operand is an integer literal; its mathematical coefficient and any accumulated constant arithmetic must be representable by checked `i128` operations, while two local or parenthesized nonliteral operands reject as non-affine.
+Parentheses alter grouping but never turn a composite expression into a direct literal factor.
+The complete `left - right <= 0` formation is checked in deterministic source order before the invariant metadata can leave the semantic front end; overflow during formation rejects under INV-1.
+The statement has no runtime effect, creates no source binding, and is not itself a fact or proof authority.
 
-For CLM-1 only, ENT-6 also computes one independent finite forward **claim-authority** state over the structural normal-control graph.
-Claim authority is not an entailment fact, optimizer fact, callee summary, or [PRV-1] provenance pair, and it grants no operation authority.
-Each component is `Local` or `BoundaryResult(witness)`; component join retains `BoundaryResult` when either input has it and retains the earliest witness in stable source order.
-The component tree is structural and finite: a scalar or opaque value has one plain component; a struct has its recursively selected declaration-order fields; an enum has its tag and recursively selected declaration-order payload fields; an array, slice, or buffer has its length and one conservative all-elements component; and a box, arena, or borrow holder retains both the holder path and every selected dereference path used by a claim support.
-A uniform authority on a whole value applies to every existing or later-materialized descendant.
-Construction and projection are component-sensitive: a boundary field or payload does not taint an independent local sibling, while reading or operating on the whole aggregate joins all selected components.
+Before a checked program may be published, the normal semantic proof checker must prove the complete invariant prefix as one simultaneous batch.
+Base checking proves every invariant at the first loop header without assuming any invariant from that same prefix.
+Backedge checking assumes the complete proved header prefix and proves every invariant for the next header after an arbitrary reachable normal body fallthrough and the hidden unit binder update; another invariant in the same prefix may be the one coefficient-one premise used for a target.
+If no normal body fallthrough reaches a backedge, the backedge obligation is vacuous rather than a simulated second iteration.
 
-Every source parameter component, command-entry parameter component, literal, named const, and otherwise untainted local initializer begins `Local`; this judgment does not classify external input provenance.
-Every result component of every ordinary user call and every system call begins `BoundaryResult`, including a scalar, tag, payload, aggregate field, length, element, box or arena content, borrow holder, and value read through that returned holder.
-This seed is unconditional: it does not inspect or substitute the callee body, arguments, effect row, [PRV-1] class, a system component's external/internal/dependent class, or an FN-9/S12 relation.
-An `ensures` relation remains an independently verified fact for direct caller consumption and never declassifies any component of its returned value.
+The fixed exact-exhaustion rule is available only when all of the following hold in the current ProofContext: the captured lower endpoint is proved no greater than the captured upper endpoint without using this loop's invariant prefix; every base and applicable arbitrary-backedge obligation in the complete prefix is proved; and, when a backedge is reachable, the hidden `binder + 1` update is proved representable in `u64`.
+Initialization gives `binder = lower_capture`; every true header gives `binder < upper_capture`; the hidden update gives the next binder exactly the old binder plus one; and the false header gives `binder >= upper_capture`.
+Those fixed facts, together with `lower_capture <= upper_capture`, establish exact exhaustion without overshoot: at the false header `binder = upper_capture`.
+The checker then substitutes the captured upper value for the binder in each proved invariant exactly once, in source order.
+It exports the resulting affine inequality only on the false-header state and only when every affine atom in the result belongs to an outer local or parameter still live at the continuation.
+The result must not name the binder, either capture, a body local, or any proof-internal header, next-header, or preheader identity.
+No `break` edge receives this false-header conclusion; the ordinary continuation join therefore retains it only when the same outer-value fact holds on every reaching edge.
+This substitution is not a second proof of the invariant, does not publish `binder = upper_capture`, and performs no coefficient, premise, invariant, or path search.
+The exported fact enters the same deterministic affine fact flow as an active invariant and may discharge later partial-operation or [FN-9] obligations before proof erasure.
+A parser or type checker result is never proof evidence.
+An unproved base or arbitrary backedge is a source rejection, not an unsupported compiler capability.
+The invariant syntax and its diagnostic derivation are erased before runtime lowering; consumers retain only the semantic decisions already justified by the proved fact.
+A violation of this rule cites INV-1 at the complete `invariant_stmt` unless the failing local IDENT or literal has a smaller complete selected node.
 
-Ordinary copy or move, conversion, reinterpretation, arithmetic, float, Boolean and enum operations, `imin`, wrapping identity operations, allocation-fit operations, and every other total value operation join the authority of the value components they read into the result components they produce.
-Struct, enum, array, buffer, slice, box, and arena construction transfers each operand to its exact component where that component is known; projection, matching, propagation, `give`, return delivery, and dereference preserve the selected component, and an aggregate-to-unresolved-payload transfer conservatively joins the aggregate into every possible direct payload.
-A place read obtains the reaching authority of its selected storage component and joins the authority of any value used to select a conservative element; an explicit `set` or `replace` transfers its right-hand side and selector authority into the written component.
-An unconditional explicit write to one statically exact whole value or exact field component is a strong replacement and may clear an older boundary marker when its right-hand side is Local; an element write, partial write, possible-overlap write, or other write represented by a shared conservative component joins and never clears.
-Control-flow joins combine corresponding components and never subtract a boundary witness.
+[PRF-1] A `proof_stmt` is one proof-only source statement whose writer supplies a target affine relation and one or more ordered premise relations:
 
-Claim authority deliberately includes control dependence although [PRV-1] provenance does not, and it includes exactly the control dependence a selection carries.
-A `BoundaryResult` condition, match scrutinee or tag, counted endpoint, or other selector chooses an edge; its witness joins each matching binder that edge's arm introduces, each value `value_if` or `value_match` delivers along it, and, at each ordinary match reconvergence, loop head, and loop exit the selector reaches, exactly those components whose reaching definition on one incoming edge is a different definition occurrence from their reaching definition on another.
-Two reaching definitions are the same occurrence when they are one definition of that component, not when two separate definitions compute equal values; `value_if` and `value_match` deliver a selected value in every case, so selecting constants on the two arms or selecting the same local value on both arms does not declassify the delivered value.
-Standing on a boundary-selected edge is not itself a selection.
-An ordinary binding, a computed value, or a storage write whose own operands are every one Local — a literal, a named const, an ordinary parameter, or another Local value — is Local, and stays Local across a reconvergence, loop head, or loop exit whose every incoming edge reaches it through that one definition, whether it stands inside the selected arm or in post-join state.
-Thus writing a local constant on one arm and joining it with the other arm's older definition, and updating loop-carried state under a boundary-selected iteration, each retain the selector's witness at the join, while a definition formed after the join from literals, named consts, parameters, and other Local values is Local although a boundary result selected the edge that reaches it.
-So a `match` on a system-call result whose `Err` arm returns leaves a following `let seed = 3209_u64;` and `let offset = seed % 64_u64;` Local, and `claim guard: ilt(offset, 64_u64)` is admitted; the same claim over a value that reads the delivered payload, a binder joined from two arms, storage the selected edge wrote and the other edge did not, or state a boundary-selected loop updates remains non-local and is refused.
+```wf
+prove total_limit: ile(sum, 255000_u32) {
+  use ile(sum, 255_u32 * count);
+  use ile(255_u32 * count, 255000_u32);
+}
+```
 
-A call's result seed is the only call event added by this first locality version.
-A user or system call's possible write through an `&uniq` actual does not by itself change claim authority for that caller storage; ordinary effect, kill, provenance, and obligation judgments remain unchanged, and an explicit later write of a boundary-derived right-hand side still transfers normally.
-Extending locality to call-written storage is an amendment-level accepted-set change rather than an implementation choice.
+The first IDENT is a proof name, is not a declaration or lexical use, and must be unique among all `proof_stmt` names in the containing function.
+The relation IDENT in the target and in every `proof_premise` must be exactly `ile`; each selects the proof-domain relation and performs no [OP-1] call.
+Every target and premise `affine_expr` obeys INV-1's mathematical-integer interpretation, closed source-integer typing, mixed-width interpretation, left-to-right `+` and `-`, direct-literal multiplication restriction, parentheses rule, checked `i128` arithmetic, and deterministic normalization.
+At this ordinary statement position an IDENT may name exactly a live own-mode local integer value visible before the statement; a borrow holder, moved value, noninteger value, runtime expression, value not yet in scope, or value outside its lexical scope rejects.
+Each relation normalizes to one canonical affine inequality `left - right <= 0`, with constants moved to its integer upper bound and equal terms combined in canonical term order.
 
-One boundary witness contains the introducing call's NodePath and kind, plus the user callee's source declaration origin and source name or the system operation's `system_declaration_ordinal` and spelling.
-When more than one witness reaches a component, the least call NodePath wins, with boundary kind and the stable callee identity used only as a deterministic tie-break at one path; no scratch or dense identity is publishable.
-The authority analysis is computed once before S3, U, B, `Eligible`, or any `Full-minus` mask and is reused unchanged by every claim component query.
-For one component, CLM-1 queries exactly [ENT-5]'s ordinary S-derived relation or opaque-goal support, including each root and holder; canonical normalization may add a fact identity but never subtract authority support read by the retained S expression.
+The complete `.wf` compilation unit is the only writer-supplied proof input, and PRF-1 consults only that source, the current ProofContext, and the rules fixed here.
+The checker snapshots the one fact state immediately before the `proof_stmt` and proves every written `use` relation independently against that same snapshot.
+No premise established by this statement may help prove another premise in the statement.
+After those independent judgments, the checker adds the normalized premise inequalities in written source order, each with the fixed coefficient one, using checked `i128` coefficient and upper-bound arithmetic.
+The written proof succeeds exactly when every premise succeeds in the pre-proof context and the accumulated canonical coefficient vector and upper bound equal the normalized target exactly.
+A stronger or weaker result, a different coefficient vector, an unused or extra premise, or equality only after weakening does not match the target.
 
-The protected families and constrained subjects are closed.
-For SubscriptBounds the sole subject is offset i in `i < len(P)`.
-For AllocationFit the sole subject is n.
-For SystemRange goal zero the subjects are start then end; for goal one the sole subject is end.
-IntegerDomain is not protected.
-Each subject's parameter datums are exactly that value's parameter-dependency set at the obligation.
-A buffer base, `len(buffer)`, comparison bound, write target, type/layout constant, and every other goal operand contributes no subject datum merely by being mentioned.
-A protected leaf with no subject parameter datum still has its structural bridge identity; an implementation must not manufacture a datum from a bound, base, type, or another goal operand.
+The checker never chooses a premise, reorders the written premises, guesses or synthesizes a coefficient, searches a subset, splits a case, invents an intermediate relation, or retries a different derivation order.
+It uses no timeout and no randomized or heuristic choice.
+Each affine checker invocation has fixed ceilings of 4096 scheduled expression nodes, 4096 input terms, 4096 result terms, 4096 written proof premises, and 10,000,000 charged deterministic work units.
+Every coefficient, constant, scaling, addition, subtraction, multiplication, and negation is checked in `i128`; arithmetic overflow or a ceiling excess is a source rejection, never a request for a wider or longer-running search.
+The proof length and expression size are therefore explicit source sizes up to fixed language ceilings, and the checker always terminates within the corresponding fixed work bound.
 
-For the active gate, the **complete state** is the ordinary [ENT-3] flow and closure used by the base [OP-4] and [FN-8] judgments.
-The **unasserted state** U is that flow recomputed with S3 establishment disabled and every other source, kill, join, loop rule, and closure unchanged.
-The **S4-blinded state** B is U with every positive S4 goal and each exact L0 projection omitted at body entry.
-Only a leaf whose complete-state base judgment succeeds reaches the local demand generator.
-If B discharges the leaf, add no demand.
-Otherwise, inspect each constrained subject in its fixed order.
-A subject component whose unconditional-external bit is true creates the local [PRV-3] candidate regardless of U and regardless of whether the component also carries parameter datums; retain those datums only as explanations and add no direct demand or bridge tuple for that subject.
-Only a component whose unconditional bit is false reaches the remaining partition: if U does not discharge the leaf, add one direct `(subject parameter datum, leaf)` demand for each subject datum; if U discharges it while B does not, add the structural pair from the complete ordered requirement-occurrence set to the leaf and add one `(requirement occurrence set, subject parameter datum, leaf)` bridge tuple for each subject datum.
-A false bit with no subject datum is internal and creates no rejection or caller-visible target.
-A complete-state failure remains the obligation family's owning rejection, forms none of these members, and publishes no checked program.
-A function with no requirements cannot distinguish U from B.
+Source acceptance requires every premise and the exact combination to succeed in that snapshot; the written target itself contributes no authority.
+On success, the normalized target becomes an affine fact for subsequent source statements only.
+The fact carries the ordinary support of every live value in its normalized target, is killed when [ENT-5] kills or replaces a supporting value image or its scope ends, and survives a control-flow join only when the identical target fact reaches every input of that join.
+It may subsequently discharge a partial-operation, [FN-8], [FN-9], allocation, address, target-domain, or parallelism proof goal through the same deterministic proof entry as every other fact; its source origin grants no special consumer path.
 
-S12 establishment and bounded `value_if` delivery are computed independently in each of these three views and enter one fixed optimistic semantic batch before provenance finalization.
-A complete-only S12 relation is absent from U and B; a U-but-not-B relation enters U only through that caller's exact U call premises and enters B only when FN-9's B alternative independently permits it; a B relation may enter all views.
-A delivered relation remains in only the view of its source relation.
-These facts may discharge a protected leaf in that same view, but they add no parameter datum, component predecessor, unconditional-external bit, protected family, constrained subject, demand kind, bridge kind, or callable component.
-PRV-1 therefore converges and freezes exactly the ordinary dependency components first.
-The fixed candidate fact batch then supplies complete/U/B outcomes to the existing PRV-2/PRV-3 demand and event stratum.
-A resulting event discards the whole candidate fact batch with the unpublished checked program; absence of every event leaves the unchanged batch in failure-atomic scratch until [CLM-3] succeeds, vacuously for a unit with no marker, and only that success finalizes it atomically.
-No per-fact retraction, negative lattice edge, second provenance class, or second flow pass exists.
-
-At an ordinary call, full-state [FN-8] acceptance is first; a refuted or unproved complete instantiated goal forms no [PRV-2] target.
-After full success, a callee direct demand always composes through the selected actual component: a true unconditional-external bit creates the local call-argument candidate and retains any parameter datums only as explanations, while only a false bit permits each caller parameter datum in that component to add the corresponding direct demand to the caller.
-A callee bridge target instead rejudges the complete instantiated call goal in the caller's U and B states.
-If B discharges it, the chain ends at that evidence.
-Otherwise, if the selected actual component's unconditional bit is true, create the local call-argument candidate regardless of U and retain any parameter datums only as explanations; the bit and those datums do not propagate as a direct demand or another bridge.
-Only a selected component whose unconditional bit is false reaches the remaining bridge partition: if U does not discharge the goal, each caller parameter datum in that component becomes a direct caller demand; if U discharges it while B does not, an ordinary caller adds the structural bridge from its requirement occurrence to the inherited leaf, composes those parameter datums into bridge tuples, and retains the call and downstream requirement occurrence as witness predecessors.
-A `command` entry has no caller to continue the latter bridge, so a false-bit selected actual creates no local gate event there.
-No synthetic external parameter datum is introduced.
-
-After the component stratum converges and freezes, take direct-demand, bridge, call-target, and event composition together to a second least fixed point over the finite concrete function instances, frozen component pairs, requirement occurrences, full-state-accepted calls, parameter datums, and protected leaves.
-Complete/U/B outcomes and every tested unconditional bit are fixed inputs to this stratum; its transfers only add set members, so a false-bit premise never later becomes true and requires no retraction.
-Direct, recursive, and mutually recursive demand paths therefore converge independently of traversal order, while a recursive component with no local protected-leaf seed remains empty.
-Multiple datum or leaf explanations for one actual argument remain distinct targets, but [PRV-2] coalesces them into one event per call and argument.
-Witness paths and tie-breaking predecessors are selected only after this second convergence and cannot change either lattice.
-The checked program retains the converged components, direct demands, structural pairs, bridge tuples, call links, complete/U/B outcomes, target sets, and deterministic finite witness predecessors [DIAG-2].
-An unconditional-external bit is never replaced by or propagated as parameter-only demand metadata: it terminates at its local leaf under [PRV-3], or at its call argument under [PRV-2] for a direct demand or a B-failing bridge, retaining any parameter explanations only for diagnostics.
-At a `command` entry, each labelled input is unconditionally external [PRV-1]; a B-failing direct local leaf whose subject carries that bit is owned by PRV-3, while a B-failing inherited bridge whose selected actual carries that bit is owned by PRV-2 at that call's argument.
-This active bridge and gate add no runtime operation, fallback check, trusted assertion, or optimizer consequence.
-
-For [CLM-3], the unasserted U state is exactly the unasserted state U above, retaining every S4 source after its independently proved incoming boundary.
-Each demanded ordinary-call goal queries its existing instantiated goal in caller U, and each demanded protected leaf retains its already-produced U derivation root as checked metadata without a separate [CLM-3] rejection.
-These strict queries introduce no new obligation family, protected subject, provenance class, component dependency, direct demand, bridge, call target, fact source, or repair.
-After PRV-1 freezes and PRV-2 or PRV-3 produces no event, the candidate S12 and delivery batch remains unchanged in failure-atomic scratch until every applicable CLM-3 query and summary succeeds; only then does the sole finalization publish that batch and the checked program.
-Any strict event discards both, with no per-fact retraction or second pass.
-
-[PRV-1] Provenance is a derived two-class explicit-dataflow judgment over exactly the finite components whose dependency transfer [ENT-6] retains.
-A plain value binding and a whole resolved storage root each have one aggregate component.
-A payload-carrying enum value binding instead has one component for each direct `(variant declaration ordinal, payload-field declaration ordinal)` projection and an aggregate defined as their join; storage has no payload, field, element, variant, or path projection.
-Every component carries the pair `(unconditionally external, parameter datums)`, where the first member is one Boolean and the second is the finite [ENT-6] set.
-Join is Boolean disjunction and set union.
-Under a concrete assignment of classes to ordinary parameter datums, the component is **external** exactly when its Boolean is true or at least one member of its parameter set is external; otherwise it is **internal**.
-An ordinary source parameter component begins with only its identity parameter datum.
-Each labelled `command` entry parameter instead begins unconditionally external and creates no caller-substitutable sentinel.
-A [SYS-2] result or writable component begins with exactly its table-fixed unconditional bit and no formal parameter datum; a dependent endpoint result then joins the concrete call's `start` actual pair.
-These entry and system components are the only unconditional external origins.
-
-The complete transfer is [ENT-6]'s positive dependency transfer applied componentwise to that pair.
-In particular, storage is flow-insensitive per binding and whole root; every initializer, overlapping `set`, and projected call write joins, and no later flow subtracts an edge.
-A selected place read joins its root and every explicit subscript-offset atom in the resolved place, field selection preserves the accumulated pair, and `len(P)` is internal.
-A `set` target's address contributes nothing to the stored value or root; only its right-hand side does.
-Literals and named consts are internal.
-Ordinary table-operation results join their value operands, checked arithmetic and `cvt` carry those operands only into `Ok(value:)` while a tag-only `Err(error:)` is internal, total `cvt` and `reinterpret` preserve, system dependent endpoints join their concrete `start` actual, and construction, matching, `give`, propagation, return, and counted-binder initialization follow the exact component transfers already enumerated by ENT-6.
-When a payload-enum target receives only one aggregate component — including from whole storage or one outer payload — that aggregate conservatively seeds every direct projection; selectors never recurse.
-A user-call result and write substitute the callee's current result or write pair through the exact actual component.
-Result, write, storage, and user-call pair propagation form the first finite least fixed point.
-Once converged, every pair is frozen and retained in the [PRV-2] boundary column before any direct-demand, bridge, target, or event generator runs.
-
-No branch, match arm, loop guard, variant tag, or other control choice contributes provenance merely by selecting a path.
-No target-address operand contributes merely by selecting a write.
-There is no path-sensitive storage, recursive payload path, implicit-flow analysis, integrity judgment, writer-spelled provenance annotation, trusted assertion, or optimizer assumption.
-An external value used only as a bound, base, target address, or unrelated goal operand therefore does not become a constrained subject by association.
-
-Every positive PRV-1 predecessor edge has exactly one carrier NodePath, fixed by this exhaustive mapping rather than implementation choice.
-An ordinary or labelled-entry seed uses its complete `param` node.
-A system result or system write uses that system-operation `call` node.
-A user-call result, projected write, or substituted call-component edge uses that user `call` node.
-Within an explicit source expression, a place read, copy, move, borrow, dereference, operation result, infix result, or construction edge uses the smallest selected `atom`, `call`, `infix`, or `construct` node that produces the receiving value.
-Delivery from an expression into an ordinary or propagated binding uses the owning `let_stmt`; delivery into storage uses the owning `set_stmt`; delivery into a function result uses the owning `return_stmt`, or the owning propagated `let_stmt` on its automatic error edge; delivery through `give` uses the owning `give_stmt`; and delivery into a match binder uses that complete `fieldbind` node.
-The componentwise delivery from a `value_match` or `value_if` into its binding uses the owning `let_stmt`, after its contributing `give_stmt` edges.
-A counted binder's initialization edge uses the lower endpoint's `atom` node, and its compiler-owned dependency-preserving increment uses the owning `for_stmt` node.
-These cases cover every positive transfer enumerated by [ENT-6]; no control-only or address-only non-edge receives a carrier.
-External origins are the labelled-entry `param` carrier or the system-operation `call` carrier and, for a system write, its exact writable parameter and caller actual.
-Every predecessor tie, rendered payload, and origin coordinate in [PRV-2] and [PRV-3] uses this carrier mapping and the carrier node's complete checked half-open extent.
-
-[PRV-2] Every concrete [FN-2] function instance derives one caller-visible provenance column.
-Its result and per-`&uniq` write components are the converged PRV-1 pairs retained by [ENT-6].
-Its protected-demand part retains each direct `(parameter datum, protected leaf)` demand and each `(requirement occurrence, parameter datum, protected leaf)` bridge tuple produced by ENT-6's complete/U/B partition.
-A parameter datum is exactly ENT-6's zero-based parameter ordinal and selector; selector order is `plain` when present, then direct enum projections in variant-declaration and payload-field declaration order.
-An unconditional-external bit is never represented by a synthetic parameter datum.
-No mention-all-parameters, whole-goal-support, recognizer, or second goal language adds a member.
-
-At a full-state-accepted call `c: F -> G`, ENT-6 composes every direct demand and every still-live bridge target through the selected plain or payload component of the corresponding actual.
-For zero-based argument ordinal `q`, `Targets(c, q)` is the finite set of all direct-demand records whose selected actual component has a true unconditional-external bit, together with every bridge record for which the caller's B state fails and that selected component has a true unconditional bit.
-A bridge that B discharges contributes no target even when the bit is true; after B fails, a true bit contributes a target regardless of U, while parameter datums beside that bit remain explanations and never replace or propagate it.
-The same partition applies inside a `command` entry, which has no ordinary caller to continue a false-bit bridge.
-Each record retains the callee parameter datum, demand kind, exact protected leaf, every bridge predecessor, and the nonpropagated companion parameter datums in the parameter order above.
-If `Targets(c, q)` is nonempty, the compiler emits exactly one hard rejection event for that `(call, q)` pair, citing PRV-2 with `SourceNode` at the existing argument `atom` node and `SourceCoordinate` equal to that atom's complete checked half-open extent.
-A second datum, leaf, or route at the same argument enlarges the retained target set but creates no second event.
-Events at different argument ordinals remain distinct.
-A call whose full goal is refuted or unproved is only [FN-8], creates no target, and never reaches this judgment.
-The command entry remains uncallable [FN-7].
-
-With every [PRV-1] component pair converged and frozen, direct-demand, bridge, call-target, and event composition form the second finite monotone product fixed point over the closed unit.
-There are finitely many concrete instances, frozen components, full-state-accepted calls, parameter datums, requirement occurrences, and protected leaves, and every transfer in this stratum only adds a set member, so its least fixed point exists, is unique, terminates, and is independent of visit order.
-No component bit or dependency set changes here; every false-bit branch is therefore a fixed premise rather than a negative dependency on a growing lattice.
-Direct, recursive, and mutually recursive routes use this second fixed point.
-A recursive component with no local protected-leaf seed remains empty.
-Result and write pairs are outputs of the first stratum and fixed inputs here; call paths and witness choices are absent from both lattices.
-
-Only after both strata converge does one PRV-2 event select its diagnostic witness.
-A complete demand-state identity is either `direct(concrete function, parameter datum, protected leaf)` or `bridge(concrete function, requirement occurrence, parameter datum, protected leaf)`; the fixed tag order is `direct < bridge`, and a bridge retains its exact requirement occurrence rather than collapsing to the same function, datum, and leaf.
-The witness first minimizes call boundaries.
-Ties compare lexicographically the complete sequence of boundary states.
-Each boundary contains the call NodePath, argument NodePath, complete callee demand-state tag and bridge occurrence when applicable, callee parameter datum, and one optional caller continuation.
-The optional continuation uses the fixed tags `absent < present`; `absent` is the real terminal-boundary case and contains no caller parameter datum or synthetic sentinel, while `present` contains the resulting caller demand-state tag and bridge occurrence when applicable plus its caller parameter datum.
-Demand-state tags, requirement-occurrence NodePaths, parameter ordinals, and selectors compare in that written order; concrete-instance-only ties use the stable order below.
-At a true-bit rejecting boundary the caller continuation is absent even when the frozen selected component also carries parameter datums; those companion datums remain a separately ordered diagnostic explanation list and do not enter the propagated route.
-The protected leaf's concrete instance, obligation NodePath, and family ordinal follow that route key.
-A remaining tie between concrete instances uses one implementation-defined but stable deterministic instance order fixed for that compiler executable and independent of hash iteration, worklist order, allocation identity, or worker scheduling.
-At the terminal boundary, the PRV-1 predecessor suffix follows only edges carrying the true unconditional bit to its labelled-entry or [SYS-2] origin, minimizes component edges, and then compares the complete sequence of carrier NodePaths fixed by PRV-1 and their selectors lexicographically; a companion parameter path is not eligible as that suffix.
-Reconstruction records visited complete demand-state identities, so `direct(F, d, L)` and `bridge(F, R, d, L)` remain distinct even at the same function, datum, and leaf, while revisiting one identical full state cuts the cycle and recursion never appears as an infinite witness.
-
-The event payload retains the complete ordered `Targets(c, q)` set, the selected leaf's [ENT-6] residual, and one rendered chain from that leaf backward through requirement occurrences, callee datums, and call boundaries to the rejecting actual, then through that actual's PRV-1 predecessors to its labelled-entry or [SYS-2] origin.
-For a direct demand, its legal repair is a real branch in the protected leaf's owning body that establishes the residual and takes the domain outcome on the false edge.
-For a requirement-bridge target, the branch instead establishes the complete bridged call goal in the rejecting caller's unasserted state before that call.
-Either kind may also be repaired by restructuring the route so the external value no longer reaches the protected constrained subject.
-A `claim` is not a repair for an unconditionally external constrained subject.
-
-[PRV-3] This rule owns only a local protected leaf, including a leaf local to a command entry.
-The [ENT-6] complete-state family judgment runs first.
-If it fails, that family's owning rule is the sole rejection and no PRV-3 candidate exists.
-After success, inspect the closed constrained-subject list [ENT-6] in order.
-If B discharges the leaf, no provenance demand remains.
-If B does not discharge it and any subject's PRV-1 pair has a true unconditional-external bit, the leaf is one hard rejection citing PRV-3 with `SourceNode` at its existing obligation-owning `psuffix` or `call` node and `SourceCoordinate` equal to that node's complete checked half-open extent, regardless of U and regardless of whether the pair also carries parameter datums.
-All external subjects and companion datums remain ordered diagnostic explanations but create no direct demand, bridge tuple, or second event.
-Only false-bit subject pairs reach the remaining partition.
-An empty parameter set is internal and creates no rejection or caller-visible target.
-With a nonempty parameter set, failure in U retains the direct demand for [PRV-2], while success in U followed by failure in B retains the complete ordered S4 requirement bridge for PRV-2; neither case is a local PRV-3 rejection.
-
-A `command` entry follows the same partition and has no contract, S4 source, or ordinary caller.
-Every labelled input has a true unconditional-external bit, so a direct entry-local leaf whose constrained subject carries that bit must be justified by a real source branch present in U and B; a claim-only proof is the local PRV-3 rejection above.
-An inherited leaf reached through an entry-body call remains a call-argument judgment and is owned only by [PRV-2].
-This entry disposition adds no wrapper, foreign adapter, alternate error protocol, source surface, or second body.
-
-The unasserted state removes exactly S3 claim establishment.
-S1 branches, every S4 requirement source, S5, S6, S7, S9, S10, S11, every kill and join, and [ENT-4] closure remain unchanged; B additionally removes every S4 source.
-Thus a `claim` may not authorize an external constrained subject, while an internal subject may use one only when CLM-2 also proves that exact occurrence and every contribution individually necessary for an allowed terminal root.
-Provenance of a buffer base, `len(buffer)`, a comparison bound, a target address, a type/layout constant, or another non-subject goal operand does not gate the obligation.
-
-A PRV-3 payload contains the exact ENT-6 residual, the shortest post-convergence PRV-1 chain from the subject component to its labelled-entry or [SYS-2] origin, and the two legal repairs: a dominating real branch whose false edge takes the domain outcome, or a restructure in which the external value no longer occupies the constrained-subject position.
-An entry-bridge payload additionally retains the requirement occurrence and deterministic bridge predecessor.
-Component-edge count is minimized first; ties use complete predecessor NodePaths and selector order exactly as PRV-2.
-A local PRV-3 rejection never relocates to an upstream claim and never becomes a call-argument event.
+A `proof_stmt` and each `proof_premise` are erased after semantic checking.
+They evaluate no runtime expression, read or write no runtime storage, form or consume no ownership loan, move no value, contribute no effect, branch, allocation, call, or trap, and emit no runtime instruction or hidden fallback.
+The statement changes only the compile-time fact state described above.
+An invalid proof form or an undischarged premise or combination cites PRF-1 at the smallest failing affine source node when formation identifies one, otherwise at the complete `proof_stmt`.
 
 ## 19. Worked example (normative bytes)
 
@@ -3471,6 +3069,7 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 [META-3] No rule carries an exception clause; conditional structure is expressed as total positive rules or table data.
 [META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
 [META-5] Every change to this artifact declares its spec delta (rules ±, tokens ±, spellings ±, exceptions ±) and its SELECTION GROUND (evidence-selected vs minimality-selected) in this document's status header.
-`WORKFLOW.md` defines the candidate and approval loop, and exact approvals are recorded in `governance/APPROVALS.md`; DEFERRED markers are tracked delta obligations.
+`docs/WORKFLOW.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
+DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
 [META-6] Every rule carries an entry in `spec/derivation/derivation-ledger.md` tracing it to `docs/constitution.md`; a rule whose chain is refuted or orphaned (evidence card dies, constitutional premise amended) is flagged for re-grounding, and underived rules may not ratify.
 The native `whitefoot-spec` gate checks that every active rule ID has a ledger row.

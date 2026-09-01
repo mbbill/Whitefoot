@@ -1,8 +1,9 @@
 //! Derives `src/syntax/grammar/generated.rs` from the active specification's
 //! normative EBNF.
 //!
-//! The committed strong-LL(2) tables are not hand-editable: 669 nodes, 95
-//! decisions and roughly three thousand provenance-retaining SELECT rows. They
+//! The committed strong-LL(2) tables are not hand-editable. They contain
+//! hundreds of nodes and decisions plus thousands of provenance-retaining
+//! SELECT rows. They
 //! have always been produced by a generator, but each grammar task built one
 //! offline and deleted it, so nothing checked that the committed tables were
 //! still the tables the specification implies. Task 0031 added 84 `]`-closing
@@ -32,10 +33,10 @@ use whitefoot::{ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_TEXT};
 /// The committed tables this generator must reproduce.
 const COMMITTED_TABLES: &str = include_str!("../../syntax/grammar/generated.rs");
 
-/// `Production` declaration order is a stable dense table index, so it is
-/// historical rather than derived: a production keeps its slot across
-/// specification versions and a new one appends. Specification-definition
-/// order is carried by `PRODUCTIONS`.
+/// `Production` declaration order is the dense index for the current grammar.
+/// Retired productions leave this inventory instead of surviving as dormant
+/// parser concepts. Specification-definition order is carried by
+/// `PRODUCTIONS`.
 const ENUM_ORDER: &[&str] = &[
     "program",
     "item",
@@ -101,7 +102,6 @@ const ENUM_ORDER: &[&str] = &[
     "effect",
     "program_kind",
     "input_label",
-    "claim_stmt",
     "if_stmt",
     "value_if",
     "infix_tail",
@@ -112,6 +112,13 @@ const ENUM_ORDER: &[&str] = &[
     "result_route",
     "replace_let_rhs",
     "effect_path",
+    "invariant_stmt",
+    "affine_expr",
+    "affine_term",
+    "affine_factor",
+    "affine_add_op",
+    "proof_stmt",
+    "proof_premise",
 ];
 
 /// v0.33 deliberately replaces the old pseudo-statement contract grammar.
@@ -450,7 +457,7 @@ fn emit(
     out.push_str(
         "use crate::syntax::grammar::{\n    Decision, DecisionContext, DecisionKind, GrammarNode, GrammarNodeId, GrammarNodeKind,\n    LookaheadPredicate, NamePredicate, RuleOwner, SelectAtom, SelectRow,\n};\nuse crate::syntax::terminal::{FixedTerminal, TerminalPredicate};\n\n",
     );
-    out.push_str("/// One normative production of the active specification grammar.\n///\n/// The declaration order is the stable dense table index and is historical,\n/// not derived: a production keeps its slot and a new one appends.\n/// Specification-definition order is carried by `PRODUCTIONS`.\n#[derive(Clone, Copy, Debug, Eq, PartialEq)]\npub enum Production {\n");
+    out.push_str("/// One normative production of the active specification grammar.\n///\n/// The declaration order is the dense compiler-local index for the current\n/// grammar. Retired productions leave the inventory; these indices are never\n/// serialized. Specification-definition order is carried by `PRODUCTIONS`.\n#[derive(Clone, Copy, Debug, Eq, PartialEq)]\npub enum Production {\n");
     for name in &enum_names {
         out.push_str(&format!("    /// The `{name}` production.\n"));
         out.push_str(&format!("    {},\n", camel(name)));

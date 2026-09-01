@@ -36,17 +36,17 @@ rejected.
 The parser handles modern location-sensitive effects, including
 `memory(read, argmem: none)`, plus common legacy memory attributes. It removes
 arbitrary quoted string attributes before interpreting facts, so a target-cpu
-string containing `memory(none)`, `#7`, or `}` cannot forge a fact or terminate
-an attribute group. `private`, `internal`, and `available_externally`
+string containing `memory(none)`, `#7`, or `}` cannot contribute a fact or
+terminate an attribute group. `private`, `internal`, and `available_externally`
 definitions cannot satisfy an external declaration; local-name collisions are
 filtered before ambiguity is decided. Return and parameter types, varargs,
 calling convention, and function address space must match across the call,
 declaration, and definition. Unsupported signatures and mismatches fail closed.
 
 Valid multiline declarations, calls, invokes, and callbr instructions are
-accumulated before parsing. Metadata attachments and sigiled identifiers cannot
-forge attributes. Operand bundles are deliberately unsupported in this first
-calibration, and inline-assembly callees are always unsupported even when an
+accumulated before parsing. Metadata attachments and sigiled identifiers do not
+contribute attributes. Operand bundles are deliberately unsupported in this
+first calibration, and inline-assembly callees are always unsupported even when an
 assembly string contains text resembling `@a_direct_symbol`.
 
 The following states remain intentionally distinct:

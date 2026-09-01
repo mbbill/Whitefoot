@@ -3,11 +3,10 @@ struct Point {
   y: i32;
 }
 
-command fn main() -> status: own ExitStatus traps {
-  doc "TYPE-2/GRAM-8: construct a struct, read its fields, use them in exact arithmetic under a retained domain claim, and control-check the expected sum.";
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-2/GRAM-8: construct a struct, read its fields, use them in total wrapping arithmetic, and control-check the expected sum.";
   let p = Point(x: 3_i32, y: 4_i32);
-  claim field_sum_defined: p.x +defined p.y because "premises: p is constructed with x equal to 3_i32 and y equal to 4_i32\nderivation: 3_i32 plus 4_i32 equals 7_i32 and is representable as i32\nconclusion: p.x +defined p.y is true\nchecker gap: ENT does not retain both constructor field values through nominal field projections\nconsumers: the following exact field addition needs the complete IntegerDomain obligation";
-  let s = p.x + p.y;
+  let s = p.x +wrap p.y;
   if ieq(s, 7_i32) {
   } else {
     return exit_status(code: 201_u8);

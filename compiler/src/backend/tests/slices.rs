@@ -4,26 +4,18 @@ use super::*;
 fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
     let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values), traps {
-  let offset = 0_u64;
+fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values) {
   let total = 0_u64;
   let length = len(values);
-  loop @items {
-    let done = ieq(offset, length);
-    if done {
-      break @items;
-    }
-    let read_ok = ilt(offset, length);
-    claim offset_in_values: read_ok because "premises: offset starts at 0_u64, the loop exits when offset equals length, and every continuing iteration increments offset once\nderivation: induction keeps offset at most length; in a continuing iteration offset is strictly below length, so the increment cannot wrap\nconclusion: read_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant relating offset to length\nconsumers: the following values[offset] subscript requires this exact OP-4 bound";
+  for offset in 0_u64..length {
     let byte = values[offset];
     let word = cvt<u8, u64>(byte);
     set total = total +wrap word;
-    set offset = offset +wrap 1_u64;
   }
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let code = 0_u8;
   region 'static_view {
     let view = slice_of(&'static_view bytes);
@@ -54,8 +46,8 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let llvm = compile(source);
     let sum = emitted_function(&llvm, "sum");
     let main = emitted_function(&llvm, "main");
-    // The discharged slice read emits no bounds branch; the explicit claim is
-    // the one retained runtime backstop and the element address forms directly.
+    // The counted range discharges the slice read before lowering, so the
+    // element address forms directly without a runtime bounds branch.
     assert!(sum.contains("getelementptr inbounds i8"));
     assert!(!sum.contains("call void @free"));
     assert_eq!(main.matches("call void @free").count(), 1);

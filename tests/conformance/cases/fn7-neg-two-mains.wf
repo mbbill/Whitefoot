@@ -1,9 +1,9 @@
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "First main.";
   return exit_status(code: 0_u8);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "The later duplicate main is rejected by [TYPE-6].";
   return exit_status(code: 0_u8);
 }

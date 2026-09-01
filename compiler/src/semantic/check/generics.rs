@@ -744,18 +744,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: GenericSubstitution,
         id: super::super::model::FunctionId,
     ) -> Result<FunctionSignature, CheckStop> {
-        let deny_claims_marker = if self
-            .tree
-            .direct_token_with(
-                template.node,
-                crate::TerminalPredicate::Fixed(crate::FixedTerminal::DenyClaims),
-            )?
-            .is_some()
-        {
-            Some(self.tree.path(template.node)?.clone())
-        } else {
-            None
-        };
         let region_parameters = self.parse_region_parameters(template.node)?;
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
         let result_binding = self
@@ -811,7 +799,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node: template.node,
             name: template.name.clone(),
             symbol,
-            deny_claims_marker,
             region_parameters,
             parameters,
             result_mode,
@@ -824,10 +811,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn validate_generic_templates(&mut self) -> Result<(), CheckStop> {
-        if !self.pending_generic_requirements.is_empty()
-            || !self.generic_requirements.is_empty()
-            || !self.generic_claim_schemas.is_empty()
-        {
+        if !self.pending_generic_requirements.is_empty() || !self.generic_requirements.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         // A closed unit with no generic function declaration has no source
@@ -899,7 +883,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.install_call_requirements(&mut phase_a)?;
         let callees = self.entailment_callees()?;
-        self.evaluate_generic_claim_schemas(&phase_a, &canonical_generic_signatures, &callees)?;
+        self.validate_generic_body_entailment(
+            &mut phase_a,
+            &canonical_generic_signatures,
+            &callees,
+        )?;
         self.signatures.clear();
         self.functions_by_declaration.clear();
         self.postcondition_selectors.clear();

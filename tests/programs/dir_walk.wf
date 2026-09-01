@@ -9,12 +9,12 @@ fn bs_new() -> result: own ByteString allocates(heap) {
   return ByteString(buf: move empty, fill: 0_u64);
 }
 
-deny_claims fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
+fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
   doc "Reports how many bytes the string holds.";
   return deref(s).fill;
 }
 
-deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
+fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
   let within = ilt(index, stored);
@@ -33,7 +33,7 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
-  let headroom = ilt(capacity, 18446744073709551488_u64);
+  let headroom = ile(capacity, 9223372036854775679_u64);
   if headroom {
   } else {
     return unit;
@@ -83,7 +83,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-deny_claims fn stored_byte['r](records: &'r ByteString, index: own u64) -> result: own u8 reads(records.buf, records.fill) {
+fn stored_byte['r](records: &'r ByteString, index: own u64) -> result: own u8 reads(records.buf, records.fill) {
   doc "Reads one record byte, delivering zero for a position the record table does not hold.";
   match bs_byte<'r>(s: records, index: index) {
     Some(value: byte) => {
@@ -95,7 +95,7 @@ deny_claims fn stored_byte['r](records: &'r ByteString, index: own u64) -> resul
   }
 }
 
-deny_claims fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> result: own Bool reads(records.buf, records.fill) {
+fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> result: own Bool reads(records.buf, records.fill) {
   doc "Orders two fixed-stride records by their stored path bytes, a shorter prefix first.";
   let left_base = left *wrap 128_u64;
   let right_base = right *wrap 128_u64;
@@ -133,7 +133,7 @@ deny_claims fn record_before['r](records: &'r ByteString, left: own u64, right: 
   return ilt(left_count, right_count);
 }
 
-deny_claims fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(records.buf, records.fill, destination), writes(destination) {
+fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(records.buf, records.fill, destination), writes(destination) {
   doc "Renders one record as its kind glyph, one space, its relative path, and one newline.";
   let base = index *wrap 128_u64;
   let kind = stored_byte<'r>(records: records, index: base);

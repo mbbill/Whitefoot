@@ -5,6 +5,7 @@ struct OptVec {
 
 fn optvec_new(capacity: own u64) -> result: own OptVec allocates(heap) contract {
   requires buffer_fits<Option<u32>>(capacity);
+  requires ile(capacity, 1000_u64);
 } {
   let empty = buffer_vacant<u32>(capacity);
   return OptVec(buf: move empty, fill: 0_u64);

@@ -104,8 +104,10 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
 
 fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths), allocates(heap) contract {
   define lengths_room = len(lengths);
+  define symbol_limit = ile(symbol_count, 286_u64);
   requires buffer_fits<u64>(symbol_count);
   requires ile(symbol_count, lengths_room);
+  requires symbol_limit;
 } {
   let count_slots_word = cvt<u32, u64>(max_bits);
   let count_slots = count_slots_word +wrap 1_u64;

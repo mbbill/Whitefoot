@@ -180,6 +180,9 @@ use crate::NodePath;
 /// The staged verdict of one loop whose body performs I/O.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StagedPermission {
+    /// Stable checked-tree identity of the judged loop. Lowering consumes a
+    /// permitted verdict by this identity rather than by source shape.
+    pub(crate) id: CheckedLoopId,
     /// The loop's spelling: `for` or `loop`.
     pub(crate) form: &'static str,
     /// The loop head, when the checked tree carries one. A `for_stmt` does; a
@@ -526,6 +529,7 @@ fn judge<'check>(
     let cut_denial = survey.classify_segments(&flow, cut.statement);
     if let Some(denial) = cut_denial {
         return Some(StagedPermission {
+            id,
             form,
             head: head.clone(),
             cut: cut.call.clone(),
@@ -534,7 +538,7 @@ fn judge<'check>(
         });
     }
     survey.walk(&flow);
-    Some(survey.finish(form, head, cut.call.clone()))
+    Some(survey.finish(id, form, head, cut.call.clone()))
 }
 
 /// The first `may-suspend` call of one body in program order, with the
@@ -605,7 +609,7 @@ fn statement_expressions(statement: &CheckedStatement) -> Vec<&CheckedExpression
         CheckedStatement::PropagateLet { scrutinee, .. }
         | CheckedStatement::Match { scrutinee, .. }
         | CheckedStatement::ValueMatchLet { scrutinee, .. } => vec![scrutinee],
-        CheckedStatement::Claim { condition, .. } => vec![condition],
+        CheckedStatement::Proof(_) => Vec::new(),
         CheckedStatement::CountedRange { lower, upper, .. } => vec![lower, upper],
         CheckedStatement::Loop { .. }
         | CheckedStatement::Region { .. }
@@ -815,13 +819,10 @@ impl<'check> FlowBuilder<'check> {
                 }
                 node
             }
-            // A `claim` leaves the loop only when it is false, which is an
-            // erroneous execution the rule accounts for rather than refuses, so
-            // its trap edge is not a control edge here.
-            CheckedStatement::Let { .. }
+            CheckedStatement::Proof(_)
+            | CheckedStatement::Let { .. }
             | CheckedStatement::Set { .. }
             | CheckedStatement::Replace { .. }
-            | CheckedStatement::Claim { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. } => {
                 let node = self.new_node(statement);
@@ -1114,6 +1115,7 @@ impl<'check> StagedSurvey<'check, '_> {
         let statement = node.statement;
         let citation = statement_citation(statement).unwrap_or_else(|| self.cut.clone());
         match statement {
+            CheckedStatement::Proof(_) => {}
             CheckedStatement::Let { value, .. } => {
                 self.construction(value, &citation);
                 self.value(value, &citation, segment);
@@ -1132,9 +1134,6 @@ impl<'check> StagedSurvey<'check, '_> {
             }
             CheckedStatement::Return { value, .. } | CheckedStatement::Give { value, .. } => {
                 self.value(value, &citation, segment);
-            }
-            CheckedStatement::Claim { condition, .. } => {
-                self.value(condition, &citation, segment);
             }
             CheckedStatement::CountedRange { lower, upper, .. } => {
                 self.value(lower, &citation, segment);
@@ -1445,6 +1444,7 @@ impl<'check> StagedSurvey<'check, '_> {
     /// report.
     fn finish(
         mut self,
+        id: CheckedLoopId,
         form: &'static str,
         head: Option<NodePath>,
         cut: NodePath,
@@ -1488,6 +1488,7 @@ impl<'check> StagedSurvey<'check, '_> {
             None => StagedVerdict::Permitted,
         };
         StagedPermission {
+            id,
             form,
             head,
             cut,
@@ -1662,11 +1663,11 @@ fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
         | CheckedStatement::Give { node_path, .. }
         | CheckedStatement::ValueMatchLet { node_path, .. }
         | CheckedStatement::CountedRange { node_path, .. } => Some(node_path.clone()),
+        CheckedStatement::Proof(proof) => Some(proof.node_path.clone()),
         CheckedStatement::Match { scrutinee, .. } => expression_citation(scrutinee),
         CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
             expression_citation(value)
         }
-        CheckedStatement::Claim { condition, .. } => expression_citation(condition),
         CheckedStatement::Loop { .. }
         | CheckedStatement::Break { .. }
         | CheckedStatement::Region { .. } => None,

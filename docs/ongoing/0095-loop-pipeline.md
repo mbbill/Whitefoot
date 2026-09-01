@@ -1,22 +1,31 @@
-# 0095 — staged loop pipeline, Stage A prerequisites
-
-Branch `batch/0095-loop-pipeline`, from `main` at `b2e2e267`.
+# 0095 — staged loop pipeline, narrow bounded-batch actualization
 
 The design is `research/investigations/io-model/LOOP-PIPELINE.md` §1, §3 and §7
 "Batch 2", with its §9 probe results as the measurement of record, and
 `research/investigations/io-model/FIRST-PRINCIPLES.md` §13-16 as the ownership
 contract the runtime work has to keep.
 
-Stage A lands the five prerequisites §3.9 and §7 name, which between them are
-the design's batch 0 — the batch §7 says every later batch is silently wrong
-without. **None of them changes a permission verdict or a published byte**, and
-no writer-visible surface is added anywhere: there is no attribute, environment
-variable, or source spelling for a window, a depth, or a schedule. The [PAR-3]
-judgment itself landed separately (`docs/done/0091-par3-judgment.md`) and its
-`permitted` verdict still selects no schedule: nothing in the compiler builds a
-pipeline descriptor. Stage B lands the lowering that does — the cut, the
-outlined stages, the driver — and the measurement, and this record moves to
-`docs/done/` then.
+The five runtime and storage prerequisites in §3.9 and §7 are implemented. The
+compiler now also builds the first source-derived multi-operation driver, but
+only for one deliberately narrow topology: a direct staged counted loop with a
+straight-line prologue and a final continuing `match` on the selected
+may-suspend system call.
+
+That driver owns exactly two static slots. On a native POSIX completion target,
+`wf__completion_window` chooses a value in `1..2`. On a qualified target without
+native completion, the same compiler-generated control-flow graph uses a fixed
+window of one and direct calls. Each batch issues up to the selected window,
+drains all issued results in source order, and only then reuses slot zero.
+Dynamic per-iteration path slices, an odd final batch, both ordinary result
+arms, LLVM emission, linking, and execution are covered by current tests. If
+one function contains two staged loops, the compiler conservatively leaves
+both on the ordinary path.
+
+This is an implementation slice, not a widening of [PAR-3]. The permission
+judgment remains the source-semantic authority, and no writer-visible window,
+depth, batch, or schedule spelling exists. Wider control flow, more completion
+operation families, open/read/close chains, and deliberate multi-loop
+selection remain unfinished.
 
 ## 1. `wf__completion_window(span, slot_bytes, ceiling)`
 
@@ -39,15 +48,12 @@ and that is the schedule the sequential program already runs, so no answer this
 query gives can make a correct program fail. That is why the weak fallback a
 link without the completion unit gets returns one.
 
-Stage A does not demonstrate it, and the record earlier said it did. The value
-the emitter binds still has no consumer at run time: what carries and what
-drains is decided by the pipeline's block set, and how wide the ring §5 below
-reserves is decided by the descriptor's static slot count, so the number the
-runtime answers restricts nothing yet. What §5 adds is the storage that answer
-will index — the ring exists, and the runtime's window is what will decide how
-many of its elements are ever occupied. The claim becomes checkable when Stage
-B's driver cycles the slot and consumes the answer, and checking it there is
-Stage B's evidence to produce.
+The narrow bounded-batch driver now consumes this answer. Its static ring has
+two elements and its generated issue condition admits no slot outside the
+runtime-selected window, so the runtime answer controls how many operations
+the batch may issue. The empty-range path does not ask for a window. Targets
+without native completion do not link the query; their generated window value
+is exactly one.
 
 The fallback is `COMPLETION_WINDOW_FALLBACK` in
 `compiler/src/backend/emitter/completion.rs`, emitted only where a module
@@ -475,19 +481,38 @@ three hundred seconds, three orders of magnitude above what the whole suite
 takes, and it names the test that stopped rather than leaving a build job to
 time out with an empty log.
 
-**What the runtime cannot do, and Stage B must.** §2.10 says the adapter
+**What the runtime cannot do, and the generated driver must.** §2.10 says the
+adapter
 "completes every older slot in index order (which runs their compiler-derived
 closes)". A compiler-derived close is writer code, and completion never invokes
 writer code (FIRST-PRINCIPLES.md §14), so the runtime can only give back the
 descriptors held by operations *it* still owns — a close already submitted, not
-one the driver has not reached. That covers the pipeline's steady state, where a
-slot's close is submitted when its read retires and is often still in flight
-when the slot's next open is. It does not cover a window whose older slots have
-not been driven that far, so the driver has to retire its own slots in index
-order on a published `ResourceExhausted` before it treats one as the program's
-answer. Stage B owns that half.
+one the driver has not reached. The implemented two-slot driver handles its
+direct result dispatch by draining the entire issued batch in source order
+before any slot is reused. It does not yet cover the wider open/read/close
+pipeline described here, so resource-exhaustion behavior for such a widened
+driver remains work rather than evidence supplied by the narrow slice.
 
-## 4. Back-edge-tolerant joins
+## 4. Source-derived issue and drain graph
+
+Current lowering recognizes one checked loop by its semantic identity and
+constructs the issue and drain graph directly from that loop. The graph has an
+empty-range edge, a window entry, an issue block, a drain block, the source
+`match` arms, a full-batch completion edge, and either the next batch or the
+loop exit. The backend renders this graph; it does not infer a schedule from an
+arbitrary collection of blocks.
+
+The issue block uses slot `issued_count`, which is bounded by both the static
+two-slot capacity and the selected window. The drain block starts at slot zero
+and advances once per issued operation. Each result reaches the original
+source `match` before the next slot drains. The last issued slot reaches the
+batch-complete edge, and only that edge may begin another batch. This is the
+mechanical reason slot reuse and result publication remain in source order.
+
+The rest of this section records the earlier Stage A representation that led to
+the current graph. Names such as `pipeline_outstanding` and
+`pipeline_feeder_blocks` describe that historical prototype and are not current
+backend data structures.
 
 `compiler/src/backend/emitter.rs` and `emitter/completion.rs`, opting in on
 `IrFunction::completion_pipeline` (`compiler/src/lowering.rs`). One rule
@@ -537,18 +562,21 @@ function is emitted:
   end of emission, exactly because a carrying block may legitimately be the
   last block emitted. A latch numbered after a typed exit it reaches is fine
   and stays admitted: a block that starts no operation leaves that exit nothing
-  to be missing. Stage B has to produce a descriptor whose hand-outs precede
-  the exits that retire them, or teach the emitter to write its blocks in an
-  order that does; the refusal is what keeps the difference from being silent.
+  to be missing. At that revision, the next driver had to produce a descriptor
+  whose hand-outs preceded the exits that retired them, or change block
+  emission order; the refusal kept the difference from being silent.
 
 `emit_stackless_root` does not consult any of this, and does not need to:
 `StacklessPlan::build` admits only a single-block function ending in a return,
-and a staged loop has a loop. If Stage B ever widens either side, the two paths
-have to be reconciled rather than left to disagree quietly.
+and a staged loop has a loop. The current narrow driver remains outside the
+stackless-root topology. Any future widening that lets the two paths overlap
+must reconcile them explicitly.
 
-What this does **not** yet carry is the driver. Nothing cycles the slot index,
-and no descriptor the compiler builds sets one: the ring §5 adds is the storage
-a driver will index, and the driver is Stage B.
+The historical prototype described above did not carry a driver. The current
+narrow path does: source lowering creates the slot counters and all issue,
+drain, result-dispatch, next-batch, and exit edges. Wider graphs still need
+their own source-derived lowering; the compiler does not revive the old
+backend graph inference for them.
 
 The wait a K-slot ring needs, on the other hand, turns out to need no new
 primitive, and the record earlier said it did. Reusing slot *i* means retiring
@@ -558,15 +586,31 @@ operations and leaves every other target operation in flight — reached from
 `IrCompletionStep::wait_for`, which the emitter consults for every step. The
 rule above admits it: it retires one named operation rather than everything
 outstanding, so the carrying block is never exempted from "a carrying block
-never joins at its terminator". What Stage B owes is a descriptor that names
-the older operation, not a new way to join one.
+never joins at its terminator". The current driver names the exact slot being
+issued and drained. A future wider driver must preserve that same local
+dependency rather than asking the backend to guess which older operation owns
+a slot.
 
-## 5. Slot-indexed completion storage
+## 5. Two-slot operation storage and captured values
 
 `compiler/src/backend/emitter/completion.rs`, on the same
-`IrFunction::completion_pipeline` opt-in. Design §3.6 item 2, and the last
-unlanded item of the design's batch 0 — the one §7 says every later batch is
-silently wrong without.
+`IrFunction::completion_pipeline` opt-in. The production descriptor now comes
+only from checked source lowering. Its bounded-batch state has two slots, a
+source loop identity, a window value, and explicit feeder and drain blocks.
+
+The backend reserves a two-element ring for target-written operation records.
+Values computed separately on each issue, including a changing transfer range
+or open path range, use per-slot capture rather than one SSA name shared by all
+outstanding operations. The drain loads the values belonging to the slot it is
+retiring. This is what makes the odd-path test meaningful: iteration five may
+name a different byte and take the error arm without changing the values or
+result owned by iterations one through four.
+
+The detailed text below records how slot-indexed storage was developed before
+the source driver existed. Examples with four slots and tests that constructed
+arbitrary descriptors were Stage A probes; those constructors and malformed
+graph tests are no longer part of the compiler. Current production evidence is
+listed after the historical findings.
 
 Every completion storage element — a token, a result slot, the raw value and
 error, an open's outcome, a directory cursor's position, an open's staged path
@@ -597,7 +641,8 @@ element an operation owns is a run-time choice; the runtime's window never
 exceeds the count, so the ring is what the window's answer will index rather
 than something the answer resizes.
 
-The index is a value the descriptor names per block, and the pointer is
+In the historical prototype, the index was a value the descriptor named per
+block, and the pointer was
 materialized in the block that names it. That is what lets a submission address
 the slot its iteration took while a retirement addresses the slot it is
 retiring, without the two having to be the same block — the loop's exit drains
@@ -607,17 +652,17 @@ indexed with, and trusts dominance and range against the ring width exactly as
 it trusts every other operand it renders: a driver threads the slot along the
 edges into its region, so the value reaching a carrying block is the
 loop-carried parameter that dominates it, and the driver owes the range a
-static refusal or a proof of its own (finding (b) below).
+static refusal or a proof of its own (historical finding (b) below). The current
+source-derived driver supplies the missing bound by construction.
 
-One consequence is worth stating before Stage B trips over it. A block
+One consequence identified before the driver landed was that a block
 retires with the one index it names, so a drain retires *one* element of each
 site's ring, not all K. That is exact for every descriptor reachable today —
 the straight-line walk admits at most one live hand-out per site, so a drain
 holds at most one operation per site — and it is not what §3.7's exit does,
-which retires slots j < i in index order. The driver therefore owes the exit an
-explicit per-slot retirement, whether unrolled or as a loop that carries the
-index it is retiring; it cannot get there by handing a single drain block a
-window of K and expecting one index to address them all.
+which retires slots j < i in index order. The current driver answers this with
+an explicit drain loop from slot zero to the issued count. It does not hand one
+drain block a window of K and expect one index to address every operation.
 
 And one slot is not a special case that has to be written twice. A site outside
 a carrying region, and every site of a one-slot region, reserves one record and
@@ -652,10 +697,9 @@ beside it is an emitter capability limit and cites no language rule [DIAG-1]:
   under a multi-slot descriptor likewise takes its own one-element reservation
   and is refused nowhere.
 
-The tests are in `compiler/src/backend/tests/completion.rs`, over
-`A_STAGED_LOOP_BODY` — the conformance-shaped loop whose [PAR-3] verdict is
-`permitted`, each iteration constructing the buffers it reads into, with a
-submission and a retirement inside the loop:
+The following tests were historical Stage A probes over a hand-constructed
+descriptor. Their names are retained here only to explain the old four-slot
+example; the tests and their test-only constructors have been removed:
 
 - `a_staged_region_reserves_one_operation_record_per_slot`: four rings of four
   for the handed-out site, and six element pointers — the two records the
@@ -668,16 +712,36 @@ submission and a retirement inside the loop:
   `a_slot_that_is_not_an_index_is_refused`, and
   `a_carrying_block_with_no_slot_is_refused_rather_than_sharing_one_record`.
 
-The tests compute the dominators of the submitting block themselves and pick
-the slot from a block that dominates it, so the index they name does dominate
+Those tests computed the dominators of the submitting block themselves and
+picked the slot from a block that dominates it, so the index they name does dominate
 its use. That is the whole of what the choice earns. The value it resolves to
 in this probe is the loop header's carried copy of the caller's `rounds`
 argument, threaded around the back edge unchanged — a loop-invariant `u64`,
 not an index that advances with the iteration — and the staged module the
-helper emits does not verify. Both of those are recorded in full in the next
-section.
+helper emitted did not verify. Both findings are historical; the current
+production driver emits and links from real source.
 
-## What the Stage B verifiers established beyond the range
+## Historical Stage A verifier findings and current resolution
+
+The earlier verifier found four real defects in the test-only descriptor: its
+result uses were not dominated by the delayed join, its slot value had no
+bound, issue-time values were not captured per slot, and the submitted open
+path ring lacked direct evidence. The current narrow production path resolves
+all four within its admitted topology:
+
+- source lowering places the drain before the original result `match`, and the
+  source-derived module is emitted, linked, and executed;
+- issue uses `issued_count < window` with a static ceiling of two, while drain
+  advances only while `drain_slot < issued_count`;
+- dynamic issue-time values use per-slot capture and are loaded by the matching
+  drain slot;
+- the odd-batch program varies `start` and `end` on every open, takes both the
+  ordinary success and error arms, and executes with native helper counts zero,
+  one, and four.
+
+These repairs establish the direct two-slot counted-loop slice. They do not
+turn the historical arbitrary descriptor into a supported interface or prove
+wider control-flow and operation families.
 
 The artifacts named below are off-repository working evidence, written to a
 scratch directory on the host that ran the verification and cited here by bare
@@ -697,11 +761,13 @@ row: all nine cells of every row agree, while the two `p06` rows taken at the
 same descriptor limit in the two logs do not agree with each other, so what the
 matrix establishes is invariance across the environment within a run, not a
 fixed output for `p06` across runs (the verifier's `NOTES.md`,
-`oracle-C.log`, `matrix.log`, `matrix2.log`). It also established four things the record above did not say,
-and the driver work inherits every one of them.
+`oracle-C.log`, `matrix.log`, `matrix2.log`). It also established four things
+the Stage A record did not say. Those findings became requirements for the
+current source-derived driver.
 
-**a. Every staged module the test helper emits fails LLVM verification.** Not
-the ring's doing and not a regression: reproduced here at `b750a435` by dumping
+**Historical finding a: every staged module the test helper emitted failed LLVM
+verification.** Not the ring's doing and not a regression: reproduced here at
+`b750a435` by dumping
 what the shipped `emit_a_ring` produces and running `llvm-as` over it
 (`r12-staged-4.ll`, `r12-staged-1.ll`, and the `*.llvm-as.log` beside each).
 Both fail with the same ten errors — nine
@@ -717,60 +783,55 @@ unstaged probe from the same source verifies cleanly (`llvm-as` exit 0 over
 and the one-slot staged module is byte-identical to the pre-ring compiler's
 (`md5 7c12419bc658f97f17461eb7b43eb03d`, the same bytes as the verifier's
 `prering-staged.ll` built at `cf60e5e3`). So this is a
-section-4 staged-join defect that the ring probe is the first to expose, and
-nothing in the compiler checks that a descriptor it accepts emits a module that
-verifies. The driver cannot be run until the deferred join is placed where its
-consumers are dominated by it.
+section-4 staged-join defect that the ring probe was the first to expose. At
+that revision, nothing checked that a test descriptor would emit a valid
+module. Current source lowering places the join before the result dispatch.
 
-**b. The slot index is unbounded.** The emitter emits no bound, mask, clamp or
-comparison of the slot against the ring width. An out-of-range slot is an
+**Historical finding b: the slot index was unbounded.** The emitter emitted no
+bound, mask, clamp or comparison of the slot against the ring width. An out-of-range slot is an
 out-of-range `getelementptr inbounds`, and that pointer is handed to the
 runtime as the token address it writes through
 (`getelementptr inbounds [4 x [2 x i64]], ptr %t23, i64 0, i64 %v6` at
 `r12-staged-4.ll:446`, passed to `wf__completion_file_pread_submit`). Nothing
-above the emitter supplies the missing proof either: the value the tests name
-is the caller's `rounds` argument, which has no relation to the slot count at
-all. The driver owes either a static refusal of an index it cannot bound or a
-proof that the index it threads never reaches K.
+above the emitter supplied the missing proof either: the value the tests named
+was the caller's `rounds` argument, which had no relation to the slot count.
+The current issue and drain counters provide the required finite bound for the
+two-slot path.
 
-**c. Per-operation facts held as SSA names are not ringed.** The ring covers
-the storage a target writes through — token, result slot, raw value and error,
-open outcome, directory position, the open's staged component. It does not
-cover the facts the emitter keeps as SSA values across the same span, and that
-list is exhaustive: the submitted `i1`
+**Historical finding c: per-operation facts held as SSA names were not
+ringed.** The ring covered the storage a target writes through — token, result
+slot, raw value and error,
+open outcome, directory position, the open's staged component. It did not
+cover the facts the emitter kept as SSA values across the same span: the submitted `i1`
 (`compiler/src/backend/emitter/completion.rs:84`), the `Transfer` start and
 extent, and the `DirectoryNext` destination, start and extent (`:118-131`, the
 destination at `:127`). Under a driver that retires in a block other than
-the one that submitted, those names cannot dominate their uses; three of the
+the one that submitted, those names could not dominate their uses; three of the
 ten verifier errors above are exactly that shape — in the four-slot module
 `r12-staged-4.ll` the submitted phi `%t38`, and `%v22` and `%t29` reaching
 `@wf.sys.read.completion`, which in the one-slot `r12-staged-1.ll` are the same
 three errors naming `%t40`, `%v22` and `%t31`; the shape is identical in
 both — against six for the join's own result phi.
 
-**d. The submitted open's staged-component ring has no test.** Section 5 above
-asserts that the component buffer is a ring because the adapter's copy happens
-at submission, and the emitter does ring it, but no test in
-`compiler/src/backend/tests/completion.rs` covers it — the probe reads, it does
-not open. The assertion currently rests on the code alone.
+**Historical finding d: the submitted open's staged-component ring had no
+test.** Section 5 above asserted that the component buffer was a ring because
+the adapter's copy
+happened at submission, but the probe read rather than opened. The current
+odd-batch source varies the submitted open path on every iteration, so this
+storage now has execution evidence.
 
-### What this range is, measured
+### Historical Stage A range measurement
 
 Seven commits, `cf60e5e3..b750a435`: 5 files changed, 801 insertions, 73
 deletions (`git diff --shortstat`), of which
 `docs/ongoing/0095-loop-pipeline.md` is 182 changed lines.
 
-The driver is shelved by owner sequencing (2026-08-29): this branch merges into
-the integration branch as it stands, and the induction-design work starts
-before Stage B's driver is written. Nothing in this range changes any emitted
-production byte — the only constructors of a pipeline descriptor are
-`#[cfg(test)]`, and the IR-identity oracle over the corpus reports `differ=0`
-against both the pre-ring compiler and `main` — so there is nothing on this
-range for the io-bench runners to measure. Performance numbers come only from
-the GitHub runners, and there is no number to ask them for until a driver
-changes an emitted byte: the runner measurement the Stage B item names — the
-before/after tables across `WF_WORKERS` × `WF_IO_HELPERS` — transfers whole to
-the driver work.
+At that historical range, nothing changed a production byte because only test
+constructors built a pipeline descriptor. The current branch is different:
+checked source now builds the narrow two-slot descriptor and changes emitted
+control flow for eligible loops. Current executable tests establish semantics
+and bounded storage, but the wider program-level performance measurement named
+by the original design is still outstanding.
 
 ## Evidence
 
@@ -908,11 +969,18 @@ the driver work.
   also mount one unprivileged inside a user namespace of its own, which this
   kernel allows and some hardened ones refuse; that is machinery the probe does
   not have, and adding it would trade a certain skip for an uncertain one.
-- Backend (`compiler/src/backend/tests/completion.rs`):
-  `a_staged_loop_carries_completion_across_its_back_edge`,
-  `the_window_fallback_is_emitted_only_where_a_module_asks_for_one`,
-  `a_carrying_region_with_no_exit_is_refused`,
-  `a_drain_emitted_before_the_hand_out_it_retires_is_refused`.
+- Current source-driver evidence:
+  `direct_staged_loop_builds_a_two_slot_issue_and_drain_driver` and
+  `two_staged_loops_in_one_function_leave_both_on_the_ordinary_path` in
+  `compiler/src/lowering/tests.rs`; and
+  `source_derived_two_slot_batch_links_and_preserves_every_iteration`,
+  `an_odd_batch_keeps_each_iterations_path_and_result_in_its_own_slot`, and
+  `a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_time`
+  in `compiler/src/backend/tests/completion.rs`. Together they cover the real
+  source-to-IR connection, two static slots, native window selection,
+  deterministic window one without native completion, dynamic open paths, an
+  odd final batch, the ordinary error arm, full source-order drain, linking,
+  execution, and the conservative multi-loop fallback.
 - Every test named above fails without the fix it covers, which is what makes
   it evidence rather than decoration. Each control is the shipped harness with
   one hunk removed, built into a scratch copy so no other agent's tree moves.
@@ -1274,76 +1342,34 @@ the driver work.
 
 ## Status
 
-- [x] item 1 — window query, weak fallback, harness boundaries. The claim about
-      what an answer of one means is now stated as a property of the runtime,
-      not as something Stage A demonstrates
-- [x] item 2 — deferred doorbell and its four flush points
-- [x] item 3 — retire-and-retry as one rule over one process-wide ledger of two
-      counts — descriptors returned, and operations in flight — asked at the
-      moment of the host attempt, with the two per-engine gates it replaces
-      gone and a deterministic test for each route, for the one exit that could
-      miss a return, for the ending that returns nothing, and for the outcome
-      each engine answers the return question from; a returned descriptor
-      awarded in waiter order, so source order decides which open publishes the
-      `Ok`; and every ledger transition announced in both the places a waiter
-      can sleep, with the shape that proves it wired in as a probe of its own
-- [x] item 4 — carrying and draining, with every drain including the first
-      given exactly what the blocks that reach it started, the out-of-order
-      descriptor refused, and the IR-identity oracle re-run: 630 sources,
-      3 passes, 1,890 compilations, 807 modules, 0 differences
-- [x] item 5 — slot-indexed completion storage: a site inside a carrying
-      region reserves a ring of the descriptor's slot count and addresses the
-      element the block names, one slot reserves and addresses exactly what an
-      unstaged program does, and the three misaddressed descriptors — no
-      elements, an index of the wrong type, and a carrying block with no slot —
-      are refused rather than silently sharing one record. Nothing the compiler
-      builds sets a slot count, so every module is unchanged: the IR-identity
-      oracle over `tests/` and the bench programs against the branch's own
-      pre-ring compiler at `cf60e5e3` reports 1,917 compilations (three modes
-      each), 834 modules, `differ=0 statusdiff=0`
-- [ ] Stage B's driver — the cut, the outlined stages, the ring of replicated
-      constructions, the owner-lane driver loop, the fold handed to a compute
-      lane, and the runner measurement. Nothing in the compiler builds a
-      pipeline descriptor yet; every consumer above is reached from the
-      test-only constructor, and the [PAR-3] judgment's `permitted` verdict
-      still changes no emitted byte. **Shelved by owner sequencing on
-      2026-08-29**: this branch merges as it stands and the induction-design
-      work goes first. The four findings under "What the Stage B verifiers
-      established beyond the range" are what the driver work inherits — the
-      staged join that does not verify is a blocker for running one at all
-- [x] `completion-test`, `completion-sanitize`, `completion-tsan`,
-      `completion-core-read-tsan` — green on an x86-64 Linux host at this
-      revision, with the repetition counts above; green on macOS and in the
-      aarch64 container at the previous one
-- [x] canonical `make check` — green at this revision on x86-64 Linux
-      (`conformance adapter: Pass=509  Skip=1`, `== WHITEFOOT ALL TESTS GREEN ==`)
-- [x] `io-hosts` and `gate` run on the pushed branch. `completion-linux` is
-      the one that matters most here: it runs the harness, the sanitizers and
-      `completion-tsan` on a real x86-64 Linux kernel with io_uring, so both
-      new exhaustion tests are exercised on the ring rather than only in the
-      aarch64 container. The six [QUAL-1] conformance cases that kept
-      `gate-linux` red are green since the Linux row landed in `main`
+- [x] The runtime prerequisites remain implemented: bounded window query,
+      deferred submission notification, retire-and-retry ledger, target-owned
+      operation records, and slot-indexed completion storage.
+- [x] Checked source now constructs a fixed two-slot bounded-batch driver for
+      one direct staged counted-loop topology. The compiler no longer relies on
+      test-only descriptor constructors or backend inference over an arbitrary
+      graph.
+- [x] Native POSIX completion targets select a window in `1..2`. A qualified
+      target without native completion uses the same generated graph with a
+      deterministic window of one and direct calls.
+- [x] The driver issues up to the selected window, drains the complete batch in
+      source order, and only then reuses slot zero. Per-slot capture covers
+      issue-time values that change between iterations.
+- [x] Current lowering and backend tests cover a twelve-iteration run, dynamic
+      path slices, an odd five-iteration final batch, ordinary success and error
+      arms, native helper counts zero, one, and four, non-native direct calls,
+      and a function with two staged loops remaining wholly ordinary.
+- [ ] Widen the driver to additional control-flow shapes, completion operation
+      families, open/read/close pipelines, and deliberate multi-loop selection.
+      A permitted [PAR-3] verdict outside the current topology continues through
+      ordinary lowering.
+- [ ] Run selected real-program performance measurements for the production
+      driver. Historical Stage A runtime measurements remain useful runtime
+      evidence, but they are not a speed result for the new source-derived
+      two-slot graph.
 
-## The job that was red, and is not any more
-
-`gate-linux` used to fail on six conformance cases, all reaching
-`TargetQualification(MissingMapping(Operation(12)))`: [QUAL-1] gave Linux no
-approved [SYS-14] directory-enumeration row, so every case that enumerates a
-directory answered `Unsupported` rather than its declared verdict. It was never
-this branch's — `git diff main` over `compiler/src/backend/qualification.rs` was
-empty then and is empty now — and it went away when the row landed:
-`batch/0094-linux-directory-row` is in `main` at `10b76c66`, which this branch
-is merged up to. Canonical `make check` on this Linux host reports
-`conformance adapter: Pass=509  Skip=1` and `== WHITEFOOT ALL TESTS GREEN ==`.
-
-## For the integrator
-
-- This branch makes `queue_count` `_Atomic` and `wf_file_adapter_queued` a bare
-  atomic load, because the retirement ledger asks for the count while holding
-  its own lock and may not reach for the queue lock there. The shutdown
-  precondition paragraph in `file_adapter.h` is rewritten to match. `main`'s
-  integration branch carries batch 0105's rewrite of that same paragraph,
-  written against `main`'s locking `wf_file_adapter_queued`; expect a textual
-  conflict there, and resolve it toward this branch's code, because the
-  decline-check lock window 0105 describes does not exist once the read is
-  lock-free.
+The former Linux qualification failure and branch-specific integration note
+belonged to earlier revisions and no longer describe current work. Current
+specification, gate, and merge state is tracked in `docs/roadmap.md`; this
+record now tracks only the remaining technical width of the staged-loop
+driver.

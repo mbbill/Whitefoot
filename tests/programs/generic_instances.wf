@@ -17,6 +17,7 @@ fn filled_array<T: Int, const n: u64>(value: own T) -> result: own array<T, n> p
 
 fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
   requires buffer_fits<T>(length);
+  requires ile(length, 1152921504606846975_u64);
 } {
   return buffer_new(length, value);
 }

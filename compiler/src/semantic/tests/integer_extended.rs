@@ -1,5 +1,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
+use super::super::entailment::{DerivationNode, ObligationFamily};
+use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedExpression, CheckedIntegerOperation, CheckedStatement};
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
@@ -68,4 +70,92 @@ fn retains_the_complete_nonfloating_integer_family() {
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
+}
+
+#[test]
+fn exhaustion_invariant_proves_exact_shift_counts_below_the_value_width() {
+    let source = br#"fn shift_prefix(limit: own u64) -> result: own unit pure contract {
+  requires ile(limit, 31_u64);
+} {
+  let amount = 0_u32;
+  for @items i in 0_u64..limit {
+    invariant consumed: ile(amount, i);
+    set amount = amount + 1_u32;
+  }
+  let left = ishl(1_u32, amount);
+  let right = ishr(1_u32, amount);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the exhaustion invariant must bound both exact shifts: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "shift_prefix")
+            .expect("shift_prefix function exists");
+        let shifts = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| {
+                outcome.family == ObligationFamily::IntegerDomain
+                    && matches!(
+                        &outcome.canonical_goal,
+                        Some(GoalExpression::Operation {
+                            row: GoalOperation::Integer {
+                                operation: CheckedIntegerOperation::ShiftLeftDefined
+                                    | CheckedIntegerOperation::ShiftRightDefined,
+                                ..
+                            },
+                            ..
+                        })
+                    )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shifts.len(),
+            2,
+            "left and right shifts retain one OP-2 each"
+        );
+        for shift in shifts {
+            assert_eq!(shift.components.len(), 1);
+            assert!(shift.discharged);
+            assert!(shift.residual.is_none());
+
+            let root = shift
+                .derivation
+                .expect("the accepted exact shift retains a derivation root");
+            let mut seen = vec![false; function.entailment.derivations.nodes.len()];
+            let mut stack = vec![root];
+            let mut used_exhaustion = false;
+            while let Some(node) = stack.pop() {
+                let index = node.0 as usize;
+                if seen[index] {
+                    continue;
+                }
+                seen[index] = true;
+                let retained = &function.entailment.derivations.nodes[index];
+                used_exhaustion |= matches!(
+                    retained,
+                    DerivationNode::AffineConsequence {
+                        premise: Some(_),
+                        ..
+                    }
+                );
+                stack.extend(retained.parent_ids());
+            }
+            assert!(
+                used_exhaustion,
+                "each exact-shift proof must consume the exported source invariant"
+            );
+        }
+    });
 }

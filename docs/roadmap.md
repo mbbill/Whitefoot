@@ -1,21 +1,29 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 56 (v0.39 narrows [CLM-1]'s claim-authority control dependence to
-the definitions a boundary selector actually chooses)
+Revision: 59 (v0.40 source proof is activated on the work branch; the former
+runtime-assertion releases remain historical evidence)
 
-The active language authority is v0.39, SHA-256
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
-the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.38 at `5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d`,
-archived at [`spec/kernel-spec-v0.38.md`](../spec/kernel-spec-v0.38.md). The
-merge-time approval record is in
+The active language authority is v0.40, SHA-256
+`5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`, at the
+stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). The outgoing v0.39
+bytes remain archived at
+[`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The v0.40
+conditional merge-time activation record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch
-record is [batch 0091](done/0091-par3-judgment.md). The execution plan is
+record for v0.39 remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
 [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
+
+The current work branch implements source-carried proof through the ordinary
+semantic compiler. It checks contracts, counted-loop invariants, and explicit
+`prove`/`use` steps; submits every supported partial operation to the same
+deterministic proof context; proves selected-target layout and address domains
+before emission; and erases proof statements before lowering. It contains no
+writer-accessible runtime assertion; internal inconsistencies are ordinary
+compiler defects owned by implementation repair and tests.
 
 ## How to read this outline
 
@@ -58,7 +66,8 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.39]` `[current: safe-Rust compiler]`
+`[current: v0.40 activated on branch; source-proof implementation complete]`
+`[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -69,10 +78,10 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.39 is the active
-semantic authority. It rebuilds the system interface around formal state paths,
-ordinary ownership, and completion-only lowering, with no separate world
-region, capability class, blocking-call family, or `Ordered` relation.
+belong in the [compiler README](../compiler/README.md). v0.40 retains
+v0.39's system interface around formal state paths, ordinary ownership, and
+completion-only lowering, with no separate world region, capability class,
+blocking-call family, or `Ordered` relation.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
@@ -83,36 +92,38 @@ Which gap matters next is selected by a project, never by checklist length.
   bounded slice is selected, `current-plan.md` records that sequence. Mapped
   direction items inform the choice but do not grant or withhold branch
   permission.
-- outline:PROOF-9 is the owner-selected successor to terminal outline:PROOF-8.
-  It takes the explicit-obligation model language-wide, makes `claim` the only
-  writer-reachable runtime rejection point, and replaces the historical entry
-  contract exception with one closed-world command entry. v0.33 installs this
-  successor together with batch 0072's completed outline:CAND-8 language
-  deltas; the direction and its plan are terminal.
-- outline:PROOF-10 is the owner-selected lifecycle correction after terminal
-  outline:PROOF-9. It preserves `claim` as the sole writer-reachable runtime
-  trap and preserves runtime execution for every accepted claim. It narrows the
-  source construct to one human-proved, checker-unknown, individually necessary
-  proof residual. Mechanically detectable redundant, contradictory, malformed,
-  and unused forms become source errors; assertion, abort, test-oracle, and
-  possible-failure intent is barred from positive programs and repaired by the
-  author even when only semantic review can recognize its disguise. Its
-  branch revision becomes mainline language authority only when the exact
-  revision is tested, owner-approved, and merged under the four rules.
+- outline:PROOF-9 records the historical v0.33 successor to terminal
+  outline:PROOF-8. It extended explicit obligations across the language,
+  introduced the former single runtime-assertion boundary, and replaced the
+  earlier entry-contract exception with one closed-world command entry. The
+  direction and its plan are terminal.
+- outline:PROOF-10 records the terminal lifecycle correction implemented by
+  released v0.39. Its rules remain release history; active v0.40 supersedes
+  that runtime-assertion model on this branch.
+- outline:PROOF-11 is the selected successor. Proof is written in `.wf` source
+  and checked directly by the normal semantic compiler. Automatic reasoning is
+  deterministic, terminating, work-bounded, and SMT-free. Verified semantic
+  consequences serve partial-operation safety, `ensures`, optimization, and
+  `par`; proof syntax and diagnostic derivations are erased before runtime
+  lowering. v0.40 removes the former writer assertion and every
+  writer-reachable language trap.
 - outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in outline:PROOF-1 through outline:PROOF-4 and outline:PROOF-7 depends
-  on outline:VERIFY-3. outline:PROOF-2 depends on outline:PROOF-5 only for a `willreturn`-class claim,
+  on outline:VERIFY-3. outline:PROOF-2 depends on outline:PROOF-5 only for a `willreturn`-class fact,
   not for memory-effect attributes.
 - outline:PAR-1 still selects a source construct only after profiling exposes concrete
   parallel work; batch 0074 deliberately built permission without one. outline:PAR-4's
   runtime is now selected for the compute lane and measured there, so it is
   evidence for exactly that lane and preselects nothing for the I/O lane;
-  outline:PAR-2 and outline:PAR-3 cannot preselect proof rules or reductions before their
-  own workload evidence. For outline:PAR-3 the owner's chartering direction of
+  wider outline:PAR-2 and outline:PAR-3 domains cannot preselect proof rules or
+  reductions before their own workload evidence. For outline:PAR-3 the owner's chartering direction of
   2026-08-23 supplied that evidence and overtook this caution: the branch
   carries a counted-loop reduction candidate, measured on the `grid` family.
-  outline:PAR-2's half is still parked and still bound by this sentence.
+  outline:PAR-2 now carries the fixed direct-own-root, write-only single-binder
+  affine map justified by the same bounds, exact-value, and iteration facts;
+  multi-term ranges, multiple maps of one root, and borrowed-root maps remain
+  parked and still bound by this sentence.
 - outline:STORE-2 must expose a concrete unsolved representation privilege before
   outline:PROOF-6 can enter a plan.
 - outline:TARGET-2 through outline:TARGET-4 depend on outline:BOUND-1 whenever their authentic milestone
@@ -138,7 +149,7 @@ creating writer trust or weakening the checked safety envelope.
   emitted. Opaque Boolean goal identity adds no Boolean decomposition or new
   optimizer authority.
 - **Missing / next:** a selected workload must first show a concrete proof gap
-  or hot retained-claim pressure; then build one finite proof family with exact
+  or hot repeated-check pressure; then build one finite proof family with exact
   producers, invalidators, negative canaries, facts-off identity, and
   attribution. O11
   Boolean-goal composition stays an open question with four recorded findings
@@ -154,13 +165,14 @@ creating writer trust or weakening the checked safety envelope.
 
 - **Goal:** safely project exact effect rows into backend facts at opaque call
   boundaries.
-- **Current:** v0.17 and the compiler check reads, writes, allocation, and traps
-  in both directions and project effects through storage origins. The backend
+- **Current:** the active compiler checks reads, writes, and allocation in
+  both directions and projects effects through storage origins. Proof-only
+  source statements have no runtime effect. The backend
   deliberately emits no `willreturn`; historical attribute results used the
   retired compiler and ABI.
 - **Missing / next:** re-derive a sound mapping for the active ABI against a
-  real opaque-boundary workload. `pure` is not totality, and trapping behavior
-  must remain observable.
+  real opaque-boundary workload. `pure` is not totality, and nontermination or
+  typed failure must remain observable.
 - **Facts:** [historical effect result](../research/experiments/effect-attrs-channel/RESULTS.md) ·
   [current design memory](../mcts_mem/whitefoot/effects.md).
 
@@ -171,11 +183,11 @@ creating writer trust or weakening the checked safety envelope.
 - **Goal:** turn checked uniqueness and provenance into useful backend alias
   information without runtime guards or writer promises.
 - **Current:** the checker owns `&uniq`, resolved places, and finite slice-origin
-  facts; the backend does not claim production alias-scope or `noalias`
-  emission. Historical short-trip kernels measured a win and long-trip parity.
+  facts; the backend emits no production alias-scope or `noalias` metadata.
+  Historical short-trip kernels measured a win and long-trip parity.
 - **Missing / next:** first demonstrate alias pressure that LLVM cannot recover
-  in a selected project, then add one active-backend consumer with hostile
-  overlap tests and current-compiler attribution.
+  in a selected project, then add one active-backend consumer with
+  overlap-boundary tests and current-compiler attribution.
 - **Facts:** [historical alias result](../research/experiments/scoped-alias-channel/RESULTS.md) ·
   [directional frequency study](../research/experiments/frequency-study/RESULTS.md).
 
@@ -238,10 +250,9 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [DEFLATE design handoff](../research/experiments/zlib-core-kernels/DESIGN-HANDOFF.md) ·
   [proof-guided autotuning](ideas.md#proof-guided-autotuning).
 
-### outline:PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
+### outline:PROOF-8 — Historical obligation-discharge and runtime assertion design
 
-`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, installed v0.28 verified postconditions, deterministic claim ledger, and installed v0.29 strict partition]`
-`[terminal]`
+`[historical: v0.21 through v0.29]` `[terminal: superseded by outline:PROOF-11]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -251,7 +262,7 @@ creating writer trust or weakening the checked safety envelope.
   is the checker's named runtime backstop at its provability frontier. This
   direction does not yet dissolve bare trapping arithmetic or ordinary
   explicit checks, so it makes no language-wide sole-trap-source claim.
-- **Current:** v0.21 and v0.22 shipped the claim construct, normative L0
+- **Historical result:** v0.21 and v0.22 shipped the claim construct, normative L0
   entailment fragment, caller-side OP-4 index discharge, and the SYS-8 transfer
   count bounds introduced into the fact state by ENT-3 S10. v0.24 installs the
   corrected ENT-5 continuing-kill rule at `spec/kernel-spec.md`. The frozen
@@ -331,12 +342,12 @@ creating writer trust or weakening the checked safety envelope.
   and counted-range roots. Task 0056 independently confirms root completeness,
   `O(S + P + R + C)` ledger-owned storage, preserved behavior, and measured
   release cost. Stage 8a tasks 0051 and 0052 establish the two removable local
-  witnesses with hostile controls and restored green gates; none of their
+  witnesses with negative controls and restored green gates; none of their
   temporary fact sources or program variants is installed. Task 0053 freezes
   the exact fourteen `read_bits` and twenty `append_slice` callers: the read
   side has fourteen mutable-delivery gaps, and the append map is staged
   `19 discharged / 1 unproved`, with two distinct declarations and only the
-  wfgrep separator needing a caller repair. Task 0058's hostile source replay
+  wfgrep separator needing a caller repair. Task 0058's source-variation rerun
   falsified the former value-match repair and froze the narrow selected-payload
   receiver now installed by v0.28. Tasks 0059–0065 then installed FN-9,
   complete/U/B callee proofs, callee-before-caller summaries, the four closed
@@ -403,9 +414,9 @@ creating writer trust or weakening the checked safety envelope.
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·
   [stable specification model](../governance/spec-evolution/stable-spec-filename-proposal.md).
 
-### outline:PROOF-9 — Claim-only runtime trap surface and static contracts
+### outline:PROOF-9 — Historical assertion-only runtime boundary and static contracts
 
-`[historical: active v0.33 closure]` `[terminal]`
+`[historical: released v0.33 closure]` `[terminal]`
 
 - **Goal:** make `claim` the only writer-reachable source of a language-level
   runtime rejection. Every hazardous operation is either total, returns a
@@ -440,9 +451,9 @@ creating writer trust or weakening the checked safety envelope.
   [batch 0072 closure](done/0072-searching-wfgrep.md) ·
   [batch 0073 closure](done/0073-claim-only-contracts.md).
 
-### outline:PROOF-10 — Claim residual source canonicality
+### outline:PROOF-10 — Historical runtime-assertion residual canonicality
 
-`[current: active v0.39; introduced by v0.34]` `[terminal]`
+`[historical: v0.34 through v0.39]` `[terminal: superseded by outline:PROOF-11]`
 
 - **Goal:** make every claim in a successful checker result one mechanically
   qualified, individually necessary runtime-residual candidate, and every
@@ -484,7 +495,7 @@ creating writer trust or weakening the checked safety envelope.
   irredundancy, not a unique proof basis or globally weakest proposition.
   Accepted-claim runtime execution is unchanged, and no optional solver
   participates in ordinary source acceptance.
-- **Current:** v0.34 introduced this direction, and active v0.39 preserves it.
+- **Historical result:** v0.34 introduced this direction, and v0.39 preserved it.
   The exact activation identities and conformance boundaries remain in
   `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
   reconstruction, fixed eligible set, component/occurrence necessity, stable
@@ -509,16 +520,66 @@ creating writer trust or weakening the checked safety envelope.
   faster, and optimized `wfgrep` compilation about 10–13% faster than the
   compared baseline; these are bounded development measurements, not a general
   speed guarantee or a closure of the inherited per-mask scaling risk.
-- **Missing / next:** none inside this direction. Later specification versions
-  must preserve its source and runtime invariants unless a new owner-approved
-  specification change explicitly supersedes them.
+- **Missing / next:** none inside this historical direction. outline:PROOF-11
+  is the explicit successor and may remove this source and runtime surface once
+  machine-checked replacements cover its legitimate clients.
 - **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md) ·
   [batch 0073 claim-only closure](done/0073-claim-only-contracts.md).
 
+### outline:PROOF-11 — Source-carried safety proof, summaries, and erasure
+
+`[current: v0.40 activated on branch; implementation complete]`
+`[next: project-selected extensions]`
+
+- **Goal:** admit every partial operation, callable fact, optimization, and
+  parallel execution only after finite machine proof. An accepted program may
+  have a logic error, but it must not execute memory corruption, a data race,
+  an uninitialized read, silent overflow, an out-of-bounds access, another
+  undefined operation, or a writer-reachable language trap.
+- **Selection:** the only author-controlled semantic input is Whitefoot source.
+  Contracts, loop invariants, and explicit premise-and-rule proof steps live in
+  that source and are checked in the ordinary semantic pass. The compiler uses
+  fixed automatic domains where their result, order, termination, work, and
+  memory are specified. It does not use SMT, a timeout, or heuristic proof
+  search. Internal compiler disagreement is a compiler defect, not another
+  proof obligation.
+- **Current:** `requires`, `ensures`, `invariant`, and `prove`/`use` all enter
+  one ordinary proof context. The checker uses fixed equality, difference-bound,
+  affine, ownership, typestate, effect, layout, address, and target-domain
+  rules; it performs no SMT query or heuristic search. An invariant is proved
+  at the first loop header and for every arbitrary reachable backedge. A proof
+  statement names its premises and the checker verifies each premise and the
+  exact finite combination. Verified postconditions publish facts to callers.
+  Every supported partial operation must submit its exact domain goal and be
+  proved before lowering. Proof syntax and diagnostic derivations are erased;
+  consumers retain only their checked semantic outcomes and permissions.
+- **Parallel consequence:** `par` consumes that same context together with
+  ownership, effect, iteration-index, layout, target-domain, and bounded
+  queue/completion facts. The source proof does not add a lock, branch,
+  dependency, scheduling marker, or second parallel proof language. One
+  source-derived fixed two-slot bounded-batch path now actualizes the narrow
+  direct staged counted-loop shape. Native POSIX completion targets select a
+  runtime window in `1..2`; qualified non-completion targets execute the same
+  generated CFG with a deterministic window of one and direct calls. The
+  complete batch drains in source order before slot zero reuse.
+- **Missing / next:** the v0.40 activation has no remaining implementation or
+  evidence item. Future projects may widen bounded completion beyond the one
+  direct shape and operation family or add proof domains only when a selected
+  real program exposes the need. Those are future language/compiler extensions,
+  not v0.40 activation gaps. Heap
+  OOM, stack exhaustion, OS quota, and runtime-start availability are the only
+  resource-availability questions deferred in this implementation cycle, and
+  their final source-language model is not selected here. Layout,
+  target-domain, parallel, and bounded queue/completion proof remain in scope.
+  This is a temporary work boundary, not a change to the Constitution or the
+  proof-carrying direction.
+- **Facts:** [current implementation plan](current-plan.md).
+
 ## Verification and compiler trust
 
-Serves W3, T1, and T2: current claims must survive independent, hostile, and
-facts-off evidence rather than trust in the compiler or writer.
+Serves W3, T1, and T2: source proof and every fact consumer must survive
+independent source variation and differential evidence rather than trust in the
+writer.
 
 ### outline:VERIFY-1 — Checked safety envelope in real programs
 
@@ -526,10 +587,11 @@ facts-off evidence rather than trust in the compiler or writer.
 
 - **Goal:** make memory corruption, data races, uninitialized reads, and silent
   overflow unrepresentable across success, failure, and cleanup paths.
-- **Current:** the active language forbids writer trust; the compiler
-  admits partial operations only after static discharge, retains exact
-  claim-owned DIAG-3 records, affine cleanup, proof-required indexing, and
-  distinct target/resource guards on its implemented path.
+- **Current:** the active language forbids writer trust; the compiler admits
+  each supported partial operation only after static discharge and retains
+  affine cleanup, proof-required indexing, and separate target-layout,
+  address-domain, and external-resource boundaries on its implemented path. It
+  contains no writer-reachable language trap or hidden runtime fallback.
 - **Missing / next:** validate malformed input and language-level failures
   separately from target or allocator resource failure, then exercise partial
   results, transfer, and teardown in the first selected medium project.
@@ -538,7 +600,7 @@ facts-off evidence rather than trust in the compiler or writer.
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter installed]`
-`[next: publish an exact-revision report for the activated v0.39 revision]`
+`[next: publish an exact-revision report for the activated source-proof revision]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
@@ -549,7 +611,7 @@ facts-off evidence rather than trust in the compiler or writer.
   ordinary test runs. Historical exact-revision results remain in their batch
   and activation records; this outline carries no floating count of its own.
 - **Missing / next:** publish the next independent pass/fail/skip report for
-  the exact activated v0.39 revision. Any
+  the exact activated source-proof revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -558,17 +620,18 @@ facts-off evidence rather than trust in the compiler or writer.
 
 `[historical: measured]` `[next: with first fact consumer]`
 
-- **Goal:** prove that an optional optimizer fact changes only justified code
-  shape, never acceptance, outputs, written-claim execution, or cleanup.
+- **Goal:** prove that a checked optimizer fact changes only justified code
+  shape, never source acceptance, outputs, or cleanup.
 - **Current:** historical experiments have local controls; the current compiler
-  has no production check-elision fact family and therefore no global claim.
+  has no production check-elision fact family and therefore no language-wide
+  optimization result.
 - **Missing / next:** the first fact consumer must ship with legal-program
-  differential generation, hostile premise mutation, output and claim identity,
-  and attribution before timing.
+  differential generation, premise mutation, output identity, and attribution
+  before timing.
 - **Facts:** [experiment index](../research/experiments/README.md) ·
   [fact-channel design memory](../mcts_mem/whitefoot/fact-channels.md).
 
-### outline:VERIFY-4 — Deterministic and reproducible artifacts
+### outline:VERIFY-4 — Deterministic and reproducible compiler outputs
 
 `[current: bounded determinism]` `[next: real consumer]`
 
@@ -576,11 +639,10 @@ facts-off evidence rather than trust in the compiler or writer.
   reproducible at the boundary a real build or audit consumer needs.
 - **Current:** source form, parsing, diagnostics, and selected output tests are
   deterministic; no complete cross-machine or whole-compiler object
-  reproducibility claim exists.
-- **Missing / next:** name a concrete caching, distribution, audit, or
-  multi-backend consumer before adding stable artifacts, receipts, or replay.
-- **Facts:** [compiler tests and boundary](../compiler/README.md) ·
-  [rejected premature artifact architecture](../mcts_mem/whitefoot/toolchain.alt/product-scale-checked-artifact-toolchain.md).
+  reproducibility result exists.
+- **Missing / next:** name a concrete build, distribution, audit, or
+  multi-backend consumer before extending the reproducibility boundary.
+- **Facts:** [compiler tests and boundary](../compiler/README.md).
 
 ## Performance floor and writer shape
 
@@ -596,18 +658,18 @@ and every slower-but-accepted divergence becomes a measured finding.
   proof channel, special writer trick, or project-specific lowering.
 - **Current:** the compiler has one conservative LLVM path and executable
   program witnesses, but no current medium-project comparison of scalar code
-  shape, proof gaps, retained claims, vectorization, and target output. `RG-BASE` completed
+  shape, proof gaps, repeated operations, vectorization, and target output. `RG-BASE` completed
   one correctness-green upstream selection attempt; host cache-position noise
   defeated its precision gate, so it selected no comparator and made no
-  performance claim. Its medians remain a development-cost table, not a
+  performance conclusion. Its medians remain a development-cost table, not a
   baseline.
 - **Missing / next:** require every newly runnable `wfgrep` slice to pass its
   correctness oracle and scoped cost-shape or performance gate before adding
   downstream behavior. Attribute each material loss to algorithm, static proof
-  gap, retained claim, source shape, compiler lowering, LLVM recovery, runtime,
+  gap, missing source proof, source shape, compiler lowering, LLVM recovery, runtime,
   I/O, output, or target, resolve its owning layer generally, and rerun the same
   slice. The
-  full paired suite is reserved for a later public-claim candidate rather than
+  full paired suite is reserved for a later public-result candidate rather than
   the edit loop.
 - **Facts:** [compiler backend boundary](../compiler/README.md) ·
   [historical DEFLATE result](../research/experiments/zlib-core-kernels/RESULTS.md) ·
@@ -660,8 +722,8 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 - **Goal:** give the AI deterministic, actionable failures that shorten the
   path from rejected source to a correct, efficient program.
-- **Current:** the candidate requires deterministic rule/location diagnostics
-  and exact named-claim records; single-shot writability and repair
+- **Current:** v0.40 requires deterministic rule/location diagnostics
+  and exact failed-goal plus failed-premise records; single-shot writability and repair
   effectiveness are not established.
 - **Missing / next:** measure repair-to-green on real project failures and turn
   repeated confusion into a diagnostic or teaching defect.
@@ -790,23 +852,24 @@ and failure semantics survive the runtime implementation.
 
 ### outline:PAR-2 — Intra-object disjointness
 
-`[research-only]` `[parked]`
+`[current: single-binder affine map]` `[next: multi-range maps]`
 
 - **Goal:** prove disjoint subranges or injective indexed writes when
   region-level separation is too coarse.
-- **Current:** effects can separate storage origins but do not prove arbitrary
-  element-level injectivity; there is no production `split_uniq` capability.
-  **This is exactly what batch 0078 deferred**: its counted-loop permission is
-  the reduction and not the map, because a resolved place carries no index
-  segment, so `dst[i]` and `dst[j]` are one place and every element write
-  denies under its condition 2. The probe carrying that fact is
-  `loop/probes/x1_same_buffer.wf`.
-- **Missing / next:** a selected sequential or parallel project must first
-  require this exact access pattern; then choose the smallest judgment and its
-  lifetime across calls or recursion. The 0078 re-entry condition is the
-  concrete form of that: a real program with a compute-heavy
-  single-destination map, or places gaining index granularity — whichever
-  arrives first reopens the map half of [PAR-2].
+- **Current:** v0.40 admits a narrow direct-own-root, write-only map
+  when the discharged OP-4 result retains the offset's exact value `a*i+b`, i
+  is the counted binder, and `a != 0`. Copies and checked affine transforms are
+  accepted because permission consumes that checked value rather than source
+  shape. Every write to one root must use the same a and b; different owned
+  roots may use different maps. Distinct binder values, ownership, effects,
+  and this fixed rule prove that two iterations do not write the same element.
+  `par` consumes the retained result rather than submitting the access to
+  another checker. There is no `split_uniq` capability or source scheduling
+  marker.
+- **Missing / next:** multiple maps of one root, multi-term ranges,
+  borrowed-root maps, and read/write maps require their own deterministic
+  domain rules and real-program pressure. The compiler may not guess an
+  injectivity lemma or search over index formulas.
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
   [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns) ·
   [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
@@ -816,24 +879,19 @@ Note the name collision, which the `outline:` prefix keeps formally distinct:
 this direction is `outline:PAR-2`, and the spec rule `[PAR-2]` the branch
 carries is counted-loop reduction permission, not intra-object disjointness.
 
-### outline:PAR-3 — Reductions, algebra, and trap selection
+### outline:PAR-3 — Reductions and deterministic proof
 
 `[current: spec]` `[historical: measured]` `[next: project pressure]`
 
-- **Goal:** parallelize only an exact algebraic domain whose result and failure
-  semantics survive regrouping and concurrent eligibility.
-- **Current:** FN-4 law discharge exists for acceptance. Parallel reduction,
-  deterministic result, and concurrent trap selection **now exist as branch
-  candidates**, where this entry previously said they do not. Batch 0078 on
-  `par/loop-permission` carries a CANDIDATE rule [PAR-2] granting counted-loop
-  reduction over a normatively enumerated exactly-associative combine set
-  (float excluded by rule, not by hedge), a lowering that publishes the
-  sequential fold's bytes at every worker count, and a trap rule: the claim
-  redirect makes the observable-identity guarantee conditional on contract
-  compliance, and `wf_trap` takes a first-trap-wins latch, so an erroneous
-  execution writes exactly one record and which claim it names is the
-  schedule's to choose. None of it is active; all of it activates only at
-  merge. Floating reproducibility is still absent and is excluded by the rule.
+- **Goal:** parallelize only an exact algebraic and safety domain whose result,
+  ownership, effects, and operation domains survive regrouping and concurrent
+  eligibility.
+- **Current:** FN-4 law discharge exists for acceptance. The counted-loop
+  reduction candidate admits only its enumerated exactly-associative combine
+  set, excludes floating point by rule, and publishes the sequential fold's
+  exact bytes at every worker count. Every operation in each lane has already
+  passed the same source proof checker used by sequential lowering. There is no
+  runtime assertion selection or failure latch in the language semantics.
   Historical chunk-summary work found no Whitefoot-over-Rust delta.
 - **Missing / next:** the workload evidence this entry asked for is partly in —
   the `grid` family measures 6.5x for the loop form against its own sequential
@@ -856,15 +914,29 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   records, exact result and loan-release milestones, one
   compute/target/completion wake decision, typed target-only helpers, real
   Linux io_uring positioned I/O, and the Windows IOCP foundation. The rejected
-  root/family/Ordered group layer has been removed. Completion drain still
-  precedes dependent-frame readiness, the first tail-wrapper stackless slice
-  can resume on any scheduler lane, and pure compute links no completion
-  runtime.
+  root/family/Ordered group layer has been removed. The source-proof direction
+  requires explicit finite bounds for queue storage, live completions,
+  publication, and drain before the staged permission is complete. One
+  source-derived fixed two-slot bounded-batch path now exists for a narrow
+  direct staged counted loop. Native POSIX completion targets select a runtime
+  window bounded to `1..2`; qualified targets without native completion keep
+  the same compiler-generated CFG, deterministically use a window of one, and
+  issue direct calls. The generated drain consumes the complete batch in
+  source order before slot zero is reused. Tests cover dynamic per-iteration
+  paths, an odd final batch, the ordinary result/error arm, LLVM emission,
+  linking, and execution. Two staged loops in one function deliberately stay
+  ordinary. Completion drain still precedes dependent-frame readiness, the
+  first tail-wrapper stackless slice can resume on any scheduler lane, and pure
+  compute links no completion runtime.
 - **Missing / next:** generalize selective stackless continuation lowering to
   branches, loops, multiple suspension points, and non-tail children;
+  widen the two-slot completion driver to additional control-flow shapes,
+  operation families, and deliberate multi-loop selection;
   measure cold/high-latency and native target workloads; and execute the
   Windows probe before qualification. Any widening keeps the same bounded
-  ownership and hostile soundness gates.
+  ownership and soundness gates. The final source-language model for host
+  resource unavailability remains undecided; that temporary boundary does not
+  relax any queue, layout, address, target, or ownership proof.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
   [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
 
@@ -875,14 +947,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: v0.39 active; unified-state model implemented and validated]`
+`[current: active v0.40 retains the released v0.39 unified-state model]`
 `[next: wider APIs and target measurements]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** v0.39 is active and carries this model. It uses
+- **Current:** active v0.40 retains this released v0.39 model. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration
@@ -897,9 +969,15 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work, Windows IOCP foundation, selective stackless slice, and
   component measurements were retained while the rejected group machinery was
-  removed. The activated revision passes compiler, program, conformance,
-  sanitizer, native helper, stress, and cross-link gates. Whole programs have
-  now been measured on both macOS and Linux with io_uring
+  removed. The current branch also has one source-derived fixed two-slot
+  bounded batch for the narrow direct staged counted-loop shape. Its native
+  POSIX completion window is `1..2`; qualified non-completion targets preserve
+  the generated CFG with a deterministic window of one and direct calls. It
+  drains every issued result in order before slot zero reuse, including an odd
+  final batch and dynamic per-iteration paths. The following results are
+  historical evidence from the released
+  v0.39 line, not a gate report for the active v0.40 bytes. Whole programs
+  were measured on both macOS and Linux with io_uring
   ([batch 0084](done/0084-io-performance.md)): the shipped build is about
   twice its own sequential build on a many-independent-files workload, and
   within 3.4 percent of a hand-written io_uring pipeline at the same queue
@@ -919,12 +997,12 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   chains; execute and qualify Windows; add a clock reading, keyed directory
   places, namespace mutation, and network, timer, cancellation, deadline, and
   finish-required output APIs only with complete ordinary ownership and target
-  contracts. The performance question that remains is width, not protocol:
-  overlap groups are runs of consecutive calls in one basic block, so a loop
-  with one I/O call per iteration overlaps nothing, and whether the language,
-  the lowering, or neither should widen that is undecided. The open items are
-  enumerated in [batch 0082](done/0082-unified-state-completion-io.md) and
-  [batch 0084](done/0084-io-performance.md).
+  contracts. The remaining completion-width question is how to extend the
+  implemented direct counted-loop batch to wider control flow, more operation
+  families, and functions containing multiple staged loops without partial or
+  ambiguous transformation. The open API and target items are enumerated in
+  [batch 0082](done/0082-unified-state-completion-io.md) and [batch
+  0084](done/0084-io-performance.md).
 - **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
   [batch record 0084](done/0084-io-performance.md) ·
   [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
@@ -972,7 +1050,8 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
   capability.
 - **Missing / next:** an embedded, portability, or verification project must
   first show why current LLVM is insufficient; then lower a bounded corpus and
-  compare values, traps, cleanup, code shape, and undefined-behavior risk.
+  compare values, typed failures, cleanup, code shape, and
+  undefined-behavior risk.
 - **Facts:** [portable C backend](ideas.md#a-portable-c-backend) ·
   [multiple backends](ideas.md#multiple-backends-as-mutual-oracles).
 
@@ -983,28 +1062,12 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 - **Goal:** test whether Whitefoot's closed world, explicit effects, checked
   memory, and deterministic failures form a useful embedded/real-time basis.
 - **Current:** there is no bare-metal target, MMIO family, ISR model, WCET
-  checker, or resource certificate. The direction has a research synthesis,
-  not an implementation selection.
+  checker, or whole-program resource-bound checker. The direction has a
+  research synthesis, not an implementation selection.
 - **Missing / next:** compare a bounded embedded exemplar with the compiler and
   runtime prerequisites it would force; start with target/runtime feasibility,
   not “general embedded support.”
-- **Facts:** [embedded direction synthesis](bargain.md#9-the-embedded-direction-owner-intent-stated-2026-07-31-researched-same-day) ·
-  [resource certificate idea](ideas.md#resource-certificates).
-
-### outline:TARGET-3 — Deployment evidence and policy
-
-`[speculative]` `[parked]`
-
-- **Goal:** let a concrete deployment or audit consumer inspect resource,
-  effect, or check-elision evidence without granting that evidence authority it
-  has not earned.
-- **Current:** resource certificates, effect-derived sandbox policies, and
-  optimization receipts are idea-stage; no stable artifact product exists.
-- **Missing / next:** reopen only for a selected embedded, regulated, sandbox,
-  or proof-consumer project and define one exact consumer before any schema.
-- **Facts:** [resource certificates](ideas.md#resource-certificates) ·
-  [sandbox policies](ideas.md#effect-derived-sandbox-policies) ·
-  [optimization receipts](ideas.md#optimization-receipts).
+- **Facts:** [embedded direction synthesis](bargain.md#9-the-embedded-direction-owner-intent-stated-2026-07-31-researched-same-day).
 
 ### outline:TARGET-4 — Constant-time secret-dependent behavior
 
@@ -1017,8 +1080,8 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
   validation path exists. The direction was deferred, not rejected on technical
   grounds.
 - **Missing / next:** a selected cryptographic or embedded component must name
-  the attacker observables, admitted operation set, target, optimizer contract,
-  and independent leakage test before language design.
+  the externally observable behavior, admitted operation set, target, optimizer
+  contract, and independent leakage test before language design.
 - **Facts:** [dated direction synthesis](bargain.md#5-shipping-what-the-artifacts-can-be).
 
 ### outline:APP-1 — ML systems components
@@ -1047,7 +1110,7 @@ permission.
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
 about the language's functional and performance ceiling — resolved general
-capabilities, attributed wins, and honest negative results. The 2x claim
+capabilities, attributed wins, and honest negative results. The 2x objective
 remains the pressure source and honesty anchor; shipping a finished tool is
 not the completion condition. Every specification amendment on this path is
 sourced from a need the frozen `wfgrep` slice actually exposed, then designed
@@ -1092,20 +1155,20 @@ the goal or an additional approval step.
   full-suite comparison. Separately, sequential wfgrep now compiles and runs
   through the normal command path and has one credited compute-bound win over
   the pinned system grep after the check-aware probe. That exact checkpoint is
-  preserved evidence, not the 2x ripgrep flagship claim.
-- **Claim boundary:** the suite must cover real source trees and large text;
+  preserved evidence, not the 2x ripgrep flagship result.
+- **Comparison boundary:** the suite must cover real source trees and large text;
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
 - **Missing / next:** the latency-floor question is answered (task 0026,
   preregistered): the lowering emits a check-aware 16-byte probe at
-  recognized byte-walk loop headers — every observable byte, including
-  every trap, still executes the unchanged scalar body — moving no-match
-  instructions/byte 17.68 to 3.10 and lifting wfgrep vs the pinned grep
+  recognized byte-walk loop headers; every observable byte still executes the
+  unchanged scalar body. The probe moved no-match instructions/byte 17.68 to
+  3.10 and lifted wfgrep vs the pinned grep
   from 0.753/0.762 to 1.069/1.071 (1.346 match-dense): the first full
-  compute-bound win, with trap identity oracle-pinned on hostile bounds.
+  compute-bound win, with bounds behavior checked against the scalar oracle.
   The probe covers only the recognized byte-walk class; the verify subloop
-  and copy loops stay scalar, and bounds traps remain secondary (~18%
+  and copy loops stay scalar, and bounds work remains secondary (~18%
   ceiling). On 2026-08-09 the owner parked every further wfgrep slice until the
   complete outline:PROOF-8 obligation-discharge sequence selected in the Current Plan
   was implemented and verified. That sequence is now terminal, so the exact
@@ -1132,7 +1195,7 @@ selected probes. They are not phases or prerequisites in front of ripgrep.
 |---|---|---|---|
 | `outline:CAND-2` Compression / binary format | outline:PERF-1, outline:PROOF-1, outline:PROOF-7, outline:VERIFY-1, outline:BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately selected binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
 | `outline:CAND-3` Parser / text validation | outline:FLOOR-1, outline:FLOOR-3, outline:FLOOR-4, outline:VERIFY-1, outline:BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately selected parser or storage question has independent decision value that the current plan does not answer. |
-| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:TARGET-3, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately selected target/runtime question has an authentic Cortex boundary. |
+| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately selected target/runtime question has an authentic Cortex boundary. |
 | `outline:CAND-6` Declared parallelism (`later`) | outline:PAR-1 through outline:PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately selected explicit-parallel question has independent value beyond the ripgrep plan. |
 | `outline:CAND-7` ML systems component (`later`) | outline:APP-1, outline:BOUND-2, outline:TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately selected ML question has independent value and a bounded real-model boundary. |
 
@@ -1143,7 +1206,7 @@ selected probes. They are not phases or prerequisites in front of ripgrep.
   compiler already computes is a different question and is live, with the
   writer-declared surface still the intended form for saying what a program
   expects. See outline:PAR-1.
-- Product-scale artifact replay, capability overlays, whole-compiler resource
+- Product-scale distribution, capability overlays, whole-compiler resource
   profiles, and stable protocol machinery are not prerequisites for the
   research compiler. Reopen only for a real consumer. See
   [toolchain design memory](../mcts_mem/whitefoot/toolchain.md).

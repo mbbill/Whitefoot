@@ -250,9 +250,9 @@ fn statement_is_neutral(
     }
 }
 
-/// Whether the expression is pure and trap-free under the frozen
-/// whitelist: constants, binding reads, trap-free integer operations,
-/// boolean operations, enum equality, numeric conversion, reinterpret.
+/// Whether the expression is pure and statically total under the frozen
+/// whitelist: constants, binding reads, checked integer operations, Boolean
+/// operations, enum equality, numeric conversion, and reinterpretation.
 fn expression_is_pure(expression: &CheckedExpression) -> bool {
     match expression {
         CheckedExpression::Constant(_)
@@ -338,10 +338,9 @@ impl IrBuilder<'_> {
     /// recognized byte-walk form; any recognition or representation
     /// mismatch falls back to the ordinary lowering with zero change.
     ///
-    /// The scalar body and every one of its claim sites are untouched: the
-    /// probe skips only iterations that are provably `i := i + 1`, so claim
-    /// identity, effect order, and acceptance are preserved by
-    /// construction.
+    /// The scalar body's observable work is untouched: the probe skips only
+    /// iterations that are provably `i := i + 1`, so effect order and
+    /// acceptance are preserved by construction.
     pub(super) fn emit_probe_skip_if_recognized(
         &mut self,
         loop_id: CheckedLoopId,

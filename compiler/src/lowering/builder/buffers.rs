@@ -39,7 +39,7 @@ impl IrBuilder<'_> {
                 length,
                 value,
                 layout_ceiling: layout_ceiling.into(),
-                target_domains: target_domains.into(),
+                target_domains: target_domains.try_into()?,
             },
         )
     }
@@ -69,7 +69,7 @@ impl IrBuilder<'_> {
             IrOperation::BufferVacant {
                 length,
                 layout_ceiling: layout_ceiling.into(),
-                target_domains: target_domains.into(),
+                target_domains: target_domains.try_into()?,
             },
         )
     }

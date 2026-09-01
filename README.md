@@ -1,28 +1,31 @@
 # Whitefoot
 
 Whitefoot is a proof-carrying systems language for AI-written, human-approved
-code. Here, proof-carrying means that source and its canonical artifacts carry
-the machine-checkable facts and explicit evidence needed to justify every
-partial operation and every performance fact the optimizer is allowed to
-trust. The normative checker, not the writer, an AI, or an external prover,
-decides whether that evidence is sufficient.
+code. Here, proof-carrying means that the Whitefoot source itself carries the
+machine-checkable statements and proof steps needed to justify every partial
+operation and every performance fact the optimizer is allowed to trust. The
+compiler checks that source directly. Its syntax tree, fact state, and checked
+program are ordinary compiler data; an inconsistency among them is a compiler
+defect to repair in code and tests.
 
 The extra evidence is intended to buy safety and speed from the same
 mechanism. The target is that an accepted program may contain a logic error,
 but cannot execute memory corruption, a data race, an uninitialized read,
 silent overflow, or another unproved partial operation. The same checked
 ownership, aliasing, effect, bounds, and algebraic facts can remove runtime
-checks, authorize optimizations, and prove that parallel tasks are independent
-without `unsafe`, speculation, or later rediscovery. Evidence is erased before
-execution and creates no runtime branch, lock, dependency, or scheduling edge.
+checks, authorize optimizations, and prove the ownership, effects, and
+independence facts required by `par`, without `unsafe`, speculation, or later
+rediscovery. Evidence is erased before execution and creates no runtime branch,
+lock, dependency, or scheduling edge.
 
 The official compiler does not use SMT to decide acceptance. Its automatic
-core runs only specification-fixed, deterministic derivations with a
-syntactically computable work bound. Harder reasoning is carried as an explicit
-finite certificate: producing that certificate may require AI, an external
-tool, or substantial search, but the compiler only checks the committed steps.
-No solver seed, heuristic order, timeout, machine load, or success in
-rediscovering a proof may change whether the same complete input is accepted.
+core runs only specification-fixed, deterministic, terminating derivations
+with a syntactically computable work bound. When those rules are not enough,
+the author writes additional finite proof steps in the same source file. AI or an
+offline tool may search while writing those steps, but compilation only checks
+what the source says. No solver seed, heuristic order, timeout, machine load,
+or success in rediscovering a proof may change whether the same complete input
+is accepted.
 
 The price is authoring difficulty: programs are more explicit, valid programs
 may need proof structure, and safe code without sufficient evidence is
@@ -41,7 +44,7 @@ untrusted-input service or a stable LLVM-scale product.
 This is more than a demo compiler: language behavior must come from general
 rules, correctness tests stay compiler-independent where useful, and the
 compiler must eventually emit and run real programs. Product-scale resource
-controls, stable artifact protocols, distribution, and release engineering are
+controls, stable binary-distribution interfaces, and release engineering are
 not current goals.
 
 [docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
@@ -54,27 +57,36 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.39 remains the active released language authority,
-SHA-256
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
-its immutable archive. It narrows [CLM-1]'s claim-authority control dependence
-to the definitions a boundary selector actually chooses, and supersedes v0.38,
-whose outgoing bytes are
-preserved as [`spec/kernel-spec-v0.38.md`](spec/kernel-spec-v0.38.md). The
-merge-time record for that activation is in
-[governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
-with the owner's merge approval of the exact revision containing it.
+Kernel specification v0.40 is the active language authority, SHA-256
+`5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`; its exact
+activation identity is recorded in
+[governance/APPROVALS.md](governance/APPROVALS.md). The outgoing v0.39 bytes are
+preserved byte-for-byte at
+[`spec/kernel-spec-v0.39.md`](spec/kernel-spec-v0.39.md). The source-proof
+implementation is complete and activated on this work branch; its conditional
+merge-time record becomes effective when the owner approves the exact revision
+containing it for merge into `main`.
 
-This work branch carries candidate v0.40 at the stable
-[specification path](spec/kernel-spec.md), SHA-256
-`3c58f67b436c0a066e4c2ea8b523ffbb3e297268fd2cbb158fa50848f899bacc`.
-It is the first implementation slice of the proof-carrying transition: direct
-`set` operations publish fixed value images, and entailment closes before a
-local scope is forgotten. It does not yet remove `claim` or implement the
-explicit certificate language, cross-function proof summaries, or the planned
-parallel proof composition. Candidate status grants no merge authority.
+The work branch checks `requires`, `ensures`, counted-loop `invariant`
+statements, and explicit `prove`/`use` steps in the ordinary semantic compiler.
+It accepts a supported partial operation only when the current proof context
+establishes that operation's exact domain, and it proves selected-target layout
+and address arithmetic before emitting the operation. The checked proof
+syntax and diagnostic derivations are erased before runtime lowering. Calls,
+the optimizer, and `par` consume only the verified semantic consequences fixed
+for them; no proof object or checker bookkeeping enters runtime IR. There is no
+writer-accessible runtime assertion or hidden fallback check.
 
-v0.39 uses ordinary opaque values, `own`, `move`, `&`, and
+`par` consumes this same checked context together with ownership, effect,
+iteration-index, layout, target-domain, and bounded queue/completion facts.
+Proof checking adds no runtime dependency or scheduling edge. External resource
+availability, such as heap exhaustion, stack exhaustion, operating-system quota,
+or runtime-start failure, is the only boundary temporarily outside this
+implementation cycle; its final source-language failure model remains open.
+That scope choice changes neither the project direction nor the required
+layout, address, target, parallel-independence, and bounded-completion proofs.
+
+v0.40 retains v0.39's ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,
@@ -156,12 +168,10 @@ harness, validates conformance structure and rule coverage, runs every
 non-pending conformance case through the native compile-run adapter, checks the
 maintained research fixtures, and verifies the specification/archive identity
 chain. Gate results are revision-specific, so this overview carries no floating
-pass count. Canonical `make check` deliberately rejects `CANDIDATE` status at
-the archive-identity step: a merge revision must carry the exact ACTIVE
-identity and the outgoing archive. A work branch drafting the next version,
-including this revision, uses `make spec-candidate-integrity` instead. A green
-result states only what the selected gate exercises and is not a completeness
-claim.
+pass count. Canonical `make check` requires the exact ACTIVE identity and the
+outgoing archive. A work branch drafting a later version can use
+`make spec-candidate-integrity` before its own activation. A green result states
+only what the selected gate exercises and does not establish completeness.
 
 ## License
 

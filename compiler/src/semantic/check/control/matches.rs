@@ -729,10 +729,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let candidate = state
                     .get(key)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                if !joined.same_except_region_claims(candidate) {
+                if !joined.same_except_region_loans(candidate) {
                     return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
                 }
-                joined.merge_region_claims_from(candidate);
+                joined.merge_region_loans_from(candidate);
             }
             *bindings
                 .get_mut(key)

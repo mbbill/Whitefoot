@@ -117,11 +117,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
         let call = self.tree.path(node)?.clone();
-        // Payload-free allocation and trap capabilities transfer by presence
-        // at a call boundary [EFF-2]; region entries are projected below.
+        // Payload-free heap allocation transfers by presence at a call
+        // boundary [EFF-2]; region entries are projected below.
         let mut effects = EffectSet {
             allocates_heap: signature.declared_effects.allocates_heap,
-            traps: signature.declared_effects.traps,
             ..EffectSet::NONE
         };
         let result_candidate = self.result_borrow_candidate(signature);

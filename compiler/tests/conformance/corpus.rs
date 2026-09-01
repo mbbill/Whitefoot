@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use super::json::{self, Value};
 
 /// The verdict space the corpus fixes:
-/// `accept | reject(rule) | run(exit) | trap | unsupported`.
+/// `accept | reject(rule) | run(exit) | unsupported`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Verdict {
     /// The unit is a complete accepted program.
@@ -21,8 +21,6 @@ pub enum Verdict {
     Reject(Option<String>),
     /// The program ran to completion with this command status.
     Run(i32),
-    /// The program aborted on a contract violation [TRAP-1].
-    Trap,
     /// The specification's own non-rejection stop [QUAL-1, QUAL-2, PROG-3].
     Unsupported(String),
     /// Not one of the corpus's verdicts: the compiler stopped for a reason
@@ -41,8 +39,6 @@ pub enum Expectation {
     Reject(String),
     /// `{"kind":"run","exit":N}`
     Run(i32),
-    /// `{"kind":"trap"}`
-    Trap,
     /// `{"kind":"unsupported","why":W}`
     Unsupported,
 }
@@ -50,7 +46,7 @@ pub enum Expectation {
 impl Expectation {
     /// Whether satisfying this expectation requires running the program.
     pub const fn needs_execution(&self) -> bool {
-        matches!(self, Self::Run(_) | Self::Trap)
+        matches!(self, Self::Run(_))
     }
 
     /// The corpus's own match rule, restated exactly as `runner.py` states it:
@@ -62,7 +58,6 @@ impl Expectation {
             (Self::Accept, Verdict::Accept) => true,
             (Self::Reject(rule), Verdict::Reject(Some(cited))) => rule == cited,
             (Self::Run(exit), Verdict::Run(reached)) => exit == reached,
-            (Self::Trap, Verdict::Trap) => true,
             (Self::Unsupported, Verdict::Unsupported(_)) => true,
             _ => false,
         }
@@ -91,7 +86,7 @@ pub struct Fixture {
     pub bytes: Option<Vec<u8>>,
 }
 
-/// The invocation one `run` or `trap` case needs.
+/// The invocation one `run` case needs.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Arrangement {
     /// The complete native argument vector, position 0 included.
@@ -213,7 +208,6 @@ fn expectation(value: &Value) -> Result<Expectation, String> {
             .and_then(|exit| i32::try_from(exit).ok())
             .map(Expectation::Run)
             .ok_or_else(|| "run expectation needs an integer exit".to_owned()),
-        Some("trap") => Ok(Expectation::Trap),
         Some("unsupported") => Ok(Expectation::Unsupported),
         other => Err(format!("invalid expectation kind {other:?}")),
     }

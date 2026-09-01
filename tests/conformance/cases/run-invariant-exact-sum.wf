@@ -1,0 +1,25 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "A counted loop and affine invariant prove every exact sum step before execution: sum 0..4 == 10.";
+  let sum = 0_u64;
+  for i in 0_u64..5_u64 {
+    invariant sum_bound: ile(sum, 5_u64 * i);
+    set sum = sum + i;
+  }
+  if ieq(sum, 10_u64) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  let doubled = match sum *checked 2_u64 {
+    Ok(value: d) => {
+      give d;
+    }
+    Err(error: e) => {
+      return exit_status(code: 203_u8);
+    }
+  }
+  if ieq(doubled, 20_u64) {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  return exit_status(code: 0_u8);
+}

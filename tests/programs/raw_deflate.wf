@@ -199,7 +199,7 @@ fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>,
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> result: own Result<u64, InflateError> reads(out, input), writes(out), allocates(heap), traps {
+fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> result: own Result<u64, InflateError> reads(out, input), writes(out), allocates(heap) {
   let input_length = len(input);
   let output_length = len(deref(out));
   let state = InflateState(input_offset: 0_u64, output_offset: 0_u64, hold: 0_u64, bits: 0_u32);

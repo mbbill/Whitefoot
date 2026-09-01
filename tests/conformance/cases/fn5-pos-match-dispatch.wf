@@ -3,23 +3,19 @@ enum Op {
   Dec();
 }
 
-fn apply(op: own Op, x: own i32) -> result: own i32 traps {
-  doc "Closed-set dispatch is match, not a function value [FN-5]. Both arms hold OP-2 class sites, so two dominating claims discharge their overflow obligations before the dispatch.";
-  let below_max = ile(x, 2147483646_i32);
-  claim x_below_max: below_max because "premises: the only closed-world call to apply supplies x equal to 41_i32\nderivation: 41_i32 is at most i32 maximum minus one\nconclusion: below_max is true\nchecker gap: ENT does not publish an uncontracted user-call argument value into apply\nconsumers: the Inc arm's exact addition needs this upper IntegerDomain component";
-  let above_min = ige(x, -2147483647_i32);
-  claim x_above_min: above_min because "premises: the only closed-world call to apply supplies x equal to 41_i32\nderivation: 41_i32 is at least i32 minimum plus one\nconclusion: above_min is true\nchecker gap: ENT does not publish an uncontracted user-call argument value into apply\nconsumers: the Dec arm's exact subtraction needs this lower IntegerDomain component";
+fn apply(op: own Op, x: own i32) -> result: own i32 pure {
+  doc "Closed-set dispatch is match, not a function value [FN-5]. Explicit wrapping arithmetic keeps both arms total so this case isolates dispatch.";
   match op {
     Inc() => {
-      return x + 1_i32;
+      return x +wrap 1_i32;
     }
     Dec() => {
-      return x - 1_i32;
+      return x -wrap 1_i32;
     }
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let inc_atom_0001 = Inc();
   let r = apply(op: inc_atom_0001, x: 41_i32);
   if ieq(r, 42_i32) {

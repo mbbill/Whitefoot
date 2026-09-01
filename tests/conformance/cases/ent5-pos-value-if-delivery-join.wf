@@ -4,21 +4,19 @@ fn guard(value: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn choose(value: own i32, narrow: own Bool) -> result: own i32 traps {
+fn choose(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
     let narrow_value = value % 8_i32;
-    claim narrow_bound: ilt(narrow_value, 8_i32) because "premises: narrow_value is value remainder 8_i32 computed in this function\nderivation: signed remainder by positive 8_i32 is at most 7_i32 and therefore strictly less than 8_i32\nconclusion: ilt(narrow_value, 8_i32) is true for every value\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the delivered narrow_value carries this bound into the joined guard call";
     give narrow_value;
   } else {
     let wide_value = value % 128_i32;
-    claim wide_bound: ilt(wide_value, 128_i32) because "premises: wide_value is value remainder 128_i32 computed in this function\nderivation: signed remainder by positive 128_i32 is at most 127_i32 and therefore strictly less than 128_i32\nconclusion: ilt(wide_value, 128_i32) is true for every value\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the delivered wide_value carries this bound into the joined guard call";
     give wide_value;
   }
   guard(value: picked);
   return picked;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let take_narrow = True();
   let narrow = choose(value: 7_i32, narrow: take_narrow);
   if ieq(narrow, 7_i32) {

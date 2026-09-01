@@ -1,27 +1,16 @@
-fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> function_result: own Option<u64> reads(input), traps {
+fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
   let length = len(deref(input));
-  let offset = 0_u64;
-  loop @scan {
-    let done = ieq(offset, length);
-    if done {
-      break @scan;
-    } else {
-      let room = len(deref(input));
-      let in_range = ilt(offset, room);
-      claim offset_in_range: in_range because "premises: offset starts at zero, advances by one only after a failed comparison, and this loop branch establishes offset differs from the unchanged input length\nderivation: the loop progression cannot skip the equality boundary, so offset is strictly below room, which is the same unchanged buffer length\nconclusion: in_range is true on every iteration reaching the read\nchecker gap: ENT does not derive the strict loop range from initialization, unit progression, and the equality exit\nconsumers: the following input subscript requires this exact upper Range component";
-      let byte = deref(input)[offset];
-      let found = ieq(byte, needle);
-      if found {
-        return Some<u64>(value: offset);
-      } else {
-        set offset = offset +wrap 1_u64;
-      }
+  for offset in 0_u64..length {
+    let byte = deref(input)[offset];
+    let found = ieq(byte, needle);
+    if found {
+      return Some<u64>(value: offset);
     }
   }
   return None<u64>();
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let bytes = buffer_new(6_u64, 0_u8);
   set bytes[0_u64] = 10_u8;
   set bytes[1_u64] = 20_u8;

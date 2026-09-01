@@ -18,11 +18,21 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
   for @singleton i in 0_u64..1_u64 {
     set total = total +wrap 1_u64;
   }
+  let max_visits = 0_u64;
+  let max_seen = 0_u64;
   for @max_one i in 18446744073709551614_u64..18446744073709551615_u64 {
+    set max_visits = max_visits +wrap 1_u64;
+    set max_seen = i;
     set total = total +wrap 2_u64;
   }
   for @max_empty i in 18446744073709551615_u64..18446744073709551615_u64 {
     set total = total +wrap 100_u64;
+  }
+  if ine(max_visits, 1_u64) {
+    return 1000_u64;
+  }
+  if ine(max_seen, 18446744073709551614_u64) {
+    return 1001_u64;
   }
   let upper = 3_u64;
   for @captured i in 0_u64..upper {

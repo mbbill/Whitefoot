@@ -209,7 +209,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-deny_claims fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> result: own u8 reads(store) {
+fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> result: own u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
   let room = len(deref(store));
   let inside = ilt(index, room);
@@ -220,7 +220,7 @@ deny_claims fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> result: own
   return 0_u8;
 }
 
-deny_claims fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own u64) -> result: own Bool reads(names) {
+fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own u64) -> result: own Bool reads(names) {
   doc "Orders two collected entry records by their stored name bytes, a shorter prefix first.";
   let left_base = left *wrap 1026_u64;
   let right_base = right *wrap 1026_u64;
@@ -416,40 +416,30 @@ fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>,
   return unit;
 }
 
-fn append_trailing_newline['i](input: &uniq 'i buffer<u8>, carry: own u64) -> result: own TrailingChunk reads(input), writes(input), traps {
+fn append_trailing_newline['i](input: &uniq 'i buffer<u8>, carry: own u64) -> result: own TrailingChunk reads(input), writes(input) {
   let input_room = len(deref(input));
-  let admitted = ile(carry, input_room);
-  if admitted {
+  let carry_ok = ilt(carry, input_room);
+  if carry_ok {
   } else {
     let rejected = TrailingChunk(available: carry, status: 6_u8);
     return move rejected;
   }
-  let room = input_room -wrap carry;
-  let full = ieq(room, 0_u64);
-  if full {
-    let rejected = TrailingChunk(available: carry, status: 6_u8);
-    return move rejected;
-  }
-  let carry_ok = ilt(carry, input_room);
-  claim carry_in_input: carry_ok because "premises: carry is at most the input length, room is that length minus carry, and the full branch returns before the write\nderivation: the surviving nonzero room means carry is strictly below the input length\nconclusion: carry_ok is true\nchecker gap: ENT does not invert the wrapping subtraction and nonzero-result test into the strict operand bound\nconsumers: the following input[carry] write requires this exact bound";
   set deref(input)[carry] = 10_u8;
   let available = carry +wrap 1_u64;
   let accepted = TrailingChunk(available: available, status: 0_u8);
   return move accepted;
 }
 
-fn scan_line['i, 'p](input: &'i buffer<u8>, available: own u64, scan: own u64, pattern: &'p buffer<u8>, pattern_length: own u64, first_pattern_byte: own u8, empty_pattern: own Bool) -> result: own LineScan reads(input, pattern), traps {
+fn scan_line['i, 'p](input: &'i buffer<u8>, available: own u64, scan: own u64, pattern: &'p buffer<u8>, pattern_length: own u64, first_pattern_byte: own u8, empty_pattern: own Bool) -> result: own LineScan reads(input, pattern) {
   let input_room = len(deref(input));
-  let bounded_available = imin(available, input_room);
-  let available_fits = ieq(available, bounded_available);
+  let available_fits = ile(available, input_room);
   if available_fits {
   } else {
     let missed = False();
     let rejected = LineScan(terminator: available, hit: missed, status: 6_u8);
     return move rejected;
   }
-  let bounded_scan = imin(scan, bounded_available);
-  let scan_fits = ieq(scan, bounded_scan);
+  let scan_fits = ile(scan, available);
   if scan_fits {
   } else {
     let missed = False();
@@ -459,14 +449,7 @@ fn scan_line['i, 'p](input: &'i buffer<u8>, available: own u64, scan: own u64, p
   let pattern_room = len(deref(pattern));
   let terminator = available;
   let hit = empty_pattern;
-  let probe = scan;
-  loop @walk_line {
-    let done = ige(probe, bounded_available);
-    if done {
-      break @walk_line;
-    }
-    let probe_ok = ilt(probe, input_room);
-    claim probe_in_input: probe_ok because "premises: bounded_available is the minimum of available and the input length; the equality branch rejects clipping; bounded_scan similarly admits scan; probe starts at scan and increments only while below bounded_available\nderivation: induction gives probe strictly below bounded_available, and the minimum cannot exceed the input length\nconclusion: probe_ok is true\nchecker gap: ENT does not publish the result range of imin or carry the probe induction across the ordinary-loop backedge\nconsumers: the following input[probe] read requires this exact bound";
+  for @walk_line probe in scan..available {
     let byte = deref(input)[probe];
     let newline = ieq(byte, 10_u8);
     if newline {
@@ -485,14 +468,12 @@ fn scan_line['i, 'p](input: &'i buffer<u8>, available: own u64, scan: own u64, p
             break @verify_line;
           }
           let spot = probe +wrap ahead;
-          let inside = ilt(spot, bounded_available);
+          let inside = ilt(spot, available);
           if inside {
           } else {
             set same = False();
             break @verify_line;
           }
-          let spot_ok = ilt(spot, input_room);
-          claim spot_in_input: spot_ok because "premises: bounded_available is the minimum of available and the input length, and the surviving inside branch establishes spot strictly below bounded_available\nderivation: the minimum cannot exceed the input length, so spot is strictly below the input length\nconclusion: spot_ok is true\nchecker gap: ENT does not publish the result range of imin through the enclosing ordinary-loop backedges\nconsumers: the following input[spot] read requires this exact bound";
           let candidate = deref(input)[spot];
           let stopper = ieq(candidate, 10_u8);
           if stopper {
@@ -519,49 +500,37 @@ fn scan_line['i, 'p](input: &'i buffer<u8>, available: own u64, scan: own u64, p
         }
       }
     }
-    set probe = probe +wrap 1_u64;
   }
   let accepted = LineScan(terminator: terminator, hit: hit, status: 0_u8);
   return move accepted;
 }
 
-fn shift_input_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input), traps {
+fn shift_input_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input) {
   let input_room = len(deref(input));
-  let bounded_available = imin(available, input_room);
-  let available_fits = ieq(available, bounded_available);
+  let available_fits = ile(available, input_room);
   if available_fits {
   } else {
     let rejected = ShiftedTail(tail: 0_u64, status: 6_u8);
     return move rejected;
   }
-  let bounded_scan = imin(scan, bounded_available);
-  let scan_fits = ieq(scan, bounded_scan);
+  let scan_fits = ile(scan, available);
   if scan_fits {
   } else {
     let rejected = ShiftedTail(tail: 0_u64, status: 6_u8);
     return move rejected;
   }
-  let tail = bounded_available -wrap bounded_scan;
   let moved = 0_u64;
-  loop @shift_input {
-    let done = ige(moved, tail);
-    if done {
-      break @shift_input;
-    }
-    let source_index = bounded_scan +wrap moved;
-    let shift_read_ok = ilt(source_index, input_room);
-    claim shift_read_in_input: shift_read_ok because "premises: bounded_available is the minimum of available and the input length; bounded_scan is the minimum of scan and bounded_available; tail is their difference; moved starts at zero and continues only below tail\nderivation: induction gives source_index strictly below bounded_available and therefore below the input length without wrap\nconclusion: shift_read_ok is true\nchecker gap: ENT publishes neither imin result range nor the nested moved-and-sum induction across the loop backedge\nconsumers: the following input[source_index] read requires this exact bound";
+  for source_index in scan..available {
+    invariant destination_precedes_source: ile(moved, source_index);
     let byte = deref(input)[source_index];
-    let shift_write_ok = ilt(moved, input_room);
-    claim shift_write_in_input: shift_write_ok because "premises: tail is bounded_available minus bounded_scan, bounded_available is the minimum of available and the input length, and moved starts at zero and continues only below tail\nderivation: tail is at most bounded_available and induction gives moved below tail, so moved is below the input length\nconclusion: shift_write_ok is true\nchecker gap: ENT publishes neither imin result range nor the tail and moved induction across the ordinary-loop backedge\nconsumers: the following input[moved] write requires this exact bound";
     set deref(input)[moved] = byte;
-    set moved = moved +wrap 1_u64;
+    set moved = moved + 1_u64;
   }
-  let accepted = ShiftedTail(tail: tail, status: 0_u8);
+  let accepted = ShiftedTail(tail: moved, status: 0_u8);
   return move accepted;
 }
 
-fn search_file['f, 'a, 'n, 'o](file: &'f ReadFile, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output) -> result: own u8 reads(file, pattern, path, out), writes(out), allocates(heap), traps {
+fn search_file['f, 'a, 'n, 'o](file: &'f ReadFile, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output) -> result: own u8 reads(file, pattern, path, out), writes(out), allocates(heap) {
   doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(8192_u64, 0_u8);
@@ -778,8 +747,8 @@ fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: 
   return open_directory<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
 }
 
-fn walk['f, 'c, 'p, 'a, 'o, 'e](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap), traps {
-  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no depth cap of its own, and an exhausted stack is a reported resource death rather than a silent truncation. Two bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
+fn walk['f, 'c, 'p, 'a, 'o, 'e](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap) {
+  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no source-level depth cap; stack availability remains outside this version's portable result model. Two program bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
   let matched = 0_u8;
   let failed = 0_u8;
   let entries = buffer_new(8192_u64, 0_u8);
@@ -1209,7 +1178,7 @@ fn walk['f, 'c, 'p, 'a, 'o, 'e](factory: &uniq 'f FileFactory, dir: &'c Director
   return packed;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap), traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two remaining fixed bounds: 64 entries per directory, beyond which it truncates and still returns normally, and a thousand-byte display path, beyond which the descent stops and the run exits 2 with nothing on standard error.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);

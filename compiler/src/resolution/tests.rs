@@ -315,7 +315,7 @@ fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_sc
 
 #[test]
 fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles() {
-    for field in ["value", "hostile"] {
+    for field in ["value", "alternate"] {
         let source = format!(
             "fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): ieq(result, value);\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
         );
@@ -1221,6 +1221,142 @@ fn counted_range_binder_and_label_are_visible_only_in_the_body() {
 }
 
 #[test]
+fn unlabeled_loops_keep_the_counted_binder_without_creating_label_records() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  loop {
+    break;
+  }
+  for index in 0_u64..limit {
+    invariant ceiling: ile(index, limit);
+    break;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("unlabeled loop forms must resolve structurally: {outcome:?}");
+        };
+        assert!(
+            resolved
+                .declarations()
+                .iter()
+                .all(|declaration| declaration.role() != DeclarationRole::LoopLabel)
+        );
+        assert!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .all(|usage| usage.role() != LexicalUseRole::BreakLabel)
+        );
+
+        let binder = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.role() == DeclarationRole::CountedBinder)
+            .expect("an unlabeled counted loop still declares its binder");
+        assert_eq!(binder.spelling(), "index");
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.role() == LexicalUseRole::InvariantValue
+                && usage.spelling() == "index"
+                && usage.target()
+                    == ResolvedTarget::Source {
+                        declaration: binder.id(),
+                        class: DeclarationClass::Value,
+                    }
+        }));
+    });
+}
+
+#[test]
+fn invariant_carriers_are_not_names_and_affine_locals_resolve_as_invariant_values() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for @range index in 0_u64..limit {
+    invariant ceiling: ile(index, limit);
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("invariant value uses must resolve in the counted body: {outcome:?}");
+        };
+        let binder = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.role() == DeclarationRole::CountedBinder)
+            .expect("counted binder declaration exists");
+        let parameter = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Parameter
+                    && declaration.spelling() == "limit"
+            })
+            .expect("limit parameter declaration exists");
+        let invariant_uses = resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| usage.role() == LexicalUseRole::InvariantValue)
+            .collect::<Vec<_>>();
+        assert_eq!(invariant_uses.len(), 2);
+        assert_eq!(invariant_uses[0].spelling(), "index");
+        assert_eq!(
+            invariant_uses[0].target(),
+            ResolvedTarget::Source {
+                declaration: binder.id(),
+                class: DeclarationClass::Value,
+            }
+        );
+        assert_eq!(invariant_uses[1].spelling(), "limit");
+        assert_eq!(
+            invariant_uses[1].target(),
+            ResolvedTarget::Source {
+                declaration: parameter.id(),
+                class: DeclarationClass::Value,
+            }
+        );
+        for carrier in ["ceiling", "ile"] {
+            assert!(
+                resolved
+                    .lexical_uses()
+                    .iter()
+                    .all(|usage| usage.spelling() != carrier
+                        || usage.role() == LexicalUseRole::BreakLabel),
+                "the invariant carrier {carrier} must not create a lexical use"
+            );
+        }
+    });
+}
+
+#[test]
+fn an_unresolved_affine_local_is_reported_as_an_invariant_value() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for @range index in 0_u64..limit {
+    invariant ceiling: ile(index, missing);
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unresolved invariant value must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Inv1);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::InvariantValue,
+                ..
+            } if spelling == "missing"
+        ));
+    });
+}
+
+#[test]
 fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
     for source in [
         br#"fn probe(limit: own u64) -> result: own unit pure {
@@ -1564,7 +1700,7 @@ fn numeric<T: Int>() -> result: own T pure {
   return 0_T;
 }
 
-fn probe() -> result: own unit traps {
+fn probe() -> result: own unit pure {
   let ordinary = 1_i32 +wrap two;
   let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);

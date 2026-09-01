@@ -21,7 +21,8 @@ CHECK_STAGES := repository-invariants approval-history-integrity spec-append-onl
 # later. `make -C compiler check` prints its own breakdown the same way.
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
-# Kept identical to `compiler/Makefile`'s, which carries the explanation.
+# Keep an unexpected executable stop from leaving a large core artifact in the
+# gate workspace. Such a stop fails the adapter; it is never a corpus verdict.
 NO_CORE_DUMPS := ulimit -c 0;
 
 check:
@@ -253,7 +254,7 @@ spec-archive-integrity spec-candidate-integrity:
 # activation cannot leave prose naming the superseded version (found landed:
 # the derivation ledger still described v0.28 as the installed authority after
 # the v0.29 activation). Checking only — it never rewrites prose. Green means
-# exactly that the anchored claims below name the chain tail; it does not mean
+# exactly that the anchored checks below name the chain tail; it does not mean
 # a listed file has no other stale sentence, and it says nothing about files
 # outside the list. Frozen history (docs/done/, research records, archived
 # specs) legitimately quotes superseded identities and is deliberately not
@@ -295,14 +296,11 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
 
 # Enumerate every declared case through the native adapter. Every non-pending
-# case reaches an actual compiler verdict; run/trap cases are linked and
+# case reaches an actual compiler verdict; run cases are linked and
 # executed, while the declared pending case is reported as Skip. `check`
 # depends on this target.
-#
-# `NO_CORE_DUMPS` for the reason `compiler/Makefile` states where it defines
-# the same variable and explains the Linux value: the trap cases execute
-# programs that abort on purpose, and a host that hands each abort to a
-# crash-report handler makes the gate pay for core files nothing reads.
+# `NO_CORE_DUMPS` only limits harness artifacts if an executable stops
+# unexpectedly; the corpus contains no abnormal-termination expectation.
 #
 # `--profile gate` for the reason `compiler/Cargo.toml` states: this adapter
 # runs the whole compiler over five hundred cases, which is exactly the

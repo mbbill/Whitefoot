@@ -1,9 +1,9 @@
-fn f(x: own i32) -> result: own i32 traps, allocates(heap) {
-  doc "Row order violates EFF-1 canonical order (allocates before traps).";
-  return x;
+fn f['r](x: &'r i32) -> result: own i32 allocates(heap), reads(x) {
+  doc "Row order violates EFF-1 canonical order: reads must precede allocates.";
+  return deref(x);
 }
 
-command fn main() -> status: own ExitStatus traps {
-  let a = f(x: 7_i32);
+command fn main() -> status: own ExitStatus pure {
+  doc "The malformed declaration above is rejected before this independent entry executes.";
   return exit_status(code: 0_u8);
 }

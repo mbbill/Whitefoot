@@ -1,5 +1,5 @@
 fn divide(n: own u64, d: own u64) -> return_value: own u64 pure {
-  doc "The same unsigned divisor-class site with nothing proving the divisor nonzero. The complete fact state does not discharge the obligation, so OP-2 rejects at the `infix` node carrying the residual [ENT-6]; no runtime trap is substituted for the missing proof.";
+  doc "The same unsigned divisor-class site has nothing proving the divisor nonzero. The fact state does not discharge the obligation, so OP-2 rejects at the `infix` node carrying the residual [ENT-6]; no runtime fallback is substituted for the missing proof.";
   let q = n / d;
   return q;
 }

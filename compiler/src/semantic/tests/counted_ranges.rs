@@ -58,7 +58,6 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
         ));
         assert!(body.is_empty());
         assert!(backedge_drops.is_empty());
-        assert!(!checked.data.functions[0].declared_traps);
     });
 
     assert_checks(
@@ -409,12 +408,104 @@ fn counted_range_forwards_breaks_to_an_enclosing_loop() {
     assert_checks(
         br#"command fn main() -> status: own ExitStatus pure {
   loop @outer {
-    for @items i in 0_u64..1_u64 {
+    for i in 0_u64..1_u64 {
       break @outer;
     }
   }
   return exit_status(code: 0_u8);
 }
 "#,
+    );
+}
+
+#[test]
+fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  loop @outer {
+    loop {
+      break;
+    }
+    for index in 0_u64..1_u64 {
+      invariant within_range: ile(index, 1_u64);
+      break;
+    }
+    break @outer;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("optional loop labels must check through structural targets: {outcome:?}");
+        };
+        let CheckedStatement::Loop {
+            id: outer_id,
+            body: outer_body,
+            ..
+        } = &checked.data.functions[0].body[0]
+        else {
+            panic!("expected the labeled outer loop");
+        };
+        let CheckedStatement::Loop {
+            id: inner_id,
+            body: inner_body,
+            ..
+        } = &outer_body[0]
+        else {
+            panic!("expected the unlabeled inner loop");
+        };
+        let CheckedStatement::Break {
+            target: inner_target,
+            ..
+        } = &inner_body[0]
+        else {
+            panic!("expected the unlabeled inner break");
+        };
+        assert_eq!(inner_target, inner_id);
+
+        let CheckedStatement::CountedRange {
+            id: counted_id,
+            invariants,
+            body: counted_body,
+            ..
+        } = &outer_body[1]
+        else {
+            panic!("expected the unlabeled counted loop");
+        };
+        assert_eq!(invariants.len(), 1);
+        assert_eq!(invariants[0].loop_id, *counted_id);
+        let CheckedStatement::Break {
+            target: counted_target,
+            ..
+        } = &counted_body[0]
+        else {
+            panic!("expected the unlabeled counted break");
+        };
+        assert_eq!(counted_target, counted_id);
+
+        let CheckedStatement::Break {
+            target: outer_target,
+            ..
+        } = &outer_body[2]
+        else {
+            panic!("expected the labeled cross-level break");
+        };
+        assert_eq!(outer_target, outer_id);
+        assert_ne!(outer_target, inner_id);
+        assert_ne!(outer_target, counted_id);
+    });
+}
+
+#[test]
+fn an_unlabeled_break_requires_an_enclosing_loop() {
+    assert_rule(
+        br#"command fn main() -> status: own ExitStatus pure {
+  break;
+}
+"#,
+        SemanticRule::Fn1,
+        SemanticIssueKind::BreakOutsideLoop {
+            mechanical_fix: "move `break;` inside a loop or remove it",
+        },
     );
 }

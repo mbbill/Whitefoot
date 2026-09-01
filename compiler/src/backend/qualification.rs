@@ -61,7 +61,7 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // The seven SYS-8 range-bearing operations now take proved half-open start/end
 // endpoints and return absolute success endpoints. Their wrapper arity, scalar
 // widths, aggregate result layouts, host facilities, and resource rows are
-// unchanged; the statically discharged obligations leave no runtime trap.
+// unchanged; the statically discharged obligations leave no runtime check.
 // `directory_next` now normalizes one kind byte plus a little-endian u16 name length,
 // and the target record fixes the Darwin-family component limit at 1023 and
 // the Linux-family limit at 255 while retaining the reviewed Darwin record
@@ -148,6 +148,15 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // ABI. Both rules erase before lowering; they can only admit the same raw
 // partial-operation instruction after its existing static obligation has a
 // derivation. Every v0.39 target mapping therefore stands unchanged.
+// v0.40 source-proof re-review (2026-09-01): written proofs, invariants, and
+// contracts erase before lowering. Retiring the writer-facing runtime-check
+// instruction removes a target surface rather than adding one: every emitted
+// partial operation has already passed its static domain obligation, and
+// selected-target allocation limits are checked before emission. Heap and
+// stack availability remain external resource failures with resource-only
+// records; trusted-runtime consistency failures still stop internally. No
+// system operation, resource representation, release row, result shape, entry
+// form, or host ABI mapping changes, so the v0.40 mapping remains complete.
 const REVIEWED_FOR: &str = "v0.40";
 
 /// The number of [SYS-2] opaque resource types, including the
@@ -613,6 +622,7 @@ pub(crate) enum QualificationFailure {
 pub(crate) struct ApprovedImplementation {
     version: u16,
     symbol: &'static str,
+    integer_result_bound: Option<crate::SystemIntegerResultBound>,
 }
 
 impl ApprovedImplementation {
@@ -624,6 +634,12 @@ impl ApprovedImplementation {
     /// The approved implementation version inside this semantic identity.
     pub(crate) const fn version(self) -> u16 {
         self.version
+    }
+
+    /// The selected implementation's fixed upper bound for a plain integer
+    /// result, when its target contract supplies one.
+    pub(crate) const fn integer_result_bound(self) -> Option<crate::SystemIntegerResultBound> {
+        self.integer_result_bound
     }
 }
 
@@ -870,9 +886,9 @@ impl SystemTarget {
 
     /// The host facility one `write_once` transfer attempt reaches [SYS-8].
     ///
-    /// This is the `write_once` row's facility only. The mandatory [DIAG-3]
-    /// trap record writes through the native `write` on every target: a
-    /// scripted host must never be able to truncate a trap record.
+    /// This is the `write_once` row's facility only. External-resource records
+    /// write through the native `write` on every target: a scripted host must
+    /// never be able to truncate a resource record.
     pub(crate) const fn write_symbol(self) -> &'static str {
         self.host.write()
     }
@@ -1320,7 +1336,18 @@ fn operation_row(
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };
-    Ok(ApprovedImplementation { version: 1, symbol })
+    // A result bound is fixed by the target-independent semantic ID's catalog
+    // row. Qualification carries it beside the selected implementation so an
+    // implementation replacement cannot add, remove, or weaken the contract.
+    let integer_result_bound = crate::SYSTEM_OPERATIONS
+        .get(usize::from(operation))
+        .ok_or(QualificationFailure::MissingMapping(facility))?
+        .integer_result_bound;
+    Ok(ApprovedImplementation {
+        version: 1,
+        symbol,
+        integer_result_bound,
+    })
 }
 
 /// The `(specification version, resource type, target, program kind)` row.

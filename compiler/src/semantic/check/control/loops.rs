@@ -7,18 +7,19 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedLoopId, CheckedMode, CheckedStatement, CheckedType, IntegerType,
+    CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType, IntegerType,
 };
 use super::super::borrows::RequiredReferent;
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
+use super::proofs::AffineProofOwner;
 use super::{ControlCounters, ControlScope, StatementResult};
 
 #[derive(Clone)]
 pub(in crate::semantic::check) struct LoopContext {
     pub(super) id: CheckedLoopId,
-    declaration: DeclarationId,
+    label_declaration: Option<DeclarationId>,
     preserved: HashSet<DeclarationId>,
 }
 
@@ -50,7 +51,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.check_counted_endpoint(function, *upper_node, bindings, scope.loops.len())?;
         let effects = lower.effects.union(upper.effects);
 
-        let label = self.declaration_at(node, DeclarationRole::LoopLabel)?.id();
+        let label = self
+            .optional_declaration_at(node, DeclarationRole::LoopLabel)?
+            .map(crate::DeclarationRecord::id);
         let binder_declaration = self.declaration_at(node, DeclarationRole::CountedBinder)?;
         let binder_declaration_id = binder_declaration.id();
         let id = Self::allocate_loop(counters.next_loop)?;
@@ -94,14 +97,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut nested_loops = scope.loops.to_vec();
         nested_loops.push(LoopContext {
             id,
-            declaration: label,
+            label_declaration: label,
             preserved: preserved.clone(),
         });
 
         let statements = self.tree.children_with(node, Production::Stmt)?;
+        let mut invariant_nodes = Vec::new();
+        let mut executable_statements = Vec::new();
+        let mut executable_seen = false;
+        for wrapper in statements {
+            let statement = self.tree.only_child(wrapper)?;
+            if self.tree.production(statement)? == Production::InvariantStmt {
+                if executable_seen {
+                    return self.invalid_loop_invariant(
+                        statement,
+                        "an invariant appears after an executable statement in its counted body",
+                        "move every invariant into one contiguous prefix at the start of the counted body",
+                    );
+                }
+                invariant_nodes.push(statement);
+            } else {
+                executable_seen = true;
+                executable_statements.push(wrapper);
+            }
+        }
+        let mut invariant_names = HashSet::new();
+        let allowed_invariant_values = header_keys.iter().copied().collect::<HashSet<_>>();
+        let mut invariants = Vec::with_capacity(invariant_nodes.len());
+        for invariant_node in invariant_nodes {
+            invariants.push(self.check_loop_invariant(
+                invariant_node,
+                id,
+                &body_bindings,
+                &allowed_invariant_values,
+                &mut invariant_names,
+            )?);
+        }
         let checked = self.check_block(
             function,
-            &statements,
+            &executable_statements,
             &mut body_bindings,
             counters,
             ControlScope {
@@ -144,6 +178,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binder,
                 lower: lower.expression,
                 upper: upper.expression,
+                invariants,
                 body: checked.statements,
                 backedge_drops,
             },
@@ -154,6 +189,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             give_states: checked.give_states,
             break_states: escaping_break_states,
         })
+    }
+
+    fn check_loop_invariant(
+        &self,
+        node: NodeId,
+        loop_id: CheckedLoopId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+        names: &mut HashSet<String>,
+    ) -> Result<CheckedLoopInvariant, CheckStop> {
+        let identifiers = self.tree.direct_identifiers(node)?;
+        let [name_token, relation_token] = identifiers.as_slice() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let name = std::str::from_utf8(self.tree.token_bytes(*name_token)?)
+            .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
+            .to_owned();
+        if !names.insert(name.clone()) {
+            return self.invalid_loop_invariant(
+                node,
+                "a counted loop contains two invariants with the same name",
+                "give every invariant in this counted loop a distinct name",
+            );
+        }
+        self.require_ile_relation(AffineProofOwner::LoopInvariant, node, *relation_token)?;
+        let relation = self.check_affine_relation(
+            node,
+            bindings,
+            allowed_values,
+            AffineProofOwner::LoopInvariant,
+        )?;
+
+        Ok(CheckedLoopInvariant {
+            loop_id,
+            name,
+            relation,
+        })
+    }
+
+    pub(super) fn invalid_loop_invariant<ResultValue>(
+        &self,
+        node: NodeId,
+        reason: &'static str,
+        mechanical_fix: &'static str,
+    ) -> Result<ResultValue, CheckStop> {
+        self.issue_node(
+            SemanticRule::Inv1,
+            node,
+            SemanticIssueKind::InvalidLoopInvariant {
+                reason,
+                mechanical_fix,
+            },
+        )
     }
 
     fn check_counted_endpoint(
@@ -294,7 +382,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let declaration = self.declaration_at(node, DeclarationRole::LoopLabel)?.id();
+        let declaration = self
+            .optional_declaration_at(node, DeclarationRole::LoopLabel)?
+            .map(crate::DeclarationRecord::id);
         let id = Self::allocate_loop(counters.next_loop)?;
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
@@ -302,7 +392,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut nested_loops = scope.loops.to_vec();
         nested_loops.push(LoopContext {
             id,
-            declaration,
+            label_declaration: declaration,
             preserved: preserved.clone(),
         });
 
@@ -368,20 +458,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let usage = self.use_at(node, LexicalUseRole::BreakLabel)?;
-        let ResolvedTarget::Source {
-            declaration,
-            class: DeclarationClass::Label,
-        } = usage.target()
-        else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        let uses = self.uses_at_ordered(node, LexicalUseRole::BreakLabel)?;
+        let target = match uses.as_slice() {
+            [] => scope.loops.last().ok_or_else(|| {
+                self.issue_value(
+                    SemanticRule::Fn1,
+                    node,
+                    SemanticIssueKind::BreakOutsideLoop {
+                        mechanical_fix: "move `break;` inside a loop or remove it",
+                    },
+                )
+            })?,
+            [usage] => {
+                let ResolvedTarget::Source {
+                    declaration,
+                    class: DeclarationClass::Label,
+                } = usage.target()
+                else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                scope
+                    .loops
+                    .iter()
+                    .rev()
+                    .find(|context| context.label_declaration == Some(declaration))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            }
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
-        let target = scope
-            .loops
-            .iter()
-            .rev()
-            .find(|context| context.declaration == declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let all_paths_deliver = scope
             .give_context
             .is_some_and(|context| context.enclosing_loops.contains(&target.id));

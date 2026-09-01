@@ -1,5 +1,5 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  doc "SYS-8 rejects start greater than end statically. The first range goal is refuted before lowering, so no host call, source read, destination write, or runtime trap exists.";
+  doc "SYS-8 rejects start greater than end statically. The first range goal is refuted before lowering, so no host call, source read, destination write, or runtime fallback exists.";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {

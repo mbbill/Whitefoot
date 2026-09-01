@@ -35,7 +35,8 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::ExprStmt
             | Production::ReturnStmt
             | Production::BreakStmt
-            | Production::ClaimStmt
+            | Production::InvariantStmt
+            | Production::ProofPremise
             | Production::GiveStmt
     );
     if fixed {
@@ -70,6 +71,7 @@ fn is_block_bearing(production: Production) -> bool {
             | Production::ContractBlock
             | Production::LoopStmt
             | Production::ForStmt
+            | Production::ProofStmt
             | Production::RegionStmt
             | Production::MatchStmt
             | Production::ValueMatch

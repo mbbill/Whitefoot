@@ -18,14 +18,14 @@ pub use engine::{resolve, resolve_with_inventory};
 
 pub use catalog::{
     Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemParameter,
-    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
-    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
-    SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction, TargetCompletion,
-    TargetDispatch, TargetMilestones, operation_state_effects, system_constructor_declaration,
-    system_constructor_index, system_constructors, system_entity, system_nominal_index,
-    system_nominals, system_operation_index, system_operations, system_release_row,
-    system_resource_contract,
+    SystemConstructor, SystemEntity, SystemField, SystemIntegerResultBound, SystemNominal,
+    SystemOperation, SystemParameter, SystemParameterMode, SystemRelease, SystemReleaseAction,
+    SystemReleaseRow, SystemResourceBacking, SystemResourceContract, SystemResourceType,
+    SystemResultPayload, SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction,
+    TargetCompletion, TargetDispatch, TargetMilestones, operation_state_effects,
+    system_constructor_declaration, system_constructor_index, system_constructors, system_entity,
+    system_nominal_index, system_nominals, system_operation_index, system_operations,
+    system_release_row, system_resource_contract,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -320,6 +320,10 @@ pub enum LexicalUseRole {
     FunctionBinding,
     /// U18: generic suffix in `0_T` or `1_T`.
     GenericNumericSuffix,
+    /// One local integer value named by an INV-1 proof-only affine factor.
+    InvariantValue,
+    /// One local integer value named by a PRF-1 finite source-proof factor.
+    ProofValue,
 }
 
 /// Deferred member and field uses resolved by the semantic owner type.
@@ -684,6 +688,10 @@ pub enum ResolutionRule {
     Fn8,
     /// Ensures-block structural and selector admission.
     Fn9,
+    /// Proof-only counted-loop invariant value lookup.
+    Inv1,
+    /// Finite source-proof value lookup.
+    Prf1,
 }
 
 impl ResolutionRule {
@@ -705,6 +713,8 @@ impl ResolutionRule {
             Self::Fn4 => "FN-4",
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
+            Self::Inv1 => "INV-1",
+            Self::Prf1 => "PRF-1",
         }
     }
 }

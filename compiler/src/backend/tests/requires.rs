@@ -1,28 +1,19 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out), traps contract {
+const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
   define out_length = len(deref(out));
   define source_length = len(source);
   requires ile(source_length, out_length);
 } {
   let length = len(source);
-  let offset = 0_u64;
-  loop @copy {
-    let done = ieq(offset, length);
-    if done {
-      break @copy;
-    } else {
-      let copy_ok = ilt(offset, length);
-      claim copy_offset_in_source: copy_ok because "premises: offset starts at 0_u64, the loop exits when offset equals length, and each continuing iteration increments offset once; the contract establishes length at most len(deref(out))\nderivation: induction keeps offset at most length; in a continuing iteration offset is strictly below length, so the increment cannot wrap and both the source and output indices are in range\nconclusion: copy_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant relating offset to length\nconsumers: the following source read consumes this OP-4 bound directly and the following output set combines it with the contract bound";
-      let value = source[offset];
-      set deref(out)[offset] = value;
-      set offset = offset +wrap 1_u64;
-    }
+  for offset in 0_u64..length {
+    let value = source[offset];
+    set deref(out)[offset] = value;
   }
   return length;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let length = 4_u64;
   let source = buffer_new(length, 7_u8);
   let output = buffer_new(length, 0_u8);
@@ -112,12 +103,15 @@ fn contract_define_can_hold_a_float_endpoint_conversion_without_runtime_code() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let converted = cvt<u8, f32>(1_u8);
-  claim one_converts_exactly: feq(converted, 1.0_f32) because "premises: converted is the f32 conversion of the exactly representable u8 value 1_u8\nderivation: f32 represents the integer one exactly, so the conversion has the bit-exact value 1.0_f32\nconclusion: feq(converted, 1.0_f32) is true\nchecker gap: ENT does not evaluate integer-to-float conversion on literal endpoints\nconsumers: the following identity call requires this exact FN-8 equality";
-  let one = identity(value: 1_u8);
-  let code = one -wrap 1_u8;
-  return exit_status(code: code);
+  if feq(converted, 1.0_f32) {
+    let one = identity(value: 1_u8);
+    let code = one -wrap 1_u8;
+    return exit_status(code: code);
+  } else {
+    return exit_status(code: 2_u8);
+  }
 }
 "#,
     );
@@ -186,11 +180,14 @@ command fn main() -> status: own ExitStatus pure {
 fn borrowed_output_capacity_contract_informs_the_body_without_a_callee_prologue() {
     let llvm = compile(OUTPUT_CAPACITY);
     let copy = emitted_function(&llvm, "copy_bytes");
-    assert!(copy.contains("br i1"));
-    // The requirement's `ile` is absent. The body's one claim comparison
-    // remains, while its discharged subscripts emit no bounds compares.
+    assert!(copy.contains("switch i1"));
+    // The requirement and counted-range binder facts are proof inputs only.
+    // They are absent after lowering, and both discharged subscripts emit no
+    // additional bounds comparison or runtime proof check. The sole strict
+    // comparison is the counted loop's continuation condition.
     assert_eq!(copy.matches("icmp ule i64").count(), 0);
     assert_eq!(copy.matches("icmp ult i64").count(), 1);
+    assert_eq!(copy.matches("call void @wf_trap").count(), 0);
     assert!(copy.contains("load i8"));
     assert!(copy.contains("store i8"));
     assert_eq!(copy.matches("call void @free").count(), 1);

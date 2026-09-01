@@ -70,12 +70,12 @@
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
-//!    sink [ERR-3], so it is never a first member and never an interposed one;
-//!    a `claim` has a trap edge to the [DIAG-3] sink, so it is neither one
-//!    either. This is not merely a condition about differing observables:
-//!    under either schedule a hand-out is outstanding at every interposed
-//!    statement, so an exit taken there abandons an unjoined lane still
-//!    reading the caller's frame.
+//!    sink [ERR-3], so it is never a first member and never an interposed one.
+//!    This is not merely a condition about differing observables: under either
+//!    schedule a hand-out is outstanding at every interposed statement, so an
+//!    exit taken there abandons an unjoined lane still reading the caller's
+//!    frame. Source proof statements are erased before lowering and therefore
+//!    introduce no runtime exit edge.
 //!
 //! Two schedules are realizable for one window — hand s1 to a lane and run
 //! T1…Tk then s2 on the calling thread, or run s1 then hoist s2's operands,
@@ -84,44 +84,23 @@
 //! what the two admit, never the weaker set the current backend alone would
 //! survive.
 //!
-//! # A claim in the closure is not a reason to refuse
+//! # Proof statements do not add a fifth condition
 //!
-//! Nothing beyond those four conditions is required. An earlier version of
-//! this judgment also asked that the transitive call closure of both callees
-//! reach zero `claim` sites, on the ground that one schedule could trap at a
-//! different claim than another and so move the [DIAG-3] record. That
-//! condition is gone, and the reason it is gone is what a claim means.
+//! Nothing beyond those four conditions is required. Every source proof
+//! statement has already been checked against its control-flow facts before
+//! permission metadata is built. It is then erased before lowering: it has no
+//! runtime evaluation, effect, exit edge, or scheduler-visible event. A failed
+//! proof rejects the program instead of creating a runtime fallback. The
+//! permission judgment therefore neither rechecks proofs nor models a proof
+//! failure path.
 //!
-//! A `claim` is the writer's lemma bridging an incompleteness of this checker,
-//! not a runtime test the program is expected to fail. A false executed claim
-//! is the sole writer-reachable language runtime contract violation [SCOPE-4],
-//! so an execution that contains one is *erroneous* and the program that
-//! contains it is defective. [PAR-1]'s observable-identity guarantee is
-//! therefore conditional on contract compliance, exactly as [SCOPE-3]'s
-//! no-undefined-behavior guarantee is conditional on its trusted computing
-//! base. A correct program — one whose every executed claim is true — reaches
-//! no trap under any schedule, so its observables are the source-order
-//! observables and it keeps the guarantee whole. For an erroneous execution
-//! the guarantee narrows to: the process traps with exactly one well-formed
-//! [DIAG-3] record naming *a* claim whose predicate evaluated false; memory
-//! safety, abort without unwinding, and family-valid outside actions hold
-//! unchanged; and *which* such claim the record names may depend on the
-//! schedule.
-//!
-//! "Exactly one record under any interleaving" is a mechanism here rather than
-//! an argument: `wf_trap` takes a process-wide latch before it writes its
-//! first byte, and a thread that loses the latch parks while the winner
-//! aborts. Declining to overlap a correct program in order to keep a defective
-//! program's trap identity stable is the trade this judgment no longer makes.
-//!
-//! **Invariant.** P consults typing, declared effect rows, resolved places
-//! [OWN-5, OWN-7], and the statement graph's exit edges — and never the
-//! entailment fact state. Nothing here reads a derived fact, an obligation
-//! disposition, a claim disposition, or any optimizer fact; the only thing it
-//! asks about a claim is whether its statement sits between the two calls.
-//! Facts-on and facts-off compilation therefore produce the same permission
-//! table by construction, and permission can never turn an
-//! accepted program into a rejected one or move a required check.
+//! **Invariant.** The window and staged judgments consult typing, declared
+//! effect rows, resolved places [OWN-5, OWN-7], and statement-graph exit edges.
+//! The counted-loop judgment additionally consumes an already-successful
+//! [OP-4] disposition and its retained single-binder affine value image; it
+//! does not repeat that proof or inspect unrelated entailment facts. Permission remains a
+//! read-only lowering judgment: it cannot turn an accepted program into a
+//! rejected one or move a required check.
 
 use super::loop_permission::LoopPermission;
 use super::model::{
@@ -163,11 +142,6 @@ pub(crate) enum ExitKind {
     /// A `propagate` right-hand side's `Err` edge to the function-return
     /// sink [ERR-3].
     PropagateError,
-    /// A `claim`'s trap edge to the [DIAG-3] sink [CLM-1]. A claim *inside* a
-    /// callee is no longer a reason to refuse, but one the writer put in the
-    /// caller's own block between the two calls still is: it is an exit edge
-    /// out of the window, and an exit taken there abandons an unjoined lane.
-    ClaimTrap,
     /// A `return`, `give`, or `break` edge, which leaves the enclosing block
     /// or function without reaching s2.
     BlockExit,
@@ -390,8 +364,8 @@ impl Denial {
 /// The judgment's outcome for one analyzed pair.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PermissionVerdict {
-    /// P holds, so the window may be overlapped. A `claim` anywhere in either
-    /// call closure is not a reason to refuse; the module doc carries why.
+    /// P holds, so the window may be overlapped. Source proof statements were
+    /// already checked and erase before this permission can be actualized.
     PermittedEligible,
     Denied(Denial),
 }
@@ -1010,18 +984,16 @@ impl<'check> Program<'check> {
             });
         }
 
-        // All four conditions hold, and there is no fifth. A `claim` reachable
-        // from either callee no longer withholds actualization: the module doc
-        // carries the contract-conditional guarantee that replaced it.
+        // All four conditions hold. Source proof statements were checked
+        // before this analysis and have no runtime exit or footprint.
         PermissionVerdict::PermittedEligible
     }
 
     /// One statement between the two members, reduced to what the window rule
     /// judges, or the reason it cannot be.
     ///
-    /// The match is exhaustive on purpose, for the same reason
-    /// [`collect_claim_sites`] is: a statement form this analysis does not
-    /// classify would otherwise contribute an empty footprint and *widen*
+    /// The match is exhaustive on purpose: a statement form this analysis does
+    /// not classify would otherwise contribute an empty footprint and *widen*
     /// permission, which is the one direction the judgment must never fail in.
     /// Every form is either given a footprint here or refused here.
     fn interposed_of(
@@ -1031,6 +1003,11 @@ impl<'check> Program<'check> {
         statement: &'check CheckedStatement,
     ) -> Result<Interposed, InterposedRefusal> {
         match statement {
+            CheckedStatement::Proof(_) => Ok(Interposed {
+                defines: None,
+                uses: Vec::new(),
+                footprint: Footprint::default(),
+            }),
             CheckedStatement::Let {
                 node_path,
                 binding,
@@ -1119,7 +1096,6 @@ impl<'check> Program<'check> {
             CheckedStatement::PropagateLet { .. } => {
                 Err(InterposedRefusal::Exit(ExitKind::PropagateError))
             }
-            CheckedStatement::Claim { .. } => Err(InterposedRefusal::Exit(ExitKind::ClaimTrap)),
             CheckedStatement::Return { .. }
             | CheckedStatement::Give { .. }
             | CheckedStatement::Break { .. } => Err(InterposedRefusal::Exit(ExitKind::BlockExit)),
@@ -1556,7 +1532,7 @@ fn loan_conflict(
             )
             .filter_map(|(half, access)| match access {
                 Access::Place { place, argument } => Some((half, place, argument)),
-                // An arena region is not a place a borrow can claim.
+                // An arena region is not a place a borrow can name.
                 Access::Arena { .. } => None,
             })
             .collect::<Vec<_>>()
@@ -1768,9 +1744,9 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::PropagateLet { .. }
         | CheckedStatement::Set { .. }
         | CheckedStatement::Replace { .. }
+        | CheckedStatement::Proof(_)
         | CheckedStatement::DropExpression { .. }
         | CheckedStatement::Evaluate(_)
-        | CheckedStatement::Claim { .. }
         | CheckedStatement::Return { .. }
         | CheckedStatement::Give { .. }
         | CheckedStatement::Break { .. } => {}

@@ -2,7 +2,7 @@
 //! emits, what an unpermitted pair still emits, what links, and what the
 //! program observes.
 //!
-//! The load-bearing claim of this whole path is that overlapping changes
+//! The load-bearing property of this whole path is that overlapping changes
 //! nothing observable. A test that only ran the overlapped program would pass
 //! just as well against a runtime that never granted a lane, so the runs below
 //! read the runtime's own grant count and refuse to accept a repeat that never
@@ -17,13 +17,20 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::backend::qualification::{SystemTarget, qualify_program};
+use crate::backend::target::{
+    PARALLEL_LANE_FRAME_ALIGNMENT, TargetLayout, TargetLayoutFailure, TargetObject,
+    parallel_lane_frame_layout,
+};
+
+use super::system::with_ir;
 use super::{
     HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
     append_completion_runtime, build_executable, compile_and_run, emit, emit_with_overlap,
     module_requires_completion_runtime, module_requires_parallel_runtime, test_directory,
 };
 
-/// A claim-free recursive fold over a heap tree, the smallest shape that has
+/// A pure recursive fold over a heap tree, the smallest shape that has
 /// every eligible form at once: a self-recursive sibling pair inside `fold`,
 /// sibling constructor pairs inside `pair`, `quad`, and `oct`, and a run of
 /// four sibling calls in `main`. Its whole result is written to standard
@@ -146,6 +153,36 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 }
 "#;
 
+const LANE_FRAME_LAYOUT_FUNCTIONS: &[u8] =
+    br#"fn exact_frame(values: own array<u8, 255>) -> result: own u8 pure {
+  return values[0_u64];
+}
+
+fn over_frame(values: own array<u8, 256>) -> result: own u8 pure {
+  return values[0_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+fn lane_frame_program(length: u64) -> Vec<u8> {
+    format!(
+        "fn first(values: own array<u8, {length}>) -> result: own u8 pure {{\n  \
+         return values[0_u64];\n}}\n\n\
+         command fn main() -> status: own ExitStatus pure {{\n  \
+         let left_values = array_new<u8, {length}>(7_u8);\n  \
+         let right_values = array_new<u8, {length}>(9_u8);\n  \
+         let left = first(values: move left_values);\n  \
+         let right = first(values: move right_values);\n  \
+         if ine(left, 7_u8) {{\n    return exit_status(code: 1_u8);\n  }}\n  \
+         if ine(right, 9_u8) {{\n    return exit_status(code: 2_u8);\n  }}\n  \
+         return exit_status(code: 0_u8);\n}}\n"
+    )
+    .into_bytes()
+}
+
 /// A pure call handed out while a second pure call, written as an `if`
 /// condition, runs on this thread.
 ///
@@ -224,10 +261,10 @@ command fn main() -> status: own ExitStatus pure {
 /// A program whose own functions are spelled like the runtime's entry points.
 ///
 /// It overlaps, so the module carries the runtime symbols too, and both sets
-/// have to coexist. `par_claim`, `par_publish`, `par_join`, and `par_release`
+/// have to coexist. `par_acquire_lane`, `par_publish`, `par_join`, and `par_release`
 /// are ordinary IDENTs [FORM-3], so nothing may stop a writer from declaring
 /// them.
-const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_claim(x: own u64) -> result: own u64 pure {
+const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_acquire_lane(x: own u64) -> result: own u64 pure {
   return imax(x, x);
 }
 
@@ -248,7 +285,7 @@ fn par_thunk_0(x: own u64) -> result: own u64 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let a = par_claim(x: 1_u64);
+  let a = par_acquire_lane(x: 1_u64);
   let b = par_publish(x: 2_u64);
   let c = par_thunk_0(x: 3_u64);
   let d = par_join(x: 4_u64);
@@ -277,18 +314,118 @@ fn a_program_named_like_the_runtime_still_compiles_and_links() {
         "the fixture must actually hand work out:\n{module}"
     );
     assert!(
-        module.contains("define internal i64 @wf_par_claim(i64 "),
+        module.contains("define internal i64 @wf_par_acquire_lane(i64 "),
         "the source function keeps its own symbol:\n{module}"
     );
     assert!(
-        module.contains("define weak ptr @wf__par_claim(i64 %bytes) #0 {"),
+        module.contains("define weak ptr @wf__par_acquire_lane(i64 %bytes) #0 {"),
         "the runtime keeps its reserved symbol:\n{module}"
     );
     let output = compile_and_run(&module);
     assert_eq!(output.status.code(), Some(0));
 }
 
-/// One handed-out call emits its outlined thunk, a lane claim, the frame
+/// The selected target lays out the exact aggregate the worker thunk reads:
+/// every parameter in declaration order followed by the result. A 255-byte
+/// array plus a byte result reaches the 256-byte runtime boundary exactly;
+/// adding one parameter byte remains a valid source function but makes this
+/// optional schedule ineligible. Reducing the target address domain below the
+/// exact aggregate is a target-layout failure rather than a capacity decline.
+#[test]
+fn selected_target_proves_the_complete_ordinary_lane_frame() {
+    with_ir(LANE_FRAME_LAYOUT_FUNCTIONS, |program| {
+        let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+        let system_target = SystemTarget::for_triple(host.triple())
+            .expect("the host triple has one qualified system target");
+        let qualification =
+            qualify_program(system_target, program).expect("the lane-frame fixture must qualify");
+        let exact = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "exact_frame")
+            .expect("the exact-boundary function must lower");
+        let over = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "over_frame")
+            .expect("the over-boundary function must lower");
+
+        let exact_layout = parallel_lane_frame_layout(host, &qualification, program, exact)
+            .expect("the exact frame is target-representable")
+            .expect("the exact frame fits the lane slot");
+        assert_eq!(exact_layout.size(), crate::LANE_FRAME_BYTES);
+        assert_eq!(exact_layout.align(), 1);
+        assert!(exact_layout.align() <= PARALLEL_LANE_FRAME_ALIGNMENT);
+        assert_eq!(
+            parallel_lane_frame_layout(host, &qualification, program, over),
+            Ok(None),
+            "a target-representable frame beyond the lane capacity must decline overlap"
+        );
+
+        let short_domain = host.with_address_index_max_for_test(crate::LANE_FRAME_BYTES - 1);
+        assert_eq!(
+            parallel_lane_frame_layout(short_domain, &qualification, program, exact),
+            Err(TargetLayoutFailure::Unrepresentable(
+                TargetObject::ParallelLaneFrame
+            )),
+            "the aggregate itself must fit the selected target's address domain"
+        );
+    });
+}
+
+/// The two constants checked by selected-target lane layout are the runtime
+/// slot's actual byte capacity and base alignment.
+#[test]
+fn ordinary_lane_frame_limits_match_the_runtime_slot() {
+    let runtime = super::PARALLEL_RUNTIME_SOURCE;
+    let declared = runtime
+        .lines()
+        .find_map(|line| line.strip_prefix("#define WF_PAR_FRAME_BYTES "))
+        .expect("the runtime must state its frame capacity");
+    assert_eq!(
+        declared.trim().parse::<u64>().expect("a decimal capacity"),
+        crate::LANE_FRAME_BYTES
+    );
+    assert!(
+        runtime.contains(&format!(
+            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_PAR_FRAME_BYTES];"
+        )),
+        "the runtime slot must provide the alignment target layout relies on"
+    );
+}
+
+/// A frame at the runtime boundary is handed out with the selected-target
+/// size as a constant. The same valid source shape one byte wider stays on the
+/// ordinary sequential call path: no thunk, lane acquisition, or address-size
+/// expression is emitted for it. Both modules pass the host LLVM toolchain and
+/// preserve the source result.
+#[test]
+fn ordinary_overlap_uses_only_target_proved_lane_frames() {
+    let exact = emit_with_overlap(&lane_frame_program(255));
+    assert!(module_requires_parallel_runtime(&exact));
+    assert!(exact.contains(&format!(
+        "call ptr @wf__par_acquire_lane(i64 {})",
+        crate::LANE_FRAME_BYTES
+    )));
+    assert!(
+        !exact.contains("@wf__par_acquire_lane(i64 ptrtoint"),
+        "lane size must come from selected-target layout, not emitted address arithmetic"
+    );
+
+    let over = emit_with_overlap(&lane_frame_program(256));
+    assert!(
+        !module_requires_parallel_runtime(&over),
+        "a frame beyond the runtime slot must keep the optional overlap sequential"
+    );
+    assert!(!over.contains("@wf__par_thunk_"));
+
+    let exact_output = compile_and_run(&exact);
+    assert_eq!(exact_output.status.code(), Some(0));
+    let over_output = compile_and_run(&over);
+    assert_eq!(over_output.status.code(), Some(0));
+}
+
+/// One handed-out call emits its outlined thunk, a lane acquisition, the frame
 /// stores and publication inside the granted edge, and a join whose refusal
 /// edge makes the same call this thread would have made anyway.
 #[test]
@@ -314,7 +451,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // Every runtime entry point is the module's own weak definition, so a
     // module that hands work out is still a complete program.
     for weak in [
-        "define weak ptr @wf__par_claim(i64 %bytes) #0 {",
+        "define weak ptr @wf__par_acquire_lane(i64 %bytes) #0 {",
         "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
         "define weak void @wf__par_join(ptr %frame) #0 {",
         "define weak void @wf__par_release(ptr %frame) #0 {",
@@ -322,17 +459,17 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         assert!(module.contains(weak), "no weak `{weak}`:\n{module}");
     }
 
-    // `fold`'s own recursive pair: a lane is claimed and the first call is
+    // `fold`'s own recursive pair: a lane is acquired and the first call is
     // published to it, the second runs inline on this thread, and only then is
     // the published one joined. The ordering is what makes the overlap window
     // exactly the second call.
     let body = function_body(&module, "@wf_fold");
-    let claim = body
-        .find("= call ptr @wf__par_claim(i64 ptrtoint")
-        .expect("fold must claim a lane for its first recursive call");
+    let acquisition = body
+        .find("= call ptr @wf__par_acquire_lane(i64 ")
+        .expect("fold must acquire a lane for its first recursive call");
     let publish = body
         .find("call void @wf__par_publish(ptr")
-        .expect("fold must publish the claimed lane its outlined call");
+        .expect("fold must publish the acquired lane its outlined call");
     let inline = body
         .find("par.offered.")
         .and_then(|start| {
@@ -345,8 +482,8 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         .find("call void @wf__par_join(ptr")
         .expect("fold must join what it offered");
     assert!(
-        claim < publish,
-        "the claim must precede the publish:\n{body}"
+        acquisition < publish,
+        "lane acquisition must precede the publish:\n{body}"
     );
     assert!(
         publish < inline,
@@ -406,7 +543,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
 /// judged: an `if` checks into a `Bool` match, so the call in its condition is
 /// reached by exactly the machinery a `let` right-hand side is reached by, with
 /// no rule of its own. Nothing in the program performs a target operation, so
-/// the group here is the ordinary [PAR-1] compute lowering — claim, publish,
+/// the group here is the ordinary [PAR-1] compute lowering — acquire, publish,
 /// the condition call inline on this thread, join, phi — and it is worth
 /// pinning because the batch that opened this position was about I/O and would
 /// not otherwise have covered it.
@@ -420,12 +557,12 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
 fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
     let module = emit_with_overlap(IF_CONDITION_SIBLING);
     let body = function_body(&module, "@wf_main");
-    let claim = body
-        .find("= call ptr @wf__par_claim(i64 ptrtoint")
-        .expect("the first call must claim a lane");
+    let acquisition = body
+        .find("= call ptr @wf__par_acquire_lane(i64 ")
+        .expect("the first call must acquire a lane");
     let publish = body
         .find("call void @wf__par_publish(ptr")
-        .expect("the claimed lane must be given the outlined call");
+        .expect("the acquired lane must be given the outlined call");
     let condition = body
         .find("call i1 @wf_odd(")
         .expect("the condition call must run on this thread");
@@ -433,7 +570,7 @@ fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
         .find("call void @wf__par_join(ptr")
         .expect("the handed-out call must be joined");
     assert!(
-        claim < publish && publish < condition && condition < join,
+        acquisition < publish && publish < condition && condition < join,
         "the condition call is the overlap window and the join follows it:\n{body}"
     );
     let done = body
@@ -536,7 +673,7 @@ command fn main() -> status: own ExitStatus pure {
 /// calibrate and no host limit to depend on.
 ///
 /// The original mechanism — a refused hand-out building no frame, which is what
-/// the overlapped world still relies on whenever the pool is on and a claim is
+/// the overlapped world still relies on whenever the pool is on and an acquisition is
 /// refused — is held structurally by `handing_a_call_out_adds_no_stack_slot`,
 /// whose count is taken over the overlapped world alone.
 #[test]
@@ -577,9 +714,9 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// it.
 ///
 /// What is pinned is a bound and not a parity, because an overlapped
-/// activation is genuinely not free: the claim's record, the recursion's own
+/// activation is genuinely not free: the acquisition handle, the recursion's own
 /// argument and the value the join reads back are live across the call to
-/// `wf__par_claim`, and whatever the register allocator cannot keep in
+/// `wf__par_acquire_lane`, and whatever the register allocator cannot keep in
 /// registers across that call is spilled into the frame.
 ///
 /// The bound is that overhead in bytes rather than a multiple of the
@@ -629,7 +766,7 @@ fn the_shipped_default_keeps_a_deep_recursion() {
          clone's {sequential} in the same binary, which is more than \
          {WIDEST_ADMITTED_OVERHEAD} bytes of hand-out state, so the world a \
          --par binary runs in unconfigured is taxing activations far beyond \
-         what the claim keeps live"
+         what lane acquisition keeps live"
     );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -638,7 +775,7 @@ fn the_shipped_default_keeps_a_deep_recursion() {
 /// The lane's frame is the lane's: asking for overlap adds no stack slot to
 /// any function.
 ///
-/// This is the whole resource claim of the hand-out. An earlier lowering put
+/// This is the whole resource bound of the hand-out. An earlier lowering put
 /// the frame in the calling function's entry block, so every activation of an
 /// eligible recursive function carried the slot and its argument spills
 /// whether or not a lane was ever granted, and a `--par` build reached about a
@@ -682,7 +819,7 @@ fn handing_a_call_out_adds_no_stack_slot() {
 /// hand-out's phi at `%par.done` forecloses and which was worth 2.96x on
 /// `fib(38)` with the pool off. "Gets the same transforms" is not something a
 /// test can ask LLVM directly; what it can ask is whether the input is the same
-/// input, which is the whole of the claim and is stronger than any list of
+/// input, which is the whole property and is stronger than any list of
 /// properties spelled out one at a time. A clone that drifted — a slot, a phi,
 /// an operand read in a different order — would be a second lowering nobody
 /// audited, and this case is what stops that.
@@ -769,7 +906,7 @@ fn the_bootstrap_selects_one_world_once() {
         "the module must carry its own answer:\n{overlapped}"
     );
     for weak in [
-        "define weak ptr @wf__par_claim(i64 %bytes) #0 {",
+        "define weak ptr @wf__par_acquire_lane(i64 %bytes) #0 {",
         "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
         "define weak void @wf__par_join(ptr %frame) #0 {",
         "define weak void @wf__par_release(ptr %frame) #0 {",
@@ -1106,7 +1243,7 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // `wf__par_grants` counts steals, and a steal is a scheduling event: a
     // pool thread has to be given a CPU before the offering lane finishes the
     // work itself. On a saturated host that can fail to happen in one run of
-    // a program this short, so the existential claim (the default build CAN
+    // a program this short, so the existential observation (the default build CAN
     // be granted lanes) is re-observed over [`GRANT_OBSERVATION_RUNS`] runs,
     // exactly as the WF_WORKERS=4 case above does. A pool that never grants
     // fails every one of them; the opt-out runs below stay exact.
@@ -1219,7 +1356,7 @@ fn the_default_compilation_hands_nothing_out() {
 /// place — is present in the reference too and compares equal. The reference
 /// here is the default compilation of the same source, whose calls were never
 /// handed out, which is the only way an overlap's "changes nothing observable"
-/// claim can be checked against something other than itself.
+/// guarantee can be checked against something other than itself.
 #[test]
 fn the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out() {
     let sequential_module = emit(OVERLAPPING_FOLD);
@@ -1259,7 +1396,7 @@ fn the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out() {
 }
 
 /// The negative control for the repeat above: its comparison reports a
-/// difference when one is present, so a green repeat is a claim about the
+/// difference when one is present, so a green repeat is evidence about the
 /// program rather than about the comparison.
 #[test]
 fn the_repeat_comparison_reports_an_injected_difference() {
@@ -1425,7 +1562,7 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
 ///
 /// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
 /// this is what the *negative* direction pays and not what a healthy host
-/// pays: the claim these runs support is existential — some run was granted a
+/// pays: the property these runs support is existential — some run was granted a
 /// lane — and one grant settles it. A runtime that grants nothing still makes
 /// every one of the thirty-two runs and still totals zero.
 pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
@@ -1479,7 +1616,7 @@ impl CountedProgram {
     /// exactly what those assertions are for: a runtime that grants nothing
     /// totals zero and still fails.
     ///
-    /// Every caller asserts `> 0`, which is an existential claim: the first
+    /// Every caller asserts `> 0`, which is an existential observation: the first
     /// grant is the whole observation, and the runs after it re-observe
     /// something already seen. Stopping there changes neither direction of the
     /// result — the total is positive exactly when some run of the sample was

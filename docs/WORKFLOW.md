@@ -111,7 +111,7 @@ an additional approval or merge condition beyond the four rules above.
   affected case's result and cited rule across both binaries; an unchanged
   failure set is insufficient.
 - A peer report is a lead rather than independent evidence. Label any
-  unverified part; if a probe did not isolate the claim, write `not measured`.
+  unverified part; if a probe did not isolate the hypothesis, write `not measured`.
 - Every new check states what a green run does and does not establish.
 - A test earns its runtime with its purpose, never with its duration: a slow
   test is not thereby a thorough test. Shared setup avoids unjustified
@@ -175,7 +175,8 @@ content part of the recorded merge approval.
 
 `make check` is the single all-tests command required by rule 3. A green run
 states only that the exact tested revision passed the repository's current test
-inventory; it is not a claim that the inventory is complete. Language safety
-remains substantive: every written claim executes, every partial operation is
-lowered only after machine proof of its domain, and optional facts may not
-change acceptance, cleanup, output, or claim behavior.
+inventory; it does not say the inventory is complete. Language safety remains
+substantive: every source proof is checked in its current control-flow context
+and erased before lowering, every partial operation is lowered only after
+machine proof of its domain, and optional optimization facts may not change
+acceptance, cleanup, or output.

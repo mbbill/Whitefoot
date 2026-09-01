@@ -11,10 +11,9 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// v0.21 added, less the `index` spelling v0.22 released to IDENT, plus the
 /// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings —
 /// and the three v0.25 counted-range spellings, plus v0.28's `ensures`,
-/// v0.29's `deny_claims`, and v0.33's contract, command, and integer-domain
-/// spellings.
-/// New variants append so every
-/// previously released dense index remains stable.
+/// v0.33's contract, command, and integer-domain spellings, and the current
+/// proof spellings. Retired source atoms are removed from this current-grammar
+/// inventory; the dense indices are compiler-local and are never serialized.
 /// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -144,14 +143,8 @@ pub enum FixedTerminal {
     Allocates,
     /// `heap`.
     Heap,
-    /// `traps`.
-    Traps,
     /// `as`.
     As,
-    /// `claim`.
-    Claim,
-    /// `because`.
-    Because,
     /// `if`.
     If,
     /// `+`.
@@ -194,8 +187,6 @@ pub enum FixedTerminal {
     DotDot,
     /// `ensures`.
     Ensures,
-    /// `deny_claims`.
-    DenyClaims,
     /// `replace`.
     Replace,
     /// `command`.
@@ -210,10 +201,16 @@ pub enum FixedTerminal {
     SlashDefined,
     /// `%defined`.
     PercentDefined,
+    /// `invariant`.
+    Invariant,
+    /// `prove`.
+    Prove,
+    /// `use`.
+    Use,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 94] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -223,19 +220,18 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
     FixedTerminal::LeftParen,
     FixedTerminal::RightParen,
     FixedTerminal::Comma,
-    FixedTerminal::DenyClaims,
-    FixedTerminal::Command,
     FixedTerminal::Fn,
     FixedTerminal::ThinArrow,
+    FixedTerminal::Command,
     FixedTerminal::Contract,
     FixedTerminal::Define,
+    FixedTerminal::Equal,
     FixedTerminal::Requires,
     FixedTerminal::Ensures,
     FixedTerminal::When,
     FixedTerminal::Law,
     FixedTerminal::Conform,
     FixedTerminal::Const,
-    FixedTerminal::Equal,
     FixedTerminal::Doc,
     FixedTerminal::LeftAngle,
     FixedTerminal::RightAngle,
@@ -273,24 +269,25 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
     FixedTerminal::For,
     FixedTerminal::In,
     FixedTerminal::DotDot,
+    FixedTerminal::Invariant,
+    FixedTerminal::Prove,
+    FixedTerminal::Use,
+    FixedTerminal::Star,
+    FixedTerminal::Plus,
+    FixedTerminal::Minus,
     FixedTerminal::Break,
     FixedTerminal::Region,
-    FixedTerminal::Claim,
-    FixedTerminal::Because,
     FixedTerminal::Give,
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
-    FixedTerminal::Plus,
     FixedTerminal::PlusWrap,
     FixedTerminal::PlusDefined,
     FixedTerminal::PlusChecked,
     FixedTerminal::PlusSat,
-    FixedTerminal::Minus,
     FixedTerminal::MinusWrap,
     FixedTerminal::MinusDefined,
     FixedTerminal::MinusChecked,
     FixedTerminal::MinusSat,
-    FixedTerminal::Star,
     FixedTerminal::StarWrap,
     FixedTerminal::StarDefined,
     FixedTerminal::StarChecked,
@@ -308,7 +305,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
     FixedTerminal::Writes,
     FixedTerminal::Allocates,
     FixedTerminal::Heap,
-    FixedTerminal::Traps,
 ];
 
 impl FixedTerminal {
@@ -383,10 +379,7 @@ impl FixedTerminal {
             Self::Writes => "writes",
             Self::Allocates => "allocates",
             Self::Heap => "heap",
-            Self::Traps => "traps",
             Self::As => "as",
-            Self::Claim => "claim",
-            Self::Because => "because",
             Self::If => "if",
             Self::Plus => "+",
             Self::PlusWrap => "+wrap",
@@ -408,7 +401,6 @@ impl FixedTerminal {
             Self::In => "in",
             Self::DotDot => "..",
             Self::Ensures => "ensures",
-            Self::DenyClaims => "deny_claims",
             Self::Replace => "replace",
             Self::Command => "command",
             Self::PlusDefined => "+defined",
@@ -416,6 +408,9 @@ impl FixedTerminal {
             Self::StarDefined => "*defined",
             Self::SlashDefined => "/defined",
             Self::PercentDefined => "%defined",
+            Self::Invariant => "invariant",
+            Self::Prove => "prove",
+            Self::Use => "use",
         }
     }
 
@@ -501,21 +496,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 103] = {
-    let mut predicates = [TerminalPredicate::Identifier; 103];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 102] = {
+    let mut predicates = [TerminalPredicate::Identifier; 102];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[95] = TerminalPredicate::Identifier;
-    predicates[96] = TerminalPredicate::TypeIdentifier;
-    predicates[97] = TerminalPredicate::RegionIdentifier;
-    predicates[98] = TerminalPredicate::Label;
-    predicates[99] = TerminalPredicate::OperationName;
-    predicates[100] = TerminalPredicate::Literal;
-    predicates[101] = TerminalPredicate::String;
-    predicates[102] = TerminalPredicate::Digits;
+    predicates[94] = TerminalPredicate::Identifier;
+    predicates[95] = TerminalPredicate::TypeIdentifier;
+    predicates[96] = TerminalPredicate::RegionIdentifier;
+    predicates[97] = TerminalPredicate::Label;
+    predicates[98] = TerminalPredicate::OperationName;
+    predicates[99] = TerminalPredicate::Literal;
+    predicates[100] = TerminalPredicate::String;
+    predicates[101] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -523,14 +518,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 95,
-            Self::TypeIdentifier => 96,
-            Self::RegionIdentifier => 97,
-            Self::Label => 98,
-            Self::OperationName => 99,
-            Self::Literal => 100,
-            Self::String => 101,
-            Self::Digits => 102,
+            Self::Identifier => 94,
+            Self::TypeIdentifier => 95,
+            Self::RegionIdentifier => 96,
+            Self::Label => 97,
+            Self::OperationName => 98,
+            Self::Literal => 99,
+            Self::String => 100,
+            Self::Digits => 101,
         }
     }
 
@@ -614,12 +609,11 @@ fn lower_word(spelling: &[u8]) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
 }
 
-/// Tests `IDENT` membership, excluding only fixed lowercase spellings and the
-/// historical singular spelling `trap`. The retired effect words `external`
-/// and `blocks` are ordinary identifiers again.
+/// Tests `IDENT` membership, excluding only fixed lowercase spellings. Retired
+/// source atoms are ordinary identifiers again.
 #[must_use]
 pub fn is_identifier(spelling: &[u8]) -> bool {
-    lower_word(spelling) && spelling != b"trap" && FixedTerminal::from_spelling(spelling).is_none()
+    lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()
 }
 
 /// Tests active specification `TYPEID` membership.
@@ -778,13 +772,17 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 82);
-        assert_eq!(FixedTerminal::For as u8, 83);
-        assert_eq!(FixedTerminal::In as u8, 84);
-        assert_eq!(FixedTerminal::DotDot as u8, 85);
-        assert_eq!(FixedTerminal::Ensures as u8, 86);
-        assert_eq!(FixedTerminal::DenyClaims as u8, 87);
-        assert_eq!(FixedTerminal::Replace as u8, 88);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 79);
+        assert_eq!(FixedTerminal::For as u8, 80);
+        assert_eq!(FixedTerminal::In as u8, 81);
+        assert_eq!(FixedTerminal::DotDot as u8, 82);
+        assert_eq!(FixedTerminal::Ensures as u8, 83);
+        assert_eq!(FixedTerminal::Replace as u8, 84);
+        assert_eq!(FixedTerminal::Invariant as u8, 91);
+        assert_eq!(FixedTerminal::Prove as u8, 92);
+        assert_eq!(FixedTerminal::Use as u8, 93);
+        assert_eq!(TerminalPredicate::Identifier.index(), 94);
+        assert_eq!(TerminalPredicate::Digits.index(), 101);
     }
 
     #[test]
@@ -798,11 +796,20 @@ mod tests {
                 assert!(!is_identifier(terminal.spelling_bytes()));
             }
         }
-        for spelling in [b"x".as_slice(), b"deref_value", b"wrap", b"ieq"] {
+        for spelling in [
+            b"x".as_slice(),
+            b"deref_value",
+            b"wrap",
+            b"ieq",
+            b"claim",
+            b"because",
+            b"deny_claims",
+            b"traps",
+            b"trap",
+        ] {
             assert!(is_identifier(spelling));
         }
         assert!(is_identifier(b"check"));
-        assert!(!is_identifier(b"trap"));
     }
 
     #[test]

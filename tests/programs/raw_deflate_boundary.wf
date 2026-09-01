@@ -200,7 +200,7 @@ fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, rea
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap), traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
   let scratch = buffer_new(4097_u64, 0_u8);
   let report = buffer_new(128_u64, 0_u8);

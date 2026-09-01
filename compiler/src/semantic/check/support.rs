@@ -63,6 +63,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution.into())
     }
 
+    pub(super) fn optional_declaration_at(
+        &self,
+        node: NodeId,
+        role: DeclarationRole,
+    ) -> Result<Option<&crate::DeclarationRecord>, CheckStop> {
+        let path = self.tree.path(node)?;
+        let mut matches = self.resolved.declarations().iter().filter(|declaration| {
+            declaration.role() == role && declaration.origin().node() == path
+        });
+        let declaration = matches.next();
+        if matches.next().is_some() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(declaration)
+    }
+
     pub(super) fn use_at(
         &self,
         node: NodeId,

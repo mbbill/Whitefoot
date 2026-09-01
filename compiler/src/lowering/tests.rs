@@ -17,8 +17,8 @@ use crate::{
 };
 
 use super::{
-    IrBlock, IrDrop, IrEntry, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram,
-    IrTerminator, IrType, IrValueId, lower_checked,
+    IrBlock, IrDrop, IrEntry, IrFunction, IrInstruction, IrIntegerOperation, IrNominalKind,
+    IrOperation, IrProgram, IrTerminator, IrType, IrValueId, lower_checked,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -73,6 +73,16 @@ fn with_ir<ResultValue>(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
+    with_ir_mode(source, OverlapLowering::Off, run)
+}
+
+fn with_ir_mode<ResultValue>(
+    source: &[u8],
+    overlap: OverlapLowering,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
     let inputs = [SourceInput::new("test.wf", source)];
     let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
         panic!("lowering test bundle must be valid");
@@ -105,8 +115,7 @@ fn with_ir<ResultValue>(
     let SemanticOutcome::Complete(checked) = outcome else {
         panic!("lowering test source must check: {outcome:?}");
     };
-    let ir =
-        lower_checked(*checked, OverlapLowering::Off).expect("checked system program must lower");
+    let ir = lower_checked(*checked, overlap).expect("checked system program must lower");
     run(&ir)
 }
 
@@ -140,8 +149,8 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
 fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
     let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
-  for @items i in 0_u64..2_u64 {
-    set total = total +wrap 1_u64;
+  for @items i in 18446744073709551614_u64..18446744073709551615_u64 {
+    set total = i;
   }
   return total;
 }
@@ -165,6 +174,133 @@ command fn main() -> status: own ExitStatus pure {
                 }
             )
         }));
+        let hidden_updates = counted
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    IrInstruction::Define {
+                        operation: IrOperation::Integer {
+                            operation: IrIntegerOperation::AddWrap,
+                            operand_type: IrType::Integer {
+                                width: 64,
+                                signed: false,
+                            },
+                            ..
+                        },
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(
+            hidden_updates, 1,
+            "MAX-1..MAX must retain exactly the compiler-owned unit update"
+        );
+    });
+}
+
+#[test]
+fn counted_break_and_return_edges_do_not_enter_the_hidden_update() {
+    let source = br#"fn leave_by_break(stop: own Bool) -> result: own u64 pure {
+  for @scan i in 0_u64..2_u64 {
+    if stop {
+      break @scan;
+    }
+  }
+  return 7_u64;
+}
+
+fn leave_by_return(stop: own Bool) -> result: own u64 pure {
+  for @scan i in 0_u64..2_u64 {
+    if stop {
+      return 9_u64;
+    }
+  }
+  return 7_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let hidden_update_count = |function: &IrFunction| {
+            function
+                .blocks()
+                .iter()
+                .flat_map(IrBlock::instructions)
+                .filter(|instruction| {
+                    matches!(
+                        instruction,
+                        IrInstruction::Define {
+                            operation: IrOperation::Integer {
+                                operation: IrIntegerOperation::AddWrap,
+                                operand_type: IrType::Integer {
+                                    width: 64,
+                                    signed: false,
+                                },
+                                ..
+                            },
+                            ..
+                        }
+                    )
+                })
+                .count()
+        };
+
+        let breaking = function(program, "leave_by_break");
+        assert_eq!(
+            hidden_update_count(breaking),
+            1,
+            "the normal fallthrough keeps one hidden update"
+        );
+        let exit_blocks = breaking
+            .blocks()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| {
+                matches!(block.terminator(), IrTerminator::Return { .. }).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            exit_blocks.len(),
+            1,
+            "the break fixture has one final return"
+        );
+        let exit = exit_blocks[0];
+        let jumps_to_exit = breaking
+            .blocks()
+            .iter()
+            .filter(|block| {
+                matches!(
+                    block.terminator(),
+                    IrTerminator::Jump { target, .. } if target.index() == exit
+                )
+            })
+            .count();
+        assert_eq!(
+            jumps_to_exit, 2,
+            "the false header and break edge must reach the exit directly"
+        );
+
+        let returning = function(program, "leave_by_return");
+        assert_eq!(
+            hidden_update_count(returning),
+            1,
+            "the non-returning branch keeps one hidden update"
+        );
+        let returns = returning
+            .blocks()
+            .iter()
+            .filter(|block| matches!(block.terminator(), IrTerminator::Return { .. }))
+            .count();
+        assert_eq!(
+            returns, 2,
+            "the body return must remain a return edge beside the false-header exit"
+        );
     });
 }
 
@@ -607,34 +743,21 @@ fn returning_or_passing_an_owner_derives_no_release_here() {
 }
 
 #[test]
-fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
+fn releases_keep_reverse_declaration_order_on_the_normal_edge() {
     let source = format!(
-        "fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
-         requires flag;\n}} {{\n  return unit;\n}}\n\n\
-         fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
-         -> result: own unit writes(first, second), traps {{\n  \
-         let not_ready = bnot(ready);\n  \
-         let tautology = bor(ready, not_ready);\n  \
-         claim ordering_probe: tautology because \"premises: ready is the current function's ordinary Bool parameter, not_ready is its Boolean negation, and tautology is their disjunction\\nderivation: every Bool is either true or false, so ready or its negation is always true\\nconclusion: tautology is true\\nchecker gap: ENT decomposes established Boolean expressions but does not synthesize excluded middle for an opaque Bool parameter\\nconsumers: the following need_true call requires this exact tautology\";\n  \
-         need_true(flag: tautology);\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+        "fn ordered(first: own ReadFile, second: own ReadFile) \
+         -> result: own unit writes(first, second) {{\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "ordered");
         let block = only_block(function);
-        // A failed written claim runs no language cleanup [TRAP-1, EFF-4]:
-        // the lowered claim check is reached with no release before it, and
-        // the IR gives that check no edge on which to carry one.
+        // Releases are not ordinary instructions interleaved with the body;
+        // they belong to the normal return edge.
         assert!(
             block
                 .instructions()
                 .iter()
                 .all(|instruction| !matches!(instruction, IrInstruction::Drop(_)))
-        );
-        assert!(
-            block
-                .instructions()
-                .iter()
-                .any(|instruction| matches!(instruction, IrInstruction::Claim { .. }))
         );
         // Both releases sit on the one normal edge, in the reverse
         // declaration order [STOR-3] fixes, which is the order [EFF-5]
@@ -750,9 +873,277 @@ command fn main() -> status: own ExitStatus pure {
                 .blocks()
                 .iter()
                 .flat_map(IrBlock::instructions)
-                .all(|instruction| !matches!(instruction, IrInstruction::Claim { .. })),
-            "an ordinary requirement is a call-site obligation and S4 axiom, not executable IR"
+                .next()
+                .is_none(),
+            "an ordinary requirement is a call-site obligation and contributes no executable callee prologue"
         );
+    });
+}
+
+#[test]
+fn source_proof_is_erased_before_typed_ir() {
+    let source = br#"fn plain() -> result: own unit pure {
+  return unit;
+}
+
+fn prove_only() -> result: own unit pure {
+  prove two_steps: ile(0_u64, 2_u64) {
+    use ile(0_u64, 1_u64);
+    use ile(1_u64, 2_u64);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let plain = function(program, "plain");
+        let proved = function(program, "prove_only");
+        assert_eq!(
+            proved.parameters(),
+            plain.parameters(),
+            "the erased proof contributes no parameter or value dependency"
+        );
+        assert_eq!(proved.result(), plain.result());
+        assert_eq!(
+            proved.blocks(),
+            plain.blocks(),
+            "PRF-1 contributes no instruction, effect, branch, runtime check, or terminator change"
+        );
+        assert_eq!(proved.overlaps(), plain.overlaps());
+        assert_eq!(proved.completion_steps(), plain.completion_steps());
+        assert_eq!(proved.completion_pipeline(), plain.completion_pipeline());
+    });
+}
+
+#[test]
+fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let total = 0_u64;
+  for @plain index in 0_u64..1_u64 {
+    set total = total +wrap 1_u64;
+  }
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::Completion, |program| {
+        let main = function(program, "main");
+        let pipeline = main
+            .completion_pipeline()
+            .expect("the permitted staged loop must reach IR");
+        assert_eq!(
+            pipeline.source_loop().0,
+            1,
+            "the pure first loop has id 0; only the permitted I/O loop's checked identity may select the descriptor"
+        );
+        assert!(
+            pipeline.entry().ordinal() > 0,
+            "the descriptor must name the selected loop's preheader, not the function entry or the first loop"
+        );
+        assert!(
+            pipeline.driver_ready(),
+            "the feeder-drain edge is a complete depth-one driver"
+        );
+        let plan = pipeline
+            .planned_driver()
+            .expect("the eligible result dispatch must have a materialized one-slot plan");
+        assert!(
+            pipeline.carries(plan.feeder()),
+            "the feeder must carry its submitted operation across the mandatory drain edge"
+        );
+        assert!(
+            !pipeline.carries(plan.drain()),
+            "the drain must retire the operation before dispatching its result"
+        );
+        assert!(!pipeline.drains(plan.feeder()));
+        assert!(pipeline.drains(plan.drain()));
+        assert_eq!(pipeline.slots(), 1);
+        assert!(pipeline.slot_index(plan.feeder()).is_none());
+        assert!(pipeline.slot_index(plan.drain()).is_none());
+        assert!(
+            plan.feeder().ordinal() < plan.drain().ordinal(),
+            "the K=1 feeder must be emitted before the exact drain that owns its result"
+        );
+        let feeder = &main.blocks()[plan.feeder().index()];
+        let IrTerminator::Jump { target, .. } = feeder.terminator() else {
+            panic!("the feeder must have exactly one edge to its drain");
+        };
+        assert_eq!(*target, plan.drain());
+        let drain = &main.blocks()[plan.drain().index()];
+        let IrTerminator::Match { scrutinee, .. } = drain.terminator() else {
+            panic!("the drain must own the original result dispatch");
+        };
+        assert_eq!(
+            *scrutinee,
+            plan.result(),
+            "the result is consumed only after the feeder's mandatory drain edge"
+        );
+        let llvm = crate::emit_llvm(program)
+            .expect("a complete depth-one staged descriptor must emit")
+            .into_string();
+        assert!(
+            llvm.contains("@wf__completion_window("),
+            "the production driver must ask for its bounded window once at loop entry"
+        );
+        assert!(
+            llvm.contains("@wf__completion_file_open_at_submit(")
+                && llvm.contains("@wf__completion_file_open_join("),
+            "the staged cut must use one typed submission followed by its mandatory depth-one retirement"
+        );
+    });
+}
+
+#[test]
+fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let opened = 0_u64;
+  let name = buffer_new(4_u64, 97_u8);
+  for @scan index in 0_u64..4_u64 {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set opened = opened +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::Completion, |program| {
+        let main = function(program, "main");
+        let pipeline = main
+            .completion_pipeline()
+            .expect("the direct staged loop must reach IR");
+        let driver = pipeline
+            .planned_batch_driver()
+            .expect("the direct result dispatch must use the bounded batch driver");
+        assert_eq!(pipeline.slots(), 2);
+        assert!(pipeline.window_value().is_some());
+        assert!(pipeline.carries(driver.feeder()));
+        assert!(!pipeline.carries(driver.drain()));
+        assert!(!pipeline.drains(driver.feeder()));
+        assert!(pipeline.drains(driver.drain()));
+        assert!(pipeline.slot_index(driver.feeder()).is_some());
+        assert!(pipeline.slot_index(driver.drain()).is_some());
+        let llvm = crate::emit_llvm(program)
+            .expect("a source-derived two-slot driver must emit valid LLVM text")
+            .into_string();
+        assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
+        assert!(llvm.contains("%wf.frame = alloca {"));
+        assert!(llvm.contains("[2 x [2 x i64]]"));
+        assert!(llvm.contains("getelementptr inbounds [2 x [2 x i64]]"));
+        assert!(llvm.contains("call i32 @wf__completion_file_open_at_submit("));
+        assert!(llvm.contains("call void @wf__completion_file_open_join("));
+    });
+}
+
+#[test]
+fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let opened = 0_u64;
+  let name = buffer_new(4_u64, 97_u8);
+  for @first index in 0_u64..3_u64 {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set opened = opened +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  for @second index in 0_u64..3_u64 {
+    region 'g {
+      let permit = reserve_file<'g>(factory: &uniq 'g files);
+      region 'm {
+        match open_file<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set opened = opened +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::Completion, |program| {
+        let main = function(program, "main");
+        assert!(
+            main.completion_pipeline().is_none(),
+            "a function-level descriptor must not partially transform one of two independently permitted loops"
+        );
+        let llvm = crate::emit_llvm(program)
+            .expect("both loops must remain valid on the ordinary target path")
+            .into_string();
+        assert!(!llvm.contains("@wf__completion_window("));
+    });
+}
+
+#[test]
+fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligations() {
+    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) contract {
+  requires ile(n, 1000_u64);
+} {
+  let filled = buffer_new(n, 7_u16);
+  let vacant = buffer_vacant<u16>(n);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  allocate(n: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let allocate = function(program, "allocate");
+        let bounds = allocate
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter_map(|instruction| {
+                let IrInstruction::Define { operation, .. } = instruction else {
+                    return None;
+                };
+                match operation {
+                    IrOperation::BufferFill { target_domains, .. }
+                    | IrOperation::BufferVacant { target_domains, .. } => {
+                        Some(target_domains.source_length_upper_bound())
+                    }
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(bounds, vec![1000, 1000]);
     });
 }
 

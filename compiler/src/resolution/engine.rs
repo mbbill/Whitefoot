@@ -60,12 +60,12 @@ enum RawRoleKind {
     /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
     /// capability, so classification produces no retained record yet.
     TableChecked,
-    /// A DIAG-1 claim-name carrier: the IDENT of a `claim_stmt`. It declares
-    /// nothing, enters and queries no lexical name domain, and does not
-    /// participate in FORM-3's reservation inventory; its CLM-1 per-function
-    /// uniqueness judgment is an unimplemented compiler capability, so
-    /// classification produces no retained record yet.
-    ClaimName,
+    /// One INV-1 direct IDENT whose spelling is judged by the semantic
+    /// invariant checker rather than entered into a lexical domain.
+    InvariantCarrier,
+    /// One PRF-1 proof name or relation IDENT. It is checked by the semantic
+    /// proof-statement owner and never enters a lexical namespace.
+    ProofCarrier,
 }
 
 impl RawRoleKind {
@@ -76,7 +76,8 @@ impl RawRoleKind {
             Self::LexicalUse(_) => 2,
             Self::DeferredUse(_) => 3,
             Self::TableChecked => 4,
-            Self::ClaimName => 5,
+            Self::InvariantCarrier => 5,
+            Self::ProofCarrier => 6,
         }
     }
 }
@@ -301,10 +302,10 @@ fn build_tables(
                 origin: role.origin.clone(),
             }),
             // Table-checked carriers await the FN-7 kind-table capability, and
-            // claim-name carriers the CLM-1 claim capability; until then a unit
-            // containing one stops in semantic checking as an explicit
-            // unsupported compiler capability.
-            RawRoleKind::Selector(_) | RawRoleKind::TableChecked | RawRoleKind::ClaimName => {}
+            RawRoleKind::Selector(_)
+            | RawRoleKind::TableChecked
+            | RawRoleKind::InvariantCarrier
+            | RawRoleKind::ProofCarrier => {}
         }
     }
 

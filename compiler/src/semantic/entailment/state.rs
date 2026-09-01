@@ -11,7 +11,9 @@ use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
-use super::super::model::{BindingId, CheckedBooleanOperation, CheckedValue, IntegerType};
+use super::super::model::{
+    BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedValue, IntegerType,
+};
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{LengthBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{NodePath, PreludeDeclarationId};
@@ -119,7 +121,9 @@ impl GoalNormalization {
         }
     }
 
-    /// Exact selected clause relations, for retained-proof verification.
+    /// Exact selected clause relations, exposed only to the independent
+    /// retained-derivation test oracle.
+    #[cfg(test)]
     pub(crate) fn clause_relations(&self, sign: GoalSign, clause: u32) -> Option<Vec<Relation>> {
         self.clauses(sign)
             .get(usize::try_from(clause).ok()?)?
@@ -137,15 +141,6 @@ impl GoalNormalization {
             })
             .collect()
     }
-
-    /// The unique conjunction basis for a signed goal, when that sign has
-    /// exactly one complete clause. Alternative clauses are deliberately not
-    /// collapsed into one claim component.
-    pub(crate) fn conjunctive_relations(&self, sign: GoalSign) -> Option<Vec<Relation>> {
-        (self.clauses(sign).len() == 1)
-            .then(|| self.clause_relations(sign, 0))
-            .flatten()
-    }
 }
 
 /// Dense function-local identity of one retained ENT-4 derivation node.
@@ -156,22 +151,10 @@ pub(crate) struct DerivationId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FlowEventId(pub(crate) u32);
 
-/// The proof view whose fact state produced one derivation node. The three
-/// views share the structural event stream, but their proof nodes remain
-/// deliberately distinct even when the same relation has the same parents.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum ProofView {
-    #[default]
-    Complete,
-    Unasserted,
-    S4Blinded,
-}
-
 /// Proof-producing phase of one event in the existing ENT flow.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum FlowEventKind {
     S1,
-    S3,
     S4,
     S5,
     S6,
@@ -179,7 +162,6 @@ pub(crate) enum FlowEventKind {
     S9,
     S10,
     S11,
-    ClaimReconstruction,
     Join,
     Snapshot,
     PostconditionEntryImageInvalidation,
@@ -197,8 +179,6 @@ pub(crate) enum FlowEventKind {
 pub(crate) struct FlowEvent {
     pub(crate) kind: FlowEventKind,
     pub(crate) node_path: Option<NodePath>,
-    /// Present only for one component-specific S3 source event.
-    pub(crate) claim_component: Option<u32>,
 }
 
 /// Canonical retained identity for one dense goal ID after analysis.
@@ -340,6 +320,21 @@ pub(crate) enum DerivationNode {
         goal: Option<GoalId>,
         parents: Vec<DerivationId>,
     },
+    /// One fixed affine consequence used by an integer-domain, bounds,
+    /// callable-boundary, or postcondition judgment. The optional premise
+    /// identifies the source loop invariant subtracted once; parents are the
+    /// L0 interval endpoints used by that subtraction. This is
+    /// ordinary compiler analysis metadata retained for diagnostics.
+    AffineConsequence {
+        /// Exact L0 conclusion when this affine step feeds an ordinary bound
+        /// or goal projection. General integer-domain and postcondition
+        /// targets need no L0 spelling and retain `None`. The uncommon
+        /// conclusion is held out of line so it does not widen every entry in
+        /// the multi-million-node derivation arena.
+        relation: Option<Box<Relation>>,
+        premise: Option<SourceAffineFactRef>,
+        parents: Vec<DerivationId>,
+    },
     /// One signed goal derived from a fixed normalization clause.
     /// The retained goal inventory makes the clause and every ordered parent
     /// relation independently verifiable.
@@ -466,12 +461,27 @@ pub(crate) enum DerivationNode {
     },
 }
 
+/// Stable function-local reference to one source-written invariant in its
+/// directly enclosing counted range.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct SourceLoopInvariantRef {
+    pub(crate) loop_id: CheckedLoopId,
+    pub(crate) source_ordinal: u32,
+}
+
+/// Stable function-local identity of one already-checked affine source fact.
+/// Later proof consumers retain which admitted source statement supplied
+/// their affine premise.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum SourceAffineFactRef {
+    LoopInvariant(SourceLoopInvariantRef),
+    SourceProof { source_ordinal: u32 },
+}
+
 /// The retained content of one [`DerivationNode::PostconditionCall`].
 ///
-/// `a0_parents` deliberately name complete-view nodes even when the node
-/// belongs to U or B; they are retained checked references, not cross-view
-/// derivation edges. `view_parents` are the exact same-view Gv premises used
-/// only by the Uq branch.
+/// `parents` are the exact caller-local proofs that establish the call's
+/// actual-operation domains and requirements in the current source context.
 ///
 /// It is held behind a pointer because [`DerivationNode`] lives in one flat
 /// arena, so the widest variant sets the width of every entry. This is by far
@@ -487,8 +497,7 @@ pub(crate) struct PostconditionCallDetail {
     /// relation operand order.
     pub(crate) substitutions: Vec<PostconditionCallSubstitution>,
     pub(crate) transfer_events: Vec<FlowEventId>,
-    pub(crate) a0_parents: Vec<DerivationId>,
-    pub(crate) view_parents: Vec<DerivationId>,
+    pub(crate) parents: Vec<DerivationId>,
 }
 
 /// The retained content of one [`DerivationNode::PostconditionDeliveryJoin`],
@@ -553,12 +562,13 @@ impl DerivationNode {
                 }
             }
             Self::PostconditionCall { detail } => {
-                for parent in &detail.view_parents {
+                for parent in &detail.parents {
                     visit(*parent);
                 }
             }
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
+            | Self::AffineConsequence { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => {
                 for parent in parents {
@@ -573,15 +583,9 @@ impl DerivationNode {
         }
     }
 
-    /// Every retained node reference, including S12's complete-view A0
-    /// evidence carried beside a U/B node without laundering its proof view.
+    /// Every retained node reference.
     fn for_each_retained_reference(&self, mut visit: impl FnMut(DerivationId)) {
         self.for_each_parent(&mut visit);
-        if let Self::PostconditionCall { detail } = self {
-            for parent in &detail.a0_parents {
-                visit(*parent);
-            }
-        }
     }
 
     #[cfg(test)]
@@ -618,11 +622,10 @@ impl DerivationNode {
             Self::PostconditionDeliveryJoin { detail } => detail.parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
             Self::IntegerDomain { parents, .. }
+            | Self::AffineConsequence { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
-            Self::PostconditionCall { detail } => {
-                detail.a0_parents.len() + detail.view_parents.len()
-            }
+            Self::PostconditionCall { detail } => detail.parents.len(),
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
@@ -675,6 +678,7 @@ impl DerivationNode {
             Self::PostconditionGive { .. } => 30,
             Self::PostconditionDeliveryJoin { .. } => 31,
             Self::IntegerDomain { .. } => 32,
+            Self::AffineConsequence { .. } => 33,
         }
     }
 }
@@ -687,26 +691,10 @@ pub(crate) struct DerivationMetrics {
     pub(crate) opaque_goal_roots: u32,
     pub(crate) projected_goal_roots: u32,
     pub(crate) contradiction_roots: u32,
-    pub(crate) claim_lifecycle_roots: u32,
-    pub(crate) claim_evidence_roots: u32,
     pub(crate) unique_nodes: u32,
     pub(crate) parent_edges: u32,
     pub(crate) maximum_depth: u32,
     pub(crate) retained_bytes: usize,
-}
-
-/// Which non-retained [CLM-2] lifecycle judgment owns a derivation root.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ClaimLifecycleKind {
-    Redundant,
-    Refuted,
-}
-
-/// Which successful CLM-3 U query retains one existing derivation root.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StrictDerivationRootKind {
-    Obligation,
-    CallGoal,
 }
 
 /// Which mandatory checked-program query owns a retained root.
@@ -714,10 +702,16 @@ pub(crate) enum StrictDerivationRootKind {
 pub(crate) enum DerivationRootKind {
     BodyEntryContradiction,
     BoundsObligation(u32),
+    /// A tighter numeric ceiling projected for one discharged OP-9
+    /// obligation. Present only when its derivation differs from the
+    /// obligation's admission root.
+    AllocationUpperBound(u32),
     IntegerDomainObligation(u32),
     CallGoal(u32),
     BitAndBound(u32),
     ShiftOneNonzero(u32),
+    UnsignedRemainderBound(u32),
+    SignedRemainderBound(u32),
     CountedS11 {
         occurrence: u32,
         atom: CountedRootAtom,
@@ -725,51 +719,27 @@ pub(crate) enum DerivationRootKind {
     PostconditionExit {
         relation_ordinal: u32,
         occurrence: u32,
-        view: ProofView,
     },
     PostconditionAggregate {
         relation_ordinal: u32,
-        view: ProofView,
     },
     PostconditionDirectResult {
         occurrence: u32,
-        view: ProofView,
     },
     PostconditionDirectMatch {
         occurrence: u32,
-        view: ProofView,
     },
     PostconditionDirectReceiver {
         occurrence: u32,
-        view: ProofView,
     },
     PostconditionSelectedReceiver {
         occurrence: u32,
-        view: ProofView,
     },
     PostconditionGive {
         occurrence: u32,
-        view: ProofView,
     },
     PostconditionDeliveryJoin {
         occurrence: u32,
-        view: ProofView,
-    },
-    ClaimLifecycle {
-        occurrence: u32,
-        kind: ClaimLifecycleKind,
-    },
-    ClaimComponent {
-        occurrence: u32,
-        component: u32,
-    },
-    ClaimReconstruction {
-        occurrence: u32,
-        direct: bool,
-    },
-    Strict {
-        occurrence: u32,
-        kind: StrictDerivationRootKind,
     },
 }
 
@@ -805,13 +775,9 @@ pub(crate) struct DerivationRoot {
 pub(crate) struct DerivationLedger {
     pub(crate) events: Vec<FlowEvent>,
     pub(crate) nodes: Vec<DerivationNode>,
-    /// Parallel to `nodes`: the explicit C/U/B identity of every retained
-    /// node. Keeping the tag beside the node leaves the established proof-step
-    /// representation compact while making view separation inspectable.
-    pub(crate) node_views: Vec<ProofView>,
     pub(crate) roots: Vec<DerivationRoot>,
     depths: Vec<u32>,
-    /// Parallel to `nodes`: whether the same-view parent ancestry reaches an
+    /// Parallel to `nodes`: whether the parent ancestry reaches an
     /// S12 call relation. Parent IDs precede children, so this is computed
     /// once at interning rather than rediscovered by every kill/join query.
     postcondition_call_ancestry: Vec<bool>,
@@ -819,59 +785,18 @@ pub(crate) struct DerivationLedger {
     pub(crate) metrics: DerivationMetrics,
 }
 
-/// Content-addressed accelerator for [`DerivationLedger::intern_for`].
-///
-/// The index is derived from the ledger's own nodes rather than ledger state:
-/// it holds one entry per interned node and answers exactly what a linear
-/// search of `nodes` and `node_views` would. Two ledgers with equal nodes are
-/// therefore equal whatever their indices hold, and a clone can leave the
-/// entries behind and rebuild them the first time the copy interns anything.
-/// That matters because [CLM-2] clones the whole concrete inventory once per
-/// counterfactual rerun and almost never interns into the copy: on
-/// `tests/programs/wfgrep.wf` copying this table was the single largest cost
-/// in the check.
-///
-/// Absence is therefore the only state the index has to represent, and it is
-/// read off the ledger rather than tracked: empty entries beside a non-empty
-/// arena means the index is owed a replay, whoever dropped it — a clone, a
-/// [`DerivationLedger::settle`], or the deliberate reset in
-/// [`DerivationLedger::finish_with_event_roots`]. A flag that distinguished
-/// those droppers would have to be set correctly by each of them and would
-/// mint a second identity for an already-held node wherever one got it wrong.
-///
-/// That third dropper is the one place where the derived rule deliberately
-/// answers differently from the flag it replaced. `79b29665` and `a8040b32`
-/// recorded the index as fresh after a finish, so interning a node the pruned
-/// arena still held minted a second identity for it; this ledger replays and
-/// returns the retained one. No compilation changes, because nothing reaches
-/// that path: every `intern_for` call site runs inside one `flow::run`, and
-/// every analysis starts from a default ledger, so no interning follows a
-/// `settle` or a `finish`.
-/// `interning_after_a_finish_keeps_the_retained_identity` holds the answer.
-///
-/// The entry keys the node's own hash rather than a copy of the node, and a
-/// hash already taken resolves by stepping to the next key. Every probe still
-/// compares the candidate against `nodes` and `node_views` before reporting a
-/// hit, so a colliding hash costs one extra step and never a wrong identity.
-/// Storing the node twice was the largest single allocation in the check: on
-/// `tests/programs/wfgrep.wf` one function inventory's indices held 2.3 M
-/// copies of a 208-byte node.
-#[derive(Debug, Default)]
+/// Content-addressed accelerator for [`DerivationLedger::intern`]. The index
+/// is ordinary live compiler state: cloning a ledger clones the index, while
+/// finalization discards it because no later semantic query may intern nodes.
+#[derive(Clone, Debug, Default)]
 struct InternIndex {
     entries: HashMap<u64, DerivationId, InternHashBuilder>,
 }
 
-impl Clone for InternIndex {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
-
 /// Hash builder for [`InternIndex`].
 ///
-/// The index is private to this module, is never iterated, and is rebuilt from
-/// the ledger's nodes whenever it is absent, so its hash function reaches no
-/// compiler output and no traversal order. The [ENT-4] closure interns one
+/// The index is private to this module and is never iterated, so its hash
+/// function reaches no compiler output and no traversal order. The [ENT-4] closure interns one
 /// candidate proof step for every accepted matrix cell, which made hashing
 /// whole [`DerivationNode`] values with the default `SipHash` the largest
 /// single remaining cost of checking `tests/programs/wfgrep.wf`.
@@ -957,32 +882,12 @@ impl DerivationLedger {
             u32::try_from(self.events.len())
                 .expect("ENT flow event inventory exceeds the u32 identity space"),
         );
-        self.events.push(FlowEvent {
-            kind,
-            node_path,
-            claim_component: None,
-        });
+        self.events.push(FlowEvent { kind, node_path });
         id
     }
 
-    pub(crate) fn claim_event(&mut self, node_path: NodePath, component: u32) -> FlowEventId {
-        let id = FlowEventId(
-            u32::try_from(self.events.len())
-                .expect("ENT flow event inventory exceeds the u32 identity space"),
-        );
-        self.events.push(FlowEvent {
-            kind: FlowEventKind::S3,
-            node_path: Some(node_path),
-            claim_component: Some(component),
-        });
-        id
-    }
-
-    pub(crate) fn intern_for(&mut self, view: ProofView, node: DerivationNode) -> DerivationId {
-        if self.interned.entries.is_empty() && !self.nodes.is_empty() {
-            self.rebuild_intern_index();
-        }
-        let key = match self.probe_intern(view, &node) {
+    pub(crate) fn intern(&mut self, node: DerivationNode) -> DerivationId {
+        let key = match self.probe_intern(&node) {
             Ok(id) => return id,
             Err(key) => key,
         };
@@ -991,10 +896,8 @@ impl DerivationLedger {
                 .expect("ENT derivation inventory exceeds the u32 identity space"),
         );
         let mut parents_precede = true;
-        let mut parents_share_view = true;
         node.for_each_parent(|parent| {
             parents_precede &= parent.0 < id.0;
-            parents_share_view &= self.node_views[parent.0 as usize] == view;
         });
         node.for_each_retained_reference(|parent| {
             parents_precede &= parent.0 < id.0;
@@ -1003,19 +906,6 @@ impl DerivationLedger {
             parents_precede,
             "ENT derivation parents must precede their child"
         );
-        assert!(
-            parents_share_view,
-            "ENT derivation parents must belong to the child's proof view"
-        );
-        if let DerivationNode::PostconditionCall { detail } = &node {
-            assert!(
-                detail
-                    .a0_parents
-                    .iter()
-                    .all(|parent| { self.node_views[parent.0 as usize] == ProofView::Complete }),
-                "S12 A0 references must name complete-view proof nodes"
-            );
-        }
         let depth = node
             .maximum_parent_depth(&self.depths)
             .map_or(0, |maximum| maximum.saturating_add(1));
@@ -1027,7 +917,6 @@ impl DerivationLedger {
             });
         }
         self.nodes.push(node);
-        self.node_views.push(view);
         self.depths.push(depth);
         self.postcondition_call_ancestry
             .push(postcondition_call_ancestry);
@@ -1036,12 +925,9 @@ impl DerivationLedger {
     }
 
     /// The key one interned identity is filed under.
-    fn intern_key(view: ProofView, node: &DerivationNode) -> u64 {
-        use std::hash::{BuildHasher, Hash, Hasher};
-        let mut hasher = InternHashBuilder.build_hasher();
-        view.hash(&mut hasher);
-        node.hash(&mut hasher);
-        hasher.finish()
+    fn intern_key(node: &DerivationNode) -> u64 {
+        use std::hash::BuildHasher;
+        InternHashBuilder.hash_one(node)
     }
 
     /// The identity already filed for this exact node, or the free key it
@@ -1052,50 +938,16 @@ impl DerivationLedger {
     /// separates them by one step instead of losing one of them. Nothing is
     /// ever removed from the index — it is only rebuilt or cleared whole — so
     /// a free key always ends the walk.
-    fn probe_intern(&self, view: ProofView, node: &DerivationNode) -> Result<DerivationId, u64> {
-        let mut key = Self::intern_key(view, node);
+    fn probe_intern(&self, node: &DerivationNode) -> Result<DerivationId, u64> {
+        let mut key = Self::intern_key(node);
         while let Some(&id) = self.interned.entries.get(&key) {
             let index = id.0 as usize;
-            if self.node_views[index] == view && self.nodes[index] == *node {
+            if self.nodes[index] == *node {
                 return Ok(id);
             }
             key = key.wrapping_add(1);
         }
         Err(key)
-    }
-
-    /// Restores the index a clone left behind.
-    ///
-    /// Replaying the ledger's own nodes in identity order reproduces the same
-    /// map the interning sequence built: every node was inserted under its own
-    /// identity, and a node identity repeated after an index reset kept the
-    /// later entry.
-    fn rebuild_intern_index(&mut self) {
-        let mut entries = std::mem::take(&mut self.interned.entries);
-        entries.clear();
-        entries.reserve(self.nodes.len());
-        for (index, node) in self.nodes.iter().enumerate() {
-            let id = DerivationId(
-                u32::try_from(index)
-                    .expect("ENT derivation inventory exceeds the u32 identity space"),
-            );
-            let view = self.node_views[index];
-            let mut key = Self::intern_key(view, node);
-            loop {
-                match entries.get(&key) {
-                    None => break,
-                    Some(&existing) => {
-                        let existing = existing.0 as usize;
-                        if self.node_views[existing] == view && self.nodes[existing] == *node {
-                            break;
-                        }
-                        key = key.wrapping_add(1);
-                    }
-                }
-            }
-            entries.insert(key, id);
-        }
-        self.interned.entries = entries;
     }
 
     pub(crate) fn depth(&self, id: DerivationId) -> u32 {
@@ -1106,130 +958,8 @@ impl DerivationLedger {
         node_event(&self.nodes[id.0 as usize])
     }
 
-    /// Returns the exact retained proof nodes under `root` whose own event has
-    /// the requested kind. The traversal follows the already-retained proof
-    /// references and performs no closure or semantic reconstruction.
-    #[cfg(test)]
-    pub(crate) fn event_premises(
-        &self,
-        root: DerivationId,
-        kind: FlowEventKind,
-    ) -> Vec<(NodePath, DerivationId)> {
-        let mut seen = vec![false; self.nodes.len()];
-        let mut stack = vec![root];
-        let mut premises = Vec::new();
-        while let Some(id) = stack.pop() {
-            let index = id.0 as usize;
-            if seen[index] {
-                continue;
-            }
-            seen[index] = true;
-            let node = &self.nodes[index];
-            if let Some(event) =
-                node_event(node).and_then(|event| self.events.get(event.0 as usize))
-                && event.kind == kind
-                && let Some(node_path) = &event.node_path
-            {
-                premises.push((node_path.clone(), id));
-            }
-            node.for_each_retained_reference(|parent| stack.push(parent));
-        }
-        premises.sort_by_key(|(_, id)| *id);
-        premises
-    }
-
-    /// Returns the exact component-specific S3 premises below one retained
-    /// terminal root. Claim evidence and counterfactual reports use the
-    /// component ordinal as authority; a path-only S3 inventory is not
-    /// precise enough when one occurrence contributes multiple facts.
-    pub(crate) fn claim_component_premises(
-        &self,
-        root: DerivationId,
-    ) -> Option<Vec<(NodePath, u32, DerivationId)>> {
-        let mut seen = vec![false; self.nodes.len()];
-        let mut stack = vec![root];
-        let mut premises = Vec::new();
-        while let Some(id) = stack.pop() {
-            let index = id.0 as usize;
-            if seen[index] {
-                continue;
-            }
-            seen[index] = true;
-            let node = &self.nodes[index];
-            if let Some(event) =
-                node_event(node).and_then(|event| self.events.get(event.0 as usize))
-                && event.kind == FlowEventKind::S3
-            {
-                let (Some(node_path), Some(component)) = (&event.node_path, event.claim_component)
-                else {
-                    return None;
-                };
-                premises.push((node_path.clone(), component, id));
-            }
-            node.for_each_retained_reference(|parent| stack.push(parent));
-        }
-        premises.sort_by_key(|(_, component, id)| (*component, *id));
-        Some(premises)
-    }
-
-    /// Whether one retained proof reaches the selected component-specific S3
-    /// authority. `component == None` matches any component of the occurrence.
-    pub(crate) fn reaches_claim_component(
-        &self,
-        root: DerivationId,
-        node_path: &NodePath,
-        component: Option<u32>,
-    ) -> bool {
-        let mut seen = vec![false; self.nodes.len()];
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            let index = id.0 as usize;
-            if seen[index] {
-                continue;
-            }
-            seen[index] = true;
-            let node = &self.nodes[index];
-            if let Some(event) = node_event(node).and_then(|id| self.events.get(id.0 as usize))
-                && event.kind == FlowEventKind::S3
-                && event.node_path.as_ref() == Some(node_path)
-                && event.claim_component.is_some()
-                && component.is_none_or(|component| event.claim_component == Some(component))
-            {
-                return true;
-            }
-            node.for_each_retained_reference(|parent| stack.push(parent));
-        }
-        false
-    }
-
-    /// CLM-2 consumers must not succeed through ex-falso, including a
-    /// contradictory predecessor hidden below a non-contradictory join.
-    pub(crate) fn is_non_explosive(&self, root: DerivationId) -> bool {
-        let mut seen = vec![false; self.nodes.len()];
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            let index = id.0 as usize;
-            if seen[index] {
-                continue;
-            }
-            seen[index] = true;
-            let node = &self.nodes[index];
-            if matches!(
-                node,
-                DerivationNode::L0Contradiction { .. }
-                    | DerivationNode::GoalContradiction { .. }
-                    | DerivationNode::JoinContradiction { .. }
-                    | DerivationNode::MaterializedContradiction { .. }
-            ) {
-                return false;
-            }
-            node.for_each_retained_reference(|parent| stack.push(parent));
-        }
-        true
-    }
-
-    /// Whether this proof's same-view derivation ancestry consumes an S12
-    /// call relation. Complete-view A0 references are execution premises, not
+    /// Whether this proof's derivation ancestry consumes an S12 call
+    /// relation. A0 references are execution premises, not
     /// live value support, and therefore are deliberately not traversed.
     pub(crate) fn depends_on_postcondition_call(&self, id: DerivationId) -> bool {
         self.postcondition_call_ancestry[id.0 as usize]
@@ -1259,6 +989,13 @@ impl DerivationLedger {
                 | DerivationNode::PostconditionSelectedReceiver { .. }
                 | DerivationNode::PostconditionGive { .. }
                 | DerivationNode::PostconditionDeliveryJoin { .. }
+        );
+        depends |= matches!(
+            node,
+            DerivationNode::AffineConsequence {
+                premise: Some(_),
+                ..
+            }
         );
         if !depends
             && !matches!(
@@ -1298,14 +1035,9 @@ impl DerivationLedger {
 
     /// Releases the working storage of a settled analysis.
     ///
-    /// The arena is built by pushing, so it ends a run holding roughly half
-    /// again the storage its nodes occupy, beside an interning index it no
-    /// longer has anything to add to. A candidate ledger then survives every
-    /// [CLM-2] rerun and the whole program batch, so both are paid for many
-    /// times over. Neither is observable: the index is derived from the nodes,
-    /// so a later interning replays it, and every vector released here is one
-    /// `finish_with_event_roots` rebuilds at its retained length before the
-    /// [DIAG-2] byte metric reads its capacity.
+    /// The arena is built by pushing, so it ends a run with spare capacity and
+    /// an interning index that no later semantic query uses. Finalization
+    /// releases both without reconstructing them.
     ///
     /// `roots` is deliberately not released. It is the one vector that
     /// survives `finish_with_event_roots` in place — that pass rewrites each
@@ -1322,7 +1054,6 @@ impl DerivationLedger {
     pub(crate) fn settle(&mut self) {
         self.events.shrink_to_fit();
         self.nodes.shrink_to_fit();
-        self.node_views.shrink_to_fit();
         self.depths.shrink_to_fit();
         self.postcondition_call_ancestry.shrink_to_fit();
         self.interned.entries = HashMap::default();
@@ -1352,7 +1083,6 @@ impl DerivationLedger {
         let mut remap = vec![None; old_len];
         let retained = keep.iter().filter(|kept| **kept).count();
         let mut nodes = Vec::with_capacity(retained);
-        let mut node_views = Vec::with_capacity(retained);
         for (index, node) in self.nodes.iter().enumerate() {
             if keep[index] {
                 let id = DerivationId(
@@ -1361,7 +1091,6 @@ impl DerivationLedger {
                 );
                 remap[index] = Some(id);
                 nodes.push(node.clone());
-                node_views.push(self.node_views[index]);
             }
         }
         for node in &mut nodes {
@@ -1371,7 +1100,6 @@ impl DerivationLedger {
             root.node = remap[root.node.0 as usize].expect("root retained");
         }
         self.nodes = nodes;
-        self.node_views = node_views;
         let mut depths = Vec::with_capacity(self.nodes.len());
         let mut postcondition_call_ancestry = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
@@ -1392,7 +1120,7 @@ impl DerivationLedger {
         self.interned.entries.clear();
         self.interned.entries.shrink_to_fit();
         let event_remap = self.prune_events(event_roots);
-        self.validate_view_integrity();
+        self.validate_integrity();
         self.metrics = self.measure();
         FinishRemap {
             nodes: remap,
@@ -1400,19 +1128,15 @@ impl DerivationLedger {
         }
     }
 
-    fn validate_view_integrity(&self) {
-        assert_eq!(self.node_views.len(), self.nodes.len());
+    fn validate_integrity(&self) {
         assert_eq!(self.postcondition_call_ancestry.len(), self.nodes.len());
         for (index, node) in self.nodes.iter().enumerate() {
-            let view = self.node_views[index];
             node.for_each_parent(|parent| {
                 assert!(parent.0 < index as u32);
-                assert_eq!(self.node_views[parent.0 as usize], view);
             });
             if let DerivationNode::PostconditionCall { detail } = node {
-                for parent in &detail.a0_parents {
+                for parent in &detail.parents {
                     assert!(parent.0 < index as u32);
-                    assert_eq!(self.node_views[parent.0 as usize], ProofView::Complete);
                 }
             }
         }
@@ -1450,18 +1174,6 @@ impl DerivationLedger {
     fn measure(&self) -> DerivationMetrics {
         let mut metrics = DerivationMetrics::default();
         for root in &self.roots {
-            match root.kind {
-                DerivationRootKind::ClaimLifecycle { .. } => {
-                    metrics.claim_lifecycle_roots += 1;
-                    continue;
-                }
-                DerivationRootKind::ClaimComponent { .. }
-                | DerivationRootKind::ClaimReconstruction { .. } => {
-                    metrics.claim_evidence_roots += 1;
-                    continue;
-                }
-                _ => {}
-            }
             match &self.nodes[root.node.0 as usize] {
                 DerivationNode::SourceGoal { .. }
                 | DerivationNode::JoinGoal { .. }
@@ -1483,7 +1195,6 @@ impl DerivationLedger {
             .expect("retained ENT parent edges exceed the u32 metric space");
         metrics.maximum_depth = self.depths.iter().copied().max().unwrap_or(0);
         metrics.retained_bytes = self.nodes.capacity() * size_of::<DerivationNode>()
-            + self.node_views.capacity() * size_of::<ProofView>()
             + self.events.capacity() * size_of::<FlowEvent>()
             + self.roots.capacity() * size_of::<DerivationRoot>()
             + self.depths.capacity() * size_of::<u32>()
@@ -1505,6 +1216,12 @@ impl DerivationLedger {
                     | DerivationNode::GoalNormalization { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
+                    DerivationNode::AffineConsequence {
+                        relation, parents, ..
+                    } => {
+                        parents.capacity() * size_of::<DerivationId>()
+                            + relation.as_ref().map_or(0, |_| size_of::<Relation>())
+                    }
                     DerivationNode::PostconditionDeliveryJoin { detail } => {
                         size_of::<PostconditionDeliveryJoinDetail>()
                             + detail.parents.capacity() * size_of::<JoinParent>()
@@ -1522,8 +1239,7 @@ impl DerivationLedger {
                                 })
                                 .sum::<usize>()
                             + detail.transfer_events.capacity() * size_of::<FlowEventId>()
-                            + detail.a0_parents.capacity() * size_of::<DerivationId>()
-                            + detail.view_parents.capacity() * size_of::<DerivationId>()
+                            + detail.parents.capacity() * size_of::<DerivationId>()
                     }
                     _ => 0,
                 })
@@ -1617,6 +1333,24 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                     .map(|parent| parent.0)
             })
         }
+        DerivationNode::AffineConsequence {
+            premise, parents, ..
+        } => {
+            let fixed = match premise {
+                Some(SourceAffineFactRef::LoopInvariant(premise)) => {
+                    [1, premise.loop_id.0, premise.source_ordinal]
+                }
+                Some(SourceAffineFactRef::SourceProof { source_ordinal }) => {
+                    [2, *source_ordinal, 0]
+                }
+                None => [0, 0, 0],
+            };
+            fixed.get(index).copied().or_else(|| {
+                parents
+                    .get(index.checked_sub(fixed.len())?)
+                    .map(|parent| parent.0)
+            })
+        }
         DerivationNode::GoalNormalization {
             goal,
             sign,
@@ -1680,30 +1414,20 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::PostconditionCall { detail } => {
             let PostconditionCallDetail {
                 summary,
-                a0_parents,
-                view_parents,
+                parents,
                 transfer_events,
                 ..
             } = detail.as_ref();
-            let fixed = [
-                summary.summary.function.0,
-                summary.summary.component,
-                summary.view as u32,
-            ];
+            let fixed = [summary.summary.function.0, summary.summary.component];
             fixed
                 .get(index)
                 .copied()
                 .or_else(|| {
                     let index = index.checked_sub(fixed.len())?;
-                    a0_parents.get(index).map(|parent| parent.0)
+                    parents.get(index).map(|parent| parent.0)
                 })
                 .or_else(|| {
-                    let index = index.checked_sub(fixed.len() + a0_parents.len())?;
-                    view_parents.get(index).map(|parent| parent.0)
-                })
-                .or_else(|| {
-                    let index =
-                        index.checked_sub(fixed.len() + a0_parents.len() + view_parents.len())?;
+                    let index = index.checked_sub(fixed.len() + parents.len())?;
                     transfer_events.get(index).map(|event| event.0)
                 })
         }
@@ -1864,6 +1588,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             remap_id(negative, remap);
         }
         DerivationNode::IntegerDomain { parents, .. }
+        | DerivationNode::AffineConsequence { parents, .. }
         | DerivationNode::GoalNormalization { parents, .. }
         | DerivationNode::BooleanIntroduction { parents, .. } => {
             for parent in parents {
@@ -1903,12 +1628,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             }
         }
         DerivationNode::PostconditionCall { detail } => {
-            let PostconditionCallDetail {
-                a0_parents,
-                view_parents,
-                ..
-            } = detail.as_mut();
-            for parent in a0_parents.iter_mut().chain(view_parents) {
+            for parent in &mut detail.parents {
                 remap_id(parent, remap);
             }
         }
@@ -2078,7 +1798,6 @@ pub(crate) struct OutcomeFact {
 /// One live fact state on the structural flow [ENT-3].
 #[derive(Clone, Debug)]
 pub(crate) struct FactState {
-    view: ProofView,
     /// Term-universe size for which `bounds` and `distinct` already contain
     /// the complete ENT-4 relation closure. S11 materialization and ENT-5
     /// joins produce such states. Endpoint kills preserve closure; adding a
@@ -2120,20 +1839,19 @@ pub(crate) struct FactState {
     /// The binding's own direct value goal is intentionally separate.
     pub(crate) goal_origins: HashMap<BindingId, GoalId>,
     /// Bool value initializers with two or more distinct live source goals.
-    /// Such a receiver has no unique claim contribution expansion [CLM-2].
+    /// Such a receiver has no unique source-goal expansion.
     pub(crate) ambiguous_goal_origins: HashSet<BindingId>,
 }
 
 impl Default for FactState {
     fn default() -> Self {
-        Self::for_view(ProofView::Complete)
+        Self::new()
     }
 }
 
 impl FactState {
-    pub(crate) fn for_view(view: ProofView) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            view,
             closed_term_count: None,
             all_derivable: false,
             contradiction: None,
@@ -2152,12 +1870,11 @@ impl FactState {
         }
     }
 
-    pub(crate) fn contradictory_for_view(view: ProofView, contradiction: DerivationId) -> Self {
+    pub(crate) fn contradictory(contradiction: DerivationId) -> Self {
         Self {
-            view,
             all_derivable: true,
             contradiction: Some(contradiction),
-            ..Self::for_view(view)
+            ..Self::new()
         }
     }
 
@@ -2175,16 +1892,13 @@ impl FactState {
         event: FlowEventId,
     ) -> DerivationId {
         let relation = Relation::Bound { left, right, bound };
-        let proof = ledger.intern_for(
-            self.view,
-            DerivationNode::SourceBound {
-                relation,
-                left,
-                right,
-                bound,
-                event,
-            },
-        );
+        let proof = ledger.intern(DerivationNode::SourceBound {
+            relation,
+            left,
+            right,
+            bound,
+            event,
+        });
         if !self.all_derivable {
             self.add_bound(left, right, bound, proof, ledger);
         }
@@ -2224,27 +1938,21 @@ impl FactState {
                 self.establish_bound_with_proof(*left, *right, *bound, ledger, event);
             }
             Relation::Equal { left, right } => {
-                let forward = ledger.intern_for(
-                    self.view,
-                    DerivationNode::SourceBound {
-                        relation: relation.clone(),
-                        left: *left,
-                        right: *right,
-                        bound: 0,
-                        event,
-                    },
-                );
+                let forward = ledger.intern(DerivationNode::SourceBound {
+                    relation: relation.clone(),
+                    left: *left,
+                    right: *right,
+                    bound: 0,
+                    event,
+                });
                 self.add_bound(*left, *right, 0, forward, ledger);
-                let reverse = ledger.intern_for(
-                    self.view,
-                    DerivationNode::SourceBound {
-                        relation: relation.clone(),
-                        left: *right,
-                        right: *left,
-                        bound: 0,
-                        event,
-                    },
-                );
+                let reverse = ledger.intern(DerivationNode::SourceBound {
+                    relation: relation.clone(),
+                    left: *right,
+                    right: *left,
+                    bound: 0,
+                    event,
+                });
                 self.add_bound(*right, *left, 0, reverse, ledger);
             }
             Relation::Distinct { left, right } => {
@@ -2263,7 +1971,6 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
-        assert_eq!(ledger.node_views[proof.0 as usize], self.view);
         if self.all_derivable {
             return;
         }
@@ -2332,40 +2039,13 @@ impl FactState {
         event: FlowEventId,
     ) -> DerivationId {
         let fact = (goal, sign);
-        let proof = ledger.intern_for(self.view, DerivationNode::SourceGoal { goal, sign, event });
+        let proof = ledger.intern(DerivationNode::SourceGoal { goal, sign, event });
         if !self.all_derivable
             && (self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]))
         {
             self.opaque_proofs.insert(fact, proof);
         }
         proof
-    }
-
-    pub(crate) fn establish_goal_from_proof(
-        &mut self,
-        goal: GoalId,
-        sign: GoalSign,
-        parent: DerivationId,
-        ledger: &mut DerivationLedger,
-        event: FlowEventId,
-    ) -> Option<DerivationId> {
-        if self.all_derivable {
-            return None;
-        }
-        let fact = (goal, sign);
-        let proof = ledger.intern_for(
-            self.view,
-            DerivationNode::MaterializedGoal {
-                goal,
-                sign,
-                event,
-                parent,
-            },
-        );
-        if self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]) {
-            self.opaque_proofs.insert(fact, proof);
-        }
-        Some(proof)
     }
 
     pub(crate) fn establish_distinct_with_proof(
@@ -2376,22 +2056,15 @@ impl FactState {
         event: FlowEventId,
     ) -> DerivationId {
         let pair = ordered(left, right);
-        let proof = ledger.intern_for(
-            self.view,
-            DerivationNode::SourceDistinct {
-                left: pair.0,
-                right: pair.1,
-                event,
-            },
-        );
+        let proof = ledger.intern(DerivationNode::SourceDistinct {
+            left: pair.0,
+            right: pair.1,
+            event,
+        });
         if !self.all_derivable {
             self.add_distinct_candidate(pair, proof, ledger);
         }
         proof
-    }
-
-    pub(crate) const fn proof_view(&self) -> ProofView {
-        self.view
     }
 
     fn selected_relations_depend_on_postcondition_call(&self, ledger: &DerivationLedger) -> bool {
@@ -2602,7 +2275,6 @@ fn ordered(left: TermId, right: TermId) -> (TermId, TermId) {
 /// The closed fact state at one point: the [ENT-4] least fixed point over the
 /// live facts and the implicit facts of every registered term.
 pub(crate) struct ClosedState {
-    view: ProofView,
     all_derivable: bool,
     contradiction: Option<DerivationId>,
     bounds: HashMap<(TermId, TermId), i128>,
@@ -2629,6 +2301,15 @@ impl ClosedState {
         self.bounds
             .get(&(left, right))
             .is_some_and(|held| *held <= bound)
+    }
+
+    /// Strongest closed difference bound for interval projection.  Callers
+    /// must handle a contradictory state separately because it has no single
+    /// meaningful numeric interval.
+    pub(crate) fn tight_bound(&self, left: TermId, right: TermId) -> Option<i128> {
+        (!self.all_derivable)
+            .then(|| self.bounds.get(&(left, right)).copied())
+            .flatten()
     }
 
     /// A state is contradictory when `t - t <= -1` is derivable for any term;
@@ -2823,16 +2504,13 @@ impl ClosedState {
         if held == requested {
             Some(parent)
         } else {
-            Some(ledger.intern_for(
-                self.view,
-                DerivationNode::SubsumedBound {
-                    left,
-                    right,
-                    held,
-                    requested,
-                    parent,
-                },
-            ))
+            Some(ledger.intern(DerivationNode::SubsumedBound {
+                left,
+                right,
+                held,
+                requested,
+                parent,
+            }))
         }
     }
 
@@ -2851,29 +2529,23 @@ impl ClosedState {
             Relation::Equal { left, right } => {
                 let forward = self.bound_proof(*left, *right, 0, ledger)?;
                 let reverse = self.bound_proof(*right, *left, 0, ledger)?;
-                Some(ledger.intern_for(
-                    self.view,
-                    DerivationNode::Equality {
-                        left: *left,
-                        right: *right,
-                        forward,
-                        reverse,
-                    },
-                ))
+                Some(ledger.intern(DerivationNode::Equality {
+                    left: *left,
+                    right: *right,
+                    forward,
+                    reverse,
+                }))
             }
             Relation::Distinct { left, right } => {
                 let pair = ordered(*left, *right);
                 let mut best = self.distinct_proofs.get(&pair).copied();
                 for (from, to) in [(*left, *right), (*right, *left)] {
                     if let Some(parent) = self.bound_proof(from, to, -1, ledger) {
-                        let candidate = ledger.intern_for(
-                            self.view,
-                            DerivationNode::DisequalityFromStrictBound {
-                                left: pair.0,
-                                right: pair.1,
-                                parent,
-                            },
-                        );
+                        let candidate = ledger.intern(DerivationNode::DisequalityFromStrictBound {
+                            left: pair.0,
+                            right: pair.1,
+                            parent,
+                        });
                         if best.is_none_or(|current| ledger.better(candidate, current)) {
                             best = Some(candidate);
                         }
@@ -2899,15 +2571,12 @@ impl ClosedState {
             relation = relation.negated();
         }
         let parent = self.relation_proof(&relation, ledger)?;
-        Some(ledger.intern_for(
-            self.view,
-            DerivationNode::GoalProjection {
-                goal,
-                sign,
-                relation,
-                parent,
-            },
-        ))
+        Some(ledger.intern(DerivationNode::GoalProjection {
+            goal,
+            sign,
+            relation,
+            parent,
+        }))
     }
 
     pub(crate) fn normalization_proof(
@@ -2940,18 +2609,13 @@ impl ClosedState {
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(parents) = parents {
-                return Some(
-                    ledger.intern_for(
-                        self.view,
-                        DerivationNode::GoalNormalization {
-                            goal,
-                            sign,
-                            clause: u32::try_from(clause)
-                                .expect("goal-normalization clause count exceeds u32"),
-                            parents,
-                        },
-                    ),
-                );
+                return Some(ledger.intern(DerivationNode::GoalNormalization {
+                    goal,
+                    sign,
+                    clause:
+                        u32::try_from(clause).expect("goal-normalization clause count exceeds u32"),
+                    parents,
+                }));
             }
         }
         None
@@ -2986,9 +2650,7 @@ impl ClosedState {
             return direct;
         }
         if literal_goal_sign(goals.expression(goal)).is_some_and(|truth| truth == sign) {
-            return Some(
-                ledger.intern_for(self.view, DerivationNode::BooleanLiteral { goal, sign }),
-            );
+            return Some(ledger.intern(DerivationNode::BooleanLiteral { goal, sign }));
         }
         if !visiting.insert((goal, sign)) {
             return None;
@@ -3058,14 +2720,11 @@ impl ClosedState {
                     (CheckedBooleanOperation::ExclusiveOr, _) => None,
                 };
                 parents.map(|parents| {
-                    ledger.intern_for(
-                        self.view,
-                        DerivationNode::BooleanIntroduction {
-                            goal,
-                            sign,
-                            parents,
-                        },
-                    )
+                    ledger.intern(DerivationNode::BooleanIntroduction {
+                        goal,
+                        sign,
+                        parents,
+                    })
                 })
             }
             GoalExpression::Datum(_) | GoalExpression::Operation { .. } => None,
@@ -3101,9 +2760,7 @@ pub(crate) fn close(
 /// Exact contradiction query without constructing a derivation DAG.
 ///
 /// Kill handling needs to know whether contradiction must become absorbing,
-/// but an accepted path almost always answers no.  Building every canonical
-/// transitive proof merely to obtain that Boolean answer dominated CLM-2's
-/// fresh whole-program reruns.  This computes the same finite ENT-4 value
+/// but an accepted path almost always answers no. This computes the same finite ENT-4 value
 /// closure in a dense matrix, including disequality strengthening and finite
 /// goal introduction; callers construct the ordinary proof closure only for
 /// the exceptional contradictory result.
@@ -3249,7 +2906,6 @@ pub(crate) fn contradiction_without_proofs(
         }
     }
     let closed = ClosedState {
-        view: state.view,
         all_derivable: false,
         contradiction: None,
         bounds: closed_bounds,
@@ -3288,7 +2944,6 @@ fn close_with_excluded_term(
 ) -> ClosedState {
     if state.all_derivable {
         return ClosedState {
-            view: state.view,
             all_derivable: true,
             contradiction: state.contradiction,
             bounds: HashMap::new(),
@@ -3305,7 +2960,6 @@ fn close_with_excluded_term(
     if excluded.is_none() && state.closed_term_count == Some(term_count_id) {
         return close_goal_contradictions(
             ClosedState {
-                view: state.view,
                 all_derivable: false,
                 contradiction: None,
                 bounds: state.bounds.clone(),
@@ -3346,7 +3000,6 @@ fn close_with_excluded_term(
                 kind,
             };
             insert_closed_candidate(
-                state.view,
                 &mut dense_bounds,
                 ClosedBoundCandidate {
                     left,
@@ -3475,7 +3128,6 @@ fn close_with_excluded_term(
                         second: second_proof,
                     };
                     changed |= insert_closed_candidate(
-                        state.view,
                         &mut dense_bounds,
                         ClosedBoundCandidate {
                             left,
@@ -3514,7 +3166,7 @@ fn close_with_excluded_term(
                     .get(&pair)
                     .is_none_or(|current| ledger.candidate_better(&node, *current));
                 if accepted {
-                    let proof = ledger.intern_for(state.view, node);
+                    let proof = ledger.intern(node);
                     distinct.insert(pair);
                     distinct_proofs.insert(pair, proof);
                     changed = true;
@@ -3534,7 +3186,6 @@ fn close_with_excluded_term(
                         distinct: distinct_proofs[&ordered(left, right)],
                     };
                     changed |= insert_closed_candidate(
-                        state.view,
                         &mut dense_bounds,
                         ClosedBoundCandidate {
                             left: from,
@@ -3557,10 +3208,7 @@ fn close_with_excluded_term(
             if bound >= 0 {
                 continue;
             }
-            let candidate = ledger.intern_for(
-                state.view,
-                DerivationNode::L0Contradiction { term: *id, parent },
-            );
+            let candidate = ledger.intern(DerivationNode::L0Contradiction { term: *id, parent });
             if contradiction.is_none_or(|current| ledger.better(candidate, current)) {
                 contradiction = Some(candidate);
             }
@@ -3568,7 +3216,6 @@ fn close_with_excluded_term(
     }
     let (bounds, bound_proofs) = dense_bounds.into_maps();
     let closed = ClosedState {
-        view: state.view,
         all_derivable: contradiction.is_some(),
         contradiction,
         bounds,
@@ -3596,14 +3243,11 @@ fn close_goal_contradictions(
             let positive = closed.goal_proof(goal, GoalSign::Positive, goals, ledger);
             let negative = closed.goal_proof(goal, GoalSign::Negative, goals, ledger);
             if let (Some(positive), Some(negative)) = (positive, negative) {
-                let candidate = ledger.intern_for(
-                    closed.view,
-                    DerivationNode::GoalContradiction {
-                        goal,
-                        positive,
-                        negative,
-                    },
-                );
+                let candidate = ledger.intern(DerivationNode::GoalContradiction {
+                    goal,
+                    positive,
+                    negative,
+                });
                 if closed
                     .contradiction
                     .is_none_or(|current| ledger.better(candidate, current))
@@ -3720,8 +3364,7 @@ struct ClosedBoundCandidate {
 ///
 /// `TermId` is a dense function-local identity.  The closed result remains in
 /// the long-lived maps above, but using tuple-key hash tables for every probe
-/// in the transitivity cube made each fresh CLM-2 counterfactual spend most of
-/// its time hashing the same two integers.  This index preserves the existing
+/// in the transitivity cube repeatedly hashes the same two integers. This index preserves the existing
 /// TermId traversal and proof-selection order; it is updated only alongside
 /// the authoritative maps and is discarded when this one closure finishes.
 struct DenseClosureBounds {
@@ -3834,7 +3477,6 @@ impl DenseClosureBounds {
 }
 
 fn insert_closed_candidate(
-    view: ProofView,
     dense: &mut DenseClosureBounds,
     candidate: ClosedBoundCandidate,
     ledger: &mut DerivationLedger,
@@ -3854,7 +3496,7 @@ fn insert_closed_candidate(
     if !accepted {
         return false;
     }
-    let proof = ledger.intern_for(view, node);
+    let proof = ledger.intern(node);
     dense.set(left, right, bound, proof);
     true
 }
@@ -3876,15 +3518,11 @@ pub(crate) fn materialize_closure_at(
     let closed = close(state, terms, goals, ledger);
     if closed.all_derivable {
         let parent = closed.contradiction.expect("contradictory closure proof");
-        let proof = ledger.intern_for(
-            state.view,
-            DerivationNode::MaterializedContradiction { event, parent },
-        );
+        let proof = ledger.intern(DerivationNode::MaterializedContradiction { event, parent });
         return FactState {
-            view: state.view,
             all_derivable: true,
             contradiction: Some(proof),
-            ..FactState::for_view(state.view)
+            ..FactState::new()
         };
     }
     let needs_ordinary_fallback = closed.selected_relations_depend_on_postcondition_call(ledger);
@@ -3893,46 +3531,37 @@ pub(crate) fn materialize_closure_at(
     bound_keys.sort_unstable();
     for (left, right) in bound_keys {
         let bound = closed.bounds[&(left, right)];
-        let proof = ledger.intern_for(
-            state.view,
-            DerivationNode::MaterializedBound {
-                left,
-                right,
-                bound,
-                event,
-                parent: closed.bound_proofs[&(left, right)],
-            },
-        );
+        let proof = ledger.intern(DerivationNode::MaterializedBound {
+            left,
+            right,
+            bound,
+            event,
+            parent: closed.bound_proofs[&(left, right)],
+        });
         bound_proofs.insert((left, right), proof);
     }
     let mut distinct_proofs = HashMap::new();
     let mut distinct_keys: Vec<_> = closed.distinct.iter().copied().collect();
     distinct_keys.sort_unstable();
     for (left, right) in distinct_keys {
-        let proof = ledger.intern_for(
-            state.view,
-            DerivationNode::MaterializedDistinct {
-                left,
-                right,
-                event,
-                parent: closed.distinct_proofs[&(left, right)],
-            },
-        );
+        let proof = ledger.intern(DerivationNode::MaterializedDistinct {
+            left,
+            right,
+            event,
+            parent: closed.distinct_proofs[&(left, right)],
+        });
         distinct_proofs.insert((left, right), proof);
     }
     let mut opaque_proofs = HashMap::new();
     let mut opaque_keys: Vec<_> = closed.opaque.iter().copied().collect();
     opaque_keys.sort_unstable();
     for (goal, sign) in opaque_keys {
-        let proof = ledger.intern_for(
-            state.view,
-            DerivationNode::MaterializedGoal {
-                goal,
-                sign,
-                event,
-                parent: closed.opaque_proofs[&(goal, sign)],
-            },
-        );
+        let proof = ledger.intern(DerivationNode::MaterializedGoal {
+            goal,
+            sign,
+            event,
+            parent: closed.opaque_proofs[&(goal, sign)],
+        });
         opaque_proofs.insert((goal, sign), proof);
     }
     let bound_candidates = bound_proofs
@@ -3944,7 +3573,6 @@ pub(crate) fn materialize_closure_at(
         .map(|(pair, proof)| (*pair, vec![*proof]))
         .collect();
     let mut materialized = FactState {
-        view: state.view,
         closed_term_count: Some(
             u32::try_from(terms.ids().count())
                 .expect("ENT term inventory exceeds the u32 identity space"),
@@ -3981,30 +3609,24 @@ pub(crate) fn materialize_closure_at(
         keys.sort_unstable();
         for (left, right) in keys {
             let bound = ordinary_closed.bounds[&(left, right)];
-            let proof = ledger.intern_for(
-                state.view,
-                DerivationNode::MaterializedBound {
-                    left,
-                    right,
-                    bound,
-                    event,
-                    parent: ordinary_closed.bound_proofs[&(left, right)],
-                },
-            );
+            let proof = ledger.intern(DerivationNode::MaterializedBound {
+                left,
+                right,
+                bound,
+                event,
+                parent: ordinary_closed.bound_proofs[&(left, right)],
+            });
             materialized.add_bound(left, right, bound, proof, ledger);
         }
         let mut keys = ordinary_closed.distinct.iter().copied().collect::<Vec<_>>();
         keys.sort_unstable();
         for (left, right) in keys {
-            let proof = ledger.intern_for(
-                state.view,
-                DerivationNode::MaterializedDistinct {
-                    left,
-                    right,
-                    event,
-                    parent: ordinary_closed.distinct_proofs[&(left, right)],
-                },
-            );
+            let proof = ledger.intern(DerivationNode::MaterializedDistinct {
+                left,
+                right,
+                event,
+                parent: ordinary_closed.distinct_proofs[&(left, right)],
+            });
             materialized.add_distinct_candidate((left, right), proof, ledger);
         }
     }
@@ -4027,22 +3649,18 @@ pub(crate) fn join(
     ledger: &mut DerivationLedger,
 ) -> FactState {
     let event = ledger.event(FlowEventKind::Join, None);
-    let view = states
-        .first()
-        .map_or(ProofView::Complete, |state| state.view);
-    join_at(states, terms, goals, ledger, view, event)
+    join_at(states, terms, goals, ledger, event)
 }
 
-/// Joins one proof view at a structural event shared by all three views.
+/// Joins source fact states at one structural event.
 pub(crate) fn join_at(
     states: &[FactState],
     terms: &TermTable,
     goals: &GoalTable,
     ledger: &mut DerivationLedger,
-    view: ProofView,
     event: FlowEventId,
 ) -> FactState {
-    let mut joined = join_at_once(states, terms, goals, ledger, view, event);
+    let mut joined = join_at_once(states, terms, goals, ledger, event);
     if joined.all_derivable {
         return joined;
     }
@@ -4057,7 +3675,7 @@ pub(crate) fn join_at(
     if !removed_postcondition_candidate {
         return joined;
     }
-    let ordinary = join_at_once(&ordinary_states, terms, goals, ledger, view, event);
+    let ordinary = join_at_once(&ordinary_states, terms, goals, ledger, event);
     if !ordinary.all_derivable {
         joined.merge_relation_candidates_from(&ordinary, ledger);
     }
@@ -4073,13 +3691,8 @@ fn join_at_once(
     terms: &TermTable,
     goals: &GoalTable,
     ledger: &mut DerivationLedger,
-    view: ProofView,
     event: FlowEventId,
 ) -> FactState {
-    assert!(
-        states.iter().all(|state| state.view == view),
-        "ENT join inputs must belong to the selected proof view"
-    );
     // Close before filtering: a contradiction established immediately before
     // an edge is already the absorbing all-derivable state even when no kill
     // had occasion to materialize its flag.
@@ -4104,12 +3717,11 @@ fn join_at_once(
                     .expect("every noncontributing join edge is contradictory"),
             })
             .collect();
-        let proof = ledger.intern_for(view, DerivationNode::JoinContradiction { event, parents });
+        let proof = ledger.intern(DerivationNode::JoinContradiction { event, parents });
         return FactState {
-            view,
             all_derivable: true,
             contradiction: Some(proof),
-            ..FactState::for_view(view)
+            ..FactState::new()
         };
     };
     let first = &closed[first_index];
@@ -4146,16 +3758,13 @@ fn join_at_once(
                     parent,
                 });
             }
-            let proof = ledger.intern_for(
-                view,
-                DerivationNode::JoinBound {
-                    left: pair.0,
-                    right: pair.1,
-                    bound: weakest,
-                    event,
-                    parents,
-                },
-            );
+            let proof = ledger.intern(DerivationNode::JoinBound {
+                left: pair.0,
+                right: pair.1,
+                bound: weakest,
+                event,
+                parents,
+            });
             bounds.insert(pair, weakest);
             bound_proofs.insert(pair, proof);
         }
@@ -4183,15 +3792,12 @@ fn join_at_once(
                 parent,
             });
         }
-        let proof = ledger.intern_for(
-            view,
-            DerivationNode::JoinDistinct {
-                left: pair.0,
-                right: pair.1,
-                event,
-                parents,
-            },
-        );
+        let proof = ledger.intern(DerivationNode::JoinDistinct {
+            left: pair.0,
+            right: pair.1,
+            event,
+            parents,
+        });
         distinct_proofs.insert(pair, proof);
     }
     // Comparison and outcome origins are path conditions, not facts; one
@@ -4219,15 +3825,12 @@ fn join_at_once(
                 parent,
             });
         }
-        let proof = ledger.intern_for(
-            view,
-            DerivationNode::JoinGoal {
-                goal,
-                sign,
-                event,
-                parents,
-            },
-        );
+        let proof = ledger.intern(DerivationNode::JoinGoal {
+            goal,
+            sign,
+            event,
+            parents,
+        });
         opaque_proofs.insert((goal, sign), proof);
     }
     let contributing_states: Vec<&FactState> =
@@ -4266,7 +3869,6 @@ fn join_at_once(
         .map(|(pair, proof)| (*pair, vec![*proof]))
         .collect();
     FactState {
-        view,
         closed_term_count: Some(
             u32::try_from(terms.ids().count())
                 .expect("ENT term inventory exceeds the u32 identity space"),
@@ -4314,7 +3916,7 @@ mod tests {
         let second = length(&mut terms, 1);
         let mut ledger = DerivationLedger::default();
         let closed = close(
-            &FactState::for_view(ProofView::Complete),
+            &FactState::new(),
             &terms,
             &GoalTable::default(),
             &mut ledger,
@@ -4348,78 +3950,28 @@ mod tests {
     }
 
     #[test]
-    fn one_structural_event_produces_distinct_view_tagged_nodes() {
+    fn one_structural_fact_has_one_derivation_identity() {
         let mut ledger = DerivationLedger::default();
         let event = ledger.event(FlowEventKind::S5, None);
-        let mut roots = Vec::new();
-        for (ordinal, view) in [
-            ProofView::Complete,
-            ProofView::Unasserted,
-            ProofView::S4Blinded,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let mut state = FactState::for_view(view);
-            let proof = state.establish_bound_with_proof(ZERO, ZERO, 0, &mut ledger, event);
-            ledger.add_root(DerivationRootKind::BoundsObligation(ordinal as u32), proof);
-            roots.push(proof);
-        }
+        let mut state = FactState::new();
+        let first = state.establish_bound_with_proof(ZERO, ZERO, 0, &mut ledger, event);
+        let second = state.establish_bound_with_proof(ZERO, ZERO, 0, &mut ledger, event);
+        ledger.add_root(DerivationRootKind::BoundsObligation(0), first);
 
         assert_eq!(ledger.events.len(), 1);
-        assert_eq!(ledger.nodes.len(), 3);
-        assert_eq!(ledger.nodes[0], ledger.nodes[1]);
-        assert_eq!(ledger.nodes[1], ledger.nodes[2]);
-        assert_eq!(
-            ledger.node_views,
-            vec![
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ]
-        );
+        assert_eq!(first, second);
+        assert_eq!(ledger.nodes.len(), 1);
 
         let remap = ledger.finish();
         assert_eq!(ledger.events.len(), 1);
-        assert_eq!(ledger.nodes.len(), 3);
-        assert_eq!(
-            ledger.node_views,
-            vec![
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ]
-        );
+        assert_eq!(ledger.nodes.len(), 1);
         assert!(
             ledger
                 .nodes
                 .iter()
                 .all(|node| node_event(node) == Some(FlowEventId(0)))
         );
-        assert!(
-            roots
-                .into_iter()
-                .all(|root| remap[root.0 as usize].is_some())
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "ENT derivation parents must belong to the child's proof view")]
-    fn a_derivation_cannot_import_a_parent_from_another_view() {
-        let mut ledger = DerivationLedger::default();
-        let event = ledger.event(FlowEventKind::S5, None);
-        let mut complete = FactState::for_view(ProofView::Complete);
-        let parent = complete.establish_bound_with_proof(ZERO, ZERO, 0, &mut ledger, event);
-        let _ = ledger.intern_for(
-            ProofView::Unasserted,
-            DerivationNode::SubsumedBound {
-                left: ZERO,
-                right: ZERO,
-                held: 0,
-                requested: 1,
-                parent,
-            },
-        );
+        assert!(remap[first.0 as usize].is_some());
     }
 
     #[test]
@@ -4453,37 +4005,32 @@ mod tests {
             bound: -1,
         };
         let mut ledger = DerivationLedger::default();
-        let source_event = ledger.event(FlowEventKind::S3, None);
-        let mut state = FactState::for_view(ProofView::Complete);
+        let source_event = ledger.event(FlowEventKind::S5, None);
+        let mut state = FactState::new();
         state.establish(&ordinary, &mut ledger, source_event);
         let ordinary_proof = state.bound_proofs[&pair];
         assert!(!ledger.depends_on_postcondition_call(ordinary_proof));
-        let call = ledger.intern_for(
-            ProofView::Complete,
-            DerivationNode::PostconditionCall {
-                detail: Box::new(PostconditionCallDetail {
-                    call: NodePath {
-                        components: vec![0],
-                    },
-                    relation: s12.clone(),
-                    summary: VerifiedPostconditionSummaryRef {
-                        summary: VerifiedPostconditionSummary {
-                            function: FunctionId(0),
-                            block: NodePath {
-                                components: vec![0, 0],
-                            },
-                            relation_ordinal: 0,
-                            component: 0,
+        let call = ledger.intern(DerivationNode::PostconditionCall {
+            detail: Box::new(PostconditionCallDetail {
+                call: NodePath {
+                    components: vec![0],
+                },
+                relation: s12.clone(),
+                summary: VerifiedPostconditionSummaryRef {
+                    summary: VerifiedPostconditionSummary {
+                        function: FunctionId(0),
+                        block: NodePath {
+                            components: vec![0, 0],
                         },
-                        view: ProofView::Complete,
+                        relation_ordinal: 0,
+                        component: 0,
                     },
-                    substitutions: Vec::new(),
-                    transfer_events: Vec::new(),
-                    a0_parents: Vec::new(),
-                    view_parents: Vec::new(),
-                }),
-            },
-        );
+                },
+                substitutions: Vec::new(),
+                transfer_events: Vec::new(),
+                parents: Vec::new(),
+            }),
+        });
         assert!(ledger.depends_on_postcondition_call(call));
         state.establish_from_proof(&s12, call, &ledger);
         assert_eq!(state.bounds[&pair], -1);
@@ -4505,7 +4052,6 @@ mod tests {
             &terms,
             &GoalTable::default(),
             &mut ledger,
-            ProofView::Complete,
             join_event,
         );
         joined.retain_non_postcondition_candidates(&ledger);
@@ -4520,16 +4066,12 @@ mod tests {
         assert!(ledger.depends_on_postcondition_call(call));
     }
 
-    /// Cloning a ledger deliberately leaves its interning index behind, which
-    /// is sound only because the copy rebuilds the index from its own nodes
-    /// before answering. Without the rebuild a clone silently re-interns
-    /// nodes it already holds, giving one proof step two identities. A copy of
-    /// that copy is the same ledger again and must answer the same way, so the
-    /// rebuild cannot be owed to "the original had entries".
+    /// A live ledger clone carries the same interning state and therefore
+    /// preserves identities without reconstructing compiler-generated data.
     #[test]
     fn interning_into_a_cloned_ledger_keeps_the_original_identity() {
         let mut ledger = DerivationLedger::default();
-        let event = ledger.event(FlowEventKind::S3, None);
+        let event = ledger.event(FlowEventKind::S5, None);
         let relation = Relation::Bound {
             left: ZERO,
             right: ZERO,
@@ -4542,135 +4084,23 @@ mod tests {
             bound: 0,
             event,
         };
-        let original = ledger.intern_for(ProofView::Complete, node.clone());
+        let original = ledger.intern(node.clone());
         let nodes = ledger.nodes.len();
 
         let copy = ledger.clone();
         assert_eq!(copy.nodes.len(), nodes);
-        // A clone of the clone holds the same nodes and no index either.
         let mut copy = copy.clone();
         assert_eq!(copy.nodes.len(), nodes);
-        assert_eq!(copy.intern_for(ProofView::Complete, node.clone()), original);
+        assert_eq!(copy.intern(node.clone()), original);
         assert_eq!(copy.nodes.len(), nodes);
-        // The rebuilt index must also keep separating the proof views.
-        assert_ne!(copy.intern_for(ProofView::Unasserted, node), original);
-        assert_eq!(copy.nodes.len(), nodes + 1);
-    }
-
-    /// `settle` drops the interning index of a finished analysis, and a later
-    /// interning must replay it and return the identity the ledger already
-    /// holds. Leaving the ledger looking freshly reset instead would give one
-    /// proof step two identities, and every [CLM-2] rerun analyzes a settled
-    /// ledger's function again.
-    #[test]
-    fn interning_into_a_settled_ledger_keeps_the_original_identity() {
-        let mut ledger = DerivationLedger::default();
-        let event = ledger.event(FlowEventKind::S3, None);
-        let node = DerivationNode::SourceBound {
-            relation: Relation::Bound {
-                left: ZERO,
-                right: ZERO,
-                bound: 0,
-            },
-            left: ZERO,
-            right: ZERO,
-            bound: 0,
-            event,
-        };
-        let original = ledger.intern_for(ProofView::Complete, node.clone());
-        let nodes = ledger.nodes.len();
-
-        ledger.settle();
-        assert_eq!(ledger.nodes.len(), nodes);
-        assert_eq!(
-            ledger.intern_for(ProofView::Complete, node.clone()),
-            original
-        );
-        assert_eq!(ledger.nodes.len(), nodes);
-        assert_ne!(ledger.intern_for(ProofView::Unasserted, node), original);
-        assert_eq!(ledger.nodes.len(), nodes + 1);
-    }
-
-    /// The composition of the two guards above is the shape the check actually
-    /// runs: a candidate ledger is settled once, and every [CLM-2] rerun then
-    /// clones it. Both droppers leave the index absent, so the clone of a
-    /// settled ledger is owed exactly the same replay as any other clone.
-    /// Deciding that from anything but the copy's own nodes — from whether the
-    /// original still held entries, say — makes this copy the one that mints a
-    /// second identity for a proof step the arena already holds.
-    #[test]
-    fn interning_into_a_clone_of_a_settled_ledger_keeps_the_original_identity() {
-        let mut ledger = DerivationLedger::default();
-        let event = ledger.event(FlowEventKind::S3, None);
-        let node = DerivationNode::SourceBound {
-            relation: Relation::Bound {
-                left: ZERO,
-                right: ZERO,
-                bound: 0,
-            },
-            left: ZERO,
-            right: ZERO,
-            bound: 0,
-            event,
-        };
-        let original = ledger.intern_for(ProofView::Complete, node.clone());
-        let nodes = ledger.nodes.len();
-        ledger.settle();
-
-        let mut copy = ledger.clone();
+        assert_eq!(copy.intern(node), original);
         assert_eq!(copy.nodes.len(), nodes);
-        assert_eq!(copy.intern_for(ProofView::Complete, node.clone()), original);
-        assert_eq!(copy.nodes.len(), nodes);
-        assert_ne!(copy.intern_for(ProofView::Unasserted, node), original);
-        assert_eq!(copy.nodes.len(), nodes + 1);
     }
 
-    /// `finish_with_event_roots` drops the index too, after remapping every
-    /// identity, and the derived absence rule replays it for that dropper as
-    /// well. `79b29665` and `a8040b32` instead recorded the index as fresh
-    /// there, so interning a node the pruned arena still holds minted a second
-    /// identity for it; this ledger returns the retained one. That is the one
-    /// place where the derived rule deliberately answers differently than the
-    /// flag did, and nothing in the check reaches it today — every
-    /// `intern_for` call site runs inside one `flow::run`, before `settle`
-    /// and `finish` — so it guards a hazard rather than a live path.
-    #[test]
-    fn interning_after_a_finish_keeps_the_retained_identity() {
-        let mut ledger = DerivationLedger::default();
-        let event = ledger.event(FlowEventKind::S3, None);
-        let node = DerivationNode::SourceBound {
-            relation: Relation::Bound {
-                left: ZERO,
-                right: ZERO,
-                bound: 0,
-            },
-            left: ZERO,
-            right: ZERO,
-            bound: 0,
-            event,
-        };
-        let interned = ledger.intern_for(ProofView::Complete, node);
-        ledger.add_root(DerivationRootKind::BoundsObligation(0), interned);
-
-        let remap = ledger.finish();
-        let retained = remap[interned.0 as usize].expect("the rooted node survives the prune");
-        let nodes = ledger.nodes.len();
-        // `finish` renumbers both nodes and events, so the node to offer again
-        // is the one the pruned arena now holds, not the one interned above.
-        let kept = ledger.nodes[retained.0 as usize].clone();
-
-        assert_eq!(
-            ledger.intern_for(ProofView::Complete, kept.clone()),
-            retained
-        );
-        assert_eq!(ledger.nodes.len(), nodes);
-        assert_ne!(ledger.intern_for(ProofView::Unasserted, kept), retained);
-        assert_eq!(ledger.nodes.len(), nodes + 1);
-    }
-
-    /// `settle`'s whole claim is that it is invisible, and the [DIAG-2] byte
+    /// `settle` is final: semantic analysis performs no later interning. Its
+    /// [DIAG-2] byte
     /// metric is the only number that could carry a trace of it:
-    /// `finish_with_event_roots` rebuilds every vector `settle` releases at
+    /// `finish_with_event_roots` restores every vector `settle` releases at
     /// the retained length, except `roots`, whose capacity it carries through
     /// because it rewrites each root in place. A `settle` that shrank `roots`
     /// would leave a finished ledger reporting fewer bytes than the same
@@ -4679,7 +4109,7 @@ mod tests {
     fn settling_a_ledger_does_not_move_the_finished_byte_metric() {
         fn rooted_ledger() -> DerivationLedger {
             let mut ledger = DerivationLedger::default();
-            let event = ledger.event(FlowEventKind::S3, None);
+            let event = ledger.event(FlowEventKind::S5, None);
             let node = DerivationNode::SourceBound {
                 relation: Relation::Bound {
                     left: ZERO,
@@ -4691,7 +4121,7 @@ mod tests {
                 bound: 0,
                 event,
             };
-            let interned = ledger.intern_for(ProofView::Complete, node);
+            let interned = ledger.intern(node);
             ledger.add_root(DerivationRootKind::BoundsObligation(0), interned);
             ledger
         }
@@ -4709,15 +4139,12 @@ mod tests {
         assert_eq!(settled.metrics, plain.metrics);
     }
 
-    /// The derivation arena is one flat array of a few million entries per
-    /// checked function, and the [CLM-2] counterfactual holds two of them at
-    /// once, so the widest variant sets the memory cost of the whole check.
+    /// The derivation arena is one flat array of entries per checked function,
+    /// so the widest variant sets the memory cost of the whole check.
     /// The transitivity and join steps that make up almost every entry need
     /// 48 bytes; the S12 call and delivery-join evidence, and the relation of
     /// every other postcondition step, are held out of line to keep them from
-    /// widening those. Checking `tests/programs/wfgrep.wf` holds two live
-    /// inventories of 2.3 M entries, so each byte of this width is 4.6 MB of
-    /// resident memory.
+    /// widening those.
     #[test]
     fn the_derivation_arena_entry_stays_narrow() {
         assert!(
@@ -4750,8 +4177,8 @@ mod tests {
         let b = place(1);
         let c = place(2);
         let mut ledger = DerivationLedger::default();
-        let event = ledger.event(FlowEventKind::S3, None);
-        let mut state = FactState::for_view(ProofView::Complete);
+        let event = ledger.event(FlowEventKind::S5, None);
+        let mut state = FactState::new();
         state.establish(
             &Relation::Bound {
                 left: a,

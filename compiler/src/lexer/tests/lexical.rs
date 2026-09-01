@@ -84,7 +84,7 @@ fn operator_forms_take_their_maximal_lowercase_suffix() {
 /// The comparison halves are the control: `==`, `<=`, and `>=` are here for
 /// their *absence* as compound tokens, because the owner's cancellation of the
 /// infix comparisons is what put them back to two tokens each. `!=` cannot
-/// appear at all — `!` is a raw lexical defect, asserted in `hostile.rs`.
+/// appear at all — `!` is a raw lexical defect, asserted in `edge_cases.rs`.
 #[test]
 fn compound_punctuation_beats_its_single_byte_prefixes() {
     let observed = observed(b"a == b <= d >= e -> f => g h..i < j > k = l\n");

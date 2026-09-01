@@ -1712,3 +1712,257 @@ ACTIVE-SPEC: v0.38 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedf
   diagnostics. Outside `tests/conformance`, no conformance-evidence file
   changes: the adapter, the runners, and the collection wiring are untouched.
 ACTIVE-SPEC: v0.39 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516 5a43c7638bd5839d77829836518374f9a169eb953d9c1edbd66b87815aedfb2d
+
+## 2026-09-01 — merge-time approval content: v0.40 source-carried proof
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this record
+  creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.40 at exact SHA-256
+  `5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`.
+  It supersedes active v0.39 at SHA-256
+  `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.39.md`. Per the specification's META-5 declaration,
+  numbered rules are +2/-9 and total 131: [INV-1] and [PRF-1] are added, while
+  [CLM-1], [CLM-2], [CLM-3], [DIAG-3], [PRV-1], [PRV-2], [PRV-3], [SCOPE-4],
+  and [TRAP-1] are removed. Grammar productions are +7/-1 and total 81; unique
+  fixed lowercase atoms are +3/-4; runtime-trap families are -1; entry forms
+  are -1; writer operation spellings, opaque system nominal spellings,
+  contract block forms, exception clauses, and the 203 system operations and
+  declaration records are unchanged. The active language now has one
+  source-carried proof path through ordinary semantic checking: contracts,
+  counted-loop invariants, and explicit finite `prove`/`use` steps establish
+  facts consumed before lowering by partial-operation, selected-target layout
+  and address, function-contract, and parallel-permission judgments. No writer
+  statement requests a runtime assertion, no supported partial operation gains
+  a hidden runtime fallback, and proof syntax is erased before lowering.
+  [STOR-6] keeps layout, stride, allocation-ceiling, address, and target-domain
+  proof mandatory; [PAR-2] consumes retained discharged OP-4 affine-map
+  evidence; bounded completion remains statically qualified. [SCOPE-3]
+  temporarily leaves only external resource availability—heap exhaustion,
+  stack exhaustion, operating-system quotas, and runtime-start resources—outside
+  the source outcome model. That resource boundary does not defer any static
+  layout, address, target, parallel, queue, or completion proof.
+- CONFORMANCE BOUNDARY: relative to `main` tip
+  `10b76c66a02bfff21d9842fd9b1f35d0b9855ce4`, the complete case-file
+  boundary has 27 added, 93 modified, 58 deleted, and no renamed files.
+  Added:
+  - `tests/conformance/cases/ent3-pos-s5-set-commit-image.wf`
+  - `tests/conformance/cases/ent5-pos-close-before-scope-kill.wf`
+  - `tests/conformance/cases/err4-checked-domain-violation.wf`
+  - `tests/conformance/cases/fn8-neg-external-actual-without-fact.wf`
+  - `tests/conformance/cases/fn8-pos-external-actual-after-branch.wf`
+  - `tests/conformance/cases/form3-neg-retired-mode-suffix.wf`
+  - `tests/conformance/cases/inv1-neg-backedge-unproved.wf`
+  - `tests/conformance/cases/inv1-neg-base-unproved.wf`
+  - `tests/conformance/cases/inv1-neg-repeated-name.wf`
+  - `tests/conformance/cases/op2-pos-division-requires-nonzero.wf`
+  - `tests/conformance/cases/op4-neg-external-index-without-fact.wf`
+  - `tests/conformance/cases/op4-pos-external-index-after-branch.wf`
+  - `tests/conformance/cases/prf1-neg-fact-killed-by-write.wf`
+  - `tests/conformance/cases/prf1-neg-inexact-combination.wf`
+  - `tests/conformance/cases/prf1-neg-repeated-name.wf`
+  - `tests/conformance/cases/prf1-neg-unproved-premise.wf`
+  - `tests/conformance/cases/prf1-pos-explicit-affine-proof.wf`
+  - `tests/conformance/cases/run-invariant-exact-sum.wf`
+  - `tests/conformance/cases/s7-pos-signed-remainder-ranges-run.wf`
+  - `tests/conformance/cases/s7-pos-unsigned-remainder-bound-run.wf`
+  - `tests/conformance/cases/x-arith-loop-checked-multiply-overflow.wf`
+  - `tests/conformance/cases/x-arith-wrapping-overflow-observed.wf`
+  - `tests/conformance/cases/x-eff-allocating-fn-calls-only-pure.wf`
+  - `tests/conformance/cases/x-eff-pure-combined-with-allocation.wf`
+  - `tests/conformance/cases/x-eff-pure-fn-calls-allocating-fn.wf`
+  - `tests/conformance/cases/x-form-form7-checked-overflow-canonical.wf`
+  - `tests/conformance/cases/x-integ-loop-product-checked-overflow.wf`
+  Modified:
+  - `tests/conformance/cases/accept-sysrelease-return-unit-declared.wf`
+  - `tests/conformance/cases/const1-neg-eval-overflow.wf`
+  - `tests/conformance/cases/const1-neg-noninteger.wf`
+  - `tests/conformance/cases/const2-neg-set.wf`
+  - `tests/conformance/cases/eff1-neg-wrong-order-row.wf`
+  - `tests/conformance/cases/eff2-neg-declared-unexhibited.wf`
+  - `tests/conformance/cases/eff2-neg-undeclared-exhibited.wf`
+  - `tests/conformance/cases/eff2-pos-discharged-division-site-pure-row.wf`
+  - `tests/conformance/cases/eff3-pos-pure-fn.wf`
+  - `tests/conformance/cases/ent3-pos-band-check-decomposition.wf`
+  - `tests/conformance/cases/ent4-pos-contradictory-state-discharges.wf`
+  - `tests/conformance/cases/ent4-pos-disequality-strengthens.wf`
+  - `tests/conformance/cases/ent4-pos-transitivity-discharges.wf`
+  - `tests/conformance/cases/ent5-neg-kill-on-write.wf`
+  - `tests/conformance/cases/ent5-pos-join-keeps-common-bound.wf`
+  - `tests/conformance/cases/ent5-pos-value-if-delivery-join.wf`
+  - `tests/conformance/cases/err2-neg-missing-variant.wf`
+  - `tests/conformance/cases/err3-neg-error-type-mismatch.wf`
+  - `tests/conformance/cases/err3-pos-propagate.wf`
+  - `tests/conformance/cases/err4-pos-recoverable-value.wf`
+  - `tests/conformance/cases/fn3-neg-signature-effect-mismatch.wf`
+  - `tests/conformance/cases/fn5-pos-match-dispatch.wf`
+  - `tests/conformance/cases/fn6-neg-polymorphic-recursion.wf`
+  - `tests/conformance/cases/fn7-neg-two-mains.wf`
+  - `tests/conformance/cases/fn8-neg-requires-noncopy-local.wf`
+  - `tests/conformance/cases/form1-neg-unknown-construct.wf`
+  - `tests/conformance/cases/form3-neg-opname-bad-suffix.wf`
+  - `tests/conformance/cases/form3-neg-typeid-fn-name.wf`
+  - `tests/conformance/cases/form4-neg-comment.wf`
+  - `tests/conformance/cases/form5-neg-missing-suffix.wf`
+  - `tests/conformance/cases/form7-neg-leading-zero.wf`
+  - `tests/conformance/cases/form7-neg-out-of-range.wf`
+  - `tests/conformance/cases/gram9-neg-nested-call.wf`
+  - `tests/conformance/cases/op1-neg-written-argument-on-deargumented-row.wf`
+  - `tests/conformance/cases/op2-neg-division-constant-zero-divisor.wf`
+  - `tests/conformance/cases/op2-neg-division-obligation-undischarged.wf`
+  - `tests/conformance/cases/op2-neg-overflow-obligation-undischarged.wf`
+  - `tests/conformance/cases/op2-pos-division-obligation-discharged.wf`
+  - `tests/conformance/cases/op2-pos-overflow-obligation-discharged.wf`
+  - `tests/conformance/cases/op2-pos-wrap-untouched-by-dissolution.wf`
+  - `tests/conformance/cases/op4-neg-index-undischarged.wf`
+  - `tests/conformance/cases/op4-pos-index-discharged.wf`
+  - `tests/conformance/cases/op9-pos-buffer-new.wf`
+  - `tests/conformance/cases/own1-neg-index-atom-after-move.wf`
+  - `tests/conformance/cases/prog1-pos-closed-unit.wf`
+  - `tests/conformance/cases/reject-gram11-unnamed-call.wf`
+  - `tests/conformance/cases/reject-sys14-list-end-beyond-buffer.wf`
+  - `tests/conformance/cases/reject-syshost-copybytes-end-beyond-buffer.wf`
+  - `tests/conformance/cases/reject-syshost-copybytes-start-after-end.wf`
+  - `tests/conformance/cases/run-syshost-copybytes-toosmall-unchanged.wf`
+  - `tests/conformance/cases/run-syshost-copyutf8-invalid-unchanged.wf`
+  - `tests/conformance/cases/run-syshost-copyutf8-toosmall-unchanged.wf`
+  - `tests/conformance/cases/run-syspath-dotdot-preserved.wf`
+  - `tests/conformance/cases/scope2-pos-accepted.wf`
+  - `tests/conformance/cases/sys14-list-handle-affine.wf`
+  - `tests/conformance/cases/sys14-list-handle-unique.wf`
+  - `tests/conformance/cases/sys14-no-path-from-bytes.wf`
+  - `tests/conformance/cases/type2-pos-twostate-enum-i1.wf`
+  - `tests/conformance/cases/type5-neg-index-offset-type.wf`
+  - `tests/conformance/cases/type5-pos-index-element-type-derived.wf`
+  - `tests/conformance/cases/type6-pos-distinct-names.wf`
+  - `tests/conformance/cases/type7-neg-index-box-holder.wf`
+  - `tests/conformance/cases/type7-neg-index-reference-holder.wf`
+  - `tests/conformance/cases/x-arith-idiv-reject-constant-zero-divisor.wf`
+  - `tests/conformance/cases/x-array-const-checksum-run.wf`
+  - `tests/conformance/cases/x-array-mutable-checksum-run.wf`
+  - `tests/conformance/cases/x-base64-rfc-vectors-run.wf`
+  - `tests/conformance/cases/x-buffer-borrowed-columns-run.wf`
+  - `tests/conformance/cases/x-buffer-mutable-checksum-run.wf`
+  - `tests/conformance/cases/x-child-reborrow-run.wf`
+  - `tests/conformance/cases/x-crc32-standard-vector-run.wf`
+  - `tests/conformance/cases/x-eff-dup-reads-effect.wf`
+  - `tests/conformance/cases/x-eff-trailing-comma-row.wf`
+  - `tests/conformance/cases/x-eff-writes-missing-region.wf`
+  - `tests/conformance/cases/x-enum-borrow-payload-live.wf`
+  - `tests/conformance/cases/x-enum-multiwidth-dispatch.wf`
+  - `tests/conformance/cases/x-enum-payload-give.wf`
+  - `tests/conformance/cases/x-enum-stmt-payload-check.wf`
+  - `tests/conformance/cases/x-fn-cross-fn-call-chain.wf`
+  - `tests/conformance/cases/x-fn-mutual-recursion-runs.wf`
+  - `tests/conformance/cases/x-integ-coin-borrow-match-score-twice.wf`
+  - `tests/conformance/cases/x-integ-give-in-statement-match-rejected.wf`
+  - `tests/conformance/cases/x-match-err2-value-match-missing-err.wf`
+  - `tests/conformance/cases/x-match-give1-give-in-stmt-match.wf`
+  - `tests/conformance/cases/x-match-gram10-binder-not-fresh.wf`
+  - `tests/conformance/cases/x-match-gram10-out-of-order-fields.wf`
+  - `tests/conformance/cases/x-option-byte-scanner-run.wf`
+  - `tests/conformance/cases/x-requires-output-capacity-run.wf`
+  - `tests/conformance/cases/x-result-buffer-transform-run.wf`
+  - `tests/conformance/cases/x-struct-construct-read-field.wf`
+  - `tests/conformance/cases/x-struct-nested-field.wf`
+  - `tests/conformance/cases/x-struct-of-buffers-checksum-run.wf`
+  - `tests/conformance/cases/x-struct-set-field.wf`
+  Deleted:
+  - `tests/conformance/cases/clm1-neg-repeated-claim-name.wf`
+  - `tests/conformance/cases/clm1-neg-system-result-claim-locality.wf`
+  - `tests/conformance/cases/clm1-neg-user-result-claim-locality.wf`
+  - `tests/conformance/cases/clm1-pos-passing-claim-establishes-fact.wf`
+  - `tests/conformance/cases/clm1-trap-false-claim-aborts.wf`
+  - `tests/conformance/cases/clm1-trap-false-claim-not-refutable.wf`
+  - `tests/conformance/cases/clm1-trap-runtime-violation.wf`
+  - `tests/conformance/cases/clm2-neg-refuted-claim.wf`
+  - `tests/conformance/cases/clm2-pos-redundant-claim-advisory.wf`
+  - `tests/conformance/cases/clm3-neg-body-check-bounds.wf`
+  - `tests/conformance/cases/clm3-neg-body-check-requires.wf`
+  - `tests/conformance/cases/clm3-neg-direct-unreachable-claim.wf`
+  - `tests/conformance/cases/clm3-neg-generic-first-import.wf`
+  - `tests/conformance/cases/clm3-neg-mutual-scc-import.wf`
+  - `tests/conformance/cases/clm3-neg-static-conjunction-unproved.wf`
+  - `tests/conformance/cases/clm3-neg-transitive-check-summary.wf`
+  - `tests/conformance/cases/clm3-pos-transitive-value-branch.wf`
+  - `tests/conformance/cases/clm3-pos-upward-near-miss.wf`
+  - `tests/conformance/cases/eff1-pos-pure-and-traps-rows.wf`
+  - `tests/conformance/cases/eff2-neg-division-class-site-pure-row.wf`
+  - `tests/conformance/cases/eff2-neg-propagate-hidden-trap.wf`
+  - `tests/conformance/cases/eff2-pos-declared-traps-exhibited.wf`
+  - `tests/conformance/cases/eff2-pos-propagate-declared-trap.wf`
+  - `tests/conformance/cases/eff4-pos-trap-aborts.wf`
+  - `tests/conformance/cases/err4-trap-claim-domain-violation.wf`
+  - `tests/conformance/cases/fn8-neg-requires-missing-traps.wf`
+  - `tests/conformance/cases/fn8-neg-strict-outside-caller-unproved-requirement.wf`
+  - `tests/conformance/cases/form3-neg-reserved-mode-field.wf`
+  - `tests/conformance/cases/op2-pos-division-claim-backstop.wf`
+  - `tests/conformance/cases/prv1-pos-control-write-address-nontaint.wf`
+  - `tests/conformance/cases/prv1-pos-payload-sibling-isolation.wf`
+  - `tests/conformance/cases/prv2-neg-complete-only-postcondition.wf`
+  - `tests/conformance/cases/prv2-neg-direct-system-result.wf`
+  - `tests/conformance/cases/prv2-neg-entry-system-result-bridge.wf`
+  - `tests/conformance/cases/prv2-neg-mutual-demand.wf`
+  - `tests/conformance/cases/prv2-neg-nonexact-goal.wf`
+  - `tests/conformance/cases/prv2-neg-recursive-demand.wf`
+  - `tests/conformance/cases/prv2-neg-two-hop-bridge.wf`
+  - `tests/conformance/cases/prv2-pos-allocation-equality-call.wf`
+  - `tests/conformance/cases/prv2-pos-postcondition-b-summary.wf`
+  - `tests/conformance/cases/prv2-pos-seedless-mutual.wf`
+  - `tests/conformance/cases/prv3-neg-external-claim-conjunction.wf`
+  - `tests/conformance/cases/prv3-neg-external-claim.wf`
+  - `tests/conformance/cases/prv3-neg-read-offset-taint.wf`
+  - `tests/conformance/cases/prv3-pos-external-bound-only.wf`
+  - `tests/conformance/cases/prv3-pos-external-branch.wf`
+  - `tests/conformance/cases/prv3-pos-internal-claim.wf`
+  - `tests/conformance/cases/run-ex2-loop-exact-claims.wf`
+  - `tests/conformance/cases/scope4-pos-claim-traps.wf`
+  - `tests/conformance/cases/v033-run-exact-domain-claim.wf`
+  - `tests/conformance/cases/x-arith-claim-catches-wrapped-overflow-traps.wf`
+  - `tests/conformance/cases/x-arith-idiv-trap-signed-two-variable-traps.wf`
+  - `tests/conformance/cases/x-arith-loop-multiply-defined-claim-traps.wf`
+  - `tests/conformance/cases/x-eff-pure-combined-with-traps.wf`
+  - `tests/conformance/cases/x-eff-pure-fn-calls-traps-fn.wf`
+  - `tests/conformance/cases/x-eff-traps-fn-calls-only-pure.wf`
+  - `tests/conformance/cases/x-form-form7-overflow-trap-canonical.wf`
+  - `tests/conformance/cases/x-integ-loop-product-overflow-traps.wf`
+  No retained case id changes its declared verdict. The 58 deleted case ids
+  are exactly the deleted files above, and the 27 added case ids are exactly
+  the added files above. `tests/conformance/manifest.jsonl` moves from 510
+  case records and 35 rule-annotation records to 479 case records and 32
+  rule-annotation records. Declared verdict totals move from 76 accept, 261
+  reject, and 173 run to 69 accept, 242 reject, and 168 run. Coverage moves
+  from 138/138 rules to 131/131 rules; the active corpus covers 112 rules by
+  case and 32 rules by annotation, with the two channels together covering all
+  131 rules and overlapping where both evidence forms apply.
+  Outside the case directory, the exact conformance runner, adapter,
+  collection, and gate-wiring boundary is:
+  - `Makefile`:
+    `5fe097a9d4d07657ecb89537ac22b6ef500d6bc97f05c0e68609d8fb85536f97`
+    -> `b2a0a74fc7690540adc76eded00db3d173dc4814fa5f6a83e0cf6bdf133818e1`;
+  - `compiler/Makefile`:
+    `67f4319643e3f59d00458c1be0a481b0d938b383b60a3227219d684043e881a2`
+    -> `f599c1e0084581e994bcd3f7b76d53a7e06ef0b25f46f64ba34825b38e235d77`;
+  - `compiler/tests/canonical_corpus.rs`:
+    `7ab174fa181233b01827f60f8f2d650c0fd23d8c56504b67924413633bd59fac`
+    -> `939738cd729ea87f5280519bf9f80220bba044959d4f2ed5f0e23add492d65b0`;
+  - `compiler/tests/conformance/adapter.rs`:
+    `0c640b5de84ac4f7026b92c4b832b5dc836439a1526c4f5edcf94cc7c682e063`
+    -> `b022470c0bdb440a672bdcd2007d07706dc30de2534bbd999b4fe1df5ba76893`;
+  - `compiler/tests/conformance/corpus.rs`:
+    `a2e4818ba9e4f4e2b079eb53635c9842397800af1339b974ab461003f22f9e9c`
+    -> `1c5bde97f65f564f72ef6bc1fff5de11793b3e938e38ef3fd79669208a19e5b4`;
+  - `tests/conformance/manifest.jsonl`:
+    `23a0745358fd56db24eb985f4a61071210927f3c737f85cd5077d4d94a378382`
+    -> `d80e2b85813cce5693cf2557436c8076e674d34fecbe7906390c90032e3021a8`;
+  - `tests/conformance/runner.py`:
+    `368a341ac0c57fdb12ca597545f1cb1a8628b92a1caac28ebc44f0111b4b6bfa`
+    -> `32ffd7607c1d23fcb19813c6d81a08b1ba02f7a6ceb4e1083af57821a242edef`;
+  - `tests/conformance/test_runner.py`:
+    `42bc4a0ad2908c59693fa85107466f5856987ad21c9f2fc2e054ddcac38d3890`
+    -> `46beed39eb0c235b914d56d203d2545c8e5c605df66960254891fafa4709e3f4`.
+  No other conformance adapter, runner, collection, manifest, gate-integrity,
+  or gate-wiring file changes.
+ACTIVE-SPEC: v0.40 5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516

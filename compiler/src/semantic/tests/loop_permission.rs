@@ -8,16 +8,27 @@
 //! loop that should have been refused and was not. Design:
 //! `research/investigations/proof-derived-parallelism/loop/DESIGN.md`.
 
-use crate::SemanticOutcome;
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::super::loop_permission::{LoopCombine, LoopDenial, LoopPermission, LoopVerdict};
+use super::super::loop_permission::{
+    LoopActualization, LoopCombine, LoopDenial, LoopPermission, LoopVerdict,
+};
 use super::super::permission::PermissionMetadata;
-use super::with_semantics;
+use super::{with_semantics, with_semantics_dark};
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("loop permission fixture must check: {outcome:?}");
+        };
+        program.data.permission.clone()
+    })
+}
+
+fn dark_permission_of(source: &[u8]) -> PermissionMetadata {
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("dark loop permission fixture must check: {outcome:?}");
         };
         program.data.permission.clone()
     })
@@ -115,6 +126,34 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// A checked source proof is erased before execution. It contributes no read,
+/// write, loan, accumulator, or exit to the loop permission survey.
+#[test]
+fn a_source_proof_in_the_body_has_no_runtime_footprint() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let total = 0_u64;
+  for @sum i in 0_u64..4_u64 {
+    prove two_steps: ile(0_u64, 2_u64) {
+      use ile(0_u64, 1_u64);
+      use ile(1_u64, 2_u64);
+    }
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let judged = permitted(source, "main");
+    assert_eq!(judged.verdict, LoopVerdict::PermittedEligible);
+    assert_eq!(judged.combines, vec!["+wrap"]);
+    assert!(matches!(
+        judged.actualization,
+        Some(LoopActualization::Reduction {
+            combine: LoopCombine::AddWrap,
+            ..
+        })
+    ));
+}
+
 /// Every admitted combine reaches a grant, one loop each, and the verdict
 /// names the operation the accumulator recombines under.
 ///
@@ -188,6 +227,10 @@ command fn main() -> status: own ExitStatus pure {
 ";
     let judged = permitted(source, "main");
     assert!(judged.combines.is_empty());
+    assert_eq!(
+        judged.actualization, None,
+        "permission alone must not turn an unobservable stateless loop into a map"
+    );
 }
 
 /// A callee that writes through a `&uniq` parameter into storage the
@@ -265,19 +308,47 @@ fn nested_counted_loops_are_each_judged_on_their_own_terms() {
     }
 }
 
-/// A `claim` written in the enclosing function but outside the loop leaves the
-/// loop eligible.
-///
-/// Eligibility asks about the body and what the body calls. A claim the writer
-/// put before the loop has already been executed when the first iteration
-/// runs, so it is no trap site an overlapped schedule could select between.
+/// One OP-4 outcome inside nested loops retains its affine image separately
+/// for each active counted binder. Here the offset depends only on the outer
+/// binder: overlapping outer iterations is sound, while overlapping inner
+/// iterations would repeatedly write the same element and is denied.
 #[test]
-fn a_claim_outside_the_loop_leaves_it_eligible() {
-    let source = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src), traps {
+fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(8_u64, 0_u64);
+  for @rows r in 0_u64..8_u64 {
+    for @cols c in 0_u64..4_u64 {
+      set out[r] = c;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let table = permission_of(source);
+    let judged = loops(&table, "main");
+    assert_eq!(judged.len(), 2);
+    assert_eq!(judged[0].verdict, LoopVerdict::PermittedEligible);
+    assert_eq!(
+        judged[0].actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+    assert!(matches!(
+        denial(judged[1], 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+/// An explicit proof cannot name an unavailable premise. PRF-1 rejects the
+/// source before loop permission can observe the unproved subscript.
+#[test]
+fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
+    let source =
+        br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   let bounded_limit = imin(limit, room);
-  let fits = ile(bounded_limit, room);
-  claim limit_fits: fits because "premises: bounded_limit is the minimum of the requested limit and room, and room is the input buffer's length\nderivation: a minimum is at most either operand, so bounded_limit is at most room\nconclusion: ile(bounded_limit, room) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the counted range below runs to bounded_limit and subscripts the input at its binder";
+  prove limit_fits: ile(bounded_limit, room) {
+    use ile(limit, room);
+  }
   let total = 0_u64;
   for @sum i in 0_u64..bounded_limit {
     let v = deref(src)[i];
@@ -286,7 +357,46 @@ fn a_claim_outside_the_loop_leaves_it_eligible() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(64_u64, 1_u64);
+  region 's {
+    let t = tally<'s>(src: &'s data, limit: 64_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unavailable proof premise must reject before permission: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Prf1);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedSourceProof { .. }
+        ));
+    });
+}
+
+/// A dominating branch establishes the same `limit <= len(src)` fact. The
+/// loop remains eligible because permission reads the checked body footprint,
+/// not the proof route for its subscript.
+#[test]
+fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
+    let source =
+        br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
+  let room = len(deref(src));
+  let total = 0_u64;
+  let fits = ile(limit, room);
+  if fits {
+    for @sum i in 0_u64..limit {
+      let v = deref(src)[i];
+      set total = total +wrap v;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   region 's {
     let t = tally<'s>(src: &'s data, limit: 64_u64);
@@ -567,12 +677,12 @@ fn a_nested_endpoint_reading_the_accumulator_denies_only_the_outer_loop() {
 // Condition 2: no shared writable footprint
 // ----------------------------------------------------------------------
 
-/// The parallel map. Two iterations write two elements of one buffer, and a
-/// resolved place carries no index segment [ENT-2], so the judgment reads them
-/// as one place and fails closed. This is the deferred capability, refused
-/// rather than granted.
+/// The smallest parallel map: OP-4 has already proved `i` is a valid index,
+/// and [FN-1] gives a distinct compiler-owned `i` to every iteration. The loop
+/// judgment consumes that successful obligation and treats each write as the
+/// disjoint range `[i, i + 1)`.
 #[test]
-fn an_element_write_into_enclosing_storage_is_denied_by_condition_two() {
+fn a_proven_counted_binder_element_map_is_permitted() {
     let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
   for @fill i in 0_u64..64_u64 {
@@ -581,10 +691,264 @@ fn an_element_write_into_enclosing_storage_is_denied_by_condition_two() {
   return exit_status(code: 0_u8);
 }
 ";
+    let judged = permitted(source, "main");
+    assert!(judged.combines.is_empty());
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+/// Permission consumes the offset's exact checked value rather than its
+/// spelling. Copying the binder and applying one proved affine transform keeps
+/// the nonzero coefficient, so distinct iterations still select distinct
+/// elements.
+#[test]
+fn a_copied_affine_binder_element_map_is_permitted() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(128_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let copy = i;
+    let slot = copy * 2_u64;
+    set out[slot] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let judged = permitted(source, "main");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+/// The permission result above must come from checked OP-4 evidence, not from
+/// recognizing the source expression again. The retained outcome records the
+/// exact coefficient and constant computed at that program point.
+#[test]
+fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(128_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let copy = i;
+    let slot = copy * 2_u64;
+    set out[slot] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the affine map fixture must check: {outcome:?}");
+        };
+        let main = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main is checked");
+        let maps = main
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == super::super::entailment::ObligationFamily::Bounds)
+            .expect("the mapped subscript has one OP-4 outcome")
+            .affine_index_maps
+            .as_slice();
+        let [map] = maps else {
+            panic!("the discharged OP-4 site must retain one active-loop image: {maps:?}");
+        };
+        assert_eq!(map.coefficient, 2);
+        assert_eq!(map.constant, 0);
+    });
+}
+/// A constant image has coefficient zero and is not injective. OP-4 proves
+/// the element access itself, but PAR-2 correctly keeps the whole-root write.
+#[test]
+fn a_zero_coefficient_element_map_is_denied() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(64_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let slot = i - i;
+    set out[slot] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
     assert!(matches!(
         denied(source, "main", 2),
         LoopDenial::SharedWrite { .. }
     ));
+}
+
+/// Two injective maps do not automatically have disjoint images across
+/// iterations. The fixed rule therefore requires every write site on one
+/// mapped root to carry the same coefficient and constant.
+#[test]
+fn two_different_affine_maps_of_one_root_are_denied() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(128_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let even = i * 2_u64;
+    let odd = even + 1_u64;
+    set out[even] = i;
+    set out[odd] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+/// Repeating one mapped write is harmless: one iteration may update its own
+/// element more than once, while the common map keeps every other iteration
+/// on a distinct element.
+#[test]
+fn repeated_writes_with_the_same_affine_map_are_permitted() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(128_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let slot = i * 2_u64;
+    set out[slot] = i;
+    set out[slot] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let judged = permitted(source, "main");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+/// The common-map requirement is per resolved collection. Ownership keeps two
+/// distinct roots disjoint, so each may use its own injective affine image.
+#[test]
+fn different_owned_roots_may_use_different_affine_maps() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let evens = buffer_new(128_u64, 0_u64);
+  let shifted = buffer_new(65_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let even = i * 2_u64;
+    let next = i + 1_u64;
+    set evens[even] = i;
+    set shifted[next] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let judged = permitted(source, "main");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+/// A map may coexist with one admitted reduction. The map supplies the
+/// disjoint writes while the real accumulator supplies the recombination
+/// payload; no synthetic map accumulator is introduced.
+#[test]
+fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(64_u64, 0_u64);
+  let total = 0_u64;
+  for @fill i in 0_u64..64_u64 {
+    set out[i] = i *wrap i;
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let judged = permitted(source, "main");
+    assert_eq!(judged.combines, vec!["+wrap"]);
+    assert!(matches!(
+        judged.actualization,
+        Some(LoopActualization::Reduction {
+            combine: LoopCombine::AddWrap,
+            ..
+        })
+    ));
+}
+
+/// An explicit proof with an unavailable premise cannot make an unproved write
+/// available to affine-map permission. PRF-1 rejects it first.
+#[test]
+fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
+    let source = br#"fn fill(output: own buffer<u64>, limit: own u64) -> result: own buffer<u64> reads(output), writes(output) {
+  let room = len(output);
+  prove limit_fits: ile(limit, room) {
+    use ile(limit, room);
+  }
+  for @fill i in 0_u64..limit {
+    set output[i] = i;
+  }
+  return move output;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let output = buffer_new(64_u64, 0_u64);
+  let filled = fill(output: move output, limit: 64_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unavailable proof premise must reject before permission: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Prf1);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedSourceProof { .. }
+        ));
+    });
+}
+
+/// A shared call loan is harmless beside another shared call, but not beside
+/// another iteration's write to the same mapped root. The loan is checked
+/// explicitly rather than relying on the argument also appearing as a read.
+#[test]
+fn a_shared_call_loan_on_the_mapped_root_is_denied() {
+    let source = b"fn observe['r](value: &'r buffer<u64>) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(64_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    region 'look {
+      let seen = observe<'look>(value: &'look out);
+    }
+    set out[i] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
+}
+
+/// An exact affine value is insufficient when OP-4 cannot prove the subscript
+/// is inside the collection. The dark entry lets this test inspect that
+/// fail-closed permission verdict without changing ordinary source acceptance.
+#[test]
+fn an_unproved_counted_binder_element_map_remains_denied() {
+    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(64_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    let slot = i + 1_u64;
+    set out[slot] = i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let table = dark_permission_of(source);
+    assert!(matches!(
+        denial(only_loop(&table, "main"), 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+    assert_eq!(only_loop(&table, "main").actualization, None);
 }
 
 /// A non-injective index map is refused for the same reason and by the same
@@ -601,10 +965,10 @@ fn a_non_injective_element_write_is_denied_by_condition_two() {
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::SharedWrite { .. }
-    ));
+    let table = permission_of(source);
+    let judged = only_loop(&table, "main");
+    assert!(matches!(denial(judged, 2), LoopDenial::SharedWrite { .. }));
+    assert_eq!(judged.actualization, None);
 }
 
 /// A stencil writes one element and reads another of the same buffer, which is
@@ -620,10 +984,10 @@ fn a_stencil_is_denied_by_condition_two() {
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::SharedWrite { .. }
-    ));
+    let table = permission_of(source);
+    let judged = only_loop(&table, "main");
+    assert!(matches!(denial(judged, 2), LoopDenial::SharedWrite { .. }));
+    assert_eq!(judged.actualization, None);
 }
 
 /// A callee that writes *caller* storage carries state across iterations
@@ -972,24 +1336,50 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Claims in the body and in its call closure
+// Proof-relevant operations in the body and call closure
 // ----------------------------------------------------------------------
 
-/// A `claim` written in the loop body is an ordinary statement here. It writes
-/// nothing, and it leaves the loop only when it is false — an erroneous
-/// execution, whose narrowed guarantee the trap latch meets. The loop is
-/// permitted, and its accumulator still carries the fold.
+/// The fixed remainder interval proves the following subscript before loop
+/// permission inspects the body. The proof adds no runtime operation and the
+/// independent reduction remains eligible.
 #[test]
-fn a_claim_in_the_body_is_permitted() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+fn an_automatic_remainder_bound_in_the_body_preserves_reduction_permission() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 8>(0_u8);
+  let total = 0_u64;
+  for @sum i in 0_u64..16_u64 {
+    let bounded = i % 8_u64;
+    let picked = values[bounded];
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let judged = permitted(source, "main");
+    assert_eq!(judged.combines, vec!["+wrap"]);
+    assert!(matches!(
+        judged.actualization,
+        Some(LoopActualization::Reduction {
+            combine: LoopCombine::AddWrap,
+            ..
+        })
+    ));
+}
+
+/// A dominating branch is the control-flow proof route. Its subscript checks,
+/// and the loop's independent reduction remains eligible and actualized.
+#[test]
+fn a_branch_proved_subscript_in_the_body_is_permitted() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 8>(0_u8);
   let size = len(values);
   let total = 0_u64;
   for @sum i in 0_u64..16_u64 {
     let bounded = imin(i, 7_u64);
     let inside = ilt(bounded, size);
-    claim index_small: inside because "premises: bounded is the minimum of the counted binder i and seven, and values has length eight\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following length-eight array subscript uses bounded";
-    let picked = values[bounded];
+    if inside {
+      let picked = values[bounded];
+    }
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -999,26 +1389,51 @@ fn a_claim_in_the_body_is_permitted() {
     let judged = only_loop(&table, "main");
     assert_eq!(judged.verdict, LoopVerdict::PermittedEligible);
     assert_eq!(judged.combines, vec!["+wrap"]);
-    let actualization = judged
-        .actualization
-        .as_ref()
-        .expect("a permitted reduction carries its accumulator");
-    assert_eq!(actualization.combine, LoopCombine::AddWrap);
+    assert!(matches!(
+        judged.actualization,
+        Some(LoopActualization::Reduction {
+            combine: LoopCombine::AddWrap,
+            ..
+        })
+    ));
 }
 
-/// The claim's predicate is still read like any other expression, so a claim
-/// that reads the accumulator is still a second read of it and condition 1
-/// still refuses. Admitting the statement did not stop counting what it reads.
+/// An accumulator-indexed subscript with no dominating fact is rejected before
+/// permission. This keeps the negative boundary entirely in source semantics.
 #[test]
-fn a_claim_reading_the_accumulator_is_still_a_read() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+fn an_unproved_accumulator_subscript_is_rejected_before_permission() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 128>(0_u8);
+  let total = 0_u64;
+  for @sum i in 0_u64..16_u64 {
+    let picked = values[total];
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unproved accumulator subscript must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+    });
+}
+
+/// In the accepted replacement, the ordinary guard and guarded subscript each
+/// read the accumulator beside its combine. Condition 1 must count all three
+/// reads and refuse the reduction.
+#[test]
+fn a_guard_reading_the_accumulator_is_still_a_read() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 128>(0_u8);
   let size = len(values);
   let total = 0_u64;
   for @sum i in 0_u64..16_u64 {
     let inside = ilt(total, size);
-    claim running_small: inside because "premises: total starts at zero and each iteration adds the counted binder, which the range keeps below sixteen, over at most sixteen iterations; values has length one hundred twenty-eight\nderivation: induction over the reached iterations keeps total at the sum of distinct values below sixteen, which is at most one hundred twenty\nconclusion: ilt(total, size) is true\nchecker gap: ENT carries no induction over the accumulator across the counted-range backedge\nconsumers: the following length-128 array subscript uses total";
-    let picked = values[total];
+    if inside {
+      let picked = values[total];
+    }
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -1028,30 +1443,58 @@ fn a_claim_reading_the_accumulator_is_still_a_read() {
     let judged = only_loop(&table, "main");
     let LoopVerdict::Denied(LoopDenial::AccumulatorRead { reads, .. }) = &judged.verdict else {
         panic!(
-            "a claim reading the accumulator must still refuse, got {:?}",
+            "a guard and guarded subscript reading the accumulator must refuse, got {:?}",
             judged.verdict
         );
     };
     assert_eq!(
         *reads, 3,
-        "the claim's predicate read and its consumer's subscript both count beside the combine's"
+        "the guard read and its guarded subscript both count beside the combine's"
     );
 }
 
-/// A `claim` in the body's call closure is likewise no reason to refuse. The
-/// judgment no longer walks the call graph for claims at all.
+/// A callee with an unproved subscript is rejected before loop permission can
+/// treat the call closure as complete.
 #[test]
-fn a_claim_in_the_call_closure_is_permitted() {
-    let source = br#"fn narrow(v: own u64) -> result: own u64 traps {
+fn an_unproved_subscript_in_the_call_closure_is_rejected() {
+    let source = br#"fn narrow(v: own u64) -> result: own u64 pure {
   let values = array_new<u64, 8>(1_u64);
-  let size = len(values);
   let bounded = imin(v, 7_u64);
-  let inside = ilt(bounded, size);
-  claim value_small: inside because "premises: bounded is the minimum of the parameter v and seven, and values has length eight\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following length-eight array subscript uses bounded";
   return values[bounded];
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
+  let total = 0_u64;
+  for @sum i in 0_u64..16_u64 {
+    let got = narrow(v: i);
+    set total = total +wrap got;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unproved callee subscript must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+    });
+}
+
+/// A callee whose branch proves its own subscript is a normal pure call in the
+/// body. It contributes no shared write and does not block reduction
+/// actualization.
+#[test]
+fn a_proof_complete_call_closure_is_permitted() {
+    let source = br#"fn narrow(v: own u64) -> result: own u64 pure {
+  let values = array_new<u64, 8>(1_u64);
+  let size = len(values);
+  if ilt(v, size) {
+    return values[v];
+  }
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum i in 0_u64..16_u64 {
     let got = narrow(v: i);
@@ -1065,7 +1508,7 @@ command fn main() -> status: own ExitStatus traps {
     assert_eq!(judged.verdict, LoopVerdict::PermittedEligible);
     assert!(
         judged.actualization.is_some(),
-        "a permitted loop over a claim-bearing callee still carries its fold"
+        "a permitted loop over a proof-complete callee still carries its fold"
     );
 }
 
@@ -1079,12 +1522,11 @@ command fn main() -> status: own ExitStatus traps {
 /// call graph, and never a derived fact — so facts-on and facts-off
 /// compilation produce the same verdicts by construction. The compiler has no
 /// facts-off switch to run a program through twice, so the differential is
-/// over *programs*: the three loops below are one shape whose subscript
-/// obligation is discharged three different ways — from the counted binder's
-/// own S11 bounds against a length term, from a claimed fact about a
-/// caller-supplied limit, and from a dominating branch — and their verdicts
-/// must be identical. A judgment that read the fact state could tell them
-/// apart; this one may not.
+/// over *programs*: accepted loops discharge the same subscript from the
+/// counted binder's own bounds, a branch dominating the whole loop, or a
+/// branch local to the iteration. Their verdicts must be identical. The
+/// unproved source-proof route remains below as a PRF-1 rejection, because
+/// writing a desired relation does not establish it.
 #[test]
 fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
     let structural = b"fn tally['s](src: &'s buffer<u64>) -> result: own u64 reads(src) {
@@ -1105,11 +1547,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return exit_status(code: 0_u8);
 }
 ";
-    let claimed = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src), traps {
+    let unproved =
+        br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   let bounded_limit = imin(limit, room);
-  let fits = ile(bounded_limit, room);
-  claim limit_fits: fits because "premises: bounded_limit is the minimum of the requested limit and room, and room is the input buffer's length\nderivation: a minimum is at most either operand, so bounded_limit is at most room\nconclusion: ile(bounded_limit, room) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the counted range below runs to bounded_limit and subscripts the input at its binder";
+  prove limit_fits: ile(bounded_limit, room) {
+    use ile(bounded_limit, room);
+  }
   let total = 0_u64;
   for @sum i in 0_u64..bounded_limit {
     let v = deref(src)[i];
@@ -1118,7 +1562,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   region 's {
     let t = tally<'s>(src: &'s data, limit: 64_u64);
@@ -1126,6 +1570,33 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   return exit_status(code: 0_u8);
 }
 "#;
+    with_semantics(unproved, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the unproved relation must reject before permission: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Prf1);
+    });
+    let dominating =
+        b"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
+  let room = len(deref(src));
+  let total = 0_u64;
+  if ile(limit, room) {
+    for @sum i in 0_u64..limit {
+      let v = deref(src)[i];
+      set total = total +wrap v;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(64_u64, 1_u64);
+  region 's {
+    let t = tally<'s>(src: &'s data, limit: 64_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+";
     let branched =
         b"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
@@ -1150,7 +1621,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 ";
     let verdicts = [
         structural.as_slice(),
-        claimed.as_slice(),
+        dominating.as_slice(),
         branched.as_slice(),
     ]
     .map(|source| {
@@ -1163,7 +1634,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         (LoopVerdict::PermittedEligible, vec!["+wrap"]),
         "the structurally bounded loop is permitted"
     );
-    assert_eq!(verdicts[0], verdicts[1], "a claimed bound moves no verdict");
+    assert_eq!(
+        verdicts[0], verdicts[1],
+        "a loop-dominating branch moves no verdict"
+    );
     assert_eq!(
         verdicts[0], verdicts[2],
         "a branch-established bound moves no verdict"

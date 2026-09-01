@@ -1,7 +1,8 @@
 fn make(n: own u64) -> return_value: own buffer<i32> allocates(heap) contract {
+  requires ile(n, 1024_u64);
   requires buffer_fits<i32>(n);
 } {
-  doc "buffer_new(n, v) allocates and fills a flat runtime-length buffer only after its buffer_fits<T>(n) obligation is proved [OP-9].";
+  doc "buffer_new(n, v) allocates and fills a flat runtime-length buffer only after its source allocation bound and selected-target byte bound are both proved [OP-9, STOR-6].";
   return buffer_new(n, 0_i32);
 }
 

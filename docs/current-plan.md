@@ -1,237 +1,430 @@
-# Current Plan: unified-state completion I/O
+# Current Plan: source-carried proof in the compiler
 
-Status: IMPLEMENTED, VALIDATED, AND ACTIVATED on
-`codex/io-first-principles`.
+Status: IMPLEMENTATION COMPLETE; v0.40 is activated on `codex/source-proof`.
 
-Active language authority: v0.39,
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.38 is
-archived at `spec/kernel-spec-v0.38.md` and the merge-time record is in
-`governance/APPROVALS.md`. Activation is branch content: nothing merges to
-`main` until the owner approves the exact revision and canonical `make check`
-passes on that revision. The batch record is
-`docs/done/0082-unified-state-completion-io.md`.
+Active language authority: v0.40, SHA-256
+`5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`.
+The conditional merge-time activation record becomes effective when the owner
+approves the exact revision containing it for merge into `main`.
 
-v0.39 rides on `batch/0102-clm1-narrow` and adds no rule. It narrows one
-paragraph of [CLM-1]'s claim authority: a boundary selector's witness now joins
-a matching binder its arm introduces, a value `value_if` or `value_match`
-delivers, and, at a reconvergence, loop head, or loop exit, exactly those
-components whose incoming reaching definitions are different definition
-occurrences. Standing on a boundary-selected edge is no longer itself a
-selection, so a definition built from literals, named consts, parameters, and
-other local values is local in post-join state and inside the selected arm
-alike. The ground is batch 0097's differential-fuzz campaign, all 63 of whose
-rejections over 2004 programs were that one shape. Its record is
-`docs/done/0102-clm1-narrow.md`.
-
-v0.38 rode on `batch/0091-par3-judgment` and added one rule, [PAR-3], the
-staged loop permission: it cuts the body of any `for_stmt` or `loop_stmt` at
-its first `may-suspend` submission and admits executing the remainder of one
-iteration against the prologue of a later one. It also amends [SYS-2] in one
-sentence, to name the release milestone of the name an open borrows: batch
-0089's adapters publish that loan release at submission, and the contract now
-says so. That batch lands the judgment and its ledger only — no lowering and no
-runtime change — so it grants a verdict a later batch actualizes and moves no
-published byte today. Its record is `docs/done/0091-par3-judgment.md`.
-
-The remaining hole in the two-host gate is closed. Batch 0090 put canonical
-`make check` on a GitHub Linux runner and ended it red on one thing: the
-compiler had no approved [SYS-14] directory-enumeration row for Linux, because
-its record model required a per-entry name length and `struct linux_dirent64`
-states none. Batch 0094 replaced that model with one that asks the target where
-a name's length comes from — a field on Darwin, a scan bounded by `d_reclen` on
-Linux — and landed the row. The two directory-walking corpus programs now
-compile, run, and publish the same bytes on both hosts for the same tree; the
-Linux conformance adapter reports the macOS number, `Pass=509 Skip=1`; and the
-host limits 0090 had to declare are removed rather than narrowed. Its record is
-`docs/done/0094-linux-directory-row.md`.
+This branch implements source proof checking in the ordinary compiler path.
+Whitefoot source is the proof-bearing input; parser output, checked syntax,
+facts, obligations, and lowering input are ordinary compiler data.
 
 ## Objective
 
-Whitefoot exposes I/O as ordinary calls over ordinary values:
+Whitefoot is a proof-carrying systems language. The only author-controlled
+semantic input is Whitefoot source code. That source contains the program,
+contracts, loop invariants, and any explicit proof steps needed when the fixed
+automatic rules are insufficient.
 
-```whitefoot
-fn write_once['o, 's](
-  output: &uniq 'o Output,
-  source: &'s buffer<u8>,
-  start: own u64,
-  end: own u64
-) -> result: own Result<u64, IoError>
-reads(output, source), writes(output);
+The compiler must reject every supported partial operation that it cannot prove
+safe before lowering. An accepted program may still implement the wrong
+algorithm, but it must not execute memory corruption, a data race, an
+uninitialized read, silent overflow, an out-of-bounds access, another undefined
+operation, or a writer-reachable language trap.
+
+The same checked facts serve four jobs:
+
+1. admit partial operations;
+2. prove `ensures` and publish facts to callers;
+3. authorize optimizer transformations and removal of redundant checks; and
+4. prove `par` ownership, effects, independence, indexed disjointness, map,
+   reduction, and bounded queue/completion conditions.
+
+Proof syntax is erased before lowering. It has no runtime representation and
+adds no runtime branch, lock, scheduling edge, metadata lookup, or fallback.
+
+The cost is source-writing difficulty. A valid program may need contracts,
+loop invariants, and explicit finite proof steps before the compiler can admit
+it. Whitefoot accepts that cost because AI is the intended writer; the compiler
+still checks every step, and the human still approves the requirements and
+resulting code.
+
+## Acceptance boundary
+
+The normal compiler path is:
+
+```text
+.wf source
+  -> lexer and parser
+  -> resolved, typed program plus typed source proof syntax
+  -> semantic fact flow
+  -> direct checking of source proof steps and compiler obligations
+  -> checked program
+  -> proof erasure
+  -> ordinary IR, LLVM, and executable
 ```
 
-The writer supplies values, `own`, `move`, borrows, exact effects, and typed
-outcomes. The compiler keeps independent operations in flight. The target
-publishes completion. The scheduler runs writer code only after the required
-ordinary ownership returns.
+The source is the sole author-supplied proof input. If internal compiler
+structures disagree, that is a compiler defect to fix in code and tests, not a
+new proof obligation or a runtime check.
 
-Completion is the only writer-visible I/O model. Direct, inline, readiness,
-helper, io_uring, and IOCP paths are target lowerings of that model.
+## Deterministic proof boundary
 
-## Settled language boundary
+The official compiler uses no SMT solver for acceptance. Automatic reasoning is
+admitted only when all of the following are true:
 
-1. `reads` and `writes` name formal parameters or static fields rooted in a
-   formal parameter. They no longer accept a lifetime.
-2. A lifetime states only loan duration and outlives relations.
-3. `own`, `move`, `&`, and `&uniq` provide all authority. Files, sockets,
-   Outputs, clocks, factories, permits, and Sources are ordinary opaque affine
-   values rather than a capability language category.
-4. The language has one state/effect system. It has no `memory` or `world`
-   effect tag and no `external` or `blocks` atom.
-5. A fine effect path describes checked behavior. It never narrows the loan
-   written in the parameter or actual argument.
-6. Changing state machines use `own` or `&uniq`. Independent work is exposed
-   through distinct ordinary owned values, fields, borrows, or permits.
-7. No logical-root registry, family/fragment table, Free/Ordered/Exclusive
-   relation, or Output-specific ordering edge participates in permission.
-8. A factory or reserve call exhibits its own effect. Later operations on its
-   local result frame locally; they are not relabelled through child-to-parent
-   ancestry.
-9. Existing move semantics transfers identity. The compiler may retain
-   internal summaries needed to check calls and release, but the language gains
-   no lineage or generative-identity feature.
-10. A false claim is impossible in a correctly reviewed program and adds no
-    cost, metadata, gate, wake, or serialization to a correct operation path.
-11. File opens consume ordinary one-shot `FilePermit` owners produced by a
-    total inline `reserve_file(&uniq FileFactory)`. `DirectoryRead` remains a
-    shared stable selector, so two permits allow two opens through one
-    directory without a long directory or factory loan.
-12. The first permit is proof-only and burns on every open outcome. It reserves
-    no host quota; `ResourceExhausted` remains a typed open result, and backend
-    lowering erases the permit before the native open ABI.
+- the specification fixes the algorithm and its iteration order;
+- the result is unique for the given input facts;
+- termination does not depend on a timeout;
+- worst-case work and memory follow from checked input size; and
+- the implementation remains fast on maintained real programs.
 
-The complete derivation is in
-`research/investigations/io-model/FIRST-PRINCIPLES.md`; the concise selected
-design is in `research/investigations/io-model/DESIGN.md`.
+The implemented automatic domains are ownership, borrows, effects,
+initialization, integer type ranges, ground relations, difference bounds, the
+current affine rules, and specification-fixed dataflow. Known bits, modular
+congruence, and richer typestate remain candidate finite domains until an
+active rule and a real program justify each one. Algorithms such as graph
+closure or a finite fixed point are allowed only when their universe, order,
+result, and work bound are fixed.
 
-## Retained implementation substrate
+Harder proofs must not expand compiler search. The implemented loop surface has
+the author state the invariant explicitly; the compiler checks it but does not
+guess one. Implemented `prove`/`use` steps name already available premises and
+one fixed coefficient-one combination. No proof form may ask the compiler to guess a
+coefficient, induction hypothesis, branch split, intermediate term, rewrite
+direction, or path.
 
-The former completion candidate established useful target/runtime work. The
-rebuild retained and requalified:
+## Implemented first vertical slice
 
-- finite generation-checked operation records;
-- one terminal publisher and monotonic result-ready, per-path loan-release,
-  and terminal milestones;
-- release/acquire result publication and drain-before-resume;
-- announce, recheck, then park with one compute/completion sleeping decision;
-- target callbacks and helpers which receive typed operation bundles and never
-  execute writer code;
-- pure-compute link isolation;
-- selective stackless lowering and direct/inline depth-one specialization;
-- real Linux io_uring operations, bounded macOS helper fallback, and the
-  Windows IOCP/OVERLAPPED foundation; and
-- deterministic hostile-race, sanitizer, target, and performance probes.
+The first end-to-end program now passes source checking, proof erasure, LLVM
+lowering, linking, and execution:
 
-The historical measurements in the I/O investigation remain evidence only for
-the components they actually measured.
+```whitefoot
+fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
+  define capacity = len(deref(weights));
+  requires ile(count, capacity);
+  requires ile(count, 1000_u64);
+  ensures ile(total, 255000_u32);
+} {
+  let sum = 0_u32;
+  for i in 0_u64..count {
+    invariant per_byte: ile(sum, 255_u32 * i);
+    let w = deref(weights)[i];
+    let wide = cvt<u8, u32>(w);
+    set sum = sum + wide;
+  }
+  return sum;
+}
+```
 
-## Replaced or deleted
+The checker handles this source in program order and proves seven separate
+things:
 
-- REGIONID/capability mixed effect operands;
-- separate memory and capability effect sets;
-- `CapabilityResultOrigin` and any I/O-specific root propagation;
-- family-fragment and Ordered permission;
-- shared writer-visible mutation of Output or DirectorySource;
-- ordered Output batches, fixed 2-16 or 2-64 group concepts, and whole-group
-  waits;
-- legacy bridge APIs which expose roots, families, or batch ordering; and
-- compiler/runtime branches which treat a direct system call as a different
-  source-language call class.
+1. on the first loop header, `sum <= 255*i`;
+2. on an arbitrary reachable header, `i < len(weights)` before indexing;
+3. `sum + wide` is in the `u32` domain before the addition;
+4. the hidden `i + 1` update is in the `u64` domain;
+5. after an arbitrary iteration and the hidden update, the next header again
+   satisfies `sum <= 255*i`;
+6. normal exhaustion exports `sum <= 255*count` to the continuation; and
+7. `count <= 1000` then proves every selected return's written
+   `ensures sum <= 255000`.
 
-## Completed implementation sequence
+The word "arbitrary" in step 5 is essential. This is the induction step for
+any reachable iteration, not a simulation of the second iteration.
 
-1. Rewrite the first-principles, design, current-plan, roadmap, specification,
-   and compiler-facing documentation so they state one model without a
-   superseded sibling.
-2. Replace effect syntax and semantic storage with parameter-rooted static
-   paths. Normalize contracts by parameter and field ordinal.
-3. Project user and system call effects directly onto actual resolved places,
-   including slices and reborrows. Preserve ordinary owner identity across
-   moves, results, aggregates, and compiler-derived release only where the
-   existing value flow requires it.
-4. Remove I/O capability origins, family relations, and Ordered IR edges.
-   Permission continues to check data, control, operand reads, effects, actual
-   loans, consumed owners, and exits.
-5. Change advancing system APIs to `own` or `&uniq`. Keep shared positioned
-   reads and shared directory selectors where the mapped value itself has no
-   consumed cursor or observation state; carry each file-open occurrence in an
-   owned one-shot permit.
-6. Replace batch actualization with dependency-driven submission. A successor
-   becomes eligible when its exact value and loan requirements return, without
-   waiting for unrelated operations.
-7. Remove the legacy bridge and group admission surfaces while retaining the
-   qualified single-operation completion core and target-private channels.
-8. Migrate all compiler tests, conformance cases, maintained programs, and
-   documentation to the same specification bytes.
-9. Run the complete verification matrix and measure the cleaned runtime again.
-10. Archive the outgoing v0.36 bytes, activate v0.37, record the activation and
-    conformance boundary, and bring every digest anchor to the new identity.
+## Implemented
 
-## Evidence obtained
+1. `invariant name: ile(left, right);` is part of the ordinary grammar,
+   resolver, checked model, diagnostics, and proof-erasing lowering path.
+2. The fixed affine checker proves a simultaneous invariant prefix at the first
+   header and across every reachable backedge, including the hidden unit binder
+   update. It performs no coefficient or invariant search.
+3. Exact normal exhaustion substitutes the captured upper endpoint into proved
+   invariants. A reaching `break` removes facts not shared by every continuation.
+4. The loop guard and contract facts discharge `weigh` indexing. Its invariant
+   discharges accumulator overflow and, after exact exhaustion, the written
+   `ensures`; the counted-loop rules discharge hidden binder overflow. The
+   backend test compiles, links, and runs `weigh`, with no invariant runtime
+   operation or overflow fallback.
+5. Multiple invariants are checked as one source-ordered induction batch. When
+   proving a later invariant's backedge, the checker may use an earlier proved
+   invariant from the same header prefix.
+6. Numeric and logical consumers use one current `ProofContext` and one
+   normalized `prove` entry. Fixed ordinary closure and affine reasoning remain
+   separate deterministic routes behind that entry; diagnostics are produced
+   with the originating decision.
+7. `prove name: ile(...) { use ile(...); }` is implemented in grammar,
+   resolution, semantic checking, diagnostics, proof flow, and erasure. Each
+   premise is checked in the same pre-proof context and the target must equal
+   the exact coefficient-one sum.
+8. `requires` is discharged before call transfer, and `ensures` is proved at
+   selected returns and published atomically across call-graph components.
+   Supported callers consume the resulting summaries through the same proof
+   context.
+9. The v0.40 grammar, semantic compiler, checked model, lowering, backend,
+   conformance surface, and ordinary tests no longer contain the released
+   writer assertion or its runtime path. Proof failure now has one disposition:
+   compile-time rejection.
+10. Selected-target layout, allocation-ceiling, and address-domain checks run
+    before emission. Parallel permission consumes already-checked operation,
+    ownership, effect, and loop facts; proof-only statements add no runtime or
+    scheduler edge.
+11. One source-derived fixed two-slot bounded-batch completion path is
+    implemented for the narrow direct staged counted-loop shape. On native
+    POSIX completion targets its runtime window is bounded to `1..2`; qualified
+    non-completion targets retain the same generated CFG with a deterministic
+    window of one and direct calls. Every issued slot is drained in source
+    order before slot zero can be reused. Dynamic per-iteration paths, an odd
+    final batch, ordinary result/error arms, and native link/run behavior have
+    executable evidence. A function containing two staged loops deliberately
+    leaves both on the ordinary path rather than partially transforming one.
+12. Counted-loop map permission consumes the exact value image retained beside
+    an already-discharged OP-4 result. It admits a direct-owned, write-only
+    single-binder affine map `a*i+b` with `a != 0`, requires every write to one
+    root to use the same map, and keeps borrowed roots, reads, `replace`, and
+    unresolved effects sequential. Copies and checked affine transforms of the
+    binder therefore work without parser-shape recognition or a second bounds
+    proof.
 
-The activated revision proves:
+## Measured compiler cost and runtime behavior
 
-- two parameters sharing one lifetime remain separate effect subjects;
-- an owned resource parameter is directly nameable in an effect;
-- a field effect preserves sibling facts without narrowing a whole-object loan;
-- two distinct outputs overlap and two unique loans of one output do not;
-- a later same-output call starts after the earlier loan returns without
-  waiting for unrelated I/O;
-- a moved incoming owner is attributed correctly at call and release;
-- no local fresh child requires a factory ancestry or hidden authority table;
-- two short factory loans can mint two affine permits, and those permits admit
-  two opens through one shared `DirectoryRead` without a retained factory loan;
-- permit move is single-use, host exhaustion stays a typed open result, and no
-  permit argument reaches the native open ABI;
-- completion-before-wait, stale generation, duplicate terminal, capacity,
-  cancellation, and multi-waiter races preserve every owner and loan;
-- pure compute links and executes no completion machinery;
-- API success, empty, partial, EOF, failure, untouched-tail, and defined
-  release outcomes are correct; finish/recycle APIs remain outside this first
-  slice;
-- macOS executes its qualified fallback path; the retained Linux io_uring path
-  has its existing native evidence but was not re-executed on this Mac; and
-  Windows remains honestly fail-closed until native execution evidence exists;
-- focused tests, maintained programs, conformance, sanitizers, stress, and
-  every independently runnable component behind the specification archive
-  gate pass; and
-- cleaned fast paths are measured against the best matched native shape.
+These are bounded development measurements from 2026-09-01 on the local
+10-core Apple M4 host running macOS 26.5.2, using the release compiler. They
+are evidence for this implementation, not portable performance guarantees.
 
-## Program-level performance, measured 2026-08-27
+- Three complete compilations of `tests/programs/wfgrep.wf` took
+  0.694-0.750 seconds through LLVM emission and 1.159-1.571 seconds through
+  native linking. The same real program currently retains 23,394 diagnostic
+  derivation nodes and 45,669 parent edges. Machine-independent tests cap those
+  sizes at 25,000 and 50,000, so a return to the former million-node cost shape
+  fails deterministically instead of depending on a wall-clock timeout.
+- The maintained parallel benchmark generator produced `bal_d12_w192` with
+  700 repetitions. Nine fixed-order interleaved runs per cell gave minimum
+  execution times of 0.5373 seconds for the sequential build, 0.5381 seconds
+  for the `--par` build at one worker, 0.2849 seconds at two workers, and
+  0.1615 seconds at four workers. That is 1.00x one-worker cost and measured
+  speedups of 1.89x and 3.33x at two and four workers for this admitted shape.
+  All 36 runs exited successfully and published identical result bytes. This
+  demonstrates that the checked ownership, effect, and independence facts can
+  authorize useful parallel code without adding proof work at runtime; it does
+  not claim that every permitted workload is profitable.
 
-The evidence above is component evidence. Whole programs were first measured
-on branch `batch/0084-io-perf` and re-measured on `batch/0086-open-handout`
-with the base commit and the branch interleaved in one plan on a quiet host;
-both tables are in `research/investigations/io-model/RESULTS.md` and the
-bundle that produces them is `research/experiments/io-completion-bench/`.
+## Future extensions after v0.40
 
-On a many-independent-files workload the shipped build is about two times
-faster than its own sequential build on macOS and about 2.8 times on Linux, so
-the overlap is real. Against the native ceiling it is within 6 percent of a
-hand-written io_uring pipeline running at the same queue depth the four-wide
-source asks for; at eight-wide the same comparison opens to 26 percent, and
-against a thread pool that also folds each file on the worker that read it —
-compute parallelism the source cannot express — it is 1.5x on macOS and 3.0x
-on Linux.
+The v0.40 source-proof implementation and activation evidence are complete.
+The items below are possible later projects selected by real-program pressure;
+they are not missing work for v0.40 activation.
 
-Batch 0086 moved the Linux open onto the ring, which removes the last blocking
-`openat` from a scheduler thread at no measured cost, and established what the
-remaining distance is not. It is not the opens: on Linux the entire
-open-plus-close budget is 9 percent of the program, and moving it changed the
-total by about one percent. It is not the completion protocol's per-operation
-cost either: the four-wide program still matches a hand-written ring at the
-same depth.
+1. Generalize the loop checker across the remaining branch, join, nested-loop,
+   modified-value, and multi-exit shapes without recognizing a function name or
+   source pattern.
+2. Exercise the implemented `prove`/`use` surface through the shared goal entry
+   for postconditions, calls, allocation/address checks, target-domain checks,
+   and `par`. Add another source proof rule only when a selected real program
+   cannot express its proof with the fixed coefficient-one form; do not replace
+   missing expressivity with compiler search.
+3. Extend static discharge to newly implemented active-spec operations as each
+   one enters the compiler. Arithmetic, conversion, subscript, initialization,
+   projection, allocation, layout, address, target, system-range, and
+   queue/completion families retain the same prove-or-reject boundary; an
+   unsupported family is not silently treated as valid or invalid source.
+4. Complete proof-driven `par` beyond the current sibling-call, write-only
+   single-binder affine map, enumerated reduction, and narrow staged-I/O forms.
+   The fixed two-slot
+   bounded batch now supplies one complete multi-operation driver; widen it
+   only with equally explicit ownership, publication, queue, drain, and
+   selected-target evidence for additional control-flow shapes, operation
+   families, and more than one staged loop in a function.
+### Retirement evidence for the old runtime-assertion surface
 
-What remains is the width a source can express and the barrier that comes with
-it. Overlap groups are runs of consecutive calls in one basic block, so a loop
-with one I/O call per iteration overlaps nothing and measures like the
-sequential build, and a hand-widened one joins its whole group before starting
-the next — paying the maximum of N latencies per round where a native pipeline
-keeps N continuously in flight. Deciding whether the language, the lowering, or
-neither should widen and pipeline that is the next I/O question, and it is a
-design decision rather than a defect.
+The active v0.40 branch has removed `claim ... because`, `deny_claims`, the `traps` effect
+category, and the CLM/PRV/TRAP rules that existed only to constrain or execute
+that surface. Their former conformance cases must be retired rather than
+rewritten into vacuous passing programs: once those constructs are no longer
+in the language, a test of their old acceptance, rejection, locality,
+provenance, or runtime behavior is not evidence for any surviving rule.
 
-No test, verdict, check, or failure path was weakened to make this revision
-green. Canonical `make check` now runs to completion on the activated identity
-rather than stopping at the candidate archive gate. No merge into `main`
-occurs without owner approval of the exact revision.
+The conformance audit identifies 52 such single-purpose cases. Before their
+retirement, every surviving rule referenced by those mixed rows was counted
+against the remaining corpus; no surviving rule loses all coverage. The
+narrowest affected counts remain nonzero (`SYS-2` changes from 19 cases to 3,
+and `FN-6` from 8 to 3). Cases that still test a live effect, arithmetic,
+ownership, function, or system rule are migrated to ordinary facts,
+contracts, invariants, or explicit finite source proofs instead of being
+deleted. The active specification, manifest, runner verdict domain, compiler
+tests, and runtime path are updated in the same branch so no removed test is
+being discarded merely to make a failing check green.
+
+The replacement inventory is concrete rather than inferred from the counts.
+Every surviving rule that the retired rows also named has independent live
+positive or negative evidence outside that retirement set:
+
+- effects: `EFF-1` by `eff1-neg-wrong-order-row` and
+  `x-eff-pure-combined-with-allocation`; `EFF-2` by
+  `eff2-neg-undeclared-exhibited`, `eff2-neg-declared-unexhibited`, and the two
+  allocation-call rows;
+- finite entailment: `ENT-3` by `op4-pos-index-discharged` and
+  `ent3-pos-s1-branch-fact`; `ENT-4` by
+  `ent4-pos-transitivity-discharges` and
+  `ent4-neg-nonstrict-bound-underivable`; `ENT-5` by
+  `ent5-pos-element-write-preserves-length` and
+  `ent5-neg-kill-on-write`; `ENT-6` by `op9-pos-buffer-new` and
+  `op4-neg-index-undischarged`;
+- functions and control: `FN-1` by `fn1-pos-signature-driven-call` and
+  `own1-neg-bare-affine-call`; `FN-2` by
+  `ent1-pos-instantiation-judged-at-value` and
+  `ent1-neg-instantiation-judged-at-value`; `FN-6` by
+  `fn6-pos-recursion` and `fn6-neg-polymorphic-recursion`; `FN-8` by
+  `fn8-pos-requires-run` and `fn8-neg-entry-contract`; `FN-9` by
+  `fn9-pos-plain-direct-result` and `fn9-neg-unproved-selected-return`;
+  `ERR-3` by `err3-pos-propagate` and `err3-neg-error-type-mismatch`; and
+  `GIVE-1` by `run-ex1-value-match` and
+  `x-match-give1-wrong-type`;
+- partial operations and mutation: `OP-2` by
+  `run-invariant-exact-sum`, `op2-pos-div-checked`, and
+  `op2-neg-div-wrap`; `OP-4` by `op4-pos-index-discharged` and
+  `op4-neg-index-undischarged`; `OP-9` by `op9-pos-buffer-new` and
+  `ent3-pos-s6-allocation-length-fact`; `SET-1` by
+  `ent3-pos-s5-set-commit-image` and `ent5-neg-kill-on-write`;
+- syntax and system contracts: `GRAM-4` by `gram4-pos-stmts` and the mutable
+  buffer program rows; `SYS-2` by `accept-sysentry-command-all-inputs` and
+  `reject-sys2-args-count-missing-region`; and `SYS-11` by
+  `accept-sysrelease-return-unit-declared` and
+  `reject-syseff-return-unit-pure`.
+
+The behavior unique to the 52 rows is therefore exactly the removed runtime
+assertion, strict-closure, or assertion-provenance surface. The rows above,
+plus the new invariant and source-proof cases, remain wired through the same
+manifest and runner after that surface is retired.
+
+The retirement boundary for each old row is recorded below. “Removed with the
+surface” means the row tested no surviving source form or rule; the named live
+rows are the independent evidence for any behavior that still exists.
+
+| Retired row | Exact after-boundary evidence |
+| --- | --- |
+| `clm1-trap-false-claim-aborts` | Runtime assertion failure is removed. `prf1-neg-unproved-premise` proves that an unproved written premise is rejected and creates no executable fallback. |
+| `clm1-pos-passing-claim-establishes-fact` | `prf1-pos-explicit-affine-proof`, `run-invariant-exact-sum`, and `op4-pos-index-discharged` cover the three surviving fact constructors. |
+| `clm1-trap-false-claim-not-refutable` | Removed with the runtime-assertion surface; `prf1-neg-unproved-premise` owns the surviving compile-time rejection. |
+| `clm1-neg-repeated-claim-name` | Removed with `claim`; proof and invariant name rules are covered by their own PRF-1/INV-1 source cases rather than retaining a CLM verdict. |
+| `clm2-pos-redundant-claim-advisory` | Removed with the assertion lifecycle. The compiler may retain an already proved fact, while every `prove` premise is independently checked by `prf1-pos-explicit-affine-proof`. |
+| `clm2-neg-refuted-claim` | Removed with the assertion lifecycle. A false or absent proof premise is a PRF-1 rejection in `prf1-neg-unproved-premise`. |
+| `scope4-pos-claim-traps` | Runtime proof failure is no longer a source outcome. `op4-pos-index-discharged` covers static admission and the proof-erasure tests cover absence of a runtime branch. |
+| `clm1-neg-user-result-claim-locality` | `fn9-pos-plain-direct-result`, `fn9-neg-unproved-selected-return`, and the FN-8 caller cases cover verified cross-function facts. |
+| `clm1-neg-system-result-claim-locality` | `op4-neg-external-index-without-fact` and `op4-pos-external-index-after-branch` cover the exact no-fact/real-branch boundary. |
+| `accept-clm1-local-claim-after-boundary-exit` | `op4-pos-external-index-after-branch` and the SYS-11 release cases cover the surviving selected-edge and early-return behavior. |
+| `accept-clm1-local-claim-after-boundary-join` | Ordinary join behavior remains in ENT-5 cases; no assertion-locality verdict survives. |
+| `accept-clm1-local-claim-inside-selected-arm` | `ent3-pos-s1-branch-fact` covers an ordinary selected-arm fact without assertion authority. |
+| `reject-clm1-claim-on-selected-payload` | `fn9-neg-unproved-selected-return` and the external-value negative cases require a verified summary or a real fact before use. |
+| `reject-clm1-claim-on-delivered-selection` | `x-match-give1-wrong-type` and the external-value negative cases independently cover GIVE-1 and missing proof. |
+| `reject-clm1-claim-on-storage-written-under-selection` | `ent5-neg-kill-on-write` covers the reaching-definition kill; `op4-neg-external-index-without-fact` covers the remaining undischarged access. |
+| `reject-clm1-claim-on-loop-carried-update` | `run-invariant-exact-sum` and the INV-1 negative cases cover loop-carried facts by induction instead of assertion locality. |
+| `eff1-pos-pure-and-traps-rows` | The `traps` row is removed. `eff1-neg-wrong-order-row` and `x-eff-pure-combined-with-allocation` cover the surviving EFF-1 rows. |
+| `eff2-pos-declared-traps-exhibited` | The `traps` exhibition is removed. `eff2-neg-undeclared-exhibited`, `eff2-neg-declared-unexhibited`, and the allocation-call rows cover EFF-2. |
+| `eff4-pos-trap-aborts` | Writer proof abort is removed. PRF-1/OP-2 negative cases cover static rejection; proof-erasure evidence covers the absent runtime edge. |
+| `eff2-neg-propagate-hidden-trap` | `err3-pos-propagate`, `err3-neg-error-type-mismatch`, and the surviving EFF-2 allocation rows cover propagation and effect closure. |
+| `eff2-pos-propagate-declared-trap` | Same surviving ERR-3 and EFF-2 rows; there is no proof-only runtime effect to declare. |
+| `fn8-neg-requires-missing-traps` | `fn8-pos-requires-run`, `fn8-neg-external-actual-without-fact`, and the EFF-2 rows separate static requirement proof from runtime effects. |
+| `fn8-neg-strict-outside-caller-unproved-requirement` | `fn8-neg-external-actual-without-fact` covers the undischarged caller goal; the deleted strict-closure marker has no surviving behavior. |
+| `prv3-pos-external-branch` | Replaced exactly by `op4-pos-external-index-after-branch`. |
+| `prv3-neg-external-claim-conjunction` | Replaced by `op4-neg-external-index-without-fact` and `prf1-neg-unproved-premise`: neither a conclusion nor an unproved premise creates a fact. |
+| `prv3-neg-external-claim` | Replaced exactly by the OP-4 and FN-8 external-value negative rows. |
+| `prv3-pos-internal-claim` | `run-invariant-exact-sum` and `prf1-pos-explicit-affine-proof` cover internally proved relations. |
+| `prv3-pos-external-bound-only` | `op4-pos-external-index-after-branch` covers the real bound while keeping unrelated values ordinary. |
+| `prv2-pos-allocation-equality-call` | `op9-pos-buffer-new`, `ent3-pos-s6-allocation-length-fact`, and `fn8-pos-requires-run` cover allocation length and caller substitution. |
+| `prv2-neg-nonexact-goal` | The surviving FN-8 negative rows require the exact instantiated goal; no provenance event remains. |
+| `prv2-neg-direct-system-result` | Replaced exactly by `fn8-neg-external-actual-without-fact`. |
+| `prv2-neg-entry-system-result-bridge` | `fn8-neg-external-actual-without-fact` proves that a helper cannot bootstrap its caller requirement. |
+| `prv2-neg-two-hop-bridge` | The same FN-8 negative plus ordinary transitive call tests cover the two-hop case without a separate demand graph. |
+| `prv2-neg-recursive-demand` | `fn6-pos-recursion`, `fn6-neg-polymorphic-recursion`, and failed recursive FN-9 publication tests cover recursion without assertion demand. |
+| `prv2-neg-mutual-demand` | The mutual-recursion and failed-component publication tests cover the surviving SCC behavior. |
+| `prv2-pos-seedless-mutual` | The seedless mutual postcondition test covers atomic publication without a provenance component. |
+| `prv1-pos-payload-sibling-isolation` | Enum payload and borrow tests retain projection isolation; protected use still requires its own OP-4 fact. |
+| `prv3-neg-read-offset-taint` | Each subscript now submits its own OP-4 goal; the OP-4 external negative/positive pair covers the exact boundary. |
+| `prv1-pos-control-write-address-nontaint` | `ent3-pos-s5-set-commit-image`, `ent5-neg-kill-on-write`, and the OP-4 branch case cover write facts and later access independently. |
+| `prv2-neg-complete-only-postcondition` | `fn9-neg-unproved-selected-return` and `fn8-neg-external-actual-without-fact` require an originating verified summary. |
+| `prv2-pos-postcondition-b-summary` | `fn9-pos-plain-direct-result` and `fn8-pos-external-actual-after-branch` cover verified summary publication and caller use. |
+| `clm3-pos-transitive-value-branch` | Generic, GIVE-1, FN-8, FN-9, and mutual-SCC behavior remains under the independent live rows listed above; `deny_claims` is removed. |
+| `clm3-neg-direct-unreachable-claim` | Removed with `claim` and `deny_claims`; no strict-closure event survives. |
+| `clm3-neg-generic-first-import` | Generic instantiation tests cover FN-2; assertion import order is removed. |
+| `clm3-pos-upward-near-miss` | Ordinary generic calls and OP-4 facts remain independently covered; upward assertion closure is removed. |
+| `clm3-neg-mutual-scc-import` | Mutual-recursion and atomic postcondition-publication tests cover the surviving SCC semantics. |
+| `clm3-neg-static-conjunction-unproved` | `prf1-pos-explicit-affine-proof` is the explicit composition repair; FN-8 negative rows retain exact-goal rejection. |
+| `clm3-neg-body-check-bounds` | OP-4 and INV-1/PRF-1 rows cover the body obligation directly. |
+| `clm3-neg-body-check-requires` | FN-8 and PRF-1 rows cover the call requirement directly. |
+| `clm3-neg-transitive-check-summary` | FN-9 publication and OP-4 rows cover the callee summary and downstream obligation directly. |
+| `x-arith-idiv-trap-signed-two-variable-traps` | `op2-pos-div-checked`, `op2-neg-div-wrap`, and the explicit nonzero-requirement case cover exact division without runtime proof failure. |
+| `eff2-neg-division-class-site-pure-row` | OP-2 owns the static division obligation; the surviving EFF-2 rows cover actual runtime effects. |
+
+The semantic unit-test retirement follows the same boundary. Five historical
+modules were audited test by test rather than merely unwired:
+
+- `strict.rs` tested only the deleted CLM-3 marker and the Complete/U/B
+  counterfactual partition;
+- `claim_locality.rs` and `claim_residuals.rs` tested the deleted
+  `ClaimAuthorityAnalysis`, residual-claim lifecycle, and generic-claim schema;
+- `provenance.rs` tested the deleted PRV value-taint gate and its diagnostic
+  carrier graph; and
+- `check_dissolution.rs` combined one live contract test with one deleted S3
+  claim test.
+
+The live behavior embedded in those modules remains under its owning compiler
+rule. Exact and weak verified postconditions and static contract clauses moved
+to `postconditions.rs`; whole-box replacement moved to `boxes.rs`; concrete
+generic nominal rebuilding, partial generic descendant discovery, and
+source-order diagnostics moved to `generics.rs`. Existing originating-context
+tests retain the other independent properties: `postconditions.rs` checks
+entry images, writes, holder consumption, call substitution, atomic recursive
+publication, failed-component withholding, and seedless cycles;
+`system_effects.rs` checks state-formal write substitution; and `borrows.rs`
+checks projected ownership paths and write invalidation. None of these tests
+reads a Complete/U/B view, a claim ledger, a strict partition, or a PRV carrier
+graph to decide acceptance.
+
+The unified entry chooses a fixed proof route and returns its derivation in the
+same call. That derivation explains the decision for diagnostics and grants no
+independent proof authority. A consumer defines the exact proposition it needs
+but does not choose between the ordinary and affine engines.
+
+Runtime-origin data receives no special assertion authority. A parameter,
+system result, loaded byte, or other run-time value may appear symbolically in
+the proof context, but it establishes a proposition only through an ordinary
+typed operation, a selected control-flow edge, a proved callee `ensures`, a
+proved loop invariant, or a source `prove` step whose named premises and fixed
+rule the checker verifies. Source proof syntax cannot inject a proposition,
+mark a run-time value trusted, or turn a failed proof into an executable
+fallback. This direct fact-admission invariant replaces the old assertion
+provenance partition: without a writer assertion, there is no separate
+assertion-laundering channel to classify.
+
+The existing checker already combines one affine invariant with ordinary range
+facts. In `weigh`, `sum <= 255 * count` and `count <= 1000` prove
+`sum <= 255000`. The current automatic boundary is instead visible when two
+independent affine premises must be selected together:
+
+```text
+x <= y
+z <= w
+------
+x + z <= y + w
+```
+
+A later explicit proof step may name those two premises and coefficient one for
+each. The checker verifies that written linear combination in source order; it
+does not search for the premise set or coefficients.
+
+## Deferred resource-availability boundary
+
+For v0.40, heap OOM, stack exhaustion,
+operating-system quotas, and runtime-start resource availability are outside
+the work scope. This does not defer layout or address proofs, target
+qualification, target-domain membership, parallel proof, or bounded
+queue/completion protocols. Existing termination paths for the scoped-out cases
+are documented gaps, not the final Whitefoot safety guarantee.
+
+## Evidence rules
+
+Every proof feature ships with a positive source program, a nearby source case
+whose stated premises are insufficient, a deterministic work bound, and tests
+for proof erasure. Optimizer facts additionally require facts-off correctness.
+Parallel facts additionally require sequential/parallel result equivalence and
+evidence that more than one worker is actually granted when the proof permits
+it.
+
+No test, conformance verdict, source rule, partial operation, or diagnostic is
+deleted or weakened merely to make a gate pass. A deliberately retired test
+must state which retired compiler architecture it exercised and why no live
+language behavior was removed.

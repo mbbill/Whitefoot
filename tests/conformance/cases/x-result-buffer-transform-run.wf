@@ -2,32 +2,18 @@ enum DecodeError {
   ZeroByte();
 }
 
-fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, DecodeError> reads(input), allocates(heap), traps {
+fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, DecodeError> reads(input), allocates(heap) {
   let length = len(input);
   let output = buffer_new(length, 0_u8);
-  let offset = 0_u64;
-  loop @transform {
-    let done = ieq(offset, length);
-    if done {
-      break @transform;
+  for offset in 0_u64..length {
+    let byte = input[offset];
+    let zero = ieq(byte, 0_u8);
+    if zero {
+      let error = ZeroByte();
+      return Err<buffer<u8>, DecodeError>(error: error);
     } else {
-      let input_room = len(input);
-      let read_ok = ilt(offset, input_room);
-      claim offset_in_input: read_ok because "premises: offset starts at zero, advances by one only after a successful transform, and this loop branch establishes offset differs from the unchanged input length\nderivation: the loop progression cannot skip the equality boundary, so offset is strictly below input_room, which is the same unchanged input length\nconclusion: read_ok is true on every iteration reaching the read\nchecker gap: ENT does not derive the strict loop range from initialization, unit progression, and the equality exit\nconsumers: the following input subscript requires this exact upper Range component";
-      let byte = input[offset];
-      let zero = ieq(byte, 0_u8);
-      if zero {
-        let error = ZeroByte();
-        return Err<buffer<u8>, DecodeError>(error: error);
-      } else {
-        let transformed = byte +wrap 1_u8;
-        let output_room = len(output);
-        let write_index = offset % output_room;
-        let write_ok = ilt(write_index, output_room);
-        claim offset_in_output: write_ok because "premises: this loop path makes output_room nonzero and write_index is the current function's offset remainder output_room\nderivation: unsigned remainder by a nonzero divisor is strictly below that divisor\nconclusion: write_ok is true on every iteration reaching the write\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following output subscript write requires this exact upper Range component";
-        set output[write_index] = transformed;
-        set offset = offset +wrap 1_u64;
-      }
+      let transformed = byte +wrap 1_u8;
+      set output[offset] = transformed;
     }
   }
   return Ok<buffer<u8>, DecodeError>(value: move output);
@@ -37,7 +23,7 @@ fn abandon(result: own Result<buffer<u8>, DecodeError>) -> function_result: own 
   return unit;
 }
 
-fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads(value), traps {
+fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads(value) {
   let length = len(deref(value));
   let expected_length = ieq(length, 3_u64);
   if expected_length {
@@ -45,16 +31,13 @@ fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads(value), 
     return False();
   }
   let first = deref(value)[0_u64];
-  let middle_index = 1_u64 % 3_u64;
-  let middle_inside = ilt(middle_index, length);
-  claim middle_in_transformed: middle_inside because "premises: this branch establishes length is 3_u64 and middle_index is the current function's 1_u64 remainder 3_u64\nderivation: unsigned remainder by 3_u64 is at most 2_u64 and therefore strictly less than length\nconclusion: middle_inside is true for every borrowed buffer reaching this branch\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following subscript requires this exact upper Range component";
-  let middle = deref(value)[middle_index];
+  let middle = deref(value)[1_u64];
   let first_expected = ieq(first, 2_u8);
   let middle_expected = ieq(middle, 5_u8);
   return band(first_expected, middle_expected);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let success_input = buffer_new(3_u64, 1_u8);
   set success_input[1_u64] = 4_u8;
   let success = transform(input: move success_input);

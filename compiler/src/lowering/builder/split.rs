@@ -3,24 +3,31 @@
 //!
 //! # What is emitted
 //!
-//! For `let a = INIT; for @l i in lo..hi { … set a = a (+) e … }` this builds
-//! two synthesized functions and replaces the loop site with one instruction:
+//! For either a reduction
+//! `let a = INIT; for @l i in lo..hi { … set a = a (+) e … }` or an
+//! independently proved map `for @l i in lo..hi { set out[i] = e; }`, this
+//! builds two synthesized functions and replaces the loop site with one
+//! instruction:
 //!
 //! ```text
-//! chunk(seed, lo, hi, captures…)   the loop itself, its accumulator seeded
-//!                                  by the first parameter
+//! chunk(seed, lo, hi, captures…)   the loop itself; reduction seed/result is
+//!                                  the accumulator, map seed/result is Unit
 //! split(seed, lo, hi, captures…, budget)
 //!                                  hi <= lo         -> seed
 //!                                  budget 0 or thin -> chunk(seed, lo, hi, …)
-//!                                  otherwise        -> split(seed, left)
-//!                                                      (+) split(identity, right)
+//!                                  otherwise        -> reduction: split left
+//!                                                      (+) split right
+//!                                                   -> map: split both, join,
+//!                                                      return Unit
 //! ```
 //!
 //! and at the site, one call: `split(seed, lo, hi, captures…, allowance)` in
 //! the overlapped world, `chunk(seed, lo, hi, captures…)` in the sequential
-//! one. The incoming accumulator folds into the leftmost chunk rather than
-//! being recombined afterwards, so the fold's leaf order is the source's own
-//! and the sequential world's call is the loop exactly.
+//! one. A reduction's incoming accumulator folds into the leftmost chunk
+//! rather than being recombined afterwards, so the fold's leaf order is the
+//! source's own. A map's Unit return is ignored; the join makes its captured
+//! stores complete. In both forms the sequential world's call is the loop
+//! exactly.
 //!
 //! # Why the leaf is the loop and never one iteration
 //!
@@ -35,12 +42,13 @@
 //!
 //! # Why the runtime chooses the grain
 //!
-//! Every admitted combine is exactly associative on its type's complete value
-//! set, so the value does not depend on the shape of the combination tree.
-//! That, and only that, is what lets the *number* of chunks depend on the span,
-//! the lane count, and what this lane is already doing — asked once per loop
-//! entry, never per iteration. If a non-associative combine were ever admitted,
-//! a runtime-keyed grain would become unsound the same day.
+//! Every admitted reduction combine is exactly associative on its type's
+//! complete value set, so its value does not depend on the combination tree.
+//! An independent map has no value to combine: its proof says distinct
+//! iterations write disjoint elements, and the `Unit` result exists only to
+//! carry the ordinary worker join. Those are the two reasons the *number* of
+//! chunks may depend on the span, the lane count, and what this lane is already
+//! doing — asked once per loop entry, never per iteration.
 //!
 //! The static half of that allowance is [`assign_weights`]: a cost estimate over the
 //! emitted IR of the chunk and the functions it calls. It is uniform over the
@@ -49,7 +57,7 @@
 //! # What declines, and loudly
 //!
 //! A lane frame is bounded ([`LANE_FRAME_BYTES`]), and a split whose frame exceeds
-//! it would have every claim refused forever: the program would pay the
+//! it would have every lane acquisition refused forever: the program would pay the
 //! splitter's calls and never overlap anything. That is exactly the silent
 //! sequentialization the ledger exists to prevent, so the frame is measured
 //! here, at compile time, and a loop that does not fit declines with a line
@@ -88,7 +96,7 @@ const SHIFT_AMOUNT: IrType = IrType::Integer {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Decline {
     /// The lane frame the splitter would need exceeds [`LANE_FRAME_BYTES`], so
-    /// every claim would be refused and the split would never overlap.
+    /// every lane acquisition would be refused and the split would never overlap.
     FrameTooWide { bytes: u64, captures: usize },
     /// The accumulator carries stable storage, so its value at the site is an
     /// address into this activation's frame rather than the value to fold.
@@ -193,27 +201,35 @@ impl IrBuilder<'_> {
         let Some(actualization) = self.permitted_loop(node_path) else {
             return Ok(false);
         };
-        let LoopActualization {
-            accumulator,
-            combine,
-        } = actualization;
+        let accumulator = match actualization {
+            LoopActualization::IndependentMap => None,
+            LoopActualization::Reduction { accumulator, .. } => Some(accumulator),
+        };
         // Every binding in scope travels into the chunk. Narrowing this to the
         // body's own free bindings needs a dead-parameter analysis over the
         // built chunk — the loop graph passes every in-scope binding as a block
         // parameter, so a use count cannot tell a read from a forwarding — and
         // no measured program declines on it today. What a wide scope costs is
-        // the frame bound below, and that decline is reported.
+        // the frame bound below, and that decline is reported. A reduction's
+        // accumulator is the one exception because its seed/result carries it;
+        // an independent map has no such binding and captures the whole scope,
+        // including the buffer descriptor whose backing storage it updates.
         let mut captures: Vec<BindingId> = self
             .bindings
             .keys()
             .copied()
-            .filter(|binding| *binding != accumulator)
+            .filter(|binding| Some(*binding) != accumulator)
             .collect();
         captures.sort_by_key(|binding| binding.0);
 
-        let seed = self.binding_value(accumulator)?;
-        let accumulator_type = self.value_type(seed)?;
-        if let Some(decline) = self.decline(accumulator, accumulator_type, combine, &captures)? {
+        let reduction_seed = accumulator
+            .map(|binding| self.binding_value(binding))
+            .transpose()?;
+        let result_type = reduction_seed
+            .map(|seed| self.value_type(seed))
+            .transpose()?
+            .unwrap_or(IrType::Unit);
+        if let Some(decline) = self.decline(actualization, result_type, &captures)? {
             self.note(node_path, &format!("declined: {}", decline.reason()));
             return Ok(false);
         }
@@ -238,6 +254,13 @@ impl IrBuilder<'_> {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        // A false result promises to leave the ordinary lowering untouched, so
+        // the independent map's synthetic token is created only after every
+        // shape-based decline above. A reduction reuses its source seed.
+        let seed = match reduction_seed {
+            Some(seed) => seed,
+            None => self.define(IrType::Unit, IrOperation::Constant(IrConstant::Unit))?,
+        };
         let (splitter, chunk) = {
             let mut synthesis = self.synthesis.borrow_mut();
             (synthesis.reserve()?, synthesis.reserve()?)
@@ -248,13 +271,13 @@ impl IrBuilder<'_> {
             binder,
             body,
             backedge_drops,
-            accumulator,
-            accumulator_type,
+            actualization,
+            result_type,
             &captures,
             &capture_types,
         )?;
         let splitter_function =
-            self.build_splitter(splitter, chunk, accumulator_type, combine, &capture_types)?;
+            self.build_splitter(splitter, chunk, actualization, result_type, &capture_types)?;
         {
             let mut synthesis = self.synthesis.borrow_mut();
             synthesis.file(chunk, chunk_function)?;
@@ -262,7 +285,7 @@ impl IrBuilder<'_> {
         }
 
         let result = self.define(
-            accumulator_type,
+            result_type,
             IrOperation::LoopSplit {
                 splitter,
                 chunk,
@@ -275,20 +298,26 @@ impl IrBuilder<'_> {
                 weight: 0,
             },
         )?;
-        self.bindings.insert(accumulator, result);
-        self.note(
-            node_path,
-            &format!(
-                "split under {} over {} captured {}",
-                combine.spelling(),
-                captures.len(),
-                if captures.len() == 1 {
-                    "binding"
-                } else {
-                    "bindings"
-                }
+        if let LoopActualization::Reduction { accumulator, .. } = actualization {
+            self.bindings.insert(accumulator, result);
+        }
+        let captured = if captures.len() == 1 {
+            "binding"
+        } else {
+            "bindings"
+        };
+        let detail = match actualization {
+            LoopActualization::IndependentMap => format!(
+                "split independent map over {} captured {captured}",
+                captures.len()
             ),
-        );
+            LoopActualization::Reduction { combine, .. } => format!(
+                "split under {} over {} captured {captured}",
+                combine.spelling(),
+                captures.len()
+            ),
+        };
+        self.note(node_path, &detail);
         Ok(true)
     }
 
@@ -309,23 +338,28 @@ impl IrBuilder<'_> {
     /// of the permission.
     fn decline(
         &self,
-        accumulator: BindingId,
-        accumulator_type: IrType,
-        combine: LoopCombine,
+        actualization: LoopActualization,
+        result_type: IrType,
         captures: &[BindingId],
     ) -> Result<Option<Decline>, LoweringFailure> {
-        if self.addressed_bindings.contains(&accumulator) {
-            return Ok(Some(Decline::AccumulatorAddressed));
-        }
-        if identity(combine, accumulator_type).is_none() {
-            return Ok(Some(Decline::NoIdentity));
+        if let LoopActualization::Reduction {
+            accumulator,
+            combine,
+        } = actualization
+        {
+            if self.addressed_bindings.contains(&accumulator) {
+                return Ok(Some(Decline::AccumulatorAddressed));
+            }
+            if identity(combine, result_type).is_none() {
+                return Ok(Some(Decline::NoIdentity));
+            }
         }
         // `{ seed, lo, hi, captures…, budget, result }`, each field charged its
         // own size rounded up to the widest scalar the backend puts in a frame.
-        // Over-charging refuses a little early; under-charging would let a
-        // claim be refused at run time, which is the silent case this exists to
-        // close.
-        let mut bytes = 3 * FRAME_FIELD_ALIGN + 2 * frame_bytes(accumulator_type);
+        // Over-charging refuses a little early; under-charging would let every
+        // lane acquisition be refused at run time, which is the silent case
+        // this exists to close.
+        let mut bytes = 3 * FRAME_FIELD_ALIGN + 2 * frame_bytes(result_type);
         for binding in captures {
             let ty = self
                 .bindings
@@ -355,12 +389,13 @@ impl IrBuilder<'_> {
         ));
     }
 
-    /// The loop itself, outlined: `chunk(seed, lo, hi, captures…)` folds the
-    /// half-open subrange starting from `seed`.
+    /// The loop itself, outlined. A reduction chunk folds the half-open
+    /// subrange starting from `seed`; an independent-map chunk performs its
+    /// disjoint stores and returns the `Unit` seed as a synchronization token.
     ///
     /// This is the same block graph [`IrBuilder::counted_range_graph`] builds
     /// at an unsplit site, built by the same code from the same statements. The
-    /// only difference is where the endpoints and the accumulator come from.
+    /// only difference is where the endpoints and any accumulator come from.
     #[allow(clippy::too_many_arguments)]
     fn build_chunk(
         &self,
@@ -369,23 +404,25 @@ impl IrBuilder<'_> {
         binder: BindingId,
         body: &[CheckedStatement],
         backedge_drops: &[CheckedDrop],
-        accumulator: BindingId,
-        accumulator_type: IrType,
+        actualization: LoopActualization,
+        result_type: IrType,
         captures: &[BindingId],
         capture_types: &[IrType],
     ) -> Result<IrFunction, LoweringFailure> {
         let mut builder = IrBuilder::new(
             self.context(),
-            accumulator_type,
+            result_type,
             self.addressed_bindings.clone(),
             self.permissions,
             self.overlap,
             self.function_name,
         )?;
-        let seed = builder.new_parameter(accumulator_type)?;
+        let seed = builder.new_parameter(result_type)?;
         let lower = builder.new_parameter(U64)?;
         let upper = builder.new_parameter(U64)?;
-        if builder.bindings.insert(accumulator, seed).is_some() {
+        if let LoopActualization::Reduction { accumulator, .. } = actualization
+            && builder.bindings.insert(accumulator, seed).is_some()
+        {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         for (binding, ty) in captures.iter().zip(capture_types) {
@@ -398,9 +435,14 @@ impl IrBuilder<'_> {
         // that could leave this loop, so a body reaching for one is a
         // malformed checked program rather than a shape this declines on.
         builder.counted_range_graph(id, binder, body, backedge_drops, None, lower, upper)?;
-        let folded = builder.binding_value(accumulator)?;
+        let result = match actualization {
+            LoopActualization::IndependentMap => seed,
+            LoopActualization::Reduction { accumulator, .. } => {
+                builder.binding_value(accumulator)?
+            }
+        };
         builder.terminate(IrTerminator::Return {
-            value: folded,
+            value: result,
             drops: Vec::new(),
         })?;
         // A [PAR-1] pair inside the loop body is permitted exactly as it was
@@ -426,25 +468,25 @@ impl IrBuilder<'_> {
     /// The group here is produced by this lowering, not judged: it actualizes
     /// the loop's own permission, and there is no pair of source statements for
     /// the window judgment to have looked at. Everything downstream — the
-    /// claim, the frame, the thunk, the deque, the join — is the machinery a
-    /// permitted pair already uses, unchanged.
+    /// lane acquisition, the frame, the thunk, the deque, and the join — is
+    /// the machinery a permitted pair already uses, unchanged.
     fn build_splitter(
         &self,
         ordinal: u32,
         chunk: u32,
-        accumulator_type: IrType,
-        combine: LoopCombine,
+        actualization: LoopActualization,
+        result_type: IrType,
         capture_types: &[IrType],
     ) -> Result<IrFunction, LoweringFailure> {
         let mut builder = IrBuilder::new(
             self.context(),
-            accumulator_type,
+            result_type,
             std::collections::HashSet::new(),
             None,
             self.overlap,
             self.function_name,
         )?;
-        let seed = builder.new_parameter(accumulator_type)?;
+        let seed = builder.new_parameter(result_type)?;
         let lower = builder.new_parameter(U64)?;
         let upper = builder.new_parameter(U64)?;
         let captures = capture_types
@@ -471,7 +513,8 @@ impl IrBuilder<'_> {
         )?;
         builder.branch(nonempty_guard, nonempty, empty_block)?;
 
-        // An empty range folds nothing, so the accumulator arrives unchanged.
+        // An empty range folds or writes nothing, so its incoming value — the
+        // accumulator for a reduction, Unit for a map — arrives unchanged.
         builder.current = Some(empty_block);
         builder.terminate(IrTerminator::Return {
             value: seed,
@@ -525,15 +568,15 @@ impl IrBuilder<'_> {
         builder.current = Some(leaf);
         let mut leaf_arguments = vec![seed, lower, upper];
         leaf_arguments.extend(captures.iter().copied());
-        let folded = builder.define(
-            accumulator_type,
+        let result = builder.define(
+            result_type,
             IrOperation::Call {
                 function: chunk,
                 arguments: leaf_arguments,
             },
         )?;
         builder.terminate(IrTerminator::Return {
-            value: folded,
+            value: result,
             drops: Vec::new(),
         })?;
 
@@ -571,37 +614,47 @@ impl IrBuilder<'_> {
                 arguments: vec![budget, one],
             },
         )?;
-        // The incoming accumulator descends into the left half and the right
-        // half starts from the identity, so the leaves of the whole tree fold
-        // `seed, e0, e1, …` in exactly the source's order. Left is handed out
-        // and right runs inline, which is the ordinary shape of a permitted
-        // pair; the combine below is the group's join site.
-        let identity = builder.identity_value(combine, accumulator_type)?;
+        // A reduction sends the incoming accumulator left and the identity
+        // right, preserving `seed, e0, e1, …` as the tree's leaf order. An
+        // independent map sends the same Unit token both ways: it carries no
+        // source value, but the two calls still form the ordinary overlap group
+        // whose join completes every disjoint store before this helper returns.
+        let right_seed = match actualization {
+            LoopActualization::IndependentMap => seed,
+            LoopActualization::Reduction { combine, .. } => {
+                builder.identity_value(combine, result_type)?
+            }
+        };
         let mut left_arguments = vec![seed, lower, middle];
         left_arguments.extend(captures.iter().copied());
         left_arguments.push(remaining);
         let left = builder.define(
-            accumulator_type,
+            result_type,
             IrOperation::Call {
                 function: ordinal,
                 arguments: left_arguments,
             },
         )?;
-        let mut right_arguments = vec![identity, middle, upper];
+        let mut right_arguments = vec![right_seed, middle, upper];
         right_arguments.extend(captures.iter().copied());
         right_arguments.push(remaining);
         let right = builder.define(
-            accumulator_type,
+            result_type,
             IrOperation::Call {
                 function: ordinal,
                 arguments: right_arguments,
             },
         )?;
-        // Left before right, always: associativity is used and commutativity
-        // never is, so the leaf order of the fold is the source's own.
-        let combined = builder.combine_values(combine, accumulator_type, left, right)?;
+        // Left before right, always. A reduction combines in source order; a
+        // map only needs the join and may return either identical Unit token.
+        let result = match actualization {
+            LoopActualization::IndependentMap => right,
+            LoopActualization::Reduction { combine, .. } => {
+                builder.combine_values(combine, result_type, left, right)?
+            }
+        };
         builder.terminate(IrTerminator::Return {
-            value: combined,
+            value: result,
             drops: Vec::new(),
         })?;
 

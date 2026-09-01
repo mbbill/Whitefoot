@@ -1,9 +1,9 @@
-fn f (x: own i32) -> function_result: own i32 traps, {
+fn f (x: own i32) -> function_result: own i32 allocates(heap), {
   doc "Trailing comma after the last effect [EFF-1].";
   return x;
 }
 
-command fn main () -> status: own ExitStatus traps {
+command fn main () -> status: own ExitStatus allocates(heap) {
   doc "Driver.";
   let a: own i32 = f(x: 7_i32);
   return exit_status(code: 0_u8);

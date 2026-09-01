@@ -9,7 +9,7 @@
 //! lets an implementation keep several iterations in flight is a loop that
 //! should have been refused and was not.
 //!
-//! The last section re-attacks the five holes the loan column closed, against
+//! The last section rechecks the five gaps the loan column closed, against
 //! this judgment rather than against the counted one. It admits body shapes
 //! [PAR-2] refuses outright — an uncounted loop, an early typed exit, a write
 //! of enclosing storage that is not an accumulator — so its neighbourhood is
@@ -387,7 +387,7 @@ fn a_break_after_the_submission_denies() {
         "a break carries no node path to cite: {statement:?}"
     );
     // The break is a statement of the remainder in its own right, not the cut
-    // statement's own edge, so the judgment does not claim the submission's
+    // statement's own edge, so the judgment does not attribute the submission's
     // outcome selects it.
     assert!(!selected_by_submission);
     // The remedy names the hoist and then says plainly where the hoist is not
@@ -826,7 +826,7 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
 }
 
 /// The other direction of the same guard, which is the wrong denial the loan
-/// column's own attack found and repaired: a bare borrow of storage the
+/// column's own boundary review found and repaired: a bare borrow of storage the
 /// iteration introduces needs no loan, because each iteration borrows its own
 /// instance, so it must not refuse.
 #[test]
@@ -1045,7 +1045,7 @@ fn a_discarded_owned_result_refuses_as_its_own_form() {
 }
 
 // ----------------------------------------------------------------------
-// The loan column's closed holes, re-attacked
+// The loan column's closed gaps, rechecked
 // ----------------------------------------------------------------------
 
 /// The owner's original example, moved to this judgment: two iterations each
@@ -1176,7 +1176,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// A recurrence carried through a struct field denies, and the denial names
 /// both halves of the overlapping pair.
 ///
-/// This is the widening an adversarial review found on 2026-08-27. The body
+/// This is the widening a boundary review found on 2026-08-27. The body
 /// reads `work.seen` before the cut and replaces `work` after it. Keyed by the
 /// exact resolved path those are two rows and each is safe alone — no
 /// footprint writes *`work.seen`*, and nothing else touches *`work`* — while
@@ -1574,11 +1574,13 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// compilation produce the same verdicts and the same disposition table by
 /// construction. The compiler has no facts-off switch to run one program
 /// through twice, so the differential is over *programs*: the three loops below
-/// are one staged shape whose subscript obligation is discharged three
-/// different ways — from a constant against a constant length, from a
-/// dominating branch, and from a claimed fact — and their verdicts and tables
-/// must be identical. A judgment that read the fact state could tell them
-/// apart; this one may not.
+/// are one staged shape whose subscript obligation is discharged by a constant,
+/// a dominating branch, and a counted binder carrying an inductive source
+/// invariant. Their verdicts and tables must be identical. The former
+/// minimum-plus-runtime-assertion route was retired with executable assertions
+/// operations; the invariant route is the proof-carrying replacement.
+/// A judgment that read the proof state could tell the programs apart; this one
+/// may not.
 #[test]
 fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
     let constant = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
@@ -1627,15 +1629,12 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let claimed = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap), traps {
+    let invariant_proved = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
   for @scan index in 0_u64..4_u64 {
+    invariant index_bound: ile(index, 4_u64);
     let name = buffer_new(16_u64, 97_u8);
-    let room = len(name);
-    let bounded = imin(index, room);
-    let fits = ilt(bounded, room);
-    claim bounded_fits: fits because "premises: bounded is the minimum of the loop binder and room, and room is the buffer's own length, which buffer_new fixed at sixteen\nderivation: a minimum is at most either operand, and room is positive, so bounded is strictly below room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish the result range of imin against its own second operand\nconsumers: the element write immediately below subscripts the buffer at bounded";
-    set name[bounded] = 98_u8;
+    set name[index] = 98_u8;
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1652,7 +1651,12 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let verdicts = [constant.as_slice(), branched.as_slice(), claimed.as_slice()].map(|source| {
+    let verdicts = [
+        constant.as_slice(),
+        branched.as_slice(),
+        invariant_proved.as_slice(),
+    ]
+    .map(|source| {
         let table = permission_of(source);
         let judged = only_staged(&table, "main");
         (judged.verdict.clone(), dispositions(judged))
@@ -1663,9 +1667,41 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
     );
     assert_eq!(
         verdicts[0], verdicts[2],
-        "the constant and claimed routes must agree"
+        "the constant and invariant-proved routes must agree"
     );
     assert_eq!(verdicts[0].0, StagedVerdict::Permitted);
+}
+
+/// A proof fact cannot erase a real cross-segment storage dependency. Here the
+/// accumulator invariant proves the prologue subscript, but that same `seen`
+/// storage is written in the remainder. PAR-3 must therefore keep the ordinary
+/// place row and deny the loop instead of consulting how the subscript checked.
+#[test]
+fn an_invariant_proved_accumulator_index_keeps_its_cross_segment_dependency() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let seen = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    invariant seen_bound: ile(seen, index);
+    let name = buffer_new(16_u64, 97_u8);
+    set name[seen] = 98_u8;
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+    set seen = index;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let denial = denied(source, "main", 5);
+    assert!(matches!(denial, StagedDenial::NoDisposition { .. }));
 }
 
 // ----------------------------------------------------------------------

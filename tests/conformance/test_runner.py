@@ -270,7 +270,7 @@ class ManifestValidationTests(unittest.TestCase):
 
 
 class ArrangementTests(unittest.TestCase):
-    """The invocation arrangement a run/trap case needs (fixtures, argv, stdin,
+    """The invocation arrangement a run case needs (fixtures, argv, stdin,
     redirection). Byte strings are hex so non-UTF-8 argument and path values are
     expressible exactly."""
 
@@ -338,7 +338,7 @@ class ArrangementTests(unittest.TestCase):
         case = self.case({"argv": ["61"]})
         case["expect"] = {"kind": "accept"}
 
-        with self.assertRaisesRegex(ValueError, "only a run or trap case"):
+        with self.assertRaisesRegex(ValueError, "only a run case"):
             self.validate(case)
 
 

@@ -1,9 +1,9 @@
-fn f(x: own i32) -> result: own i32 traps {
-  doc "Declares `traps` but body has no trapping op [EFF-2] declared-but-unexhibited.";
+fn f(x: own i32) -> result: own i32 allocates(heap) {
+  doc "Declares `allocates(heap)` but the body performs no allocation [EFF-2].";
   return x;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let a = f(x: 7_i32);
   return exit_status(code: 0_u8);
 }

@@ -1,0 +1,16 @@
+fn bump(x: own i32) -> function_result: own i32 pure {
+  doc "A pure helper with no allocation and no allocating callee.";
+  return x +wrap 1_i32;
+}
+
+fn f(x: own i32) -> function_result: own i32 allocates(heap) {
+  doc "Declares allocates(heap), but its body only calls a pure function [EFF-2].";
+  let a = bump(x: x);
+  return a;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "Driver.";
+  let a = f(x: 7_i32);
+  return exit_status(code: 0_u8);
+}

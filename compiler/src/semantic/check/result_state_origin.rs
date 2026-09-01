@@ -280,7 +280,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             }
             CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Claim { .. } => Ok(OriginFlow::continuing(environment)),
+            | CheckedStatement::Proof(_) => Ok(OriginFlow::continuing(environment)),
             CheckedStatement::Return { value, .. } => Ok(OriginFlow {
                 continuation: None,
                 returns: self.expression(value, &environment)?,

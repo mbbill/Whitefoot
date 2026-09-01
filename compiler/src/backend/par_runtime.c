@@ -3,12 +3,12 @@
  * The actualization half of the [PAR-1 candidate] permission judgment. The
  * compiler proves, before anything here runs, that the two statements of an
  * overlapped pair touch disjoint storage, carry no external or blocking row,
- * and reach no claim site; this file only decides where the work runs. It
+ * and reach no writer-visible trap; this file only decides where the work runs. It
  * never chooses what may overlap.
  *
  * Contract with the emitted module, in the order the module uses it:
  *
- *   void *wf__par_claim(unsigned long bytes)
+ *   void *wf__par_acquire_lane(unsigned long bytes)
  *       Takes one of this thread's own frame slots and returns it — `bytes` of
  *       storage the caller fills with the handed-out call's arguments and later
  *       reads its result out of — or returns NULL when this thread holds no
@@ -18,7 +18,7 @@
  *   void wf__par_publish(void *frame, void (*fn)(void *))
  *       Offers `fn(frame)` to the pool by pushing the frame onto this thread's
  *       own deque. It hands the work to nobody: an idle thread takes it, or the
- *       joining thread takes it back. Only a frame a claim returned reaches it.
+ *       joining thread takes it back. Only an acquired frame reaches it.
  *
  *   void wf__par_join(void *frame)
  *       Returns once that task has run, after which the frame holds its result.
@@ -40,12 +40,12 @@
  *       and the plain sequential one — and its bootstrap asks this to choose
  *       between them, once, before anything runs. It moves no work, takes no
  *       frame, and starts nothing: the pool is still created lazily by the
- *       first claim. See its definition at the bottom of this file for why the
+ *       first lane acquisition. See its definition at the bottom of this file for why the
  *       answer may be kept for the life of the process, why it reads the
  *       setting rather than the pool, and why that makes it a different thing
  *       from a demand signal.
  *
- * The claim comes first because it is what makes the hand-out cost
+ * Lane acquisition comes first because it is what makes the hand-out cost
  * conditional. The frame lives in per-thread storage rather than in the calling
  * function, so an activation that is never granted a slot never builds one: no
  * stack slot, no argument spills, and the recursion depth of a `--par` build
@@ -54,7 +54,7 @@
  * ## Why a deque and not a hand-off
  *
  * The earlier shape searched the lane array for an idle thread and pushed the
- * work at it: a claim was an O(lanes) atomic scan over lines other threads were
+ * work at it: acquisition was an O(lanes) atomic scan over lines other threads were
  * using, and a grant was a mutex round trip plus a condition-variable wake. The
  * cost of that fell on *every* offer, granted or refused, so a program that
  * offered more than the pool could absorb paid the whole search for nothing —
@@ -75,7 +75,7 @@
  * Unset — the shape a `--par` binary is actually handed to somebody in — asks
  * for this machine's logical CPUs, so a program that was built for overlap
  * overlaps. An explicit `0`, `1`, or anything that does not parse leaves the
- * pool unstarted, so every claim returns NULL and every program runs exactly
+ * pool unstarted, so every acquisition returns NULL and every program runs exactly
  * the sequential schedule it runs today — and, since the module can ask,
  * exactly the sequential code as well.
  */
@@ -88,8 +88,9 @@
 #include <sys/sysctl.h>
 #endif
 
-/* An upper bound on threads of execution, so a hostile WF_WORKERS cannot ask
- * for unbounded threads. It is a resource ceiling, not a language constant. */
+/* An upper bound on threads of execution, so an oversized WF_WORKERS value
+ * cannot ask for unbounded threads. It is a resource ceiling, not a language
+ * constant. */
 #define WF_PAR_MAX_LANES 64
 
 /* How large a handed-out call's frame a slot can hold: its arguments followed
@@ -171,7 +172,7 @@
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
 #define WF_PAR_SPLIT_WORK_PER_CHUNK 1200000
 
-/* A slot's execution state. FREE is the resting state of an unclaimed slot;
+/* A slot's execution state. FREE is the resting state of an available slot;
  * PENDING says the frame is filled and pushed; DONE says the task has run and
  * the result is in the frame. */
 #define WF_PAR_SLOT_FREE 0
@@ -219,7 +220,7 @@ struct wf__par_lane {
      * nothing else. */
     _Alignas(WF_PAR_CACHE_LINE) unsigned long long bottom;
     struct wf__par_slot *buffer[WF_PAR_LANE_SLOTS];
-    /* Head of this lane's free-slot list. Claim and release are the only
+    /* Head of this lane's free-slot list. Acquisition and release are the only
      * writers and both run on the owning thread, so it needs no atomic. */
     int free_head;
     /* Victim selection state, so idle threads do not all descend on the same
@@ -719,7 +720,7 @@ static void wf__par_start(void) {
 }
 
 /* Takes lane 0 for the thread that first offers work. Any further thread that
- * offers gets no lane and every claim it makes is refused, which is a schedule
+ * offers gets no lane and every acquisition it makes is refused, which is a schedule
  * the program is already correct under. */
 static struct wf__par_lane *wf__par_attach(void) {
     static int taken;
@@ -753,7 +754,7 @@ void wf__writer_scheduler_wake_lane(void) {
 
 /* --------------------------------------------------------- the module's ABI */
 
-void *wf__par_claim(unsigned long bytes) {
+void *wf__par_acquire_lane(unsigned long bytes) {
     struct wf__par_lane *lane = wf__par_self;
     struct wf__par_slot *slot;
     int index;
@@ -862,7 +863,7 @@ void wf__par_release(void *frame) {
  * the refused edge of the overlapped one.
  *
  * **It reads the setting rather than the pool, and that is the point.** The
- * pool is still created lazily, by the first claim, exactly where it was
+ * pool is still created lazily, by the first lane acquisition, exactly where it was
  * created before this question existed, so a program that asks this is
  * scheduled exactly as it was. The alternative — answering by *starting* the
  * pool here — was built and measured, and it costs real time: it moves the
@@ -888,7 +889,7 @@ void wf__par_release(void *frame) {
  *
  * The one case where "asked for" and "got" differ is a pool that was
  * requested and failed to start — no thread could be created. That run takes
- * the overlapped world and has every claim refused, which is a correct
+ * the overlapped world and has every acquisition refused, which is a correct
  * schedule and exactly what such a run did before this question existed.
  */
 int wf__par_pool_active(void) {

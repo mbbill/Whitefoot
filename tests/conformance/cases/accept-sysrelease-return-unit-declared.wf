@@ -1,5 +1,5 @@
 fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {
-  doc "The EFF-2 canonical case: no call, no claim, and no subscript, so the complete exhibited row is the release contribution of the owned ReadFile's close attempt on the return edge [STOR-3, SYS-5, SYS-11]; declaring exactly that row is accepted.";
+  doc "The EFF-2 canonical case: no call, proof statement, or subscript occurs, so the complete exhibited row is the release contribution of the owned ReadFile's close attempt on the return edge [STOR-3, SYS-5, SYS-11]; declaring exactly that row is accepted.";
   return unit;
 }
 

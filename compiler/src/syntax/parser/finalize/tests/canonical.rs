@@ -202,7 +202,7 @@ fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
     let inputs = [SourceInput::new("mutated.wf", source)];
     with_parsed(&inputs, |parsed| {
         let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-            panic!("fixture must finalize before hostile mutation");
+            panic!("fixture must finalize before the consistency edit");
         };
         let Some(node) = finalized
             .topology
@@ -221,7 +221,7 @@ fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
 
     with_parsed(&inputs, |parsed| {
         let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-            panic!("fixture must finalize before hostile mutation");
+            panic!("fixture must finalize before the consistency edit");
         };
         finalized.topology.terminals[0].local_ordinal = 1;
         assert!(matches!(
@@ -483,9 +483,26 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
 
 #[test]
 fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
-    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
+    // `(` remains in FORM-2's general right-attachment set, so the affine
+    // parenthesized factor is `*(...)`, with no proof-syntax exception.
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    invariant limit: ile(index + 1_u64 *(1_u64), upper);\n    break @range;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range index in lower .. upper{\nbreak @range;\n}\nreturn unit;\n}\n";
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range index in lower .. upper{\ninvariant limit : ile ( index+1_u64 * ( 1_u64 ) ,upper ) ; break @range;\n}\nreturn unit;\n}\n";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
+        Some(canonical.as_slice())
+    );
+    assert_eq!(
+        rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}
+
+#[test]
+fn finite_proof_blocks_render_their_header_and_premises_canonically() {
+    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove ordered: ile(left + 1_i32, right + 1_i32) {\n    use ile(left, right);\n    use ile(0_i32, 0_i32);\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ prove ordered : ile ( left+1_i32,right+1_i32 ) { use ile ( left , right ) ; use ile(0_i32,0_i32); } return unit; }";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
