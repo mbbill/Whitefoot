@@ -1,22 +1,17 @@
-fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
+fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 reads(src), writes(out) contract {
   define output_length = len(deref(out));
   define source_length = len(src);
   define sufficient = ige(output_length, source_length);
   requires sufficient;
 } {
   let source_length = len(src);
-  let output_length = len(deref(out));
   let consumed_until = 0_u64;
   let output_index = 0_u64;
   for input_index in 0_u64..source_length {
+    invariant writes_behind_scan: ile(output_index, input_index);
     let already_consumed = ilt(input_index, consumed_until);
     if already_consumed {
     } else {
-      let output_in_range = ilt(output_index, output_length);
-      if output_in_range {
-      } else {
-        return output_index;
-      }
       let byte = src[input_index];
       let is_percent = ieq(byte, 37_u8);
       let next_index = input_index +wrap 1_u64;

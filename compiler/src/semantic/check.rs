@@ -2810,7 +2810,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedBoundsObligation {
                                 residual,
-                                mechanical_fix: "establish the residual with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the access",
+                                mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
                             },
                         },
                         super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {
@@ -2823,7 +2823,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 } else {
                                     StaticObligationDisposition::Unproved
                                 },
-                                mechanical_fix: "establish the fixed `.defined` normalization with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps; otherwise use an available total non-exact row or restructure the arithmetic",
+                                mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic",
                             },
                         },
                         super::entailment::ObligationFamily::AllocationFit => SemanticIssue {
@@ -2831,7 +2831,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
-                                mechanical_fix: "establish `buffer_fits<T>(n)` with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the allocation",
+                                mechanical_fix: "when the allocation must fit, establish `buffer_fits<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
                             },
                         },
                         super::entailment::ObligationFamily::SystemRange => SemanticIssue {
@@ -2839,7 +2839,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedSystemRangeObligation {
                                 residual,
-                                mechanical_fix: "establish the residual with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the system range",
+                                mechanical_fix: "when the range must be valid, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the system range",
                             },
                         },
                     }))
@@ -2865,7 +2865,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                         "bind that argument or referent value with one preceding ordinary let, establish the entire instantiated requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
                     } else {
-                        "establish the entire instantiated callee requirement with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps before the call; otherwise restructure the call"
+                        "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
                     };
                     Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Fn8,

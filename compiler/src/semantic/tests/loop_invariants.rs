@@ -117,6 +117,127 @@ fn normal_body_fallthrough_must_preserve_the_invariant() {
 }
 
 #[test]
+fn a_conditional_unit_step_preserves_the_invariant_through_an_affine_join() {
+    let source = br#"fn advance(flag: own Bool) -> result: own unit pure {
+  let completed = 0_u64;
+  for i in 0_u64..4_u64 {
+    invariant limit: ile(completed, i);
+    if flag {
+      set completed = completed + 1_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the conditional unit step must preserve its invariant: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "advance")
+            .expect("advance function exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("advance retains one source invariant");
+        };
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
+    });
+}
+
+#[test]
+fn an_affine_join_does_not_hide_a_branch_that_advances_too_far() {
+    assert_invariant_issue(
+        br#"fn advance(flag: own Bool) -> result: own unit pure {
+  let completed = 0_u64;
+  for i in 0_u64..4_u64 {
+    invariant limit: ile(completed, i);
+    if flag {
+      set completed = completed + 2_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        LoopInvariantProofObligation::Backedge,
+    );
+}
+
+#[test]
+fn an_affine_join_retains_a_negative_constant_delta() {
+    let source = br#"fn select_nonpositive(flag: own Bool) -> result: own unit pure {
+  let offset = 0_i32;
+  for i in 0_u64..2_u64 {
+    invariant limit: ile(offset, 0_i32);
+    if flag {
+      set offset = -1_i32;
+    } else {
+      set offset = 0_i32;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the signed join delta must retain its negative lower endpoint: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "select_nonpositive")
+            .expect("select_nonpositive function exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("select_nonpositive retains one source invariant");
+        };
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
+    });
+}
+
+#[test]
+fn separate_joined_bindings_do_not_share_one_delta_atom() {
+    assert_invariant_issue(
+        br#"fn select_pair(flag: own Bool) -> result: own unit pure {
+  let left = 0_u64;
+  let right = 0_u64;
+  for i in 0_u64..1_u64 {
+    invariant limit: ile(left, right);
+    if flag {
+      set left = 1_u64;
+      set right = 0_u64;
+    } else {
+      set left = 0_u64;
+      set right = 1_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        LoopInvariantProofObligation::Backedge,
+    );
+}
+
+#[test]
 fn a_matching_break_is_not_a_backedge() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   for i in 0_u64..1_u64 {

@@ -13,7 +13,7 @@ use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation};
 use super::with_semantics;
 
-const DIVISION_FIX: &str = "establish the fixed `.defined` normalization with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps; otherwise use an available total non-exact row or restructure the arithmetic";
+const DIVISION_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],

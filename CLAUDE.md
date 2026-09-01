@@ -7,10 +7,10 @@ unrepresentable. There is no writer-accessible unsafe escape or runtime trap.
 Every partial operation is admitted only after machine proof of its domain.
 The official compiler uses no SMT for acceptance: automatic derivation is
 specification-fixed, deterministic, terminating, and work-bounded, while
-harder proofs arrive as explicit finite certificates that the compiler checks
-without rediscovering them. Proofs are erased before lowering and may authorize
-check removal, optimization, and parallel independence without adding runtime
-branches, locks, dependencies, or scheduling edges.
+harder proofs arrive as explicit finite steps in the same source file that the
+compiler checks without rediscovering them. Proofs are erased before lowering
+and may authorize check removal, optimization, and parallel independence
+without adding runtime branches, locks, dependencies, or scheduling edges.
 
 ## Project goal
 
@@ -167,10 +167,18 @@ only reports the same class of mistake earlier.
   function name, signature, source shape, project, corpus, or test identity.
 - Keep one normal semantic and lowering path. A temporary unsupported
   capability must be explicit rather than misreported as invalid source.
-- Never remove or weaken a written claim for speed. Required static proof is
-  the only authority for admitting a partial operation.
+- Never replace or weaken required static proof with executable fallback
+  control flow. Required static proof is the only authority for admitting a
+  partial operation.
+- State relations that are intended to hold on every conforming execution as
+  proof-only source evidence: `requires`/`ensures` across functions,
+  `invariant` across counted-loop backedges, and `prove` for an explicit local
+  derivation. A source branch may guard a partial operation only when its false
+  edge is intended program behavior. An impossible-case return or other
+  observable branch added only to satisfy the checker is a compiler or source
+  defect; improve the proof or the checker instead.
 - Keep facts-off compilation correct. An optimizer fact may improve an accepted
-  program but may not change acceptance or claim execution.
+  program but may not change source acceptance or program semantics.
 - Prefer simple implementations and normal collections. Fix measured
   performance or resource problems instead of designing for imagined scale.
 - Keep files cohesive and reviewable. Split by invariant-bearing

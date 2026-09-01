@@ -82,6 +82,17 @@ impl AffineForm {
         self.constant
     }
 
+    /// Returns the canonical nonconstant coefficient vector with a zero
+    /// constant. Structural joins use this only after every incoming form has
+    /// the same `terms()` slice; the differing constants are represented by
+    /// one separately bounded delta atom.
+    pub(crate) fn nonconstant_part(&self) -> Self {
+        Self {
+            terms: self.terms.clone(),
+            constant: 0,
+        }
+    }
+
     pub(crate) fn unit_term(&self) -> Option<AffineTermId> {
         let [coefficient] = self.terms.as_ref() else {
             return None;

@@ -7058,7 +7058,7 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
             residual: "i < len(values)".to_owned(),
-            mechanical_fix: "establish the residual with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the access",
+            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
     );
 }
@@ -8687,7 +8687,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(
             detail.mechanical_fix,
-            "establish the entire instantiated callee requirement with a dominating branch, a verified requirement, a source invariant, or explicit finite proof steps before the call; otherwise restructure the call"
+            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
         );
         let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
             panic!("FN-8 must cite the source call");

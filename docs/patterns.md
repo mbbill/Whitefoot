@@ -182,6 +182,13 @@ caller receives that fact only after the callee's return proof succeeds. Use a
 `prove` statement when several already-available affine premises must be named
 and combined explicitly.
 
+This is the default decision rule, not merely a performance suggestion. If the
+false edge would contradict the function's contract or the algorithm's stated
+invariant, do not add an early return or another observable branch just to make
+a partial operation compile. State the missing proof, or improve the checker
+when it cannot verify the stated proof. Use executed control flow only when the
+false edge is a real result the program is meant to handle, as in P9 and P12.
+
 All three forms are compile-time only. They are erased before lowering and add
 no branch to the hot loop. Use `.wrap` only where modular behavior is the
 intended semantics; it must never evade an exact operation's static domain

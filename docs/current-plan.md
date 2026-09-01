@@ -131,7 +131,14 @@ any reachable iteration, not a simulation of the second iteration.
    resolver, checked model, diagnostics, and proof-erasing lowering path.
 2. The fixed affine checker proves a simultaneous invariant prefix at the first
    header and across every reachable backedge, including the hidden unit binder
-   update. It performs no coefficient or invariant search.
+   update. At an ordinary control-flow join, incoming affine values with the
+   same canonical coefficient vector and different constants are represented
+   by that common nonconstant form plus one compiler-owned delta whose interval
+   is the exact minimum and maximum incoming constant. This fixed linear
+   transfer preserves bounded conditional steps such as `old` versus
+   `old + 1` without path enumeration, and every goal consumer uses it through
+   the same proof context. It performs no coefficient, invariant, or path
+   search.
 3. Exact normal exhaustion substitutes the captured upper endpoint into proved
    invariants. A reaching `break` removes facts not shared by every continuation.
 4. The loop guard and contract facts discharge `weigh` indexing. Its invariant
@@ -208,9 +215,9 @@ The v0.40 source-proof implementation and activation evidence are complete.
 The items below are possible later projects selected by real-program pressure;
 they are not missing work for v0.40 activation.
 
-1. Generalize the loop checker across the remaining branch, join, nested-loop,
-   modified-value, and multi-exit shapes without recognizing a function name or
-   source pattern.
+1. Generalize beyond the fixed same-coefficient join interval across the
+   remaining coefficient-changing branch/join, nested-loop, correlated-value,
+   and multi-exit shapes without recognizing a function name or source pattern.
 2. Exercise the implemented `prove`/`use` surface through the shared goal entry
    for postconditions, calls, allocation/address checks, target-domain checks,
    and `par`. Add another source proof rule only when a selected real program

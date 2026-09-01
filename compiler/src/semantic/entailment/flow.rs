@@ -339,7 +339,15 @@ struct ActiveAffineFact {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct AffineAtom {
+    /// Source integer class used only when a live binding maps directly to
+    /// this atom and ordinary L0 facts can therefore tighten its interval.
     ty: IntegerType,
+    /// Intrinsic mathematical interval of this atom. Ordinary unknown values
+    /// use their full source-type range. A structural affine join may instead
+    /// allocate a delta atom whose bounds are the exact minimum and maximum
+    /// incoming constants, including negative constants.
+    minimum: i128,
+    maximum: i128,
 }
 
 struct PostconditionExitProof {
@@ -836,8 +844,8 @@ struct Analyzer<'check, 'unit> {
     /// FN-9 proof consults only the images its own relation references.
     postcondition_entry_images: Vec<Vec<usize>>,
     /// Function-local mathematical atoms allocated in structural execution
-    /// order.  They are ordinary checker state and are discarded with the
-    /// analysis and are discarded with it.
+    /// order. They are ordinary checker state and are discarded with the
+    /// analysis.
     affine_atoms: Vec<AffineAtom>,
     encountered_counted: u32,
     completed_counted_roots: u32,
@@ -7056,9 +7064,23 @@ impl Analyzer<'_, '_> {
     }
 
     fn new_affine_atom(&mut self, ty: IntegerType) -> AffineForm {
+        let (minimum, maximum) = type_range(ty);
+        self.new_affine_atom_with_interval(ty, minimum, maximum)
+    }
+
+    fn new_affine_atom_with_interval(
+        &mut self,
+        ty: IntegerType,
+        minimum: i128,
+        maximum: i128,
+    ) -> AffineForm {
         let index = u32::try_from(self.affine_atoms.len())
             .expect("affine value atoms exceed the u32 identity space");
-        self.affine_atoms.push(AffineAtom { ty });
+        self.affine_atoms.push(AffineAtom {
+            ty,
+            minimum,
+            maximum,
+        });
         AffineForm::term(AffineTermId::from_index(index))
     }
 
@@ -7112,8 +7134,42 @@ impl Analyzer<'_, '_> {
                     .is_some_and(|value| value == first_value)
             }) {
                 first_value.clone()
-            } else if let Some(atom) = self.new_affine_binding_atom(binding) {
-                atom
+            } else if let Some(ty) = self.affine_binding_type(binding) {
+                let same_nonconstant_part = states.iter().skip(1).all(|state| {
+                    state
+                        .affine
+                        .values
+                        .get(&binding)
+                        .is_some_and(|value| value.terms() == first_value.terms())
+                });
+                if same_nonconstant_part {
+                    let mut minimum = first_value.constant_value();
+                    let mut maximum = minimum;
+                    for state in states.iter().skip(1) {
+                        let constant = state
+                            .affine
+                            .values
+                            .get(&binding)
+                            .expect("one join binding exists on every input")
+                            .constant_value();
+                        minimum = minimum.min(constant);
+                        maximum = maximum.max(constant);
+                    }
+                    let atom_start = self.affine_atoms.len();
+                    let delta = self.new_affine_atom_with_interval(ty, minimum, maximum);
+                    match first_value
+                        .nonconstant_part()
+                        .add(&delta, &mut AffineCheckState::new())
+                    {
+                        Ok(value) => value,
+                        Err(_) => {
+                            self.affine_atoms.truncate(atom_start);
+                            self.new_affine_atom(ty)
+                        }
+                    }
+                } else {
+                    self.new_affine_atom(ty)
+                }
             } else {
                 continue;
             };
@@ -7860,7 +7916,7 @@ impl Analyzer<'_, '_> {
                 .affine_atoms
                 .get(atom_id.index() as usize)
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
-            let (minimum, maximum) = type_range(atom.ty);
+            let (minimum, maximum) = (atom.minimum, atom.maximum);
             let mut bindings = values
                 .values
                 .iter()
@@ -7936,7 +7992,7 @@ impl Analyzer<'_, '_> {
                 .affine_atoms
                 .get(atom_id.index() as usize)
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
-            let (minimum, maximum) = type_range(atom.ty);
+            let (minimum, maximum) = (atom.minimum, atom.maximum);
             let mut bindings = values
                 .values
                 .iter()
