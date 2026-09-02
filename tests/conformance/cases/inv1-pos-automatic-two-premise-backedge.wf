@@ -1,0 +1,22 @@
+fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+} {
+  let left = 0_u64;
+  let left_limit = 0_u64;
+  let right = 0_u64;
+  let right_limit = 0_u64;
+  for i in 0_u64..2_u64 {
+    invariant combined: ile(left + right, left_limit + right_limit);
+    set left = first;
+    set left_limit = first_limit;
+    set right = second;
+    set right_limit = second_limit;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let finished = preserve_pair_bounds(first: 3_u64, first_limit: 5_u64, second: 7_u64, second_limit: 9_u64);
+  return exit_status(code: 0_u8);
+}
