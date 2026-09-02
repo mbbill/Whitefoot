@@ -17,6 +17,22 @@ const WRITER_HEADER_BYTES: usize = 64;
 
 pub(super) const STACKLESS_RUNTIME_FALLBACK: &str = "define weak i32 @wf__completion_file_pread_submit_writer(i32 %descriptor, ptr %buffer, i64 %count, i64 %offset, ptr %token, ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak i32 @wf__completion_file_write_submit_writer(i32 %descriptor, ptr %buffer, i64 %count, ptr %token, ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak i32 @wf__completion_file_take(ptr %token, ptr %value, ptr %error) {\nentry:\n  ret i32 0\n}\n\ndefine weak void @wf__writer_frame_init(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_begin_suspend(ptr %frame, ptr %resume) {\nentry:\n  ret void\n}\n\ndefine weak i32 @wf__writer_commit_suspend(ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak void @wf__writer_cancel_suspend(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_complete(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_run_root(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
+/// Hard Windows ABI for stackless writer continuations.
+///
+/// Windows completion is mandatory: a missing native bridge must fail at link
+/// time instead of silently selecting the direct path through weak bodies.
+pub(super) const STACKLESS_WINDOWS_RUNTIME_DECLARATIONS: &str = concat!(
+    "declare i32 @wf__completion_file_pread_submit_writer(i32, ptr, i64, i64, ptr, ptr)\n",
+    "declare i32 @wf__completion_file_write_submit_writer(i32, ptr, i64, ptr, ptr)\n",
+    "declare i32 @wf__completion_file_take(ptr, ptr, ptr)\n",
+    "declare void @wf__writer_frame_init(ptr)\n",
+    "declare void @wf__writer_begin_suspend(ptr, ptr)\n",
+    "declare i32 @wf__writer_commit_suspend(ptr)\n",
+    "declare void @wf__writer_cancel_suspend(ptr)\n",
+    "declare void @wf__writer_complete(ptr)\n",
+    "declare void @wf__writer_run_root(ptr)\n",
+);
+
 #[derive(Clone, Debug)]
 pub(super) struct StacklessPlan {
     root: u32,
@@ -420,9 +436,21 @@ fn emit_system_tail(
     } else {
         (String::new(), "%vacant")
     };
+    let verdict = if qualification.target().is_windows() {
+        "  %direct_only = icmp eq i32 %status, 0\n  \
+         br i1 %direct_only, label %inline, label %submit.accepted\n\
+         submit.accepted:\n  %accepted = icmp eq i32 %status, 1\n  \
+         br i1 %accepted, label %suspended, label %submit.capacity\n\
+         submit.capacity:\n  %capacity = icmp eq i32 %status, 2\n  \
+         br i1 %capacity, label %capacity_wait, label %invalid_submit\n\
+         capacity_wait:\n  call void @wf__completion_wait_core_capacity()\n  br label %submit\n\
+         invalid_submit:\n  call void @abort()\n  unreachable\n"
+    } else {
+        "  %accepted = icmp eq i32 %status, 1\n  br i1 %accepted, label %suspended, label %inline\n"
+    };
     writeln!(
         output,
-        "  %extent = sub i64 {}, {}\n  store i64 {}, ptr %start_slot\n  store i64 %extent, ptr %extent_slot\n  %vacant = icmp eq i64 %extent, 0\n{eligibility}  br i1 {ineligible}, label %inline, label %submit\nsubmit:\n  %base = extractvalue {buffer_llvm} {}, 0\n  %target = getelementptr inbounds i8, ptr %base, i64 {}\n  %status = call i32 @{submit}({submit_args})\n  %accepted = icmp eq i32 %status, 1\n  br i1 %accepted, label %suspended, label %inline\ninline:\n  %direct = call {result_llvm} @{}({})\n  store {result_llvm} %direct, ptr %result\n  ret i1 false\nsuspended:\n  ret i1 true\n}}\n",
+        "  %extent = sub i64 {}, {}\n  store i64 {}, ptr %start_slot\n  store i64 %extent, ptr %extent_slot\n  %vacant = icmp eq i64 %extent, 0\n{eligibility}  br i1 {ineligible}, label %inline, label %submit\nsubmit:\n  %base = extractvalue {buffer_llvm} {}, 0\n  %target = getelementptr inbounds i8, ptr %base, i64 {}\n  %status = call i32 @{submit}({submit_args})\n{verdict}inline:\n  %direct = call {result_llvm} @{}({})\n  store {result_llvm} %direct, ptr %result\n  ret i1 false\nsuspended:\n  ret i1 true\n}}\n",
         value_name(*end),
         value_name(*start),
         value_name(*start),

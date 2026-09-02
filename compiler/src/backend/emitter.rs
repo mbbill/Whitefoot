@@ -29,11 +29,11 @@ use super::qualification::{
 };
 use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
-    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite,
-    IrCompletionStep, IrConstant, IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction,
-    IrGlobalValue, IrInstruction, IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId,
-    IrNominalKind, IrOperation, IrOverlap, IrProgram, IrRuntimeTargetObligations,
-    IrTargetDomainObligation, IrTerminator, IrType, IrValueId, SystemResourceType,
+    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite, IrConstant,
+    IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
+    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
+    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
+    IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -104,15 +104,29 @@ pub enum BackendFailure {
     /// ring exists to prevent. With a one-slot descriptor there is no ring
     /// element at all and a missing slot is refused nowhere; a non-carrying
     /// block under a multi-slot descriptor likewise takes its own one-element
-    /// reservation and is refused nowhere. Nothing else is
-    /// checked. In particular the value's *dominance* over the block naming
-    /// it, and its *range* against the ring width, are trusted exactly as
-    /// every other operand this emitter renders is trusted: a driver threads
-    /// the slot along the edges into its region and owes the range a static
-    /// refusal or a proof of its own. Like the two refusals above this is an
-    /// emitter capability limit rather than a source-language rejection; it
-    /// cites no language rule [DIAG-1].
+    /// reservation and is refused nowhere. The compiler also checks that a
+    /// named slot is a `u64` parameter which dominates its use; it rejects an
+    /// instruction-local or non-dominating name before it can make malformed
+    /// LLVM. The remaining dynamic range fact is established by the emitted
+    /// checked-slot helper before every `inbounds` element address. Like the
+    /// two refusals above this is an emitter capability limit rather than a
+    /// source-language rejection; it cites no language rule [DIAG-1].
     MisaddressedCompletionSlot,
+    /// A staged operation's source result is consumed before a drain can
+    /// materialize it.  The current pipeline descriptor carries only target
+    /// ownership and per-operation storage; it does not rewrite the source
+    /// continuation around a deferred result.  Admitting such a descriptor
+    /// would either use an undefined LLVM value or read a result before the
+    /// target completed it, so it is an emitter capability stop rather than a
+    /// source-language rejection.
+    StagedCompletionResultUse,
+    /// A carrying region tries to retire a prior completion before its drain.
+    /// The current staged schedule records one source-ordered outstanding set,
+    /// not a per-edge dataflow fact.  Applying an early wait while emitting one
+    /// branch could therefore erase work still live on a sibling branch.  Such
+    /// a descriptor is refused until the pipeline carries path-specific
+    /// ownership state.
+    StagedCompletionDependency,
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -347,7 +361,16 @@ fn emit_llvm_for(
             system_declarations.remove("declare i64 @write(i32, ptr, i64)");
         }
     }
-    if writes_a_record || has_matches {
+    let has_completion_ring = program.functions().iter().any(|function| {
+        function
+            .completion_pipeline()
+            .is_some_and(|pipeline| pipeline.slots() > 1)
+    });
+    if writes_a_record
+        || has_matches
+        || has_completion_ring
+        || (stackless.is_some() && system_target.is_windows())
+    {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
@@ -453,17 +476,32 @@ fn emit_llvm_for(
     }
     if completion_used {
         text.push('\n');
-        text.push_str(completion::COMPLETION_RUNTIME_FALLBACK);
+        if has_completion_ring {
+            text.push_str(completion::COMPLETION_SLOT_CHECKER);
+        }
+        text.push_str(if system_target.is_windows() {
+            completion::COMPLETION_WINDOWS_RUNTIME_DECLARATIONS
+        } else {
+            completion::COMPLETION_RUNTIME_FALLBACK
+        });
         // Emitted only where a module actually asks for a window, exactly as
         // the split budget's fallback is, so a module that stages no loop
         // names no such symbol at all.
         if functions.contains("@wf__completion_window(") {
-            text.push_str(completion::COMPLETION_WINDOW_FALLBACK);
+            text.push_str(if system_target.is_windows() {
+                completion::COMPLETION_WINDOWS_WINDOW_DECLARATION
+            } else {
+                completion::COMPLETION_WINDOW_FALLBACK
+            });
         }
     }
     if stackless.is_some() {
         text.push('\n');
-        text.push_str(stackless::STACKLESS_RUNTIME_FALLBACK);
+        text.push_str(if system_target.is_windows() {
+            stackless::STACKLESS_WINDOWS_RUNTIME_DECLARATIONS
+        } else {
+            stackless::STACKLESS_RUNTIME_FALLBACK
+        });
     }
     if !functions.is_empty() {
         text.push('\n');
@@ -1011,30 +1049,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 }
             }
         }
-        self.validate_pipeline_slots(pipeline)
+        self.validate_pipeline_slots(pipeline)?;
+        self.validate_pipeline_results(pipeline)
     }
 
     /// Refuses a ring whose slots cannot be addressed where they are used.
-    ///
-    /// Two things have to hold here. They are not between them the whole of
-    /// what makes a run-time-chosen element safe: the slot's *range* against
-    /// the ring width is a third thing, and it is trusted rather than checked.
     ///
     /// A ring has at least one element. A descriptor claiming none would
     /// reserve a zero-length array and index into it.
     ///
     /// And a slot a block names is a value of the function, of the `u64` the
     /// array is indexed with. The index is rendered straight into a
-    /// `getelementptr` the block emits, so a name of the wrong width, or of no
-    /// value at all, is a module that does not verify; that is refused here
-    /// rather than left to a linker. Whether the value *dominates* the block
-    /// naming it, and whether it is *in range* of the ring, are trusted
-    /// exactly as every other operand this emitter renders is trusted — a
-    /// driver threads the slot along the edges into its region, so the value
-    /// reaching a carrying block is the loop-carried parameter that dominates
-    /// it, and the driver owes the range a static refusal or a proof of its
-    /// own. An out-of-range slot is an out-of-range `getelementptr inbounds`
-    /// whose pointer is handed to the runtime as an address it writes through.
+    /// `getelementptr` the block emits, so a name of the wrong width, or one
+    /// that does not dominate that block, is refused here rather than left to
+    /// LLVM's verifier. The only descriptor values this emitter can prove to
+    /// dominate are function parameters and block parameters in a dominating
+    /// block; instruction-local values are refused conservatively. A dynamic
+    /// check immediately before each ring `inbounds` GEP proves the remaining
+    /// fact, `slot < slots`, on every execution path.
     ///
     /// What is deliberately *not* checked here is which blocks must name a
     /// slot. A carrying block that starts no operation and retires none needs
@@ -1051,6 +1083,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if pipeline.slots() == 0 {
             return Err(BackendFailure::MisaddressedCompletionSlot);
         }
+        if pipeline.slots() == 1 {
+            return Ok(());
+        }
+        let dominators = self.completion_block_dominators()?;
         for index in 0..self.function.blocks().len() {
             let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
             let Some(slot) = pipeline.slot_index(id) else {
@@ -1063,6 +1099,182 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 })
             {
                 return Err(BackendFailure::MisaddressedCompletionSlot);
+            }
+            if !self.completion_slot_dominates(slot, id, &dominators) {
+                return Err(BackendFailure::MisaddressedCompletionSlot);
+            }
+        }
+        Ok(())
+    }
+
+    /// Computes ordinary control-flow dominators for the descriptor checks.
+    ///
+    /// The emitter writes blocks in source order, but slot availability is a
+    /// control-flow property: a loop-carried block parameter in an earlier
+    /// header can dominate a later body block even when its value is not a
+    /// function parameter.  Unreachable blocks retain only themselves, which
+    /// permits their own parameter and nothing invented from another path.
+    fn completion_block_dominators(&self) -> Result<Vec<HashSet<IrBlockId>>, BackendFailure> {
+        let count = self.function.blocks().len();
+        if count == 0 {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let ids = (0..count)
+            .map(|index| IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut reachable = HashSet::new();
+        let mut worklist = vec![ids[0]];
+        while let Some(block) = worklist.pop() {
+            if !reachable.insert(block) {
+                continue;
+            }
+            let source = self
+                .function
+                .blocks()
+                .get(block.index())
+                .ok_or(BackendFailure::InvalidIr)?;
+            for successor in block_successors(source) {
+                if successor.index() >= count {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                worklist.push(successor);
+            }
+        }
+        let universe = reachable.clone();
+        let mut dominators = ids
+            .iter()
+            .map(|id| {
+                if *id == ids[0] || !reachable.contains(id) {
+                    HashSet::from([*id])
+                } else {
+                    universe.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for index in 1..count {
+                if !reachable.contains(&ids[index]) {
+                    continue;
+                }
+                let predecessors = self
+                    .function
+                    .blocks()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(candidate, block)| {
+                        (reachable.contains(&ids[candidate])
+                            && block_successors(block).contains(&ids[index]))
+                        .then_some(candidate)
+                    })
+                    .collect::<Vec<_>>();
+                let mut next = match predecessors.split_first() {
+                    Some((first, rest)) => {
+                        let mut shared = dominators[*first].clone();
+                        for predecessor in rest {
+                            shared.retain(|candidate| dominators[*predecessor].contains(candidate));
+                        }
+                        shared
+                    }
+                    None => HashSet::new(),
+                };
+                next.insert(ids[index]);
+                if next != dominators[index] {
+                    dominators[index] = next;
+                    changed = true;
+                }
+            }
+        }
+        Ok(dominators)
+    }
+
+    /// True only when the descriptor can prove `slot` is available wherever
+    /// the named block materializes a ring element.
+    fn completion_slot_dominates(
+        &self,
+        slot: IrValueId,
+        block: IrBlockId,
+        dominators: &[HashSet<IrBlockId>],
+    ) -> bool {
+        if self
+            .function
+            .parameters()
+            .iter()
+            .any(|(value, _)| *value == slot)
+        {
+            return true;
+        }
+        self.function
+            .blocks()
+            .iter()
+            .enumerate()
+            .find_map(|(index, candidate)| {
+                candidate
+                    .parameters()
+                    .iter()
+                    .any(|(value, _)| *value == slot)
+                    .then(|| IrBlockId::from_index(index).ok())
+                    .flatten()
+            })
+            .is_some_and(|definition| {
+                dominators
+                    .get(block.index())
+                    .is_some_and(|set| set.contains(&definition))
+            })
+    }
+
+    /// A carrying descriptor may defer only a completion result that the
+    /// source does not consume.  The current pipeline record transports the
+    /// target request and its mapper facts, but it deliberately does not
+    /// rewrite arbitrary source continuations around every possible drain.
+    ///
+    /// Refusing a result use is therefore the safe boundary: otherwise a
+    /// carrying block could read the result slot before the target has written
+    /// it, or distinct drains would try to define the same LLVM SSA value.
+    fn validate_pipeline_results(
+        &self,
+        pipeline: &crate::IrCompletionPipeline,
+    ) -> Result<(), BackendFailure> {
+        let mut carried_results = HashSet::new();
+        for (index, block) in self.function.blocks().iter().enumerate() {
+            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            if !pipeline.carries(id) {
+                continue;
+            }
+            for instruction in block.instructions() {
+                let IrInstruction::Define { result, .. } = instruction else {
+                    continue;
+                };
+                if self
+                    .completion_steps
+                    .get(result)
+                    .is_some_and(crate::IrCompletionStep::submit)
+                {
+                    carried_results.insert(*result);
+                }
+            }
+        }
+        for block in self.function.blocks() {
+            for instruction in block.instructions() {
+                let IrInstruction::Define { result, .. } = instruction else {
+                    continue;
+                };
+                let Some(step) = self.completion_steps.get(result) else {
+                    continue;
+                };
+                if step
+                    .wait_for()
+                    .iter()
+                    .any(|dependency| carried_results.contains(dependency))
+                {
+                    return Err(BackendFailure::StagedCompletionDependency);
+                }
+                if carried_results.contains(result)
+                    && function_uses_value(self.program, self.function, *result)?
+                {
+                    return Err(BackendFailure::StagedCompletionResultUse);
+                }
             }
         }
         Ok(())
@@ -1129,7 +1341,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             if feeders.contains(&carrying)
                 && !self.completion_operation_is_outstanding(pending.result())
             {
-                self.handed_out.push(HandedOut::Completion(pending));
+                self.handed_out
+                    .push(HandedOut::Completion(Box::new(pending)));
             }
         }
     }
@@ -1146,7 +1359,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .iter()
                 .any(|(_, carried)| carried.result() == pending.result())
             {
-                self.pipeline_outstanding.push((block, pending.clone()));
+                self.pipeline_outstanding
+                    .push((block, pending.as_ref().clone()));
             }
         }
     }
@@ -1298,18 +1512,99 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.output,
                     "[ {}, %{} ]",
                     self.value_name(argument),
-                    block_exit_label(
-                        edge.predecessor,
-                        self.block(edge.predecessor)?,
-                        &self.overlaps,
-                        &self.completion_steps
-                    )
+                    self.block_exit_label(edge.predecessor, self.block(edge.predecessor)?)?
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
             self.output.push('\n');
         }
         Ok(())
+    }
+
+    /// Replays the pieces of one source block that can introduce a new LLVM
+    /// predecessor label.
+    ///
+    /// Block parameters are emitted before their incoming source blocks, so a
+    /// phi must predict the label where each predecessor's terminator will
+    /// actually appear. A staged drain is no longer local to the predecessor:
+    /// it first rehydrates every carried feeder's pending completion and joins
+    /// it, leaving the source terminator in that join's `par.done` block.
+    /// Keeping that graph fact here makes the source phi name the real CFG
+    /// predecessor rather than the nominal `bbN` header.
+    fn block_exit_label(
+        &self,
+        block_id: IrBlockId,
+        block: &IrBlock,
+    ) -> Result<String, BackendFailure> {
+        let carries = self.block_carries_completion(block_id);
+        let mut label = block_label(block_id);
+        let mut outstanding = self.pipeline_drain_handouts(block_id)?;
+        for (index, instruction) in block.instructions().iter().enumerate() {
+            // `emit_instruction` checks the completion step first and returns,
+            // so a step's call never reaches the compute-overlap join below.
+            if let IrInstruction::Define { result, .. } = instruction
+                && let Some(step) = self.completion_steps.get(result)
+            {
+                drain_completions(&mut outstanding, step.wait_for(), &mut label);
+                if step.submit() {
+                    outstanding.push(*result);
+                    label = completion_offered_label(*result);
+                } else {
+                    definition_exit_label(block_id, index, instruction, &mut label);
+                }
+                if !carries && step.finish() {
+                    drain_all_completions(&mut outstanding, &mut label);
+                }
+                continue;
+            }
+            definition_exit_label(block_id, index, instruction, &mut label);
+            // The overlap join rides its last member's own emission, so it
+            // settles the label after whatever that emission left.
+            if let IrInstruction::Define { result, .. } = instruction
+                && let Some(last) = overlap_join_tail(&self.overlaps, *result)
+            {
+                label = par_done_label(last);
+            }
+        }
+        // A carrying block leaves its target work live; every other block
+        // emits all its joins before its source terminator.
+        if !carries {
+            drain_all_completions(&mut outstanding, &mut label);
+        }
+        Ok(label)
+    }
+
+    /// The completion results a source block starts and a pipeline drain must
+    /// rehydrate. `pipeline_outstanding` records them in source emission order;
+    /// this predictive counterpart does the same before phis are written.
+    fn pipeline_drain_handouts(&self, drain: IrBlockId) -> Result<Vec<IrValueId>, BackendFailure> {
+        if !self.pipeline_drains.contains(&drain) {
+            return Ok(Vec::new());
+        }
+        let Some(feeders) = self.pipeline_feeders.get(&drain) else {
+            return Ok(Vec::new());
+        };
+        let mut pending = Vec::new();
+        for (index, block) in self.function.blocks().iter().enumerate() {
+            let feeder =
+                IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            if !feeders.contains(&feeder) {
+                continue;
+            }
+            for instruction in block.instructions() {
+                let IrInstruction::Define { result, .. } = instruction else {
+                    continue;
+                };
+                if self
+                    .completion_steps
+                    .get(result)
+                    .is_some_and(crate::IrCompletionStep::submit)
+                {
+                    pending.push(*result);
+                }
+            }
+        }
+        Ok(pending)
     }
 
     fn emit_instruction(
@@ -1619,13 +1914,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Ok(());
         };
         let window = pipeline.window();
+        // Zero means no independent compiler ceiling, not an unbounded ring:
+        // this function has reserved exactly `slots` records per call site.
+        let ring_ceiling = match window.ceiling() {
+            0 => pipeline.slots(),
+            ceiling => ceiling.min(pipeline.slots()),
+        };
+        let requested = self.next_temporary()?;
+        let within_ring = self.next_temporary()?;
         let name = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{name} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})",
+            "  %{requested} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})\n  \
+             %{within_ring} = icmp ule i64 %{requested}, {}\n  \
+             %{name} = select i1 %{within_ring}, i64 %{requested}, i64 {}",
             window.span(),
             window.slot_bytes(),
-            window.ceiling()
+            ring_ceiling,
+            pipeline.slots(),
+            pipeline.slots(),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         *self.completion_used = true;
@@ -2097,64 +2404,6 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
         .and_then(|overlap| overlap.handed_out().last().copied())
 }
 
-/// Where a block's terminator is actually emitted.
-///
-/// Emission is one pass over the blocks in order, so a block's phis are written
-/// before the blocks that reach it. A phi therefore has to name the label an
-/// incoming block *will* end at, and every operation that opens a new LLVM
-/// block moves that label away from the plain `bbN` header. This function is
-/// the one model of that: it replays a block's instructions and reports the
-/// label the terminator lands in.
-///
-/// The two hand-out mechanisms both leave the block somewhere else. A compute
-/// overlap settles on its group's `par.done` when its join site runs. A direct
-/// completion step submits into `completion.offered` and is joined later, and
-/// its join settles on that operation's own `par.done`; whatever is still
-/// outstanding when the block ends is joined by `emit_terminator` before the
-/// terminator itself, so the replay drains the same queue in the same order
-/// that `emit_completion_dependencies` does.
-fn block_exit_label(
-    block_id: IrBlockId,
-    block: &IrBlock,
-    overlaps: &[IrOverlap],
-    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
-) -> String {
-    let mut label = block_label(block_id);
-    // The direct completion hand-outs this block has submitted and not yet
-    // joined, in `FunctionEmitter::handed_out` order.
-    let mut outstanding: Vec<IrValueId> = Vec::new();
-    for (index, instruction) in block.instructions().iter().enumerate() {
-        // `emit_instruction` checks the completion step first and returns, so
-        // a step's call never reaches the compute-overlap join below.
-        if let IrInstruction::Define { result, .. } = instruction
-            && let Some(step) = completion_steps.get(result)
-        {
-            drain_completions(&mut outstanding, step.wait_for(), &mut label);
-            if step.submit() {
-                outstanding.push(*result);
-                label = completion_offered_label(*result);
-            } else {
-                definition_exit_label(block_id, index, instruction, &mut label);
-            }
-            if step.finish() {
-                drain_all_completions(&mut outstanding, &mut label);
-            }
-            continue;
-        }
-        definition_exit_label(block_id, index, instruction, &mut label);
-        // The overlap join rides its last member's own emission, so it settles
-        // the label after whatever that emission left.
-        if let IrInstruction::Define { result, .. } = instruction
-            && let Some(last) = overlap_join_tail(overlaps, *result)
-        {
-            label = par_done_label(last);
-        }
-    }
-    // `emit_terminator` joins every remaining hand-out before the terminator.
-    drain_all_completions(&mut outstanding, &mut label);
-    label
-}
-
 /// Replays `emit_completion_dependencies`: each named operation still
 /// outstanding is joined, and each join leaves the block at its `par.done`.
 fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], label: &mut String) {
@@ -2238,6 +2487,151 @@ fn block_successors(block: &IrBlock) -> Vec<IrBlockId> {
         }
         IrTerminator::Return { .. } | IrTerminator::Unreachable => Vec::new(),
     }
+}
+
+/// Whether an IR value is consumed anywhere in one function.
+///
+/// This is intentionally structural rather than a source-shape exception: a
+/// staged completion result can be hidden in an ordinary call argument, a
+/// block-edge argument, or a drop just as easily as it can be the scrutinee of
+/// a match.  The pipeline validator needs the complete answer before it
+/// commits to replacing the normal SSA join with per-operation storage.
+fn function_uses_value(
+    program: &IrProgram<'_, '_, '_>,
+    function: &IrFunction,
+    needle: IrValueId,
+) -> Result<bool, BackendFailure> {
+    for block in function.blocks() {
+        for instruction in block.instructions() {
+            if instruction_uses_value(program, instruction, needle)? {
+                return Ok(true);
+            }
+        }
+        if terminator_uses_value(program, block.terminator(), needle)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn instruction_uses_value(
+    program: &IrProgram<'_, '_, '_>,
+    instruction: &IrInstruction,
+    needle: IrValueId,
+) -> Result<bool, BackendFailure> {
+    Ok(match instruction {
+        IrInstruction::Define { operation, .. } => operation_uses_value(operation, needle),
+        IrInstruction::Claim { condition, .. } => *condition == needle,
+        IrInstruction::StoreBuffer {
+            buffer,
+            index,
+            value,
+        } => *buffer == needle || *index == needle || *value == needle,
+        IrInstruction::Store { address, value, .. } => *address == needle || *value == needle,
+        IrInstruction::Drop(drop) => drop.value() == needle && drop_uses_value(program, *drop)?,
+    })
+}
+
+fn terminator_uses_value(
+    program: &IrProgram<'_, '_, '_>,
+    terminator: &IrTerminator,
+    needle: IrValueId,
+) -> Result<bool, BackendFailure> {
+    let (ordinary_use, drops) = match terminator {
+        IrTerminator::Unreachable => return Ok(false),
+        IrTerminator::Jump {
+            arguments, drops, ..
+        } => (arguments.contains(&needle), drops.as_slice()),
+        IrTerminator::Match { scrutinee, .. } => return Ok(*scrutinee == needle),
+        IrTerminator::Return { value, drops } => (*value == needle, drops.as_slice()),
+    };
+    if ordinary_use {
+        return Ok(true);
+    }
+    for drop in drops {
+        if drop.value() == needle && drop_uses_value(program, *drop)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Whether the backend actually consumes a dropped value.
+///
+/// A lowered, non-owning outcome can have a bookkeeping `Drop` whose emitted
+/// form is only a comment. It is not a source continuation reading the staged
+/// result, so it does not make the deferred join unsafe. Any release action or
+/// recursively owned payload, however, is a real use and remains forbidden.
+fn drop_uses_value(program: &IrProgram<'_, '_, '_>, drop: IrDrop) -> Result<bool, BackendFailure> {
+    Ok(drop.release().action.is_some() || type_requires_cleanup(program, drop.ty())?)
+}
+
+fn operation_uses_value(operation: &IrOperation, needle: IrValueId) -> bool {
+    match operation {
+        IrOperation::Constant(_) | IrOperation::ArenaListNew => false,
+        IrOperation::Call { arguments, .. }
+        | IrOperation::SystemCall { arguments, .. }
+        | IrOperation::Integer { arguments, .. }
+        | IrOperation::Float { arguments, .. }
+        | IrOperation::Boolean { arguments, .. } => arguments.contains(&needle),
+        IrOperation::NumericConversion { value, .. }
+        | IrOperation::Reinterpret { value, .. }
+        | IrOperation::ArrayFill { value, .. }
+        | IrOperation::BufferLength { buffer: value }
+        | IrOperation::SliceFromBuffer { buffer: value }
+        | IrOperation::SliceLength { slice: value }
+        | IrOperation::BoxNew { value, .. }
+        | IrOperation::BoxDeref { value, .. }
+        | IrOperation::ArenaDeref { value, .. }
+        | IrOperation::AddressOf { value, .. } => *value == needle,
+        IrOperation::EnumEquality { arguments, .. } => arguments.contains(&needle),
+        IrOperation::ArrayIndex { root, offset, .. } => {
+            ir_array_root_uses_value(*root, needle) || *offset == needle
+        }
+        IrOperation::InsertArray {
+            aggregate,
+            index,
+            value,
+        } => *aggregate == needle || *index == needle || *value == needle,
+        IrOperation::BufferFill { length, value, .. } => *length == needle || *value == needle,
+        IrOperation::BufferVacant { length, .. } | IrOperation::BufferFits { length, .. } => {
+            *length == needle
+        }
+        IrOperation::BufferIndex { buffer, offset, .. }
+        | IrOperation::SliceIndex {
+            slice: buffer,
+            offset,
+            ..
+        } => *buffer == needle || *offset == needle,
+        IrOperation::BufferProbeSkip {
+            buffer,
+            index,
+            limit,
+            needles,
+        } => *buffer == needle || *index == needle || *limit == needle || needles.contains(&needle),
+        IrOperation::SliceFromArray { array } => ir_array_root_uses_value(*array, needle),
+        IrOperation::ArenaNew { list, value, .. } => *list == needle || *value == needle,
+        IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
+            fields.contains(&needle)
+        }
+        IrOperation::ProjectStruct { aggregate, .. }
+        | IrOperation::ProjectVariant { aggregate, .. } => *aggregate == needle,
+        IrOperation::InsertStruct {
+            aggregate, value, ..
+        } => *aggregate == needle || *value == needle,
+        IrOperation::Load { address, .. } => *address == needle,
+        IrOperation::LoopSplit {
+            seed,
+            lower,
+            upper,
+            captures,
+            ..
+        } => *seed == needle || *lower == needle || *upper == needle || captures.contains(&needle),
+    }
+}
+
+fn ir_array_root_uses_value(root: IrArrayRoot, needle: IrValueId) -> bool {
+    matches!(root, IrArrayRoot::Value(value) if value == needle)
 }
 
 /// Where a staged loop pipeline's carrying region ends.

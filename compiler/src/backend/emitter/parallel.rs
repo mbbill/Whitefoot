@@ -413,7 +413,7 @@ pub(crate) struct ComputeHandedOut {
 #[derive(Clone, Debug)]
 pub(crate) enum HandedOut {
     Compute(ComputeHandedOut),
-    Completion(super::completion::CompletionHandedOut),
+    Completion(Box<super::completion::CompletionHandedOut>),
 }
 
 impl FunctionEmitter<'_, '_> {
@@ -623,7 +623,7 @@ impl FunctionEmitter<'_, '_> {
             let pending = match pending {
                 HandedOut::Compute(pending) => pending,
                 HandedOut::Completion(pending) => {
-                    self.emit_completion_join(pending)?;
+                    self.emit_completion_join(*pending)?;
                     continue;
                 }
             };

@@ -188,10 +188,53 @@ jobs:
             compiler/src/backend/completion/windows_bridge.c \
             compiler/src/backend/completion/writer_scheduler_windows.c
 
+      # The bridge is not allowed to turn an IOCP initialization failure into
+      # a smaller execution mode. Rename that dependency in the bridge object
+      # only, inject ERROR_NOT_ENOUGH_MEMORY, and require the production
+      # fail-stop path to terminate before the completion window can return.
+      - name: Build the Windows bridge initialization fail-stop probe
+        run: |
+          fault_dir="$RUNNER_TEMP/completion/windows-bridge-init-fault"
+          mkdir -p "$fault_dir"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -DWF_WINDOWS_BRIDGE_INIT_PROBE_DECLARATIONS=1 \
+            -include compiler/src/backend/completion/windows_bridge_init_fail_stop_probe.c \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/completion/windows_bridge.c \
+            -o "$fault_dir/windows-bridge.o"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            compiler/src/backend/windows_runtime.c \
+            compiler/src/backend/completion/windows_completion.c \
+            compiler/src/backend/completion/windows_iocp.c \
+            compiler/src/backend/completion/writer_scheduler_windows.c \
+            compiler/src/backend/completion/windows_bridge_init_fail_stop_probe.c \
+            "$fault_dir/windows-bridge.o" \
+            -o "$fault_dir/windows-bridge-init-fail-stop-probe.exe"
+
+      - name: Require Windows bridge initialization to fail stop
+        run: |
+          fault_dir="$RUNNER_TEMP/completion/windows-bridge-init-fault"
+          set +e
+          "$fault_dir/windows-bridge-init-fail-stop-probe.exe" \
+            > "$fault_dir/stdout.txt" 2> "$fault_dir/stderr.txt"
+          status=$?
+          set -e
+          if [ "$status" -ne 86 ]; then
+            echo "bridge initialization fault exited ${status}, expected 86" >&2
+            exit 1
+          fi
+          if [ -s "$fault_dir/stdout.txt" ] || [ -s "$fault_dir/stderr.txt" ]; then
+            echo "bridge initialization fault wrote unexpected output" >&2
+            exit 1
+          fi
+
       # Terminal IOCP packets do not free compiler core slots; source joins do.
-      # Fill all 64 slots without joining, then require the 65th submit to
-      # return its direct-fallback verdict within five seconds. The probe then
-      # joins every admitted read and closes the submission/publication ledger.
+      # Fill all 64 slots without joining, require the 65th submit to return
+      # WAIT with its token untouched, consume one older token, then require an
+      # exact retry to be accepted with no eligible direct fallback.
       - name: Build the Windows bridge capacity probe
         run: |
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
@@ -258,6 +301,106 @@ jobs:
             fail_e2e "the compiled program produced the wrong bytes" "$?"
           test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt" || \
             fail_e2e "the compiled program wrote diagnostics" "$?"
+
+      # The bridge-only capacity probe above establishes the C ABI. This is
+      # the production compiler boundary: four source-level independent
+      # read_at calls leave three eligible requests before the source-last
+      # direct read. The test-only two-slot bridge makes the third admission
+      # return status 2 without widening the production runtime's 64-slot
+      # capacity.
+      # The link-only observer wraps the core claim and successful join ABI;
+      # it proves an executed capacity verdict, no eligible direct fallback,
+      # and that each accepted request was published and consumed. It is not
+      # linked into the normal whitefootc output.
+      - name: Exercise compiler-emitted Windows core-capacity recovery
+        run: |
+          fail_capacity() {
+            local stage="$1"
+            local status="${2:-1}"
+            echo "::error title=Windows compiler completion capacity::${stage}"
+            exit "$status"
+          }
+          capacity_dir="$RUNNER_TEMP/whitefoot-e2e/windows-capacity"
+          mkdir -p "$capacity_dir"
+          compiler/target/debug/whitefootc.exe --emit-llvm \
+            tests/programs/completion_windows_capacity.wf \
+            -o "$capacity_dir/completion-windows-capacity.ll" || \
+            fail_capacity "the capacity program did not emit" "$?"
+
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/windows_runtime.c \
+            -o "$capacity_dir/windows-runtime.o" || \
+            fail_capacity "the Windows runtime did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -I compiler/src/backend \
+            -c compiler/src/backend/wf_floor_windows.c \
+            -o "$capacity_dir/wf-floor-windows.o" || \
+            fail_capacity "the Windows floor runtime did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -Dwf_completion_claim=wf__capacity_observed_completion_claim \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/completion/windows_completion.c \
+            -o "$capacity_dir/windows-completion.o" || \
+            fail_capacity "the renamed completion core did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/completion/windows_iocp.c \
+            -o "$capacity_dir/windows-iocp.o" || \
+            fail_capacity "the Windows IOCP adapter did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -DWF_WINDOWS_COMPILER_CAPACITY_PROBE=1 \
+            -Dwf__completion_file_join=wf__capacity_observed_file_join \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/completion/windows_bridge.c \
+            -o "$capacity_dir/windows-bridge.o" || \
+            fail_capacity "the renamed Windows bridge did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/completion/writer_scheduler_windows.c \
+            -o "$capacity_dir/writer-scheduler.o" || \
+            fail_capacity "the Windows writer scheduler did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            -c compiler/src/backend/completion/windows_compiler_capacity_observer.c \
+            -o "$capacity_dir/capacity-observer.o" || \
+            fail_capacity "the capacity observer did not compile" "$?"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            -x ir "$capacity_dir/completion-windows-capacity.ll" \
+            "$capacity_dir/windows-runtime.o" \
+            "$capacity_dir/wf-floor-windows.o" \
+            "$capacity_dir/windows-completion.o" \
+            "$capacity_dir/windows-iocp.o" \
+            "$capacity_dir/windows-bridge.o" \
+            "$capacity_dir/writer-scheduler.o" \
+            "$capacity_dir/capacity-observer.o" \
+            -Wno-override-module \
+            -o "$capacity_dir/completion-windows-capacity.exe" || \
+            fail_capacity "the observed capacity program did not link" "$?"
+
+          printf 'Q' > "$capacity_dir/capacity.bin"
+          printf 'Q%.0s' {1..4} > "$capacity_dir/expected.txt"
+          (
+            cd "$capacity_dir"
+            WF_REQUIRE_WINDOWS_IOCP=1 ./completion-windows-capacity.exe \
+              capacity.bin > actual.txt 2> diagnostics.txt
+          ) || fail_capacity "the observed capacity program failed" "$?"
+          cmp "$capacity_dir/expected.txt" "$capacity_dir/actual.txt" || \
+            fail_capacity "the observed capacity program produced wrong bytes" "$?"
+          tr -d $'\r' < "$capacity_dir/diagnostics.txt" \
+            > "$capacity_dir/diagnostics.normalized"
+          test "$(wc -l < "$capacity_dir/diagnostics.normalized")" -eq 1 || \
+            fail_capacity "the capacity run wrote unexpected diagnostics"
+          grep -E \
+            '^windows-native-completion-capacity status=pass accepted=3 publications=3 consumes=3 capacity_waits=[1-9][0-9]* fallback=0$' \
+            "$capacity_dir/diagnostics.normalized" > /dev/null || \
+            fail_capacity "the capacity observer did not close the native completion ledger"
 
       # U+4241 is one native UTF-16 code unit whose little-endian memory bytes
       # are 0x41, 0x42. The program measures the HostString, copies its complete

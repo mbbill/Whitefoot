@@ -8,6 +8,25 @@
 extern "C" {
 #endif
 
+/* Stable integer verdicts for target submit implementations that expose core
+ * backpressure.  The Windows positioned-read submit uses all three in this
+ * runtime slice.  On that path DIRECT_ONLY means the request cannot use IOCP
+ * and leaves the token untouched.  ACCEPTED transfers the request to IOCP and
+ * returns with a valid token.  WAIT_CORE_CAPACITY also leaves the token
+ * untouched so the source owner can consume one of its older tokens and retry
+ * the same request. */
+enum wf_completion_submit_verdict {
+    WF_COMPLETION_SUBMIT_DIRECT_ONLY = 0,
+    WF_COMPLETION_SUBMIT_ACCEPTED = 1,
+    WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY = 2
+};
+
+/* Called only after WAIT_CORE_CAPACITY when the source owner has no earlier
+ * accepted request left to consume. It helps scheduler work or waits for a
+ * capacity notification, then returns so the caller can retry the exact
+ * submission. */
+void wf__completion_wait_core_capacity(void);
+
 /* How many iterations of one loop the runtime will carry in flight at once,
  * asked once per loop entry and never per iteration.  `span` is the loop's
  * statically known trip count, `slot_bytes` the private storage one in-flight

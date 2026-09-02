@@ -12,9 +12,20 @@
 #include <string.h>
 #include <windows.h>
 
+#if defined(WF_WINDOWS_COMPILER_CAPACITY_PROBE)
+/* Native CI compiles one observed executable with two slots so four source
+ * reads exercise compiler-emitted status-2 recovery. Production links never
+ * define this probe marker and retain the fixed 64-slot runtime. */
+#define WF_WINDOWS_BRIDGE_CAPACITY 2u
+#else
 #define WF_WINDOWS_BRIDGE_CAPACITY 64u
+#endif
 #define WF_WINDOWS_BRIDGE_DRAIN_BUDGET 16u
 #define WF_WINDOWS_BRIDGE_WINDOW_BUDGET (4u * 1024u * 1024u)
+
+/* writer_scheduler_windows.c supplies a completion-only default; the native
+ * compute runtime overrides it with its unified work-first helper. */
+extern int wf__par_help_once(void);
 
 static wf_completion_runtime wf_windows_bridge_runtime;
 static wf_completion_slot wf_windows_bridge_slots[WF_WINDOWS_BRIDGE_CAPACITY];
@@ -306,23 +317,54 @@ static int wf_windows_bridge_progress(
     return wf_windows_bridge_drain() != 0 || published != 0;
 }
 
-static int wf_windows_bridge_claim(wf_completion_token *token) {
+static enum wf_completion_submit_verdict wf_windows_bridge_claim(
+    wf_completion_token *token
+) {
     enum wf_completion_claim_result claimed;
-    if (token == NULL || wf_windows_bridge_start() != 0) {
-        return 0;
+    if (token == NULL) {
+        abort();
+    }
+    if (wf_windows_bridge_start() != 0) {
+        abort();
     }
     claimed = wf_completion_claim(&wf_windows_bridge_runtime, token);
     if (claimed == WF_COMPLETION_CLAIMED) {
-        return 1;
+        return WF_COMPLETION_SUBMIT_ACCEPTED;
     }
-    /* A completed core slot remains occupied until its source join consumes
-     * it. Waiting for more IOCP packets therefore cannot create capacity when
-     * every slot is held by earlier source operations. The operation at the
-     * full boundary must take its compiler-emitted direct fallback. */
     if (claimed == WF_COMPLETION_CLAIM_WAIT_CAPACITY) {
-        return 0;
+        /* wf_completion_claim does not write the caller's token on this
+         * result.  The source owner must consume one of its older tokens and
+         * retry; waiting inside the bridge could deadlock on that same owner. */
+        return WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY;
     }
     abort();
+}
+
+void wf__completion_wait_core_capacity(void) {
+    if (wf_windows_bridge_start() != 0) {
+        abort();
+    }
+    for (;;) {
+        uint64_t observed = wf_completion_wake_epoch(
+            &wf_windows_bridge_runtime
+        );
+        if (wf_completion_has_capacity(&wf_windows_bridge_runtime)) {
+            return;
+        }
+        if (wf_windows_bridge_drain() != 0) {
+            continue;
+        }
+        /* A native parallel runtime supplies the strong hook and already
+         * prefers a ready writer before compute work. A completion-only link
+         * gets the no-op default, then helps its writer queue directly. */
+        if (wf__par_help_once() || wf__writer_scheduler_help_once()) {
+            continue;
+        }
+        if (wf_completion_has_capacity(&wf_windows_bridge_runtime)) {
+            return;
+        }
+        (void)wf_windows_bridge_progress(observed, INFINITE);
+    }
 }
 
 static int wf_windows_bridge_submit_pread(
@@ -334,17 +376,20 @@ static int wf_windows_bridge_submit_pread(
     void *dependent_frame
 ) {
     intptr_t native;
+    enum wf_completion_submit_verdict claimed;
     wf_windows_file_request request;
     wf_windows_iocp_file associated;
-    if (descriptor < 0 || buffer == NULL || count == 0 || token == NULL
-        || count > (uint64_t)MAXDWORD
+    if (descriptor < 0 || (buffer == NULL && count != 0) || token == NULL) {
+        abort();
+    }
+    if (count == 0 || count > (uint64_t)MAXDWORD
         || file_offset > (uint64_t)INT64_MAX
         || count > (uint64_t)INT64_MAX - file_offset) {
-        return 0;
+        return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
     }
     native = _get_osfhandle(descriptor);
     if (native == -1 || wf_windows_bridge_start() != 0) {
-        return 0;
+        abort();
     }
     memset(&associated, 0, sizeof(associated));
     if (!wf_windows_bridge_file_for_descriptor(
@@ -352,10 +397,14 @@ static int wf_windows_bridge_submit_pread(
             (HANDLE)native,
             &associated
         )) {
-        return 0;
+        abort();
     }
-    if (!wf_windows_bridge_claim(token)) {
-        return 0;
+    claimed = wf_windows_bridge_claim(token);
+    if (claimed == WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY) {
+        return claimed;
+    }
+    if (claimed != WF_COMPLETION_SUBMIT_ACCEPTED) {
+        abort();
     }
     if (dependent_frame != NULL
         && wf_completion_depend(
@@ -387,7 +436,7 @@ static int wf_windows_bridge_submit_pread(
                 1,
                 memory_order_relaxed
             );
-            return 1;
+            return WF_COMPLETION_SUBMIT_ACCEPTED;
         }
         if (submitted != WF_WINDOWS_IOCP_WAIT_CAPACITY) {
             abort();
@@ -403,7 +452,7 @@ uint64_t wf__completion_window(
 ) {
     uint64_t window = WF_WINDOWS_BRIDGE_CAPACITY / 2u;
     if (wf_windows_bridge_start() != 0) {
-        return 1;
+        abort();
     }
     if (ceiling != 0 && ceiling < window) {
         window = ceiling;
@@ -468,7 +517,7 @@ int wf__completion_file_write_submit(
     (void)buffer;
     (void)count;
     (void)token_storage;
-    return 0;
+    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
 int wf__completion_file_write_submit_writer(
@@ -497,7 +546,7 @@ int wf__completion_file_read_submit(
     (void)buffer;
     (void)count;
     (void)token_storage;
-    return 0;
+    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
 int wf__completion_file_open_at_submit(
@@ -516,19 +565,19 @@ int wf__completion_file_open_at_submit(
     (void)has_mode;
     (void)expected_kind;
     (void)token_storage;
-    return 0;
+    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
 int wf__completion_file_status_submit(int descriptor, void *token_storage) {
     (void)descriptor;
     (void)token_storage;
-    return 0;
+    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
 int wf__completion_file_close_submit(int descriptor, void *token_storage) {
     (void)descriptor;
     (void)token_storage;
-    return 0;
+    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
 int wf__completion_directory_next_submit(
@@ -543,7 +592,7 @@ int wf__completion_directory_next_submit(
     (void)count;
     (void)position;
     (void)token_storage;
-    return 0;
+    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
 static int wf_windows_bridge_take_result(

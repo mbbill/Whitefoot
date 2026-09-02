@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -373,6 +373,126 @@ fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
         "                      }\n                    }\n                    return exit_status(code: 0_u8);\n                  }\n                  Err(error: problem) => {\n                    return exit_status(code: 201_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
     );
     source.into_bytes()
+}
+
+fn emit_windows_completion(source: &[u8]) -> String {
+    let target = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+        .expect("the native Windows completion target");
+    with_mutated_completion_ir(source, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the Windows completion probe must emit")
+            .into_string()
+    })
+}
+
+#[test]
+fn windows_completion_modules_require_the_native_runtime_at_link_time() {
+    let module = emit_windows_completion(POSITIONED_READS);
+
+    assert!(crate::module_requires_completion_runtime(&module));
+    for declaration in [
+        "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
+        "declare void @wf__completion_file_join(ptr, ptr, ptr)",
+        "declare void @wf__completion_wait_core_capacity()",
+    ] {
+        assert!(
+            module.contains(declaration),
+            "Windows completion must name the native ABI `{declaration}`:\n{module}"
+        );
+    }
+    assert!(
+        !module.contains("define weak i32 @wf__completion_file_read_submit"),
+        "a missing Windows runtime must be a link error, not a direct backend"
+    );
+    assert!(
+        !module.contains("define weak void @wf__completion_file_join"),
+        "Windows joins must not resolve to an empty optional-runtime body"
+    );
+}
+
+#[test]
+fn windows_core_pressure_materializes_the_oldest_owned_result_and_retries() {
+    let source = more_than_target_capacity_reads(3);
+    let module = emit_windows_completion(&source);
+    let body = emitted_function(&module, "main");
+    let submissions = body
+        .matches("call i32 @wf__completion_file_pread_submit")
+        .count();
+
+    assert_eq!(submissions, 2, "the source-last read remains direct");
+    assert_eq!(
+        body.matches(" = icmp eq i32 ").count(),
+        submissions * 3,
+        "each submit distinguishes DIRECT_ONLY, ACCEPTED, and WAIT_CORE_CAPACITY"
+    );
+    assert_eq!(
+        body.matches(", 2\n  br i1 ").count(),
+        submissions,
+        "status 2 must have its own branch at every submit"
+    );
+    assert_eq!(
+        body.matches("call void @wf__completion_wait_core_capacity()")
+            .count(),
+        submissions,
+        "every site has a no-owned-token capacity wait before retry"
+    );
+    assert_eq!(
+        body.matches("completion.capacity.consume.").count(),
+        2,
+        "the second submit has one consume label and one branch to it"
+    );
+    assert_eq!(
+        body.matches("call void @wf__completion_file_join").count(),
+        3,
+        "two source joins plus one pressure-path materialization consume each token at most once"
+    );
+
+    let lines = body.lines().collect::<Vec<_>>();
+    let wait_verdicts = lines
+        .windows(3)
+        .filter(|window| {
+            window[0].trim().starts_with("completion.verdict.wait.")
+                && window[0].trim().ends_with(':')
+        })
+        .map(|window| window[2])
+        .collect::<Vec<_>>();
+    assert_eq!(wait_verdicts.len(), submissions);
+    for branch in wait_verdicts {
+        assert!(branch.contains("label %completion.capacity."), "{branch}");
+        assert!(
+            branch.contains("label %completion.verdict.invalid."),
+            "{branch}"
+        );
+        assert!(
+            !branch.contains("completion.inline."),
+            "core pressure must never become direct execution: {branch}"
+        );
+    }
+
+    let consume = body
+        .split_once("\ncompletion.capacity.consume.")
+        .expect("the second submit can consume the first request")
+        .1
+        .split_once("\ncompletion.capacity.next.")
+        .expect("the consume arm rejoins the owner scan")
+        .0;
+    assert!(consume.contains("call void @wf__completion_file_join"));
+    let mapped = consume
+        .find("@wf.sys.read.completion(")
+        .expect("the pressure path maps the raw result");
+    let stored = consume[mapped..]
+        .find("\n  store ")
+        .map(|offset| mapped + offset)
+        .expect("the pressure path stores the typed result");
+    let cleared = consume
+        .find("store i1 false")
+        .expect("the pressure path relinquishes target ownership");
+    assert!(mapped < stored && stored < cleared, "{consume}");
+    assert!(consume.contains("br label %completion.submit."));
+    assert!(
+        body.matches("call void @abort()").count() >= submissions,
+        "an unknown runtime verdict must abort"
+    );
 }
 
 #[test]
@@ -1935,31 +2055,19 @@ fn blocks_that_reach_the_back_edge(function: &crate::IrFunction) -> Vec<crate::I
         .collect()
 }
 
-/// A staged loop leaves its target operations outstanding across the back
-/// edge, and every way out of the loop retires them.
+/// A staged completion result cannot be consumed before the descriptor's
+/// drain.
 ///
-/// Two facts make one schedule. The back edge no longer joins, which is what
-/// gives a loop the right to keep work in flight across its own iterations —
-/// today's unconditional join at every terminator is the whole of the round
-/// barrier the design measures. And every block the pipeline does not name
-/// still joins everything outstanding, which is the drain: the loop's normal
-/// exit and the typed exit out of its body each retire the window, and neither
-/// leaves an accepted operation owned by nobody.
-///
-/// The descriptor is the loop judgment's product and the judgment does not
-/// exist yet, so the test supplies the block set. Everything the emitter does
-/// with it — where a join lands, where it does not, and how many there are —
-/// is the shipped path.
+/// This source observes `first` after its loop, while the descriptor would
+/// defer its completion until an exit from that loop. The current pipeline
+/// record carries target storage and mapper facts but deliberately does not
+/// rewrite arbitrary source continuations, so accepting this descriptor would
+/// either make an incomplete result observable or create a non-dominating LLVM
+/// definition.
 #[test]
-fn a_staged_loop_carries_completion_across_its_back_edge() {
+fn a_staged_loop_that_uses_a_result_before_its_drain_is_refused() {
     let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    let sequential = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
-        emit_llvm_for_target(program, target)
-            .expect("the probe must emit")
-            .into_string()
-    });
-    let sequential = emitted_function(&sequential, "probe");
-    let carried = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+    with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
         let probe = program
             .functions()
             .iter()
@@ -1981,54 +2089,12 @@ fn a_staged_loop_carries_completion_across_its_back_edge() {
             ),
             "the probe function must take a pipeline"
         );
-        emit_llvm_for_target(program, target)
-            .expect("a staged probe must emit")
-            .into_string()
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::StagedCompletionResultUse),
+            "a descriptor cannot defer a result the source consumes before its drain"
+        );
     });
-    let carried = emitted_function(&carried, "probe");
-
-    // Without the pipeline the schedule joins where it submitted: one join, in
-    // the block the two reads are in.
-    let sequential_joins = ir_blocks_containing(sequential, "@wf__completion_file_join(");
-    assert_eq!(
-        sequential_joins,
-        vec!["entry".to_owned()],
-        "an unstaged schedule joins in the block that submitted it"
-    );
-
-    // With it, the submitting block ends with the operation still in flight
-    // and each exit from the loop retires it.
-    let carried_joins = ir_blocks_containing(carried, "@wf__completion_file_join(");
-    assert!(
-        !carried_joins.contains(&"entry".to_owned()),
-        "a carrying block must not join: found joins in {carried_joins:?}"
-    );
-    assert_eq!(
-        carried_joins.len(),
-        2,
-        "the loop's normal exit and its typed exit are two drains, not one: {carried_joins:?}"
-    );
-    assert!(
-        carried_joins[0] != carried_joins[1],
-        "the two drains must be two different blocks: {carried_joins:?}"
-    );
-
-    // The window is asked once, at the loop's entry block, and the weak
-    // answer a link without the completion unit gets is one — the sequential
-    // program.
-    assert_eq!(
-        ir_blocks_containing(carried, "@wf__completion_window(").len(),
-        1,
-        "the window is asked once per loop entry, never per iteration"
-    );
-    assert!(
-        carried.contains("call i64 @wf__completion_window(i64 0, i64 65536, i64 32)"),
-        "the query must carry the compiler's own three bounds"
-    );
-    assert!(
-        !sequential.contains("@wf__completion_window("),
-        "a module that stages no loop must name no window symbol"
-    );
 }
 
 /// The weak window answer is emitted only where a module asks for one, and it
@@ -2036,7 +2102,7 @@ fn a_staged_loop_carries_completion_across_its_back_edge() {
 #[test]
 fn the_window_fallback_is_emitted_only_where_a_module_asks_for_one() {
     let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    let sequential = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+    let sequential = with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
         emit_llvm_for_target(program, target)
             .expect("the probe must emit")
             .into_string()
@@ -2049,7 +2115,7 @@ fn the_window_fallback_is_emitted_only_where_a_module_asks_for_one() {
         !sequential.contains("define weak i64 @wf__completion_window"),
         "a module that asks for no window must define none"
     );
-    let staged = with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
+    let staged = with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
         let probe = program
             .functions()
             .iter()
@@ -2129,56 +2195,26 @@ const READS_ON_TWO_BRANCHES: &[u8] = br#"fn probe(file: own ReadFile, rounds: ow
   region 'file {
     region 'a {
       region 'b {
-        region 'c {
-          region 'd {
-            let outer_first = read_at<'file, 'a>(file: &'file file, destination: &uniq 'a outer_left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-            let outer_second = read_at<'file, 'b>(file: &'file file, destination: &uniq 'b outer_right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
-            let split = ieq(rounds, 7_u64);
-            if split {
-              let inner_first = read_at<'file, 'c>(file: &'file file, destination: &uniq 'c inner_left, file_offset: 2_u64, start: 0_u64, end: 1_u64);
-              let inner_second = read_at<'file, 'd>(file: &'file file, destination: &uniq 'd inner_right, file_offset: 3_u64, start: 0_u64, end: 1_u64);
-              match move inner_first {
-                ReadBytes(next: produced) => {
-                  set total = total +wrap produced;
-                }
-                ReadEnd() => {
-                }
-                ReadFailed(error: problem) => {
-                }
-              }
-              match move inner_second {
-                ReadBytes(next: produced) => {
-                  set total = total +wrap produced;
-                }
-                ReadEnd() => {
-                }
-                ReadFailed(error: problem) => {
-                }
-              }
-            } else {
-              set total = total +wrap 1_u64;
-            }
-            match move outer_first {
-              ReadBytes(next: produced) => {
-                set total = total +wrap produced;
-              }
-              ReadEnd() => {
-              }
-              ReadFailed(error: problem) => {
-              }
-            }
-            match move outer_second {
-              ReadBytes(next: produced) => {
-                set total = total +wrap produced;
-              }
-              ReadEnd() => {
-              }
-              ReadFailed(error: problem) => {
-              }
-            }
-          }
+        let outer_first = read_at<'file, 'a>(file: &'file file, destination: &uniq 'a outer_left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+        let outer_second = read_at<'file, 'b>(file: &'file file, destination: &uniq 'b outer_right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+      }
+    }
+    let split = ieq(rounds, 7_u64);
+    if split {
+      region 'c {
+        region 'd {
+          let inner_first = read_at<'file, 'c>(file: &'file file, destination: &uniq 'c inner_left, file_offset: 2_u64, start: 0_u64, end: 1_u64);
+          let inner_second = read_at<'file, 'd>(file: &'file file, destination: &uniq 'd inner_right, file_offset: 3_u64, start: 0_u64, end: 1_u64);
         }
       }
+      let inner_branch = ieq(rounds, 8_u64);
+      if inner_branch {
+        set total = total +wrap 2_u64;
+      } else {
+        set total = total +wrap 3_u64;
+      }
+    } else {
+      set total = total +wrap 1_u64;
     }
   }
   return total;
@@ -2343,26 +2379,18 @@ fn block_targets(block: &crate::IrBlock) -> Vec<usize> {
     }
 }
 
-/// A drain retires the operations the branches that reach it started, and no
-/// others.
+/// A staged descriptor cannot carry a completion result through a source
+/// branch just to drop it later.
 ///
-/// The emission walk is a straight line through blocks in index order, and a
-/// carrying region with a branch is not one. When the walk reaches an exit it
-/// holds whatever the path it took handed out, which is both too little — an
-/// operation started on a branch it has not passed is missing — and too much:
-/// an operation started on a *sibling* branch, one that cannot reach this exit
-/// at all, is still in hand. Retiring that one here would emit a join for an
-/// operation no path through this block ever started, reading a token no
-/// target ever wrote.
-///
-/// Above, the entry starts one operation and the `if` arm starts another, and
-/// the `else` arm is the first exit the walk reaches. Only the entry reaches
-/// it, so it retires one operation. The walk arrives holding two.
+/// The source does not inspect either outcome, but lowering must still thread
+/// each result through branch edges until its owning scope ends. Those edge
+/// arguments are real SSA uses: a later drain would otherwise have to define
+/// the result on a path that already needed it. Refuse the descriptor instead
+/// of making an incomplete slot look like a completed result.
 #[test]
-fn a_drain_retires_only_what_the_branches_that_reach_it_started() {
+fn a_branched_staged_descriptor_that_threads_results_is_refused() {
     let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    let mut first_drain = String::new();
-    let staged = with_mutated_completion_ir(READS_ON_TWO_BRANCHES, |program| {
+    with_mutated_completion_ir(READS_ON_TWO_BRANCHES, |program| {
         let probe = program
             .functions()
             .iter()
@@ -2374,25 +2402,6 @@ fn a_drain_retires_only_what_the_branches_that_reach_it_started() {
             2,
             "the probe must start one operation on each of two branches"
         );
-        // The exits of that carrying region, and the first one the walk
-        // reaches. The `else` arm is a successor of the entry alone, and the
-        // arm that starts the second operation cannot reach it.
-        let mut drains: Vec<usize> = carrying
-            .iter()
-            .flat_map(|block| block_targets(&probe.blocks()[block.index()]))
-            .filter(|target| !carrying.iter().any(|block| block.index() == *target))
-            .collect();
-        drains.sort_unstable();
-        drains.dedup();
-        let first = *drains.first().expect("the region must have an exit");
-        assert!(
-            carrying
-                .iter()
-                .any(|block| block.index() < first && block.index() != 0),
-            "a branch that starts an operation must be walked before that exit, \
-             or nothing is out of place: carrying {carrying:?} exits {drains:?}"
-        );
-        first_drain = format!("bb{first}");
         assert!(program.set_completion_pipeline_for_test(
             "probe",
             crate::IrCompletionPipeline::new(
@@ -2401,29 +2410,23 @@ fn a_drain_retires_only_what_the_branches_that_reach_it_started() {
                 crate::IrCompletionWindow::new(0, 65_536, 32),
             ),
         ));
-        emit_llvm_for_target(program, target)
-            .expect("a staged probe must emit")
-            .into_string()
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::StagedCompletionResultUse),
+            "a staged result cannot be threaded through a source branch"
+        );
     });
-    let staged = emitted_function(&staged, "probe");
-    let joins = ir_blocks_containing(staged, "@wf__completion_file_join(");
-    let at_the_first_drain = joins.iter().filter(|block| **block == first_drain).count();
-    assert_eq!(
-        at_the_first_drain, 1,
-        "the first exit retires the one operation the branch reaching it started, \
-         not the sibling branch's as well: joins {joins:?} at {first_drain}"
-    );
 }
 
 /// A loop whose body both submits and joins, and whose [PAR-3] verdict is
 /// `permitted`.
 ///
-/// Each iteration constructs the two buffers it reads into, so nothing the
-/// body writes is rooted outside the loop but the total it commits — the
-/// disposition the judgment grants. And the second read is independent work
-/// after the first, which is what makes the first a hand-out: the operation is
-/// started and retired inside the loop body, in blocks the loop reaches once
-/// per iteration, which is exactly where a ring element has to be addressable.
+/// Each iteration constructs the two buffers it reads into, and leaves the
+/// first result deliberately unused. That is the completion pipeline's
+/// current valid boundary: it can carry a target request and its mapper facts
+/// around the loop, but it does not yet rewrite a source continuation that
+/// consumes the result before a drain. The second read is independent work
+/// after the first, which is what makes the first a hand-out.
 const A_STAGED_LOOP_BODY: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
   let total = 0_u64;
   for @scan index in 0_u64..4_u64 {
@@ -2434,24 +2437,6 @@ const A_STAGED_LOOP_BODY: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u
         region 'right {
           let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
           let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
-          match move first {
-            ReadBytes(next: produced) => {
-              set total = total +wrap produced;
-            }
-            ReadEnd() => {
-            }
-            ReadFailed(error: problem) => {
-            }
-          }
-          match move second {
-            ReadBytes(next: produced) => {
-              set total = total +wrap produced;
-            }
-            ReadEnd() => {
-            }
-            ReadFailed(error: problem) => {
-            }
-          }
         }
       }
     }
@@ -2463,6 +2448,62 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+
+/// A staged region cannot apply a source dependency while work remains
+/// carried on another path.  The current outstanding ledger is deliberately
+/// source ordered rather than per edge, so admitting that descriptor could
+/// erase an operation which a sibling path still owns.
+#[test]
+fn a_staged_region_with_an_early_completion_dependency_is_refused() {
+    let original = std::str::from_utf8(A_STAGED_LOOP_BODY).expect("the fixture is UTF-8");
+    let second = "          let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);";
+    let replacement = format!(
+        "{second}\n          let third = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 2_u64, start: 0_u64, end: 1_u64);"
+    );
+    let source = original.replace(second, &replacement);
+    assert_ne!(
+        source, original,
+        "the dependency fixture must add a third read"
+    );
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+
+    with_mutated_completion_ir(source.as_bytes(), |program| {
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let carrying = blocks_that_reach_the_back_edge(probe);
+        let has_carried_dependency = probe.blocks().iter().enumerate().any(|(index, block)| {
+            let id = crate::IrBlockId::from_index(index).expect("a block ordinal");
+            carrying.contains(&id)
+                && block.instructions().iter().any(|instruction| {
+                    matches!(instruction, crate::IrInstruction::Define { result, .. }
+                        if probe
+                            .completion_steps()
+                            .iter()
+                            .any(|step| step.call() == *result && !step.wait_for().is_empty()))
+                })
+        });
+        assert!(
+            has_carried_dependency,
+            "the third read must wait for an earlier carried read"
+        );
+        assert!(program.set_completion_pipeline_for_test(
+            "probe",
+            crate::IrCompletionPipeline::new(
+                crate::IrBlockId::from_index(0).expect("the entry block"),
+                carrying,
+                crate::IrCompletionWindow::new(0, 65_536, 32),
+            ),
+        ));
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::StagedCompletionDependency),
+            "a carrying dependency requires path-specific outstanding state"
+        );
+    });
+}
 
 /// The blocks that dominate `block`, computed from the successor relation the
 /// probe helpers already use.
@@ -2564,6 +2605,9 @@ enum SlotChoice {
     Carried,
     /// A value of the wrong type.
     NotAnIndex,
+    /// A `u64` from a block that cannot reach the addressed block on every
+    /// path.
+    NonDominating,
     /// Nothing, which is the descriptor that would silently share one record.
     None,
 }
@@ -2589,6 +2633,36 @@ fn a_value_that_is_not_an_index(
         .expect("the probe's loop must carry something that is not an index")
 }
 
+/// A `u64` block parameter that cannot dominate `block`.
+///
+/// The ring address is emitted in `block`, so choosing a sibling's parameter
+/// would make an SSA use on a path where that parameter has no definition.
+/// This gives the descriptor validator a real dominance failure rather than
+/// merely an instruction-local value it already rejects conservatively.
+fn a_u64_that_does_not_dominate(
+    function: &crate::IrFunction,
+    block: crate::IrBlockId,
+) -> crate::IrValueId {
+    let u64_type = crate::IrType::Integer {
+        width: 64,
+        signed: false,
+    };
+    let dominators = blocks_dominating(function, block);
+    function
+        .blocks()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !dominators.contains(index))
+        .find_map(|(_, candidate)| {
+            candidate
+                .parameters()
+                .iter()
+                .find(|(_, ty)| *ty == u64_type)
+                .map(|(value, _)| *value)
+        })
+        .expect("the probe must have a non-dominating u64 block parameter")
+}
+
 fn the_unstaged_probe() -> String {
     let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
     with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
@@ -2601,33 +2675,15 @@ fn the_unstaged_probe() -> String {
 /// Emits the probe with a ring of `slots` records per site, addressed as
 /// `choice` says.
 ///
-/// Two things about the module this returns have to be said plainly, because
-/// the five tests below read it and neither is something they check.
-///
 /// The descriptor is one the emitter accepts, not one a driver has been shown
 /// to produce. Its slot is the loop-invariant `rounds` parameter
-/// `a_slot_index_for` resolves, and nothing — here or in the emitter — bounds
-/// that value against the ring width.
-///
-/// And the staged module does not pass `llvm-as`: ten errors, nine of them
-/// `instruction does not dominate all uses` — six for the completion join's
-/// result phi, three for per-operation facts the emitter keeps as SSA names,
-/// the submitted `i1` phi among them — because the carrying block consumes the
-/// operation's result while the join is deferred to the following block. The
-/// one-slot module is byte-identical to what the pre-ring compiler emitted for
-/// the same descriptor, so this is a staged-join defect of section 4 that
-/// these tests are the first to expose rather than anything the ring
-/// introduced — and nothing in the emitter checks that a descriptor it accepts
-/// emits a module that verifies.
-///
-/// What the tests over this helper do establish, and all they establish, is
-/// the storage shape and the refusals: the reservation shape at the handed-out
-/// site, that every element pointer is that ring indexed by the slot its block
-/// names rather than a constant element, that a one-slot region reserves what
-/// the unstaged program reserves and indexes by no run-time value, and that
-/// the three misaddressed descriptors are refused.
-fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendFailure> {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+/// `a_slot_index_for` resolves. The emitted checked-slot helper makes that
+/// otherwise unbounded input safe for every ring address.
+fn emit_a_ring_for_target(
+    slots: u64,
+    choice: SlotChoice,
+    target: SystemTarget,
+) -> Result<String, crate::BackendFailure> {
     let submitting = the_block_that_submits(&the_unstaged_probe());
     with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
         let probe = program
@@ -2661,6 +2717,16 @@ fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendF
                     }
                 })
                 .collect(),
+            SlotChoice::NonDominating => addressed
+                .into_iter()
+                .map(|(block, slot)| {
+                    if block == submitting {
+                        (block, a_u64_that_does_not_dominate(probe, block))
+                    } else {
+                        (block, slot)
+                    }
+                })
+                .collect(),
             SlotChoice::None => Vec::new(),
         };
         assert!(
@@ -2680,6 +2746,11 @@ fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendF
     })
 }
 
+fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendFailure> {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    emit_a_ring_for_target(slots, choice, target)
+}
+
 /// The types this function reserves, in reservation order and without the
 /// temporary names, which shift when a module also asks for a window.
 fn reserved_types(function: &str) -> Vec<String> {
@@ -2688,6 +2759,37 @@ fn reserved_types(function: &str) -> Vec<String> {
         .filter_map(|line| line.split_once("= alloca "))
         .map(|(_, reserved)| reserved.trim().to_owned())
         .collect()
+}
+
+/// Sends emitted IR through LLVM's parser and verifier.
+///
+/// `clang -emit-llvm -c` rejects malformed IR before it can produce bitcode,
+/// including non-dominating SSA uses. Keeping this as an external check makes
+/// the staged tests exercise the same parser/verifier a downstream LLVM tool
+/// sees rather than only checking strings the emitter happened to write.
+fn verify_llvm(module: &str) {
+    let sink = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let mut child = Command::new("clang")
+        .args(["-x", "ir", "-emit-llvm", "-c", "-o", sink, "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the LLVM verifier must be available as clang");
+    let mut input = child.stdin.take().expect("clang must accept LLVM IR");
+    input
+        .write_all(module.as_bytes())
+        .expect("the complete LLVM module must reach clang");
+    drop(input);
+    let output = child
+        .wait_with_output()
+        .expect("the LLVM verifier must return a status");
+    assert!(
+        output.status.success(),
+        "LLVM rejected staged completion IR:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
 }
 
 /// A staged region reserves one operation record per slot and addresses the
@@ -2707,20 +2809,25 @@ fn a_staged_region_reserves_one_operation_record_per_slot() {
         !unstaged.contains("alloca [4 x"),
         "the unstaged probe must reserve one record per site, not a ring"
     );
-    let staged = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
-    let staged = emitted_function(&staged, "probe");
+    let module = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
+    assert!(
+        module.contains("call i64 @wf__completion_window(i64 0, i64 65536, i64 4)"),
+        "the runtime window is capped by the four allocated records"
+    );
+    let staged = emitted_function(&module, "probe");
 
     // The body's first read is the hand-out — the second is independent work
-    // after it, and has none of its own — so one site reserves four rings,
-    // each four elements wide.
+    // after it, and has none of its own — so one site reserves seven rings,
+    // each four elements wide. Besides the target-facing token/result/raw
+    // fields, the record retains submission state and both mapper facts for a
+    // join in another block.
     let rings = reserved_types(staged)
         .into_iter()
         .filter(|reserved| reserved.starts_with("[4 x "))
         .count();
     assert_eq!(
-        rings, 4,
-        "the handed-out site reserves a ring for its token, its result, its raw \
-         value and its raw error"
+        rings, 7,
+        "the handed-out site reserves a ring for target state and mapper facts"
     );
 
     // And every element pointer is that ring indexed by the slot, in the block
@@ -2729,48 +2836,89 @@ fn a_staged_region_reserves_one_operation_record_per_slot() {
         .lines()
         .filter(|line| line.contains("getelementptr inbounds [4 x"))
         .collect();
+    let checked = staged
+        .matches("call i64 @wf__completion_checked_slot(i64 ")
+        .count();
     assert_eq!(
         indexed.len(),
-        6,
-        "the submission addresses the two records the target is handed — the \
-         token and the result slot — and the retirement addresses all four: \
-         {indexed:?}"
+        checked,
+        "every ring GEP must use the helper-checked slot: {indexed:?}"
+    );
+    assert_eq!(
+        indexed.len(),
+        12,
+        "submission addresses target state and mapper facts; retirement reloads \
+         all target state and facts: {indexed:?}"
     );
     for line in &indexed {
         let (_, index) = line
             .rsplit_once(", i64 0, i64 ")
             .unwrap_or_else(|| panic!("an element pointer indexes its ring: {line}"));
         assert!(
-            index.starts_with("%v"),
-            "an element pointer must be indexed by a named slot, never a constant \
-             element the two iterations would share: {line}"
+            index.starts_with("%t"),
+            "an element pointer must be indexed by the helper-checked slot, never \
+             a constant element the two iterations would share: {line}"
         );
     }
 }
 
-/// One slot addresses storage exactly as a program with no pipeline does.
+/// One slot keeps every completion record fixed and needs no ring proof.
 ///
 /// A window of one is always a legal answer — it is the schedule the
-/// sequential program already runs — so the storage a one-slot region reserves
-/// has to be the storage the unstaged program reserves, element for element,
-/// with no array and no index arithmetic between the operation and its record.
+/// sequential program already runs. A staged record still retains its
+/// submission state and mapper facts, but it addresses its only element with
+/// no run-time slot and emits no checked-slot helper.
 #[test]
-fn one_slot_reserves_exactly_what_an_unstaged_program_reserves() {
-    let unstaged = the_unstaged_probe();
+fn one_slot_needs_no_dynamic_ring_index() {
     let one = emit_a_ring(1, SlotChoice::Carried).expect("a one-slot probe must emit");
-    assert_eq!(
-        reserved_types(emitted_function(&one, "probe")),
-        reserved_types(emitted_function(&unstaged, "probe")),
-        "a one-slot region reserves what the sequential program reserves"
+    assert!(
+        !one.contains("wf__completion_checked_slot"),
+        "a single fixed record has no ring GEP to guard"
     );
     assert!(
         !one.contains(", i64 0, i64 %v"),
         "a one-slot region indexes its records by no run-time value: the element \
          is the reservation's only one"
     );
+}
+
+/// The accepted staged ring is real LLVM, not merely emitter-shaped text.
+#[test]
+fn staged_completion_ring_passes_the_llvm_parser_and_verifier() {
+    let module = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
     assert!(
-        !unstaged.contains(", i64 0, i64 %v"),
-        "and neither does the program with no pipeline at all"
+        module.contains("define private i64 @wf__completion_checked_slot"),
+        "a multi-slot ring must publish its range guard"
+    );
+    verify_llvm(&module);
+}
+
+/// Windows pressure recovery may inspect a ring element before that iteration
+/// takes its submit arm. Its submission-state array must therefore start false
+/// in the entry prelude, not on a path through the loop body.
+#[test]
+fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
+    let target = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+        .expect("the native Windows completion target");
+    let module = emit_a_ring_for_target(4, SlotChoice::Carried, target)
+        .expect("the Windows staged probe must emit");
+    let body = emitted_function(&module, "probe");
+    let initialized = body
+        .find("store [4 x i1] zeroinitializer, ptr ")
+        .expect("the submission-state ring is initialized in the entry prelude");
+    let submit = body
+        .find("call i32 @wf__completion_file_pread_submit")
+        .expect("the staged probe submits a positioned read");
+    let pressure = body
+        .find("completion.capacity.v")
+        .expect("Windows emits a capacity-recovery path");
+    assert!(
+        initialized < submit && initialized < pressure,
+        "the state ring starts false before either an accepted submit or a pressure path"
+    );
+    assert!(
+        module.contains("declare void @abort() noreturn"),
+        "the checked ring helper has an abort declaration even without a local match"
     );
 }
 
@@ -2792,6 +2940,79 @@ fn a_slot_that_is_not_an_index_is_refused() {
         Some(crate::BackendFailure::MisaddressedCompletionSlot),
         "an index of the wrong type emits a module that does not verify"
     );
+}
+
+/// A `u64` alone is not enough: it must be defined on every route to the ring
+/// address.
+#[test]
+fn a_slot_that_does_not_dominate_its_ring_address_is_refused() {
+    assert_eq!(
+        emit_a_ring(4, SlotChoice::NonDominating).err(),
+        Some(crate::BackendFailure::MisaddressedCompletionSlot),
+        "a non-dominating slot would make an invalid LLVM use"
+    );
+}
+
+/// An unreachable loop must not acquire every block as a dominator merely
+/// because its SCC has no path from entry.  The old universe-initialized
+/// fixed point did exactly that and could admit an arbitrary block parameter
+/// as a ring index in every other unreachable block.
+#[test]
+fn an_unreachable_completion_scc_cannot_invent_slot_dominance() {
+    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
+    with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
+        assert!(
+            program.disconnect_function_body_for_test("probe"),
+            "the probe entry must be disconnected"
+        );
+        let probe = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "probe")
+            .expect("the probe function");
+        let carrying = blocks_that_reach_the_back_edge(probe);
+        assert!(
+            !carrying.contains(&crate::IrBlockId::from_index(0).expect("the entry block")),
+            "the retained loop must be structurally unreachable from entry"
+        );
+        let index_type = crate::IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        let slot = carrying
+            .iter()
+            .find_map(|block| {
+                probe.blocks()[block.index()]
+                    .parameters()
+                    .iter()
+                    .find(|(_, ty)| *ty == index_type)
+                    .map(|(value, _)| *value)
+            })
+            .expect("the unreachable loop carries a u64 parameter");
+        let addressed = (1..probe.blocks().len())
+            .map(|index| {
+                (
+                    crate::IrBlockId::from_index(index).expect("a block ordinal"),
+                    slot,
+                )
+            })
+            .collect();
+        assert!(program.set_completion_pipeline_for_test(
+            "probe",
+            crate::IrCompletionPipeline::with_slots(
+                crate::IrBlockId::from_index(0).expect("the entry block"),
+                carrying,
+                crate::IrCompletionWindow::new(0, 65_536, 32),
+                4,
+                addressed,
+            ),
+        ));
+        assert_eq!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::MisaddressedCompletionSlot),
+            "an unreachable SCC cannot make an external block parameter dominate its peers"
+        );
+    });
 }
 
 /// A carrying block that submits with no slot is refused, not handed element

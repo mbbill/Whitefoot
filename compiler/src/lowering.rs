@@ -1491,6 +1491,38 @@ impl IrProgram<'_, '_, '_> {
         true
     }
 
+    /// Disconnects a function's lowered body from entry while retaining its
+    /// original blocks as a structurally unreachable graph.  Completion
+    /// backend tests use this narrow mutation to prove that dominator
+    /// validation does not obtain facts from an unreachable cycle's greatest
+    /// fixed point.  The replacement return reuses a same-typed function
+    /// parameter, so the mutation introduces no invented value.
+    #[cfg(test)]
+    pub(crate) fn disconnect_function_body_for_test(&mut self, function_name: &str) -> bool {
+        let Some(function) = self
+            .functions
+            .iter_mut()
+            .find(|function| function.name == function_name)
+        else {
+            return false;
+        };
+        let Some((value, _)) = function
+            .parameters
+            .iter()
+            .find(|(_, ty)| *ty == function.result)
+        else {
+            return false;
+        };
+        let Some(entry) = function.blocks.first_mut() else {
+            return false;
+        };
+        entry.terminator = IrTerminator::Return {
+            value: *value,
+            drops: Vec::new(),
+        };
+        true
+    }
+
     /// Test-only fault injection for runtime-claim evidence.
     ///
     /// The source must first pass the complete claim judgment with a genuine

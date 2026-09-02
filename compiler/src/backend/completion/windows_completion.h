@@ -195,6 +195,11 @@ enum wf_completion_claim_result wf_completion_claim(
     wf_completion_token *token
 );
 
+/* A non-destructive, advisory capacity check for a scheduler which is about
+ * to park. A true answer does not reserve a slot; the submitter must retry its
+ * exact claim and tolerate another lane winning the race. */
+int wf_completion_has_capacity(const wf_completion_runtime *runtime);
+
 size_t wf_completion_drain(
     wf_completion_runtime *runtime,
     wf_completion_event *events,

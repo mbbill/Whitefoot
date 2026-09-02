@@ -276,6 +276,26 @@ enum wf_completion_claim_result wf_completion_claim(
     return result;
 }
 
+int wf_completion_has_capacity(const wf_completion_runtime *runtime) {
+    size_t index;
+    if (runtime == NULL || runtime->slots == NULL
+        || runtime->slot_count == 0) {
+        return 0;
+    }
+    for (index = 0; index < runtime->slot_count; ++index) {
+        wf_completion_slot *slot = &runtime->slots[index];
+        int available;
+        AcquireSRWLockShared(&slot->publication_lock);
+        available = slot->phase == WF_COMPLETION_FREE
+            && slot->generation != UINT64_MAX;
+        ReleaseSRWLockShared(&slot->publication_lock);
+        if (available) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static enum wf_completion_transition_result wf_windows_transition(
     wf_completion_runtime *runtime,
     wf_completion_token token,

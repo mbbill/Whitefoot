@@ -62,24 +62,29 @@ _Alignas(8) static volatile LONG64 wf_writer_resumes;
  */
 void wf__writer_scheduler_wake_lane(void);
 void wf__writer_scheduler_notify(void);
+int wf__par_help_once(void);
 
 #if defined(_MSC_VER)
 void wf__writer_scheduler_prepare_lanes_default(void) {}
 void wf__writer_scheduler_wake_lane_default(void) {}
 void wf__writer_scheduler_notify_default(void) {}
+int wf__par_help_once_default(void) { return 0; }
 #if defined(_M_IX86)
 #pragma comment(linker, "/alternatename:_wf__writer_scheduler_prepare_lanes=_wf__writer_scheduler_prepare_lanes_default")
 #pragma comment(linker, "/alternatename:_wf__writer_scheduler_wake_lane=_wf__writer_scheduler_wake_lane_default")
 #pragma comment(linker, "/alternatename:_wf__writer_scheduler_notify=_wf__writer_scheduler_notify_default")
+#pragma comment(linker, "/alternatename:_wf__par_help_once=_wf__par_help_once_default")
 #else
 #pragma comment(linker, "/alternatename:wf__writer_scheduler_prepare_lanes=wf__writer_scheduler_prepare_lanes_default")
 #pragma comment(linker, "/alternatename:wf__writer_scheduler_wake_lane=wf__writer_scheduler_wake_lane_default")
 #pragma comment(linker, "/alternatename:wf__writer_scheduler_notify=wf__writer_scheduler_notify_default")
+#pragma comment(linker, "/alternatename:wf__par_help_once=wf__par_help_once_default")
 #endif
 #elif defined(__clang__) || defined(__GNUC__)
 __attribute__((weak)) void wf__writer_scheduler_prepare_lanes(void) {}
 __attribute__((weak)) void wf__writer_scheduler_wake_lane(void) {}
 __attribute__((weak)) void wf__writer_scheduler_notify(void) {}
+__attribute__((weak)) int wf__par_help_once(void) { return 0; }
 #else
 #error "writer scheduler requires MSVC, Clang, or GCC-compatible weak linkage"
 #endif

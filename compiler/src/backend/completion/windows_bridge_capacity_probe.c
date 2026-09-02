@@ -1,5 +1,5 @@
-/* Native Windows proof that a full compiler completion window falls back
- * instead of waiting for a core slot only a later source join can release. */
+/* Native Windows proof that a full compiler completion window asks its source
+ * owner to release capacity without modifying the rejected request's token. */
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef _WIN32_WINNT
@@ -22,24 +22,31 @@
 #define WF_WINDOWS_BRIDGE_PROBE_CAPACITY 64u
 #define WF_WINDOWS_BRIDGE_PROBE_TIMEOUT_MS 5000u
 
+_Static_assert(WF_COMPLETION_SUBMIT_DIRECT_ONLY == 0, "stable direct verdict");
+_Static_assert(WF_COMPLETION_SUBMIT_ACCEPTED == 1, "stable accepted verdict");
+_Static_assert(
+    WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY == 2,
+    "stable core-capacity verdict"
+);
+
 typedef struct wf_windows_bridge_probe_submit {
     int descriptor;
     unsigned char *buffer;
     wf_completion_token *token;
-    volatile LONG accepted;
+    volatile LONG verdict;
 } wf_windows_bridge_probe_submit;
 
 static DWORD WINAPI wf_windows_bridge_probe_submit_full(void *opaque) {
     wf_windows_bridge_probe_submit *submit =
         (wf_windows_bridge_probe_submit *)opaque;
-    int accepted = wf__completion_file_pread_submit(
+    int verdict = wf__completion_file_pread_submit(
         submit->descriptor,
         submit->buffer,
         1,
         0,
         submit->token
     );
-    InterlockedExchange(&submit->accepted, (LONG)accepted);
+    InterlockedExchange(&submit->verdict, (LONG)verdict);
     return 0;
 }
 
@@ -54,7 +61,10 @@ int main(int argc, char **argv) {
     HANDLE native;
     int descriptor;
     unsigned char direct_buffer = 0;
+    wf_completion_token local_token;
+    wf_completion_token local_untouched;
     wf_completion_token tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u];
+    wf_completion_token untouched;
     unsigned char buffers[WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u];
     wf_windows_bridge_probe_submit full;
     HANDLE submit_thread;
@@ -113,28 +123,59 @@ int main(int argc, char **argv) {
             "direct pread on the associated handle did not complete exactly"
         );
     }
+    local_token.slot = UINT32_C(0x5a5aa5a5);
+    local_token.generation = UINT64_C(0x5a5aa5a50ff00ff0);
+    local_untouched = local_token;
+    if (wf__completion_file_pread_submit(
+            descriptor,
+            NULL,
+            0,
+            0,
+            &local_token
+        ) != WF_COMPLETION_SUBMIT_DIRECT_ONLY
+        || wf__completion_file_pread_submit(
+            descriptor,
+            &direct_buffer,
+            UINT64_C(0x100000000),
+            0,
+            &local_token
+        ) != WF_COMPLETION_SUBMIT_DIRECT_ONLY) {
+        return wf_windows_bridge_probe_fail(
+            "a locally ineligible request did not remain direct-only"
+        );
+    }
+    if (local_token.slot != local_untouched.slot
+        || local_token.generation != local_untouched.generation) {
+        return wf_windows_bridge_probe_fail(
+            "a direct-only verdict modified the caller's token"
+        );
+    }
 
     memset(tokens, 0, sizeof(tokens));
     memset(buffers, 0, sizeof(buffers));
     for (index = 0; index < WF_WINDOWS_BRIDGE_PROBE_CAPACITY; ++index) {
-        if (!wf__completion_file_pread_submit(
+        if (wf__completion_file_pread_submit(
                 descriptor,
                 &buffers[index],
                 1,
                 0,
                 &tokens[index]
-            )) {
+            ) != WF_COMPLETION_SUBMIT_ACCEPTED) {
             return wf_windows_bridge_probe_fail(
-                "a slot below the core capacity fell back"
+                "a slot below the core capacity was not accepted"
             );
         }
     }
 
+    tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].slot = UINT32_C(0xa5a55a5a);
+    tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].generation =
+        UINT64_C(0xa5a55a5af00ff00f);
+    untouched = tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY];
     memset(&full, 0, sizeof(full));
     full.descriptor = descriptor;
     full.buffer = &buffers[WF_WINDOWS_BRIDGE_PROBE_CAPACITY];
     full.token = &tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY];
-    full.accepted = -1;
+    full.verdict = -1;
     submit_thread = CreateThread(
         NULL,
         0,
@@ -158,28 +199,65 @@ int main(int argc, char **argv) {
         ExitProcess(1);
     }
     (void)CloseHandle(submit_thread);
-    if (InterlockedCompareExchange(&full.accepted, 0, 0) != 0) {
+    if (InterlockedCompareExchange(&full.verdict, 0, 0)
+        != WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY) {
         return wf_windows_bridge_probe_fail(
-            "the operation beyond core capacity did not fall back"
+            "the operation beyond core capacity did not return WAIT"
+        );
+    }
+    if (tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].slot != untouched.slot
+        || tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].generation
+            != untouched.generation) {
+        return wf_windows_bridge_probe_fail(
+            "the WAIT verdict modified the caller's token"
         );
     }
 
-    for (index = 0; index < WF_WINDOWS_BRIDGE_PROBE_CAPACITY; ++index) {
+    {
+        int64_t value = -1;
+        int error_code = -1;
+        wf__completion_file_join(&tokens[0], &value, &error_code);
+        if (value != 1 || error_code != 0
+            || buffers[0] != (unsigned char)'x') {
+            return wf_windows_bridge_probe_fail(
+                "the capacity-releasing operation did not complete exactly"
+            );
+        }
+    }
+    if (wf__completion_file_pread_submit(
+            full.descriptor,
+            full.buffer,
+            1,
+            0,
+            full.token
+        ) != WF_COMPLETION_SUBMIT_ACCEPTED) {
+        return wf_windows_bridge_probe_fail(
+            "the exact request was not accepted after capacity was released"
+        );
+    }
+
+    for (index = 1; index <= WF_WINDOWS_BRIDGE_PROBE_CAPACITY; ++index) {
         int64_t value = -1;
         int error_code = -1;
         wf__completion_file_join(&tokens[index], &value, &error_code);
-        if (value != 1 || error_code != 0 || buffers[index] != (unsigned char)'x') {
+        if (value != 1 || error_code != 0
+            || buffers[index] != (unsigned char)'x') {
             return wf_windows_bridge_probe_fail(
-                "an admitted operation did not complete exactly"
+                "an accepted operation did not complete exactly"
             );
         }
     }
     if (wf__completion_file_submissions()
-            != WF_WINDOWS_BRIDGE_PROBE_CAPACITY
+            != WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u
         || wf__completion_publications()
-            != WF_WINDOWS_BRIDGE_PROBE_CAPACITY) {
+            != WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u) {
         return wf_windows_bridge_probe_fail(
             "submission and publication counts do not close"
+        );
+    }
+    if (wf__completion_file_fallback_submissions() != 0) {
+        return wf_windows_bridge_probe_fail(
+            "an IOCP-eligible request used a direct fallback"
         );
     }
     if (wf__completion_file_close_direct(descriptor) != 0) {
