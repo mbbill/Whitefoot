@@ -199,6 +199,12 @@ struct AffineFlowState {
     assumptions: Vec<ActiveAffineFact>,
     exports: Vec<ActiveAffineFact>,
     proofs: Vec<ActiveAffineFact>,
+    /// Fixed unsigned literal-division consequences over exact runtime value
+    /// atoms. A binding kill removes the binding-to-value map, not a theorem
+    /// about the old value: a later value receives another atom, while a live
+    /// alias may still use the old image. An image with no live alias is only
+    /// unreachable, bounded compiler state that may be reclaimed later.
+    division_images: Vec<AutomaticAffineFact>,
 }
 
 /// The numeric/logical proof state at one exact control-flow point.
@@ -336,6 +342,12 @@ struct ProofResult {
 struct ActiveAffineFact {
     source: SourceAffineFactRef,
     inequality: AffineInequality,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AutomaticAffineFact {
+    inequality: AffineInequality,
+    parent: DerivationId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2627,6 +2639,9 @@ impl Analyzer<'_, '_> {
             }
             super::S7DerivationKind::ShiftOneNonzero { .. } => {
                 DerivationRootKind::ShiftOneNonzero(occurrence)
+            }
+            super::S7DerivationKind::UnsignedDivisionBound { .. } => {
+                DerivationRootKind::UnsignedDivisionBound(occurrence)
             }
             super::S7DerivationKind::UnsignedRemainderBound { .. } => {
                 DerivationRootKind::UnsignedRemainderBound(occurrence)
@@ -7192,6 +7207,23 @@ impl Analyzer<'_, '_> {
             assumptions: Self::intersect_affine_facts(states, |state| &state.assumptions),
             exports: Self::intersect_affine_facts(states, |state| &state.exports),
             proofs: Self::intersect_affine_facts(states, |state| &state.proofs),
+            // Equality includes the exact value atoms and originating proof.
+            // Therefore this only preserves the same incoming theorem. Two
+            // branches that independently compute equal-looking divisions
+            // need a separate value-delivery transfer before their facts can
+            // be merged; silently equating their atoms would be unsound.
+            division_images: first
+                .affine
+                .division_images
+                .iter()
+                .filter(|candidate| {
+                    states
+                        .iter()
+                        .skip(1)
+                        .all(|state| state.affine.division_images.contains(candidate))
+                })
+                .cloned()
+                .collect(),
         }
     }
 
@@ -7630,6 +7662,42 @@ impl Analyzer<'_, '_> {
         self.affine_pure_expression_form(expression, state)
     }
 
+    /// Retains the second fixed consequence of one S7 unsigned division:
+    /// for `q = a / k` with a positive written literal `k`, `k*q <= a`.
+    /// Both sides are the exact affine value images computed at this program
+    /// point, so later writes receive different atoms and cannot inherit it.
+    fn establish_unsigned_division_image(
+        &mut self,
+        binding: BindingId,
+        value: &CheckedExpression,
+        established: sources::EstablishedUnsignedDivision,
+        state: &mut AffineFlowState,
+    ) {
+        let CheckedExpression::IntegerOperation { arguments, .. } = value else {
+            return;
+        };
+        let [dividend, _divisor] = arguments.as_slice() else {
+            return;
+        };
+        let Some(quotient) = state.values.get(&binding).cloned() else {
+            return;
+        };
+        let Some(dividend) = self.affine_pre_domain_form(dividend, state) else {
+            return;
+        };
+        let Ok(scaled_quotient) = quotient.scale(established.divisor, &mut AffineCheckState::new())
+        else {
+            return;
+        };
+        let Some(inequality) = Self::affine_less_equal(&scaled_quotient, &dividend) else {
+            return;
+        };
+        state.division_images.push(AutomaticAffineFact {
+            inequality,
+            parent: established.parent,
+        });
+    }
+
     fn affine_pure_expression_form(
         &mut self,
         expression: &CheckedExpression,
@@ -8024,6 +8092,7 @@ impl Analyzer<'_, '_> {
         assumptions: &[ActiveAffineFact],
         candidates: &[AffineL0Candidate],
         facts: &FactState,
+        images: &[AutomaticAffineFact],
         check: &mut AffineCheckState,
     ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
         let mut premises = Vec::new();
@@ -8061,6 +8130,16 @@ impl Analyzer<'_, '_> {
                     inequality,
                     source: None,
                     parent: Some(facts.bound_proofs[&(left, right)]),
+                });
+            }
+        }
+        for image in images {
+            check.charge(1)?;
+            if seen.insert(image.inequality.clone()) {
+                premises.push(AutomaticAffinePremise {
+                    inequality: image.inequality.clone(),
+                    source: None,
+                    parent: Some(image.parent),
                 });
             }
         }
@@ -8265,13 +8344,19 @@ impl Analyzer<'_, '_> {
             });
         }
         let automatic = self
-            .automatic_affine_premises(assumptions, &candidates, facts, &mut check)
+            .automatic_affine_premises(
+                assumptions,
+                &candidates,
+                facts,
+                &values.division_images,
+                &mut check,
+            )
             .ok()?;
 
         // Preserve the existing complete one-premise route before the
         // intentionally incomplete multi-premise reduction. This phase is
-        // source-affine order followed by canonical L0 term-pair order, and
-        // gives every fact exactly coefficient one.
+        // source-affine order, canonical L0 term-pair order, then automatic
+        // value-image order, and gives every fact exactly coefficient one.
         for (index, assumption) in automatic.iter().enumerate() {
             let Ok(residual) =
                 AffineInequality::residual_after(target, &assumption.inequality, &mut check)
@@ -8297,7 +8382,8 @@ impl Analyzer<'_, '_> {
         }
 
         // R2 is one canonical, non-backtracking path. At each iteration it
-        // scans unused facts in source-affine-then-canonical-L0 order and
+        // scans unused facts in source-affine, canonical-L0, then automatic
+        // value-image order and
         // permanently selects the first whose greatest no-sign-crossing
         // factor strictly decreases the
         // lexicographic absolute-coefficient residual measure. Therefore it
@@ -8378,6 +8464,9 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .any(|event| Self::affine_event_kills_binding(*binding, event))
         });
+        // `division_images` name AffineTermId value identities, not mutable
+        // bindings. Removing the map above prevents a replacement value from
+        // matching an old image; retaining the image preserves valid aliases.
     }
 
     fn expression_effects(
@@ -8551,13 +8640,21 @@ impl Analyzer<'_, '_> {
                 // Sources S5, S6, S7, and S9 establish at the binding, after
                 // the initializer's own kills [ENT-3, ENT-5].
                 let mut event = None;
-                self.establish_binding_facts(
+                let unsigned_division = self.establish_binding_facts(
                     node_path,
                     *binding,
                     value,
                     &mut state.facts,
                     &mut event,
                 );
+                if let Some(established) = unsigned_division {
+                    self.establish_unsigned_division_image(
+                        *binding,
+                        value,
+                        established,
+                        &mut state.affine,
+                    );
+                }
                 true
             }
             CheckedStatement::PropagateLet {

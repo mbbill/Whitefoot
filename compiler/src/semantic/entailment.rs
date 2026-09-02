@@ -592,6 +592,10 @@ pub(crate) enum S7DerivationKind {
     UnsignedRemainderBound {
         divisor: TermId,
     },
+    UnsignedDivisionBound {
+        dividend: TermId,
+        divisor: i128,
+    },
     SignedRemainderBound {
         divisor: i128,
         endpoint: RemainderEndpoint,

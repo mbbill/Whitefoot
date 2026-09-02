@@ -1713,6 +1713,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             }
             DerivationRootKind::BitAndBound(occurrence)
             | DerivationRootKind::ShiftOneNonzero(occurrence)
+            | DerivationRootKind::UnsignedDivisionBound(occurrence)
             | DerivationRootKind::UnsignedRemainderBound(occurrence)
             | DerivationRootKind::SignedRemainderBound(occurrence) => {
                 let source = summary
@@ -1733,6 +1734,10 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(
                     matches!(source.kind, S7DerivationKind::BitAndBound { .. }),
                     matches!(root.kind, DerivationRootKind::BitAndBound(_))
+                );
+                assert_eq!(
+                    matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { .. }),
+                    matches!(root.kind, DerivationRootKind::UnsignedDivisionBound(_))
                 );
                 assert_eq!(
                     matches!(source.kind, S7DerivationKind::UnsignedRemainderBound { .. }),
@@ -1775,6 +1780,23 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                                     && !place.deref
                                     && place.fields.is_empty()
                             && *row == source.row
+                        ));
+                    }
+                    (
+                        S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
+                        Relation::Bound { left, right, bound },
+                    ) => {
+                        assert_eq!(right, dividend);
+                        assert_eq!(*bound, 0);
+                        assert!(*divisor > 0);
+                        assert!(!source.row.signed());
+                        assert!(matches!(
+                            retained_term(summary, *left),
+                            TermKind::Place(place, row)
+                                if place.root == PlaceRoot::Binding(source.binding)
+                                    && !place.deref
+                                    && place.fields.is_empty()
+                                    && *row == source.row
                         ));
                     }
                     (
@@ -5796,6 +5818,9 @@ command fn main() -> status: own ExitStatus pure {
                 S7DerivationKind::ShiftOneNonzero { .. } => {
                     panic!("the first S7 group must be the bit-and bounds")
                 }
+                S7DerivationKind::UnsignedDivisionBound { .. } => {
+                    panic!("the first S7 group must be the bit-and bounds")
+                }
                 S7DerivationKind::UnsignedRemainderBound { .. } => {
                     panic!("the first S7 group must be the bit-and bounds")
                 }
@@ -5824,11 +5849,13 @@ command fn main() -> status: own ExitStatus pure {
                     == match &group[0].kind {
                         S7DerivationKind::ShiftOneNonzero { count_atom, .. } => count_atom,
                         S7DerivationKind::BitAndBound { .. } => unreachable!(),
+                        S7DerivationKind::UnsignedDivisionBound { .. } => unreachable!(),
                         S7DerivationKind::UnsignedRemainderBound { .. } => unreachable!(),
                         S7DerivationKind::SignedRemainderBound { .. } => unreachable!(),
                     }
             }
             S7DerivationKind::BitAndBound { .. } => false,
+            S7DerivationKind::UnsignedDivisionBound { .. } => false,
             S7DerivationKind::UnsignedRemainderBound { .. } => false,
             S7DerivationKind::SignedRemainderBound { .. } => false,
         }));

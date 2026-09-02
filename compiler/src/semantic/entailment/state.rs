@@ -718,6 +718,7 @@ pub(crate) enum DerivationRootKind {
     CallGoal(u32),
     BitAndBound(u32),
     ShiftOneNonzero(u32),
+    UnsignedDivisionBound(u32),
     UnsignedRemainderBound(u32),
     SignedRemainderBound(u32),
     CountedS11 {

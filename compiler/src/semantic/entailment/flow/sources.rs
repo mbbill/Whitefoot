@@ -19,8 +19,8 @@ use super::super::super::model::{
 };
 use super::super::fragment_type;
 use super::super::state::{
-    DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact, OutcomeRelation,
-    Relation, close,
+    DerivationId, DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact,
+    OutcomeRelation, Relation, close,
 };
 use super::super::term::{
     CountedCaptureSide, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId,
@@ -52,6 +52,14 @@ pub(super) struct CountedTerms {
     pub(super) binder: TermId,
     pub(super) upper: TermId,
     pub(super) upper_source: TermId,
+}
+
+/// The affine half of one admitted unsigned literal-division transfer.
+/// The ordinary S7 relation supplies the retained source proof; the parent
+/// flow binds the scaled quotient image to the exact current operand values.
+pub(super) struct EstablishedUnsignedDivision {
+    pub(super) divisor: i128,
+    pub(super) parent: DerivationId,
 }
 
 /// The three preheader relations after their complete S11 snapshot has been
@@ -283,18 +291,24 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) {
+    ) -> Option<EstablishedUnsignedDivision> {
         if self.establish_length_facts(node_path, binding, value, state, event) {
-            return;
+            return None;
         }
         if self.establish_element_range(node_path, binding, value, state, event) {
-            return;
+            return None;
+        }
+        if let Some(image) =
+            self.establish_unsigned_division_bound(node_path, binding, value, state, event)
+        {
+            return Some(image);
         }
         if self.establish_offset_fact(node_path, binding, value, state, event) {
-            return;
+            return None;
         }
         self.record_outcome_origin(binding, value, state);
         self.establish_copy_fact(node_path, binding, value, state, event);
+        None
     }
 
     fn binding_event(
@@ -614,6 +628,66 @@ impl Analyzer<'_, '_> {
         let event = self.binding_event(event, FlowEventKind::S7, node_path);
         establish_shifted(state, bound, base, delta, &mut self.derivations, event);
         true
+    }
+
+    /// [ENT-3] S7: an admitted unsigned exact division by a positive written
+    /// integer literal publishes `quotient <= dividend`. The returned source
+    /// proof lets the parent flow also retain the exact affine image
+    /// `literal * quotient <= dividend` over the same runtime value atoms.
+    /// Signed division deliberately has no member of this rule.
+    fn establish_unsigned_division_bound(
+        &mut self,
+        node_path: &crate::NodePath,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> Option<EstablishedUnsignedDivision> {
+        let CheckedExpression::IntegerOperation {
+            operation: CheckedIntegerOperation::DivideExact,
+            operand_type: CheckedType::Integer(row),
+            arguments,
+            ..
+        } = value
+        else {
+            return None;
+        };
+        if row.signed() {
+            return None;
+        }
+        let [dividend, divisor] = arguments.as_slice() else {
+            return None;
+        };
+        let CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) = divisor else {
+            return None;
+        };
+        if ty != row {
+            return None;
+        }
+        let divisor = integer_value(*ty, *bits);
+        if divisor <= 0 {
+            return None;
+        }
+        let result = self.bound_term(binding, value)?;
+        let dividend = self.read_operand(dividend)?;
+        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let relation = Relation::Bound {
+            left: result,
+            right: dividend,
+            bound: 0,
+        };
+        let parent =
+            state.establish_bound_with_proof(result, dividend, 0, &mut self.derivations, event);
+        self.retain_s7_derivation(S7Derivation {
+            source: node_path.clone(),
+            row: *row,
+            binding,
+            kind: S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
+            relation,
+            event,
+            parent,
+        });
+        Some(EstablishedUnsignedDivision { divisor, parent })
     }
 
     /// [ENT-3] S7: an admitted unsigned exact remainder publishes

@@ -8,9 +8,10 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily};
+use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind};
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation};
+use super::entailment::validate_derivations;
 use super::with_semantics;
 
 const DIVISION_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
@@ -427,6 +428,229 @@ command fn main() -> status: own ExitStatus pure {
             matches!(outcome, SemanticOutcome::Complete(_)),
             "a discharged exact site has no runtime effect, so `pure` is correct: {outcome:?}",
         );
+    });
+}
+
+#[test]
+fn unsigned_literal_division_publishes_the_quotient_bound() {
+    let source = br#"fn half_floor(count: own u64) -> result: own u64 pure contract {
+  ensures ile(result, count);
+} {
+  let quotient = count / 2_u64;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the unsigned quotient bound must discharge the postcondition: {outcome:?}");
+        };
+        let function = named(&checked.data.functions, "half_floor");
+        validate_derivations(&function.entailment);
+        assert!(function.entailment.postconditions[0].aggregate.discharged);
+        assert!(
+            function
+                .entailment
+                .s7_derivations
+                .iter()
+                .any(|source| matches!(
+                    source.kind,
+                    S7DerivationKind::UnsignedDivisionBound { divisor: 2, .. }
+                ))
+        );
+    });
+}
+
+#[test]
+fn unsigned_literal_division_publishes_the_scaled_quotient_image() {
+    let source = br#"fn doubled_floor(count: own u64) -> result: own u64 pure contract {
+  ensures ile(result, count);
+} {
+  let quotient = count / 2_u64;
+  let doubled = quotient * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!(
+                "the scaled quotient image must prove both multiplication and return: {outcome:?}"
+            );
+        };
+        let function = named(&checked.data.functions, "doubled_floor");
+        let domains = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            domains.len(),
+            2,
+            "division and multiplication each own one domain"
+        );
+        assert!(domains.iter().all(|outcome| outcome.discharged));
+        assert!(function.entailment.postconditions[0].aggregate.discharged);
+    });
+}
+
+#[test]
+fn signed_literal_division_does_not_publish_unsigned_ordering_images() {
+    let source = br#"fn signed_half(value: own i32) -> result: own i32 pure contract {
+  ensures ile(result, value);
+} {
+  let quotient = value / 2_i32;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("signed truncation does not imply quotient <= dividend: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedPostcondition(_)
+        ));
+    });
+}
+
+#[test]
+fn unsigned_zero_literal_still_fails_the_division_domain() {
+    let source = br#"fn invalid_divisor(value: own u64) -> result: own u64 pure {
+  let quotient = value / 0_u64;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("zero remains outside the exact unsigned division domain: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Refuted,
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn replacing_the_quotient_does_not_transfer_its_old_division_image() {
+    let source =
+        br#"fn replace_quotient(count: own u64, replacement: own u64) -> result: own u64 pure {
+  let quotient = count / 2_u64;
+  set quotient = replacement;
+  let doubled = quotient * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a new quotient value must not inherit the old division image: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+    });
+}
+
+#[test]
+fn replacing_the_dividend_does_not_retarget_the_old_division_image() {
+    let source =
+        br#"fn replace_dividend(count: own u64, replacement: own u64) -> result: own u64 pure {
+  let quotient = count / 2_u64;
+  set count = replacement;
+  let doubled = quotient * 2_u64;
+  let difference = count - doubled;
+  return difference;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the old dividend value must not constrain its replacement: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("the rejection must cite the exact arithmetic site");
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        assert_eq!(&source[start..end], b"count - doubled");
+    });
+}
+
+#[test]
+fn a_live_alias_keeps_the_old_quotient_value_image_after_set() {
+    let source = br#"fn alias_before_set(count: own u64, replacement: own u64) -> result: own u64 pure contract {
+  ensures ile(result, count);
+} {
+  let quotient = count / 2_u64;
+  let saved = quotient;
+  set quotient = replacement;
+  let doubled = saved * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the image belongs to the saved runtime value, not the overwritten name: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn independent_branch_images_are_not_merged_without_a_value_transfer_rule() {
+    let source =
+        br#"fn branch_half(count: own u64, choose_left: own Bool) -> result: own u64 pure {
+  let quotient = if choose_left {
+    let left = count / 2_u64;
+    give left;
+  } else {
+    let right = count / 2_u64;
+    give right;
+  }
+  let doubled = quotient * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("branch-local value atoms require an explicit delivery transfer: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
     });
 }
 
