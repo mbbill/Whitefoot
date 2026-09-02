@@ -389,14 +389,30 @@ pub enum LoopInvariantProofObligation {
     Backedge,
 }
 
-/// The first failed part of one PRF-1 source proof.
+/// The first failed part of one erased local invariant certificate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceProofObligation {
     /// Zero-based `use` occurrence in source order.
     Premise(u32),
-    /// Exact coefficient-one sum of all proved premises did not equal the
-    /// written target.
+    /// The written weighted sum plus the fixed direct residual rule did not
+    /// establish the invariant target.
     Combination,
+    /// AUTO already established the target, so the entire written `use` block
+    /// is forbidden redundant proof text in this specification version.
+    RedundantUseBlock,
+    /// Two normalized `use` relations are identical; one explicitly scaled
+    /// use must express their combined contribution.
+    RepeatedUse { first: u32, repeated: u32 },
+    /// The source list exceeds the fixed structural use capacity.
+    UseCapacity { maximum: u32, actual: u32 },
+    /// A written proof-domain factor or source-order accumulated certificate
+    /// exceeded the admitted i128 arithmetic.
+    CertificateArithmeticOverflow,
+    /// The accumulated certificate exceeded a fixed affine shape capacity.
+    CertificateFormationCapacity,
+    /// A nonpositive factor reached the certificate core. Canonical source
+    /// checking normally rejects this before entailment.
+    InvalidUseFactor { use_index: u32 },
 }
 
 /// One non-discharged [FN-8] ordinary-call goal disposition.
@@ -638,14 +654,15 @@ pub enum SemanticIssueKind {
         /// Exact source-level repair selected by INV-1.
         mechanical_fix: &'static str,
     },
-    /// A PRF-1 proof statement violates the closed affine source form.
+    /// A local invariant or one of its `use` entries violates the closed
+    /// affine source form.
     InvalidSourceProof {
         reason: &'static str,
         mechanical_fix: &'static str,
     },
-    /// A well-formed PRF-1 proof failed in the source fact context, either
-    /// because one written premise was not established or because their exact
-    /// source-order sum did not equal the target.
+    /// A well-formed local invariant failed in the source fact context.
+    /// Written uses are independent entering-context premises; their explicit
+    /// weighted sum may establish a target weakened by the fixed direct rule.
     UndischargedSourceProof {
         name: String,
         obligation: SourceProofObligation,

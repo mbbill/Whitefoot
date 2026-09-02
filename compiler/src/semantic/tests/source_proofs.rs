@@ -616,3 +616,83 @@ fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
         assert!(proof.check.combination);
     });
 }
+
+#[test]
+fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
+    let source = format!(
+        r#"fn combine(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  prove total: ile(a + b + c, a_limit + b_limit + c_limit) {{
+    use ile(a, a_limit);
+    use ile(b, b_limit);
+    use ile(c, c_limit);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("three explicit uses must discharge the non-AUTO target: {outcome:?}");
+        };
+        let combine = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "combine")
+            .expect("combine function exists");
+        let [proof] = combine.entailment.source_proofs.as_slice() else {
+            panic!("combine retains one local certificate");
+        };
+        assert_eq!(proof.check.premises, [true, true, true]);
+        assert!(proof.check.combination);
+        assert!(!proof.check.redundant);
+        assert!(proof.check.discharged());
+    });
+}
+
+#[test]
+fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
+    let source = format!(
+        r#"fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  prove upper_bound: ile(value, limit) {{
+    use ile(value, limit);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    assert_prf1_issue(source.as_bytes(), SourceProofObligation::RedundantUseBlock);
+}
+
+#[test]
+fn repeated_normalized_uses_require_one_explicit_multiplier() {
+    let source = format!(
+        r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  prove upper_bound: ile(3_u64 * value, 3_u64 * limit) {{
+    use ile(value, limit);
+    use ile(value, limit);
+    use ile(value, limit);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::RepeatedUse {
+            first: 0,
+            repeated: 1,
+        },
+    );
+}

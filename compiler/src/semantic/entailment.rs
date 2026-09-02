@@ -547,23 +547,52 @@ pub(crate) struct LoopInvariantOutcome {
     pub(crate) proof: LoopInvariantProof,
 }
 
-/// One direct PRF-1 result. Premises are retained in source order
-/// so a rejection points to the first unproved `use`; `combination` records
-/// only the deterministic written-sum and residual check and grants no fact
-/// by itself.
+/// A structural failure while following one source-written local certificate.
+/// These are closed, deterministic source-shape outcomes, not compiler
+/// resource failures and not work-budget exhaustion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SourceProofCertificateFailure {
+    /// Two `use` entries normalized to the same proposition. The writer must
+    /// express their combined contribution with one explicit multiplier.
+    RepeatedUse { first: u32, repeated: u32 },
+    /// The written `use` list exceeds the fixed source-language capacity.
+    UseCapacity { maximum: u32, actual: u32 },
+    /// A written multiplier or source-order accumulated sum exceeds the
+    /// admitted i128 proof arithmetic.
+    ArithmeticOverflow,
+    /// The accumulated certificate exceeds another fixed affine formation
+    /// capacity, such as the number of canonical result terms.
+    FormationCapacity,
+    /// An invalid nonpositive factor reached the arithmetic core. Normal
+    /// source checking rejects this earlier; retaining it here keeps the
+    /// acceptance-bearing core total over its internal input type.
+    InvalidFactor { use_index: u32 },
+}
+
+/// One direct result for an erased local invariant. Premises are retained in
+/// source order so a rejection points to the first unproved `use`;
+/// `combination` records only the deterministic written weighted sum and
+/// direct residual check and grants no fact by itself.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceProofCheck {
     pub(crate) premises: Vec<bool>,
     pub(crate) combination: bool,
+    pub(crate) certificate_failure: Option<SourceProofCertificateFailure>,
+    /// A nonempty `use` block is invalid when the specification-defined AUTO
+    /// route already proves its outer target from the entering context.
+    pub(crate) redundant: bool,
 }
 
 impl SourceProofCheck {
     pub(crate) fn discharged(&self) -> bool {
-        self.premises.iter().all(|proved| *proved) && self.combination
+        !self.redundant
+            && self.certificate_failure.is_none()
+            && self.premises.iter().all(|proved| *proved)
+            && self.combination
     }
 }
 
-/// Direct result of checking one erased PRF-1 statement in source order.
+/// Direct result of checking one erased local invariant in source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceProofOutcome {
     pub(crate) node_path: NodePath,
@@ -819,7 +848,7 @@ pub(crate) struct FunctionEntailment {
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,
     /// Source-written loop invariants in statement order.
     pub(crate) loop_invariants: Vec<LoopInvariantOutcome>,
-    /// Erased finite source proofs in statement order.
+    /// Erased finite local invariants in statement order.
     pub(crate) source_proofs: Vec<SourceProofOutcome>,
     /// Diagnostic-only DAG nodes introduced when equal source-proof facts
     /// meet at structural joins. Dense ordinals are function-local.

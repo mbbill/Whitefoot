@@ -35,8 +35,9 @@ use super::super::postcondition::{
     PostconditionReturnPlace, PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
 };
 use super::affine::{
-    AffineCheckError, AffineCheckState, AffineCoefficient, AffineForm, AffineInequality,
-    AffineTermId, interval_maximum, interval_proves, sum_explicit_inequalities,
+    AffineCheckError, AffineCheckLimit, AffineCheckState, AffineCoefficient, AffineForm,
+    AffineInequality, AffineTermId, MAX_CERTIFICATE_PREMISES, ScaledAffinePremise,
+    interval_maximum, interval_proves, sum_explicit_inequalities, sum_explicit_scaled_inequalities,
 };
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
@@ -54,9 +55,9 @@ use super::{
     EntailmentContext, FunctionEntailment, FunctionPostconditionProof, JoinedSourceProofProvenance,
     LoopInvariantOutcome, LoopInvariantProof, ObligationFamily, ObligationOutcome,
     PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
-    PostconditionEntryImageOutcome, PostconditionExit, S7Derivation, SourceProofCheck,
-    SourceProofOutcome, VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef,
-    fragment_type, overflow_conjuncts_for_values,
+    PostconditionEntryImageOutcome, PostconditionExit, S7Derivation, SourceProofCertificateFailure,
+    SourceProofCheck, SourceProofOutcome, VerifiedPostconditionSummary,
+    VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
 };
 use crate::SYSTEM_OPERATIONS;
 
@@ -7275,7 +7276,7 @@ impl Analyzer<'_, '_> {
                         .collect::<Vec<_>>()
                         .into_boxed_slice();
                     let join_ordinal = u32::try_from(self.joined_source_proofs.len())
-                        .expect("joined source proof count exceeds the u32 identity space");
+                        .expect("joined local invariant count exceeds the u32 identity space");
                     self.joined_source_proofs
                         .push(JoinedSourceProofProvenance { predecessors });
                     SourceAffineFactRef::JoinedSourceProof { join_ordinal }
@@ -8169,7 +8170,8 @@ impl Analyzer<'_, '_> {
         &mut self,
         premises: &[Option<AffineInequality>],
         l0_premises: &[Option<Relation>],
-        combination: bool,
+        combination: Result<bool, SourceProofCertificateFailure>,
+        redundant: bool,
         values: &AffineFlowState,
         facts: &FactState,
     ) -> SourceProofCheck {
@@ -8194,39 +8196,104 @@ impl Analyzer<'_, '_> {
                     == ProofDisposition::Proved
             })
             .collect();
+        let certificate_failure = combination.as_ref().err().copied();
         SourceProofCheck {
             premises,
-            combination,
+            combination: combination.unwrap_or(false),
+            certificate_failure,
+            redundant,
         }
     }
 
-    /// Checks the one combination the source writer selected.
+    /// Checks the one weighted combination the source writer selected.
     ///
-    /// The written premises are summed with coefficient one. The remaining
-    /// proposition `target - sum` may be discharged only by the existing L0
-    /// closure or fixed interval rule at the pre-proof program point. This
-    /// route never selects another affine premise and never retries a subset.
+    /// The written premises are multiplied and summed exactly in source order.
+    /// The remaining proposition `target - sum` may be discharged only by the
+    /// existing direct L0 closure or fixed interval rule at the entering
+    /// program point. This route never selects another affine premise, derives
+    /// a multiplier, or retries a subset.
     fn source_proof_combination(
         &mut self,
         target: &AffineInequality,
-        premises: &[AffineInequality],
+        premises: &[(AffineInequality, i128)],
         values: &AffineFlowState,
         facts: &FactState,
-    ) -> bool {
+    ) -> Result<bool, SourceProofCertificateFailure> {
+        let actual = u32::try_from(premises.len()).unwrap_or(u32::MAX);
+        if premises.len() > MAX_CERTIFICATE_PREMISES {
+            return Err(SourceProofCertificateFailure::UseCapacity {
+                maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
+                    .expect("certificate capacity fits u32"),
+                actual,
+            });
+        }
+
+        let mut first_by_premise = HashMap::new();
+        for (index, (premise, factor)) in premises.iter().enumerate() {
+            let index = u32::try_from(index).expect("certificate capacity fits u32");
+            if *factor <= 0 {
+                return Err(SourceProofCertificateFailure::InvalidFactor { use_index: index });
+            }
+            if let Some(first) = first_by_premise.insert(premise.clone(), index) {
+                return Err(SourceProofCertificateFailure::RepeatedUse {
+                    first,
+                    repeated: index,
+                });
+            }
+        }
+
+        let scaled = premises
+            .iter()
+            .map(|(inequality, factor)| ScaledAffinePremise {
+                inequality,
+                factor: *factor,
+            })
+            .collect::<Vec<_>>();
         let mut check = AffineCheckState::new();
-        let Ok(sum) = sum_explicit_inequalities(premises, &mut check) else {
-            return false;
+        let sum = match sum_explicit_scaled_inequalities(&scaled, &mut check) {
+            Ok(sum) => sum,
+            Err(AffineCheckError::ArithmeticOverflow) => {
+                return Err(SourceProofCertificateFailure::ArithmeticOverflow);
+            }
+            Err(AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises)) => {
+                return Err(SourceProofCertificateFailure::UseCapacity {
+                    maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
+                        .expect("certificate capacity fits u32"),
+                    actual,
+                });
+            }
+            Err(AffineCheckError::LimitExceeded(_)) => {
+                return Err(SourceProofCertificateFailure::FormationCapacity);
+            }
+            Err(AffineCheckError::InvalidCertificateFactor) => {
+                let use_index = premises
+                    .iter()
+                    .position(|(_, factor)| *factor <= 0)
+                    .and_then(|index| u32::try_from(index).ok())
+                    .unwrap_or(0);
+                return Err(SourceProofCertificateFailure::InvalidFactor { use_index });
+            }
+            Err(AffineCheckError::CoefficientMismatch) => return Ok(false),
         };
-        let Ok(residual) = AffineInequality::residual_after(target, &sum, &mut check) else {
-            return false;
+        let residual = match AffineInequality::residual_after(target, &sum, &mut check) {
+            Ok(residual) => residual,
+            Err(AffineCheckError::ArithmeticOverflow) => {
+                return Err(SourceProofCertificateFailure::ArithmeticOverflow);
+            }
+            Err(AffineCheckError::LimitExceeded(_)) => {
+                return Err(SourceProofCertificateFailure::FormationCapacity);
+            }
+            Err(
+                AffineCheckError::CoefficientMismatch | AffineCheckError::InvalidCertificateFactor,
+            ) => return Ok(false),
         };
         let candidates = self.affine_l0_candidates(values);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
-        matches!(
+        Ok(matches!(
             self.affine_residual_proof(&residual, &l0, values, &closed, &mut check),
             Ok(Some(_))
-        )
+        ))
     }
 
     /// Exact maximum of one affine left-hand side under the independently
@@ -8981,11 +9048,11 @@ impl Analyzer<'_, '_> {
             }
             CheckedStatement::Proof(proof) => {
                 let source_ordinal = u32::try_from(self.source_proofs.len())
-                    .expect("source proof count exceeds the u32 identity space");
+                    .expect("local invariant count exceeds the u32 identity space");
                 let l0_premises = proof
-                    .premises
+                    .uses
                     .iter()
-                    .map(|premise| self.checked_affine_relation_l0(premise))
+                    .map(|written_use| self.checked_affine_relation_l0(&written_use.relation))
                     .collect::<Vec<_>>();
                 let target = self.checked_affine_relation_inequality(
                     &proof.target,
@@ -8993,22 +9060,57 @@ impl Analyzer<'_, '_> {
                     &mut AffineCheckState::new(),
                 );
                 let premises = proof
-                    .premises
+                    .uses
                     .iter()
-                    .map(|premise| {
+                    .map(|written_use| {
                         self.checked_affine_relation_inequality(
-                            premise,
+                            &written_use.relation,
                             &mut state.affine,
                             &mut AffineCheckState::new(),
                         )
                     })
                     .collect::<Vec<_>>();
-                let certificate_premises = premises.iter().cloned().collect::<Option<Vec<_>>>();
-                let combination = match (target.as_ref(), certificate_premises.as_deref()) {
-                    (Some(target), Some(premises)) => {
-                        self.source_proof_combination(target, premises, &state.affine, &state.facts)
+                let certificate_premises = proof
+                    .uses
+                    .iter()
+                    .zip(&premises)
+                    .map(|(written_use, premise)| {
+                        premise.clone().map(|premise| (premise, written_use.factor))
+                    })
+                    .collect::<Option<Vec<_>>>();
+
+                // AUTO is exactly the unified zero-, one-, and exhaustive
+                // unordered two-premise route for this specification version.
+                // A written block is redundant when that route already proves
+                // its target from this same entering context. A blockless local
+                // invariant uses AUTO itself as its complete check.
+                let auto_proved = target.as_ref().is_some_and(|target| {
+                    self.prove(
+                        ProofContext::new(&state.facts, &state.affine),
+                        ProofGoal::Affine { inequality: target },
+                    )
+                    .disposition
+                        == ProofDisposition::Proved
+                });
+                let redundant = !proof.uses.is_empty() && auto_proved;
+                let combination = if proof.uses.len() > MAX_CERTIFICATE_PREMISES {
+                    Err(SourceProofCertificateFailure::UseCapacity {
+                        maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
+                            .expect("certificate capacity fits u32"),
+                        actual: u32::try_from(proof.uses.len()).unwrap_or(u32::MAX),
+                    })
+                } else if proof.uses.is_empty() {
+                    Ok(auto_proved)
+                } else {
+                    match (target.as_ref(), certificate_premises.as_deref()) {
+                        (Some(target), Some(premises)) => self.source_proof_combination(
+                            target,
+                            premises,
+                            &state.affine,
+                            &state.facts,
+                        ),
+                        _ => Ok(false),
                     }
-                    _ => false,
                 };
 
                 // Every written `use` is proved against the same pre-proof
@@ -9018,6 +9120,7 @@ impl Analyzer<'_, '_> {
                     &premises,
                     &l0_premises,
                     combination,
+                    redundant,
                     &state.affine,
                     &state.facts,
                 );
@@ -9025,7 +9128,7 @@ impl Analyzer<'_, '_> {
                 if let Some(target) = target {
                     let fact = ActiveAffineFact {
                         source: SourceAffineFactRef::SourceProof { source_ordinal },
-                        inequality: target,
+                        inequality: target.clone(),
                     };
                     if check.discharged() {
                         state.affine.proofs.push(fact);

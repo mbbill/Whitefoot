@@ -11,7 +11,7 @@ use super::super::super::entailment::affine::{
 };
 use super::super::super::model::{
     CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation, CheckedMode,
-    CheckedSourceProof, CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    CheckedProofUse, CheckedSourceProof, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding};
 use super::{ControlCounters, StatementResult};
@@ -52,8 +52,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.invalid_affine_proof(
                 AffineProofOwner::SourceProof,
                 node,
-                "a function contains two source proofs with the same name",
-                "give every prove statement in this function a distinct name",
+                "one lexical scope contains two local invariants with the same name",
+                "give every local invariant in this lexical scope a distinct name",
             );
         }
         counters.proof_names.push(name.clone());
@@ -67,8 +67,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             AffineProofOwner::SourceProof,
         )?;
         let premise_nodes = self.tree.children_with(node, Production::ProofPremise)?;
-        let mut premises = Vec::with_capacity(premise_nodes.len());
+        let mut uses = Vec::with_capacity(premise_nodes.len());
         for premise_node in premise_nodes {
+            let factor = self.source_proof_factor(premise_node)?;
             let identifiers = self.tree.direct_identifiers(premise_node)?;
             let [relation_token] = identifiers.as_slice() else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -78,12 +79,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 premise_node,
                 *relation_token,
             )?;
-            premises.push(self.check_affine_relation(
-                premise_node,
-                bindings,
-                &allowed_values,
-                AffineProofOwner::SourceProof,
-            )?);
+            uses.push(CheckedProofUse {
+                node_path: self.tree.path(premise_node)?.clone(),
+                factor,
+                relation: self.check_affine_relation(
+                    premise_node,
+                    bindings,
+                    &allowed_values,
+                    AffineProofOwner::SourceProof,
+                )?,
+            });
         }
 
         Ok(Self::continuing_statement(
@@ -91,10 +96,54 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node_path: self.tree.path(node)?.clone(),
                 name,
                 target,
-                premises,
+                uses,
             }),
             EffectSet::NONE,
         ))
+    }
+
+    /// Reads the optional proof-domain multiplier on one `use`.
+    ///
+    /// The lexer already classifies bare `[0-9]+` as `digits`; typed runtime
+    /// literals are deliberately a different terminal. This keeps the
+    /// multiplier independent of machine integer types. Omission and an
+    /// explicitly written `1 *` both normalize to factor one.
+    fn source_proof_factor(&self, node: NodeId) -> Result<i128, CheckStop> {
+        let Some(token) = self
+            .tree
+            .direct_token_with(node, crate::syntax::terminal::TerminalPredicate::Digits)?
+        else {
+            return Ok(1);
+        };
+        let bytes = self.tree.token_bytes(token)?;
+        if bytes == b"0" {
+            return self.invalid_affine_proof(
+                AffineProofOwner::SourceProof,
+                node,
+                "a use multiplier is zero",
+                "write a positive bare-decimal multiplier, or omit it when it is one",
+            );
+        }
+        if bytes.len() > 1 && bytes.first() == Some(&b'0') {
+            return self.invalid_affine_proof(
+                AffineProofOwner::SourceProof,
+                node,
+                "a use multiplier is not in canonical decimal form",
+                "remove leading zeroes from the positive bare-decimal multiplier",
+            );
+        }
+        let Some(factor) = std::str::from_utf8(bytes)
+            .ok()
+            .and_then(|digits| digits.parse::<i128>().ok())
+        else {
+            return self.invalid_affine_proof(
+                AffineProofOwner::SourceProof,
+                node,
+                "a use multiplier exceeds the positive i128 proof domain",
+                "write a positive bare-decimal multiplier no greater than 170141183460469231731687303715884105727",
+            );
+        };
+        Ok(factor)
     }
 
     pub(super) fn require_ile_relation(
@@ -147,7 +196,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     owner,
                     node,
                     "the affine relation exceeds the checker's fixed formation capacity",
-                    "split the relation into smaller source proofs",
+                    "split the relation into smaller named local invariants",
                 );
             }
             Err(_) => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),

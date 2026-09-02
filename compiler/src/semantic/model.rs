@@ -70,15 +70,32 @@ pub(crate) struct CheckedLoopInvariant {
     pub(crate) relation: CheckedAffineRelation,
 }
 
-/// One PRF-1 proof statement. Every premise and the target are written in the
-/// `.wf` source; later analysis proves each premise and checks their exact
-/// coefficient-one sum. The whole statement is erased before lowering.
+/// One source-written `use` in a local invariant certificate.
+///
+/// `factor` is a positive proof-domain integer. The omitted source spelling is
+/// represented as one. This record deliberately contains no accumulating
+/// state: every use is checked against the invariant statement's same entering
+/// proof context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedProofUse {
+    pub(crate) node_path: NodePath,
+    pub(crate) factor: i128,
+    pub(crate) relation: CheckedAffineRelation,
+}
+
+/// One erased source-written local invariant. Every `use` and the target are
+/// written in the `.wf` source; later analysis proves each use independently,
+/// follows the written multipliers, and publishes only the checked target.
+///
+/// The historical type name remains internal while the parser surface moves
+/// from `prove` to `invariant`; it does not grant a separate proof language or
+/// runtime operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedSourceProof {
     pub(crate) node_path: NodePath,
     pub(crate) name: String,
     pub(crate) target: CheckedAffineRelation,
-    pub(crate) premises: Vec<CheckedAffineRelation>,
+    pub(crate) uses: Vec<CheckedProofUse>,
 }
 
 /// The checked source production that owns a value initializer. These forms
@@ -1704,8 +1721,9 @@ pub(crate) enum CheckedStatement {
         state_origins: Option<CheckedStateOrigins>,
         release: crate::SystemRelease,
     },
-    /// A finite source-written proof checked by PRF-1 and erased before
-    /// lowering. It has no runtime expression, effect, branch, or trap.
+    /// A finite source-written local invariant checked before it is published
+    /// and erased before lowering. It has no runtime expression, effect,
+    /// branch, or trap.
     Proof(CheckedSourceProof),
     Return {
         node_path: NodePath,

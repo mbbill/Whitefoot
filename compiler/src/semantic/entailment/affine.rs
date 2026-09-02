@@ -2,7 +2,7 @@
 //!
 //! This module normalizes checked affine expressions, carries exact affine
 //! value forms, constructs canonical inequalities, and applies the fixed
-//! coefficient-one residual and interval rules used by semantic checking. It
+//! fixed residual and interval rules used by semantic checking. It
 //! performs no heuristic search and every `i128` operation is checked. Work is
 //! counted for measurement, but a cumulative compiler budget never changes
 //! whether a source proposition is accepted.
@@ -272,6 +272,53 @@ pub(crate) fn sum_explicit_inequalities(
     })
 }
 
+/// One premise explicitly selected by a source certificate, paired with the
+/// positive mathematical multiplier written on that `use`.
+///
+/// The multiplier belongs to the proof domain, not to any machine-integer
+/// type. Source checking admits only values in `1..=i128::MAX`; this arithmetic
+/// core repeats that check so an invalid internal value cannot be mistaken for
+/// a valid certificate step.
+#[derive(Clone, Copy)]
+pub(crate) struct ScaledAffinePremise<'premise> {
+    pub(crate) inequality: &'premise AffineInequality,
+    pub(crate) factor: i128,
+}
+
+/// Sums one author-selected affine certificate in exactly source order.
+///
+/// Every multiplier is written in the source. This function never derives a
+/// multiplier, retries a different order, selects another premise, or
+/// publishes an intermediate sum. Its work is therefore linear in the
+/// written `use` list, subject only to the fixed affine formation capacities.
+pub(crate) fn sum_explicit_scaled_inequalities(
+    premises: &[ScaledAffinePremise<'_>],
+    check: &mut AffineCheckState,
+) -> Result<AffineInequality, AffineCheckError> {
+    if premises.len() > check.limits.max_certificate_premises {
+        return Err(AffineCheckError::LimitExceeded(
+            AffineCheckLimit::CertificatePremises,
+        ));
+    }
+
+    let mut terms = Vec::new();
+    let mut upper = 0_i128;
+    for premise in premises {
+        if premise.factor <= 0 {
+            return Err(AffineCheckError::InvalidCertificateFactor);
+        }
+        terms = merge_scaled(&terms, premise.inequality.terms(), premise.factor, check)?;
+        upper = checked_add(
+            upper,
+            checked_mul(premise.inequality.upper(), premise.factor)?,
+        )?;
+    }
+    Ok(AffineInequality {
+        terms: terms.into_boxed_slice(),
+        upper,
+    })
+}
+
 /// Uses one independently known inclusive interval per affine term.  This is
 /// the fixed interval rule: positive coefficients select the upper endpoint,
 /// negative coefficients select the lower endpoint.  `false` means only that
@@ -333,6 +380,10 @@ const AFFINE_CHECK_LIMITS: AffineCheckLimits = AffineCheckLimits {
     max_certificate_premises: 4_096,
 };
 
+/// Maximum number of source-written `use` entries in one local certificate.
+/// This is a structural language capacity, not a time or work budget.
+pub(crate) const MAX_CERTIFICATE_PREMISES: usize = AFFINE_CHECK_LIMITS.max_certificate_premises;
+
 /// One finite capacity of an affine semantic-check operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AffineCheckLimit {
@@ -348,6 +399,7 @@ pub(crate) enum AffineCheckError {
     ArithmeticOverflow,
     LimitExceeded(AffineCheckLimit),
     CoefficientMismatch,
+    InvalidCertificateFactor,
 }
 
 /// Structural limits and measured work for one affine checking unit.
@@ -751,6 +803,61 @@ mod tests {
         assert_eq!(
             sum_explicit_inequalities(&[per_byte, count_limit], &mut AffineCheckState::new(),),
             Ok(target)
+        );
+    }
+
+    #[test]
+    fn explicit_scaled_sum_uses_only_the_written_positive_factors() {
+        // i <= count, scaled by the written factor 255.
+        let count_limit = inequality(&[(0, 1), (1, -1)], 0);
+        // wide <= 255, used with the omitted factor 1.
+        let byte_limit = inequality(&[(2, 1)], 255);
+        let uses = [
+            ScaledAffinePremise {
+                inequality: &count_limit,
+                factor: 255,
+            },
+            ScaledAffinePremise {
+                inequality: &byte_limit,
+                factor: 1,
+            },
+        ];
+
+        assert_eq!(
+            sum_explicit_scaled_inequalities(&uses, &mut AffineCheckState::new()),
+            Ok(inequality(&[(0, 255), (1, -255), (2, 1)], 255))
+        );
+    }
+
+    #[test]
+    fn explicit_scaled_sum_rejects_nonpositive_internal_factors() {
+        let premise = inequality(&[(0, 1)], 7);
+        for factor in [0, -1] {
+            assert_eq!(
+                sum_explicit_scaled_inequalities(
+                    &[ScaledAffinePremise {
+                        inequality: &premise,
+                        factor,
+                    }],
+                    &mut AffineCheckState::new(),
+                ),
+                Err(AffineCheckError::InvalidCertificateFactor)
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_scaled_sum_reports_checked_multiplier_overflow() {
+        let premise = inequality(&[(0, 1)], i128::MAX);
+        assert_eq!(
+            sum_explicit_scaled_inequalities(
+                &[ScaledAffinePremise {
+                    inequality: &premise,
+                    factor: 2,
+                }],
+                &mut AffineCheckState::new(),
+            ),
+            Err(AffineCheckError::ArithmeticOverflow)
         );
     }
 

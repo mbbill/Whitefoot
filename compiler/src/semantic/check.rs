@@ -1089,7 +1089,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // Permission is a read-only legality table over the completed checked
         // program. The affine-map rule consumes a successful OP-4 disposition
         // and exact value image retained on that program; no permission rule
-        // repeats a source proof or changes source acceptance.
+        // repeats a local invariant or changes source acceptance.
         let permission_signatures = self
             .signatures
             .iter()
@@ -2758,7 +2758,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .tree
                         .node_with_path(&outcome.node_path)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let obligation = if let Some(index) =
+                    let obligation = if outcome.check.redundant {
+                        crate::SourceProofObligation::RedundantUseBlock
+                    } else if let Some(failure) = outcome.check.certificate_failure {
+                        match failure {
+                            super::entailment::SourceProofCertificateFailure::RepeatedUse {
+                                first,
+                                repeated,
+                            } => crate::SourceProofObligation::RepeatedUse { first, repeated },
+                            super::entailment::SourceProofCertificateFailure::UseCapacity {
+                                maximum,
+                                actual,
+                            } => crate::SourceProofObligation::UseCapacity { maximum, actual },
+                            super::entailment::SourceProofCertificateFailure::ArithmeticOverflow => {
+                                crate::SourceProofObligation::CertificateArithmeticOverflow
+                            }
+                            super::entailment::SourceProofCertificateFailure::FormationCapacity => {
+                                crate::SourceProofObligation::CertificateFormationCapacity
+                            }
+                            super::entailment::SourceProofCertificateFailure::InvalidFactor {
+                                use_index,
+                            } => crate::SourceProofObligation::InvalidUseFactor { use_index },
+                        }
+                    } else if let Some(index) =
                         outcome.check.premises.iter().position(|premise| !premise)
                     {
                         crate::SourceProofObligation::Premise(
@@ -2772,10 +2794,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     };
                     let mechanical_fix = match obligation {
                         crate::SourceProofObligation::Premise(_) => {
-                            "establish this use relation from facts already available before the prove statement, or replace it with a relation the checker can prove there"
+                            "establish this use relation from facts already available before the invariant statement, or replace it with a relation AUTO can prove in that same entering context"
                         }
                         crate::SourceProofObligation::Combination => {
-                            "rewrite the target or the written use relations so their source-order coefficient-one sum equals the target exactly"
+                            "rewrite the invariant target, use relations, or explicit positive factors so their source-order weighted sum leaves a residual proved by the fixed direct L0 or interval rule"
+                        }
+                        crate::SourceProofObligation::RedundantUseBlock => {
+                            "remove the use block; AUTO already proves this invariant target from the same entering context in this specification version"
+                        }
+                        crate::SourceProofObligation::RepeatedUse { .. } => {
+                            "replace repeated normalized use relations with one use carrying their combined explicit positive factor"
+                        }
+                        crate::SourceProofObligation::UseCapacity { .. } => {
+                            "split this local certificate into named intermediate invariants so every written use list is within the fixed structural capacity"
+                        }
+                        crate::SourceProofObligation::CertificateArithmeticOverflow => {
+                            "split or rescale this certificate so every source-order proof-domain coefficient and constant operation fits i128"
+                        }
+                        crate::SourceProofObligation::CertificateFormationCapacity => {
+                            "split this certificate into smaller named intermediate invariants whose canonical affine shapes fit the fixed formation capacities"
+                        }
+                        crate::SourceProofObligation::InvalidUseFactor { .. } => {
+                            "write a canonical positive bare-decimal factor, or omit the factor when it is one"
                         }
                     };
                     Err(CheckStop::source_issue(SemanticIssue {
