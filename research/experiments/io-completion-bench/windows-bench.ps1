@@ -356,7 +356,7 @@ function Invoke-Sample {
     }
     $fields = $lines[0] -split "`t"
     if ($fields.Count -ne 5 -or $fields[0] -cne $Label -or $fields[4] -cne "0") {
-        throw "malformed native sample for $Variant: $($lines[0])"
+        throw "malformed native sample for ${Variant}: $($lines[0])"
     }
     return [pscustomobject]@{
         Variant = $Variant

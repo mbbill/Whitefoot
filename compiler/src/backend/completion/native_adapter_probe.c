@@ -1098,6 +1098,7 @@ int main(int argc, char **argv) {
         || contract.supports_scheduler_progress != 1) {
         return 8;
     }
+    memset(entries, 0xa5, sizeof(entries));
     if (wf_windows_iocp_init(&adapter, &runtime, entries, 2, 0) != 0) {
         return 3;
     }

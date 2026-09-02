@@ -64,7 +64,10 @@ int wf_windows_iocp_init(
     atomic_init(&adapter->in_flight, 0);
     wf_windows_init_statistics(adapter);
     for (index = 0; index < entry_capacity; ++index) {
-        memset(&entry_storage[index].overlapped, 0, sizeof(OVERLAPPED));
+        /* Entry storage is caller-owned and may contain arbitrary bytes.  A
+         * free entry must expose neither a stale token nor a stale descriptor
+         * lease before its first reservation. */
+        memset(&entry_storage[index], 0, sizeof(entry_storage[index]));
         atomic_init(
             &entry_storage[index].state,
             WF_WINDOWS_IOCP_ENTRY_FREE
