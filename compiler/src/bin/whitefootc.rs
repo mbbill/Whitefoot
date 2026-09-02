@@ -5,29 +5,28 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    Architecture, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    SourceInput, compile_with_io_notices, compile_with_permission_ledger, stack_ledger,
+    Architecture, COMPLETION_BRIDGE_HEADER, CompilerLimits, FLOOR_STACK_BYTES,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SourceInput, WRITER_SCHEDULER_HEADER,
+    compile_with_io_notices, compile_with_permission_ledger, stack_ledger,
 };
 
 #[cfg(not(target_os = "windows"))]
 use whitefoot::{
-    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, PARALLEL_COMPLETION_RUNTIME_SOURCE,
-    PARALLEL_RUNTIME_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
+    COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER,
+    COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, FLOOR_RUNTIME_SOURCE,
+    HOST_LINK_LIBRARIES, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
+    WRITER_SCHEDULER_SOURCE, module_requires_completion_runtime, module_requires_parallel_runtime,
     module_requires_writer_scheduler,
 };
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 use whitefoot::{
-    COMPLETION_BRIDGE_HEADER, COMPLETION_WINDOWS_BLOCKING_HEADER,
-    COMPLETION_WINDOWS_BLOCKING_SOURCE, COMPLETION_WINDOWS_BRIDGE_SOURCE,
-    COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER, COMPLETION_WINDOWS_IOCP_SOURCE,
-    COMPLETION_WINDOWS_NATIVE_API_HEADER, COMPLETION_WINDOWS_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE,
-    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, WRITER_SCHEDULER_HEADER,
-    WRITER_SCHEDULER_WINDOWS_SOURCE,
+    COMPLETION_WINDOWS_BLOCKING_HEADER, COMPLETION_WINDOWS_BLOCKING_SOURCE,
+    COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER,
+    COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
+    COMPLETION_WINDOWS_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE, WINDOWS_RUNTIME_HEADER,
+    WINDOWS_RUNTIME_SOURCE, WRITER_SCHEDULER_WINDOWS_SOURCE,
 };
 
 #[cfg(any(target_os = "windows", test))]
@@ -46,6 +45,95 @@ fn clang_executable() -> &'static str {
         "/usr/bin/clang"
     }
 }
+
+/// One compiler-owned Windows runtime file and the path its quoted includes
+/// expect it to have below the driver's private staging root.
+///
+/// The sources deliberately keep the repository's `backend/` topology:
+/// `windows_runtime.c` includes `completion/windows_completion.h`, while the
+/// completion bridge reaches back to `../windows_runtime.h`. Flattening these
+/// bytes into one temporary directory therefore changes the meaning of both
+/// includes even though every required file was written.
+#[cfg(any(target_os = "windows", test))]
+#[derive(Clone, Copy)]
+struct WindowsRuntimeUnit {
+    relative_path: &'static str,
+    source: &'static str,
+}
+
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_RUNTIME_UNITS: &[WindowsRuntimeUnit] = &[
+    WindowsRuntimeUnit {
+        relative_path: "windows_runtime.h",
+        source: WINDOWS_RUNTIME_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/native_completion_api.h",
+        source: COMPLETION_WINDOWS_NATIVE_API_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_completion.h",
+        source: COMPLETION_WINDOWS_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_iocp.h",
+        source: COMPLETION_WINDOWS_IOCP_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_blocking.h",
+        source: COMPLETION_WINDOWS_BLOCKING_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/bridge.h",
+        source: COMPLETION_BRIDGE_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/writer_scheduler.h",
+        source: WRITER_SCHEDULER_HEADER,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "windows_runtime.c",
+        source: WINDOWS_RUNTIME_SOURCE,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "wf_floor_windows.c",
+        source: FLOOR_WINDOWS_RUNTIME_SOURCE,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_completion.c",
+        source: COMPLETION_WINDOWS_SOURCE,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_iocp.c",
+        source: COMPLETION_WINDOWS_IOCP_SOURCE,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_blocking.c",
+        source: COMPLETION_WINDOWS_BLOCKING_SOURCE,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/windows_bridge.c",
+        source: COMPLETION_WINDOWS_BRIDGE_SOURCE,
+    },
+    WindowsRuntimeUnit {
+        relative_path: "completion/writer_scheduler_windows.c",
+        source: WRITER_SCHEDULER_WINDOWS_SOURCE,
+    },
+];
+
+/// Translation units passed to clang, in their stable link order. Headers
+/// live in [`WINDOWS_RUNTIME_UNITS`] beside them but are never compiled as
+/// standalone inputs.
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_RUNTIME_COMPILE_UNITS: &[&str] = &[
+    "windows_runtime.c",
+    "wf_floor_windows.c",
+    "completion/windows_completion.c",
+    "completion/windows_iocp.c",
+    "completion/windows_blocking.c",
+    "completion/windows_bridge.c",
+    "completion/writer_scheduler_windows.c",
+];
 
 fn main() {
     if let Err(message) = run() {
@@ -336,30 +424,22 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("cannot create Windows runtime directory: {error}"))?;
     let result = (|| {
-        for (name, source) in [
-            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
-            (
-                "native_completion_api.h",
-                COMPLETION_WINDOWS_NATIVE_API_HEADER,
-            ),
-            ("windows_completion.h", COMPLETION_WINDOWS_HEADER),
-            ("windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
-            ("windows_blocking.h", COMPLETION_WINDOWS_BLOCKING_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("windows_runtime.c", WINDOWS_RUNTIME_SOURCE),
-            ("wf_floor_windows.c", FLOOR_WINDOWS_RUNTIME_SOURCE),
-            ("windows_completion.c", COMPLETION_WINDOWS_SOURCE),
-            ("windows_iocp.c", COMPLETION_WINDOWS_IOCP_SOURCE),
-            ("windows_blocking.c", COMPLETION_WINDOWS_BLOCKING_SOURCE),
-            ("windows_bridge.c", COMPLETION_WINDOWS_BRIDGE_SOURCE),
-            (
-                "writer_scheduler_windows.c",
-                WRITER_SCHEDULER_WINDOWS_SOURCE,
-            ),
-        ] {
-            std::fs::write(directory.join(name), source)
-                .map_err(|error| format!("cannot write Windows runtime {name}: {error}"))?;
+        for unit in WINDOWS_RUNTIME_UNITS {
+            let path = directory.join(unit.relative_path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    format!(
+                        "cannot create Windows runtime parent for {}: {error}",
+                        unit.relative_path
+                    )
+                })?;
+            }
+            std::fs::write(&path, unit.source).map_err(|error| {
+                format!(
+                    "cannot write Windows runtime {}: {error}",
+                    unit.relative_path
+                )
+            })?;
         }
         let parallel_runtime = windows_parallel_runtime_unit(llvm);
         if let Some((name, source)) = parallel_runtime {
@@ -372,14 +452,10 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
             .arg("-std=c11")
             .arg("-municode")
             .arg("-I")
-            .arg(&directory)
-            .arg(directory.join("windows_runtime.c"))
-            .arg(directory.join("wf_floor_windows.c"))
-            .arg(directory.join("windows_completion.c"))
-            .arg(directory.join("windows_iocp.c"))
-            .arg(directory.join("windows_blocking.c"))
-            .arg(directory.join("windows_bridge.c"))
-            .arg(directory.join("writer_scheduler_windows.c"));
+            .arg(&directory);
+        for relative_path in WINDOWS_RUNTIME_COMPILE_UNITS {
+            command.arg(directory.join(relative_path));
+        }
         if let Some((name, _)) = parallel_runtime {
             command.arg(directory.join(name));
         }
@@ -640,12 +716,14 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::collections::HashSet;
+    use std::path::{Component, Path, PathBuf};
 
     use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
-        compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
-        module_requires_writer_scheduler, source_names, windows_parallel_runtime_unit,
+        CompilerLimits, Options, OverlapLowering, SourceInput, WINDOWS_RUNTIME_COMPILE_UNITS,
+        WINDOWS_RUNTIME_UNITS, compile_with_io_notices, compile_with_permission_ledger,
+        io_notice_report, module_requires_parallel_runtime, module_requires_writer_scheduler,
+        source_names, windows_parallel_runtime_unit,
     };
     use whitefoot::module_requires_completion_runtime;
 
@@ -749,6 +827,85 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             source.starts_with("#define WF_PAR_WITH_WRITER_SCHEDULER 1\n"),
             "a stackless Windows pool must help the writer scheduler"
         );
+    }
+
+    /// The driver stages the embedded Windows sources with the same relative
+    /// topology they have under `backend/`. Every quoted compiler-owned
+    /// include must therefore resolve either beside the including file or
+    /// from the one `-I` root passed to clang.
+    ///
+    /// This is stronger than naming the two paths that exposed the original
+    /// flattening bug: adding a new compiler-owned quoted include without its
+    /// staged target makes this test fail before native CI reaches clang.
+    #[test]
+    fn windows_runtime_staging_closes_every_quoted_include() {
+        fn normalized(path: &Path) -> Option<PathBuf> {
+            let mut result = PathBuf::new();
+            for component in path.components() {
+                match component {
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        if !result.pop() {
+                            return None;
+                        }
+                    }
+                    Component::Normal(piece) => result.push(piece),
+                    Component::Prefix(_) | Component::RootDir => return None,
+                }
+            }
+            Some(result)
+        }
+
+        let staged: HashSet<PathBuf> = WINDOWS_RUNTIME_UNITS
+            .iter()
+            .map(|unit| PathBuf::from(unit.relative_path))
+            .collect();
+        assert_eq!(
+            staged.len(),
+            WINDOWS_RUNTIME_UNITS.len(),
+            "a staged Windows runtime path is duplicated"
+        );
+        assert!(staged.contains(Path::new("windows_runtime.c")));
+        assert!(staged.contains(Path::new("completion/windows_completion.h")));
+        assert!(staged.contains(Path::new("completion/windows_bridge.c")));
+        assert!(
+            !staged.contains(Path::new("windows_completion.h")),
+            "completion files must not be flattened into the staging root"
+        );
+
+        for relative_path in WINDOWS_RUNTIME_COMPILE_UNITS {
+            assert!(
+                staged.contains(Path::new(relative_path)),
+                "clang input `{relative_path}` is not staged"
+            );
+        }
+
+        for unit in WINDOWS_RUNTIME_UNITS {
+            let parent = Path::new(unit.relative_path)
+                .parent()
+                .unwrap_or_else(|| Path::new(""));
+            for line in unit.source.lines() {
+                let Some(include) = line
+                    .trim()
+                    .strip_prefix("#include \"")
+                    .and_then(|rest| rest.strip_suffix('"'))
+                else {
+                    continue;
+                };
+                let beside_source = normalized(&parent.join(include));
+                let from_include_root = normalized(Path::new(include));
+                assert!(
+                    beside_source
+                        .as_ref()
+                        .is_some_and(|path| staged.contains(path))
+                        || from_include_root
+                            .as_ref()
+                            .is_some_and(|path| staged.contains(path)),
+                    "{} includes `{include}`, which the staged tree cannot resolve",
+                    unit.relative_path
+                );
+            }
+        }
     }
 
     /// Every reader-facing name is the argument the caller typed, including an
