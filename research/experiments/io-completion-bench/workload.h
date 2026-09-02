@@ -14,7 +14,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#if defined(_WIN32)
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
 /* The Whitefoot programs render this name shape from an index with fixed
  * arithmetic, so it is ten bytes wide and never varies. */
@@ -177,11 +181,17 @@ static inline int wf_bench_write_drop_cache(int descriptor) {
     if (descriptor < 0) {
         return -1;
     }
+#if defined(_WIN32)
+    if (_commit(descriptor) != 0) {
+        return -1;
+    }
+#else
     if (fsync(descriptor) != 0) {
         return -1;
     }
 #if defined(__linux__)
     (void)posix_fadvise(descriptor, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 #endif
     return 0;
 }

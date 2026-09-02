@@ -21,10 +21,37 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <direct.h>
+#include <io.h>
+#include <sys/stat.h>
+#else
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 
 #include "workload.h"
+
+#if defined(_WIN32)
+#define WF_BENCH_BINARY_FLAG _O_BINARY
+#define WF_BENCH_WRITE_FLAGS (_O_WRONLY | _O_CREAT | _O_TRUNC)
+#define wf_bench_close _close
+#define wf_bench_mkdir(path) _mkdir(path)
+#define wf_bench_open(path, flags, mode) \
+    _open((path), (flags) | WF_BENCH_BINARY_FLAG, _S_IREAD | _S_IWRITE)
+#define wf_bench_write(descriptor, bytes, count) \
+    _write((descriptor), (bytes), (unsigned)(count))
+typedef int wf_bench_write_result;
+#else
+#define WF_BENCH_BINARY_FLAG 0
+#define WF_BENCH_WRITE_FLAGS (O_WRONLY | O_CREAT | O_TRUNC)
+#define wf_bench_close close
+#define wf_bench_mkdir(path) mkdir((path), 0755)
+#define wf_bench_open(path, flags, mode) open((path), (flags), (mode))
+#define wf_bench_write(descriptor, bytes, count) \
+    write((descriptor), (bytes), (count))
+typedef ssize_t wf_bench_write_result;
+#endif
 
 int main(int argc, char **argv) {
     if (argc != 4 && argc != 5) {
@@ -43,7 +70,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "gen: COUNT and MAX_KIB must be positive\n");
         return 2;
     }
-    if (mkdir(root, 0755) != 0 && errno != EEXIST) {
+    if (wf_bench_mkdir(root) != 0 && errno != EEXIST) {
         perror("gen: mkdir");
         return 1;
     }
@@ -63,7 +90,11 @@ int main(int argc, char **argv) {
             free(bytes);
             return 1;
         }
-        int descriptor = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        int descriptor = wf_bench_open(
+            path,
+            WF_BENCH_WRITE_FLAGS,
+            0644
+        );
         if (descriptor < 0) {
             perror("gen: open");
             free(bytes);
@@ -75,10 +106,14 @@ int main(int argc, char **argv) {
         wf_bench_no_populate(descriptor);
         size_t done = 0;
         while (done < length) {
-            ssize_t moved = write(descriptor, bytes + done, length - done);
+            wf_bench_write_result moved = wf_bench_write(
+                descriptor,
+                bytes + done,
+                length - done
+            );
             if (moved <= 0) {
                 perror("gen: write");
-                close(descriptor);
+                wf_bench_close(descriptor);
                 free(bytes);
                 return 1;
             }
@@ -86,11 +121,11 @@ int main(int argc, char **argv) {
         }
         if (wf_bench_write_drop_cache(descriptor) != 0) {
             perror("gen: flush");
-            close(descriptor);
+            wf_bench_close(descriptor);
             free(bytes);
             return 1;
         }
-        if (close(descriptor) != 0) {
+        if (wf_bench_close(descriptor) != 0) {
             perror("gen: close");
             free(bytes);
             return 1;

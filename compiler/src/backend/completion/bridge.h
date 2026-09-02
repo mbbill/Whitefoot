@@ -69,6 +69,9 @@ int wf__completion_file_open_at_submit(
     unsigned mode,
     unsigned has_mode,
     unsigned expected_kind,
+#if defined(_WIN32)
+    unsigned descriptor_class,
+#endif
     void *token_storage
 );
 
@@ -129,6 +132,9 @@ int wf__completion_file_open_at_direct(
     unsigned mode,
     unsigned has_mode,
     unsigned expected_kind,
+#if defined(_WIN32)
+    unsigned descriptor_class,
+#endif
     int *error_code,
     unsigned *open_outcome
 );

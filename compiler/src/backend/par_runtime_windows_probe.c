@@ -8,7 +8,9 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <windows.h>
 
 #if !defined(_WIN32)
 #error "par_runtime_windows_probe.c requires a Windows target"
@@ -23,10 +25,103 @@ unsigned long wf__par_grant_count(void);
 unsigned long wf__par_started_worker_count(void);
 unsigned long wf__par_worker_execution_count(void);
 
+#if defined(WF_PAR_MIXED_PROBE)
+void wf__mixed_observed_par_publish(void *frame, void (*fn)(void *));
+void wf__mixed_observed_file_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code
+);
+void wf__mixed_observed_file_open_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
+);
+uint64_t wf__completion_file_fallback_submissions(void);
+uint64_t wf__completion_file_submissions(void);
+uint64_t wf__completion_publications(void);
+uint64_t wf__completion_windows_iocp_in_flight(void);
+
+static volatile LONG64 wf_par_mixed_overlap_publishes;
+static volatile LONG64 wf_par_mixed_consumes;
+
+void wf__par_publish(void *frame, void (*fn)(void *)) {
+    if (wf__completion_windows_iocp_in_flight() != 0) {
+        (void)InterlockedIncrement64(&wf_par_mixed_overlap_publishes);
+    }
+    wf__mixed_observed_par_publish(frame, fn);
+}
+
+void wf__completion_file_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code
+) {
+    wf__mixed_observed_file_join(token_storage, value, error_code);
+    (void)InterlockedIncrement64(&wf_par_mixed_consumes);
+}
+
+void wf__completion_file_open_join(
+    const void *token_storage,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
+) {
+    wf__mixed_observed_file_open_join(
+        token_storage,
+        value,
+        error_code,
+        open_outcome
+    );
+    (void)InterlockedIncrement64(&wf_par_mixed_consumes);
+}
+#endif
+
 static void wf_par_probe_report(void) {
     unsigned long started = wf__par_started_worker_count();
     unsigned long executed = wf__par_worker_execution_count();
     unsigned long grants = wf__par_grant_count();
+#if defined(WF_PAR_MIXED_PROBE)
+    unsigned long long overlap_publishes =
+        (unsigned long long)InterlockedCompareExchange64(
+            &wf_par_mixed_overlap_publishes,
+            0,
+            0
+        );
+    unsigned long long consumes =
+        (unsigned long long)InterlockedCompareExchange64(
+            &wf_par_mixed_consumes,
+            0,
+            0
+        );
+    unsigned long long submissions =
+        (unsigned long long)wf__completion_file_submissions();
+    unsigned long long publications =
+        (unsigned long long)wf__completion_publications();
+    unsigned long long fallback =
+        (unsigned long long)wf__completion_file_fallback_submissions();
+    int passed = started > 0 && executed > 0 && grants > 0
+        && overlap_publishes == (unsigned long long)grants
+        && submissions > 0 && publications == submissions
+        && consumes == submissions && fallback == 0;
+
+    fprintf(
+        stderr,
+        "windows-native-mixed-probe status=%s started=%lu executed=%lu "
+        "grants=%lu overlap_publishes=%llu submissions=%llu "
+        "publications=%llu consumes=%llu fallback=%llu\n",
+        passed ? "pass" : "fail",
+        started,
+        executed,
+        grants,
+        overlap_publishes,
+        submissions,
+        publications,
+        consumes,
+        fallback
+    );
+#else
     int passed = started > 0 && executed > 0 && grants > 0;
 
     fprintf(
@@ -37,6 +132,7 @@ static void wf_par_probe_report(void) {
         executed,
         grants
     );
+#endif
     if (!passed) {
         fflush(stderr);
         _Exit(WF_PAR_PROBE_FAILURE_STATUS);

@@ -4,6 +4,7 @@
 #if defined(_WIN32)
 
 #include "native_completion_api.h"
+#include "windows_runtime.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -16,7 +17,10 @@ extern "C" {
 
 enum wf_windows_file_operation_kind {
     WF_WINDOWS_FILE_READ_AT = 1,
-    WF_WINDOWS_FILE_WRITE_AT = 2
+    WF_WINDOWS_FILE_WRITE_AT = 2,
+    WF_WINDOWS_FILE_WRITE = 3,
+    WF_WINDOWS_FILE_OPEN_AT = 4,
+    WF_WINDOWS_FILE_DIRECTORY_NEXT = 5
 };
 
 struct wf_windows_iocp_adapter;
@@ -45,6 +49,7 @@ typedef struct wf_windows_iocp_file {
 typedef struct wf_windows_file_request {
     enum wf_windows_file_operation_kind kind;
     wf_windows_iocp_file file;
+    wf_windows_descriptor_lease lease;
     union {
         void *read_buffer;
         const void *write_buffer;
@@ -57,7 +62,20 @@ typedef struct wf_windows_file_result {
     enum wf_windows_file_operation_kind kind;
     int64_t value;
     uint32_t error_code;
+    uint32_t open_outcome;
+    /* Worker-private retirement facts. Consumers ignore these bytes. */
+    uint32_t runtime_flags;
 } wf_windows_file_result;
+
+enum wf_windows_file_runtime_flag {
+    WF_WINDOWS_FILE_TOOK_NATIVE_HANDLE = 1u << 0,
+    WF_WINDOWS_FILE_TOOK_CRT_DESCRIPTOR = 1u << 1,
+    WF_WINDOWS_FILE_RETURNED_NATIVE_HANDLE = 1u << 2,
+    WF_WINDOWS_FILE_RETURNED_CRT_DESCRIPTOR = 1u << 3,
+    WF_WINDOWS_FILE_REFUSED_NATIVE_HANDLE = 1u << 4,
+    WF_WINDOWS_FILE_REFUSED_CRT_DESCRIPTOR = 1u << 5,
+    WF_WINDOWS_FILE_REFUSED_GENERAL_RESOURCE = 1u << 6
+};
 
 enum wf_windows_iocp_submit_result {
     WF_WINDOWS_IOCP_TARGET_OWNS = 0,
@@ -80,6 +98,7 @@ typedef struct wf_windows_iocp_entry {
     _Atomic unsigned state;
     wf_completion_token token;
     enum wf_windows_file_operation_kind kind;
+    wf_windows_descriptor_lease lease;
 } wf_windows_iocp_entry;
 
 typedef struct wf_windows_iocp_statistics {

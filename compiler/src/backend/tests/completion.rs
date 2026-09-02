@@ -392,6 +392,7 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
     assert!(crate::module_requires_completion_runtime(&module));
     for declaration in [
         "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
+        "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)",
         "declare void @wf__completion_file_join(ptr, ptr, ptr)",
         "declare void @wf__completion_wait_core_capacity()",
     ] {
@@ -1124,6 +1125,31 @@ fn component_directory_open_uses_the_same_typed_completion_route() {
     }
     std::fs::remove_file(executable).expect("remove component-open probe");
     std::fs::remove_dir(directory).expect("remove component-open directory");
+}
+
+#[test]
+fn windows_component_completion_stages_one_terminated_utf16_name() {
+    let module = emit_windows_completion(INDEPENDENT_COMPONENT_OPENS);
+    assert!(
+        module.contains("i32 2, i32 2, ptr %"),
+        "a component directory result must be registered as DIRECTORY_ROOT: {module}"
+    );
+    let component = module
+        .split_once("completion.component.entry.")
+        .expect("the Windows completion route validates the component")
+        .1
+        .split_once("call i32 @wf__completion_file_open_at_submit")
+        .expect("the validated component reaches the typed submit")
+        .0;
+
+    assert!(component.contains("load i16"), "{component}");
+    assert!(component.contains("icmp eq i16"), "{component}");
+    assert!(component.contains("add i64") && component.contains(", 2\n"));
+    assert!(component.contains("store i16 0"), "{component}");
+    assert!(
+        !component.contains("store i8 0"),
+        "a one-byte terminator can expose an uninitialized UTF-16 high byte: {component}"
+    );
 }
 
 #[test]

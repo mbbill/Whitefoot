@@ -17,6 +17,21 @@
 
 static unsigned ready_count;
 static void *last_ready_frame;
+static unsigned descriptor_lease_releases;
+
+void wf__windows_completion_descriptor_lease_release(
+    wf_windows_descriptor_lease *lease
+) {
+    if (lease == NULL || lease->descriptor != 19 || lease->generation != 1
+        || lease->handle == NULL || lease->handle == INVALID_HANDLE_VALUE
+        || lease->completion_owner == NULL
+        || lease->descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+        || lease->mode != WF_WINDOWS_DESCRIPTOR_LEASE_SHARED) {
+        abort();
+    }
+    descriptor_lease_releases += 1;
+    memset(lease, 0, sizeof(*lease));
+}
 
 #define PROBE_IOCP_WAITERS 4u
 #define PROBE_IOCP_NOTIFY_STORM 4096u
@@ -609,6 +624,12 @@ static int test_real_iocp(const char *path) {
     memset(&request, 0, sizeof(request));
     request.kind = WF_WINDOWS_FILE_WRITE_AT;
     request.file = file;
+    request.lease.descriptor = 19;
+    request.lease.generation = 1;
+    request.lease.handle = handle;
+    request.lease.completion_owner = &adapter;
+    request.lease.descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE;
+    request.lease.mode = WF_WINDOWS_DESCRIPTOR_LEASE_SHARED;
     request.buffer.write_buffer = payload;
     request.count = 2;
     request.offset = 0;
@@ -775,7 +796,9 @@ static int test_real_iocp(const char *path) {
             && core_statistics.publications == 4
             && core_statistics.target_capacity_waits == 1
             && core_statistics.compute_notifications == 1
-            && wf_windows_iocp_in_flight(&adapter) == 0,
+            && wf_windows_iocp_in_flight(&adapter) == 0
+            && descriptor_lease_releases == 4
+            && entries[0].lease.generation == 0,
         86
     );
     PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0, 87);

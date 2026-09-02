@@ -22,8 +22,9 @@ use whitefoot::{
 
 #[cfg(target_os = "windows")]
 use whitefoot::{
-    COMPLETION_BRIDGE_HEADER, COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, COMPLETION_WINDOWS_IOCP_SOURCE,
+    COMPLETION_BRIDGE_HEADER, COMPLETION_WINDOWS_BLOCKING_HEADER,
+    COMPLETION_WINDOWS_BLOCKING_SOURCE, COMPLETION_WINDOWS_BRIDGE_SOURCE,
+    COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER, COMPLETION_WINDOWS_IOCP_SOURCE,
     COMPLETION_WINDOWS_NATIVE_API_HEADER, COMPLETION_WINDOWS_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE,
     WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, WRITER_SCHEDULER_HEADER,
     WRITER_SCHEDULER_WINDOWS_SOURCE,
@@ -343,12 +344,14 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
             ),
             ("windows_completion.h", COMPLETION_WINDOWS_HEADER),
             ("windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("windows_blocking.h", COMPLETION_WINDOWS_BLOCKING_HEADER),
             ("bridge.h", COMPLETION_BRIDGE_HEADER),
             ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
             ("windows_runtime.c", WINDOWS_RUNTIME_SOURCE),
             ("wf_floor_windows.c", FLOOR_WINDOWS_RUNTIME_SOURCE),
             ("windows_completion.c", COMPLETION_WINDOWS_SOURCE),
             ("windows_iocp.c", COMPLETION_WINDOWS_IOCP_SOURCE),
+            ("windows_blocking.c", COMPLETION_WINDOWS_BLOCKING_SOURCE),
             ("windows_bridge.c", COMPLETION_WINDOWS_BRIDGE_SOURCE),
             (
                 "writer_scheduler_windows.c",
@@ -374,6 +377,7 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
             .arg(directory.join("wf_floor_windows.c"))
             .arg(directory.join("windows_completion.c"))
             .arg(directory.join("windows_iocp.c"))
+            .arg(directory.join("windows_blocking.c"))
             .arg(directory.join("windows_bridge.c"))
             .arg(directory.join("writer_scheduler_windows.c"));
         if let Some((name, _)) = parallel_runtime {

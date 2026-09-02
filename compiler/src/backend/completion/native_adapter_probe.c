@@ -994,11 +994,41 @@ int main(int argc, char **argv) {
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct wf_completion_runtime {
     unsigned publications;
 };
+
+static unsigned probe_operations_accepted;
+static unsigned probe_operations_retired;
+static unsigned probe_descriptor_lease_releases;
+
+void wf__windows_completion_descriptor_lease_release(
+    wf_windows_descriptor_lease *lease
+) {
+    if (lease == NULL || lease->descriptor != 17 || lease->generation != 1
+        || lease->handle == NULL || lease->handle == INVALID_HANDLE_VALUE
+        || lease->completion_owner == NULL
+        || lease->descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+        || lease->mode != WF_WINDOWS_DESCRIPTOR_LEASE_SHARED) {
+        abort();
+    }
+    probe_descriptor_lease_releases += 1;
+    memset(lease, 0, sizeof(*lease));
+}
+
+void wf_completion_operation_accepted(void) {
+    probe_operations_accepted += 1;
+}
+
+void wf_completion_operation_retired(int returned_a_descriptor) {
+    if (returned_a_descriptor != 0) {
+        abort();
+    }
+    probe_operations_retired += 1;
+}
 
 enum wf_completion_transition_result wf_completion_begin_submit(
     wf_completion_runtime *runtime,
@@ -1087,6 +1117,12 @@ int main(int argc, char **argv) {
     memset(&request, 0, sizeof(request));
     request.kind = WF_WINDOWS_FILE_WRITE_AT;
     request.file = file;
+    request.lease.descriptor = 17;
+    request.lease.generation = 1;
+    request.lease.handle = handle;
+    request.lease.completion_owner = &adapter;
+    request.lease.descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE;
+    request.lease.mode = WF_WINDOWS_DESCRIPTOR_LEASE_SHARED;
     request.buffer.write_buffer = bytes;
     request.count = sizeof(bytes);
     request.offset = 0;
@@ -1100,6 +1136,11 @@ int main(int argc, char **argv) {
         }
     }
     if (runtime.publications != 1
+        || probe_operations_accepted != 1
+        || probe_operations_retired != 1
+        || probe_descriptor_lease_releases != 1
+        || entries[0].lease.generation != 0
+        || entries[1].lease.generation != 0
         || wf_windows_iocp_destroy(&adapter) != 0
         || CloseHandle(handle) == FALSE) {
         return 7;

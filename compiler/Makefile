@@ -433,7 +433,7 @@ completion-windows-cross:
 	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
 	$(WINDOWS_CC) -target x86_64-windows-gnu \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) \
+		-I$(COMPLETION_DIR) -Isrc/backend \
 		$(COMPLETION_DIR)/windows_completion.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
 		$(COMPLETION_DIR)/windows_completion_probe.c \
@@ -442,7 +442,7 @@ completion-windows-cross:
 	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
 	$(WINDOWS_CC) -target x86_64-windows-gnu \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) \
+		-I$(COMPLETION_DIR) -Isrc/backend \
 		$(COMPLETION_DIR)/native_contract.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
 		$(COMPLETION_DIR)/native_adapter_probe.c \
@@ -452,9 +452,36 @@ completion-windows-cross:
 	$(WINDOWS_CC) -target x86_64-windows-gnu \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-I$(COMPLETION_DIR) -Isrc/backend \
+		$(COMPLETION_DIR)/windows_completion.c \
+		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_blocking.c \
+		$(COMPLETION_DIR)/windows_blocking_probe.c \
+		-o "$(COMPLETION_TMP)/windows-blocking-probe.exe"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-DWF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT=wf_windows_resource_probe_open_wait \
+		-DWF_WINDOWS_OPEN_ATTEMPT_POINT=wf_windows_resource_probe_open_acquired \
+		-DWF_WINDOWS_CLOSE_RELEASE_POINT=wf_windows_resource_probe_close_release \
+		-I$(COMPLETION_DIR) -Isrc/backend \
 		src/backend/windows_runtime.c \
 		$(COMPLETION_DIR)/windows_completion.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_blocking.c \
+		$(COMPLETION_DIR)/windows_bridge.c \
+		$(COMPLETION_DIR)/writer_scheduler_windows.c \
+		$(COMPLETION_DIR)/windows_resource_attempt_probe.c \
+		-o "$(COMPLETION_TMP)/windows-resource-attempt-probe.exe"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-I$(COMPLETION_DIR) -Isrc/backend \
+		src/backend/windows_runtime.c \
+		$(COMPLETION_DIR)/windows_completion.c \
+		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_blocking.c \
 		$(COMPLETION_DIR)/windows_bridge.c \
 		$(COMPLETION_DIR)/writer_scheduler_windows.c \
 		-shared -o "$(COMPLETION_TMP)/windows-runtime.dll"
@@ -466,6 +493,7 @@ completion-windows-cross:
 		src/backend/windows_runtime.c \
 		$(COMPLETION_DIR)/windows_completion.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_blocking.c \
 		$(COMPLETION_DIR)/windows_bridge.c \
 		$(COMPLETION_DIR)/writer_scheduler_windows.c \
 		$(COMPLETION_DIR)/windows_bridge_capacity_probe.c \
@@ -489,6 +517,16 @@ completion-windows-cross:
 		AcquireSRWLockExclusive SleepConditionVariableSRW; do \
 		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
 			echo "Windows completion probe does not import $$symbol" >&2; \
+			exit 1; \
+		fi; \
+	done
+	@imports="$$($(WINDOWS_OBJDUMP) -p \
+		"$(COMPLETION_TMP)/windows-blocking-probe.exe")"; \
+	for symbol in _beginthreadex CreateIoCompletionPort \
+		GetQueuedCompletionStatus PostQueuedCompletionStatus \
+		SleepConditionVariableSRW WakeAllConditionVariable; do \
+		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
+			echo "Windows blocking probe does not import $$symbol" >&2; \
 			exit 1; \
 		fi; \
 	done

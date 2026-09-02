@@ -136,6 +136,25 @@ const DIRECTORY_NEXT_COMPLETION_MAPPER: &str = "wf.sys.directory_next.completion
 const OPEN_FILE_COMPLETION_MAPPER: &str = "wf.sys.open_file.completion";
 pub(super) const OPEN_EXPECT_REGULAR: u32 = 1;
 pub(super) const OPEN_EXPECT_DIRECTORY: u32 = 2;
+pub(super) const WINDOWS_DESCRIPTOR_CLASS_READ_FILE: u32 = 1;
+pub(super) const WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT: u32 = 2;
+pub(super) const WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE: u32 = 3;
+
+fn completion_open_declaration(target: SystemTarget, symbol: &str) -> String {
+    if target.is_windows() {
+        format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)")
+    } else {
+        format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+    }
+}
+
+fn windows_descriptor_class_argument(target: SystemTarget, descriptor_class: u32) -> String {
+    if target.is_windows() {
+        format!(", i32 {descriptor_class}")
+    } else {
+        String::new()
+    }
+}
 
 /// The private constant naming the initial working directory.
 pub(super) const WORKING_DIRECTORY: &str = "@.wf.sys.working.directory";
@@ -411,7 +430,7 @@ fn operation_declarations(
             let symbol = target.file_open_symbol();
             return Ok(vec![
                 if target.uses_typed_completion_file_adapter() {
-                    format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                    completion_open_declaration(target, symbol)
                 } else {
                     format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
                 },
@@ -422,7 +441,7 @@ fn operation_declarations(
             let symbol = target.file_open_symbol();
             return Ok(vec![
                 if target.uses_typed_completion_file_adapter() {
-                    format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                    completion_open_declaration(target, symbol)
                 } else {
                     format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
                 },
@@ -434,7 +453,7 @@ fn operation_declarations(
             let open = target.file_open_symbol();
             let mut declarations = vec![
                 if target.uses_typed_completion_file_adapter() {
-                    format!("declare i32 @{open}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                    completion_open_declaration(target, open)
                 } else {
                     format!("declare i32 @{open}(i32, ptr, i32, ...)")
                 },
@@ -1422,6 +1441,8 @@ fn emit_open_read(
         OPEN_READ_COMPLETION_MAPPER,
         SystemResourceType::ReadFile,
     )?;
+    let descriptor_class_argument =
+        windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_READ_FILE);
     let wrapper = if target.uses_typed_completion_file_adapter() {
         format!(
             "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
@@ -1430,7 +1451,8 @@ fn emit_open_read(
              %open.outcome.slot = alloca i32, align 4\n  \
              %text = extractvalue {path} %path, 0\n  \
              %descriptor = call {file} @{open}({directory} %root, ptr %text, i32 {flags}, \
-             i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}, ptr %open.error.slot, \
+             i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}{descriptor_class_argument}, \
+             ptr %open.error.slot, \
              ptr %open.outcome.slot)\n  \
              %raw.descriptor = sext {file} %descriptor to i64\n  \
              %open.error = load i32, ptr %open.error.slot, align 4\n  \
@@ -2266,6 +2288,14 @@ fn emit_open_by_name(
         } else {
             (OPEN_DIRECTORY_COMPLETION_MAPPER, OPEN_EXPECT_DIRECTORY)
         };
+        let descriptor_class_argument = windows_descriptor_class_argument(
+            target,
+            if require_regular {
+                WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+            } else {
+                WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT
+            },
+        );
         let terminator = if target.is_windows() {
             "store i16 0, ptr %terminator, align 1"
         } else {
@@ -2282,7 +2312,8 @@ fn emit_open_by_name(
              %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
              {terminator}\n  \
              %descriptor = call {opened} @{open}({directory} %root, ptr %component, i32 {flags}, \
-             i32 0, i32 0, i32 {expected_kind}, ptr %open.error.slot, \
+             i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
+             ptr %open.error.slot, \
              ptr %open.outcome.slot)\n  \
              %raw.descriptor = sext {opened} %descriptor to i64\n  \
              %open.error = load i32, ptr %open.error.slot, align 4\n  \
@@ -2372,6 +2403,8 @@ fn emit_open_directory_source(
         OPEN_LIST_COMPLETION_MAPPER,
         SystemResourceType::DirectorySource,
     )?;
+    let descriptor_class_argument =
+        windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE);
     let wrapper = if target.uses_typed_completion_file_adapter() {
         format!(
             "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
@@ -2380,7 +2413,8 @@ fn emit_open_directory_source(
              %open.outcome.slot = alloca i32, align 4\n  \
              %descriptor = call {list} @{open}({directory} %directory, \
              ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0, \
-             i32 {OPEN_EXPECT_DIRECTORY}, ptr %open.error.slot, ptr %open.outcome.slot)\n  \
+             i32 {OPEN_EXPECT_DIRECTORY}{descriptor_class_argument}, ptr %open.error.slot, \
+             ptr %open.outcome.slot)\n  \
              %raw.descriptor = sext {list} %descriptor to i64\n  \
              %open.error = load i32, ptr %open.error.slot, align 4\n  \
              %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \

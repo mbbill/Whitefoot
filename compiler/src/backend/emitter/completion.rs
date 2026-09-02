@@ -29,6 +29,9 @@ pub const COMPLETION_WINDOWS_NATIVE_API_HEADER: &str =
 pub const COMPLETION_WINDOWS_HEADER: &str = include_str!("../completion/windows_completion.h");
 /// The Windows IOCP adapter contract embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
+/// The Windows bounded blocking-worker contract embedded in the compiler.
+pub const COMPLETION_WINDOWS_BLOCKING_HEADER: &str =
+    include_str!("../completion/windows_blocking.h");
 /// The finite completion core implementation embedded in the compiler.
 pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.c");
 /// The typed file-adapter implementation embedded in the compiler.
@@ -43,6 +46,9 @@ pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/l
 pub const COMPLETION_WINDOWS_SOURCE: &str = include_str!("../completion/windows_completion.c");
 /// The Windows IOCP adapter embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("../completion/windows_iocp.c");
+/// The Windows bounded blocking-worker adapter embedded in the compiler.
+pub const COMPLETION_WINDOWS_BLOCKING_SOURCE: &str =
+    include_str!("../completion/windows_blocking.c");
 /// The compiler-owned Windows completion bridge embedded in the compiler.
 pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/windows_bridge.c");
 /// The Windows bounded ready-frame scheduler embedded in the compiler.
@@ -65,7 +71,7 @@ pub(crate) const COMPLETION_WINDOWS_RUNTIME_DECLARATIONS: &str = concat!(
     "declare i32 @wf__completion_file_read_submit(i32, ptr, i64, ptr)\n",
     "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)\n",
     "declare i32 @wf__completion_file_write_submit(i32, ptr, i64, ptr)\n",
-    "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, ptr)\n",
+    "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)\n",
     "declare i32 @wf__completion_file_status_submit(i32, ptr)\n",
     "declare i32 @wf__completion_file_close_submit(i32, ptr)\n",
     "declare i32 @wf__completion_directory_next_submit(i32, ptr, i64, ptr, ptr)\n",
@@ -952,18 +958,31 @@ impl FunctionEmitter<'_, '_> {
         let implementation = self.qualification.operation(operation)?;
         let rendered_type = llvm_type(self.program, ty)?;
         let rendered_arguments = self.rendered_system_arguments(arguments)?;
-        let expected_kind = match completion {
-            CompletionFileOperation::OpenRead | CompletionFileOperation::OpenFile => {
-                system::OPEN_EXPECT_REGULAR
-            }
-            CompletionFileOperation::OpenDirectory
-            | CompletionFileOperation::OpenDirectorySource => system::OPEN_EXPECT_DIRECTORY,
+        let (expected_kind, descriptor_class) = match completion {
+            CompletionFileOperation::OpenRead | CompletionFileOperation::OpenFile => (
+                system::OPEN_EXPECT_REGULAR,
+                system::WINDOWS_DESCRIPTOR_CLASS_READ_FILE,
+            ),
+            CompletionFileOperation::OpenDirectory => (
+                system::OPEN_EXPECT_DIRECTORY,
+                system::WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT,
+            ),
+            CompletionFileOperation::OpenDirectorySource => (
+                system::OPEN_EXPECT_DIRECTORY,
+                system::WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE,
+            ),
             _ => return Err(BackendFailure::InvalidIr),
+        };
+        let descriptor_class_argument = if self.qualification.target().is_windows() {
+            format!(", i32 {descriptor_class}")
+        } else {
+            String::new()
         };
         writeln!(
             self.output,
             "  {status} = call i32 @wf__completion_file_open_at_submit(i32 {}, ptr {path}, \
-             i32 {flags}, i32 0, i32 0, i32 {expected_kind}, ptr {token_pointer})",
+             i32 {flags}, i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
+             ptr {token_pointer})",
             self.value_name(directory),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
@@ -1029,8 +1048,13 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         };
         let limit = self.qualification.target().component_limit();
+        let terminator_bytes = if self.qualification.target().is_windows() {
+            2
+        } else {
+            1
+        };
         let slot = limit
-            .checked_add(1)
+            .checked_add(terminator_bytes)
             .ok_or(BackendFailure::CounterOverflow)?;
         let staged = self.completion_entry_slot(result, &format!("[{slot} x i8]"))?;
         let component = self.completion_storage_pointer(&staged)?;
@@ -1043,55 +1067,112 @@ impl FunctionEmitter<'_, '_> {
         let index = format!("%{}", self.next_temporary()?);
         let at = format!("%{}", self.next_temporary()?);
         let byte = format!("%{}", self.next_temporary()?);
-        let terminating = format!("%{}", self.next_temporary()?);
-        let separating = format!("%{}", self.next_temporary()?);
-        let refused = format!("%{}", self.next_temporary()?);
-        let next = format!("%{}", self.next_temporary()?);
-        let scanned = format!("%{}", self.next_temporary()?);
-        let terminator = format!("%{}", self.next_temporary()?);
         let scan_entry = format!("completion.component.entry.v{}", result.ordinal());
         let scan = format!("completion.component.scan.v{}", result.ordinal());
         let scan_step = format!("completion.component.step.v{}", result.ordinal());
         let ready = format!("completion.component.ready.v{}", result.ordinal());
         let buffer_ty = self.value_type(*name).ok_or(BackendFailure::InvalidIr)?;
-        writeln!(
-            self.output,
-            "  {extent} = sub i64 {}, {}\n  \
-             {oversize} = icmp ugt i64 {extent}, {limit}\n  \
-             {vacant} = icmp eq i64 {extent}, 0\n  \
-             {unusable} = or i1 {oversize}, {vacant}\n  \
-             br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
-             {scan_entry}:\n  \
-             {base} = extractvalue {} {}, 0\n  \
-             {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
-             br label %{scan}\n\
-             {scan}:\n  \
-             {index} = phi i64 [ 0, %{scan_entry} ], [ {next}, %{scan_step} ]\n  \
-             {at} = getelementptr inbounds i8, ptr {text}, i64 {index}\n  \
-             {byte} = load i8, ptr {at}, align 1\n  \
-             {terminating} = icmp eq i8 {byte}, 0\n  \
-             {separating} = icmp eq i8 {byte}, {}\n  \
-             {refused} = or i1 {terminating}, {separating}\n  \
-             br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
-             {scan_step}:\n  \
-             {next} = add i64 {index}, 1\n  \
-             {scanned} = icmp uge i64 {next}, {extent}\n  \
-             br i1 {scanned}, label %{ready}, label %{scan}\n\
-             {ready}:\n  \
-             call void @llvm.memcpy.p0.p0.i64(ptr {component}, ptr {text}, i64 {extent}, \
-             i1 false)\n  \
-             {terminator} = getelementptr inbounds i8, ptr {component}, i64 {extent}\n  \
-             store i8 0, ptr {terminator}, align 1\n  \
-             br label %{request_label}\n\
-             {request_label}:",
-            self.value_name(*end),
-            self.value_name(*start),
-            llvm_type(self.program, buffer_ty)?,
-            self.value_name(*name),
-            self.value_name(*start),
-            self.qualification.target().root_prefix(),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
+        if self.qualification.target().is_windows() {
+            let width_remainder = format!("%{}", self.next_temporary()?);
+            let misaligned = format!("%{}", self.next_temporary()?);
+            let size_unusable = format!("%{}", self.next_temporary()?);
+            let unit = format!("%{}", self.next_temporary()?);
+            let terminating = format!("%{}", self.next_temporary()?);
+            let slash = format!("%{}", self.next_temporary()?);
+            let backslash = format!("%{}", self.next_temporary()?);
+            let separating = format!("%{}", self.next_temporary()?);
+            let refused = format!("%{}", self.next_temporary()?);
+            let next = format!("%{}", self.next_temporary()?);
+            let scanned = format!("%{}", self.next_temporary()?);
+            let terminator = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {extent} = sub i64 {}, {}\n  \
+                 {oversize} = icmp ugt i64 {extent}, {limit}\n  \
+                 {vacant} = icmp eq i64 {extent}, 0\n  \
+                 {width_remainder} = and i64 {extent}, 1\n  \
+                 {misaligned} = icmp ne i64 {width_remainder}, 0\n  \
+                 {size_unusable} = or i1 {oversize}, {vacant}\n  \
+                 {unusable} = or i1 {size_unusable}, {misaligned}\n  \
+                 br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
+                 {scan_entry}:\n  \
+                 {base} = extractvalue {} {}, 0\n  \
+                 {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
+                 br label %{scan}\n\
+                 {scan}:\n  \
+                 {index} = phi i64 [ 0, %{scan_entry} ], [ {next}, %{scan_step} ]\n  \
+                 {at} = getelementptr inbounds i8, ptr {text}, i64 {index}\n  \
+                 {unit} = load i16, ptr {at}, align 1\n  \
+                 {terminating} = icmp eq i16 {unit}, 0\n  \
+                 {slash} = icmp eq i16 {unit}, 47\n  \
+                 {backslash} = icmp eq i16 {unit}, 92\n  \
+                 {separating} = or i1 {slash}, {backslash}\n  \
+                 {refused} = or i1 {terminating}, {separating}\n  \
+                 br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
+                 {scan_step}:\n  \
+                 {next} = add i64 {index}, 2\n  \
+                 {scanned} = icmp uge i64 {next}, {extent}\n  \
+                 br i1 {scanned}, label %{ready}, label %{scan}\n\
+                 {ready}:\n  \
+                 call void @llvm.memcpy.p0.p0.i64(ptr {component}, ptr {text}, i64 {extent}, \
+                 i1 false)\n  \
+                 {terminator} = getelementptr inbounds i8, ptr {component}, i64 {extent}\n  \
+                 store i16 0, ptr {terminator}, align 1\n  \
+                 br label %{request_label}\n\
+                 {request_label}:",
+                self.value_name(*end),
+                self.value_name(*start),
+                llvm_type(self.program, buffer_ty)?,
+                self.value_name(*name),
+                self.value_name(*start),
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        } else {
+            let terminating = format!("%{}", self.next_temporary()?);
+            let separating = format!("%{}", self.next_temporary()?);
+            let refused = format!("%{}", self.next_temporary()?);
+            let next = format!("%{}", self.next_temporary()?);
+            let scanned = format!("%{}", self.next_temporary()?);
+            let terminator = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {extent} = sub i64 {}, {}\n  \
+                 {oversize} = icmp ugt i64 {extent}, {limit}\n  \
+                 {vacant} = icmp eq i64 {extent}, 0\n  \
+                 {unusable} = or i1 {oversize}, {vacant}\n  \
+                 br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
+                 {scan_entry}:\n  \
+                 {base} = extractvalue {} {}, 0\n  \
+                 {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
+                 br label %{scan}\n\
+                 {scan}:\n  \
+                 {index} = phi i64 [ 0, %{scan_entry} ], [ {next}, %{scan_step} ]\n  \
+                 {at} = getelementptr inbounds i8, ptr {text}, i64 {index}\n  \
+                 {byte} = load i8, ptr {at}, align 1\n  \
+                 {terminating} = icmp eq i8 {byte}, 0\n  \
+                 {separating} = icmp eq i8 {byte}, {}\n  \
+                 {refused} = or i1 {terminating}, {separating}\n  \
+                 br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
+                 {scan_step}:\n  \
+                 {next} = add i64 {index}, 1\n  \
+                 {scanned} = icmp uge i64 {next}, {extent}\n  \
+                 br i1 {scanned}, label %{ready}, label %{scan}\n\
+                 {ready}:\n  \
+                 call void @llvm.memcpy.p0.p0.i64(ptr {component}, ptr {text}, i64 {extent}, \
+                 i1 false)\n  \
+                 {terminator} = getelementptr inbounds i8, ptr {component}, i64 {extent}\n  \
+                 store i8 0, ptr {terminator}, align 1\n  \
+                 br label %{request_label}\n\
+                 {request_label}:",
+                self.value_name(*end),
+                self.value_name(*start),
+                llvm_type(self.program, buffer_ty)?,
+                self.value_name(*name),
+                self.value_name(*start),
+                self.qualification.target().root_prefix(),
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
         let flags = match completion {
             CompletionFileOperation::OpenDirectory => {
                 self.qualification.target().component_directory_open_flags()

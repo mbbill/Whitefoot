@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -976,6 +977,506 @@ wf_completion_statistics wf_completion_statistics_snapshot(
         WF_WINDOWS_STAT(runtime->stat_capacity_notifications);
 #undef WF_WINDOWS_STAT
     return statistics;
+}
+
+/* -------------------------------------------------------------------------
+ * Process-wide descriptor-retirement ledger.
+ *
+ * This is the Windows-native port of runtime.c's ledger.  The counters remain
+ * lock-free on ordinary submission/publication paths.  The SRW lock protects
+ * only waiter order, awards, and the condition-variable decision which makes
+ * a refused open's single retry unmissable.
+ * ---------------------------------------------------------------------- */
+
+#if !defined(WF_COMPLETION_RETIREMENT_POINT)
+#define WF_COMPLETION_RETIREMENT_POINT wf_completion_retirement_point_absent
+static void wf_completion_retirement_point_absent(void) {
+}
+#else
+extern void WF_COMPLETION_RETIREMENT_POINT(void);
+#endif
+
+static SRWLOCK wf_retirement_lock = SRWLOCK_INIT;
+static CONDITION_VARIABLE wf_retirement_signal = CONDITION_VARIABLE_INIT;
+static _Atomic uint64_t
+    wf_retirement_returns[WF_RETIREMENT_RESOURCE_COUNT];
+static _Atomic size_t wf_retirement_in_flight;
+static _Atomic size_t wf_retirement_waiter_count;
+static _Atomic uint64_t wf_retirement_wait_starts;
+static _Atomic(wf_retirement_waiter *) wf_retirement_first;
+static wf_retirement_waiter *wf_retirement_last;
+static uint64_t wf_retirement_awarded[WF_RETIREMENT_RESOURCE_COUNT];
+static _Atomic(wf_completion_runtime *) wf_retirement_endpoint;
+
+uint64_t wf_completion_descriptor_returns(void) {
+    return wf_completion_resource_returns(WF_RETIREMENT_CRT_DESCRIPTOR);
+}
+
+uint64_t wf_completion_resource_returns(unsigned resource) {
+    if (resource >= WF_RETIREMENT_RESOURCE_COUNT) {
+        abort();
+    }
+    return atomic_load_explicit(
+        &wf_retirement_returns[resource],
+        memory_order_seq_cst
+    );
+}
+
+void wf_completion_retirement_announces_on(wf_completion_runtime *runtime) {
+    atomic_store_explicit(
+        &wf_retirement_endpoint,
+        runtime,
+        memory_order_seq_cst
+    );
+}
+
+static void wf_retirement_announce_on_the_endpoint(void) {
+    wf_completion_runtime *endpoint = atomic_load_explicit(
+        &wf_retirement_endpoint,
+        memory_order_seq_cst
+    );
+    if (endpoint != NULL) {
+        wf_completion_notify_capacity(endpoint);
+    }
+}
+
+static void wf_retirement_announce(void) {
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    WakeAllConditionVariable(&wf_retirement_signal);
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+    /* The core wake lock is always acquired after the retirement lock has
+     * been released, so publication and park cannot form a lock cycle. */
+    wf_retirement_announce_on_the_endpoint();
+}
+
+void wf_completion_operation_accepted(void) {
+    atomic_fetch_add_explicit(
+        &wf_retirement_in_flight,
+        1,
+        memory_order_seq_cst
+    );
+    if (atomic_load_explicit(
+            &wf_retirement_waiter_count,
+            memory_order_seq_cst
+        ) != 0) {
+        wf_retirement_announce();
+    }
+}
+
+void wf_completion_resource_returned(unsigned resource) {
+    if (resource >= WF_RETIREMENT_RESOURCE_COUNT) {
+        abort();
+    }
+    atomic_fetch_add_explicit(
+        &wf_retirement_returns[resource],
+        1,
+        memory_order_seq_cst
+    );
+    if (atomic_load_explicit(
+            &wf_retirement_waiter_count,
+            memory_order_seq_cst
+        ) != 0) {
+        wf_retirement_announce();
+    }
+}
+
+void wf_completion_operation_retired_resources(unsigned returned_resources) {
+    unsigned resource;
+    if ((returned_resources
+         & ~((unsigned)WF_RETIREMENT_RETURNED_NATIVE_HANDLE
+             | (unsigned)WF_RETIREMENT_RETURNED_CRT_DESCRIPTOR)) != 0) {
+        abort();
+    }
+    for (resource = 0; resource < WF_RETIREMENT_RESOURCE_COUNT; ++resource) {
+        if ((returned_resources & (1u << resource)) == 0) {
+            continue;
+        }
+        atomic_fetch_add_explicit(
+            &wf_retirement_returns[resource],
+            1,
+            memory_order_seq_cst
+        );
+    }
+    if (atomic_fetch_sub_explicit(
+            &wf_retirement_in_flight,
+            1,
+            memory_order_seq_cst
+        ) == 0) {
+        abort();
+    }
+    if (atomic_load_explicit(
+            &wf_retirement_waiter_count,
+            memory_order_seq_cst
+        ) != 0) {
+        wf_retirement_announce();
+    }
+}
+
+void wf_completion_operation_retired(int returned_a_descriptor) {
+    wf_completion_operation_retired_resources(
+        returned_a_descriptor != 0
+            ? (unsigned)WF_RETIREMENT_RETURNED_NATIVE_HANDLE
+                | (unsigned)WF_RETIREMENT_RETURNED_CRT_DESCRIPTOR
+            : 0u
+    );
+}
+
+size_t wf_completion_retirement_waiters(void) {
+    return atomic_load_explicit(
+        &wf_retirement_waiter_count,
+        memory_order_acquire
+    );
+}
+
+uint64_t wf_completion_retirement_waits(void) {
+    return atomic_load_explicit(
+        &wf_retirement_wait_starts,
+        memory_order_relaxed
+    );
+}
+
+void wf_completion_retirement_wait_begin(
+    wf_retirement_waiter *waiter,
+    uint64_t seen,
+    size_t (*owed)(void *context),
+    void *owed_context,
+    int runs_owed
+) {
+    wf_completion_retirement_wait_begin_resource(
+        waiter,
+        seen,
+        owed,
+        owed_context,
+        runs_owed,
+        WF_RETIREMENT_CRT_DESCRIPTOR
+    );
+}
+
+void wf_completion_retirement_wait_begin_resource(
+    wf_retirement_waiter *waiter,
+    uint64_t seen,
+    size_t (*owed)(void *context),
+    void *owed_context,
+    int runs_owed,
+    unsigned resource
+) {
+    wf_retirement_waiter *same_resource;
+    if (waiter == NULL) {
+        return;
+    }
+    if (resource >= WF_RETIREMENT_RESOURCE_COUNT) {
+        abort();
+    }
+    waiter->seen = seen;
+    waiter->owed = owed;
+    waiter->owed_context = owed_context;
+    waiter->resource = resource;
+    waiter->runs_owed = runs_owed;
+    waiter->awarded = 0;
+    waiter->aside = 0;
+    waiter->next = NULL;
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    same_resource = atomic_load_explicit(
+        &wf_retirement_first,
+        memory_order_relaxed
+    );
+    while (same_resource != NULL
+           && same_resource->resource != resource) {
+        same_resource = same_resource->next;
+    }
+    if (same_resource == NULL
+        && seen > wf_retirement_awarded[resource]) {
+        wf_retirement_awarded[resource] = seen;
+    }
+    if (wf_retirement_last == NULL) {
+        atomic_store_explicit(
+            &wf_retirement_first,
+            waiter,
+            memory_order_seq_cst
+        );
+    } else {
+        wf_retirement_last->next = waiter;
+    }
+    wf_retirement_last = waiter;
+    atomic_fetch_add_explicit(
+        &wf_retirement_waiter_count,
+        1,
+        memory_order_seq_cst
+    );
+    atomic_fetch_add_explicit(
+        &wf_retirement_wait_starts,
+        1,
+        memory_order_relaxed
+    );
+    WakeAllConditionVariable(&wf_retirement_signal);
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+    wf_retirement_announce_on_the_endpoint();
+}
+
+void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter) {
+    wf_retirement_waiter *scan;
+    wf_retirement_waiter *previous = NULL;
+    if (waiter == NULL) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    scan = atomic_load_explicit(&wf_retirement_first, memory_order_relaxed);
+    while (scan != NULL && scan != waiter) {
+        previous = scan;
+        scan = scan->next;
+    }
+    if (scan != NULL) {
+        if (previous == NULL) {
+            atomic_store_explicit(
+                &wf_retirement_first,
+                waiter->next,
+                memory_order_seq_cst
+            );
+        } else {
+            previous->next = waiter->next;
+        }
+        if (wf_retirement_last == waiter) {
+            wf_retirement_last = previous;
+        }
+        waiter->next = NULL;
+        atomic_fetch_sub_explicit(
+            &wf_retirement_waiter_count,
+            1,
+            memory_order_seq_cst
+        );
+    }
+    WakeAllConditionVariable(&wf_retirement_signal);
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+    wf_retirement_announce_on_the_endpoint();
+}
+
+static size_t wf_retirement_owed(const wf_retirement_waiter *waiter) {
+    if (waiter == NULL || waiter->owed == NULL) {
+        return 0;
+    }
+    return waiter->owed(waiter->owed_context);
+}
+
+static int wf_retirement_must_run_its_own_work(
+    const wf_retirement_waiter *waiter
+) {
+    return waiter != NULL && waiter->runs_owed != 0
+        && wf_retirement_owed(waiter) != 0;
+}
+
+static wf_retirement_waiter *wf_retirement_earliest_deciding(void) {
+    wf_retirement_waiter *scan = atomic_load_explicit(
+        &wf_retirement_first,
+        memory_order_seq_cst
+    );
+    while (scan != NULL && scan->aside != 0) {
+        scan = scan->next;
+    }
+    return scan;
+}
+
+static int wf_retirement_an_earlier_waiter_is_owed(
+    const wf_retirement_waiter *waiter,
+    uint64_t returns
+) {
+    const wf_retirement_waiter *scan = atomic_load_explicit(
+        &wf_retirement_first,
+        memory_order_seq_cst
+    );
+    while (scan != NULL && scan != waiter) {
+        if (scan->resource == waiter->resource && scan->seen != returns) {
+            return 1;
+        }
+        scan = scan->next;
+    }
+    return 0;
+}
+
+static int wf_retirement_award_locked(
+    wf_retirement_waiter *waiter,
+    uint64_t returns,
+    int award
+) {
+    if (waiter->awarded != 0) {
+        return 1;
+    }
+    if (returns == waiter->seen
+        || returns <= wf_retirement_awarded[waiter->resource]
+        || wf_retirement_an_earlier_waiter_is_owed(waiter, returns) != 0) {
+        return 0;
+    }
+    if (award != 0) {
+        wf_retirement_awarded[waiter->resource] += 1;
+        waiter->awarded = 1;
+    }
+    return 1;
+}
+
+void wf_completion_retirement_open_took_a_descriptor(int on_an_award) {
+    wf_completion_retirement_open_took_resource(
+        WF_RETIREMENT_NATIVE_HANDLE,
+        0
+    );
+    wf_completion_retirement_open_took_resource(
+        WF_RETIREMENT_CRT_DESCRIPTOR,
+        on_an_award
+    );
+}
+
+void wf_completion_retirement_open_took_resource(
+    unsigned resource,
+    int on_an_award
+) {
+    uint64_t returns;
+    if (resource >= WF_RETIREMENT_RESOURCE_COUNT) {
+        abort();
+    }
+    if (on_an_award != 0) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    returns = atomic_load_explicit(
+        &wf_retirement_returns[resource],
+        memory_order_seq_cst
+    );
+    if (returns > wf_retirement_awarded[resource]) {
+        wf_retirement_awarded[resource] += 1;
+    }
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+}
+
+static enum wf_retirement_state wf_retirement_state_locked(
+    wf_retirement_waiter *waiter,
+    uint64_t returns_before,
+    int award
+) {
+    size_t in_flight;
+    size_t idle;
+    size_t owed;
+    if (waiter == NULL) {
+        return WF_RETIREMENT_UNREACHABLE;
+    }
+    if (wf_retirement_award_locked(waiter, returns_before, award) != 0) {
+        return WF_RETIREMENT_HAPPENED;
+    }
+    owed = wf_retirement_owed(waiter);
+    if (waiter->runs_owed != 0 && owed != 0) {
+        return WF_RETIREMENT_AWAITED;
+    }
+    in_flight = atomic_load_explicit(
+        &wf_retirement_in_flight,
+        memory_order_seq_cst
+    );
+    idle = atomic_load_explicit(
+        &wf_retirement_waiter_count,
+        memory_order_seq_cst
+    );
+    if (waiter->runs_owed == 0) {
+        if (idle > SIZE_MAX - owed) {
+            abort();
+        }
+        idle += owed;
+    }
+    if (in_flight > idle) {
+        return WF_RETIREMENT_AWAITED;
+    }
+    if (wf_retirement_earliest_deciding() != waiter) {
+        return WF_RETIREMENT_AWAITED;
+    }
+    if (wf_retirement_award_locked(
+            waiter,
+            atomic_load_explicit(
+                &wf_retirement_returns[waiter->resource],
+                memory_order_seq_cst
+            ),
+            award
+        ) != 0) {
+        return WF_RETIREMENT_HAPPENED;
+    }
+    return WF_RETIREMENT_UNREACHABLE;
+}
+
+void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter) {
+    wf_retirement_waiter *promoted;
+    int announce = 0;
+    if (waiter == NULL) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    promoted = wf_retirement_earliest_deciding() == waiter ? waiter : NULL;
+    waiter->aside = 1;
+    if (promoted != NULL) {
+        promoted = wf_retirement_earliest_deciding();
+    }
+    if (promoted != NULL
+        && wf_retirement_state_locked(
+               promoted,
+               atomic_load_explicit(
+                   &wf_retirement_returns[promoted->resource],
+                   memory_order_seq_cst
+               ),
+               0
+           ) == WF_RETIREMENT_UNREACHABLE) {
+        announce = 1;
+        WakeAllConditionVariable(&wf_retirement_signal);
+    }
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+    if (announce != 0) {
+        wf_retirement_announce_on_the_endpoint();
+    }
+}
+
+void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter) {
+    if (waiter == NULL) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    waiter->aside = 0;
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+}
+
+enum wf_retirement_state wf_completion_retirement_state(
+    wf_retirement_waiter *waiter
+) {
+    enum wf_retirement_state state;
+    uint64_t returns_before;
+    if (waiter == NULL) {
+        return WF_RETIREMENT_UNREACHABLE;
+    }
+    returns_before = atomic_load_explicit(
+        &wf_retirement_returns[waiter->resource],
+        memory_order_seq_cst
+    );
+    WF_COMPLETION_RETIREMENT_POINT();
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    state = wf_retirement_state_locked(waiter, returns_before, 1);
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+    return state;
+}
+
+void wf_completion_retirement_sleep(wf_retirement_waiter *waiter) {
+    BOOL slept = TRUE;
+    AcquireSRWLockExclusive(&wf_retirement_lock);
+    if (wf_retirement_state_locked(
+            waiter,
+            atomic_load_explicit(
+                &wf_retirement_returns[waiter->resource],
+                memory_order_seq_cst
+            ),
+            0
+        ) == WF_RETIREMENT_AWAITED
+        && !wf_retirement_must_run_its_own_work(waiter)) {
+        slept = SleepConditionVariableSRW(
+            &wf_retirement_signal,
+            &wf_retirement_lock,
+            INFINITE,
+            0
+        );
+    }
+    ReleaseSRWLockExclusive(&wf_retirement_lock);
+    if (slept == FALSE) {
+        abort();
+    }
 }
 
 #else

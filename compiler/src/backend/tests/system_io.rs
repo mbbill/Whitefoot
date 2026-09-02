@@ -196,7 +196,10 @@ fn windows_emits_the_utf16_bootstrap_and_typed_positioned_read_route() {
     assert!(llvm.contains("call i32 @wf__windows_relative_path_valid"));
     assert!(llvm.contains("call ptr @wf__windows_error_location()"));
     assert!(llvm.contains(
-        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1"
+        "declare i32 @wf__completion_file_open_at_direct(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)"
+    ));
+    assert!(llvm.contains(
+        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
     ));
     assert!(llvm.contains("@wf__completion_file_pread_submit"));
     assert!(llvm.contains("@wf__completion_file_pread_direct"));

@@ -132,6 +132,12 @@ static int wf_windows_request_valid(
     if (request == NULL || request->file.adapter != adapter
         || request->file.handle == NULL
         || request->file.handle == INVALID_HANDLE_VALUE
+        || request->lease.generation == 0
+        || request->lease.handle != request->file.handle
+        || request->lease.completion_owner != adapter
+        || request->lease.descriptor_class
+            != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+        || request->lease.mode != WF_WINDOWS_DESCRIPTOR_LEASE_SHARED
         || request->count > MAXDWORD) {
         return 0;
     }
@@ -202,25 +208,40 @@ static int wf_windows_publish(
     wf_windows_file_result result;
     wf_completion_publication publication;
     enum wf_completion_publish_result published;
+    wf_completion_token token = entry->token;
+    enum wf_windows_file_operation_kind kind = entry->kind;
+    wf_windows_descriptor_lease lease = entry->lease;
     /* Positioned file reads use the Whitefoot/POSIX-shaped result contract:
      * reaching the file boundary is a successful zero-byte read.  Windows
      * reports that boundary as ERROR_HANDLE_EOF for overlapped disk I/O. */
-    if (entry->kind == WF_WINDOWS_FILE_READ_AT
+    if (kind == WF_WINDOWS_FILE_READ_AT
         && error_code == ERROR_HANDLE_EOF) {
         error_code = 0;
         transferred = 0;
     }
     memset(&result, 0, sizeof(result));
-    result.kind = entry->kind;
+    result.kind = kind;
     result.value = error_code == 0 ? (int64_t)transferred : -1;
     result.error_code = error_code;
     publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
     publication.terminal_kind = error_code == 0 ? 1u : 2u;
     publication.result = &result;
     publication.result_size = sizeof(result);
+    /* The target no longer touches the descriptor after GQCS. Relinquish the
+     * generation lease and operation entry before terminal publication: a
+     * fast source consume may immediately run the derived close and reclaim
+     * both the descriptor and this fixed-capacity entry. */
+    wf__windows_completion_descriptor_lease_release(&lease);
+    memset(&entry->lease, 0, sizeof(entry->lease));
+    atomic_store_explicit(
+        &entry->state,
+        WF_WINDOWS_IOCP_ENTRY_FREE,
+        memory_order_release
+    );
+    atomic_fetch_sub_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     published = wf_completion_publish_terminal(
         adapter->runtime,
-        entry->token,
+        token,
         &publication
     );
     if (published != WF_COMPLETION_PUBLISHED) {
@@ -229,13 +250,9 @@ static int wf_windows_publish(
             1,
             memory_order_relaxed
         );
+    } else {
+        wf_completion_operation_retired(0);
     }
-    atomic_store_explicit(
-        &entry->state,
-        WF_WINDOWS_IOCP_ENTRY_FREE,
-        memory_order_release
-    );
-    atomic_fetch_sub_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(
         &adapter->stat_completions,
         1,
@@ -295,6 +312,9 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
             ? WF_WINDOWS_IOCP_SUBMIT_STALE
             : WF_WINDOWS_IOCP_SUBMIT_INVALID;
     }
+
+    entry->lease = request->lease;
+    wf_completion_operation_accepted();
 
     atomic_store_explicit(
         &entry->state,
