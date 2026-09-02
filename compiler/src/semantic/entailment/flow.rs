@@ -3007,10 +3007,36 @@ impl Analyzer<'_, '_> {
         self.promote_contradiction(&mut states.facts);
     }
 
+    /// Preserves only survivor-to-survivor difference bounds whose internal
+    /// graph vertices this event batch is about to invalidate. The event
+    /// overlap logic remains the single authority for place, holder, and alias
+    /// kills; projection changes neither that set nor any goal support.
+    fn project_event_killed_bounds(&mut self, state: &mut FactState, events: &[KillEvent]) {
+        if events.is_empty() {
+            return;
+        }
+        let killed = state
+            .bound_terms()
+            .into_iter()
+            .filter(|term| {
+                events
+                    .iter()
+                    .any(|event| self.event_kills_term(*term, event))
+            })
+            .collect::<Vec<_>>();
+        if killed.is_empty() {
+            return;
+        }
+        let term_count = u32::try_from(self.terms.ids().count())
+            .expect("ENT term inventory exceeds the u32 identity space");
+        state.project_bounds_through_killed(&killed, term_count, &mut self.derivations);
+    }
+
     fn apply_kills_one(&mut self, state: &mut FactState, events: &[KillEvent]) {
         if events.is_empty() {
             return;
         }
+        self.project_event_killed_bounds(state, events);
         state.kill(|term| {
             events
                 .iter()
@@ -9691,6 +9717,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn apply_loop_kills_one(&mut self, state: &mut FactState, kills: &LoopKills) {
+        self.project_event_killed_bounds(state, &kills.events);
         state.kill(|term| {
             kills
                 .events

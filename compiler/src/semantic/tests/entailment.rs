@@ -2685,11 +2685,11 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_kill_between_establishment_and_query_breaks_an_underived_chain() {
-    // The flow carries established facts and closure happens at the query
-    // [ENT-3, ENT-4]: consuming the middle term's root before the query
-    // leaves the endpoints unrelated, because i - Z was never established
-    // as its own fact on this straight-line path.
+fn consuming_a_middle_vertex_preserves_its_survivor_consequence() {
+    // The move kills p.count, but it cannot retroactively change the already
+    // proved independent integer fact i < 4. Killed-vertex projection fixes
+    // that one survivor relation before the middle term disappears; this is a
+    // deliberate capability increase over query-only closure.
     let source = br#"const count: u64 = 4_u64;
 
 struct Pair {
@@ -2726,15 +2726,107 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![false],
-        "consuming p kills both links before any join materializes i <= 3"
+        vec![true],
+        "consuming the middle projects the still-true i <= 3 conclusion"
     );
-    assert!(summary.obligations[0].derivation.is_none());
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, 0),
+        |node| matches!(node, DerivationNode::TransitiveBound { .. }),
+        "the killed-middle projection",
+    );
 }
 
 // ---------------------------------------------------------------------
 // [ENT-5] kills: assignment overlap and effect-row write projection
 // ---------------------------------------------------------------------
+
+#[test]
+fn assigning_a_middle_vertex_projects_a_bound_needed_after_the_write() {
+    let source = br#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  set middle = replacement;
+  let result = x + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "increment");
+    validate_derivations(&summary);
+    assert_eq!(
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true],
+        "x <= middle <= 254 must project x <= 254 before middle is assigned"
+    );
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, 0),
+        |node| matches!(node, DerivationNode::TransitiveBound { .. }),
+        "the killed-middle projection",
+    );
+}
+
+#[test]
+fn projection_does_not_preserve_a_bound_when_the_final_endpoint_is_written() {
+    let source = br#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  set middle = replacement;
+  set x = 255_u8;
+  let result = x + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "increment"),
+        vec![false],
+        "the later endpoint write kills the projected x <= 254 fact"
+    );
+}
+
+#[test]
+fn projection_does_not_preserve_a_bound_through_a_moved_alias_write_to_its_endpoint() {
+    let source = br#"fn overwrite['w](value: &uniq 'w u8) -> result: own unit writes(value) {
+  set deref(value) = 255_u8;
+  return unit;
+}
+
+fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  region 'w {
+    let holder = &uniq 'w x;
+    overwrite<'w>(value: move holder);
+  }
+  let result = x + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "increment"),
+        vec![false],
+        "the moved writable alias resolves to and kills x itself, so no survivor endpoint exists"
+    );
+}
 
 #[test]
 fn an_assignment_to_a_sibling_field_keeps_facts_and_to_the_fact_field_kills_them() {
@@ -4553,7 +4645,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_counted_preheader_closes_snapshot_consequences_before_body_kills() {
+fn killed_middles_preserve_survivor_consequences_in_counted_and_ordinary_flow() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
@@ -4600,10 +4692,45 @@ command fn main() -> status: own ExitStatus pure {
         |node| matches!(node, DerivationNode::MaterializedBound { .. }),
         "the counted preheader materialization marker",
     );
+    let ordinary = entailment(source, "ordinary");
+    validate_derivations(&ordinary);
     assert_eq!(
-        discharge_flags(source, "ordinary"),
-        vec![false],
-        "without S11's preheader materialization, the same write kills the ordinary query-derived relation"
+        ordinary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true],
+        "the ordinary write projects i < 4 before killing the mutable middle upper"
+    );
+    assert_root_contains(
+        &ordinary,
+        obligation_root(&ordinary, 0),
+        |node| match node {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: -1,
+                ..
+            } => {
+                matches!(
+                    (
+                        retained_term(&ordinary, *left),
+                        retained_term(&ordinary, *middle),
+                        retained_term(&ordinary, *right),
+                    ),
+                    (
+                        TermKind::Place(i, IntegerType::U64),
+                        TermKind::Place(upper, IntegerType::U64),
+                        TermKind::Constant(4),
+                    ) if i.root == PlaceRoot::Binding(BindingId(1))
+                        && upper.root == PlaceRoot::Binding(BindingId(2))
+                )
+            }
+            _ => false,
+        },
+        "the exact i - upper <= -1 plus upper - 4 <= 0 projection",
     );
 }
 
@@ -5240,11 +5367,11 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_element_write_keeps_the_allocation_equality_that_a_write_to_its_length_kills() {
+fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
     // [ENT-5]: a buffer's length is fixed at allocation, so an element write
-    // never kills its length fact; a write to the term the equality is held
-    // against does. A buffer place is affine [STOR-1], so writing the root
-    // binding itself is not a source shape the engine can be shown.
+    // never kills its length fact. Writing n kills facts that still mention n,
+    // but first projects the already true 3 < len(b) consequence whose two
+    // endpoints survive the write.
     let source = br#"fn kept(n: own u64) -> result: own u8 allocates(heap) contract {
   requires buffer_fits<u8>(n);
 } {
@@ -5287,20 +5414,48 @@ command fn main() -> status: own ExitStatus pure {
     let killed = entailment(source, "killed");
     validate_derivations(&killed);
     assert!(
-        !killed
+        killed
             .obligations
             .last()
             .is_some_and(|outcome| outcome.discharged),
-        "writing n kills the allocation equality held against it"
+        "writing n preserves the already established 3 < len(b) consequence"
     );
-    assert!(killed.obligations.last().unwrap().derivation.is_none());
+    assert_root_contains(
+        &killed,
+        obligation_root(&killed, killed.obligations.len() - 1),
+        |node| match node {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: -1,
+                ..
+            } => {
+                matches!(
+                    (
+                        retained_term(&killed, *left),
+                        retained_term(&killed, *middle),
+                        retained_term(&killed, *right),
+                    ),
+                    (
+                        TermKind::Constant(3),
+                        TermKind::Place(n, IntegerType::U64),
+                        TermKind::Length(buffer),
+                    ) if n.root == PlaceRoot::Binding(BindingId(0))
+                        && buffer.root == PlaceRoot::Binding(BindingId(1))
+                )
+            }
+            _ => false,
+        },
+        "the exact 3 - n <= -1 plus n - len(b) <= 0 projection",
+    );
 }
 
 #[test]
-fn consuming_the_buffer_kills_a_length_binding_that_survives_otherwise() {
-    // The support of len(b) is b's root binding, so a consuming use kills
-    // every fact holding it, including the equality a length binding carries
-    // away from it [ENT-5](c).
+fn consuming_the_buffer_projects_its_copied_length_before_the_root_dies() {
+    // The support of len(b) is b's root binding, so the length term dies with
+    // the move. Its already copied mathematical value m does not: projecting
+    // m = len(b) = 4 before the kill soundly preserves m < 8.
     let source = br#"const wide: u64 = 8_u64;
 
 fn eat(b: own buffer<u8>) -> result: own unit pure {
@@ -5349,24 +5504,29 @@ command fn main() -> status: own ExitStatus pure {
         FlowEventKind::S6,
     );
 
-    let killed = entailment(source, "killed");
-    validate_derivations(&killed);
+    let projected = entailment(source, "killed");
+    validate_derivations(&projected);
     assert_eq!(
-        killed
+        projected
             .obligations
             .iter()
             .filter(|outcome| outcome.family == ObligationFamily::Bounds)
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![false],
-        "the consuming use kills m's tie to the allocation length"
+        vec![true],
+        "the consuming use projects the independent copied-length bound"
     );
-    let killed_bounds = killed
+    let projected_bounds = projected
         .obligations
         .iter()
-        .find(|outcome| outcome.family == ObligationFamily::Bounds)
+        .position(|outcome| outcome.family == ObligationFamily::Bounds)
         .expect("the subscript carries one bounds obligation");
-    assert!(killed_bounds.derivation.is_none());
+    assert_root_contains(
+        &projected,
+        obligation_root(&projected, projected_bounds),
+        |node| matches!(node, DerivationNode::TransitiveBound { .. }),
+        "the consumed length-root projection",
+    );
 }
 
 #[test]
@@ -8882,7 +9042,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
+fn writing_back_an_independent_copy_preserves_the_call_precondition() {
     let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
   requires ilt(deref(value), 10_u64);
 } {
@@ -8908,7 +9068,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let outcomes = call_goals(source, "update");
+    let summary = entailment(source, "update");
+    validate_derivations(&summary);
+    let outcomes = &summary.call_goals;
     assert_eq!(outcomes.len(), 2);
     assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(
@@ -8918,7 +9080,40 @@ command fn main() -> status: own ExitStatus pure {
             CallGoalEvidence::ExactL0Projection,
         ]
     );
-    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[1].evidence,
+        vec![CallGoalEvidence::ExactL0Projection]
+    );
+    assert_root_contains(
+        &summary,
+        call_root(&summary, 1),
+        |node| match node {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: -1,
+                ..
+            } => {
+                matches!(
+                    (
+                        retained_term(&summary, *left),
+                        retained_term(&summary, *middle),
+                        retained_term(&summary, *right),
+                    ),
+                    (
+                        TermKind::Place(old, IntegerType::U64),
+                        TermKind::ProjectedPlace(value, IntegerType::U64),
+                        TermKind::Constant(10),
+                    ) if old.root == PlaceRoot::Binding(BindingId(1))
+                        && value.root == PlaceRoot::Binding(BindingId(0))
+                )
+            }
+            _ => false,
+        },
+        "the exact old - deref(value) <= 0 plus deref(value) - 10 <= -1 projection",
+    );
 }
 
 #[test]

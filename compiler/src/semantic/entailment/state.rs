@@ -2173,6 +2173,140 @@ impl FactState {
         }
     }
 
+    /// Materializes only difference-bound consequences whose internal
+    /// vertices are about to die.
+    ///
+    /// Ordinary proof queries keep the complete ENT-4 closure ephemeral. A
+    /// kill is different: once an internal vertex disappears, a relation
+    /// between surviving endpoints cannot be rediscovered. Eliminating the
+    /// killed vertices from the live explicit-bound graph preserves its
+    /// transitive paths without closing unrelated surviving vertices. Implicit
+    /// type bounds and disequality strengthening remain the later ordinary
+    /// closure's responsibility.
+    ///
+    /// Vertices and incident edges are visited in `TermId` order. Each killed
+    /// vertex is removed from the working graph immediately after its incoming
+    /// and outgoing products, so a path is considered once in the fixed
+    /// elimination order. This bounds the work by the killed vertices' incident
+    /// products rather than by a complete all-terms closure.
+    ///
+    /// This narrow projection deliberately does not perform ENT-4's
+    /// disequality strengthening. Omitting such a projection can only leave a
+    /// later goal unproved; it cannot establish a stronger bound. A later
+    /// ordinary query still performs the complete rule over every surviving
+    /// bound and disequality.
+    pub(crate) fn project_bounds_through_killed(
+        &mut self,
+        killed: &[TermId],
+        term_count: u32,
+        ledger: &mut DerivationLedger,
+    ) {
+        if self.all_derivable
+            || self.closed_term_count == Some(term_count)
+            || killed.is_empty()
+            || self.bounds.is_empty()
+        {
+            return;
+        }
+
+        let mut middles = killed.to_vec();
+        middles.sort_unstable();
+        middles.dedup();
+
+        // The working graph carries the selected strongest live edge for each
+        // pair. Alternate proof candidates have the same endpoint support and
+        // cannot change a transitive bound's numeric result.
+        let mut working = self
+            .bounds
+            .iter()
+            .map(|(pair, bound)| (*pair, (*bound, self.bound_proofs[pair])))
+            .collect::<HashMap<_, _>>();
+
+        for middle in middles.iter().copied() {
+            let mut incoming = working
+                .iter()
+                .filter_map(|(&(left, right), &(bound, proof))| {
+                    (right == middle && left != middle).then_some((left, bound, proof))
+                })
+                .collect::<Vec<_>>();
+            let mut outgoing = working
+                .iter()
+                .filter_map(|(&(left, right), &(bound, proof))| {
+                    (left == middle && right != middle).then_some((right, bound, proof))
+                })
+                .collect::<Vec<_>>();
+            incoming.sort_unstable_by_key(|(left, _, _)| *left);
+            outgoing.sort_unstable_by_key(|(right, _, _)| *right);
+
+            for (left, first, first_proof) in &incoming {
+                for (right, second, second_proof) in &outgoing {
+                    if left == right {
+                        // `promote_contradiction` has already fixed a negative
+                        // cycle before every event kill. A nonnegative diagonal
+                        // contributes no surviving relation.
+                        continue;
+                    }
+                    // Keep the exact arithmetic convention of the complete
+                    // ENT-4 closure. Saturation is a representable weakening at
+                    // the language's finite integer term ranges; it never wraps.
+                    let via = compose_transitive_bounds(*first, *second);
+                    let node = DerivationNode::TransitiveBound {
+                        left: *left,
+                        middle,
+                        right: *right,
+                        bound: via,
+                        first: *first_proof,
+                        second: *second_proof,
+                    };
+                    let accepted = match working.get(&(*left, *right)) {
+                        None => true,
+                        Some((current, _)) if via < *current => true,
+                        Some((current, proof)) if via == *current => {
+                            ledger.candidate_better(&node, *proof)
+                        }
+                        Some(_) => false,
+                    };
+                    if accepted {
+                        let proof = ledger.intern(node);
+                        working.insert((*left, *right), (via, proof));
+                    }
+                }
+            }
+
+            working.retain(|(left, right), _| *left != middle && *right != middle);
+        }
+
+        let killed = middles.into_iter().collect::<HashSet<_>>();
+        let mut projected = working
+            .into_iter()
+            .filter(|((left, right), (bound, _))| {
+                !killed.contains(left)
+                    && !killed.contains(right)
+                    && self
+                        .bounds
+                        .get(&(*left, *right))
+                        .is_none_or(|current| *bound < *current)
+            })
+            .collect::<Vec<_>>();
+        projected.sort_unstable_by_key(|(pair, _)| *pair);
+        for ((left, right), (bound, proof)) in projected {
+            self.add_bound(left, right, bound, proof, ledger);
+        }
+    }
+
+    /// Bound vertices are the only candidates relevant to killed-vertex
+    /// projection. Other fact families retain their existing exact kill rules.
+    pub(crate) fn bound_terms(&self) -> Vec<TermId> {
+        let mut terms = self
+            .bounds
+            .keys()
+            .flat_map(|(left, right)| [*left, *right])
+            .collect::<Vec<_>>();
+        terms.sort_unstable();
+        terms.dedup();
+        terms
+    }
+
     /// Removes every live fact and origin with a support member the kill
     /// predicate reaches. Closure never resurrects a killed fact: derived
     /// facts normally live in [`ClosedState`] views or join results, while
@@ -2296,6 +2430,14 @@ fn ordered(left: TermId, right: TermId) -> (TermId, TermId) {
     } else {
         (right, left)
     }
+}
+
+/// The one arithmetic convention shared by complete closure and killed-vertex
+/// projection. Difference bounds are weakest when their constant is greater;
+/// at Whitefoot's finite integer term ranges, saturation preserves a
+/// representable conservative bound and, unlike wrapping, cannot cross signs.
+fn compose_transitive_bounds(first: i128, second: i128) -> i128 {
+    first.saturating_add(second)
 }
 
 /// The closed fact state at one point: the [ENT-4] least fixed point over the
@@ -2874,7 +3016,7 @@ pub(crate) fn contradiction_without_proofs(
                     let Some(second) = bounds[middle_row + right] else {
                         continue;
                     };
-                    let via = first.saturating_add(second);
+                    let via = compose_transitive_bounds(first, second);
                     let cell = &mut bounds[left_row + right];
                     if cell.is_none_or(|current| via < current) {
                         *cell = Some(via);
@@ -3998,6 +4140,115 @@ mod tests {
                 .all(|node| node_event(node) == Some(FlowEventId(0)))
         );
         assert!(remap[first.0 as usize].is_some());
+    }
+
+    #[test]
+    fn killed_vertex_projection_composes_bounds_in_relation_direction() {
+        let mut terms = TermTable::new();
+        let mut place = |binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        };
+        let x = place(0);
+        let middle = place(1);
+        let ceiling = place(2);
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        state.establish(
+            &Relation::Bound {
+                left: x,
+                right: middle,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        state.establish(
+            &Relation::Bound {
+                left: middle,
+                right: ceiling,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+
+        let term_count = u32::try_from(terms.ids().count()).expect("test term count fits u32");
+        state.project_bounds_through_killed(&[middle], term_count, &mut ledger);
+        state.kill(|term| term == middle);
+
+        assert_eq!(state.bounds.get(&(x, ceiling)), Some(&0));
+        let proof = state.bound_proofs[&(x, ceiling)];
+        assert!(matches!(
+            ledger.nodes[proof.0 as usize],
+            DerivationNode::TransitiveBound {
+                left,
+                middle: projected,
+                right,
+                bound: 0,
+                ..
+            } if left == x && projected == middle && right == ceiling
+        ));
+        assert!(
+            state
+                .bounds
+                .keys()
+                .all(|(left, right)| *left != middle && *right != middle),
+            "the killed endpoint itself must not survive projection"
+        );
+    }
+
+    #[test]
+    fn killed_vertex_projection_never_preserves_a_killed_conclusion_endpoint() {
+        let mut terms = TermTable::new();
+        let mut place = |binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        };
+        let x = place(0);
+        let middle = place(1);
+        let ceiling = place(2);
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        for relation in [
+            Relation::Bound {
+                left: x,
+                right: middle,
+                bound: 0,
+            },
+            Relation::Bound {
+                left: middle,
+                right: ceiling,
+                bound: 0,
+            },
+        ] {
+            state.establish(&relation, &mut ledger, event);
+        }
+
+        let term_count = u32::try_from(terms.ids().count()).expect("test term count fits u32");
+        state.project_bounds_through_killed(&[x, middle], term_count, &mut ledger);
+        state.kill(|term| term == x || term == middle);
+
+        assert!(!state.bounds.contains_key(&(x, ceiling)));
+        assert!(
+            state.bounds.keys().all(|(left, right)| {
+                ![x, middle].contains(left) && ![x, middle].contains(right)
+            })
+        );
     }
 
     #[test]

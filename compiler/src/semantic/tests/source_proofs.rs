@@ -4,7 +4,7 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, SourceProofObligation,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily, SourceAffineFactRef};
+use super::super::entailment::{DerivationNode, ObligationFamily};
 use super::{with_semantics, with_semantics_dark};
 
 const COMMAND_MAIN: &str =
@@ -42,7 +42,7 @@ fn assert_prf1_issue(source: &[u8], expected: SourceProofObligation) {
 }
 
 #[test]
-fn an_exact_source_proof_discharges_a_following_integer_domain() {
+fn an_exact_source_proof_is_checked_before_the_middle_bound_is_projected() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {{
   requires ile(x, middle);
@@ -86,21 +86,39 @@ fn an_exact_source_proof_discharges_a_following_integer_domain() {
             .find(|outcome| outcome.family == ObligationFamily::IntegerDomain)
             .expect("the exact addition retains one OP-2 obligation");
         assert!(addition.discharged);
+        let nodes = &increment.entailment.derivations.nodes;
         assert!(
-            increment.entailment.derivations.nodes.iter().any(|node| {
+            nodes.iter().any(|node| {
+                let DerivationNode::TransitiveBound {
+                    left,
+                    middle,
+                    right,
+                    bound: 0,
+                    first,
+                    second,
+                } = node
+                else {
+                    return false;
+                };
                 matches!(
-                    node,
-                    DerivationNode::AffineConsequence {
-                        premises,
+                    &nodes[first.0 as usize],
+                    DerivationNode::SourceBound {
+                        left: source_left,
+                        right: source_middle,
+                        bound: 0,
                         ..
-                    } if premises.iter().any(|premise| matches!(
-                        premise.source,
-                        SourceAffineFactRef::SourceProof { source_ordinal: 0 }
-                    ))
+                    } if source_left == left && source_middle == middle
+                ) && matches!(
+                    &nodes[second.0 as usize],
+                    DerivationNode::SourceBound {
+                        left: source_middle,
+                        right: source_right,
+                        bound: 0,
+                        ..
+                    } if source_middle == middle && source_right == right
                 )
             }),
-            "retained derivations: {:#?}",
-            increment.entailment.derivations.nodes
+            "the retained addition proof must contain the exact x <= middle <= 254 projection: {nodes:#?}"
         );
     });
 }
