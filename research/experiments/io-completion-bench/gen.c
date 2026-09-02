@@ -24,6 +24,7 @@
 #if defined(_WIN32)
 #include <direct.h>
 #include <io.h>
+#include <share.h>
 #include <sys/stat.h>
 #else
 #include <sys/stat.h>
@@ -37,11 +38,27 @@
 #define WF_BENCH_WRITE_FLAGS (_O_WRONLY | _O_CREAT | _O_TRUNC)
 #define wf_bench_close _close
 #define wf_bench_mkdir(path) _mkdir(path)
-#define wf_bench_open(path, flags, mode) \
-    _open((path), (flags) | WF_BENCH_BINARY_FLAG, _S_IREAD | _S_IWRITE)
 #define wf_bench_write(descriptor, bytes, count) \
     _write((descriptor), (bytes), (unsigned)(count))
 typedef int wf_bench_write_result;
+
+static int wf_bench_open(const char *path, int flags, int mode) {
+    int descriptor = -1;
+    errno_t error;
+    (void)mode;
+    error = _sopen_s(
+        &descriptor,
+        path,
+        flags | WF_BENCH_BINARY_FLAG,
+        _SH_DENYNO,
+        _S_IREAD | _S_IWRITE
+    );
+    if (error != 0) {
+        errno = (int)error;
+        return -1;
+    }
+    return descriptor;
+}
 #else
 #define WF_BENCH_BINARY_FLAG 0
 #define WF_BENCH_WRITE_FLAGS (O_WRONLY | O_CREAT | O_TRUNC)

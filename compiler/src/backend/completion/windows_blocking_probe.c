@@ -515,7 +515,7 @@ static int wf_windows_blocking_probe_wait_for_retirement_waiter(void) {
 int main(void) {
     wf_completion_runtime runtime;
     wf_completion_slot slots[WF_WINDOWS_BLOCKING_PROBE_SLOTS];
-    wf_windows_blocking_adapter adapter;
+    static wf_windows_blocking_adapter adapter;
     wf_windows_blocking_request request;
     wf_completion_token retry_open;
     wf_completion_token owed_write;

@@ -160,8 +160,20 @@ static inline void wf_bench_uncached_host(int descriptor) {
  * host call on the same descriptors so that N and C wait on the same device
  * rather than on two different cache states. */
 static inline int wf_bench_uncached_requested(void) {
+#if defined(_WIN32)
+    char text[2] = {0};
+    size_t required = 0;
+    errno_t error = getenv_s(
+        &required,
+        text,
+        sizeof(text),
+        "WF_IO_NOCACHE"
+    );
+    return error == 0 && required == 2u && text[0] == '1' && text[1] == 0;
+#else
     const char *text = getenv("WF_IO_NOCACHE");
     return text != NULL && text[0] == '1' && text[1] == 0;
+#endif
 }
 
 static inline void wf_bench_apply_uncached(int descriptor) {
