@@ -211,7 +211,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
             .to_owned();
         if !names.insert(name.clone()) {
-            return self.invalid_loop_invariant(
+            return self.invalid_invariant(
                 node,
                 "a loop contains two invariants with the same name",
                 "give every invariant in this loop a distinct name",
@@ -222,7 +222,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             *relation_token,
             bindings,
             allowed_values,
-            AffineProofOwner::LoopInvariant,
+            AffineProofOwner::InvariantTarget,
         )?;
 
         Ok(CheckedLoopInvariant {
@@ -233,7 +233,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    pub(super) fn invalid_loop_invariant<ResultValue>(
+    pub(super) fn invalid_invariant<ResultValue>(
         &self,
         node: NodeId,
         reason: &'static str,
@@ -242,7 +242,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.issue_node(
             SemanticRule::Inv1,
             node,
-            SemanticIssueKind::InvalidLoopInvariant {
+            SemanticIssueKind::InvalidInvariant {
                 reason,
                 mechanical_fix,
             },
@@ -438,9 +438,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 escaping_break_states.push(state);
             }
         }
-        if own_break_states.is_empty() {
-            return self.unsupported(UnsupportedSemanticFeature::StructuredControlFlow, node);
-        }
+        // An ordinary loop with no break resolved to itself has no executable
+        // continuation input. `join_states` deliberately leaves the
+        // structurally retained continuation bindings unchanged for that
+        // empty join; ENT-5's proof flow marks the same continuation
+        // contradictory, and lowering emits an unreachable exit block.
         self.join_states(&base_keys, &own_break_states, node, bindings)?;
         let backedge_drops = if checked.can_continue {
             self.live_affine_drops(&body_bindings, &preserved)?

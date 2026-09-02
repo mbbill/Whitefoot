@@ -2015,7 +2015,7 @@ fn collect_goal_nominals(expression: &GoalExpression, output: &mut Vec<NominalId
             GoalDatum::Parameter { ty, .. }
             | GoalDatum::NamedConst { ty, .. }
             | GoalDatum::Place { ty, .. } => collect_type_nominals(*ty, output),
-            GoalDatum::EphemeralActual {
+            GoalDatum::EvaluatedValue {
                 captured_type, ty, ..
             } => {
                 collect_type_nominals(*captured_type, output);
@@ -2053,8 +2053,11 @@ fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<Nominal
         } => collect_type_nominals(operand_type, output),
         GoalOperation::ArrayFill { element, .. }
         | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::ArrayIndex { element, .. }
         | GoalOperation::BufferLength { element }
-        | GoalOperation::SliceLength { element, .. } => {
+        | GoalOperation::BufferIndex { element }
+        | GoalOperation::SliceLength { element, .. }
+        | GoalOperation::SliceIndex { element, .. } => {
             collect_flat_element_nominals(element, output);
         }
         GoalOperation::NumericConversion { .. }
@@ -2123,7 +2126,7 @@ fn rewrite_goal_nominals(
             GoalDatum::Parameter { ty, .. }
             | GoalDatum::NamedConst { ty, .. }
             | GoalDatum::Place { ty, .. } => rewrite_type_nominals(ty, checkpoint, replacements)?,
-            GoalDatum::EphemeralActual {
+            GoalDatum::EvaluatedValue {
                 captured_type, ty, ..
             } => {
                 rewrite_type_nominals(captured_type, checkpoint, replacements)?;
@@ -2166,8 +2169,11 @@ fn rewrite_operation_nominals(
         } => rewrite_type_nominals(operand_type, checkpoint, replacements)?,
         GoalOperation::ArrayFill { element, .. }
         | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::ArrayIndex { element, .. }
         | GoalOperation::BufferLength { element }
-        | GoalOperation::SliceLength { element, .. } => {
+        | GoalOperation::BufferIndex { element }
+        | GoalOperation::SliceLength { element, .. }
+        | GoalOperation::SliceIndex { element, .. } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
         }
         GoalOperation::NumericConversion { .. }

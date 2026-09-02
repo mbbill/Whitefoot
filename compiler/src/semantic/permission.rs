@@ -1925,7 +1925,7 @@ fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<Res
 }
 
 /// The storage a direct slice value views.
-fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource) -> ResolvedPlace {
+pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource) -> ResolvedPlace {
     match source {
         CheckedSliceSource::Array { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => rooted_place(places, *binding, fields),
@@ -1941,7 +1941,7 @@ fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource) -> Resolve
     }
 }
 
-fn rooted_place(places: &PlaceMap, binding: BindingId, fields: &[u32]) -> ResolvedPlace {
+pub(super) fn rooted_place(places: &PlaceMap, binding: BindingId, fields: &[u32]) -> ResolvedPlace {
     places.resolve(&PlaceTerm {
         root: PlaceRoot::Binding(binding),
         deref: places.is_holder(binding),

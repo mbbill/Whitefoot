@@ -37,7 +37,7 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::ExprStmt
             | Production::ReturnStmt
             | Production::BreakStmt
-            | Production::ProofPremise
+            | Production::ProofUse
             | Production::GiveStmt
     );
     if fixed || (record.production == Production::InvariantStmt && record.body_open.is_none()) {

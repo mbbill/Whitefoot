@@ -389,44 +389,71 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_repeated_source_proof_name_is_a_prf1_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  prove held: ile(0_u64, 0_u64) {
-    use ile(0_u64, 0_u64);
+fn repeated_normalized_uses_are_a_prf1_rejection() {
+    let source = br#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {
+  requires ile(value, limit);
+} {
+  invariant scaled: ile(3_u64 * value, 3_u64 * limit) {
+    use ile(value, limit);
+    use ile(value, limit);
+    use ile(value, limit);
   }
-  prove held: ile(0_u64, 0_u64) {
-    use ile(0_u64, 0_u64);
-  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Prf1,
-        SemanticIssueKind::InvalidSourceProof {
-            reason: "a function contains two source proofs with the same name",
-            mechanical_fix: "give every prove statement in this function a distinct name",
-        },
-    );
+    assert_rule_kind(source, SemanticRule::Prf1, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedSourceProof { .. })
+    });
 }
 
 #[test]
-fn a_non_ile_source_proof_relation_is_a_prf1_rejection() {
+fn a_non_ordered_local_invariant_target_is_an_inv1_rejection() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  prove held: ieq(0_u64, 0_u64) {
-    use ile(0_u64, 0_u64);
-  }
+  invariant held: ieq(0_u64, 0_u64);
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Prf1,
-        SemanticIssueKind::InvalidSourceProof {
-            reason: "the affine proof relation is not the admitted `ile` relation",
-            mechanical_fix: "write `ile(left, right)` at this proof relation",
-        },
-    );
+    assert_rule_kind(source, SemanticRule::Inv1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidInvariant { .. })
+    });
+}
+
+#[test]
+fn an_unproved_blockless_local_invariant_target_is_an_inv1_rejection() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  invariant impossible: ile(1_u64, 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Inv1, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedLocalInvariant { name, .. }
+                if name == "impossible"
+        )
+    });
+}
+
+#[test]
+fn a_non_ordered_use_relation_is_a_prf1_rejection() {
+    let source = br#"fn check(value: own u64, limit: own u64) -> result: own unit pure {
+  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {
+    use ieq(value, limit);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Prf1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidSourceProof { .. })
+    });
 }
 
 #[test]
@@ -464,9 +491,9 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticIssueKind::ReturnMismatch,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  prove bad: ieq(0_u64, 0_u64) {\n    use ile(0_u64, 0_u64);\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Prf1,
-        |kind| matches!(kind, SemanticIssueKind::InvalidSourceProof { .. }),
+        b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ieq(0_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Inv1,
+        |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
     assert_rule_kind(
         b"fn helper() -> result: own unit pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
@@ -513,9 +540,14 @@ fn loops_enforce_own11_for_outer_affine_moves() {
             mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
         },
     );
-    assert_unsupported(
+    with_semantics(
         b"command fn main() -> status: own ExitStatus pure {\n  loop @forever {\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        UnsupportedSemanticFeature::StructuredControlFlow,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a break-free loop has a contradictory continuation rather than an unsupported shape: {outcome:?}"
+            );
+        },
     );
 }
 

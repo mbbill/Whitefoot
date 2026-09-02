@@ -51,11 +51,15 @@ fn sha256_majority(x: own u32, y: own u32, z: own u32) -> result: own u32 pure {
 
 fn sha256_abc_word_zero() -> result: own u32 pure {
   let schedule = array_new<u32, 64>(0_u32);
-  for @copy_block copy_index in 0_u64..16_u64 {
+  for @copy_block (
+    copy_index in 0_u64..16_u64
+  ) {
     let source_word = sha256_abc_block[copy_index];
     set schedule[copy_index] = source_word;
   }
-  for @extend_schedule extend_index in 16_u64..64_u64 {
+  for @extend_schedule (
+    extend_index in 16_u64..64_u64
+  ) {
     let index_minus_two = extend_index -wrap 2_u64;
     let word_minus_two = schedule[index_minus_two];
     let sigma_one = sha256_small_one(word: word_minus_two);
@@ -79,7 +83,9 @@ fn sha256_abc_word_zero() -> result: own u32 pure {
   let f = 2600822924_u32;
   let g = 528734635_u32;
   let h = 1541459225_u32;
-  for @compression_rounds round in 0_u64..64_u64 {
+  for @compression_rounds (
+    round in 0_u64..64_u64
+  ) {
     let big_one = sha256_big_one(word: e);
     let choose = sha256_choose(x: e, y: f, z: g);
     let constant = sha256_round_constants[round];

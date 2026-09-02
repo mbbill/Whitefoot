@@ -9,7 +9,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let right = buffer_new(6_u64, 0_u64);
   let columns = Columns(left: move left, right: move right);
   let length = len(columns.left);
-  for fill_index in 0_u64..length {
+  for (
+    fill_index in 0_u64..length
+  ) {
     set columns.left[fill_index] = fill_index;
     let doubled = fill_index *wrap 2_u64;
     let right_room = len(columns.right);
@@ -21,7 +23,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let total = 0_u64;
-  for fold_index in 0_u64..length {
+  for (
+    fold_index in 0_u64..length
+  ) {
     let left_value = columns.left[fold_index];
     let right_room = len(columns.right);
     let fold_right_ok = ilt(fold_index, right_room);

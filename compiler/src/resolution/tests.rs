@@ -1120,6 +1120,57 @@ fn every_comparison_name_is_reserved_from_source_declarations() {
 }
 
 #[test]
+fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for (
+    index in 0_u64..limit,
+    invariant ile: ile(index, limit)
+  ) {
+    break;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a reserved header invariant name must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::ReservedName {
+                spelling,
+                declaration_role: ReservedDeclarationRole::Invariant,
+                ..
+            } if spelling == "ile"
+        ));
+    });
+}
+
+#[test]
+fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
+    let source = br#"fn probe(value: own u64) -> result: own unit pure {
+  invariant ile: ile(value, value);
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a reserved body invariant name must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::ReservedName {
+                spelling,
+                declaration_role: ReservedDeclarationRole::Invariant,
+                ..
+            } if spelling == "ile"
+        ));
+    });
+}
+
+#[test]
 fn region_names_are_unique_across_the_complete_function() {
     let source = br#"fn nested() -> result: own unit pure {
   region 'r {
@@ -1513,7 +1564,15 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
                 .iter()
                 .filter(|usage| usage.role() == LexicalUseRole::InvariantValue)
                 .count(),
-            8
+            6
+        );
+        assert_eq!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .filter(|usage| usage.role() == LexicalUseRole::ProofValue)
+                .count(),
+            2
         );
     });
 
@@ -1538,6 +1597,67 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
             } if spelling == "same"
         ));
     });
+}
+
+#[test]
+fn an_unresolved_relation_use_value_is_reported_by_prf1() {
+    let source = br#"fn probe(value: own u64, limit: own u64) -> result: own unit pure {
+  invariant scaled: ile(3_u64 * value, 3_u64 * limit) {
+    use ile(value, missing);
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unresolved use relation value must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Prf1);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::ProofValue,
+                ..
+            } if spelling == "missing"
+        ));
+    });
+}
+
+#[test]
+fn repeated_header_and_local_invariant_names_are_reported_by_inv1() {
+    for source in [
+        br#"fn probe(value: own u64) -> result: own unit pure {
+  invariant same: ile(value, value);
+  invariant same: ile(value, value);
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn probe(value: own u64) -> result: own unit pure {
+  loop (
+    invariant same: ile(value, value),
+    invariant same: ile(value, value)
+  ) {
+    break;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a repeated invariant name must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Inv1);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::DeclarationCollision { spelling, .. }
+                    if spelling == "same"
+            ));
+        });
+    }
 }
 
 #[test]

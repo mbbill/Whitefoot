@@ -4,8 +4,8 @@
 //! # What is emitted
 //!
 //! For either a reduction
-//! `let a = INIT; for @l i in lo..hi { … set a = a (+) e … }` or an
-//! independently proved map `for @l i in lo..hi { set out[i] = e; }`, this
+//! `let a = INIT; for @l (i in lo..hi) { … set a = a (+) e … }` or an
+//! independently proved map `for @l (i in lo..hi) { set out[i] = e; }`, this
 //! builds two synthesized functions and replaces the loop site with one
 //! instruction:
 //!

@@ -19,13 +19,13 @@ rediscovery. Evidence is erased before execution and creates no runtime branch,
 lock, dependency, or scheduling edge.
 
 The official compiler does not use SMT to decide acceptance. Its automatic
-core runs only specification-fixed, deterministic, terminating derivations
-with a syntactically computable work bound. When those rules are not enough,
-the author writes additional finite proof steps in the same source file. AI or an
-offline tool may search while writing those steps, but compilation only checks
-what the source says. No solver seed, heuristic order, timeout, machine load,
-or success in rediscovering a proof may change whether the same complete input
-is accepted.
+core runs only specification-fixed, deterministic, terminating derivations.
+Each admitted rule family is run to its specified completion; there is no
+timeout, cumulative proof-work budget, solver seed, or heuristic stopping
+condition that can turn the same source into a different verdict. When those
+rules are not enough, the author writes finite proof steps in the same source
+file. AI or an offline tool may search while writing them, but compilation only
+checks the written steps.
 
 The price is authoring difficulty: programs are more explicit, valid programs
 may need proof structure, and safe code without sufficient evidence is
@@ -57,25 +57,65 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.40 is the active language authority, SHA-256
+The last activated kernel specification is v0.40, SHA-256
 `5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`; its exact
 activation identity is recorded in
 [governance/APPROVALS.md](governance/APPROVALS.md). The outgoing v0.39 bytes are
 preserved byte-for-byte at
-[`spec/kernel-spec-v0.39.md`](spec/kernel-spec-v0.39.md). The source-proof
-implementation is complete and activated on this work branch; its conditional
-merge-time record becomes effective when the owner approves the exact revision
-containing it for merge into `main`.
+[`spec/kernel-spec-v0.39.md`](spec/kernel-spec-v0.39.md). The current work branch
+is a source-proof candidate whose final specification identity is intentionally
+left open until its source, compiler, conformance evidence, and complete gate
+agree. It is not described as activated or complete before that verification.
 
-The work branch checks `requires`, `ensures`, counted-loop `invariant`
-statements, and explicit `prove`/`use` steps in the ordinary semantic compiler.
-It accepts a supported partial operation only when the current proof context
-establishes that operation's exact domain, and it proves selected-target layout
-and address arithmetic before emitting the operation. The checked proof
-syntax and diagnostic derivations are erased before runtime lowering. Calls,
-the optimizer, and `par` consume only the verified semantic consequences fixed
-for them; no proof object or checker bookkeeping enters runtime IR. There is no
-writer-accessible runtime assertion or hidden fallback check.
+The candidate checks `requires`, `ensures`, loop-header `invariant` relations,
+and local `invariant` statements in the ordinary semantic compiler. A local
+invariant may carry an explicit `use` block when the fixed automatic rules are
+insufficient. It accepts a supported partial operation only when the current
+proof context establishes that operation's exact domain, and it proves
+selected-target layout and address arithmetic before emitting the operation.
+The checked proof syntax and diagnostic derivations are erased before runtime
+lowering. Calls, the optimizer, and `par` consume only verified semantic
+consequences; no proof object or checker bookkeeping enters runtime IR. There
+is no writer-accessible runtime assertion or hidden fallback check.
+This implementation cycle does not introduce a `.wfproof` artifact,
+cross-module proof cache, incremental-proof protocol, or compiler
+self-verification layer. Those are possible future build concerns, not part of
+making source proof correct now.
+
+The automatic affine boundary is part of the language, not an implementation
+guess. For each goal, AUTO checks the zero-premise direct route, every available
+coefficient-one single premise, every unordered coefficient-one premise pair
+including a premise paired with itself, and the final fixed L0-image route.
+Those finite families are exhausted in specification order when the goal is
+not proved. A relation that needs three or more published affine premises
+outside the final fixed L0-image route, a special elimination route, or a
+future named nonlinear rule must carry explicit `use` steps. A
+nonempty `use` block is rejected as redundant when AUTO already proves its
+target under the same specification version.
+
+The canonical loop surface makes induction visible at the loop header:
+
+```wf
+for (
+  i in 0_u64..count,
+  invariant per_byte: ile(sum, 255_u32 * i)
+) {
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+The first `for` header item is the binding and every later item is an
+`invariant`; the final item has no trailing comma. `loop` uses the same optional
+parenthesized invariant list but has no binding item. Header invariants cannot
+have `use` blocks, and their names exist only in the loop body. Local
+invariants are checked once at their program point; every `use` is proved from
+the same entering snapshot, only the outer conclusion is published, factor one
+is omitted, and repeating the same normalized premise is invalid. In this
+example AUTO subtracts the one published affine premise `per_byte`; DIRECT then
+proves the residual from the `u8` type interval of `wide`. Adding a `use` block
+would therefore be redundant and invalid.
 
 `par` consumes this same checked context together with ownership, effect,
 iteration-index, layout, target-domain, and bounded queue/completion facts.

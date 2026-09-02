@@ -2,7 +2,7 @@ fn bounded(x: own u8, middle: own u8) -> result: own u8 pure contract {
   requires ile(x, middle);
   requires ile(middle, 254_u8);
 } {
-  prove upper_bound: ile(x, 253_u8) {
+  invariant upper_bound: ile(x, 253_u8) {
     use ile(x, middle);
     use ile(middle, 254_u8);
   }

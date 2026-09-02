@@ -6,13 +6,15 @@ private implementation choices; the active language is defined by
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), not by the compiler source or
 this README.
 
-The frontend targets the exact v0.40 bytes at `../spec/kernel-spec.md`,
-SHA-256
+The last activated frontend target is v0.40, SHA-256
 `5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`.
-The outgoing exact v0.39 bytes are archived at
-`../spec/kernel-spec-v0.39.md`. `whitefoot-spec` checks the selected
-specification identity, activation chain, rule inventory, and generated syntax
-identity as one compiler gate.
+The current work branch is drafting the next source-proof candidate at
+`../spec/kernel-spec.md`; its exact version and digest remain pending until the
+specification, generated syntax, compiler, conformance evidence, and complete
+gate agree. The exact v0.39 bytes remain archived at
+`../spec/kernel-spec-v0.39.md`. `whitefoot-spec` checks the selected identity,
+activation chain, rule inventory, and generated syntax identity as one
+compiler gate.
 
 ## Compilation path
 
@@ -41,7 +43,7 @@ a compiler defect to fix in code and tests, not another source obligation.
 ## Source proof checking
 
 Whitefoot source is the only writer-controlled proof input. The compiler checks
-four source forms in the ordinary semantic walk:
+three kinds of evidence in the ordinary semantic walk:
 
 - `requires` states what every caller must prove before argument transfer. A
   successfully checked call makes the instantiated facts available at callee
@@ -50,32 +52,80 @@ four source forms in the ordinary semantic walk:
   published atomically by call-graph component and then instantiated at later
   callers; a recursive component cannot bootstrap itself from an unpublished
   summary.
-- A counted-loop `invariant` is a direct prefix statement of that loop body.
-  The compiler proves its base case and its preservation from an arbitrary
-  reachable header through one body fallthrough and the hidden unit update.
-  Normal exact exhaustion may export the separately justified binder-free
-  consequence; a `break` does not receive that consequence.
-- `prove`/`use` supplies an affine target and ordered premises. Every premise is
-  independently proved in the same pre-statement context, then the checker
-  verifies the exact coefficient-one sum in source order. It does not choose a
-  premise, coefficient, intermediate relation, branch split, or rewrite.
+- A loop-header `invariant` is an induction contract. In a counted loop the
+  binding is the first header item and every later item is an invariant; in an
+  ordinary loop every header item is an invariant. The compiler checks all
+  base obligations before activating the header batch, then checks every
+  arbitrary reachable backedge against the simultaneous next-header batch.
+  Normal exact exhaustion of a counted loop may export the separately
+  justified binder-free consequence; `break` does not receive it. Header
+  invariant names exist only in the body and header entries cannot have `use`
+  blocks.
+- A local `invariant` states a relation at one program point. With no block it
+  is submitted to AUTO. With `{ use ... }`, each written premise is proved from
+  the same entering snapshot and the checker follows the explicit weighted
+  combination. A `use` premise never publishes a new fact; only the checked
+  outer invariant is published for its remaining dominance region.
+
+The canonical counted shape has no trailing comma:
+
+```wf
+for (
+  i in 0_u64..count,
+  invariant per_byte: ile(sum, 255_u32 * i)
+) {
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+AUTO subtracts the one published affine premise `per_byte`; DIRECT then proves
+the residual from the `u8` type interval of `wide`. An explicit use block at
+this point would be redundant and is therefore invalid.
+
+`loop { ... }` remains the zero-invariant ordinary form. An ordinary loop with
+induction contracts uses `loop (` followed only by invariant items, `)` and the
+body. Labels occur after `for` or `loop` and before `(`.
 
 At each program point the semantic checker has one current `ProofContext`.
 Selected control-flow edges, type and declaration facts, checked requirements,
-verified postconditions, proved invariants, and successful source proof steps
-update that context. Numeric and logical consumers submit one normalized goal
-to the shared proof entry. The current implementation runs the fixed ordinary
-ground/difference-bound closure first and the fixed affine rule where that same
-goal has an affine form. Ownership, initialization, effects, layout, target,
-and parallel permission remain separate deterministic domains tied to the same
-checked source flow; this is not a universal solver.
+verified postconditions, and proved invariants update that context. Numeric and
+logical consumers submit one normalized goal to the shared proof entry. AUTO's
+complete affine boundary is exact and source-visible: the zero-premise direct route, every
+available coefficient-one single premise, every unordered coefficient-one
+premise pair including the same premise twice, and the final fixed L0-image
+route. Every family is exhausted in specification order for an unproved goal.
+Combinations that need three or more published affine premises outside the
+final fixed L0-image route, special elimination routes, and future named
+nonlinear rules require explicit `use` steps rather than compiler guesswork.
+Ownership, initialization, effects, layout, target, and parallel permission
+remain separate deterministic domains tied to the same checked source flow;
+this is not a universal solver.
 
-Acceptance uses no SMT solver, random seed, heuristic proof search, or timeout.
-Every closure order, source traversal, arithmetic operation, and work ceiling is
-fixed. Internal derivations are produced with the originating decision for
-diagnostics; they grant no independent authority.
+Within a `use` block, a bare decimal factor from two upward scales one premise;
+factor one must be omitted, and the same normalized premise cannot be repeated.
+The final target may be a direct weakening of the checked weighted sum. A
+nonempty block is a source error if AUTO proves the target without it. This
+redundancy rule is tied to the exact specification version, so an author can
+decide from the language rules whether the block is required instead of
+probing compiler behavior.
 
-Contracts, invariants, and source proof statements have no runtime behavior.
+Acceptance uses no SMT solver, random seed, heuristic proof search, timeout, or
+cumulative proof-work budget. Rule families, traversal, normalization, and
+structural source ceilings are fixed by the specification, and every admitted
+family runs to completion. A successful query may stop at its first witness in
+the fixed order because later candidates cannot revoke success; an unproved
+query is reported only after the required family is exhausted. Internal
+derivations explain the originating decision but grant no independent
+authority. An inconsistency among compiler data structures is a compiler bug,
+not a reason to export or replay compiler-generated proof objects.
+The current compiler therefore emits no `.wfproof`, external certificate,
+proof-cache entry, or self-verification payload. Incremental and cross-module
+proof reuse remain future build-system questions, outside this source-proof
+implementation.
+
+Contracts and invariants have no runtime behavior.
 Lowering drops their syntax and diagnostic derivations. Later consumers see
 only semantic decisions already justified by the checker: an admitted
 operation, a verified callable summary, a target obligation, or a parallel
@@ -119,10 +169,12 @@ Parallel permission is derived from the same checked program. The compiler
 uses ordinary data dependencies, ownership and loan overlap, exact effect
 footprints, control exits, and already-discharged operation goals. It does not
 repeat a bounds proof to authorize an index map. The counted-loop path
-currently supports a fixed write-only single-binder affine map `a*i+b`, with
-one identical map required at every write to the same owned root, and the
-enumerated exactly-associative reductions. Sibling-call and staged-I/O
-judgments use their own fixed, fail-closed shape rules.
+currently supports a fixed single-binder affine map `a*i+b`, with one identical
+map required at every read or write to the same root. This includes
+same-index read-modify-write and an output reached through a live usable
+`&uniq` holder, as well as the enumerated exactly-associative reductions.
+Sibling-call and staged-I/O judgments use their own fixed, fail-closed shape
+rules.
 
 Permission and actualization are separate. The default lowering actualizes
 eligible finite completion operations while leaving compute-call outlining

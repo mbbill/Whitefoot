@@ -78,8 +78,10 @@ fn exhaustion_invariant_proves_exact_shift_counts_below_the_value_width() {
   requires ile(limit, 31_u64);
 } {
   let amount = 0_u32;
-  for @items i in 0_u64..limit {
-    invariant consumed: ile(amount, i);
+  for @items (
+    i in 0_u64..limit,
+    invariant consumed: ile(amount, i)
+  ) {
     set amount = amount + 1_u32;
   }
   let left = ishl(1_u32, amount);

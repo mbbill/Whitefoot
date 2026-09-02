@@ -7,7 +7,9 @@ fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
 fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values) {
   let total = 0_u64;
   let length = len(values);
-  for offset in 0_u64..length {
+  for (
+    offset in 0_u64..length
+  ) {
     let byte = values[offset];
     let word = cvt<u8, u64>(byte);
     set total = total +wrap word;

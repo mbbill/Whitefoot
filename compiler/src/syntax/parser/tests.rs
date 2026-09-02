@@ -816,7 +816,7 @@ fn active_contract_parses_and_finalizes_a_local_invariant_certificate() {
             )
         })
         .count();
-    let proof_premises = parsed
+    let proof_uses = parsed
         .tree
         .elements
         .iter()
@@ -824,14 +824,14 @@ fn active_contract_parses_and_finalizes_a_local_invariant_certificate() {
             matches!(
                 element,
                 DerivationElement::Production {
-                    production: Production::ProofPremise,
+                    production: Production::ProofUse,
                     ..
                 }
             )
         })
         .count();
     assert_eq!(invariant_statements, 1);
-    assert_eq!(proof_premises, 2);
+    assert_eq!(proof_uses, 2);
 
     let FinalizeOutcome::Complete(_) = finalize(
         parsed,
@@ -1004,6 +1004,20 @@ fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
             panic!("malformed counted range must reject: {outcome:?}");
         };
         assert_eq!(issue_bytes(source, issue), boundary);
+    }
+}
+
+#[test]
+fn loop_headers_reject_a_trailing_comma_at_the_closing_delimiter() {
+    for source in [
+        b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    index in lower..upper,\n    invariant stable: ile(index, upper),\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
+        b"fn probe(value: own i32) -> result: own unit pure {\n  loop (\n    invariant stable: ile(value, value),\n  ) {\n    break;\n  }\n  return unit;\n}\n",
+    ] {
+        let outcome = parse_active("trailing-loop-header-comma.wf", source);
+        let ParseOutcome::SourceIssue(issue) = outcome else {
+            panic!("loop header with a trailing comma must reject: {outcome:?}");
+        };
+        assert_eq!(issue_bytes(source, issue), b")");
     }
 }
 

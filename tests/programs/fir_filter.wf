@@ -15,7 +15,9 @@ command fn main() -> status: own ExitStatus pure {
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len(filter.taps);
   let output_sum = 0.0_f64;
-  for frame in 0_u64..64_u64 {
+  for (
+    frame in 0_u64..64_u64
+  ) {
     let first_frame = ieq(frame, 0_u64);
     let sample = if first_frame {
       give 8.0_f64;
@@ -30,7 +32,9 @@ command fn main() -> status: own ExitStatus pure {
     set filter.delay.samples[filter.delay.cursor] = sample;
     let read_cursor = filter.delay.cursor;
     let output = 0.0_f64;
-    for tap in 0_u64..tap_count {
+    for (
+      tap in 0_u64..tap_count
+    ) {
       let coefficient = filter.taps[tap];
       let read_ok = ilt(read_cursor, 8_u64);
       if read_ok {

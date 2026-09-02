@@ -108,8 +108,10 @@ command fn main() -> status: own ExitStatus pure {
 fn an_unproved_loop_header_fact_rejects_under_inv1() {
     let source = br#"fn read(values: own array<i32, 4>, input: own u64) -> result: own unit pure {
   let bounded = imin(input, 3_u64);
-  for i in 0_u64..1_u64 {
-    invariant limit: ile(bounded, 3_u64);
+  for (
+    i in 0_u64..1_u64,
+    invariant limit: ile(bounded, 3_u64)
+  ) {
     let value = values[bounded];
   }
   return unit;
@@ -251,24 +253,31 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn originating_proof_context_retains_acceptance_results_and_derivations() {
-    let source = br#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
+    let source = br#"fn increment(x: own u8, middle: own u8, left: own u64, left_limit: own u64, center: own u64, center_limit: own u64, right: own u64, right_limit: own u64) -> result: own u8 pure contract {
   requires ile(x, middle);
   requires ile(middle, 254_u8);
+  requires ile(left, left_limit);
+  requires ile(center, center_limit);
+  requires ile(right, right_limit);
   ensures ile(result, 255_u8);
 } {
-  prove upper_bound: ile(x, 254_u8) {
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant combined: ile(left + center + right, left_limit + center_limit + right_limit) {
+    use ile(left, left_limit);
+    use ile(center, center_limit);
+    use ile(right, right_limit);
   }
+  invariant upper_bound: ile(x, 254_u8);
   let result = x + 1_u8;
   return result;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  for i in 0_u64..1_u64 {
-    invariant limit: ile(i, 1_u64);
+  for (
+    i in 0_u64..1_u64,
+    invariant limit: ile(i, 1_u64)
+  ) {
   }
-  let value = increment(x: 1_u8, middle: 2_u8);
+  let value = increment(x: 1_u8, middle: 2_u8, left: 1_u64, left_limit: 2_u64, center: 3_u64, center_limit: 4_u64, right: 5_u64, right_limit: 6_u64);
   return exit_status(code: 0_u8);
 }
 "#;

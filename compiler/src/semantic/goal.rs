@@ -95,7 +95,7 @@ impl GoalExpression {
     }
 }
 
-/// A source-stable leaf of a goal template.
+/// One typed leaf in a requirement template or concrete proof goal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum GoalDatum {
     /// A formal is identified by position, not source spelling or declaration.
@@ -118,13 +118,14 @@ pub(crate) enum GoalDatum {
         projections: Vec<GoalProjection>,
         ty: CheckedType,
     },
-    /// The already-evaluated pre-transfer value of one direct-subscript
-    /// actual. Source cannot name this datum, so it is scoped to its exact call
-    /// occurrence and contributes no place support.
-    EphemeralActual {
-        caller: FunctionId,
-        call: NodePath,
-        argument: u32,
+    /// One already-evaluated value that source cannot safely name again.
+    ///
+    /// The value is scoped to its exact source occurrence and contributes no
+    /// place support: it is the immutable mathematical result already
+    /// produced at that point, not permission to reread the source expression.
+    EvaluatedValue {
+        function: FunctionId,
+        occurrence: EvaluatedValueOccurrence,
         captured_type: CheckedType,
         projections: Vec<GoalProjection>,
         ty: CheckedType,
@@ -139,7 +140,7 @@ impl GoalDatum {
             Self::Parameter { ty, .. }
             | Self::NamedConst { ty, .. }
             | Self::Place { ty, .. }
-            | Self::EphemeralActual { ty, .. } => *ty,
+            | Self::EvaluatedValue { ty, .. } => *ty,
             Self::Literal(value) => value.ty(),
         }
     }
@@ -149,7 +150,7 @@ impl GoalDatum {
             Self::Parameter { projections, .. }
             | Self::NamedConst { projections, .. }
             | Self::Place { projections, .. }
-            | Self::EphemeralActual { projections, .. } => projections,
+            | Self::EvaluatedValue { projections, .. } => projections,
             Self::Literal(_) => unreachable!("a literal cannot carry a place projection"),
         }
     }
@@ -159,10 +160,20 @@ impl GoalDatum {
             Self::Parameter { ty, .. }
             | Self::NamedConst { ty, .. }
             | Self::Place { ty, .. }
-            | Self::EphemeralActual { ty, .. } => *ty = new_ty,
+            | Self::EvaluatedValue { ty, .. } => *ty = new_ty,
             Self::Literal(_) => unreachable!("a literal cannot carry a place projection"),
         }
     }
+}
+
+/// Structural identity for an already-evaluated, occurrence-local value.
+///
+/// Call actuals remain distinguishable from proof-obligation operands so
+/// FN-8's bind-first diagnostic cannot be selected for OP-2, OP-9, or SYS-8.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum EvaluatedValueOccurrence {
+    CallArgument { call: NodePath, argument: u32 },
+    ObligationOperand { site: NodePath, operand: u32 },
 }
 
 /// Ordered projection identity within one formal or named-constant datum.
@@ -172,7 +183,7 @@ pub(crate) enum GoalProjection {
     Field(u32),
 }
 
-/// Exact selected operation-table row and its operand-domain identity.
+/// One structural goal row and its exact selected type/domain identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum GoalOperation {
     Integer {
@@ -206,7 +217,18 @@ pub(crate) enum GoalOperation {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
+    /// One array element value whose own OP-4 obligation has already been
+    /// discharged before this expression is used as a proof operand.
+    ArrayIndex {
+        element: CheckedFlatElement,
+        length: CheckedConst,
+    },
     BufferLength {
+        element: CheckedFlatElement,
+    },
+    /// One buffer element value whose own OP-4 obligation has already been
+    /// discharged before this expression is used as a proof operand.
+    BufferIndex {
         element: CheckedFlatElement,
     },
     /// Canonical total allocation-domain predicate [OP-9]. The ceiling is
@@ -220,13 +242,22 @@ pub(crate) enum GoalOperation {
         region: DeclarationId,
         element: CheckedFlatElement,
     },
+    /// One slice element value whose own OP-4 obligation has already been
+    /// discharged before this expression is used as a proof operand.
+    SliceIndex {
+        region: DeclarationId,
+        element: CheckedFlatElement,
+    },
 }
 
 /// First occurrence-local actual value in structural operand order, when a
 /// call goal needs FN-8's stronger bind-then-prove restructuring.
 pub(crate) fn first_ephemeral_argument(expression: &GoalExpression) -> Option<u32> {
     match expression {
-        GoalExpression::Datum(GoalDatum::EphemeralActual { argument, .. }) => Some(*argument),
+        GoalExpression::Datum(GoalDatum::EvaluatedValue {
+            occurrence: EvaluatedValueOccurrence::CallArgument { argument, .. },
+            ..
+        }) => Some(*argument),
         GoalExpression::Operation { arguments, .. } => {
             arguments.iter().find_map(first_ephemeral_argument)
         }

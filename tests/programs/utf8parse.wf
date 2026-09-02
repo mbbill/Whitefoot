@@ -9,7 +9,9 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
   let count = 0_u64;
   let state = 0_u8;
   let value = 0_u32;
-  for i in 0_u64..source_length {
+  for (
+    i in 0_u64..source_length
+  ) {
     let output_in_range = ilt(count, output_length);
     if output_in_range {
     } else {

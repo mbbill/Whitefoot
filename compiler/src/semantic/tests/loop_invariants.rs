@@ -212,7 +212,7 @@ fn equality_and_disequality_are_not_invariant_roots() {
             assert_eq!(issue.rule(), SemanticRule::Inv1);
             assert_eq!(
                 issue.kind(),
-                &SemanticIssueKind::InvalidLoopInvariant {
+                &SemanticIssueKind::InvalidInvariant {
                     reason: "the invariant root is not an admitted ordered integer relation",
                     mechanical_fix: "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
                 }
@@ -256,6 +256,48 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert!(invariant.proof.base);
         assert_eq!(invariant.proof.step, Some(true));
+    });
+}
+
+#[test]
+fn ordinary_loop_without_a_break_has_a_contradictory_continuation() {
+    let source = br#"fn repeat_forever() -> result: own unit pure {
+  let value = 0_u64;
+  loop (
+    invariant limit: ile(value, 0_u64)
+  ) {
+    set value = 0_u64;
+  }
+  let impossible = 1_u64 / 0_u64;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a break-free loop must retain its unreachable continuation: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "repeat_forever")
+            .expect("repeat_forever exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("the loop retains one header invariant");
+        };
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
+        let division = function
+            .entailment
+            .obligations
+            .iter()
+            .find(|obligation| obligation.family == ObligationFamily::IntegerDomain)
+            .expect("the structurally retained continuation checks its division");
+        assert!(division.discharged);
     });
 }
 
@@ -2095,5 +2137,83 @@ command fn main() -> status: own ExitStatus pure {
             std::str::from_utf8(&source[start..end]).expect("call source is UTF-8"),
             "accept_total(value: total)"
         );
+    });
+}
+
+/// The counted false-header edge and a matching break edge may establish the
+/// same outer-value theorem through different source categories. The join is
+/// over the canonical inequality, not over its diagnostic provenance.
+#[test]
+fn an_exhaustion_export_and_a_break_local_invariant_join_by_canonical_fact() {
+    let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
+  requires ile(value, 4_u64);
+} {
+  return unit;
+}
+
+fn count_or_stop(stop: own Bool) -> result: own unit pure {
+  let total = 0_u64;
+  for (
+    i in 0_u64..4_u64,
+    invariant completed: ile(total, i)
+  ) {
+    if stop {
+      invariant break_total: ile(total, 4_u64);
+      break;
+    }
+    set total = total + 1_u64;
+  }
+  accept_total(value: total);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("equal export and local-invariant facts must survive their join: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "count_or_stop")
+            .expect("count_or_stop function exists");
+        let [call] = function.entailment.call_goals.as_slice() else {
+            panic!("the post-loop requirement is retained once");
+        };
+        assert_eq!(call.disposition, CallGoalDisposition::Discharged);
+        let completed = function
+            .entailment
+            .loop_invariants
+            .iter()
+            .find(|invariant| invariant.name == "completed")
+            .expect("the loop-header invariant is retained");
+        let [joined] = function.entailment.joined_source_proofs.as_slice() else {
+            panic!("the cross-source join retains one diagnostic provenance node");
+        };
+        let [first, second] = joined.predecessors.as_ref() else {
+            panic!("the cross-source join retains both predecessor witnesses");
+        };
+        assert!(matches!(
+            first,
+            SourceAffineFactRef::LoopInvariant(source)
+                if source.loop_id == completed.loop_id && source.source_ordinal == 0
+        ));
+        assert_eq!(
+            *second,
+            SourceAffineFactRef::SourceProof { source_ordinal: 0 },
+            "the first structural predecessor fixes order even when source categories differ"
+        );
+        assert!(function.entailment.derivations.nodes.iter().any(|node| {
+            matches!(
+                node,
+                DerivationNode::AffineConsequence { premises, .. }
+                    if premises.iter().any(|premise| premise.source
+                        == SourceAffineFactRef::JoinedSourceProof { join_ordinal: 0 })
+            )
+        }));
     });
 }

@@ -4,7 +4,9 @@ fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> function_
   requires ile(source_length, out_length);
 } {
   let length = len(source);
-  for offset in 0_u64..length {
+  for (
+    offset in 0_u64..length
+  ) {
     let value = source[offset];
     set deref(out)[offset] = value;
   }

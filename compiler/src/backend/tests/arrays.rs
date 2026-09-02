@@ -201,8 +201,12 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
   let window = array_new<u64, 8>(1_u64);
   let completed = 0_u64;
   let total = 0_u64;
-  for batch in 0_u64..25000_u64 {
-    for cursor in 0_u64..8_u64 {
+  for (
+    batch in 0_u64..25000_u64
+  ) {
+    for (
+      cursor in 0_u64..8_u64
+    ) {
       let previous = window[cursor];
       let mixed = ixor(previous, completed);
       set window[cursor] = mixed *wrap 1099511628211_u64;

@@ -663,7 +663,9 @@ mod tests {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -697,7 +699,9 @@ mod tests {
     /// judgment grants.
     const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -824,6 +828,52 @@ mod tests {
             detail.contains(r#"at /absolute/path/wc.wf:5:26 in line "  let skip = bor(dotted, bnot(addressable));""#),
             "{detail}"
         );
+    }
+
+    #[test]
+    fn invariant_targets_and_certificate_steps_keep_distinct_rule_owners() {
+        for (name, source, stage, rule) in [
+            (
+                "local-target-formation.wf",
+                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ieq(0_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n"
+                    .as_slice(),
+                CompilationStage::Semantics,
+                "INV-1",
+            ),
+            (
+                "local-target-unproved.wf",
+                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ile(1_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Semantics,
+                "INV-1",
+            ),
+            (
+                "use-relation-formation.wf",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use ieq(value, limit);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Semantics,
+                "PRF-1",
+            ),
+            (
+                "use-relation-name.wf",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use ile(value, missing);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Resolution,
+                "PRF-1",
+            ),
+            (
+                "named-use-scope.wf",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Resolution,
+                "INV-1",
+            ),
+        ] {
+            let failure = compile(
+                &[SourceInput::new(name, source)],
+                CompilerLimits::default(),
+            )
+            .expect_err("the focused invalid proof form must reject");
+            assert_eq!(failure.stage(), stage, "{name}: {failure}");
+            assert_eq!(failure.kind(), CompilationFailureKind::Source);
+            assert_eq!(failure.rule_id(), Some(rule), "{name}: {failure}");
+        }
     }
 
     /// A canonical-form rejection prints the bytes it wanted and the bytes it
@@ -1022,7 +1072,9 @@ command fn main() -> status: own ExitStatus pure {
     fn a_ledger_names_the_host_path_the_source_was_read_from() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1128,9 +1180,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
   let size = len(values);
   let bounded = iand(index, 7_u64);
-  prove index_in_range: ile(bounded, 7_u64) {{
-    use ile(bounded, 7_u64);
-  }}
+  invariant index_in_range: ile(bounded, 7_u64);
   return values[bounded];
 }}
 
@@ -1170,11 +1220,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         let ledger = ledger_of("bubble.wf", proved.as_bytes());
         assert_eq!(
             ledger[0],
-            "PAR permitted   bubble.wf:34  pair(bubble, bubble)  eligible"
+            "PAR permitted   bubble.wf:32  pair(bubble, bubble)  eligible"
         );
         assert_eq!(
             ledger[1],
-            "PAR chain       bubble.wf:34  run(bubble, bubble)  2 members through line 35"
+            "PAR chain       bubble.wf:32  run(bubble, bubble)  2 members through line 33"
         );
         assert!(
             !ledger.iter().any(|line| line.contains("not-actualizable")),
@@ -1189,15 +1239,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // reported.
         assert_eq!(
             ledger[2],
-            "PAR permitted   bubble.wf:44  pair(boxed_leaf, boxed_leaf)  eligible"
+            "PAR permitted   bubble.wf:42  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
             ledger[3],
-            "PAR chain       bubble.wf:44  run(boxed_leaf, boxed_leaf)  2 members through line 45"
+            "PAR chain       bubble.wf:42  run(boxed_leaf, boxed_leaf)  2 members through line 43"
         );
         assert_eq!(
             ledger[4],
-            "PAR denied      bubble.wf:45  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
+            "PAR denied      bubble.wf:43  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
         );
         assert_eq!(ledger.len(), 5);
     }
@@ -1318,7 +1368,9 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   let hits = 0_u64;
-  for @scan i in 0_u64..4096_u64 {
+  for @scan (
+    i in 0_u64..4096_u64
+  ) {
     let escaped = interesting(index: i);
     if escaped {
       set hits = hits +wrap 1_u64;
@@ -1351,7 +1403,9 @@ command fn main() -> status: own ExitStatus pure {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
-  for @sum i in 0_u64..1024_u64 {
+  for @sum (
+    i in 0_u64..1024_u64
+  ) {
     set total = fadd.strict(total, step);
   }
   return exit_status(code: 0_u8);
@@ -1372,7 +1426,9 @@ command fn main() -> status: own ExitStatus pure {
         let integral = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
-  for @sum i in 0_u64..1024_u64 {
+  for @sum (
+    i in 0_u64..1024_u64
+  ) {
     set total = total +wrap step;
   }
   return exit_status(code: 0_u8);
@@ -1394,7 +1450,9 @@ command fn main() -> status: own ExitStatus pure {
     fn a_proven_counted_binder_buffer_map_is_permitted() {
         let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
-  for @fill i in 0_u64..64_u64 {
+  for @fill (
+    i in 0_u64..64_u64
+  ) {
     set out[i] = i *wrap i;
   }
   return exit_status(code: 0_u8);
@@ -1431,7 +1489,9 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
-  for @sum i in 0_u64..8_u64 {
+  for @sum (
+    i in 0_u64..8_u64
+  ) {
     region 'acc {
       let one = accum<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
       set count = count +wrap one;
@@ -1460,7 +1520,9 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
-  for @sum i in 0_u64..8_u64 {
+  for @sum (
+    i in 0_u64..8_u64
+  ) {
     let one = weigh(x: total);
     set count = count +wrap one;
   }
@@ -1493,7 +1555,9 @@ command fn main() -> status: own ExitStatus pure {
   let acc = 0_u64;
   let always = True();
   let answer = if always {
-    for @scan i in 0_u64..count {
+    for @scan (
+      i in 0_u64..count
+    ) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
       let hit = ieq(v, needle);
@@ -1532,7 +1596,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let acc = 0_u64;
   let always = True();
   let answer = if always {
-    for @scan i in 0_u64..count {
+    for @scan (
+      i in 0_u64..count
+    ) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
     }
@@ -1577,7 +1643,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let every = True();
   let any = False();
   let parity = False();
-  for @scan i in 0_u64..64_u64 {
+  for @scan (
+    i in 0_u64..64_u64
+  ) {
     let low = iand(i, 1_u64);
     let bit = ieq(low, 0_u64);
     set every = band(every, bit);
@@ -1613,7 +1681,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     fn the_permission_ledger_reports_a_granted_stage_and_its_disposition_table() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1688,7 +1758,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(8_u64, 1_u8);
   let right = buffer_new(8_u64, 2_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1748,7 +1820,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1817,7 +1891,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let byte = data[0_u64];
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1889,9 +1965,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     #[test]
     fn nested_loops_sharing_one_cut_print_at_their_own_heads() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  for @outer step in 0_u64..2_u64 {
+  for @outer (
+    step in 0_u64..2_u64
+  ) {
     let shared = buffer_new(16_u64, 97_u8);
-    for @scan index in 0_u64..4_u64 {
+    for @scan (
+      index in 0_u64..4_u64
+    ) {
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
         region 'n {
@@ -1919,7 +1999,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
             "the outer loop is anchored on its own head: {stages:?}"
         );
         assert!(
-            stages[1].starts_with("PAR stage       nested.wf:4  for   permitted"),
+            stages[1].starts_with("PAR stage       nested.wf:6  for   permitted"),
             "the inner loop is anchored on its own head: {stages:?}"
         );
     }
@@ -1932,7 +2012,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     fn a_loop_without_io_gets_a_counted_line_and_no_staged_line() {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
-  for @sum i in 0_u64..8_u64 {
+  for @sum (
+    i in 0_u64..8_u64
+  ) {
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -2790,7 +2872,9 @@ command fn main() -> status: own ExitStatus pure {
         let per_iteration = format!(
             "{EMIT}
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
-  for @scan index in 0_u64..4_u64 {{
+  for @scan (
+    index in 0_u64..4_u64
+  ) {{
     region 'p {{
       let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
     }}
@@ -2819,7 +2903,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             "{EMIT}
 command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {{
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {{
+  for @scan (
+    index in 0_u64..4_u64
+  ) {{
     let name = buffer_new(16_u64, 97_u8);
     region 'f {{
       let permit = reserve_file<'f>(factory: &uniq 'f files);

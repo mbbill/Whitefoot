@@ -1,0 +1,17 @@
+fn increment(value: own u8, byte_limit: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(value, byte_limit);
+  requires ine(value, byte_limit);
+} {
+  set byte_limit = replacement;
+  let result = value + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = increment(value: 2_u8, byte_limit: 10_u8, replacement: 0_u8);
+  if ieq(result, 3_u8) {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  return exit_status(code: 0_u8);
+}

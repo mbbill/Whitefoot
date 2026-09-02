@@ -23,15 +23,15 @@ use super::StatementResult;
 /// source diagnostics differ.
 #[derive(Clone, Copy)]
 pub(super) enum AffineProofOwner {
-    LoopInvariant,
-    LocalInvariant,
+    InvariantTarget,
+    ProofUse,
 }
 
 impl AffineProofOwner {
     const fn value_role(self) -> LexicalUseRole {
         match self {
-            Self::LoopInvariant => LexicalUseRole::InvariantValue,
-            Self::LocalInvariant => LexicalUseRole::InvariantValue,
+            Self::InvariantTarget => LexicalUseRole::InvariantValue,
+            Self::ProofUse => LexicalUseRole::ProofValue,
         }
     }
 }
@@ -66,9 +66,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             *relation_token,
             bindings,
             &allowed_values,
-            AffineProofOwner::LocalInvariant,
+            AffineProofOwner::InvariantTarget,
         )?;
-        let premise_nodes = self.tree.children_with(node, Production::ProofPremise)?;
+        let premise_nodes = self.tree.children_with(node, Production::ProofUse)?;
         let mut uses = Vec::with_capacity(premise_nodes.len());
         for premise_node in premise_nodes {
             let factor = self.invariant_use_factor(premise_node)?;
@@ -86,7 +86,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     *carrier_token,
                     bindings,
                     &allowed_values,
-                    AffineProofOwner::LocalInvariant,
+                    AffineProofOwner::ProofUse,
                 )?)
             } else {
                 let usage = self.use_at(premise_node, LexicalUseRole::InvariantFact)?;
@@ -134,7 +134,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let bytes = self.tree.token_bytes(token)?;
         if bytes == b"0" {
             return self.invalid_affine_proof(
-                AffineProofOwner::LocalInvariant,
+                AffineProofOwner::ProofUse,
                 node,
                 "a use multiplier is zero",
                 "write a positive bare-decimal multiplier, or omit it when it is one",
@@ -142,7 +142,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if bytes == b"1" {
             return self.invalid_affine_proof(
-                AffineProofOwner::LocalInvariant,
+                AffineProofOwner::ProofUse,
                 node,
                 "an explicitly written use multiplier one is not canonical",
                 "omit `1 *` from this use",
@@ -150,7 +150,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if bytes.len() > 1 && bytes.first() == Some(&b'0') {
             return self.invalid_affine_proof(
-                AffineProofOwner::LocalInvariant,
+                AffineProofOwner::ProofUse,
                 node,
                 "a use multiplier is not in canonical decimal form",
                 "remove leading zeroes from the positive bare-decimal multiplier",
@@ -161,7 +161,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .and_then(|digits| digits.parse::<i128>().ok())
         else {
             return self.invalid_affine_proof(
-                AffineProofOwner::LocalInvariant,
+                AffineProofOwner::ProofUse,
                 node,
                 "a use multiplier exceeds the positive i128 proof domain",
                 "write a positive bare-decimal multiplier no greater than 170141183460469231731687303715884105727",
@@ -487,10 +487,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         mechanical_fix: &'static str,
     ) -> Result<ResultValue, CheckStop> {
         match owner {
-            AffineProofOwner::LoopInvariant => {
-                self.invalid_loop_invariant(node, reason, mechanical_fix)
+            AffineProofOwner::InvariantTarget => {
+                self.invalid_invariant(node, reason, mechanical_fix)
             }
-            AffineProofOwner::LocalInvariant => self.issue_node(
+            AffineProofOwner::ProofUse => self.issue_node(
                 SemanticRule::Prf1,
                 node,
                 SemanticIssueKind::InvalidSourceProof {

@@ -62,7 +62,9 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   if full {
     let grown = capacity + 8_u64;
     let fresh = buffer_new(grown, value);
-    for @copy at in 0_u64..capacity {
+    for @copy (
+      at in 0_u64..capacity
+    ) {
       let byte = deref(s).buf[at];
       set fresh[at] = byte;
     }
@@ -80,7 +82,9 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
 fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends every byte of one static message, growing the destination as needed.";
   let count = len(text);
-  for @append at in 0_u64..count {
+  for @append (
+    at in 0_u64..count
+  ) {
     let byte = text[at];
     region 'push {
       bs_push<'push>(s: &uniq 'push deref(s), value: byte);
@@ -95,7 +99,9 @@ fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -
   region 'measure {
     set count = bs_len<'measure>(s: &'measure deref(source));
   }
-  for @concat at in 0_u64..count {
+  for @concat (
+    at in 0_u64..count
+  ) {
     region 'read {
       match bs_byte<'read>(s: &'read deref(source), index: at) {
         Some(value: byte) => {

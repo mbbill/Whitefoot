@@ -148,7 +148,7 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // ABI. Both rules erase before lowering; they can only admit the same raw
 // partial-operation instruction after its existing static obligation has a
 // derivation. Every v0.39 target mapping therefore stands unchanged.
-// v0.40 source-proof re-review (2026-09-01): written proofs, invariants, and
+// v0.41 source-proof review (2026-09-02): written proofs, invariants, and
 // contracts erase before lowering. Retiring the writer-facing runtime-check
 // instruction removes a target surface rather than adding one: every emitted
 // partial operation has already passed its static domain obligation, and
@@ -156,8 +156,8 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // stack availability remain external resource failures with resource-only
 // records; trusted-runtime consistency failures still stop internally. No
 // system operation, resource representation, release row, result shape, entry
-// form, or host ABI mapping changes, so the v0.40 mapping remains complete.
-const REVIEWED_FOR: &str = "v0.40";
+// form, or host ABI mapping changes, so the v0.41 mapping remains complete.
+const REVIEWED_FOR: &str = "v0.41";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

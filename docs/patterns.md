@@ -8,7 +8,8 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.40 guidance for the source-proof direction,
+This document carries candidate guidance for the source-proof successor to
+v0.40,
 including the unified-state completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
 2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
@@ -17,8 +18,10 @@ inside P15, the hoisted length fact (P16), and the subtotal-returning walk
 it may not hold. References to earlier versions describe historical evidence,
 not a second writable proof surface.
 
-Implementation boundary: the active v0.40 compiler proves supported partial
-operations before lowering and erases source proof statements. The backend
+Implementation boundary: the work-branch compiler is being aligned to prove
+supported partial operations before lowering and erase source proof syntax. It
+is not described as complete or activated before whole-repository verification.
+The backend
 still emits no effect-derived attributes or alias metadata, has no termination
 checker or `willreturn` derivation. Local region-confined arenas now lower and
 execute, with selected-target layout and address checks before emission and
@@ -174,13 +177,32 @@ Replaces: integer state flags, branchy per-byte match chains.
 Problem: several partial operations need one relation maintained by a loop or
 local state machine. Repeating a runtime check at every use would add branches
 and would still leave the compiler unable to use the relation after the loop.
-Pattern: put an `invariant` in the direct prefix of the counted loop that
-maintains the relation. The checker proves the base case and every arbitrary
-reachable backedge, then exports only the separately proved normal-exhaustion
-consequence. Put a cross-function fact in the callee's verified `ensures`; the
-caller receives that fact only after the callee's return proof succeeds. Use a
-`prove` statement when several already-available affine premises must be named
-and combined explicitly.
+Pattern: put the maintained relation in the loop's parenthesized header. The
+checker proves the base case and every arbitrary reachable backedge, then
+exports only the separately proved normal-exhaustion consequence. The binding
+is the first item of a counted `for`; every later item is a header invariant,
+and the final item has no trailing comma:
+
+```whitefoot
+for (
+  i in 0_u64..count,
+  invariant per_byte: ile(sum, 255_u32 * i)
+) {
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+Header entries cannot carry `use` blocks, and their names exist only inside the
+body. Here AUTO subtracts the one published affine premise `per_byte`; DIRECT
+then proves the residual from the `u8` type interval of `wide`. An explicit use
+block would be redundant and invalid. Put a
+cross-function fact in the callee's verified `ensures`; the caller receives it
+only after the callee's return proof succeeds. Use a local
+`invariant { use ... }` when three or more published affine premises outside
+the final fixed L0-image route, a special elimination route, or an explicit
+factor needs written guidance.
 
 This is the default decision rule, not merely a performance suggestion. If the
 false edge would contradict the function's contract or the algorithm's stated
@@ -212,7 +234,7 @@ violated the actual API contract.  For a fixed-ratio transform, state the
 weakest overflow-safe capacity relation that covers the body.  If insufficient
 capacity is an expected runtime outcome, test the next token/burst before any
 of its effects and return a value such as `NeedMoreOutput`; do not turn that
-outcome into a requirement or proof statement. A preflight/exact-allocation API
+outcome into a requirement or invariant. A preflight/exact-allocation API
 is appropriate only when its validated size remains bound to the input it
 describes. Never
 put a merely common-case size or a rare worst-case allocation in `requires`.
@@ -253,8 +275,18 @@ which same-region argument a returned view references.
 
 Problem: a fixed ascending index walk needs the current index bound inside the
 body without hand-written termination tests, increments, or assertions.
-Pattern: write `for i in lower..upper { ... }` when both endpoints are `own u64`
-terms or constants. They are evaluated once from left to right; `i` is a
+Pattern: write the closed multiline header below when both endpoints are
+`own u64` terms or constants:
+
+```whitefoot
+for (
+  i in lower..upper
+) {
+  consume(i);
+}
+```
+
+The endpoints are evaluated once from left to right; `i` is a
 read-only body binding, the upper endpoint is excluded, and
 `lower >= upper` is zero-trip. A normal fallthrough advances by one; `break`,
 `return`, and propagated errors do not. Use ordinary `loop` when progress is
@@ -265,8 +297,9 @@ direct parent loop and never names the label. Do not write a proof step for
 such as `i-k` still require the real lower-bound relation.
 Current value: the SHA-256 reference uses this one form for its three index
 walks, removes four former runtime assertions, and proves all nine schedule
-accesses. The form adds no general induction, iterator protocol, reverse range,
-step, or post-loop equality.
+accesses. The source-proof successor adds explicit header induction but never guesses an
+invariant; it still adds no iterator protocol, reverse range, variable step, or
+unconditional post-loop equality.
 Replaces: `let i`, `loop`, equality break, redundant index proof, and wrapping
 increment boilerplate for an exact half-open u64 walk.
 
@@ -275,7 +308,7 @@ increment boilerplate for an exact half-open u64 walk.
 Problem: a storage access uses an offset derived from process or system input,
 so valid input may falsify its bound. Test the relation
 with a real branch and return the domain's normal error value on the false
-edge. An unconditional proof statement or an ordinary callee requirement is
+edge. An unconditional invariant or an ordinary callee requirement is
 not a repair: each turns expected external failure into an uncallable path.
 Main has no contract and no process-entry wrapper check.
 
@@ -284,8 +317,9 @@ access, branch in the function that owns that access. For a call rejection,
 branch in the rejecting caller before the call so the true edge proves
 the complete bridged goal; alternatively restructure the dataflow so the
 external value no longer reaches the operation. An internal relation that is
-true on every execution may instead be stated as a machine-checked `invariant`
-or derived with `prove`; writing the conclusion alone never grants it authority.
+true on every execution may instead be stated as a machine-checked local or
+loop-header `invariant`; writing the conclusion never grants it authority—the
+checker must still prove it, either through AUTO or its explicit `use` steps.
 Every address and offset still has its own exact domain obligation regardless of
 where its operands originated.
 
@@ -333,34 +367,41 @@ at the place it names, so no facts are lost to a conservative merge.
 Replaces: an ambiguous-provenance borrow-returning signature, and the
 caller-side workaround of binding a result the language cannot root.
 
-## P14. Write the missing finite proof in source
+## P14. Guide a larger affine proof with `use`
 
-Problem: the automatic checker knows several affine relations, but proving the
-next relation requires choosing which ones to combine. Letting the compiler
-guess premises or coefficients would turn compilation into heuristic proof
-search. Pattern: write one `prove` statement and list each selected relation as
-a `use` premise.
+Problem: the automatic checker knows several affine relations, but the next
+relation needs three or more published affine premises outside the final fixed
+L0-image route, a special elimination route, or an explicit factor. The
+compiler's automatic boundary must not be discovered by
+trial and error. It is fixed by the language: zero-premise direct proof, every
+coefficient-one single premise, every unordered coefficient-one pair including
+the same premise twice, then the final fixed L0-image route. If none applies,
+write a local `invariant` and direct its finite calculation with `use`.
 
 ```whitefoot
-prove total_limit: ile(sum, 255000_u32) {
-  use ile(sum, 255_u32 * count);
-  use ile(255_u32 * count, 255000_u32);
+invariant total_limit: ile(first + second + third, first_limit + second_limit + third_limit) {
+  use first_bound;
+  use second_bound;
+  use third_bound;
 }
 ```
 
-The checker snapshots the facts before the statement, proves each `use`
-independently against that same snapshot, and checks the specification-fixed
-coefficient-one affine sum in source order. A premise written earlier in the
-same statement cannot help prove a later premise. The conclusion enters the
-ordinary proof context only after every check succeeds, and the entire statement
-is erased before lowering.
+The checker snapshots the facts before the outer invariant and proves every
+`use` against that same snapshot. A prior use cannot help prove a later one and
+no use publishes a fact; only `total_limit` enters the ordinary proof context
+after the combination succeeds. A named use resolves the exact live theorem;
+a relation-form use is itself discharged by AUTO. A written factor begins at
+two—factor one must be omitted—and the same normalized premise cannot appear
+twice. The final target may be a direct weakening of the weighted sum.
 
-Use `invariant` instead when the missing relation is an induction hypothesis for
-a counted loop. Use `ensures` when the relation must cross a function boundary.
-Use a typed result or ordinary control flow when the condition can legitimately
-be false. AI may search for the proposition, premises, or intermediate lemmas
-while writing the source, but the compiler performs no SMT query, heuristic
-selection, timeout-bounded search, or runtime fallback.
+A nonempty use block is an error when AUTO already proves the outer target.
+This is a canonical-source rule tied to the exact language version, not a
+warning about a compiler optimization. Use a header invariant when the relation
+is the induction contract; use `ensures` when it must cross a function
+boundary; use a typed result or real branch when the condition can legitimately
+be false. AI may search while authoring the source, but the compiler performs
+no SMT query, heuristic premise selection, timeout-bounded attempt, or runtime
+fallback.
 
 Replaces: assertions, intentional aborts, "trust me" comments, and compiler
 guessing over proof candidates.
@@ -380,7 +421,9 @@ beyond it are the previous iteration's.
 Pattern: construct the per-iteration scratch **inside** the loop body.
 
 ```whitefoot
-for @scan index in 0_u64..8192_u64 {
+for @scan (
+  index in 0_u64..8192_u64
+) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
   region 'name {
@@ -573,8 +616,8 @@ survives a whole program: 34 of the 41 length bindings in the five programs of
 the 2026-08-28 blind-writer trial existed only to re-establish a fact that had
 never died. Without that live fact, the call receives an [FN-8] rejection
 because nothing proves the callee's complete requirement. The repair is a
-dominating real branch, an already verified contract fact, or an explicit
-finite `prove` statement whose written premises the checker can discharge. The
+dominating real branch, an already verified contract fact, or a local
+`invariant` whose optional written premises the checker can discharge. The
 compiler never inserts a callee-side fallback check.
 
 Replaces: defensive re-measurement of a container after every call that wrote
@@ -646,7 +689,9 @@ Problem: a loop reads a file per iteration and writes one line to an output —
 given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
 
 ```whitefoot
-for @scan index in 0_u64..8_u64 {
+for @scan (
+  index in 0_u64..8_u64
+) {
   /* P15's reserve, open, and read; then */
   region 'say {
     let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
@@ -672,7 +717,9 @@ outside the loop being taken in index order.
 ```whitefoot
 let page = buffer_new(8_u64, 0_u8);
 let room = len(page);
-for @scan index in 0_u64..8_u64 {
+for @scan (
+  index in 0_u64..8_u64
+) {
   /* reserve, open, and read into the iteration's own data buffer */
   let writable = ilt(index, room);
   if writable {

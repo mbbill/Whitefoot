@@ -4,13 +4,41 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, SourceProofObligation,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily, SourceAffineFactRef};
+use super::super::entailment::affine::MAX_CERTIFICATE_PREMISES;
+use super::super::entailment::{
+    CallGoalDisposition, CallGoalEvidence, DerivationNode, ObligationFamily, SourceAffineFactRef,
+    SourceProofCertificateFailure,
+};
 use super::{with_semantics, with_semantics_dark};
 
 const COMMAND_MAIN: &str =
     "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-fn assert_prf1_issue(source: &[u8], expected: SourceProofObligation) {
+#[derive(Clone, Copy)]
+enum ExpectedProofIssueNode<'source> {
+    Invariant,
+    Use {
+        source: &'source str,
+        /// Zero-based occurrence of this exact `use` spelling after the
+        /// owning invariant begins. This distinguishes repeated entries.
+        occurrence: usize,
+    },
+}
+
+fn assert_prf1_issue(
+    source: &[u8],
+    expected: SourceProofObligation,
+    expected_node: ExpectedProofIssueNode<'_>,
+) {
+    assert_prf1_issue_named(source, expected, "upper_bound", expected_node);
+}
+
+fn assert_prf1_issue_named(
+    source: &[u8],
+    expected: SourceProofObligation,
+    expected_name: &str,
+    expected_node: ExpectedProofIssueNode<'_>,
+) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected a PRF-1 source rejection, got {outcome:?}");
@@ -25,7 +53,7 @@ fn assert_prf1_issue(source: &[u8], expected: SourceProofObligation) {
                 issue.kind()
             );
         };
-        assert_eq!(name, "upper_bound");
+        assert_eq!(name, expected_name);
         assert_eq!(*obligation, expected);
         let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
             panic!("PRF-1 must cite the complete invariant statement");
@@ -33,25 +61,45 @@ fn assert_prf1_issue(source: &[u8], expected: SourceProofObligation) {
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("proof source is UTF-8");
-        assert!(
-            cited.starts_with("invariant upper_bound: ile("),
-            "PRF-1 cited {cited:?} instead of the complete invariant statement"
-        );
-        assert!(cited.ends_with('}'));
+        match expected_node {
+            ExpectedProofIssueNode::Invariant => {
+                assert!(
+                    cited.starts_with(&format!("invariant {expected_name}: ile(")),
+                    "PRF-1 cited {cited:?} instead of the complete invariant statement"
+                );
+                assert!(cited.ends_with('}'));
+            }
+            ExpectedProofIssueNode::Use {
+                source: expected_source,
+                occurrence,
+            } => {
+                assert_eq!(cited, expected_source);
+                let text = std::str::from_utf8(source).expect("proof source is UTF-8");
+                let owner_start = text
+                    .find(&format!("invariant {expected_name}:"))
+                    .expect("owning invariant exists");
+                let expected_start = text[owner_start..]
+                    .match_indices(expected_source)
+                    .nth(occurrence)
+                    .map(|(offset, _)| owner_start + offset)
+                    .expect("expected use occurrence exists");
+                assert_eq!((start, end), (expected_start, expected_start + cited.len()));
+            }
+        }
     });
 }
 
+/// AUTO owns the old two-premise shape. This preserves the OP-2 consumer
+/// coverage while separately letting the certificate test below exercise the
+/// first shape that actually needs written `use` steps.
 #[test]
-fn an_exact_source_proof_is_checked_before_the_middle_bound_is_projected() {
+fn an_automatic_pair_invariant_discharges_op2_after_a_middle_write() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {{
   requires ile(x, middle);
   requires ile(middle, 254_u8);
 }} {{
-  prove upper_bound: ile(x, 254_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
-  }}
+  invariant upper_bound: ile(x, 254_u8);
   set middle = replacement;
   let result = x + 1_u8;
   return result;
@@ -61,7 +109,7 @@ fn an_exact_source_proof_is_checked_before_the_middle_bound_is_projected() {
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the exact source proof must discharge the addition: {outcome:?}");
+            panic!("the automatic pair invariant must discharge OP-2: {outcome:?}");
         };
         let increment = checked
             .data
@@ -69,16 +117,6 @@ fn an_exact_source_proof_is_checked_before_the_middle_bound_is_projected() {
             .iter()
             .find(|function| function.name == "increment")
             .expect("increment function exists");
-        super::entailment::validate_derivations(&increment.entailment);
-
-        let [proof] = increment.entailment.source_proofs.as_slice() else {
-            panic!("increment retains one PRF-1 outcome");
-        };
-        assert_eq!(proof.name, "upper_bound");
-        assert_eq!(proof.check.premises, [true, true]);
-        assert!(proof.check.combination);
-        assert!(proof.check.discharged());
-
         let addition = increment
             .entailment
             .obligations
@@ -86,40 +124,79 @@ fn an_exact_source_proof_is_checked_before_the_middle_bound_is_projected() {
             .find(|outcome| outcome.family == ObligationFamily::IntegerDomain)
             .expect("the exact addition retains one OP-2 obligation");
         assert!(addition.discharged);
-        let nodes = &increment.entailment.derivations.nodes;
-        assert!(
-            nodes.iter().any(|node| {
-                let DerivationNode::TransitiveBound {
-                    left,
-                    middle,
-                    right,
-                    bound: 0,
-                    first,
-                    second,
-                } = node
-                else {
-                    return false;
-                };
-                matches!(
-                    &nodes[first.0 as usize],
-                    DerivationNode::SourceBound {
-                        left: source_left,
-                        right: source_middle,
-                        bound: 0,
-                        ..
-                    } if source_left == left && source_middle == middle
-                ) && matches!(
-                    &nodes[second.0 as usize],
-                    DerivationNode::SourceBound {
-                        left: source_middle,
-                        right: source_right,
-                        bound: 0,
-                        ..
-                    } if source_middle == middle && source_right == right
-                )
-            }),
-            "the retained addition proof must contain the exact x <= middle <= 254 projection: {nodes:#?}"
-        );
+    });
+}
+
+#[test]
+fn an_explicit_three_premise_invariant_survives_source_writes() {
+    let source = format!(
+        r#"fn preserve(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  let left = a;
+  let left_limit = a_limit;
+  let middle = b;
+  let middle_limit = b_limit;
+  let right = c;
+  let right_limit = c_limit;
+  invariant total: ile(left + middle + right, left_limit + middle_limit + right_limit) {{
+    use ile(left, left_limit);
+    use ile(middle, middle_limit);
+    use ile(right, right_limit);
+  }}
+  set a = replacement;
+  set a_limit = replacement;
+  set b = replacement;
+  set b_limit = replacement;
+  set c = replacement;
+  set c_limit = replacement;
+  invariant retained_scaled: ile(3_u64 * left + 3_u64 * middle + 3_u64 * right, 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit) {{
+    use 3 * total;
+  }}
+  for (
+    seed in 0_u64..0_u64,
+    invariant retained: ile(3_u64 * left + 3_u64 * middle + 3_u64 * right, 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit)
+  ) {{
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!(
+                "the explicit three-premise invariant must survive the source writes: {outcome:?}"
+            );
+        };
+        let preserve = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "preserve")
+            .expect("preserve function exists");
+        super::entailment::validate_derivations(&preserve.entailment);
+
+        let [total, retained_scaled] = preserve.entailment.source_proofs.as_slice() else {
+            panic!("preserve retains the original and post-write source proofs");
+        };
+        assert_eq!(total.name, "total");
+        assert_eq!(total.check.premises, [true, true, true]);
+        assert!(total.check.combination);
+        assert!(total.check.discharged());
+        assert_eq!(retained_scaled.name, "retained_scaled");
+        assert_eq!(retained_scaled.check.premises, [true]);
+        assert!(retained_scaled.check.combination);
+        assert!(retained_scaled.check.discharged());
+        let retained = preserve
+            .entailment
+            .loop_invariants
+            .iter()
+            .find(|invariant| invariant.name == "retained")
+            .expect("the post-write loop invariant exists");
+        assert!(retained.proof.base);
     });
 }
 
@@ -129,7 +206,7 @@ fn the_first_unproved_use_is_reported_in_source_order() {
         r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
   requires ile(middle, 254_u8);
 }} {{
-  prove upper_bound: ile(x, 254_u8) {{
+  invariant upper_bound: ile(x, 254_u8) {{
     use ile(x, middle);
     use ile(middle, 254_u8);
   }}
@@ -138,7 +215,14 @@ fn the_first_unproved_use_is_reported_in_source_order() {
 
 {COMMAND_MAIN}"#
     );
-    assert_prf1_issue(source.as_bytes(), SourceProofObligation::Premise(0));
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::Premise(0),
+        ExpectedProofIssueNode::Use {
+            source: "use ile(x, middle);",
+            occurrence: 0,
+        },
+    );
 }
 
 #[test]
@@ -147,7 +231,7 @@ fn the_second_unproved_use_is_reported_in_source_order() {
         r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
   requires ile(x, middle);
 }} {{
-  prove upper_bound: ile(x, 254_u8) {{
+  invariant upper_bound: ile(x, 254_u8) {{
     use ile(x, middle);
     use ile(middle, 254_u8);
   }}
@@ -156,7 +240,14 @@ fn the_second_unproved_use_is_reported_in_source_order() {
 
 {COMMAND_MAIN}"#
     );
-    assert_prf1_issue(source.as_bytes(), SourceProofObligation::Premise(1));
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::Premise(1),
+        ExpectedProofIssueNode::Use {
+            source: "use ile(middle, 254_u8);",
+            occurrence: 0,
+        },
+    );
 }
 
 #[test]
@@ -166,7 +257,7 @@ fn proved_premises_cannot_strengthen_their_written_sum() {
   requires ile(x, middle);
   requires ile(middle, 254_u8);
 }} {{
-  prove upper_bound: ile(x, 253_u8) {{
+  invariant upper_bound: ile(x, 253_u8) {{
     use ile(x, middle);
     use ile(middle, 254_u8);
   }}
@@ -175,21 +266,27 @@ fn proved_premises_cannot_strengthen_their_written_sum() {
 
 {COMMAND_MAIN}"#
     );
-    assert_prf1_issue(source.as_bytes(), SourceProofObligation::Combination);
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::Combination,
+        ExpectedProofIssueNode::Invariant,
+    );
 }
 
 #[test]
 fn proved_premises_may_weaken_their_written_sum_deterministically() {
     let source = format!(
-        r#"fn retain(x: own u8, middle: own u8) -> result: own u8 pure contract {{
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+        r#"fn retain(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
 }} {{
-  prove upper_bound: ile(x, 255_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant upper_bound: ile(a + b + c, a_limit + b_limit + c_limit + 1_u64) {{
+    use ile(a, a_limit);
+    use ile(b, b_limit);
+    use ile(c, c_limit);
   }}
-  return x;
+  return unit;
 }}
 
 {COMMAND_MAIN}"#
@@ -207,7 +304,7 @@ fn proved_premises_may_weaken_their_written_sum_deterministically() {
         let [proof] = retain.entailment.source_proofs.as_slice() else {
             panic!("retain has one source proof");
         };
-        assert_eq!(proof.check.premises, [true, true]);
+        assert_eq!(proof.check.premises, [true, true, true]);
         assert!(proof.check.combination);
         assert!(proof.check.discharged());
     });
@@ -220,23 +317,42 @@ fn proved_premises_may_weaken_their_written_sum_deterministically() {
 #[test]
 fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
     let source = format!(
-        r#"fn increment(flag: own Bool, x: own u8, replacement: own u8) -> result: own u8 pure contract {{
-  requires ile(x, 254_u8);
+        r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
+  requires ile(value, limit);
 }} {{
-  let original = x * 1_u8;
+  return unit;
+}}
+
+fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own u32 pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  let left = cvt<u8, u32>(a);
+  let left_limit = cvt<u8, u32>(a_limit);
+  let middle = cvt<u8, u32>(b);
+  let middle_limit = cvt<u8, u32>(b_limit);
+  let right = cvt<u8, u32>(c);
+  let right_limit = cvt<u8, u32>(c_limit);
+  let first_sum = left + middle;
+  let total = first_sum + right;
+  let first_limit_sum = left_limit + middle_limit;
+  let total_limit = first_limit_sum + right_limit;
   if flag {{
-    prove expression_form: ile(original + 1_u8, 255_u8) {{
-      use ile(original + 1_u8, 255_u8);
+    invariant expression_form: ile(left + middle + right, left_limit + middle_limit + right_limit) {{
+      use ile(left, left_limit);
+      use ile(middle, middle_limit);
+      use ile(right, right_limit);
     }}
   }} else {{
-    let next = original + 1_u8;
-    prove binder_form: ile(next, 255_u8) {{
-      use ile(next, 255_u8);
+    invariant binder_form: ile(total, total_limit) {{
+      use ile(left, left_limit);
+      use ile(middle, middle_limit);
+      use ile(right, right_limit);
     }}
   }}
-  set x = replacement;
-  let result = original + 1_u8;
-  return result;
+  need(value: total, limit: total_limit);
+  return total;
 }}
 
 {COMMAND_MAIN}"#
@@ -245,23 +361,23 @@ fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("equivalent source facts must survive the branch join: {outcome:?}");
         };
-        let increment = checked
+        let combine = checked
             .data
             .functions
             .iter()
-            .find(|function| function.name == "increment")
-            .expect("increment function exists");
-        super::entailment::validate_derivations(&increment.entailment);
+            .find(|function| function.name == "combine")
+            .expect("combine function exists");
+        super::entailment::validate_derivations(&combine.entailment);
 
-        assert_eq!(increment.entailment.source_proofs.len(), 2);
+        assert_eq!(combine.entailment.source_proofs.len(), 2);
         assert!(
-            increment
+            combine
                 .entailment
                 .source_proofs
                 .iter()
                 .all(|proof| proof.check.discharged())
         );
-        let [joined] = increment.entailment.joined_source_proofs.as_slice() else {
+        let [joined] = combine.entailment.joined_source_proofs.as_slice() else {
             panic!("the branch join retains one diagnostic provenance node");
         };
         assert_eq!(
@@ -271,7 +387,7 @@ fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
                 SourceAffineFactRef::SourceProof { source_ordinal: 1 },
             ]
         );
-        assert!(increment.entailment.derivations.nodes.iter().any(|node| {
+        assert!(combine.entailment.derivations.nodes.iter().any(|node| {
             matches!(
                 node,
                 DerivationNode::AffineConsequence { premises, .. }
@@ -285,21 +401,39 @@ fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
 #[test]
 fn a_common_source_proof_reference_is_reused_across_a_branch_join() {
     let source = format!(
-        r#"fn increment(flag: own Bool, x: own u8, replacement: own u8) -> result: own u8 pure contract {{
-  requires ile(x, 254_u8);
+        r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
+  requires ile(value, limit);
 }} {{
-  let original = x * 1_u8;
-  prove common_bound: ile(original, 254_u8) {{
-    use ile(original, 254_u8);
+  return unit;
+}}
+
+fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own u32 pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  let left = cvt<u8, u32>(a);
+  let left_limit = cvt<u8, u32>(a_limit);
+  let middle = cvt<u8, u32>(b);
+  let middle_limit = cvt<u8, u32>(b_limit);
+  let right = cvt<u8, u32>(c);
+  let right_limit = cvt<u8, u32>(c_limit);
+  let first_sum = left + middle;
+  let total = first_sum + right;
+  let first_limit_sum = left_limit + middle_limit;
+  let total_limit = first_limit_sum + right_limit;
+  invariant common_bound: ile(total, total_limit) {{
+    use ile(left, left_limit);
+    use ile(middle, middle_limit);
+    use ile(right, right_limit);
   }}
   if flag {{
-    let marker = 0_u8;
+    let marker = 0_u32;
   }} else {{
-    let marker = 1_u8;
+    let marker = 1_u32;
   }}
-  set x = replacement;
-  let result = original + 1_u8;
-  return result;
+  need(value: total, limit: total_limit);
+  return total;
 }}
 
 {COMMAND_MAIN}"#
@@ -308,15 +442,15 @@ fn a_common_source_proof_reference_is_reused_across_a_branch_join() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("the common source fact must survive unchanged: {outcome:?}");
         };
-        let increment = checked
+        let combine = checked
             .data
             .functions
             .iter()
-            .find(|function| function.name == "increment")
-            .expect("increment function exists");
-        super::entailment::validate_derivations(&increment.entailment);
-        assert!(increment.entailment.joined_source_proofs.is_empty());
-        assert!(increment.entailment.derivations.nodes.iter().any(|node| {
+            .find(|function| function.name == "combine")
+            .expect("combine function exists");
+        super::entailment::validate_derivations(&combine.entailment);
+        assert!(combine.entailment.joined_source_proofs.is_empty());
+        assert!(combine.entailment.derivations.nodes.iter().any(|node| {
             matches!(
                 node,
                 DerivationNode::AffineConsequence { premises, .. }
@@ -330,23 +464,48 @@ fn a_common_source_proof_reference_is_reused_across_a_branch_join() {
 #[test]
 fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
     let source = format!(
-        r#"fn increment(flag: own Bool, x: own u8, replacement: own u8) -> result: own u8 pure contract {{
-  requires ile(x, 253_u8);
-}} {{
-  let original = x * 1_u8;
-  if flag {{
-    prove expression_form: ile(original + 1_u8, 255_u8) {{
-      use ile(original, 253_u8);
+        r#"fn combine(flag: own Bool, a: own u8, b: own u8, c: own u8, x: own u8, p: own u8, q: own u8) -> result: own u8 pure {{
+  let a_wide = cvt<u8, u16>(a);
+  let b_wide = cvt<u8, u16>(b);
+  let c_wide = cvt<u8, u16>(c);
+  let x_wide = cvt<u8, u16>(x);
+  let p_wide = cvt<u8, u16>(p);
+  let q_wide = cvt<u8, u16>(q);
+  let first_link = a_wide + x_wide;
+  let second_link = b_wide + p_wide;
+  let third_link = c_wide + q_wide;
+  let ceiling_link = 255_u16 + x_wide;
+  let first_holds = ile(first_link, p_wide);
+  if first_holds {{
+    let second_holds = ile(second_link, q_wide);
+    if second_holds {{
+      let third_holds = ile(third_link, ceiling_link);
+      if third_holds {{
+        if flag {{
+          invariant exact: ile(a_wide + b_wide + c_wide, 255_u16) {{
+            use ile(a_wide + x_wide, p_wide);
+            use ile(b_wide + p_wide, q_wide);
+            use ile(c_wide + q_wide, 255_u16 + x_wide);
+          }}
+        }} else {{
+          invariant weaker: ile(a_wide + b_wide + c_wide, 256_u16) {{
+            use ile(a_wide + x_wide, p_wide);
+            use ile(b_wide + p_wide, q_wide);
+            use ile(c_wide + q_wide, 255_u16 + x_wide);
+          }}
+        }}
+        let first = a + b;
+        let result = first + c;
+        return result;
+      }} else {{
+        return 0_u8;
+      }}
+    }} else {{
+      return 0_u8;
     }}
   }} else {{
-    let next = original + 1_u8;
-    prove binder_form: ile(next, 254_u8) {{
-      use ile(original, 253_u8);
-    }}
+    return 0_u8;
   }}
-  set x = replacement;
-  let result = original + 1_u8;
-  return result;
 }}
 
 {COMMAND_MAIN}"#
@@ -368,20 +527,26 @@ fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
 /// exact components; adding the weaker fact cannot turn acceptance into
 /// rejection.
 #[test]
-fn an_earlier_weaker_fact_does_not_hide_a_later_two_premise_proof() {
+fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
     let source = format!(
         r#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
   requires ile(first, first_limit);
   requires ile(second, second_limit);
 }} {{
-  for weak_seed in 0_u64..0_u64 {{
-    invariant weaker_first: ile(first + second, first_limit + second_limit + 1_u64);
+  for (
+    weak_seed in 0_u64..0_u64,
+    invariant weaker_first: ile(first + second, first_limit + second_limit + 1_u64)
+  ) {{
   }}
-  for first_seed in 0_u64..0_u64 {{
-    invariant first_part: ile(first, first_limit);
+  for (
+    first_seed in 0_u64..0_u64,
+    invariant first_part: ile(first, first_limit)
+  ) {{
   }}
-  for second_seed in 0_u64..0_u64 {{
-    invariant second_part: ile(second, second_limit);
+  for (
+    second_seed in 0_u64..0_u64,
+    invariant second_part: ile(second, second_limit)
+  ) {{
   }}
   let left = first * 1_u64;
   let left_limit = first_limit * 1_u64;
@@ -391,51 +556,35 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_two_premise_proof() {
   set first_limit = replacement;
   set second = replacement;
   set second_limit = replacement;
-  prove exact_parts: ile(left + right, left_limit + right_limit) {{
-    use ile(left, left_limit);
-    use ile(right, right_limit);
-  }}
-  for check_seed in 0_u64..0_u64 {{
-    invariant combined: ile(left + right, left_limit + right_limit);
+  for (
+    check_seed in 0_u64..0_u64,
+    invariant combined: ile(left + right, left_limit + right_limit)
+  ) {{
   }}
   return unit;
 }}
 
 {COMMAND_MAIN}"#
     );
+
+    // The old two-use certificate is retained as negative evidence: AUTO now
+    // owns this exact pair, so spelling the same selection is a PRF-1 error.
+    const REDUNDANT: &str = "  invariant exact_parts: ile(left + right, left_limit + right_limit) {\n    use ile(left, left_limit);\n    use ile(right, right_limit);\n  }\n";
+    let with_redundant = source.replacen(
+        "  for (\n    check_seed",
+        &format!("{REDUNDANT}  for (\n    check_seed"),
+        1,
+    );
+    assert_prf1_issue_named(
+        with_redundant.as_bytes(),
+        SourceProofObligation::RedundantUseBlock,
+        "exact_parts",
+        ExpectedProofIssueNode::Invariant,
+    );
+
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the written premise selection must establish the invariant base: {outcome:?}");
-        };
-        let preserve = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "preserve")
-            .expect("preserve function exists");
-        let proof = preserve
-            .entailment
-            .source_proofs
-            .iter()
-            .find(|proof| proof.name == "exact_parts")
-            .expect("the explicit source proof is retained");
-        assert!(proof.check.discharged());
-        let combined = preserve
-            .entailment
-            .loop_invariants
-            .iter()
-            .find(|invariant| invariant.name == "combined")
-            .expect("the target invariant is retained");
-        assert!(combined.proof.base);
-        assert!(combined.proof.discharged());
-    });
-
-    const PROOF: &str = "  prove exact_parts: ile(left + right, left_limit + right_limit) {\n    use ile(left, left_limit);\n    use ile(right, right_limit);\n  }\n";
-    assert_eq!(source.matches(PROOF).count(), 1);
-    let without_proof = source.replacen(PROOF, "", 1);
-    with_semantics(without_proof.as_bytes(), |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the exhaustive pair route must ignore the weaker fact: {outcome:?}");
+            panic!("the exhaustive automatic pair must establish the invariant base: {outcome:?}");
         };
         let preserve = checked
             .data
@@ -461,24 +610,34 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_two_premise_proof() {
 #[test]
 fn one_source_proof_fact_discharges_multiple_bounds_and_a_call_requirement() {
     let source = format!(
-        r#"fn need(index: own u64) -> result: own unit pure contract {{
-  requires ile(index, 7_u64);
+        r#"fn need(index: own u8) -> result: own unit pure contract {{
+  requires ile(index, 254_u8);
 }} {{
   return unit;
 }}
 
-fn read(values: own array<u8, 8>, index: own u64, middle: own u64) -> result: own u8 pure contract {{
-  requires ile(index, middle);
-  requires ile(middle, 7_u64);
+fn read(values: own array<u8, 255>, first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {{
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+  requires ile(first_limit, 80_u8);
+  requires ile(second_limit, 80_u8);
+  requires ile(third_limit, 93_u8);
 }} {{
-  prove in_range: ile(index, 7_u64) {{
-    use ile(index, middle);
-    use ile(middle, 7_u64);
+  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {{
+    use ile(first, first_limit);
+    use ile(second, second_limit);
+    use ile(third, third_limit);
   }}
-  let first = values[index];
-  let second = values[index];
+  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
+  invariant in_range: ile(first + second + third, 254_u8);
+  let first_two = first + second;
+  let index = first_two + third;
+  let array_index = cvt<u8, u64>(index);
+  let loaded_first = values[array_index];
+  let loaded_second = values[array_index];
   need(index: index);
-  return second;
+  return loaded_second;
 }}
 
 {COMMAND_MAIN}"#
@@ -497,16 +656,25 @@ fn read(values: own array<u8, 8>, index: own u64, middle: own u64) -> result: ow
 #[test]
 fn a_source_proof_fact_discharges_the_selected_return_postcondition() {
     let source = format!(
-        r#"fn bounded(x: own u8, middle: own u8) -> result: own u8 pure contract {{
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+        r#"fn bounded(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {{
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+  requires ile(first_limit, 80_u8);
+  requires ile(second_limit, 80_u8);
+  requires ile(third_limit, 93_u8);
   ensures ile(result, 254_u8);
 }} {{
-  prove upper_bound: ile(x, 254_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {{
+    use ile(first, first_limit);
+    use ile(second, second_limit);
+    use ile(third, third_limit);
   }}
-  return x;
+  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
+  invariant total_bound: ile(first + second + third, 254_u8);
+  let first_two = first + second;
+  let result = first_two + third;
+  return result;
 }}
 
 {COMMAND_MAIN}"#
@@ -520,18 +688,25 @@ fn a_source_proof_fact_discharges_the_selected_return_postcondition() {
 }
 
 #[test]
-fn assignment_invalidates_a_source_proof_about_the_previous_value() {
+fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
     let source = format!(
-        r#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {{
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+        r#"fn increment(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, replacement: own u8) -> result: own u8 pure contract {{
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+  requires ile(first_limit, 80_u8);
+  requires ile(second_limit, 80_u8);
+  requires ile(third_limit, 93_u8);
 }} {{
-  prove upper_bound: ile(x, 254_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {{
+    use ile(first, first_limit);
+    use ile(second, second_limit);
+    use ile(third, third_limit);
   }}
-  set x = replacement;
-  let result = x + 1_u8;
+  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
+  invariant total_bound: ile(first + second + third, 254_u8);
+  set first = replacement;
+  let result = first + second;
   return result;
 }}
 
@@ -558,10 +733,13 @@ fn assignment_invalidates_a_source_proof_about_the_previous_value() {
             .iter()
             .find(|function| function.name == "increment")
             .expect("increment function exists");
-        let [proof] = increment.entailment.source_proofs.as_slice() else {
-            panic!("the pre-assignment proof is still checked once");
-        };
-        assert!(proof.check.discharged());
+        let component_sum = increment
+            .entailment
+            .source_proofs
+            .iter()
+            .find(|proof| proof.name == "component_sum")
+            .expect("the pre-assignment source proof remains recorded");
+        assert!(component_sum.check.discharged());
         let addition = increment
             .entailment
             .obligations
@@ -581,15 +759,17 @@ fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
         r#"fn preserve_zero(x: own u64) -> result: own unit pure contract {{
   requires ile(x, 0_u64);
 }} {{
-  for seed in 0_u64..0_u64 {{
-    invariant large_nonpositive: ile(9223372036854775808_u64 *(18446744073709551615_u64 * x), 0_u8);
+  for (
+    seed in 0_u64..0_u64,
+    invariant large_nonpositive: ile(9223372036854775808_u64 *(18446744073709551615_u64 * x), 0_u8)
+  ) {{
   }}
   let left = x;
-  for i in 0_u64..1_u64 {{
-    invariant scaled_order: ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x);
-    prove carried_order: ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x) {{
-      use ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x);
-    }}
+  for (
+    i in 0_u64..1_u64,
+    invariant scaled_order: ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x)
+  ) {{
+    invariant carried_order: ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x);
     set left = x;
     break;
   }}
@@ -612,7 +792,7 @@ fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
             panic!("preserve_zero retains one source proof");
         };
         assert_eq!(proof.name, "carried_order");
-        assert_eq!(proof.check.premises, [true]);
+        assert!(proof.check.premises.is_empty());
         assert!(proof.check.combination);
     });
 }
@@ -669,7 +849,11 @@ fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
 
 {COMMAND_MAIN}"#
     );
-    assert_prf1_issue(source.as_bytes(), SourceProofObligation::RedundantUseBlock);
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::RedundantUseBlock,
+        ExpectedProofIssueNode::Invariant,
+    );
 }
 
 #[test]
@@ -694,7 +878,48 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
             first: 0,
             repeated: 1,
         },
+        ExpectedProofIssueNode::Use {
+            source: "use ile(value, limit);",
+            occurrence: 1,
+        },
     );
+}
+
+#[test]
+fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
+    let written_use = "    use ile(value, limit);\n";
+    let uses = written_use.repeat(MAX_CERTIFICATE_PREMISES + 1);
+    let source = format!(
+        "fn combine(value: own u64, limit: own u64, other: own u64, other_limit: own u64, final_value: own u64, final_limit: own u64) -> result: own unit pure {{\n  invariant upper_bound: ile(value + other + final_value, limit + other_limit + final_limit) {{\n{uses}  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+    );
+    let maximum = u32::try_from(MAX_CERTIFICATE_PREMISES).expect("capacity fits u32");
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::UseCapacity {
+            maximum,
+            actual: maximum + 1,
+        },
+        ExpectedProofIssueNode::Use {
+            source: written_use.trim(),
+            occurrence: MAX_CERTIFICATE_PREMISES,
+        },
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain the capacity result: {outcome:?}");
+        };
+        let combine = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "combine")
+            .expect("combine exists");
+        let [proof] = combine.entailment.source_proofs.as_slice() else {
+            panic!("combine retains one local certificate");
+        };
+        assert_eq!(proof.check.certificate_failure_use_index, Some(maximum));
+        assert_eq!(proof.use_node_paths.len(), MAX_CERTIFICATE_PREMISES + 1);
+    });
 }
 
 #[test]
@@ -841,5 +1066,432 @@ fn an_explicit_factor_one_is_not_canonical_source() {
                 ..
             }
         ));
+    });
+}
+
+#[test]
+fn a_composite_requirement_uses_affine_invariant_leaves() {
+    let source = format!(
+        r#"fn need(value: own u32, limit: own u32, enabled: own Bool) -> result: own unit pure contract {{
+  define ordered = ile(value, limit);
+  define accepted = band(ordered, enabled);
+  requires accepted;
+}} {{
+  return unit;
+}}
+
+fn caller(enabled: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own unit pure contract {{
+  requires enabled;
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  let left = cvt<u8, u32>(a);
+  let left_limit = cvt<u8, u32>(a_limit);
+  let middle = cvt<u8, u32>(b);
+  let middle_limit = cvt<u8, u32>(b_limit);
+  let right = cvt<u8, u32>(c);
+  let right_limit = cvt<u8, u32>(c_limit);
+  let first_sum = left + middle;
+  let value = first_sum + right;
+  let first_limit_sum = left_limit + middle_limit;
+  let limit = first_limit_sum + right_limit;
+  invariant total: ile(value, limit) {{
+    use ile(left, left_limit);
+    use ile(middle, middle_limit);
+    use ile(right, right_limit);
+  }}
+  let called = need(value: value, limit: limit, enabled: enabled);
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!(
+                "the affine relation and ordinary Boolean fact must prove the conjunction: {outcome:?}"
+            );
+        };
+        let caller = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "caller")
+            .expect("caller exists");
+        super::entailment::validate_derivations(&caller.entailment);
+        assert_eq!(caller.entailment.call_goals.len(), 1);
+        assert_eq!(
+            caller.entailment.call_goals[0].disposition,
+            CallGoalDisposition::Discharged
+        );
+        assert_eq!(
+            caller.entailment.call_goals[0].evidence,
+            [CallGoalEvidence::AffinePositive]
+        );
+        assert!(caller.entailment.derivations.nodes.iter().any(|node| {
+            matches!(
+                node,
+                DerivationNode::BooleanIntroduction { parents, .. } if parents.len() == 2
+            )
+        }));
+    });
+}
+
+/// A predecessor that closes to L0 contradiction contributes no runtime state
+/// to a join. In particular, its write cannot erase the live predecessor's
+/// exact value image, published name, or canonical affine theorem.
+#[test]
+fn a_contradictory_predecessor_is_neutral_to_an_affine_join() {
+    let source = format!(
+        r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  return unit;
+}}
+
+fn retain(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own unit pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  let left = cvt<u8, u32>(a);
+  let left_limit = cvt<u8, u32>(a_limit);
+  let middle = cvt<u8, u32>(b);
+  let middle_limit = cvt<u8, u32>(b_limit);
+  let right = cvt<u8, u32>(c);
+  let right_limit = cvt<u8, u32>(c_limit);
+  let first_sum = left + middle;
+  let value = first_sum + right;
+  let first_limit_sum = left_limit + middle_limit;
+  let limit = first_limit_sum + right_limit;
+  if ilt(a, a) {{
+    set value = 0_u32;
+  }} else {{
+    invariant total: ile(value, limit) {{
+      use ile(left, left_limit);
+      use ile(middle, middle_limit);
+      use ile(right, right_limit);
+    }}
+  }}
+  need(value: value, limit: limit);
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the contradictory predecessor must be neutral: {outcome:?}");
+        };
+        let retain = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "retain")
+            .expect("retain exists");
+        super::entailment::validate_derivations(&retain.entailment);
+        let [call] = retain.entailment.call_goals.as_slice() else {
+            panic!("retain has one requirement call");
+        };
+        assert_eq!(call.disposition, CallGoalDisposition::Discharged);
+        assert_eq!(call.evidence, [CallGoalEvidence::AffinePositive]);
+    });
+}
+
+#[test]
+fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
+    let source = format!(
+        r#"fn named_source(value: own u64, limit: own u64) -> result: own unit pure {{
+  loop (
+    invariant header_bound: ile(value, limit)
+  ) {{
+    if ile(value, limit) {{
+      invariant scaled_named: ile(3_u64 * value, 3_u64 * limit) {{
+        use 3 * header_bound;
+      }}
+    }}
+    break;
+  }}
+  return unit;
+}}
+
+fn relation_source(value: own u64, limit: own u64) -> result: own unit pure {{
+  if ile(value, limit) {{
+    invariant scaled_relation: ile(3_u64 * value, 3_u64 * limit) {{
+      use 3 * ile(value, limit);
+    }}
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain both source forms: {outcome:?}");
+        };
+
+        let named = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "named_source")
+            .expect("named_source exists");
+        let named = named
+            .entailment
+            .source_proofs
+            .iter()
+            .find(|proof| proof.name == "scaled_named")
+            .expect("the named certificate is retained");
+        assert!(named.check.source_failure.is_none());
+        assert!(named.check.certificate_failure.is_none());
+        assert_eq!(named.check.premises, [false]);
+        assert_eq!(named.check.first_unproved_premise, Some(0));
+        assert_eq!(named.use_node_paths.len(), 1);
+        assert!(!named.check.discharged());
+
+        let relation = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "relation_source")
+            .expect("relation_source exists");
+        let relation = relation
+            .entailment
+            .source_proofs
+            .iter()
+            .find(|proof| proof.name == "scaled_relation")
+            .expect("the relation certificate is retained");
+        assert_eq!(relation.check.premises, [true]);
+        assert_eq!(relation.check.first_unproved_premise, None);
+        assert!(relation.check.combination);
+        assert!(relation.check.discharged());
+    });
+}
+
+#[test]
+fn repeated_unpublished_named_uses_retain_the_structural_failure() {
+    let source = format!(
+        r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure {{
+  loop (
+    invariant header_bound: ile(value, limit)
+  ) {{
+    invariant scaled: ile(3_u64 * value, 3_u64 * limit) {{
+      use header_bound;
+      use 2 * header_bound;
+    }}
+    break;
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain the duplicate result: {outcome:?}");
+        };
+        let combine = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "combine")
+            .expect("combine exists");
+        let [proof] = combine.entailment.source_proofs.as_slice() else {
+            panic!("combine retains one local certificate");
+        };
+        assert!(proof.check.source_failure.is_none());
+        assert_eq!(proof.check.premises, [false, false]);
+        assert_eq!(
+            proof.check.certificate_failure,
+            Some(SourceProofCertificateFailure::RepeatedUse {
+                first: 0,
+                repeated: 1,
+            })
+        );
+        assert_eq!(proof.check.certificate_failure_use_index, Some(1));
+        assert!(!proof.check.discharged());
+    });
+}
+
+#[test]
+fn an_unpublished_named_use_does_not_hide_scaled_sum_overflow() {
+    let source = format!(
+        r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure {{
+  loop (
+    invariant doubled: ile(2_u64 * value, 2_u64 * limit)
+  ) {{
+    invariant scaled: ile(2_u64 * value, 2_u64 * limit) {{
+      use 170141183460469231731687303715884105727 * doubled;
+    }}
+    break;
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain the arithmetic result: {outcome:?}");
+        };
+        let combine = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "combine")
+            .expect("combine exists");
+        let [proof] = combine.entailment.source_proofs.as_slice() else {
+            panic!("combine retains one local certificate");
+        };
+        assert!(proof.check.source_failure.is_none());
+        assert_eq!(proof.check.premises, [false]);
+        assert_eq!(
+            proof.check.certificate_failure,
+            Some(SourceProofCertificateFailure::ArithmeticOverflow)
+        );
+        assert_eq!(proof.check.certificate_failure_use_index, Some(0));
+        assert!(!proof.check.discharged());
+    });
+}
+
+#[test]
+fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
+    let source = format!(
+        r#"fn combine(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(c, c_limit);
+}} {{
+  invariant upper_bound: ile(a + b + c, a_limit + b_limit + c_limit) {{
+    use ile(a, a_limit);
+    use 170141183460469231731687303715884105727 * ile(2_u64 * b, 2_u64 * b_limit);
+    use ile(c, c_limit);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::CertificateArithmeticOverflow,
+        ExpectedProofIssueNode::Use {
+            source: "use 170141183460469231731687303715884105727 * ile(2_u64 * b, 2_u64 * b_limit);",
+            occurrence: 0,
+        },
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain the indexed arithmetic result: {outcome:?}");
+        };
+        let combine = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "combine")
+            .expect("combine exists");
+        let [proof] = combine.entailment.source_proofs.as_slice() else {
+            panic!("combine retains one local certificate");
+        };
+        assert_eq!(
+            proof.check.certificate_failure,
+            Some(SourceProofCertificateFailure::ArithmeticOverflow)
+        );
+        assert_eq!(proof.check.certificate_failure_use_index, Some(1));
+        assert_eq!(proof.use_node_paths.len(), 3);
+    });
+}
+
+#[test]
+fn an_unpublished_named_use_does_not_stop_later_duplicate_detection() {
+    let source = format!(
+        r#"fn combine(value: own u64, limit: own u64, part: own u64, part_limit: own u64) -> result: own unit pure {{
+  loop (
+    invariant header_bound: ile(value, limit)
+  ) {{
+    invariant combined: ile(value + 2_u64 * part, limit + 2_u64 * part_limit) {{
+      use header_bound;
+      use ile(part, part_limit);
+      use ile(part, part_limit);
+    }}
+    break;
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain the later duplicate result: {outcome:?}");
+        };
+        let combine = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "combine")
+            .expect("combine exists");
+        let [proof] = combine.entailment.source_proofs.as_slice() else {
+            panic!("combine retains one local certificate");
+        };
+        assert!(proof.check.source_failure.is_none());
+        assert_eq!(proof.check.premises, [false, false, false]);
+        assert_eq!(
+            proof.check.certificate_failure,
+            Some(SourceProofCertificateFailure::RepeatedUse {
+                first: 1,
+                repeated: 2,
+            })
+        );
+        assert_eq!(proof.check.certificate_failure_use_index, Some(2));
+        assert!(!proof.check.discharged());
+    });
+}
+
+#[test]
+fn current_value_image_overflow_precedes_redundant_block_detection() {
+    let source = format!(
+        r#"fn expand(value: own u64) -> result: own unit pure contract {{
+  requires ile(value, 0_u64);
+}} {{
+  let scaled = 18446744073709551615_u64 * value;
+  invariant unchanged: ile(scaled, scaled) {{
+    use ile(18446744073709551615_u64 * scaled, 0_u64);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    assert_prf1_issue_named(
+        source.as_bytes(),
+        SourceProofObligation::CertificateArithmeticOverflow,
+        "unchanged",
+        ExpectedProofIssueNode::Use {
+            source: "use ile(18446744073709551615_u64 * scaled, 0_u64);",
+            occurrence: 0,
+        },
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark analysis must retain the source-formation result: {outcome:?}");
+        };
+        let expand = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "expand")
+            .expect("expand exists");
+        let [proof] = expand.entailment.source_proofs.as_slice() else {
+            panic!("expand retains one local certificate");
+        };
+        assert_eq!(
+            proof.check.source_failure,
+            Some(SourceProofCertificateFailure::ArithmeticOverflow)
+        );
+        assert_eq!(proof.check.source_failure_use_index, Some(0));
+        assert!(!proof.check.discharged());
     });
 }

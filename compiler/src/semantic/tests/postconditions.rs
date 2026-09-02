@@ -5,7 +5,8 @@ use crate::{
 
 use super::{assert_rule, assert_rule_at, with_resolution, with_semantics, with_semantics_dark};
 use crate::semantic::entailment::{
-    DerivationNode, FlowEventKind, FunctionPostconditionProof, PostconditionDisposition,
+    CallGoalDisposition, DerivationNode, FlowEventKind, FunctionPostconditionProof,
+    PostconditionDisposition,
 };
 use crate::semantic::model::{CheckedBodyDisposition, CheckedExpression, CheckedStatement};
 
@@ -641,7 +642,9 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   let admitted = ile(filled, capacity);
   let length = len(text);
   if admitted {
-    for @append at in filled..capacity {
+    for @append (
+      at in filled..capacity
+    ) {
       let taken = at -wrap filled;
       let done = ige(taken, length);
       if done {
@@ -970,8 +973,12 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// P0 closes the two pre-move equalities while their common box referent is
+/// still live. The resulting `observed == expected` theorem names only the two
+/// copied scalar bindings, so consuming the original owner cannot invalidate
+/// it.
 #[test]
-fn a_later_owner_move_kills_an_already_published_s12_relation() {
+fn an_owner_move_preserves_a_materialized_holder_free_s12_consequence() {
     let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
   ensures ieq(result, value);
 } {
@@ -1001,10 +1008,83 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a holder-free pre-move consequence must survive: {outcome:?}");
+        };
+        let caller = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "caller")
+            .expect("caller function exists");
+        super::entailment::validate_derivations(&caller.entailment);
+        let [goal] = caller.entailment.call_goals.as_slice() else {
+            panic!("caller retains exactly the guard requirement");
+        };
+        assert_eq!(goal.disposition, CallGoalDisposition::Discharged);
+        let root = goal
+            .derivation
+            .expect("the discharged guard retains its derivation");
+        let mut seen = vec![false; caller.entailment.derivations.nodes.len()];
+        let mut stack = vec![root];
+        let mut materialized = false;
+        let mut postcondition = false;
+        while let Some(node) = stack.pop() {
+            let index = node.0 as usize;
+            if seen[index] {
+                continue;
+            }
+            seen[index] = true;
+            let retained = &caller.entailment.derivations.nodes[index];
+            materialized |= matches!(retained, DerivationNode::MaterializedBound { .. });
+            postcondition |= matches!(retained, DerivationNode::PostconditionCall { .. });
+            stack.extend(retained.parent_ids());
+        }
+        assert!(
+            materialized,
+            "the surviving scalar equality is pre-kill materialized"
+        );
+        assert!(
+            postcondition,
+            "the equality retains the verified callee result as a parent"
+        );
+    });
+}
+
+#[test]
+fn a_referent_write_kills_an_s12_relation_that_still_reads_that_referent() {
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
+} {
+  return value;
+}
+
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
+} {
+  return unit;
+}
+
+fn caller() -> result: own unit pure {
+  let source = 1_i32;
+  let observed = observe(value: source);
+  region 'write {
+    let writer = &uniq 'write source;
+    set deref(writer) = 2_i32;
+  }
+  guard(left: observed, right: source);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
     assert_rule_at(
         source,
         SemanticRule::Fn8,
-        "guard(left: observed, right: expected)",
+        "guard(left: observed, right: source)",
     );
 }
 

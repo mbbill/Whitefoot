@@ -1,11 +1,15 @@
 fn crc32(bytes: own buffer<u8>) -> function_result: own u32 reads(bytes) {
   let crc = 4294967295_u32;
   let length = len(bytes);
-  for offset in 0_u64..length {
+  for (
+    offset in 0_u64..length
+  ) {
     let byte = bytes[offset];
     let word = cvt<u8, u32>(byte);
     set crc = ixor(crc, word);
-    for bit in 0_u64..8_u64 {
+    for (
+      bit in 0_u64..8_u64
+    ) {
       let low_bit = iand(crc, 1_u32);
       let shifted = ishr.wrap(crc, 1_u32);
       let low_bit_set = ieq(low_bit, 1_u32);

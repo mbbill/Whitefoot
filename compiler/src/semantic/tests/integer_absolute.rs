@@ -57,9 +57,11 @@ fn active_invariant_excludes_the_signed_minimum_from_exact_absolute_value() {
   requires ile(limit, 10_u64);
 } {
   let value = floor;
-  for @items i in 0_u64..limit {
-    invariant above_minimum: ile(floor, value);
-    invariant progress: ile(value, floor + i);
+  for @items (
+    i in 0_u64..limit,
+    invariant above_minimum: ile(floor, value),
+    invariant progress: ile(value, floor + i)
+  ) {
     let magnitude = iabs(value);
     set value = value + 1_i32;
   }

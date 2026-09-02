@@ -19,9 +19,10 @@ use super::super::entailment::{
     PostconditionDeliveryJoinDetail, PostconditionDisposition, Relation, RemainderEndpoint,
     S7DerivationKind, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO, type_range,
 };
+use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedBodyDisposition, CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue,
-    FunctionId, IntegerType,
+    CheckedBodyDisposition, CheckedExpression, CheckedIntegerOperation, CheckedProgramData,
+    CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
@@ -1110,6 +1111,18 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         &DerivationConclusion::Relation(relation),
                     );
                 }
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
+            DerivationNode::GoalAffineConsequence { goal, sign, parent } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert_eq!(
+                    retained_conclusion(&conclusions, *parent),
+                    &DerivationConclusion::AffineConsequence,
+                    "an affine-goal conclusion must retain its owning affine proof",
+                );
                 DerivationConclusion::Goal {
                     goal: *goal,
                     sign: *sign,
@@ -4149,7 +4162,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_source_proof_does_not_discard_an_unrelated_no_ensures_value_if_delivery() {
+fn a_local_invariant_does_not_discard_an_unrelated_no_ensures_value_if_delivery() {
     let source = br#"fn choose(value: own i32, side: own Bool) -> result: own i32 pure {
   if ilt(value, 128_i32) {
     let picked = if side {
@@ -4166,9 +4179,7 @@ fn a_source_proof_does_not_discard_an_unrelated_no_ensures_value_if_delivery() {
 fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 pure contract {
   requires ile(position, 3_u64);
 } {
-  prove bounded: ile(position, 3_u64) {
-    use ile(position, 3_u64);
-  }
+  invariant bounded: ile(position, 3_u64);
   return values[position];
 }
 
@@ -4178,7 +4189,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
-            panic!("source proof checking must preserve the unrelated delivery: {outcome:?}");
+            panic!("local invariant checking must preserve the unrelated delivery: {outcome:?}");
         };
     });
     with_semantics_dark(source, |outcome| {
@@ -4603,7 +4614,9 @@ fn a_counted_range_discharges_its_binder_and_safe_predecessor_indices() {
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 1_u64..4_u64 {
+  for @items (
+    i in 1_u64..4_u64
+  ) {
     let previous = i -wrap 1_u64;
     let current_value = values[i];
     let previous_value = values[previous];
@@ -4630,7 +4643,9 @@ fn a_counted_range_does_not_prove_the_next_index_or_an_unrelated_carried_index()
 
 fn read(values: own array<i32, count>, j: own u64) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 0_u64..4_u64 {
+  for @items (
+    i in 0_u64..4_u64
+  ) {
     let next = i +wrap 1_u64;
     let current_value = values[i];
     let next_value = values[next];
@@ -4659,7 +4674,9 @@ fn a_counted_upper_needs_an_independent_relation_to_the_storage_length() {
 
 fn read(values: own array<i32, count>, upper: own u64) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 0_u64..upper {
+  for @items (
+    i in 0_u64..upper
+  ) {
     let value = values[i];
     set total = total +wrap value;
   }
@@ -4684,7 +4701,9 @@ fn killed_middles_preserve_survivor_consequences_in_counted_and_ordinary_flow() 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let upper = 4_u64;
   let total = 0_i32;
-  for @items i in 0_u64..upper {
+  for @items (
+    i in 0_u64..upper
+  ) {
     set upper = 0_u64;
     let value = values[i];
     set total = total +wrap value;
@@ -4768,6 +4787,79 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_write_preserves_a_survivor_bound_derived_through_disequality_strengthening() {
+    let source = br#"const count: u64 = 3_u64;
+
+fn read(values: own array<i32, count>, index: own u64, middle: own u64) -> result: own i32 pure contract {
+  requires ile(index, middle);
+  requires ine(index, middle);
+  requires ile(middle, 3_u64);
+} {
+  set middle = 0_u64;
+  return values[index];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "read");
+    validate_derivations(&summary);
+    let [obligation] = summary.obligations.as_slice() else {
+        panic!("the one subscript must retain exactly one bounds obligation");
+    };
+    assert!(obligation.discharged);
+    let root = obligation_root(&summary, 0);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::StrengthenedBound { .. }),
+        "index <= middle and index != middle strengthen to index < middle",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::MaterializedBound { bound: 2, .. }),
+        "the complete pre-write closure publishes index <= 2 before middle changes",
+    );
+}
+
+#[test]
+fn a_write_preserves_a_survivor_bound_derived_through_an_implicit_type_edge() {
+    let source =
+        br#"fn increment(value: own u8, byte_limit: own u8) -> result: own u8 pure contract {
+  requires ilt(value, byte_limit);
+} {
+  set byte_limit = 0_u8;
+  return value + 1_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "increment");
+    validate_derivations(&summary);
+    let [obligation] = summary.obligations.as_slice() else {
+        panic!("the one exact addition must retain exactly one domain obligation");
+    };
+    assert!(obligation.discharged);
+    let root = obligation_root(&summary, 0);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::ImplicitBound { .. }),
+        "the u8 middle contributes its implicit upper bound before it changes",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::MaterializedBound { bound: 254, .. }),
+        "the complete pre-write closure publishes value <= 254 independently",
+    );
+}
+
+#[test]
 fn counted_roots_cover_mixed_control_edges_and_unused_s11_facts() {
     let source = br#"enum Stop {
   Failed();
@@ -4782,40 +4874,60 @@ fn maybe(fail: own Bool) -> result: own Result<unit, Stop> pure {
 }
 
 fn mixed_edges(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> result: own Result<unit, Stop> pure {
-  for @zero zero in 0_u64..0_u64 {
+  for @zero (
+    zero in 0_u64..0_u64
+  ) {
   }
-  for @reversed reversed in 2_u64..1_u64 {
+  for @reversed (
+    reversed in 2_u64..1_u64
+  ) {
   }
-  for @singleton singleton in 0_u64..1_u64 {
+  for @singleton (
+    singleton in 0_u64..1_u64
+  ) {
   }
-  for @maximum maximum in 18446744073709551614_u64..18446744073709551615_u64 {
+  for @maximum (
+    maximum in 18446744073709551614_u64..18446744073709551615_u64
+  ) {
   }
   let mutable_lower = lower;
   let mutable_upper = upper;
-  for @mutated at in mutable_lower..mutable_upper {
+  for @mutated (
+    at in mutable_lower..mutable_upper
+  ) {
     set mutable_lower = 0_u64;
     set mutable_upper = 0_u64;
     if leave {
       break @mutated;
     }
   }
-  for @returning at in 0_u64..1_u64 {
+  for @returning (
+    at in 0_u64..1_u64
+  ) {
     if leave {
       return Ok<unit, Stop>(value: unit);
     }
   }
-  for @propagating at in 0_u64..1_u64 {
+  for @propagating (
+    at in 0_u64..1_u64
+  ) {
     let ignored = propagate maybe(fail: fail);
   }
-  for @outer_counted outer in 0_u64..1_u64 {
-    for @inner_counted inner in 0_u64..1_u64 {
+  for @outer_counted (
+    outer in 0_u64..1_u64
+  ) {
+    for @inner_counted (
+      inner in 0_u64..1_u64
+    ) {
       if leave {
         break @inner_counted;
       }
     }
   }
   loop @ordinary {
-    for @breaking at in 0_u64..1_u64 {
+    for @breaking (
+      at in 0_u64..1_u64
+    ) {
       if leave {
         break @ordinary;
       } else {
@@ -4886,7 +4998,9 @@ fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own
   } else {
     return unit;
   }
-  for @impossible i in 0_u64..1_u64 {
+  for @impossible (
+    i in 0_u64..1_u64
+  ) {
   }
   return unit;
 }
@@ -4897,7 +5011,9 @@ fn joined(values: own array<i32, count>, x: own u64) -> result: own i32 pure {
     let impossible = x;
   }
   let total = 0_i32;
-  for @items i in 0_u64..upper {
+  for @items (
+    i in 0_u64..upper
+  ) {
     let item = values[i];
     set total = total +wrap item;
   }
@@ -4975,7 +5091,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn inconsistent_counted_root_metadata_fails_the_test_checker() {
     let source = br#"fn probe(upper: own u64) -> result: own unit pure {
-  for @items i in 0_u64..upper {
+  for @items (
+    i in 0_u64..upper
+  ) {
   }
   return unit;
 }
@@ -5056,9 +5174,13 @@ command fn main() -> status: own ExitStatus pure {
 fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
     let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> result: own unit pure {
   let upper = len(values);
-  for @first i in 0_u64..upper {
+  for @first (
+    i in 0_u64..upper
+  ) {
   }
-  for @second j in 1_u64..upper {
+  for @second (
+    j in 1_u64..upper
+  ) {
   }
   return unit;
 }
@@ -5125,7 +5247,9 @@ fn a_break_free_zero_trip_counted_continuation_is_reachable_not_contradictory() 
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
-  for @empty i in 4_u64..4_u64 {
+  for @empty (
+    i in 4_u64..4_u64
+  ) {
     let ignored = i;
   }
   return values[9_u64];
@@ -5147,7 +5271,9 @@ fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  for @maybe n in 0_u64..1_u64 {
+  for @maybe (
+    n in 0_u64..1_u64
+  ) {
     if ilt(i, 4_u64) {
       let ignored = n;
     } else {
@@ -5178,7 +5304,9 @@ fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> result: o
     return 0_i32;
   }
   loop @outer {
-    for @inner n in 0_u64..1_u64 {
+    for @inner (
+      n in 0_u64..1_u64
+    ) {
       set i = i +wrap 1_u64;
       let ignored = n;
     }
@@ -5260,7 +5388,60 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_buffer_or_slice_offset_renders_the_same_subscript_spelling() {
+fn a_failed_inner_index_prevents_the_unreached_outer_bounds_obligation() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> result: own u8 pure {
+  return lens[order[j]];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let outcomes = obligations(source, "read");
+    let [inner] = outcomes.as_slice() else {
+        panic!("only the reached inner index may retain an obligation: {outcomes:?}");
+    };
+    assert_eq!(inner.family, ObligationFamily::Bounds);
+    assert!(!inner.discharged);
+    assert_eq!(inner.residual.as_deref(), Some("j < len(order)"));
+}
+
+#[test]
+fn a_failed_boolean_index_publishes_no_admitted_goal_origin() {
+    let source = br#"fn remember(flags: own array<Bool, 1>) -> result: own unit pure {
+  let observed = flags[1_u64];
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "remember");
+    let [index] = summary.obligations.as_slice() else {
+        panic!(
+            "the failed Boolean index must retain exactly its own obligation: {:?}",
+            summary.obligations
+        );
+    };
+    assert_eq!(index.family, ObligationFamily::Bounds);
+    assert!(!index.discharged);
+    assert!(
+        summary.inventory.goals.iter().all(|goal| !matches!(
+            &goal.expression,
+            GoalExpression::Operation {
+                row: GoalOperation::ArrayIndex { .. },
+                ..
+            }
+        )),
+        "an index whose own bounds obligation failed has no admitted value expression to publish"
+    );
+}
+
+#[test]
+fn a_buffer_offset_renders_the_outer_subscript_and_a_failed_slice_offset_stops_there() {
     let source = br#"const count: u64 = 4_u64;
 
 fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap) {
@@ -5291,12 +5472,119 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let slice = obligations(source, "from_slice");
-    assert_eq!(slice.len(), 2, "inner offset first, then the outer site");
-    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len(order)"));
     assert_eq!(
-        slice[1].residual.as_deref(),
-        Some("order[0_u64] < len(values)")
+        slice.len(),
+        1,
+        "the failed inner slice index prevents the outer site from being reached"
     );
+    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len(order)"));
+}
+
+#[test]
+fn failed_partial_operations_do_not_create_parent_or_downstream_domain_authority() {
+    let source = br#"fn add_after_index(values: own array<u8, 1>) -> result: own u8 pure {
+  let result = values[1_u64] + 1_u8;
+  return result;
+}
+
+fn continue_after_failed_exact() -> result: own u8 pure {
+  let below_zero = 0_u8 - 1_u8;
+  let recovered = below_zero + 1_u8;
+  return recovered;
+}
+
+fn continue_after_failed_set() -> result: own u8 pure {
+  let current = 0_u8;
+  set current = 0_u8 - 1_u8;
+  let recovered = current + 1_u8;
+  return recovered;
+}
+
+fn return_after_failed_set(value: own u8) -> result: own u8 pure contract {
+  ensures igt(result, value);
+} {
+  let current = 0_u8;
+  set current = value + 1_u8;
+  return current;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    let indexed = obligations(source, "add_after_index");
+    let [inner_index] = indexed.as_slice() else {
+        panic!("only the reached inner index may retain an obligation: {indexed:?}");
+    };
+    assert_eq!(inner_index.family, ObligationFamily::Bounds);
+    assert!(!inner_index.discharged);
+    assert!(
+        indexed
+            .iter()
+            .all(|outcome| outcome.family != ObligationFamily::IntegerDomain),
+        "the outer exact addition has no admitted indexed operand and is not reached"
+    );
+
+    let exact = obligations(source, "continue_after_failed_exact");
+    let [subtraction, downstream_addition] = exact.as_slice() else {
+        panic!("both source-ordered exact sites must retain their own outcome: {exact:?}");
+    };
+    assert_eq!(subtraction.family, ObligationFamily::IntegerDomain);
+    assert!(subtraction.refuted);
+    assert!(matches!(
+        &subtraction.canonical_goal,
+        Some(GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: CheckedIntegerOperation::SubtractDefined,
+                ..
+            },
+            ..
+        })
+    ));
+    assert_eq!(downstream_addition.family, ObligationFamily::IntegerDomain);
+    assert!(!downstream_addition.discharged);
+    assert!(matches!(
+        &downstream_addition.canonical_goal,
+        Some(GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: CheckedIntegerOperation::AddDefined,
+                ..
+            },
+            ..
+        })
+    ));
+
+    let set = obligations(source, "continue_after_failed_set");
+    let [set_value, after_set] = set.as_slice() else {
+        panic!("the failed set value and later exact site retain outcomes: {set:?}");
+    };
+    assert_eq!(set_value.family, ObligationFamily::IntegerDomain);
+    assert!(set_value.refuted);
+    assert_eq!(after_set.family, ObligationFamily::IntegerDomain);
+    assert!(!after_set.discharged);
+
+    let returned = entailment(source, "return_after_failed_set");
+    let [set_value] = returned.obligations.as_slice() else {
+        panic!(
+            "the failed set value must retain its own domain outcome: {:?}",
+            returned.obligations
+        );
+    };
+    assert_eq!(set_value.family, ObligationFamily::IntegerDomain);
+    assert!(!set_value.discharged);
+    let [postcondition] = returned.postconditions.as_slice() else {
+        panic!(
+            "the failed return still retains an unproved FN-9 result: {:?}",
+            returned.postconditions
+        );
+    };
+    assert_eq!(postcondition.exits.len(), 1);
+    assert_eq!(
+        postcondition.exits[0].disposition,
+        PostconditionDisposition::Unproved
+    );
+    assert!(!postcondition.aggregate.discharged);
 }
 
 // ---------------------------------------------------------------------
@@ -6638,13 +6926,21 @@ const inside: array<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
 const outside: array<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
 
 fn low(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let bound = inside[i];
-  return values[bound];
+  if ilt(i, 4_u64) {
+    let bound = inside[i];
+    return values[bound];
+  } else {
+    return 0_i32;
+  }
 }
 
 fn high(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let bound = outside[i];
-  return values[bound];
+  if ilt(i, 4_u64) {
+    let bound = outside[i];
+    return values[bound];
+  } else {
+    return 0_i32;
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -6659,8 +6955,8 @@ command fn main() -> status: own ExitStatus pure {
         "the element read carries its own obligation"
     );
     assert!(
-        !low.obligations[0].discharged,
-        "the index into the const table is judged separately and unaffected"
+        low.obligations[0].discharged,
+        "the dominating guard reaches the const-table element read"
     );
     assert!(
         low.obligations[1].discharged,
@@ -6787,6 +7083,33 @@ command fn main() -> status: own ExitStatus pure {
 // ---------------------------------------------------------------------
 
 #[test]
+fn a_failed_system_endpoint_expression_prevents_unreached_range_obligations() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
+  region 'attempt {
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
+  }
+  return unit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let outcomes = obligations(source, "publish");
+    let [endpoint_index] = outcomes.as_slice() else {
+        panic!("only the reached endpoint index may retain an obligation: {outcomes:?}");
+    };
+    assert_eq!(endpoint_index.family, ObligationFamily::Bounds);
+    assert!(!endpoint_index.discharged);
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| outcome.family != ObligationFamily::SystemRange),
+        "SYS-8 begins only after every endpoint expression succeeds"
+    );
+}
+
+#[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region 'attempt {
@@ -6885,6 +7208,101 @@ command fn main() -> status: own ExitStatus pure {
             }
         }
     });
+}
+
+#[test]
+fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 2>) -> result: own unit reads(output, source), writes(output) {
+  let capacity = len(deref(source));
+  if ile(endpoints[0_u64], endpoints[1_u64]) {
+    if ile(endpoints[1_u64], capacity) {
+      region 'attempt {
+        let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the two indexed guards must prove the exact SYS-8 goals: {outcome:?}");
+        };
+        let publish = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "publish")
+            .expect("publish is checked");
+        let ranges = publish
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
+            .collect::<Vec<_>>();
+        assert_eq!(ranges.len(), 2);
+        assert!(ranges.iter().all(|range| range.discharged));
+        let Some(GoalExpression::Operation {
+            arguments: first, ..
+        }) = &ranges[0].canonical_goal
+        else {
+            panic!("the first SYS-8 conjunct retains its canonical goal");
+        };
+        let Some(GoalExpression::Operation {
+            arguments: second, ..
+        }) = &ranges[1].canonical_goal
+        else {
+            panic!("the second SYS-8 conjunct retains its canonical goal");
+        };
+        assert!(matches!(
+            first.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::ArrayIndex { .. },
+                    ..
+                },
+                GoalExpression::Operation {
+                    row: GoalOperation::ArrayIndex { .. },
+                    ..
+                }
+            ]
+        ));
+        assert_eq!(
+            first[1], second[0],
+            "both conjuncts reuse the same end value identity"
+        );
+    });
+}
+
+#[test]
+fn a_nonterm_system_endpoint_is_never_replaced_by_the_zero_term() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
+  region 'attempt {
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let ranges = obligations(source, "publish")
+        .into_iter()
+        .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
+        .collect::<Vec<_>>();
+    assert_eq!(ranges.len(), 2);
+    assert!(ranges[0].canonical_goal.is_some());
+    assert!(ranges[0].components.is_empty());
+    assert!(!ranges[0].discharged);
+    assert!(
+        !ranges[0].refuted,
+        "`1 <= indexed_end` is unknown, not `1 <= 0`"
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -7229,7 +7647,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_counted_loop_body_bound_reaches_only_its_dominated_obligation() {
     let source = br#"fn read(values: own array<i32, 4>, leave: own Bool) -> result: own i32 pure {
-  for index in 0_u64..4_u64 {
+  for (
+    index in 0_u64..4_u64
+  ) {
     let value = values[index];
     if leave {
       return value;
@@ -7285,6 +7705,28 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_closed_opposite_bound_marks_the_subscript_obligation_refuted() {
+    let source = br#"fn read(values: own array<i32, 2>) -> result: own i32 pure {
+  return values[2_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "read");
+    let [bounds] = summary.obligations.as_slice() else {
+        panic!("the one subscript must retain exactly one OP-4 obligation");
+    };
+    assert_eq!(bounds.family, ObligationFamily::Bounds);
+    assert!(!bounds.discharged);
+    assert!(
+        bounds.refuted,
+        "the implicit len(values) = 2 relation proves the negation of 2 < len(values)"
+    );
+}
+
+#[test]
 fn a_discharged_program_accepts_and_retains_its_derivations() {
     let source = br#"const count: u64 = 4_u64;
 
@@ -7318,7 +7760,9 @@ fn counted_flow_publishes_one_exact_originating_outcome_shape() {
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 0_u64..4_u64 {
+  for @items (
+    i in 0_u64..4_u64
+  ) {
     let value = values[i];
     set total = total +wrap value;
   }
@@ -7927,7 +8371,9 @@ fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
 }
 
 fn probe(holder: own Holder) -> result: own unit reads(holder.value) {
-  for @items i in deref(holder.value)..1_u64 {
+  for @items (
+    i in deref(holder.value)..1_u64
+  ) {
   }
   return unit;
 }
@@ -7970,7 +8416,9 @@ fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
 fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.upper) {
   region 'r {
     let holder = &uniq 'r limit;
-    for @items i in 0_u64..deref(holder).upper {
+    for @items (
+      i in 0_u64..deref(holder).upper
+    ) {
       set deref(holder).upper = 0_u64;
       need(index: i, upper: deref(holder).upper);
     }
@@ -7997,7 +8445,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
     let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit reads(holder) {
-  for @items i in deref(deref(holder))..1_u64 {
+  for @items (
+    i in deref(deref(holder))..1_u64
+  ) {
   }
   return unit;
 }
@@ -8028,7 +8478,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
     let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads(holder) {
-  for @items i in deref(deref(deref(holder)))..1_u64 {
+  for @items (
+    i in deref(deref(deref(holder)))..1_u64
+  ) {
   }
   return unit;
 }
@@ -8061,7 +8513,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
     let source = br#"fn probe(holder: own box<u64>) -> result: own unit reads(holder) {
-  for @items i in deref(holder)..1_u64 {
+  for @items (
+    i in deref(holder)..1_u64
+  ) {
   }
   return unit;
 }
@@ -8088,7 +8542,9 @@ command fn main() -> status: own ExitStatus pure {
 fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
     let source = br#"fn probe() -> result: own unit allocates(heap) {
   let holder = box_new(0_u64);
-  for @items i in deref(holder)..1_u64 {
+  for @items (
+    i in deref(holder)..1_u64
+  ) {
   }
   return unit;
 }
@@ -8920,7 +9376,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn actual_obligations_precede_fn8_and_ephemeral_goals_use_the_stronger_fix() {
+fn actual_obligations_precede_fn8_and_admitted_index_goals_use_the_source_fix() {
     let admitted_actual = br#"fn positive(value: own u8) -> result: own unit pure contract {
   requires ilt(value, 10_u8);
 } {
@@ -8939,21 +9395,17 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(admitted_actual, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the ephemeral goal is not source-establishable: {outcome:?}");
+            panic!("the unproved indexed goal must reject at FN-8: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Fn8);
         let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
             panic!("expected FN-8 payload, got {:?}", issue.kind());
         };
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
-        assert!(
-            detail
-                .instantiated_goal
-                .contains("argument #0 pre-transfer value")
-        );
+        assert_eq!(detail.instantiated_goal, "ilt(values[0_u64], 10_u8)");
         assert_eq!(
             detail.mechanical_fix,
-            "bind that argument or referent value with one preceding ordinary let, establish the entire instantiated requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
+            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
         );
     });
     let admitted = entailment(admitted_actual, "caller");

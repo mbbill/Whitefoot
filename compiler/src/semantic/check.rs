@@ -2328,7 +2328,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             GoalExpression::Datum(GoalDatum::Literal(value)) => Ok(GoalExpression::Datum(
                 GoalDatum::Literal(self.instantiate_goal_value(value, signature, regions)?),
             )),
-            GoalExpression::Datum(GoalDatum::Place { .. } | GoalDatum::EphemeralActual { .. }) => {
+            GoalExpression::Datum(GoalDatum::Place { .. } | GoalDatum::EvaluatedValue { .. }) => {
                 Err(SemanticCompilerFailure::InvalidResolution.into())
             }
             GoalExpression::Operation {
@@ -2409,7 +2409,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
+            GoalOperation::ArrayIndex { element, length } => GoalOperation::ArrayIndex {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                length: self.instantiate_goal_const(length, signature)?,
+            },
             GoalOperation::BufferLength { element } => GoalOperation::BufferLength {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            GoalOperation::BufferIndex { element } => GoalOperation::BufferIndex {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
             GoalOperation::BufferFits {
@@ -2428,6 +2435,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            GoalOperation::SliceIndex { region, element } => GoalOperation::SliceIndex {
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
@@ -2657,7 +2668,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             fn node_path(&self) -> &crate::NodePath {
                 match self {
                     Self::LoopInvariant(outcome) => &outcome.node_path,
-                    Self::SourceProof(outcome) => &outcome.node_path,
+                    Self::SourceProof(outcome) => outcome.rejection_node_path(),
                     Self::Obligation(outcome) => &outcome.node_path,
                     Self::Call(outcome) => &outcome.node_path,
                 }
@@ -2666,7 +2677,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             const fn rule(&self) -> SemanticRule {
                 match self {
                     Self::LoopInvariant(_) => SemanticRule::Inv1,
-                    Self::SourceProof(_) => SemanticRule::Prf1,
+                    Self::SourceProof(outcome) => {
+                        if outcome.certificate_written {
+                            SemanticRule::Prf1
+                        } else {
+                            SemanticRule::Inv1
+                        }
+                    }
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
@@ -2759,39 +2776,90 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }))
                 }
                 Rejection::SourceProof(outcome) => {
+                    let rejection_node_path = outcome.rejection_node_path();
                     let node = self
                         .tree
-                        .node_with_path(&outcome.node_path)
+                        .node_with_path(rejection_node_path)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let obligation = if outcome.check.redundant {
+                    if let Some(failure) = outcome.check.target_failure {
+                        let (reason, mechanical_fix) = match failure {
+                            super::entailment::SourceProofCertificateFailure::ArithmeticOverflow => (
+                                "the invariant target exceeds the i128 proof domain after current value images are substituted",
+                                "split or rescale the invariant so its normalized current-value coefficients and constant fit i128",
+                            ),
+                            super::entailment::SourceProofCertificateFailure::FormationCapacity => (
+                                "the invariant target exceeds a fixed affine formation capacity after current value images are substituted",
+                                "split the invariant into smaller local invariants whose normalized current-value shapes fit the fixed capacities",
+                            ),
+                            super::entailment::SourceProofCertificateFailure::RepeatedUse { .. }
+                            | super::entailment::SourceProofCertificateFailure::UseCapacity { .. }
+                            | super::entailment::SourceProofCertificateFailure::InvalidFactor { .. } => {
+                                return Err(SemanticCompilerFailure::InvalidResolution.into());
+                            }
+                        };
+                        return Err(CheckStop::source_issue(SemanticIssue {
+                            rule: SemanticRule::Inv1,
+                            location: SemanticLocation::SourceNode(
+                                rejection_node_path.clone(),
+                                self.tree.coordinate(node)?,
+                            ),
+                            kind: SemanticIssueKind::InvalidInvariant {
+                                reason,
+                                mechanical_fix,
+                            },
+                        }));
+                    }
+                    if !outcome.certificate_written {
+                        if !outcome.check.premises.is_empty()
+                            || outcome.check.source_failure.is_some()
+                            || outcome.check.certificate_failure.is_some()
+                            || outcome.check.residual_failure.is_some()
+                            || outcome.check.redundant
+                            || outcome.check.combination
+                        {
+                            return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        }
+                        return Err(CheckStop::source_issue(SemanticIssue {
+                            rule: SemanticRule::Inv1,
+                            location: SemanticLocation::SourceNode(
+                                rejection_node_path.clone(),
+                                self.tree.coordinate(node)?,
+                            ),
+                            kind: SemanticIssueKind::UndischargedLocalInvariant {
+                                name: outcome.name.clone(),
+                                mechanical_fix: "weaken or correct this invariant, or establish the missing facts before this statement so AUTO proves its target in the entering context",
+                            },
+                        }));
+                    }
+                    let failure_obligation = |failure| match failure {
+                        super::entailment::SourceProofCertificateFailure::RepeatedUse {
+                            first,
+                            repeated,
+                        } => crate::SourceProofObligation::RepeatedUse { first, repeated },
+                        super::entailment::SourceProofCertificateFailure::UseCapacity {
+                            maximum,
+                            actual,
+                        } => crate::SourceProofObligation::UseCapacity { maximum, actual },
+                        super::entailment::SourceProofCertificateFailure::ArithmeticOverflow => {
+                            crate::SourceProofObligation::CertificateArithmeticOverflow
+                        }
+                        super::entailment::SourceProofCertificateFailure::FormationCapacity => {
+                            crate::SourceProofObligation::CertificateFormationCapacity
+                        }
+                        super::entailment::SourceProofCertificateFailure::InvalidFactor {
+                            use_index,
+                        } => crate::SourceProofObligation::InvalidUseFactor { use_index },
+                    };
+                    let obligation = if let Some(failure) = outcome.check.source_failure {
+                        failure_obligation(failure)
+                    } else if outcome.check.redundant {
                         crate::SourceProofObligation::RedundantUseBlock
                     } else if let Some(failure) = outcome.check.certificate_failure {
-                        match failure {
-                            super::entailment::SourceProofCertificateFailure::RepeatedUse {
-                                first,
-                                repeated,
-                            } => crate::SourceProofObligation::RepeatedUse { first, repeated },
-                            super::entailment::SourceProofCertificateFailure::UseCapacity {
-                                maximum,
-                                actual,
-                            } => crate::SourceProofObligation::UseCapacity { maximum, actual },
-                            super::entailment::SourceProofCertificateFailure::ArithmeticOverflow => {
-                                crate::SourceProofObligation::CertificateArithmeticOverflow
-                            }
-                            super::entailment::SourceProofCertificateFailure::FormationCapacity => {
-                                crate::SourceProofObligation::CertificateFormationCapacity
-                            }
-                            super::entailment::SourceProofCertificateFailure::InvalidFactor {
-                                use_index,
-                            } => crate::SourceProofObligation::InvalidUseFactor { use_index },
-                        }
-                    } else if let Some(index) =
-                        outcome.check.premises.iter().position(|premise| !premise)
-                    {
-                        crate::SourceProofObligation::Premise(
-                            u32::try_from(index)
-                                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                        )
+                        failure_obligation(failure)
+                    } else if let Some(index) = outcome.check.first_unproved_premise {
+                        crate::SourceProofObligation::Premise(index)
+                    } else if let Some(failure) = outcome.check.residual_failure {
+                        failure_obligation(failure)
                     } else if !outcome.check.combination {
                         crate::SourceProofObligation::Combination
                     } else {
@@ -2826,7 +2894,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Prf1,
                         location: SemanticLocation::SourceNode(
-                            outcome.node_path.clone(),
+                            rejection_node_path.clone(),
                             self.tree.coordinate(node)?,
                         ),
                         kind: SemanticIssueKind::UndischargedSourceProof {

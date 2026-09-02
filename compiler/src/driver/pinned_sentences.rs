@@ -1085,7 +1085,7 @@ command fn main() -> status: own ExitStatus pure {
         sentences: &[r#"instantiated_goal: "flt(v, Float { ty: F64, bits: 4607182418800017408 })""#],
     },
     Probe {
-        name: "goal-over-a-holder-and-an-ephemeral-actual.wf",
+        name: "goal-over-an-admitted-index-actual.wf",
         source: br#"fn need(x: own u8) -> out: own u8 pure contract {
   requires ilt(x, 10_u8);
 } {
@@ -1099,7 +1099,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ilt(<argument #0 pre-transfer value>, 10_u8)""#],
+        sentences: &[r#"instantiated_goal: "ilt(data[0_u64], 10_u8)""#],
     },
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",

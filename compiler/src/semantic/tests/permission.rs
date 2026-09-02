@@ -943,11 +943,11 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(runs[0].sites.len(), 2);
 }
 
-/// A source proof between two calls is a compile-time statement, not a runtime
-/// window member. It neither splits the pair nor contributes a footprint or
-/// exit edge.
+/// A local invariant between two calls is a compile-time statement, not a
+/// runtime window member. It neither splits the pair nor contributes a
+/// footprint or exit edge.
 #[test]
-fn a_source_proof_between_two_calls_keeps_the_pair() {
+fn a_local_invariant_between_two_calls_keeps_the_pair() {
     let source = br#"fn peek['r](value: &'r u64) -> result: own u64 reads(value) {
   return deref(value);
 }
@@ -957,10 +957,7 @@ command fn main() -> status: own ExitStatus pure {
   let right = 2_u64;
   region 'r {
     let a = peek<'r>(value: &'r left);
-    prove two_steps: ile(0_u64, 2_u64) {
-      use ile(0_u64, 1_u64);
-      use ile(1_u64, 2_u64);
-    }
+    invariant two_steps: ile(0_u64, 2_u64);
     let b = peek<'r>(value: &'r right);
     let total = a +wrap b;
   }

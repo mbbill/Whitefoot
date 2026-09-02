@@ -772,11 +772,13 @@ fn active_invariants_prove_signed_division_and_remainder_domains() {
 } {
   let dividend = dividend_start;
   let divisor = divisor_start;
-  for @items i in 0_u64..limit {
-    invariant dividend_lower: ile(-10_i32, dividend);
-    invariant dividend_progress: ile(dividend, dividend_start + i);
-    invariant divisor_positive: ile(1_i32, divisor);
-    invariant divisor_progress: ile(divisor, divisor_start + i);
+  for @items (
+    i in 0_u64..limit,
+    invariant dividend_lower: ile(-10_i32, dividend),
+    invariant dividend_progress: ile(dividend, dividend_start + i),
+    invariant divisor_positive: ile(1_i32, divisor),
+    invariant divisor_progress: ile(divisor, divisor_start + i)
+  ) {
     let quotient_positive = -2147483648_i32 / divisor;
     let remainder_positive = -2147483648_i32 % divisor;
     let quotient_negative_one = dividend / -1_i32;
@@ -852,5 +854,244 @@ command fn main() -> status: own ExitStatus pure {
                 "each signed domain proof must consume a source invariant"
             );
         }
+    });
+}
+
+#[test]
+fn an_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    let source = br#"fn increment(values: own array<u8, 1>) -> result: own u8 pure {
+  if values[0_u64] +defined 1_u8 {
+    let result = values[0_u64] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 1>(0_u8);
+  let result = increment(values: move values);
+  return exit_status(code: result);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the identical indexed value must retain one structural goal: {outcome:?}");
+        };
+        let increment = named(&checked.data.functions, "increment");
+        let exact = increment
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition retains its OP-2 obligation");
+        assert!(exact.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &exact.canonical_goal else {
+            panic!("every OP-2 occurrence must retain its canonical goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::ArrayIndex { .. },
+                    ..
+                },
+                GoalExpression::Datum(_)
+            ]
+        ));
+    });
+}
+
+#[test]
+fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
+    let source = br#"fn increment_after_write(values: own array<u8, 1>) -> result: own u8 pure {
+  if values[0_u64] +defined 1_u8 {
+    set values[0_u64] = 255_u8;
+    let result = values[0_u64] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 1>(0_u8);
+  let result = increment_after_write(values: move values);
+  return exit_status(code: result);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a collection write must kill the old indexed goal: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn a_buffer_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    let source = br#"fn increment['v](values: &'v buffer<u8>) -> result: own u8 reads(values) {
+  let room = len(deref(values));
+  if ilt(0_u64, room) {
+    if deref(values)[0_u64] +defined 1_u8 {
+      let result = deref(values)[0_u64] + 1_u8;
+      return result;
+    } else {
+      return 0_u8;
+    }
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the identical buffer element must retain one structural goal: {outcome:?}");
+        };
+        let increment = named(&checked.data.functions, "increment");
+        let exact = increment
+            .entailment
+            .obligations
+            .iter()
+            .rfind(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition retains its OP-2 obligation");
+        assert!(exact.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &exact.canonical_goal else {
+            panic!("every OP-2 occurrence must retain its canonical goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::BufferIndex { .. },
+                    ..
+                },
+                GoalExpression::Datum(_)
+            ]
+        ));
+    });
+}
+
+#[test]
+fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    let source = br#"fn increment['v](values: own slice<'v, u8>) -> result: own u8 reads(values) {
+  let room = len(values);
+  if ilt(0_u64, room) {
+    if values[0_u64] +defined 1_u8 {
+      let result = values[0_u64] + 1_u8;
+      return result;
+    } else {
+      return 0_u8;
+    }
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the identical slice element must retain one structural goal: {outcome:?}");
+        };
+        let increment = named(&checked.data.functions, "increment");
+        let exact = increment
+            .entailment
+            .obligations
+            .iter()
+            .rfind(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition retains its OP-2 obligation");
+        assert!(exact.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &exact.canonical_goal else {
+            panic!("every OP-2 occurrence must retain its canonical goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::SliceIndex { .. },
+                    ..
+                },
+                GoalExpression::Datum(_)
+            ]
+        ));
+    });
+}
+
+#[test]
+fn different_index_offsets_do_not_share_a_defined_fact() {
+    let source = br#"fn increment_other(values: own array<u8, 2>) -> result: own u8 pure {
+  if values[0_u64] +defined 1_u8 {
+    let result = values[1_u64] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("different index identities must not share a defined fact: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                residual,
+                ..
+            } if residual == "values[1_u64] +defined 1_u8"
+        ));
+    });
+}
+
+#[test]
+fn writing_the_index_binding_invalidates_its_old_indexed_defined_fact() {
+    let source =
+        br#"fn increment_after_index_write(values: own array<u8, 2>) -> result: own u8 pure {
+  let offset = 1_u64;
+  if values[offset] +defined 1_u8 {
+    set offset = 0_u64;
+    let result = values[offset] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an index write must kill the old indexed goal: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                residual,
+                ..
+            } if residual == "values[offset] +defined 1_u8"
+        ));
     });
 }

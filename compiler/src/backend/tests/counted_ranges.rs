@@ -9,23 +9,33 @@ use super::{compile, compile_and_run, emitted_function};
 fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
     let source = br#"fn exercise() -> result: own u64 pure {
   let total = 0_u64;
-  for @empty i in 4_u64..4_u64 {
+  for @empty (
+    i in 4_u64..4_u64
+  ) {
     set total = total +wrap 100_u64;
   }
-  for @reversed i in 5_u64..2_u64 {
+  for @reversed (
+    i in 5_u64..2_u64
+  ) {
     set total = total +wrap 100_u64;
   }
-  for @singleton i in 0_u64..1_u64 {
+  for @singleton (
+    i in 0_u64..1_u64
+  ) {
     set total = total +wrap 1_u64;
   }
   let max_visits = 0_u64;
   let max_seen = 0_u64;
-  for @max_one i in 18446744073709551614_u64..18446744073709551615_u64 {
+  for @max_one (
+    i in 18446744073709551614_u64..18446744073709551615_u64
+  ) {
     set max_visits = max_visits +wrap 1_u64;
     set max_seen = i;
     set total = total +wrap 2_u64;
   }
-  for @max_empty i in 18446744073709551615_u64..18446744073709551615_u64 {
+  for @max_empty (
+    i in 18446744073709551615_u64..18446744073709551615_u64
+  ) {
     set total = total +wrap 100_u64;
   }
   if ine(max_visits, 1_u64) {
@@ -35,7 +45,9 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
     return 1001_u64;
   }
   let upper = 3_u64;
-  for @captured i in 0_u64..upper {
+  for @captured (
+    i in 0_u64..upper
+  ) {
     region 'r {
       let held = &'r i;
       let seen = deref(held);
@@ -43,8 +55,12 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
     }
     set upper = 0_u64;
   }
-  for @outer i in 0_u64..4_u64 {
-    for @inner j in 0_u64..4_u64 {
+  for @outer (
+    i in 0_u64..4_u64
+  ) {
+    for @inner (
+      j in 0_u64..4_u64
+    ) {
       set total = total +wrap 1_u64;
       break @inner;
     }

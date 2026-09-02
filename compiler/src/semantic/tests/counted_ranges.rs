@@ -19,7 +19,9 @@ fn assert_checks(source: &[u8]) {
 #[test]
 fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  for @items i in 2_u64..1_u64 {
+  for @items (
+    i in 2_u64..1_u64
+  ) {
   }
   return exit_status(code: 0_u8);
 }
@@ -62,7 +64,9 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
 
     assert_checks(
         br#"command fn main() -> status: own ExitStatus pure {
-  for @items i in 18446744073709551614_u64..18446744073709551615_u64 {
+  for @items (
+    i in 18446744073709551614_u64..18446744073709551615_u64
+  ) {
   }
   return exit_status(code: 0_u8);
 }
@@ -74,7 +78,9 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
 fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
     assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus pure {
-  for @items i in 0_u32..1_u64 {
+  for @items (
+    i in 0_u32..1_u64
+  ) {
   }
   return exit_status(code: 0_u8);
 }
@@ -85,7 +91,9 @@ fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
 
     assert_rule(
         br#"fn walk['r](start: &'r u64) -> result: own unit pure {
-  for @items i in start..1_u64 {
+  for @items (
+    i in start..1_u64
+  ) {
   }
   return unit;
 }
@@ -103,7 +111,9 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let start = box_new(0_u64);
-  for @items i in start..1_u64 {
+  for @items (
+    i in start..1_u64
+  ) {
   }
   return exit_status(code: 0_u8);
 }
@@ -118,7 +128,9 @@ command fn main() -> status: own ExitStatus pure {
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let start = box_new(0_u64);
   loop @outer {
-    for @items i in start..1_u64 {
+    for @items (
+      i in start..1_u64
+    ) {
     }
     break @outer;
   }
@@ -133,7 +145,9 @@ command fn main() -> status: own ExitStatus pure {
 
     assert_checks(
         br#"fn walk['l, 'u](lower: &'l u64, upper: &'u u64) -> result: own unit reads(lower, upper) {
-  for @items i in deref(lower)..deref(upper) {
+  for @items (
+    i in deref(lower)..deref(upper)
+  ) {
   }
   return unit;
 }
@@ -148,7 +162,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_endpoints_require_a_preceding_term_or_constant() {
     let subscript = br#"fn probe(bounds: own array<u64, 2>) -> result: own unit pure {
-  for @items i in bounds[0_u64]..bounds[1_u64] {
+  for @items (
+    i in bounds[0_u64]..bounds[1_u64]
+  ) {
   }
   return unit;
 }
@@ -172,7 +188,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn probe['r](bounds: own Bounds, upper: &'r u64) -> result: own unit reads(bounds.lower, upper) {
-  for @items i in bounds.lower..deref(upper) {
+  for @items (
+    i in bounds.lower..deref(upper)
+  ) {
   }
   return unit;
 }
@@ -188,7 +206,9 @@ command fn main() -> status: own ExitStatus pure {
 fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     set i = 1_u64;
   }
   return exit_status(code: 0_u8);
@@ -203,7 +223,9 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
 
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     region 'body {
       let exclusive = &uniq 'body i;
     }
@@ -222,7 +244,9 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     region 'body {
       overwrite<'body>(target: &uniq 'body i);
     }
@@ -244,7 +268,9 @@ fn counted_body_inherits_own11_and_accepts_body_local_ownership() {
 
 command fn main() -> status: own ExitStatus pure {
   let token = Token(value: 1_u64);
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     let consumed = move token;
   }
   return exit_status(code: 0_u8);
@@ -260,7 +286,9 @@ command fn main() -> status: own ExitStatus pure {
         br#"command fn main() -> status: own ExitStatus pure {
   let value = 0_u64;
   region 'outer {
-    for @items i in 0_u64..1_u64 {
+    for @items (
+      i in 0_u64..1_u64
+    ) {
       let shared = &'outer value;
     }
   }
@@ -279,7 +307,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     region 'body {
       let shared = &'body i;
     }
@@ -295,7 +325,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_cleanup_is_attached_only_to_taken_body_exits() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     let values = buffer_new(1_u64, 0_u8);
     break @items;
   }
@@ -334,7 +366,9 @@ fn source() -> result: own Result<u64, Fail> pure {
 }
 
 fn leave() -> result: own unit allocates(heap) {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     let values = buffer_new(1_u64, 0_u8);
     return unit;
   }
@@ -342,7 +376,9 @@ fn leave() -> result: own unit allocates(heap) {
 }
 
 fn forward() -> result: own Result<unit, Fail> allocates(heap) {
-  for @items i in 0_u64..1_u64 {
+  for @items (
+    i in 0_u64..1_u64
+  ) {
     let values = buffer_new(1_u64, 0_u8);
     let value = propagate source();
   }
@@ -408,7 +444,9 @@ fn counted_range_forwards_breaks_to_an_enclosing_loop() {
     assert_checks(
         br#"command fn main() -> status: own ExitStatus pure {
   loop @outer {
-    for i in 0_u64..1_u64 {
+    for (
+      i in 0_u64..1_u64
+    ) {
       break @outer;
     }
   }
@@ -425,8 +463,10 @@ fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
     loop {
       break;
     }
-    for index in 0_u64..1_u64 {
-      invariant within_range: ile(index, 1_u64);
+    for (
+      index in 0_u64..1_u64,
+      invariant within_range: ile(index, 1_u64)
+    ) {
       break;
     }
     break @outer;

@@ -6,11 +6,14 @@ reads, silent overflow, and every other unproved partial operation
 unrepresentable. There is no writer-accessible unsafe escape or runtime trap.
 Every partial operation is admitted only after machine proof of its domain.
 The official compiler uses no SMT for acceptance: automatic derivation is
-specification-fixed, deterministic, terminating, and work-bounded, while
-harder proofs arrive as explicit finite steps in the same source file that the
-compiler checks without rediscovering them. Proofs are erased before lowering
-and may authorize check removal, optimization, and parallel independence
-without adding runtime branches, locks, dependencies, or scheduling edges.
+specification-fixed, deterministic, and terminating. Every admitted automatic
+family runs to its specified completion; timeout, machine speed, solver state,
+or a cumulative work budget never selects acceptance. Harder proofs arrive as
+explicit finite `use` steps inside a local `invariant`, and the compiler checks
+those written steps without rediscovering them. Proofs are erased before
+lowering and may authorize check removal, optimization, and parallel
+independence without adding runtime branches, locks, dependencies, or
+scheduling edges.
 
 ## Project goal
 
@@ -172,11 +175,43 @@ only reports the same class of mistake earlier.
   partial operation.
 - State relations that are intended to hold on every conforming execution as
   proof-only source evidence: `requires`/`ensures` across functions,
-  `invariant` across counted-loop backedges, and `prove` for an explicit local
-  derivation. A source branch may guard a partial operation only when its false
-  edge is intended program behavior. An impossible-case return or other
-  observable branch added only to satisfy the checker is a compiler or source
-  defect; improve the proof or the checker instead.
+  header `invariant` relations across loop edges, and local `invariant`
+  statements for program-point facts. A local invariant may carry explicit
+  `use` steps; those steps read one entering snapshot, publish nothing
+  themselves, and only the checked outer invariant becomes a later fact. A
+  source branch may guard a partial operation only when its false edge is
+  intended program behavior. An impossible-case return or other observable
+  branch added only to satisfy the checker is a compiler or source defect;
+  improve the proof or the checker instead.
+- Keep AUTO's exact language boundary visible in the implementation and docs:
+  zero-premise direct proof, every coefficient-one single premise, every unordered
+  coefficient-one premise pair including the same premise twice, then the
+  fixed L0-image route. Combinations that need three or more published affine
+  premises outside that final L0-image route, special elimination routes, and
+  future named nonlinear rules require explicit `use`. A nonempty `use` block
+  that AUTO can remove is a source error.
+- Preserve the canonical loop header: multiline `for (` has the binding first
+  and only header invariants after it; multiline `loop (` has only header
+  invariants; neither permits a trailing comma. Header invariants have no
+  `use` block and their names are body-only.
+- Do not add timeouts, fuel, a proof-work budget, heuristic early failure, or
+  hash-order dependence to any acceptance path. Fixed structural source
+  ceilings are language rules; within them the specified checker runs to
+  completion. Stopping at the first success in a fixed order is valid because
+  a later candidate cannot revoke a proof.
+- Treat the compiler as a compiler, not a self-validating proof service.
+  Internal data disagreement is a compiler bug to fix with code and tests; do
+  not invent exported proof objects, replay layers, or runtime self-checks for
+  compiler-generated state.
+- Keep `.wfproof`, proof-cache, incremental-proof, and cross-module certificate
+  protocols outside the current source-proof work. They may be reconsidered
+  only for a future build consumer; they are not prerequisites for checking one
+  complete source program correctly.
+- Feed `par` from the same checked facts used by sequential semantics. Failure
+  to prove an optional parallel permission leaves sequential lowering; it does
+  not reject otherwise valid source. If overlap is selected, prove its
+  independence, mapping, layout, target, and bounded completion premises before
+  emission.
 - Keep facts-off compilation correct. An optimizer fact may improve an accepted
   program but may not change source acceptance or program semantics.
 - Prefer simple implementations and normal collections. Fix measured

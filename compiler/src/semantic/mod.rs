@@ -639,8 +639,8 @@ pub enum SemanticIssueKind {
         /// The exact source-level restructuring required by GRAM-4.
         mechanical_fix: &'static str,
     },
-    /// A proof-only loop invariant violates INV-1 formation.
-    InvalidLoopInvariant {
+    /// A header or local invariant violates INV-1 name or target formation.
+    InvalidInvariant {
         reason: &'static str,
         mechanical_fix: &'static str,
     },
@@ -658,8 +658,16 @@ pub enum SemanticIssueKind {
         /// Exact source-level repair selected by INV-1.
         mechanical_fix: &'static str,
     },
-    /// A local invariant or one of its `use` entries violates the closed
-    /// affine source form.
+    /// A well-formed blockless local invariant target is not established by
+    /// the specification-defined AUTO family in its entering context.
+    UndischargedLocalInvariant {
+        /// Source spelling of the invariant name.
+        name: String,
+        /// Exact source-level repair selected by INV-1.
+        mechanical_fix: &'static str,
+    },
+    /// A `proof_use` relation or certificate factor violates the closed
+    /// PRF-1 source form.
     InvalidSourceProof {
         reason: &'static str,
         mechanical_fix: &'static str,
@@ -991,8 +999,6 @@ pub enum UnsupportedSemanticFeature {
     RegionsAndBorrows,
     /// Composite types or values outside the implemented nominal-data family.
     CompositeValues,
-    /// A loop with no structurally reachable break exit for current SSA lowering.
-    StructuredControlFlow,
     /// A recursive nominal layout whose finite representation is not selected.
     RecursiveNominalLayout,
     /// Moving an affine referent out of owning indirection has no selected cleanup semantics.

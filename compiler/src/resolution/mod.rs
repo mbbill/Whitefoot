@@ -203,7 +203,7 @@ pub enum DeclarationClass {
     OperationFamily,
 }
 
-/// Closed TYPE-6 collision-domain order.
+/// Closed resolver collision-domain order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DeclarationDomain {
     /// Functions, constants, const generics, parameters, lets, and binders.
@@ -697,9 +697,9 @@ pub enum ResolutionRule {
     Fn8,
     /// Ensures-block structural and selector admission.
     Fn9,
-    /// Proof-only counted-loop invariant value lookup.
+    /// Invariant declaration names and proof-only target-value lookup.
     Inv1,
-    /// Finite source-proof value lookup.
+    /// Finite source-certificate relation-value lookup.
     Prf1,
 }
 
@@ -748,6 +748,8 @@ pub enum ReservedDeclarationRole {
     Parameter,
     /// Lexical let binding.
     Let,
+    /// Header or body-local invariant declaration.
+    Invariant,
     /// Counted-range binder.
     ForBinder,
     /// Match binder.

@@ -1,6 +1,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::entailment::{DerivationNode, GoalSign, ObligationFamily, SourceAffineFactRef};
+use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
@@ -8,6 +9,36 @@ use super::super::model::{
 use super::{
     assert_rule, assert_rule_kind, assert_unsupported, with_semantics, with_semantics_dark,
 };
+
+#[test]
+fn a_failed_length_expression_prevents_the_unreached_allocation_fit_obligation() {
+    let source = br#"fn allocate(lengths: own array<u64, 1>) -> result: own unit allocates(heap) {
+  let values = buffer_new(lengths[1_u64], 0_u8);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the dark hook must retain the reached index obligation: {outcome:?}");
+        };
+        let allocation = &checked.data.functions[0].entailment.obligations;
+        let [length_index] = allocation.as_slice() else {
+            panic!("only the reached length index may retain an obligation: {allocation:?}");
+        };
+        assert_eq!(length_index.family, ObligationFamily::Bounds);
+        assert!(!length_index.discharged);
+        assert!(
+            allocation
+                .iter()
+                .all(|outcome| outcome.family != ObligationFamily::AllocationFit),
+            "OP-9 begins only after its length and fill value expressions succeed"
+        );
+    });
+}
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
@@ -187,16 +218,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 
 #[test]
-fn a_source_proof_allocation_ceiling_is_installed_in_the_target_domain() {
+fn a_local_invariant_allocation_ceiling_is_installed_in_the_target_domain() {
     let source =
         br#"fn allocate(n: own u64, middle: own u64) -> result: own unit allocates(heap) contract {
   requires ile(n, middle);
   requires ile(middle, 1000_u64);
 } {
-  prove bounded: ile(n, 1000_u64) {
-    use ile(n, middle);
-    use ile(middle, 1000_u64);
-  }
+  invariant bounded: ile(n, 1000_u64);
   let values = buffer_new(n, 0_u16);
   return unit;
 }
@@ -208,7 +236,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the checked source proof must bound the allocation: {outcome:?}");
+            panic!("the checked local invariant must bound the allocation: {outcome:?}");
         };
         let allocate = checked
             .data
@@ -237,7 +265,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 
 #[test]
-fn an_affine_source_proof_supplies_the_only_tight_allocation_ceiling() {
+fn an_affine_invariant_supplies_the_only_tight_allocation_ceiling() {
     let source =
         br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
   requires ile(half, 500_u64);
@@ -245,11 +273,7 @@ fn an_affine_source_proof_supplies_the_only_tight_allocation_ceiling() {
   let doubled = half * 2_u64;
   let within = ile(n, doubled);
   if within {
-    prove tight: ile(n, 1000_u64) {
-      use ile(n, doubled);
-      use ile(doubled, 2_u64 * half);
-      use ile(2_u64 * half, 1000_u64);
-    }
+    invariant tight: ile(n, 1000_u64);
     let values = buffer_new(n, 0_u16);
   }
   return unit;
@@ -261,7 +285,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the checked affine source proof must bound the allocation: {outcome:?}");
+            panic!("the checked affine invariant must bound the allocation: {outcome:?}");
         };
         let allocate = checked
             .data
@@ -1000,4 +1024,58 @@ command fn main() -> status: own ExitStatus allocates(heap) {
             assert_eq!(issue.rule(), SemanticRule::Fn8);
         },
     );
+}
+
+#[test]
+fn an_indexed_buffer_fits_guard_discharges_the_same_allocation_goal() {
+    let source =
+        br#"fn make_buffer(lengths: own array<u64, 1>) -> result: own buffer<u8> allocates(heap) {
+  if buffer_fits<u8>(lengths[0_u64]) {
+    return buffer_new(lengths[0_u64], 0_u8);
+  } else {
+    return buffer_new(0_u64, 0_u8);
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let lengths = array_new<u64, 1>(1_u64);
+  let result = make_buffer(lengths: move lengths);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the indexed predicate and allocation must share one exact goal: {outcome:?}");
+        };
+        let make_buffer = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "make_buffer")
+            .expect("make_buffer is checked");
+        let indexed = make_buffer
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| {
+                matches!(
+                    &outcome.canonical_goal,
+                    Some(GoalExpression::Operation {
+                        row: GoalOperation::BufferFits { .. },
+                        arguments,
+                        ..
+                    }) if matches!(
+                        arguments.as_slice(),
+                        [GoalExpression::Operation {
+                            row: GoalOperation::ArrayIndex { .. },
+                            ..
+                        }]
+                    )
+                )
+            })
+            .expect("the indexed allocation retains its OP-9 goal");
+        assert!(indexed.discharged);
+        assert_eq!(indexed.components.len(), 1);
+        assert!(indexed.components[0].left.is_none());
+    });
 }

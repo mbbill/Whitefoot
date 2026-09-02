@@ -9,7 +9,9 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   requires ile(length, left_length);
   requires ile(length, right_length);
 } {
-  for index_value in 0_u64..length {
+  for (
+    index_value in 0_u64..length
+  ) {
     set deref(left)[index_value] = index_value;
     let shifted = index_value +wrap 10_u64;
     set deref(right)[index_value] = shifted;
@@ -24,7 +26,9 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> f
   requires ile(length, right_length);
 } {
   let total = 0_u64;
-  for index_value in 0_u64..length {
+  for (
+    index_value in 0_u64..length
+  ) {
     let left_value = deref(left)[index_value];
     let right_value = deref(right)[index_value];
     set total = total +wrap left_value;

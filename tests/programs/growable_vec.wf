@@ -27,7 +27,9 @@ fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Over
           let overflow = Overflow();
           return Err<unit, Overflow>(error: overflow);
         }
-        for @copy i in 0_u64..cap {
+        for @copy (
+          i in 0_u64..cap
+        ) {
           let e = deref(v).buf[i];
           set nbuf[i] = e;
         }
@@ -49,7 +51,9 @@ fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Over
 
 fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own Result<unit, Overflow> reads(dst.buf, dst.fill, src), writes(dst.buf, dst.fill), allocates(heap) {
   let count = len(deref(src));
-  for @append i in 0_u64..count {
+  for @append (
+    i in 0_u64..count
+  ) {
     let byte = deref(src)[i];
     region 'c {
       let pushed = propagate vec_push<'c>(v: &uniq 'c deref(dst), x: byte);
@@ -61,7 +65,9 @@ fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: o
 command fn main() -> status: own ExitStatus allocates(heap) {
   let v = vec_new();
   let b = 7_u8;
-  for @seed i in 0_u64..20_u64 {
+  for @seed (
+    i in 0_u64..20_u64
+  ) {
     region 'push {
       match vec_push<'push>(v: &uniq 'push v, x: b) {
         Ok(value: pushed) => {

@@ -105,7 +105,9 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
 
 fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   let total = 0_u64;
-  for @points i in lo..hi {
+  for @points (
+    i in lo..hi
+  ) {
     let mixed = mix(seed: i);
     set total = total +wrap mixed;
   }
@@ -158,7 +160,9 @@ const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
 
 fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   let total = 7_u64;
-  for @points i in lo..hi {
+  for @points (
+    i in lo..hi
+  ) {
     let mixed = mix(seed: i);
     set total = total +wrap mixed;
   }
@@ -247,7 +251,9 @@ command fn main() -> status: own ExitStatus pure {
   let d0 = 30_u64;
   let d1 = 31_u64;
   let total = 0_u64;
-  for @points i in 0_u64..400000_u64 {
+  for @points (
+    i in 0_u64..400000_u64
+  ) {
     let mixed = mix(seed: i);
     let biased = mixed +wrap a0;
     set total = total +wrap biased;
@@ -323,7 +329,9 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
 fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pure {
   doc "Three captured values, each used differently, folded under ixor.";
   let total = 12345678901234567890_u64;
-  for @points i in 0_u64..400000_u64 {
+  for @points (
+    i in 0_u64..400000_u64
+  ) {
     let stepped = i *wrap stride;
     let mixed = mix(seed: stepped, salt: salt, rounds: rounds);
     set total = ixor(total, mixed);
@@ -387,7 +395,9 @@ fn low_byte(v: own u64) -> result: own u8 pure {
 
 fn mapped() -> result: own buffer<u8> allocates(heap) {
   let out = buffer_new(400000_u64, 0_u8);
-  for @fill i in 0_u64..400000_u64 {
+  for @fill (
+    i in 0_u64..400000_u64
+  ) {
     let copied = i;
     let slot = copied * 1_u64;
     let mixed = mix(seed: i);
@@ -423,8 +433,8 @@ fn map_and_reduction_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "  for @fill i in 0_u64..400000_u64 {\n",
-            "  let checksum = 0_u64;\n  for @fill i in 0_u64..400000_u64 {\n",
+            "  for @fill (\n    i in 0_u64..400000_u64\n  ) {\n",
+            "  let checksum = 0_u64;\n  for @fill (\n    i in 0_u64..400000_u64\n  ) {\n",
             1,
         )
         .replacen(
@@ -435,6 +445,31 @@ fn map_and_reduction_source() -> Vec<u8> {
         .replacen(
             "  return move out;\n",
             "  let first = low_byte(v: checksum);\n  set out[0_u64] = first;\n  return move out;\n",
+            1,
+        )
+        .into_bytes()
+}
+
+/// The same work as [`INDEPENDENT_MAP`], expressed through a unique output
+/// parameter and a same-index read-modify-write. This keeps the result bytes
+/// unchanged while exercising both read-side map evidence and holder capture.
+fn borrowed_read_modify_map_source() -> Vec<u8> {
+    let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
+    source
+        .replacen(
+            "fn mapped() -> result: own buffer<u8> allocates(heap) {\n  let out = buffer_new(400000_u64, 0_u8);\n",
+            "fn mapped['m](out: &uniq 'm buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires ile(400000_u64, room);\n} {\n",
+            1,
+        )
+        .replacen(
+            "    set out[slot] = byte;\n",
+            "    let old = deref(out)[slot];\n    let next = old +wrap byte;\n    set deref(out)[slot] = next;\n",
+            1,
+        )
+        .replacen("  return move out;\n", "  return unit;\n", 1)
+        .replacen(
+            "  let report = mapped();\n",
+            "  let report = buffer_new(400000_u64, 0_u8);\n  region 'map {\n    let done = mapped<'map>(out: &uniq 'map report);\n  }\n",
             1,
         )
         .into_bytes()
@@ -875,6 +910,42 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// PAR-2's read-side map and unique-holder routes use the ordinary counted
+/// splitter. Running the same program with and without that lowering proves
+/// that the new permission changes scheduling only, not the published bytes.
+#[test]
+fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
+    let source = borrowed_read_modify_map_source();
+    let unsplit = emit(&source);
+    let split = emit_with_overlap(&source);
+    assert!(
+        module_requires_parallel_runtime(&split),
+        "the proved holder map must actualize when overlap lowering is requested"
+    );
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the sequential holder map");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(reference.stdout.len(), 400000);
+
+    let executable = build_executable(&split, &directory);
+    let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
+    for workers in ["1", "4", "8"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split holder map");
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+        assert_eq!(output.stdout.len(), 400000, "WF_WORKERS={workers}");
+        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+    }
+    identical(&runs).expect("the borrowed read-modify map must preserve every output byte");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 /// A loop that maps and reduces still selects the Reduction result path. The
 /// byte at index zero depends on the returned fold; every other byte depends on
 /// the captured map storage, so the differential checks both at once.
@@ -1224,7 +1295,7 @@ fn admitted_combine_source() -> Vec<u8> {
         } = combine;
         source.push_str(&format!(
             "\nfn fold_{name}(lo: own u64, hi: own u64) -> result: own {ty} pure {{\n  \
-             let total = {seed};\n  for @points i in lo..hi {{\n    \
+             let total = {seed};\n  for @points (\n    i in lo..hi\n  ) {{\n    \
              let mixed = mix(seed: i);\n"
         ));
         for statement in *element {

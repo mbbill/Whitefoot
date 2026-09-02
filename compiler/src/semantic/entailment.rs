@@ -202,9 +202,10 @@ pub(crate) struct ObligationOutcome {
     /// Family-local occurrence ordinal: zero for every family except the two
     /// independent SystemRange goals, which use zero and one.
     pub(crate) conjunct: u8,
-    /// The canonical total Bool domain predicate. Bounds obligations carry
-    /// `None`; an integer-domain obligation carries `Some` whenever every
-    /// operand belongs to ENT-2's finite goal vocabulary.
+    /// The canonical total Bool domain predicate. Bounds obligations alone
+    /// carry `None`; OP-2, OP-9, and SYS-8 always retain one exact identity,
+    /// using an occurrence-local evaluated-value leaf only when no stable
+    /// structural operand identity exists.
     pub(crate) canonical_goal: Option<GoalExpression>,
     /// Fixed family normalization used only as an alternate proof route.
     /// Components never receive source-obligation identities.
@@ -584,8 +585,32 @@ pub(crate) enum SourceProofCertificateFailure {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceProofCheck {
     pub(crate) premises: Vec<bool>,
+    /// First written premise that AUTO did not establish. Keeping the index in
+    /// the entailment result makes the eventual diagnostic a direct consumer
+    /// of this check rather than a second interpretation of `premises`.
+    pub(crate) first_unproved_premise: Option<u32>,
     pub(crate) combination: bool,
+    /// Failure while substituting current value images into the owning
+    /// invariant target. This remains an INV-1 target-formation failure even
+    /// when the statement also carries a PRF-1 block.
+    pub(crate) target_failure: Option<SourceProofCertificateFailure>,
+    /// First value-image normalization failure among the written `use`
+    /// sources. Source formation precedes redundancy and every certificate
+    /// arithmetic or availability judgment.
+    pub(crate) source_failure: Option<SourceProofCertificateFailure>,
+    /// The written `use` whose source formation first failed.
+    pub(crate) source_failure_use_index: Option<u32>,
+    /// Failure while forming the use list's factors, duplicate-free scaled
+    /// premises, or source-order sum. PRF-1 selects this before premise
+    /// availability because it depends only on the written certificate.
     pub(crate) certificate_failure: Option<SourceProofCertificateFailure>,
+    /// The written `use` at which certificate formation failed. For a
+    /// capacity failure this is the first entry beyond the admitted prefix.
+    pub(crate) certificate_failure_use_index: Option<u32>,
+    /// Failure while forming `target - sum` after every written premise has
+    /// been admitted. This is selected after the first failed premise rather
+    /// than allowing an unavailable premise to change certificate formation.
+    pub(crate) residual_failure: Option<SourceProofCertificateFailure>,
     /// A nonempty `use` block is invalid when the specification-defined AUTO
     /// route already proves its outer target from the entering context.
     pub(crate) redundant: bool,
@@ -594,9 +619,31 @@ pub(crate) struct SourceProofCheck {
 impl SourceProofCheck {
     pub(crate) fn discharged(&self) -> bool {
         !self.redundant
+            && self.target_failure.is_none()
+            && self.source_failure.is_none()
             && self.certificate_failure.is_none()
+            && self.residual_failure.is_none()
             && self.premises.iter().all(|proved| *proved)
             && self.combination
+    }
+
+    /// Selects the source-written `use` that owns this failed PRF-1 judgment.
+    /// The order is the normative PRF-1 failure order; failures owned by the
+    /// invariant target or final combination deliberately return `None`.
+    pub(crate) fn failure_use_index(&self) -> Option<u32> {
+        if self.target_failure.is_some() {
+            None
+        } else if self.source_failure.is_some() {
+            self.source_failure_use_index
+        } else if self.redundant {
+            None
+        } else if self.certificate_failure.is_some() {
+            self.certificate_failure_use_index
+        } else if self.first_unproved_premise.is_some() {
+            self.first_unproved_premise
+        } else {
+            None
+        }
     }
 }
 
@@ -604,10 +651,26 @@ impl SourceProofCheck {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceProofOutcome {
     pub(crate) node_path: NodePath,
+    /// Source paths for every written `use`, retained in source order so a
+    /// failed premise or certificate step points at the smallest owning node.
+    pub(crate) use_node_paths: Box<[NodePath]>,
     pub(crate) source_ordinal: u32,
     pub(crate) name: String,
-    /// The direct PRF-1 result in the source fact context.
+    /// Whether the source statement carries a nonempty PRF-1 `use` block.
+    /// A false value means this is an INV-1 AUTO-only local invariant.
+    pub(crate) certificate_written: bool,
+    /// The direct INV-1 AUTO or PRF-1 certificate result in the source fact
+    /// context, selected by `certificate_written`.
     pub(crate) check: SourceProofCheck,
+}
+
+impl SourceProofOutcome {
+    pub(crate) fn rejection_node_path(&self) -> &NodePath {
+        let Some(index) = self.check.failure_use_index() else {
+            return &self.node_path;
+        };
+        &self.use_node_paths[usize::try_from(index).expect("source-proof use index fits usize")]
+    }
 }
 
 /// Diagnostic provenance for one source-proof fact retained across a join.
@@ -792,8 +855,9 @@ pub(crate) enum CallGoalEvidence {
     ExactL0Projection,
     NormalizationPositive,
     BooleanIntroductionPositive,
-    /// The concrete caller predicate is one supported affine comparison and
-    /// current source invariant facts prove its normalized inequality.
+    /// The concrete caller predicate is one supported affine comparison or a
+    /// fixed Boolean introduction whose ordering leaves are proved from the
+    /// current source invariant facts.
     AffinePositive,
     OpaqueNegative,
     NegatedL0Projection,

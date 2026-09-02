@@ -6,8 +6,10 @@ fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, s
   let left_limit = 0_u64;
   let right = 0_u64;
   let right_limit = 0_u64;
-  for i in 0_u64..2_u64 {
-    invariant combined: ile(left + right, left_limit + right_limit);
+  for (
+    i in 0_u64..2_u64,
+    invariant combined: ile(left + right, left_limit + right_limit)
+  ) {
     set left = first;
     set left_limit = first_limit;
     set right = second;

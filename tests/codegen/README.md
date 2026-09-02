@@ -16,13 +16,12 @@ evidence, not current specification authority or active expected results.
 A future integration belongs beside the real backend and must exercise each
 selected source through the normal compiler path. It has four layers:
 
-1. executable correctness for lowered programs, explicit claims, and typed
-   failure outcomes;
+1. executable correctness for lowered programs and typed failure outcomes;
 2. acceptance and rejection tests proving that every partial operation has its
    static obligation discharged before lowering;
 3. facts-on/facts-off comparisons proving that optimization facts change
-   neither acceptance nor the execution of written claims, with near-miss
-   programs that must reject; and
+   neither source acceptance nor runtime behavior, with near-miss programs
+   that must reject; and
 4. runtime and code-shape measurements kept under `research/`, because noisy
    timing is experimental evidence rather than an every-commit invariant.
 

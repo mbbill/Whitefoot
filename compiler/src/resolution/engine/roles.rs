@@ -297,7 +297,7 @@ fn classify_node(
                 complete_counts,
             )?;
         }
-        Production::ProofPremise => {
+        Production::ProofUse => {
             let [carrier] = names.as_slice() else {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
@@ -326,14 +326,22 @@ fn classify_node(
                 complete_counts,
             )?;
         }
-        Production::AffineFactor if !names.is_empty() => add_all(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::InvariantValue),
-            roles,
-            complete_counts,
-        )?,
+        Production::AffineFactor if !names.is_empty() => {
+            let role = if ancestor_with_production(topology, owner, Production::ProofUse).is_some()
+            {
+                LexicalUseRole::ProofValue
+            } else {
+                LexicalUseRole::InvariantValue
+            };
+            add_all(
+                classified,
+                owner,
+                &names,
+                RawRoleKind::LexicalUse(role),
+                roles,
+                complete_counts,
+            )?;
+        }
         Production::LetStmt | Production::ContractDefine => add_single(
             classified,
             owner,

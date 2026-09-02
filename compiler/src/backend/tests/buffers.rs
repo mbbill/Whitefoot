@@ -4,18 +4,14 @@ use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, va
 use super::system::with_ir;
 use super::*;
 
-const AFFINE_PROOF_BOUNDED_ALLOCATION: &[u8] =
+const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
     br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
   requires ile(half, 500_u64);
 } {
   let doubled = half * 2_u64;
   let within = ile(n, doubled);
   if within {
-    prove tight: ile(n, 1000_u64) {
-      use ile(n, doubled);
-      use ile(doubled, 2_u64 * half);
-      use ile(2_u64 * half, 1000_u64);
-    }
+    invariant tight: ile(n, 1000_u64);
     let values = buffer_new(n, 0_u16);
   }
   return unit;
@@ -34,13 +30,13 @@ const U64_BUFFER_ALLOCATION: &[u8] =
 "#;
 
 #[test]
-fn affine_source_proof_ceiling_controls_the_exact_selected_target_boundary() {
-    with_ir(AFFINE_PROOF_BOUNDED_ALLOCATION, |program| {
+fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
+    with_ir(AFFINE_INVARIANT_BOUNDED_ALLOCATION, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
         let system_target = SystemTarget::for_triple(host.triple())
             .expect("the host triple has one qualified system target");
         let qualification = qualify_program(system_target, program)
-            .expect("the source-proof allocation fixture must qualify");
+            .expect("the invariant-bounded allocation fixture must qualify");
 
         let exact = host.with_runtime_allocation_limits_for_test(2000, 8);
         assert_eq!(validate_program(exact, &qualification, program), Ok(()));
@@ -86,8 +82,10 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
   ensures ile(total, 255000_u32);
 } {
   let sum = 0_u32;
-  for i in 0_u64..count {
-    invariant per_byte: ile(sum, 255_u32 * i);
+  for (
+    i in 0_u64..count,
+    invariant per_byte: ile(sum, 255_u32 * i)
+  ) {
     let w = deref(weights)[i];
     let wide = cvt<u8, u32>(w);
     set sum = sum + wide;

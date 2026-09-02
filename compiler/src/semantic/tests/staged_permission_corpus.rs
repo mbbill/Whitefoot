@@ -64,7 +64,9 @@ struct CorpusCase {
 const A01_BASELINE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Baseline: the granted shape.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -100,7 +102,9 @@ const A02_HOISTED_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own D
   doc "Design 2.3: the destination buffer is hoisted above the loop, so one iteration's short read leaves the previous iteration's bytes behind it.";
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -135,7 +139,9 @@ const A03_CARRIED_BYTE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
   doc "The name buffer is hoisted above the loop and mutated in the remainder, so iteration i+1 opens a name iteration i wrote.";
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -182,7 +188,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "Design 2.5: the fold reads the hoisted destination before this iteration's transfer writes it, so every byte it reads is the previous iteration's.";
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'fold {
       let digest = fold_prefix<'fold>(source: &'fold data, produced: 64_u64, seed: 0_u64);
@@ -219,7 +227,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A05_RETURN_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The body returns from the remainder, after later iterations have already submitted opens the source-order execution never performs.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -243,7 +253,9 @@ const A06_BREAK_ENCLOSING: &[u8] = br#"command fn main(command.cwd as cwd: own D
   doc "The remainder breaks out of a loop enclosing the staged loop.";
   let total = 0_u64;
   loop @outer {
-    for @scan index in 0_u64..4_u64 {
+    for @scan (
+      index in 0_u64..4_u64
+    ) {
       let name = buffer_new(16_u64, 97_u8);
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -271,7 +283,9 @@ const A07_DIRECTORY_SOURCE: &[u8] = br#"command fn main(command.cwd as cwd: own 
     let permit = reserve_file<'c>(factory: &uniq 'c files);
     match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
-        for @scan index in 0_u64..4_u64 {
+        for @scan (
+          index in 0_u64..4_u64
+        ) {
           let entries = buffer_new(1024_u64, 0_u8);
           region 'b {
             match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
@@ -298,7 +312,9 @@ const A08_READONLY_NAME: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
   doc "A may-suspend call retains a shared borrow of an enclosing buffer the body never writes.";
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -320,7 +336,9 @@ const A09_REMAINDER_CURSOR: &[u8] = br#"command fn main(command.cwd as cwd: own 
   doc "The remainder reads an enclosing cursor to pick the file offset of its second submission and then overwrites that cursor from the loop binder alone, so the final value matches source order whatever the schedule while the offset the host reads at does not.";
   let cursor = 0_u64;
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -358,7 +376,9 @@ const A09_REMAINDER_CURSOR: &[u8] = br#"command fn main(command.cwd as cwd: own 
 const A10_PROLOGUE_ACCUMULATOR: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The accumulator is written in the prologue only. Prologues run in index order and never overlap, so the sum is the source-order sum.";
   let attempted = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     set attempted = attempted +wrap 1_u64;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -380,9 +400,13 @@ const A10_PROLOGUE_ACCUMULATOR: &[u8] = br#"command fn main(command.cwd as cwd: 
 const A12_NESTED_INNER_IO: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Nested loops with the inner loop doing the I/O: the outer body has no single cut, the inner loop is judged on its own terms.";
   let total = 0_u64;
-  for @outer step in 0_u64..2_u64 {
+  for @outer (
+    step in 0_u64..2_u64
+  ) {
     let shared = buffer_new(16_u64, 97_u8);
-    for @scan index in 0_u64..4_u64 {
+    for @scan (
+      index in 0_u64..4_u64
+    ) {
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
         region 'n {
@@ -402,18 +426,18 @@ const A12_NESTED_INNER_IO: &[u8] = br#"command fn main(command.cwd as cwd: own D
 "#;
 
 const A13_PROOF_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  doc "A checked proof statement in the remainder erases before execution and does not narrow staged permission.";
+  doc "A checked local invariant in the remainder erases before execution and does not narrow staged permission.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
         match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
-            prove bounded: ile(index, 4_u64) {
-              use ile(index, 4_u64);
-            }
+            invariant bounded: ile(index, 4_u64);
             set total = total +wrap 1_u64;
           }
           Err(error: problem) => {
@@ -430,7 +454,9 @@ const A13A_REMAINDER_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: o
   doc "An automatically proved remainder bound admits a prologue subscript before staged permission computes its footprint.";
   let total = 0_u64;
   let table = array_new<u8, 8>(3_u8);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let seed = index *wrap 3_u64;
     let slot = seed % 8_u64;
     let picked = table[slot];
@@ -458,13 +484,12 @@ const A13C_PROVED_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own 
   doc "A branch-proved subscript in the prologue. Permission is determined by its checked footprint, not by the proof route that admitted the partial operation.";
   let total = 0_u64;
   let table = array_new<u8, 8>(3_u8);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let seed = index *wrap 3_u64;
     let slot = seed % 8_u64;
-    prove two_steps: ile(0_u64, 2_u64) {
-      use ile(0_u64, 1_u64);
-      use ile(1_u64, 2_u64);
-    }
+    invariant two_steps: ile(0_u64, 2_u64);
     if ilt(slot, 8_u64) {
       let picked = table[slot];
     }
@@ -487,9 +512,11 @@ const A13C_PROVED_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own 
 "#;
 
 const A13B_PROOF_REMAINDER_STORAGE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  doc "A checked proof in the remainder may mention locally constructed storage facts without changing staged permission.";
+  doc "A checked local invariant in the remainder may mention locally constructed storage facts without changing staged permission.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -498,10 +525,7 @@ const A13B_PROOF_REMAINDER_STORAGE: &[u8] = br#"command fn main(command.cwd as c
           Ok(value: handle) => {
             let slot = buffer_new(8_u64, 0_u8);
             let room = len(slot);
-            prove fixed_step: ile(0_u64, 2_u64) {
-              use ile(0_u64, 1_u64);
-              use ile(1_u64, 2_u64);
-            }
+            invariant fixed_step: ile(0_u64, 2_u64);
             set total = total +wrap 1_u64;
           }
           Err(error: problem) => {
@@ -517,7 +541,9 @@ const A13B_PROOF_REMAINDER_STORAGE: &[u8] = br#"command fn main(command.cwd as c
 const A14_INTERPOSED: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "An ordinary statement written between the submission and the statement that consumes its outcome. The judgment cuts at the submission statement, so the interposed statement is in the remainder.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -555,7 +581,9 @@ const A15_BODY_BOUND_BORROW: &[u8] = br#"command fn main(command.cwd as cwd: own
   doc "A borrow of enclosing storage bound to a body-introduced name, then handed to the submission. If the judgment read the binding rather than its referent, the enclosing buffer would carry no disposition at all.";
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -580,7 +608,9 @@ const A16_GIVE_OUT: &[u8] = br#"command fn main(command.cwd as cwd: own Director
   let seed = Some<u64>(value: 1_u64);
   let picked = match seed {
     Some(value: carried) => {
-      for @scan index in 0_u64..4_u64 {
+      for @scan (
+        index in 0_u64..4_u64
+      ) {
         let name = buffer_new(16_u64, 97_u8);
         region 'f {
           let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -608,7 +638,9 @@ const A16_GIVE_OUT: &[u8] = br#"command fn main(command.cwd as cwd: own Director
 const A17_NO_CLEAN_CUT: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The submission is written inside one branch, and a statement after the branch is neither before it on every path nor reached only through it.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     let first = ieq(index, 0_u64);
     if first {
@@ -644,7 +676,9 @@ fn probe['w, 'c, 'n](w: &'w Work, root: &'c DirectoryRead, name: &'n buffer<u8>,
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The submission reads the whole carried record; the remainder writes one field of it. The two are the same storage.";
   let work = Work(seen: 1_u64, code: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -673,7 +707,9 @@ const A19_FIELD_RECURRENCE: &[u8] = br#"struct Work {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The carried count is read in the prologue as a field and rewritten in the remainder as the whole record. Sequentially work.seen takes 0,1,2,3; with prologues running ahead of remainders every iteration reads the same value.";
   let work = Work(seen: 0_u64, code: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let carried = work.seen;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -697,7 +733,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A19B_CONTROL_SCALAR: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Control for A19: the identical recurrence carried in a bare u64 instead of a struct field.";
   let seen = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let carried = seen;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -726,7 +764,9 @@ const A19C_OBSERVABLE: &[u8] = br#"struct Work {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The carried count selects the name prefix the open uses, so the divergence reaches the host: sequentially the four opens name four different prefixes, pipelined they name one.";
   let work = Work(seen: 0_u64, code: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let carried = work.seen;
     let short = ilt(carried, 4_u64);
     if short {
@@ -755,7 +795,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A20_PROPAGATE_CUT: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "The submission statement is itself the exit: propagate leaves the loop and the function on the operation's own Err outcome.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -785,7 +827,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A20B_MATCH_TWIN: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "The same exit as A20, spelled as a match arm instead of a propagate.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -821,7 +865,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A20C_PROPAGATE_SECOND: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "A propagate on a second submission, written in the remainder.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -872,7 +918,9 @@ const A22_EXPR_STATEMENT: &[u8] = br#"fn stamp['b](slot: &uniq 'b buffer<u8>, in
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "An expression statement in the prologue.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 's {
       stamp<'s>(slot: &uniq 's name, index: index);
@@ -897,7 +945,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A23_GIVE_INSIDE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "A value initializer written inside the remainder: its gives deliver to a binding of the same iteration and leave nothing.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -928,7 +978,9 @@ const A24_SLICE_READONLY: &[u8] = br#"command fn main(command.cwd as cwd: own Di
   doc "A shared slice of an enclosing buffer the body never writes.";
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     region 'v {
       let view = slice_of(&'v table);
@@ -970,7 +1022,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "The name the submission opens is a field of a record the remainder replaces wholesale. Sequentially iteration 0 opens one name and iterations 1 to 3 open another; with prologues running ahead of remainders all four open the first.";
   let seed = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move seed, seen: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -992,7 +1046,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A27_OUTPUT_WRITE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
   doc "The remainder writes an enclosing Output. Two remainders coexist, so the bytes reaching the stream would not be in iteration order.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     let line = buffer_new(8_u64, 65_u8);
     region 'f {
@@ -1036,7 +1092,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "The prologue reads a doubly nested field and the remainder replaces its parent.";
   let start = Inner(a: 0_u64, b: 0_u64);
   let carrier = Outer(inner: move start, tag: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let carried = carrier.inner.a;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -1061,7 +1119,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A29_TWO_SUBMISSIONS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Two submissions on disjoint branches: neither is a single cut.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let name = buffer_new(16_u64, 97_u8);
     let first = ieq(index, 0_u64);
     if first {
@@ -1103,7 +1163,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "The mirror of A19: the prologue replaces the whole record and the remainder reads one of its fields. Sequentially the remainder of iteration i reads the tag its own prologue wrote; with prologues running ahead it reads a later iteration's.";
   let carrier = Carrier(tag: 0_u64, spare: 0_u64);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (
+    index in 0_u64..4_u64
+  ) {
     let previous = replace carrier = Carrier(tag: index, spare: 0_u64);
     let name = buffer_new(16_u64, 97_u8);
     region 'f {

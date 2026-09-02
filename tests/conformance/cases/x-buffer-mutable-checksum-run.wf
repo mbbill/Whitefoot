@@ -2,11 +2,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "A runtime-length buffer is allocated, filled, folded, and released; counted-loop range facts discharge every indexed access.";
   let values = buffer_new(8_u64, 0_u64);
   let length = len(values);
-  for fill_index in 0_u64..length {
+  for (
+    fill_index in 0_u64..length
+  ) {
     set values[fill_index] = fill_index +wrap 1_u64;
   }
   let total = 0_u64;
-  for fold_index in 0_u64..length {
+  for (
+    fold_index in 0_u64..length
+  ) {
     let value = values[fold_index];
     set total = total +wrap value;
   }

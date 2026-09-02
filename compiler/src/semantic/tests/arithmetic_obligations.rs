@@ -11,6 +11,7 @@ use crate::{
 use super::super::entailment::{
     DerivationNode, ObligationFamily, OverflowConjuncts, overflow_conjuncts_for_values,
 };
+use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation, IntegerType};
 use super::with_semantics;
 
@@ -148,7 +149,9 @@ command fn main() -> status: own ExitStatus pure {
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let n = 10_u64;
-  for @steps i in 0_u64..n {
+  for @steps (
+    i in 0_u64..n
+  ) {
     let next = i + 1_u64;
   }
   return exit_status(code: 0_u8);
@@ -446,6 +449,60 @@ command fn main() -> status: own ExitStatus pure {
             SemanticRule::Op2,
             "there is no accepted always-trapping bare spelling",
         );
+    });
+}
+
+#[test]
+fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
+    let source = br#"fn combine(start: own u64, parent: own u64) -> result: own u64 pure contract {
+  requires ile(parent, 9223372036854775807_u64);
+} {
+  let doubled = parent * 2_u64;
+  let addition_defined = start +defined doubled;
+  if addition_defined {
+    let result = start + doubled;
+    return result;
+  } else {
+    return 0_u64;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the matching defined guard must admit the later exact addition: {outcome:?}");
+        };
+        let combine = named(&checked.data.functions, "combine");
+        let domains = combine
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        let [multiply, addition] = domains.as_slice() else {
+            panic!("the exact multiply and addition retain two OP-2 obligations");
+        };
+        assert!(multiply.discharged);
+        assert!(addition.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &addition.canonical_goal else {
+            panic!("the addition retains its canonical domain goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Datum(_),
+                GoalExpression::Operation {
+                    row: GoalOperation::Integer {
+                        operation: CheckedIntegerOperation::MultiplyExact,
+                        ..
+                    },
+                    ..
+                }
+            ]
+        ));
     });
 }
 

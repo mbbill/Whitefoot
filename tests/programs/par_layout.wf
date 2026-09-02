@@ -84,7 +84,9 @@ fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> re
   if count_fits {
     set bounded_count = count;
   }
-  for k in 0_u64..bounded_count {
+  for (
+    k in 0_u64..bounded_count
+  ) {
     let raw = deref(words)[k];
     let scaled = fmul.strict(raw, font);
     let above = fgt(scaled, widest);

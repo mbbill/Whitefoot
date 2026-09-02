@@ -1,13 +1,20 @@
-fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+fn replace_component(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+  requires ile(first_limit, 80_u8);
+  requires ile(second_limit, 80_u8);
+  requires ile(third_limit, 93_u8);
 } {
-  prove upper_bound: ile(x, 254_u8) {
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {
+    use ile(first, first_limit);
+    use ile(second, second_limit);
+    use ile(third, third_limit);
   }
-  set x = replacement;
-  let result = x + 1_u8;
+  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
+  invariant total_bound: ile(first + second + third, 254_u8);
+  set first = replacement;
+  let result = first + second;
   return result;
 }
 

@@ -6,7 +6,9 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
-use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
+use super::super::super::super::goal::{
+    EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
+};
 use super::super::super::super::model::{
     CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
     CheckedStateOrigins, CheckedType,
@@ -343,10 +345,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(atom, Production::Place)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.call_goal_place_contains_subscript(place)? {
-            return Ok(GoalExpression::Datum(GoalDatum::EphemeralActual {
-                caller,
-                call: call.clone(),
-                argument: ordinal,
+            return Ok(GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                function: caller,
+                occurrence: EvaluatedValueOccurrence::CallArgument {
+                    call: call.clone(),
+                    argument: ordinal,
+                },
                 captured_type: expected_type,
                 projections: Vec::new(),
                 ty: expected_type,

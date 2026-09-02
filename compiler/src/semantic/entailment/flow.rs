@@ -18,7 +18,8 @@ mod sources;
 use std::collections::{HashMap, HashSet};
 
 use super::super::goal::{
-    CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
+    CheckedRequirement, ConcreteGoal, EvaluatedValueOccurrence, GoalDatum, GoalExpression,
+    GoalOperation, GoalProjection,
 };
 use super::super::model::expression_children;
 use super::super::model::{
@@ -45,6 +46,7 @@ use super::state::{
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
     PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef, close,
     close_excluding_term, contradiction_without_proofs, join_at, materialize_closure_at,
+    materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
@@ -197,19 +199,14 @@ struct ProofFlowState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
     values: HashMap<BindingId, AffineForm>,
-    assumptions: Vec<ActiveAffineFact>,
-    exports: Vec<ActiveAffineFact>,
-    proofs: Vec<ActiveAffineFact>,
+    /// Every published affine conclusion at this control-flow point. Fact
+    /// identity is only the canonical inequality over immutable value images;
+    /// evidence is retained solely to explain a selected derivation.
+    facts: Vec<ActiveAffineFact>,
     /// Exact immutable theorem image published by each resolved invariant
     /// declaration. Resolution owns visibility; this map carries only the
     /// canonical proposition proved at that declaration's execution point.
     published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
-    /// Fixed unsigned literal-division consequences over exact runtime value
-    /// atoms. A binding kill removes the binding-to-value map, not a theorem
-    /// about the old value: a later value receives another atom, while a live
-    /// alias may still use the old image. An image with no live alias is only
-    /// unreachable, bounded compiler state that may be reclaimed later.
-    division_images: Vec<AutomaticAffineFact>,
 }
 
 /// The numeric/logical proof state at one exact control-flow point.
@@ -225,11 +222,13 @@ impl<'a> ProofContext<'a> {
     }
 }
 
-/// One consumer-normalized numeric/logical proposition.  A signed goal keeps
-/// the finite Boolean structure written at a call boundary.  An ordering goal
-/// is the exact L0 relation selected for a function postcondition.  Either
-/// consumer may additionally provide the unique affine inequality for the
-/// same proposition; the proof entry never invents another formula.
+/// One consumer-normalized numeric/logical proposition. A signed goal keeps
+/// the finite Boolean structure written at a call boundary and lets the proof
+/// entry normalize its ordering leaves under that fixed structure. An
+/// ordering goal is the exact L0 relation selected for a function
+/// postcondition. Either consumer may additionally provide the unique affine
+/// inequality for a direct-root proposition; the proof entry never invents
+/// another formula.
 enum ProofGoal<'a> {
     /// One source-written canonical affine inequality. PRF-1 submits each
     /// `use` through the same proof entry as partial operations and callable
@@ -267,7 +266,7 @@ enum ProofGoal<'a> {
 #[derive(Clone, Copy)]
 struct BoundedRelationGoal<'a> {
     canonical: Option<&'a GoalExpression>,
-    request: BoundsRequest,
+    request: Option<BoundsRequest>,
     direct_affine: Option<&'a AffineInequality>,
     fixed_affine_bridge: Option<FixedAffineBoundBridge<'a>>,
     affine_left: Option<&'a AffineForm>,
@@ -345,14 +344,17 @@ struct ProofResult {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActiveAffineFact {
-    source: SourceAffineFactRef,
     inequality: AffineInequality,
+    evidence: AffineFactEvidence,
+    /// Enclosing loop assumptions on which this fact still depends. Removing
+    /// any listed loop removes the fact; an empty list is path-stable.
+    active_loops: Vec<CheckedLoopId>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct AutomaticAffineFact {
-    inequality: AffineInequality,
-    parent: DerivationId,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AffineFactEvidence {
+    Source(SourceAffineFactRef),
+    Derivation(DerivationId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -496,6 +498,18 @@ struct PreparedCall {
     kills: Vec<KillEvent>,
 }
 
+/// Result of judging one expression in source evaluation order.
+///
+/// `reached` is independent of postcondition preparation: it says that every
+/// acceptance-bearing judgment needed to produce this value succeeded, so the
+/// expression may receive an admitted structural identity. A successfully
+/// evaluated call may have no verified postcondition summary and therefore no
+/// `prepared_call`.
+struct ExpressionJudgment {
+    prepared_call: Option<PreparedCall>,
+    reached: bool,
+}
+
 #[derive(Clone, Debug)]
 struct AvailablePostcondition {
     relation: RelationTemplate,
@@ -553,6 +567,7 @@ struct DirectReceiverCandidate {
 
 struct SetWalkOutcome {
     target_event: Option<FlowEventId>,
+    commit_reached: bool,
 }
 
 /// The [ENT-5] loop rule's structural kill summary of one loop body.
@@ -692,6 +707,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         loop_invariants: Vec::new(),
         source_proofs: Vec::new(),
         joined_source_proofs: Vec::new(),
+        invariant_targets: HashMap::new(),
         s7_derivations: Vec::new(),
         postconditions: Vec::new(),
         boolean_decompositions: Vec::new(),
@@ -919,6 +935,13 @@ struct Analyzer<'check, 'unit> {
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
     joined_source_proofs: Vec<JoinedSourceProofProvenance>,
+    /// Canonical immutable target formed at each invariant declaration.
+    ///
+    /// This table is deliberately separate from flow availability. A named
+    /// PRF-1 `use` must form its written certificate from the declaration's
+    /// proposition even on a path where that proposition is unavailable;
+    /// availability is checked later as an independent premise judgment.
+    invariant_targets: HashMap<crate::DeclarationId, Result<AffineInequality, AffineCheckError>>,
     s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     /// O11 candidate decomposition sets, recorded at
@@ -1035,6 +1058,7 @@ impl Analyzer<'_, '_> {
         statement: &crate::NodePath,
         states: &ProofFlowState,
         affine_result: Option<&AffineForm>,
+        value_reached: bool,
     ) {
         if self.postconditions.is_empty() {
             return;
@@ -1068,9 +1092,10 @@ impl Analyzer<'_, '_> {
                 .collect::<Vec<_>>();
             let occurrence = self.postconditions[index].exits.len();
             let relation_ordinal = self.postconditions[index].relation_ordinal;
-            let unavailable = entry_images
-                .iter()
-                .any(|image| image.invalidation.is_some());
+            let unavailable = !value_reached
+                || entry_images
+                    .iter()
+                    .any(|image| image.invalidation.is_some());
             let complete = self.judge_postcondition(
                 relation_ordinal,
                 occurrence,
@@ -1240,6 +1265,18 @@ impl Analyzer<'_, '_> {
         expression: &GoalExpression,
         state: &AffineFlowState,
     ) -> Option<AffineInequality> {
+        self.affine_signed_goal_ordering_target(expression, state, GoalSign::Positive)
+    }
+
+    /// Converts either truth sign of one callable-boundary ordering leaf to
+    /// its unique affine inequality. Boolean composition uses this same leaf
+    /// normalization instead of adding a call-specific affine fallback.
+    fn affine_signed_goal_ordering_target(
+        &self,
+        expression: &GoalExpression,
+        state: &AffineFlowState,
+        sign: GoalSign,
+    ) -> Option<AffineInequality> {
         let GoalExpression::Operation {
             row:
                 GoalOperation::Integer {
@@ -1265,6 +1302,12 @@ impl Analyzer<'_, '_> {
             CheckedIntegerOperation::GreaterEqual => (right, left, false),
             CheckedIntegerOperation::Greater => (right, left, true),
             _ => return None,
+        };
+        let (left, right, strict) = match sign {
+            GoalSign::Positive => (left, right, strict),
+            // Integer order is total: not(left <= right) is right < left,
+            // while not(left < right) is right <= left.
+            GoalSign::Negative => (right, left, !strict),
         };
         let right = if strict {
             right.subtract(&AffineForm::constant(1), &mut check).ok()?
@@ -1344,7 +1387,7 @@ impl Analyzer<'_, '_> {
                 }
             }
             GoalExpression::Datum(
-                GoalDatum::Parameter { .. } | GoalDatum::EphemeralActual { .. },
+                GoalDatum::Parameter { .. } | GoalDatum::EvaluatedValue { .. },
             )
             | GoalExpression::Datum(GoalDatum::NamedConst { .. })
             | GoalExpression::Datum(GoalDatum::Place { .. })
@@ -1834,7 +1877,7 @@ impl Analyzer<'_, '_> {
                 projections,
             ),
             GoalDatum::Parameter { .. }
-            | GoalDatum::EphemeralActual { .. }
+            | GoalDatum::EvaluatedValue { .. }
             | GoalDatum::Literal(_) => return None,
         };
         Some((
@@ -3069,36 +3112,24 @@ impl Analyzer<'_, '_> {
         self.promote_contradiction(&mut states.facts);
     }
 
-    /// Preserves only survivor-to-survivor difference bounds whose internal
-    /// graph vertices this event batch is about to invalidate. The event
-    /// overlap logic remains the single authority for place, holder, and alias
-    /// kills; projection changes neither that set nor any goal support.
-    fn project_event_killed_bounds(&mut self, state: &mut FactState, events: &[KillEvent]) {
+    /// Materializes the complete [ENT-4] closure before an event-kill batch.
+    ///
+    /// The existing event predicates remain the sole authority for which
+    /// terms, goals, and origins die. Materialization only makes every
+    /// survivor-to-survivor consequence independently live before one of its
+    /// supporting endpoints disappears.
+    fn materialize_before_event_kill(&mut self, state: &mut FactState, events: &[KillEvent]) {
         if events.is_empty() {
             return;
         }
-        let killed = state
-            .bound_terms()
-            .into_iter()
-            .filter(|term| {
-                events
-                    .iter()
-                    .any(|event| self.event_kills_term(*term, event))
-            })
-            .collect::<Vec<_>>();
-        if killed.is_empty() {
-            return;
-        }
-        let term_count = u32::try_from(self.terms.ids().count())
-            .expect("ENT term inventory exceeds the u32 identity space");
-        state.project_bounds_through_killed(&killed, term_count, &mut self.derivations);
+        materialize_closure_before_kill(state, &self.terms, &self.goals, &mut self.derivations);
     }
 
     fn apply_kills_one(&mut self, state: &mut FactState, events: &[KillEvent]) {
         if events.is_empty() {
             return;
         }
-        self.project_event_killed_bounds(state, events);
+        self.materialize_before_event_kill(state, events);
         state.kill(|term| {
             events
                 .iter()
@@ -3278,28 +3309,30 @@ impl Analyzer<'_, '_> {
         loop_id: CheckedLoopId,
         declarations: &[crate::DeclarationId],
     ) {
-        let retain = |assumption: &ActiveAffineFact| {
-            !matches!(
-                assumption.source,
-                SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
-                    loop_id: source_loop,
-                    ..
-                }) if source_loop == loop_id
-            )
-        };
-        state.assumptions.retain(retain);
+        state
+            .facts
+            .retain(|fact| !fact.active_loops.contains(&loop_id));
         for declaration in declarations {
             state.published_invariants.remove(declaration);
         }
     }
 
-    fn affine_facts(state: &AffineFlowState) -> Vec<ActiveAffineFact> {
-        let (exports, active, proofs) = (&state.exports, &state.assumptions, &state.proofs);
-        let mut facts = Vec::with_capacity(exports.len() + active.len() + proofs.len());
-        facts.extend(exports.iter().cloned());
-        facts.extend(active.iter().cloned());
-        facts.extend(proofs.iter().cloned());
+    /// Returns the one deterministic premise traversal used by every affine
+    /// consumer: insertion order with later occurrences of the same canonical
+    /// inequality removed, regardless of evidence category.
+    fn canonical_affine_facts(facts: &[ActiveAffineFact]) -> Vec<&ActiveAffineFact> {
+        let mut seen = HashSet::new();
         facts
+            .iter()
+            .filter(|fact| seen.insert(fact.inequality.clone()))
+            .collect()
+    }
+
+    fn affine_facts(state: &AffineFlowState) -> Vec<ActiveAffineFact> {
+        Self::canonical_affine_facts(&state.facts)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     fn affine_fact_uses_only_outer_values(
@@ -3484,6 +3517,91 @@ impl Analyzer<'_, '_> {
     /// Converts one source expression to ENT-3's exact direct pure/total
     /// origin. Any excluded child excludes the whole expression.
     fn direct_goal_expression(&self, expression: &CheckedExpression) -> Option<GoalExpression> {
+        self.goal_expression(expression, false)
+    }
+
+    /// Converts a value whose nested obligations have already been discharged
+    /// to its exact stable proof expression. In addition to the pure/total
+    /// direct subset, this admits an exact integer result or indexed element
+    /// only after `judge_expression` has checked that nested partial operation.
+    fn admitted_value_goal_expression(
+        &self,
+        expression: &CheckedExpression,
+    ) -> Option<GoalExpression> {
+        self.goal_expression(expression, true)
+    }
+
+    /// Replaces one occurrence-local FN-8 actual with the same admitted
+    /// structural value used by the rest of ENT-2. The caller invokes this
+    /// only after every obligation in every actual expression has succeeded.
+    /// A projection that the admitted structural tree cannot represent keeps
+    /// the occurrence-local value instead of inventing a different identity.
+    fn admitted_call_goal_expression(
+        &self,
+        expression: &GoalExpression,
+        call: &crate::NodePath,
+        arguments: &[Option<GoalExpression>],
+    ) -> GoalExpression {
+        match expression {
+            GoalExpression::Datum(
+                original @ GoalDatum::EvaluatedValue {
+                    occurrence:
+                        EvaluatedValueOccurrence::CallArgument {
+                            call: occurrence_call,
+                            argument,
+                        },
+                    captured_type,
+                    projections,
+                    ty,
+                    ..
+                },
+            ) if occurrence_call == call => {
+                let Some(mut admitted) = usize::try_from(*argument)
+                    .ok()
+                    .and_then(|index| arguments.get(index))
+                    .and_then(Option::as_ref)
+                    .filter(|argument| argument.ty() == *captured_type)
+                    .cloned()
+                else {
+                    return GoalExpression::Datum(original.clone());
+                };
+                for projection in projections {
+                    let Some(projected) = admitted.with_projection(*projection, *ty) else {
+                        return GoalExpression::Datum(original.clone());
+                    };
+                    admitted = projected;
+                }
+                if admitted.ty() == *ty {
+                    admitted
+                } else {
+                    GoalExpression::Datum(original.clone())
+                }
+            }
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                const_arguments,
+                result,
+                arguments: operands,
+            } => GoalExpression::Operation {
+                row: *row,
+                type_arguments: type_arguments.clone(),
+                const_arguments: const_arguments.clone(),
+                result: *result,
+                arguments: operands
+                    .iter()
+                    .map(|operand| self.admitted_call_goal_expression(operand, call, arguments))
+                    .collect(),
+            },
+            GoalExpression::Datum(datum) => GoalExpression::Datum(datum.clone()),
+        }
+    }
+
+    fn goal_expression(
+        &self,
+        expression: &CheckedExpression,
+        admitted_partial: bool,
+    ) -> Option<GoalExpression> {
         // A non-consuming place read is admitted by its final copy value, not
         // by the mode of every holder traversed on the way there. In
         // particular, reading through an owning box must retain the box's
@@ -3563,15 +3681,15 @@ impl Analyzer<'_, '_> {
             CheckedExpression::BoxDeref {
                 referent, value, ..
             } if self.is_copy(*referent) => self
-                .direct_goal_expression(value)?
+                .goal_expression(value, admitted_partial)?
                 .with_projection(GoalProjection::Deref, *referent),
             CheckedExpression::ArenaDeref { content, value, .. } if self.is_copy(*content) => self
-                .direct_goal_expression(value)?
+                .goal_expression(value, admitted_partial)?
                 .with_projection(GoalProjection::Deref, *content),
             CheckedExpression::ProjectValue {
                 value, field, ty, ..
             } if self.is_copy(*ty) => self
-                .direct_goal_expression(value)?
+                .goal_expression(value, admitted_partial)?
                 .with_projection(GoalProjection::Field(*field), *ty),
             CheckedExpression::IntegerOperation {
                 operation,
@@ -3579,7 +3697,7 @@ impl Analyzer<'_, '_> {
                 arguments,
                 result,
                 ..
-            } if !operation.is_exact() => build_operation(
+            } if !operation.is_exact() || admitted_partial => build_operation(
                 GoalOperation::Integer {
                     operation: *operation,
                     operand_type: *operand_type,
@@ -3589,7 +3707,7 @@ impl Analyzer<'_, '_> {
                 *result,
                 arguments
                     .iter()
-                    .map(|argument| self.direct_goal_expression(argument))
+                    .map(|argument| self.goal_expression(argument, admitted_partial))
                     .collect::<Option<Vec<_>>>()?,
             ),
             CheckedExpression::IntegerOperation { .. } => None,
@@ -3615,7 +3733,7 @@ impl Analyzer<'_, '_> {
                 row.result_type(*operand_type),
                 arguments
                     .iter()
-                    .map(|argument| self.direct_goal_expression(argument))
+                    .map(|argument| self.goal_expression(argument, admitted_partial))
                     .collect::<Option<Vec<_>>>()?,
             ),
             CheckedExpression::NumericConversion {
@@ -3632,7 +3750,7 @@ impl Analyzer<'_, '_> {
                 vec![source.ty(), destination.ty()],
                 Vec::new(),
                 *result,
-                vec![self.direct_goal_expression(value)?],
+                vec![self.goal_expression(value, admitted_partial)?],
             ),
             CheckedExpression::Reinterpret {
                 source,
@@ -3647,7 +3765,7 @@ impl Analyzer<'_, '_> {
                 vec![source.ty(), destination.ty()],
                 Vec::new(),
                 destination.ty(),
-                vec![self.direct_goal_expression(value)?],
+                vec![self.goal_expression(value, admitted_partial)?],
             ),
             CheckedExpression::BooleanOperation {
                 operation: row,
@@ -3660,7 +3778,7 @@ impl Analyzer<'_, '_> {
                 CheckedType::Bool,
                 arguments
                     .iter()
-                    .map(|argument| self.direct_goal_expression(argument))
+                    .map(|argument| self.goal_expression(argument, admitted_partial))
                     .collect::<Option<Vec<_>>>()?,
             ),
             CheckedExpression::EnumEquality {
@@ -3678,7 +3796,7 @@ impl Analyzer<'_, '_> {
                 CheckedType::Bool,
                 arguments
                     .iter()
-                    .map(|argument| self.direct_goal_expression(argument))
+                    .map(|argument| self.goal_expression(argument, admitted_partial))
                     .collect::<Option<Vec<_>>>()?,
             ),
             CheckedExpression::ArrayFill { ty, value, .. } => {
@@ -3693,7 +3811,7 @@ impl Analyzer<'_, '_> {
                     vec![element.ty()],
                     vec![*length],
                     *ty,
-                    vec![self.direct_goal_expression(value)?],
+                    vec![self.goal_expression(value, admitted_partial)?],
                 )
             }
             CheckedExpression::ArrayLength { root, length, .. } => {
@@ -3710,6 +3828,35 @@ impl Analyzer<'_, '_> {
                     Vec::new(),
                     CheckedType::Integer(IntegerType::U64),
                     vec![argument],
+                )
+            }
+            CheckedExpression::ArrayIndex {
+                root,
+                element_type,
+                length,
+                offset,
+                ..
+            } if admitted_partial => {
+                let collection = self.goal_array_root(root)?;
+                let CheckedType::Array {
+                    element,
+                    length: root_length,
+                } = collection.ty()
+                else {
+                    return None;
+                };
+                if root_length != *length || element.ty() != *element_type {
+                    return None;
+                }
+                build_operation(
+                    GoalOperation::ArrayIndex {
+                        element,
+                        length: *length,
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    *element_type,
+                    vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
             CheckedExpression::BufferLength { root, .. } => {
@@ -3730,6 +3877,25 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
+            CheckedExpression::BufferIndex { root, offset, .. } if admitted_partial => {
+                let collection_type = CheckedType::Buffer {
+                    element: root.element,
+                };
+                let collection = self.goal_binding_place(
+                    root.binding,
+                    root.fields.iter().copied().map(GoalProjection::Field),
+                    collection_type,
+                );
+                build_operation(
+                    GoalOperation::BufferIndex {
+                        element: root.element,
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    root.element.ty(),
+                    vec![collection, self.goal_expression(offset, admitted_partial)?],
+                )
+            }
             CheckedExpression::BufferFits {
                 element,
                 layout_ceiling,
@@ -3743,7 +3909,7 @@ impl Analyzer<'_, '_> {
                 vec![*element],
                 Vec::new(),
                 CheckedType::Bool,
-                vec![self.direct_goal_expression(length)?],
+                vec![self.goal_expression(length, admitted_partial)?],
             ),
             CheckedExpression::SliceLength { root, .. } => {
                 let ty = self.summary(root.binding)?.ty?;
@@ -3757,6 +3923,23 @@ impl Analyzer<'_, '_> {
                     Vec::new(),
                     CheckedType::Integer(IntegerType::U64),
                     vec![argument],
+                )
+            }
+            CheckedExpression::SliceIndex { root, offset, .. } if admitted_partial => {
+                let ty = self.summary(root.binding)?.ty?;
+                let CheckedType::Slice { region, element } = ty else {
+                    return None;
+                };
+                if element != root.element {
+                    return None;
+                }
+                let collection = self.goal_binding_place(root.binding, std::iter::empty(), ty);
+                build_operation(
+                    GoalOperation::SliceIndex { region, element },
+                    Vec::new(),
+                    Vec::new(),
+                    element.ty(),
+                    vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
             CheckedExpression::Binding { .. }
@@ -3783,6 +3966,35 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::ConstructStruct { .. }
             | CheckedExpression::ConstructEnum { .. } => None,
         }
+    }
+
+    /// Exact value identity for one operand of an already-reached proof
+    /// obligation. Stable structural expressions are preferred so a prior
+    /// source fact can name the same value. The occurrence-local fallback is
+    /// reserved for a value that cannot be safely replayed from source.
+    fn obligation_goal_operand(
+        &mut self,
+        site: &crate::NodePath,
+        operand: usize,
+        expression: &CheckedExpression,
+        facts: &FactState,
+    ) -> GoalExpression {
+        self.admitted_value_goal_expression(expression)
+            .map(|expression| self.expand_goal_expression(&expression, facts))
+            .unwrap_or_else(|| {
+                let operand =
+                    u32::try_from(operand).expect("proof-obligation operand ordinal exceeds u32");
+                GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                    function: self.function.id,
+                    occurrence: EvaluatedValueOccurrence::ObligationOperand {
+                        site: site.clone(),
+                        operand,
+                    },
+                    captured_type: expression.ty(),
+                    projections: Vec::new(),
+                    ty: expression.ty(),
+                })
+            })
     }
 
     fn goal_binding_place(
@@ -3970,7 +4182,7 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         state: &FactState,
     ) -> Vec<GoalId> {
-        let Some(direct) = self.direct_goal_expression(expression) else {
+        let Some(direct) = self.admitted_value_goal_expression(expression) else {
             return Vec::new();
         };
         if direct.ty() != CheckedType::Bool {
@@ -3992,7 +4204,7 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut FactState,
     ) {
-        let Some(direct) = self.direct_goal_expression(value) else {
+        let Some(direct) = self.admitted_value_goal_expression(value) else {
             return;
         };
         let origin = self.intern_goal_expression(direct);
@@ -4242,7 +4454,7 @@ impl Analyzer<'_, '_> {
             GoalExpression::Datum(
                 GoalDatum::Parameter { .. }
                 | GoalDatum::NamedConst { .. }
-                | GoalDatum::EphemeralActual { .. }
+                | GoalDatum::EvaluatedValue { .. }
                 | GoalDatum::Literal(_),
             ) => {}
             GoalExpression::Operation { row, arguments, .. } => {
@@ -4387,7 +4599,7 @@ impl Analyzer<'_, '_> {
                 projections,
             ),
             GoalDatum::Parameter { .. }
-            | GoalDatum::EphemeralActual { .. }
+            | GoalDatum::EvaluatedValue { .. }
             | GoalDatum::Literal(_) => return None,
         };
         Some(ProjectedPlaceTerm {
@@ -4420,7 +4632,7 @@ impl Analyzer<'_, '_> {
                     ty: *ty,
                 }))
             }
-            GoalExpression::Datum(GoalDatum::EphemeralActual { .. }) => None,
+            GoalExpression::Datum(GoalDatum::EvaluatedValue { .. }) => None,
             GoalExpression::Datum(datum) => Some(GoalExpression::Datum(datum.clone())),
             GoalExpression::Operation {
                 row,
@@ -4604,39 +4816,94 @@ impl Analyzer<'_, '_> {
 
     /// Judges every bounds obligation inside one expression against the
     /// state at this point, inner offsets before the sites they feed.
+    ///
+    /// A parent operation is reached only after every partial operation in
+    /// its already-evaluated children succeeds.  The acceptance-dark test
+    /// hook keeps a failed child outcome for inspection, but must not then
+    /// manufacture an admitted exact/index value or a later obligation for
+    /// the unreachable parent.
+    fn judge_children_reach_parent<'expression>(
+        &mut self,
+        children: impl IntoIterator<Item = &'expression CheckedExpression>,
+        states: &mut ProofFlowState,
+    ) -> bool {
+        let mut reached = true;
+        for child in children {
+            reached &= self.judge_expression(child, states).reached;
+        }
+        reached
+    }
+
+    fn obligations_since_discharged(&self, obligation_start: usize) -> bool {
+        self.obligations[obligation_start..]
+            .iter()
+            .all(|outcome| outcome.discharged)
+    }
+
     fn judge_expression(
         &mut self,
         expression: &CheckedExpression,
         states: &mut ProofFlowState,
-    ) -> Option<PreparedCall> {
+    ) -> ExpressionJudgment {
         match expression {
             CheckedExpression::UserCall {
                 function,
                 call,
                 arguments,
+                goal_arguments,
                 requirements,
                 ..
             } => {
                 let obligation_start = self.obligations.len();
+                let mut actuals_reached = true;
                 for argument in arguments {
-                    let _ = self.judge_expression(argument, states);
+                    actuals_reached &= self.judge_expression(argument, states).reached;
                 }
                 let actual_parents = self.obligations[obligation_start..]
                     .iter()
                     .map(|outcome| outcome.discharged.then_some(outcome.derivation).flatten())
                     .collect::<Option<Vec<_>>>();
                 let mut goal_parents = Vec::with_capacity(requirements.len());
-                let mut goals_ok = true;
+                let mut goals_ok = actuals_reached;
+                let admitted_arguments = actuals_reached.then(|| {
+                    arguments
+                        .iter()
+                        .zip(goal_arguments)
+                        .map(|(argument, captured)| {
+                            matches!(
+                                captured,
+                                GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                                    occurrence: EvaluatedValueOccurrence::CallArgument {
+                                        call: occurrence_call,
+                                        ..
+                                    },
+                                    ..
+                                }) if occurrence_call == call
+                            )
+                            .then(|| self.admitted_value_goal_expression(argument))
+                            .flatten()
+                        })
+                        .collect::<Vec<_>>()
+                });
                 // FN-8 begins only after every actual-expression obligation
                 // succeeds. A failed OP-4 actual therefore publishes no call
                 // judgment for diagnostic selection to reorder.
                 for requirement in requirements {
-                    if actual_parents.is_some() {
+                    if actuals_reached {
+                        let goal = ConcreteGoal::new(
+                            self.admitted_call_goal_expression(
+                                &requirement.goal.root,
+                                call,
+                                admitted_arguments
+                                    .as_deref()
+                                    .expect("reached actuals have admitted argument slots"),
+                            ),
+                        );
                         let (disposition, derivation) = self.judge_call_goal(
                             *function,
                             call,
                             requirement.requires_clause.clone(),
-                            requirement.goal.clone(),
+                            goal,
                             arguments.len(),
                             ProofContext::new(&states.facts, &states.affine),
                         );
@@ -4646,24 +4913,32 @@ impl Analyzer<'_, '_> {
                         }
                     }
                 }
-                let mut parents = actual_parents?;
-                if !goals_ok || goal_parents.len() != requirements.len() {
-                    return None;
+                let reached = actuals_reached && goals_ok;
+                let prepared_call = (|| {
+                    let mut parents = actual_parents?;
+                    if !reached || goal_parents.len() != requirements.len() {
+                        return None;
+                    }
+                    parents.extend(goal_parents);
+                    // Only an earlier-component verified summary can publish
+                    // an S12 carrier. Calls without one retain the exact
+                    // pre-H3 kill path and create no transient postcondition
+                    // events, but are still successfully evaluated.
+                    if self.context.verified_postconditions(*function)?.is_empty() {
+                        return None;
+                    }
+                    Some(PreparedCall {
+                        function: *function,
+                        call: call.clone(),
+                        parents,
+                        transfer_events: Vec::new(),
+                        kills: Vec::new(),
+                    })
+                })();
+                ExpressionJudgment {
+                    prepared_call,
+                    reached,
                 }
-                parents.extend(goal_parents);
-                // Only an earlier-component verified summary can publish an
-                // S12 carrier. Calls without one retain the exact pre-H3 kill
-                // path and create no transient postcondition events.
-                if self.context.verified_postconditions(*function)?.is_empty() {
-                    return None;
-                }
-                Some(PreparedCall {
-                    function: *function,
-                    call: call.clone(),
-                    parents,
-                    transfer_events: Vec::new(),
-                    kills: Vec::new(),
-                })
             }
             CheckedExpression::SystemCall {
                 operation,
@@ -4671,11 +4946,15 @@ impl Analyzer<'_, '_> {
                 arguments,
                 ..
             } => {
-                for argument in arguments {
-                    let _ = self.judge_expression(argument, states);
+                let reaches_call = self.judge_children_reach_parent(arguments, states);
+                let obligation_start = self.obligations.len();
+                if reaches_call {
+                    self.judge_system_ranges(*operation, call, arguments, states);
                 }
-                self.judge_system_ranges(*operation, call, arguments, states);
-                None
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_call && self.obligations_since_discharged(obligation_start),
+                }
             }
             CheckedExpression::ArrayIndex {
                 root,
@@ -4684,10 +4963,17 @@ impl Analyzer<'_, '_> {
                 obligation,
                 ..
             } => {
-                let _ = self.judge_expression(offset, states);
-                let base = self.array_root_place(root);
-                self.judge_obligation(base, Some(*length), offset, obligation.clone(), states);
-                None
+                let reaches_index =
+                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
+                let obligation_start = self.obligations.len();
+                if reaches_index {
+                    let base = self.array_root_place(root);
+                    self.judge_obligation(base, Some(*length), offset, obligation.clone(), states);
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                }
             }
             CheckedExpression::BufferIndex {
                 root,
@@ -4695,14 +4981,21 @@ impl Analyzer<'_, '_> {
                 obligation,
                 ..
             } => {
-                let _ = self.judge_expression(offset, states);
-                let base = PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: root.fields.clone(),
-                };
-                self.judge_obligation(base, None, offset, obligation.clone(), states);
-                None
+                let reaches_index =
+                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
+                let obligation_start = self.obligations.len();
+                if reaches_index {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(root.binding),
+                        deref: self.is_holder(root.binding),
+                        fields: root.fields.clone(),
+                    };
+                    self.judge_obligation(base, None, offset, obligation.clone(), states);
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                }
             }
             CheckedExpression::SliceIndex {
                 root,
@@ -4710,14 +5003,21 @@ impl Analyzer<'_, '_> {
                 obligation,
                 ..
             } => {
-                let _ = self.judge_expression(offset, states);
-                let base = PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: Vec::new(),
-                };
-                self.judge_obligation(base, None, offset, obligation.clone(), states);
-                None
+                let reaches_index =
+                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
+                let obligation_start = self.obligations.len();
+                if reaches_index {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(root.binding),
+                        deref: self.is_holder(root.binding),
+                        fields: Vec::new(),
+                    };
+                    self.judge_obligation(base, None, offset, obligation.clone(), states);
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                }
             }
             CheckedExpression::BufferFill {
                 carrier,
@@ -4727,16 +5027,23 @@ impl Analyzer<'_, '_> {
                 value,
                 ..
             } => {
-                let _ = self.judge_expression(length, states);
-                let _ = self.judge_expression(value, states);
-                self.judge_allocation_fit(
-                    element.ty(),
-                    layout_ceiling.stride.allocation_limit(),
-                    length,
-                    carrier.clone(),
-                    states,
-                );
-                None
+                let reaches_allocation =
+                    self.judge_children_reach_parent([length.as_ref(), value.as_ref()], states);
+                let obligation_start = self.obligations.len();
+                if reaches_allocation {
+                    self.judge_allocation_fit(
+                        element.ty(),
+                        layout_ceiling.stride.allocation_limit(),
+                        length,
+                        carrier.clone(),
+                        states,
+                    );
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_allocation
+                        && self.obligations_since_discharged(obligation_start),
+                }
             }
             CheckedExpression::BufferVacant {
                 carrier,
@@ -4745,15 +5052,23 @@ impl Analyzer<'_, '_> {
                 length,
                 ..
             } => {
-                let _ = self.judge_expression(length, states);
-                self.judge_allocation_fit(
-                    CheckedType::Nominal(*element),
-                    layout_ceiling.stride.allocation_limit(),
-                    length,
-                    carrier.clone(),
-                    states,
-                );
-                None
+                let reaches_allocation =
+                    self.judge_children_reach_parent(std::iter::once(length.as_ref()), states);
+                let obligation_start = self.obligations.len();
+                if reaches_allocation {
+                    self.judge_allocation_fit(
+                        CheckedType::Nominal(*element),
+                        layout_ceiling.stride.allocation_limit(),
+                        length,
+                        carrier.clone(),
+                        states,
+                    );
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_allocation
+                        && self.obligations_since_discharged(obligation_start),
+                }
             }
             CheckedExpression::IntegerOperation {
                 carrier,
@@ -4762,10 +5077,9 @@ impl Analyzer<'_, '_> {
                 arguments,
                 ..
             } => {
-                for argument in arguments {
-                    let _ = self.judge_expression(argument, states);
-                }
-                if operation.is_exact() {
+                let reaches_operation = self.judge_children_reach_parent(arguments, states);
+                let obligation_start = self.obligations.len();
+                if operation.is_exact() && reaches_operation {
                     self.judge_integer_domain_obligation(
                         *operation,
                         *operand_type,
@@ -4774,13 +5088,19 @@ impl Analyzer<'_, '_> {
                         states,
                     );
                 }
-                None
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_operation
+                        && self.obligations_since_discharged(obligation_start),
+                }
             }
             _ => {
-                for child in expression_children(expression) {
-                    let _ = self.judge_expression(child, states);
+                let reached =
+                    self.judge_children_reach_parent(expression_children(expression), states);
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached,
                 }
-                None
             }
         }
     }
@@ -5044,50 +5364,174 @@ impl Analyzer<'_, '_> {
             };
         }
 
-        let Some(target) = affine_target else {
-            return ProofResult {
-                disposition: ProofDisposition::Unknown,
-                route: None,
-                derivation: None,
-                numeric_upper_bound: None,
-            };
-        };
-        let Some(relation) = self.goals.projection(goal).cloned() else {
-            return ProofResult {
-                disposition: ProofDisposition::Unknown,
-                route: None,
-                derivation: None,
-                numeric_upper_bound: None,
-            };
-        };
+        if let Some(target) = affine_target
+            && let Some(relation) = self.goals.projection(goal).cloned()
+        {
+            let assumptions = Self::affine_facts(context.affine);
+            if let Some(proof) =
+                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
+            {
+                let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
+                    relation: Some(Box::new(relation.clone())),
+                    premises: proof.premises.into_boxed_slice(),
+                    parents: proof.parents,
+                });
+                let derivation = self.derivations.intern(DerivationNode::GoalProjection {
+                    goal,
+                    sign: GoalSign::Positive,
+                    relation,
+                    parent: consequence,
+                });
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::Affine),
+                    derivation: Some(derivation),
+                    numeric_upper_bound: None,
+                };
+            }
+        }
+
+        let derivation = self.signed_goal_affine_proof(
+            context,
+            expression,
+            GoalSign::Positive,
+            &closed,
+            &mut HashSet::new(),
+        );
+        ProofResult {
+            disposition: if derivation.is_some() {
+                ProofDisposition::Proved
+            } else {
+                ProofDisposition::Unknown
+            },
+            route: derivation.map(|_| ProofRoute::Affine),
+            derivation,
+            numeric_upper_bound: None,
+        }
+    }
+
+    /// Proves one signed ordering leaf through the ordinary affine entry and
+    /// projects the result back to the exact interned Goal. This is the leaf
+    /// case used by the fixed Boolean recursion below.
+    fn affine_signed_goal_leaf_proof(
+        &mut self,
+        context: ProofContext<'_>,
+        expression: &GoalExpression,
+        goal: GoalId,
+        sign: GoalSign,
+    ) -> Option<DerivationId> {
+        let target = self.affine_signed_goal_ordering_target(expression, context.affine, sign)?;
+        let mut relation = self.goals.projection(goal)?.clone();
+        if sign == GoalSign::Negative {
+            relation = relation.negated();
+        }
         let assumptions = Self::affine_facts(context.affine);
-        let Some(proof) =
-            self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-        else {
-            return ProofResult {
-                disposition: ProofDisposition::Unknown,
-                route: None,
-                derivation: None,
-                numeric_upper_bound: None,
-            };
-        };
+        let proof =
+            self.affine_target_proof(&target, &assumptions, context.affine, context.facts)?;
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: Some(Box::new(relation.clone())),
             premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
-        let derivation = self.derivations.intern(DerivationNode::GoalProjection {
+        Some(self.derivations.intern(DerivationNode::GoalProjection {
             goal,
-            sign: GoalSign::Positive,
+            sign,
             relation,
             parent: consequence,
-        });
-        ProofResult {
-            disposition: ProofDisposition::Proved,
-            route: Some(ProofRoute::Affine),
-            derivation: Some(derivation),
-            numeric_upper_bound: None,
+        }))
+    }
+
+    /// Extends the existing finite Boolean introduction rule with affine
+    /// ordering leaves. The recursion follows the closed truth table exactly:
+    /// conjunction requires every positive child, disjunction every negative
+    /// child, the opposite signs require one witness, and `not` flips sign.
+    /// It performs no premise, coefficient, or path search.
+    fn signed_goal_affine_proof(
+        &mut self,
+        context: ProofContext<'_>,
+        expression: &GoalExpression,
+        sign: GoalSign,
+        closed: &ClosedState,
+        visiting: &mut HashSet<(GoalId, GoalSign)>,
+    ) -> Option<DerivationId> {
+        let goal = self.intern_goal_expression(expression.clone());
+        if let Some(proof) = closed.goal_proof(goal, sign, &self.goals, &mut self.derivations) {
+            return Some(proof);
         }
+        if !visiting.insert((goal, sign)) {
+            return None;
+        }
+
+        let proof = match expression {
+            GoalExpression::Operation {
+                row: GoalOperation::Boolean(operation),
+                arguments,
+                ..
+            } => {
+                let child_sign = match (operation, sign) {
+                    (CheckedBooleanOperation::And, GoalSign::Positive)
+                    | (CheckedBooleanOperation::Or, GoalSign::Positive) => GoalSign::Positive,
+                    (CheckedBooleanOperation::And, GoalSign::Negative)
+                    | (CheckedBooleanOperation::Or, GoalSign::Negative) => GoalSign::Negative,
+                    (CheckedBooleanOperation::Not, GoalSign::Positive) => GoalSign::Negative,
+                    (CheckedBooleanOperation::Not, GoalSign::Negative) => GoalSign::Positive,
+                    (CheckedBooleanOperation::ExclusiveOr, _) => {
+                        visiting.remove(&(goal, sign));
+                        return None;
+                    }
+                };
+                let requires_all = matches!(
+                    (operation, sign),
+                    (CheckedBooleanOperation::And, GoalSign::Positive)
+                        | (CheckedBooleanOperation::Or, GoalSign::Negative)
+                        | (CheckedBooleanOperation::Not, _)
+                );
+                let parents = if requires_all {
+                    let mut parents = Vec::with_capacity(arguments.len());
+                    let mut complete = true;
+                    for argument in arguments {
+                        let Some(parent) = self.signed_goal_affine_proof(
+                            context, argument, child_sign, closed, visiting,
+                        ) else {
+                            complete = false;
+                            break;
+                        };
+                        parents.push(parent);
+                    }
+                    complete.then_some(parents)
+                } else {
+                    let mut best = None;
+                    for argument in arguments {
+                        let Some(candidate) = self.signed_goal_affine_proof(
+                            context, argument, child_sign, closed, visiting,
+                        ) else {
+                            continue;
+                        };
+                        // Existential Boolean introductions use the first
+                        // successful child in source order. Later witnesses
+                        // cannot change acceptance, only diagnostics.
+                        if best.is_none() {
+                            best = Some(candidate);
+                        }
+                    }
+                    best.map(|parent| vec![parent])
+                };
+                parents.map(|parents| {
+                    self.derivations
+                        .intern(DerivationNode::BooleanIntroduction {
+                            goal,
+                            sign,
+                            parents,
+                        })
+                })
+            }
+            GoalExpression::Operation { .. } => {
+                self.affine_signed_goal_leaf_proof(context, expression, goal, sign)
+            }
+            GoalExpression::Datum(_) => None,
+        };
+        visiting.remove(&(goal, sign));
+        proof
     }
 
     fn prove_ordering(
@@ -5168,12 +5612,9 @@ impl Analyzer<'_, '_> {
         context: ProofContext<'_>,
         goal: BoundedRelationGoal<'_>,
     ) -> ProofResult {
-        if let Some(canonical) = goal.canonical {
-            let direct = self.prove_signed(context, canonical, goal.direct_affine);
-            if direct.disposition != ProofDisposition::Unknown {
-                return direct;
-            }
-        }
+        let canonical = goal
+            .canonical
+            .map(|expression| self.intern_goal_expression(expression.clone()));
         let closed = close(
             context.facts,
             &self.terms,
@@ -5188,69 +5629,111 @@ impl Analyzer<'_, '_> {
                 numeric_upper_bound: None,
             };
         }
-        let Some(left) = goal.request.left else {
-            return ProofResult {
-                disposition: ProofDisposition::Unknown,
-                route: None,
-                derivation: None,
-                numeric_upper_bound: None,
-            };
-        };
-        if let Some(derivation) = closed.bound_proof(
-            left,
-            goal.request.right,
-            goal.request.bound,
-            &mut self.derivations,
-        ) {
-            return ProofResult {
-                disposition: ProofDisposition::Proved,
-                route: Some(ProofRoute::L0),
-                derivation: Some(derivation),
-                numeric_upper_bound: None,
-            };
-        }
-
-        if let (None, Some(target)) = (goal.canonical, goal.direct_affine) {
-            let direct = self.prove_affine(context, target);
-            if direct.disposition == ProofDisposition::Proved {
-                return direct;
+        if let Some(canonical) = canonical {
+            if closed.holds_opaque(canonical, GoalSign::Positive) {
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::FiniteGoal),
+                    derivation: closed.opaque_proof(canonical, GoalSign::Positive),
+                    numeric_upper_bound: None,
+                };
+            }
+            if closed.holds_opaque(canonical, GoalSign::Negative) {
+                return ProofResult {
+                    disposition: ProofDisposition::Refuted,
+                    route: Some(ProofRoute::FiniteGoal),
+                    derivation: None,
+                    numeric_upper_bound: None,
+                };
             }
         }
 
-        if let Some(derivation) = goal.fixed_affine_bridge.and_then(|bridge| {
-            self.fixed_affine_bound_derivation(
-                bridge,
-                left,
-                goal.request.right,
-                goal.request.bound,
-                context.affine,
-                context.facts,
-            )
-        }) {
-            return ProofResult {
-                disposition: ProofDisposition::Proved,
-                route: Some(ProofRoute::Affine),
-                derivation: Some(derivation),
-                numeric_upper_bound: None,
-            };
+        let relation = goal.request.as_ref().and_then(request_relation);
+        if let Some(relation) = relation.as_ref() {
+            if closed.derives(relation) {
+                let parent = closed
+                    .relation_proof(relation, &mut self.derivations)
+                    .expect("a proved L0 relation must retain its local derivation");
+                let derivation = self.goal_numeric_derivation(canonical, Some(relation), parent);
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::L0),
+                    derivation: Some(derivation),
+                    numeric_upper_bound: None,
+                };
+            }
+            if closed.derives(&relation.negated()) {
+                return ProofResult {
+                    disposition: ProofDisposition::Refuted,
+                    route: Some(ProofRoute::L0),
+                    derivation: None,
+                    numeric_upper_bound: None,
+                };
+            }
         }
 
-        if let Some(derivation) = goal.affine_left.and_then(|affine_left| {
-            self.affine_bound_via_l0_right(
-                affine_left,
-                left,
-                goal.request.right,
-                goal.request.bound,
-                context.affine,
-                context.facts,
-            )
-        }) {
-            return ProofResult {
-                disposition: ProofDisposition::Proved,
-                route: Some(ProofRoute::Affine),
-                derivation: Some(derivation),
-                numeric_upper_bound: None,
-            };
+        if let Some(target) = goal.direct_affine {
+            let assumptions = Self::affine_facts(context.affine);
+            if let Some(proof) =
+                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
+            {
+                let parent = self.derivations.intern(DerivationNode::AffineConsequence {
+                    relation: relation.clone().map(Box::new),
+                    premises: proof.premises.into_boxed_slice(),
+                    parents: proof.parents,
+                });
+                let derivation = self.goal_numeric_derivation(canonical, relation.as_ref(), parent);
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::Affine),
+                    derivation: Some(derivation),
+                    numeric_upper_bound: None,
+                };
+            }
+        }
+
+        if let Some(request) = goal.request
+            && let Some(left) = request.left
+        {
+            if let Some(derivation) = goal.fixed_affine_bridge.and_then(|bridge| {
+                self.fixed_affine_bound_derivation(
+                    bridge,
+                    left,
+                    request.right,
+                    request.bound,
+                    context.affine,
+                    context.facts,
+                )
+            }) {
+                let derivation =
+                    self.goal_numeric_derivation(canonical, relation.as_ref(), derivation);
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::Affine),
+                    derivation: Some(derivation),
+                    numeric_upper_bound: None,
+                };
+            }
+
+            if let Some(derivation) = goal.affine_left.and_then(|affine_left| {
+                self.affine_bound_via_l0_right(
+                    affine_left,
+                    left,
+                    request.right,
+                    request.bound,
+                    context.affine,
+                    context.facts,
+                )
+            }) {
+                let derivation =
+                    self.goal_numeric_derivation(canonical, relation.as_ref(), derivation);
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::Affine),
+                    derivation: Some(derivation),
+                    numeric_upper_bound: None,
+                };
+            }
         }
 
         ProofResult {
@@ -5259,6 +5742,53 @@ impl Analyzer<'_, '_> {
             derivation: None,
             numeric_upper_bound: None,
         }
+    }
+
+    fn goal_numeric_derivation(
+        &mut self,
+        goal: Option<GoalId>,
+        relation: Option<&Relation>,
+        parent: DerivationId,
+    ) -> DerivationId {
+        let Some(goal) = goal else {
+            return parent;
+        };
+        if let Some(relation) = relation
+            && self.goals.projection(goal) == Some(relation)
+        {
+            return self.derivations.intern(DerivationNode::GoalProjection {
+                goal,
+                sign: GoalSign::Positive,
+                relation: relation.clone(),
+                parent,
+            });
+        }
+        if let Some(relation) = relation
+            && self.goals.normalization(goal).is_some_and(|normalization| {
+                normalization.clause_is_single_relation(GoalSign::Positive, 0, relation)
+            })
+        {
+            return self.derivations.intern(DerivationNode::GoalNormalization {
+                goal,
+                sign: GoalSign::Positive,
+                clause: 0,
+                parents: vec![parent],
+            });
+        }
+        // A bounded obligation may have an exact complete goal whose source
+        // occurrence is represented in L0 only through an evaluated alias.
+        // The relation remains the obligation's direct proof root; recording
+        // it as this globally interned goal's normalization would attach
+        // occurrence-local data to a shared identity.
+        if relation.is_some() {
+            return parent;
+        }
+        self.derivations
+            .intern(DerivationNode::GoalAffineConsequence {
+                goal,
+                sign: GoalSign::Positive,
+                parent,
+            })
     }
 
     /// Proves one canonical ordering that may also be represented by a finite
@@ -5289,20 +5819,15 @@ impl Analyzer<'_, '_> {
             };
         }
         if let Some(goal) = goal {
-            if closed.derives_goal(goal, GoalSign::Positive, &self.goals) {
+            if closed.holds_opaque(goal, GoalSign::Positive) {
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
                     route: Some(ProofRoute::FiniteGoal),
-                    derivation: closed.goal_proof(
-                        goal,
-                        GoalSign::Positive,
-                        &self.goals,
-                        &mut self.derivations,
-                    ),
+                    derivation: closed.opaque_proof(goal, GoalSign::Positive),
                     numeric_upper_bound: None,
                 };
             }
-            if closed.derives_goal(goal, GoalSign::Negative, &self.goals) {
+            if closed.holds_opaque(goal, GoalSign::Negative) {
                 return ProofResult {
                     disposition: ProofDisposition::Refuted,
                     route: Some(ProofRoute::FiniteGoal),
@@ -5310,16 +5835,17 @@ impl Analyzer<'_, '_> {
                     numeric_upper_bound: None,
                 };
             }
-        } else if let Some(relation) = relation {
+        }
+        if let Some(relation) = relation {
             if closed.derives(relation) {
+                let parent = closed
+                    .relation_proof(relation, &mut self.derivations)
+                    .expect("a proved L0 relation must retain its local derivation");
+                let derivation = self.goal_numeric_derivation(goal, Some(relation), parent);
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
                     route: Some(ProofRoute::L0),
-                    derivation: Some(
-                        closed
-                            .relation_proof(relation, &mut self.derivations)
-                            .expect("a proved L0 relation must retain its local derivation"),
-                    ),
+                    derivation: Some(derivation),
                     numeric_upper_bound: None,
                 };
             }
@@ -5333,7 +5859,7 @@ impl Analyzer<'_, '_> {
             }
         }
 
-        let (Some(target), Some(relation)) = (affine_target, relation) else {
+        let Some(target) = affine_target else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -5353,18 +5879,11 @@ impl Analyzer<'_, '_> {
             };
         };
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: Some(Box::new(relation.clone())),
+            relation: relation.cloned().map(Box::new),
             premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
-        let derivation = goal.map_or(consequence, |goal| {
-            self.derivations.intern(DerivationNode::GoalNormalization {
-                goal,
-                sign: GoalSign::Positive,
-                clause: 0,
-                parents: vec![consequence],
-            })
-        });
+        let derivation = self.goal_numeric_derivation(goal, relation, consequence);
         ProofResult {
             disposition: ProofDisposition::Proved,
             route: Some(ProofRoute::Affine),
@@ -5544,13 +6063,14 @@ impl Analyzer<'_, '_> {
             ProofContext::new(&states.facts, &states.affine),
             ProofGoal::BoundedRelation(BoundedRelationGoal {
                 canonical: None,
-                request,
+                request: Some(request),
                 direct_affine: None,
                 fixed_affine_bridge,
                 affine_left: affine_offset.as_ref(),
             }),
         );
         let discharged = proof.disposition == ProofDisposition::Proved;
+        let refuted = proof.disposition == ProofDisposition::Refuted;
         let contradictory = proof.route == Some(ProofRoute::Contradiction);
         let derivation = proof.derivation;
         let residual = (!discharged).then(|| rendered_residual.clone());
@@ -5567,7 +6087,7 @@ impl Analyzer<'_, '_> {
             canonical_goal: None,
             components: vec![request],
             discharged,
-            refuted: false,
+            refuted,
             contradictory,
             residual,
             derivation,
@@ -5769,8 +6289,8 @@ impl Analyzer<'_, '_> {
         node_path: crate::NodePath,
         states: &ProofFlowState,
     ) {
-        let length_goal = self.direct_goal_expression(length);
-        let canonical_goal = length_goal.map(|argument| GoalExpression::Operation {
+        let length_goal = self.obligation_goal_operand(&node_path, 0, length, &states.facts);
+        let canonical_goal = GoalExpression::Operation {
             row: GoalOperation::BufferFits {
                 element,
                 maximum_length,
@@ -5778,12 +6298,9 @@ impl Analyzer<'_, '_> {
             type_arguments: vec![element],
             const_arguments: Vec::new(),
             result: CheckedType::Bool,
-            arguments: vec![argument],
-        });
-        let goal = canonical_goal
-            .as_ref()
-            .cloned()
-            .map(|goal| self.intern_goal_expression(goal));
+            arguments: vec![length_goal],
+        };
+        let goal = Some(self.intern_goal_expression(canonical_goal.clone()));
         let length_term = self.read_operand(length);
         let threshold_term = self
             .terms
@@ -5794,7 +6311,7 @@ impl Analyzer<'_, '_> {
             bound: 0,
         });
         let affine_length = self
-            .direct_goal_expression(length)
+            .admitted_value_goal_expression(length)
             .and_then(|length| self.affine_goal_value(&length, &states.affine));
         let affine_target = affine_length.as_ref().and_then(|length| {
             AffineInequality::from_forms(
@@ -5848,7 +6365,7 @@ impl Analyzer<'_, '_> {
             node_path: node_path.clone(),
             family: ObligationFamily::AllocationFit,
             conjunct: 0,
-            canonical_goal,
+            canonical_goal: Some(canonical_goal),
             components: vec![BoundsRequest {
                 left: length_term,
                 right: threshold_term,
@@ -5905,8 +6422,9 @@ impl Analyzer<'_, '_> {
         ) else {
             return;
         };
-        let start_goal = self.direct_goal_expression(start);
-        let end_goal = self.direct_goal_expression(end);
+        let start_goal =
+            self.obligation_goal_operand(node_path, start_ordinal, start, &states.facts);
+        let end_goal = self.obligation_goal_operand(node_path, end_ordinal, end, &states.facts);
         let start_term = self.read_operand(start);
         let end_term = self.read_operand(end);
         let comparison = |left, right| GoalExpression::Operation {
@@ -5920,33 +6438,20 @@ impl Analyzer<'_, '_> {
             arguments: vec![left, right],
         };
 
-        if let (Some(start_goal), Some(end_goal)) = (start_goal, end_goal.clone()) {
-            self.judge_exact_relation_obligation(
-                ObligationFamily::SystemRange,
-                0,
-                node_path.clone(),
-                comparison(start_goal, end_goal),
-                start_term,
-                end_term.unwrap_or(ZERO),
-                format!(
-                    "{} <= {}",
-                    self.render_expression(start),
-                    self.render_expression(end)
-                ),
-                states,
-            );
-        } else {
-            self.judge_unrepresentable_system_range(
-                node_path,
-                0,
-                format!(
-                    "{} <= {}",
-                    self.render_expression(start),
-                    self.render_expression(end)
-                ),
-                states,
-            );
-        }
+        self.judge_exact_relation_obligation(
+            ObligationFamily::SystemRange,
+            0,
+            node_path.clone(),
+            comparison(start_goal, end_goal.clone()),
+            start_term,
+            end_term,
+            format!(
+                "{} <= {}",
+                self.render_expression(start),
+                self.render_expression(end)
+            ),
+            states,
+        );
 
         // The second conjunct bounds the end against the caller's own buffer,
         // so the residual names the caller's place — `wide <= len(header)` —
@@ -5973,31 +6478,22 @@ impl Analyzer<'_, '_> {
             }),
             None => buffer_parameter.name.to_owned(),
         };
-        let Some(end_goal) = end_goal else {
-            self.judge_unrepresentable_system_range(
-                node_path,
-                1,
-                format!("{} <= len({buffer_spelling})", self.render_expression(end)),
-                states,
-            );
+        let CheckedType::Buffer {
+            element: buffer_element,
+        } = buffer.ty()
+        else {
             return;
         };
-        let Some((buffer_binding, buffer_fields, buffer_element)) = buffer_root else {
-            self.judge_unrepresentable_system_range(
-                node_path,
-                1,
-                format!("{} <= len({buffer_spelling})", self.render_expression(end)),
-                states,
-            );
-            return;
+        let buffer_goal = match buffer_root.as_ref() {
+            None => self.obligation_goal_operand(node_path, buffer_ordinal, buffer, &states.facts),
+            Some((buffer_binding, buffer_fields, _)) => self.goal_binding_place(
+                *buffer_binding,
+                buffer_fields.iter().copied().map(GoalProjection::Field),
+                CheckedType::Buffer {
+                    element: buffer_element,
+                },
+            ),
         };
-        let buffer_goal = self.goal_binding_place(
-            buffer_binding,
-            buffer_fields.iter().copied().map(GoalProjection::Field),
-            CheckedType::Buffer {
-                element: buffer_element,
-            },
-        );
         let length_goal = GoalExpression::Operation {
             row: GoalOperation::BufferLength {
                 element: buffer_element,
@@ -6007,12 +6503,14 @@ impl Analyzer<'_, '_> {
             result: CheckedType::Integer(IntegerType::U64),
             arguments: vec![buffer_goal],
         };
-        let base = PlaceTerm {
-            root: PlaceRoot::Binding(buffer_binding),
-            deref: self.is_holder(buffer_binding),
-            fields: buffer_fields,
-        };
-        let length_term = self.length_term(base, None);
+        let length_term = buffer_root.map(|(buffer_binding, buffer_fields, _)| {
+            let base = PlaceTerm {
+                root: PlaceRoot::Binding(buffer_binding),
+                deref: self.is_holder(buffer_binding),
+                fields: buffer_fields,
+            };
+            self.length_term(base, None)
+        });
         self.judge_exact_relation_obligation(
             ObligationFamily::SystemRange,
             1,
@@ -6033,17 +6531,17 @@ impl Analyzer<'_, '_> {
         node_path: crate::NodePath,
         root: GoalExpression,
         left: Option<TermId>,
-        right: TermId,
+        right: Option<TermId>,
         residual: String,
         states: &ProofFlowState,
     ) {
         let canonical_goal = root.clone();
-        let request = BoundsRequest {
-            left,
+        let request = left.zip(right).map(|(left, right)| BoundsRequest {
+            left: Some(left),
             right,
             bound: 0,
             distinct: false,
-        };
+        });
         let direct_affine = self.affine_goal_ordering_target(&root, &states.affine);
         let affine_left = left.and_then(|term| self.affine_term_value(term, &states.affine));
         let proof = self.prove(
@@ -6071,7 +6569,7 @@ impl Analyzer<'_, '_> {
             family,
             conjunct,
             canonical_goal: Some(canonical_goal),
-            components: vec![request],
+            components: request.into_iter().collect(),
             discharged,
             refuted,
             contradictory,
@@ -6104,47 +6602,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn judge_unrepresentable_system_range(
-        &mut self,
-        node_path: &crate::NodePath,
-        conjunct: u8,
-        residual: String,
-        states: &ProofFlowState,
-    ) {
-        let complete = close(
-            &states.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
-        );
-        let contradictory = complete.contradictory();
-        let derivation = contradictory.then(|| {
-            complete
-                .contradiction_proof()
-                .expect("contradictory state has a proof")
-        });
-        self.obligations.push(ObligationOutcome {
-            node_path: node_path.clone(),
-            family: ObligationFamily::SystemRange,
-            conjunct,
-            canonical_goal: None,
-            components: vec![BoundsRequest {
-                left: None,
-                right: ZERO,
-                bound: 0,
-                distinct: false,
-            }],
-            discharged: contradictory,
-            refuted: false,
-            contradictory,
-            residual: (!contradictory).then(|| residual.clone()),
-            derivation,
-            allocation_length_upper_bound: None,
-            allocation_length_upper_bound_derivation: None,
-            affine_index_maps: Vec::new(),
-        });
-    }
-
     /// [ENT-6] judges one proof-required exact integer operation. The source
     /// occurrence owns one canonical `.defined` goal and one obligation
     /// identity. Fixed L0 components are alternate derivations of that goal;
@@ -6157,11 +6614,9 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         states: &mut ProofFlowState,
     ) {
-        let canonical_goal = self.integer_domain_goal(operation, operand_type, arguments);
-        let goal = canonical_goal
-            .as_ref()
-            .cloned()
-            .map(|goal| self.intern_goal_expression(goal));
+        let canonical_goal =
+            self.integer_domain_goal(operation, operand_type, arguments, node_path, &states.facts);
+        let goal = Some(self.intern_goal_expression(canonical_goal.clone()));
         let components = self.integer_domain_components(operation, operand_type, arguments);
         let residual = self.render_integer_domain_goal(operation, arguments);
         // Goal preparation may need to install a missing binding value image
@@ -6208,7 +6663,7 @@ impl Analyzer<'_, '_> {
             node_path: node_path.clone(),
             family: ObligationFamily::IntegerDomain,
             conjunct: 0,
-            canonical_goal,
+            canonical_goal: Some(canonical_goal),
             components,
             discharged,
             refuted,
@@ -6222,14 +6677,18 @@ impl Analyzer<'_, '_> {
     }
 
     fn integer_domain_goal(
-        &self,
+        &mut self,
         operation: CheckedIntegerOperation,
         operand_type: CheckedType,
         arguments: &[CheckedExpression],
-    ) -> Option<GoalExpression> {
-        Some(GoalExpression::Operation {
+        node_path: &crate::NodePath,
+        facts: &FactState,
+    ) -> GoalExpression {
+        GoalExpression::Operation {
             row: GoalOperation::Integer {
-                operation: operation.defined_query()?,
+                operation: operation
+                    .defined_query()
+                    .expect("every proof-required exact row has one total domain query"),
                 operand_type,
             },
             type_arguments: Vec::new(),
@@ -6237,9 +6696,12 @@ impl Analyzer<'_, '_> {
             result: CheckedType::Bool,
             arguments: arguments
                 .iter()
-                .map(|argument| self.direct_goal_expression(argument))
-                .collect::<Option<Vec<_>>>()?,
-        })
+                .enumerate()
+                .map(|(ordinal, argument)| {
+                    self.obligation_goal_operand(node_path, ordinal, argument, facts)
+                })
+                .collect(),
+        }
     }
 
     fn integer_domain_components(
@@ -6561,27 +7023,56 @@ impl Analyzer<'_, '_> {
                 request_relation(goal.components.get(index)?)
                     .and_then(|relation| closed.relation_proof(&relation, derivations))
             };
-        let parents = if contradictory {
-            closed.contradiction_proof().map(|proof| vec![proof])
-        } else if let Some(canonical) = goal
-            .canonical
-            .filter(|canonical| closed.derives_goal(*canonical, GoalSign::Positive, &self.goals))
-        {
-            closed
-                .goal_proof(
-                    canonical,
-                    GoalSign::Positive,
-                    &self.goals,
-                    &mut self.derivations,
-                )
-                .map(|proof| vec![proof])
-        } else if goal.canonical.is_none() && signed_division && goal.components.len() == 3 {
+        if contradictory {
+            let parents = closed.contradiction_proof().map(|proof| vec![proof]);
+            let Some(parents) = parents else {
+                unreachable!("a contradictory closure retains its proof");
+            };
+            let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
+                goal: goal.canonical,
+                parents,
+            });
+            return ProofResult {
+                disposition: ProofDisposition::Proved,
+                route: Some(ProofRoute::Contradiction),
+                derivation: Some(derivation),
+                numeric_upper_bound: None,
+            };
+        }
+
+        if let Some(canonical) = goal.canonical {
+            if closed.holds_opaque(canonical, GoalSign::Positive) {
+                let parent = closed
+                    .opaque_proof(canonical, GoalSign::Positive)
+                    .expect("an opaque goal fact retains its proof");
+                let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
+                    goal: Some(canonical),
+                    parents: vec![parent],
+                });
+                return ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::FiniteGoal),
+                    derivation: Some(derivation),
+                    numeric_upper_bound: None,
+                };
+            }
+            if closed.holds_opaque(canonical, GoalSign::Negative) {
+                return ProofResult {
+                    disposition: ProofDisposition::Refuted,
+                    route: Some(ProofRoute::FiniteGoal),
+                    derivation: None,
+                    numeric_upper_bound: None,
+                };
+            }
+        }
+
+        let normalization_parents = if signed_division && goal.components.len() == 3 {
             component_proof(0, &mut self.derivations).and_then(|nonzero| {
                 component_proof(1, &mut self.derivations)
                     .or_else(|| component_proof(2, &mut self.derivations))
                     .map(|witness| vec![nonzero, witness])
             })
-        } else if goal.canonical.is_none() && !goal.components.is_empty() {
+        } else if !goal.components.is_empty() {
             goal.components
                 .iter()
                 .map(|request| {
@@ -6593,20 +7084,35 @@ impl Analyzer<'_, '_> {
         } else {
             None
         };
-        if let Some(parents) = parents {
+        if let Some(parents) = normalization_parents {
+            let parents = if let Some(canonical) = goal.canonical {
+                if let Some(normalization) = closed.normalization_proof(
+                    canonical,
+                    GoalSign::Positive,
+                    &self.goals,
+                    &mut self.derivations,
+                ) {
+                    vec![normalization]
+                } else {
+                    // A complete admitted Goal may expand an ordinary-let
+                    // operand into an exact operation that is not an L0 term.
+                    // Its source occurrence can still have fixed L0
+                    // components over the already evaluated alias. Those
+                    // occurrence-local parents prove this IntegerDomain
+                    // judgment directly; they must not become a normalization
+                    // on the globally interned complete Goal identity.
+                    parents
+                }
+            } else {
+                parents
+            };
             let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
                 goal: goal.canonical,
                 parents,
             });
             return ProofResult {
                 disposition: ProofDisposition::Proved,
-                route: Some(if contradictory {
-                    ProofRoute::Contradiction
-                } else if goal.canonical.is_some() {
-                    ProofRoute::FiniteGoal
-                } else {
-                    ProofRoute::L0
-                }),
+                route: Some(ProofRoute::L0),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
             };
@@ -6618,9 +7124,7 @@ impl Analyzer<'_, '_> {
                 .and_then(request_relation)
                 .is_some_and(|relation| closed.derives(&relation.negated()))
         };
-        let normalization_refuted = if goal.canonical.is_some() {
-            false
-        } else if signed_division && goal.components.len() == 3 {
+        let normalization_refuted = if signed_division && goal.components.len() == 3 {
             component_false(0) || (component_false(1) && component_false(2))
         } else {
             goal.components
@@ -6628,17 +7132,10 @@ impl Analyzer<'_, '_> {
                 .filter_map(request_relation)
                 .any(|relation| closed.derives(&relation.negated()))
         };
-        let refuted = goal.canonical.is_some_and(|canonical| {
-            closed.derives_goal(canonical, GoalSign::Negative, &self.goals)
-        }) || normalization_refuted;
-        if refuted {
+        if normalization_refuted {
             return ProofResult {
                 disposition: ProofDisposition::Refuted,
-                route: Some(if goal.canonical.is_some() {
-                    ProofRoute::FiniteGoal
-                } else {
-                    ProofRoute::L0
-                }),
+                route: Some(ProofRoute::L0),
                 derivation: None,
                 numeric_upper_bound: None,
             };
@@ -6799,7 +7296,7 @@ impl Analyzer<'_, '_> {
             .flatten()
             .and_then(|terms| constant.checked_sub(terms));
 
-        for assumption in assumptions {
+        for assumption in Self::canonical_affine_facts(assumptions) {
             if let Ok(residual) = AffineInequality::residual_after(
                 &upper_zero,
                 &assumption.inequality,
@@ -7141,38 +7638,48 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn judge_set_target(&mut self, target: &CheckedSetTarget, states: &mut ProofFlowState) {
+    fn judge_set_target(&mut self, target: &CheckedSetTarget, states: &mut ProofFlowState) -> bool {
         match target {
-            CheckedSetTarget::Place(_) => {}
+            CheckedSetTarget::Place(_) => true,
             CheckedSetTarget::ArrayIndex(target) => {
-                let _ = self.judge_expression(&target.offset, states);
-                let base = PlaceTerm {
-                    root: PlaceRoot::Binding(target.binding),
-                    deref: self.is_holder(target.binding),
-                    fields: target.fields.clone(),
-                };
-                self.judge_obligation(
-                    base,
-                    Some(target.length),
-                    &target.offset,
-                    target.obligation.clone(),
-                    states,
-                );
+                let reaches_target =
+                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
+                let obligation_start = self.obligations.len();
+                if reaches_target {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(target.binding),
+                        deref: self.is_holder(target.binding),
+                        fields: target.fields.clone(),
+                    };
+                    self.judge_obligation(
+                        base,
+                        Some(target.length),
+                        &target.offset,
+                        target.obligation.clone(),
+                        states,
+                    );
+                }
+                reaches_target && self.obligations_since_discharged(obligation_start)
             }
             CheckedSetTarget::BufferIndex(target) => {
-                let _ = self.judge_expression(&target.offset, states);
-                let base = PlaceTerm {
-                    root: PlaceRoot::Binding(target.root.binding),
-                    deref: self.is_holder(target.root.binding),
-                    fields: target.root.fields.clone(),
-                };
-                self.judge_obligation(
-                    base,
-                    None,
-                    &target.offset,
-                    target.obligation.clone(),
-                    states,
-                );
+                let reaches_target =
+                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
+                let obligation_start = self.obligations.len();
+                if reaches_target {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(target.root.binding),
+                        deref: self.is_holder(target.root.binding),
+                        fields: target.root.fields.clone(),
+                    };
+                    self.judge_obligation(
+                        base,
+                        None,
+                        &target.offset,
+                        target.obligation.clone(),
+                        states,
+                    );
+                }
+                reaches_target && self.obligations_since_discharged(obligation_start)
             }
         }
     }
@@ -7217,46 +7724,32 @@ impl Analyzer<'_, '_> {
         Some(self.new_affine_atom(ty))
     }
 
-    fn intersect_affine_facts(
-        states: &[ProofFlowState],
-        select: impl Fn(&AffineFlowState) -> &[ActiveAffineFact],
-    ) -> Vec<ActiveAffineFact> {
-        let Some(first) = states.first() else {
-            return Vec::new();
-        };
-        select(&first.affine)
-            .iter()
-            .filter(|candidate| {
-                states
-                    .iter()
-                    .skip(1)
-                    .all(|state| select(&state.affine).contains(candidate))
-            })
-            .cloned()
-            .collect()
-    }
-
-    /// Intersects source-proof facts by canonical numeric content, then
-    /// records their predecessor sources for diagnostics.
+    /// Intersects every published affine fact by canonical numeric content,
+    /// then records representative predecessor evidence for diagnostics.
     ///
-    /// The first phase deliberately does not inspect `source`: an inequality
-    /// survives exactly when every predecessor contains the same canonical
-    /// value relation. Only after that decision does the second phase either
-    /// reuse one common source reference or append a diagnostic join node.
-    fn join_source_proof_facts(&mut self, states: &[ProofFlowState]) -> Vec<ActiveAffineFact> {
+    /// The first phase deliberately does not inspect evidence or the source
+    /// category that published a fact: an inequality survives exactly when
+    /// every predecessor contains the same relation over the same immutable
+    /// value images. Loop dependencies are then unioned conservatively, so a
+    /// cross-category match cannot carry an assumption beyond its loop.
+    fn join_affine_facts(&mut self, states: &[ProofFlowState]) -> Vec<ActiveAffineFact> {
         let Some(first) = states.first() else {
             return Vec::new();
         };
 
+        // This is deliberately an ordered intersection, not a set iteration:
+        // the first contributing structural predecessor fixes the retained
+        // order, and the first canonical occurrence in that predecessor fixes
+        // each fact's position. Evidence category never participates.
         let mut common_inequalities = Vec::new();
-        for candidate in &first.affine.proofs {
+        for candidate in &first.affine.facts {
             if common_inequalities.contains(&candidate.inequality) {
                 continue;
             }
             if states.iter().skip(1).all(|state| {
                 state
                     .affine
-                    .proofs
+                    .facts
                     .iter()
                     .any(|fact| fact.inequality == candidate.inequality)
             }) {
@@ -7267,39 +7760,63 @@ impl Analyzer<'_, '_> {
         common_inequalities
             .into_iter()
             .map(|inequality| {
-                let sources = states
+                let witnesses = states
                     .iter()
                     .map(|state| {
                         state
                             .affine
-                            .proofs
+                            .facts
                             .iter()
                             .filter(|fact| fact.inequality == inequality)
-                            .map(|fact| fact.source)
-                            .collect::<Vec<_>>()
+                            // A stable witness is strictly preferable to an
+                            // active-loop assumption for the same canonical
+                            // fact. Remaining ties keep deterministic fact
+                            // insertion order and do not affect acceptance.
+                            .min_by_key(|fact| fact.active_loops.len())
+                            .expect("a common affine inequality has one witness")
                     })
                     .collect::<Vec<_>>();
-                debug_assert!(sources.iter().all(|matches| !matches.is_empty()));
 
-                let common_source = sources[0].iter().copied().find(|candidate| {
-                    sources
+                let mut active_loops = witnesses
+                    .iter()
+                    .flat_map(|fact| fact.active_loops.iter().copied())
+                    .collect::<Vec<_>>();
+                active_loops.sort_unstable_by_key(|loop_id| loop_id.0);
+                active_loops.dedup();
+
+                let first_evidence = witnesses[0].evidence;
+                let evidence = if witnesses.iter().all(|fact| fact.evidence == first_evidence) {
+                    first_evidence
+                } else if witnesses
+                    .iter()
+                    .all(|fact| matches!(fact.evidence, AffineFactEvidence::Source(_)))
+                {
+                    let predecessors = witnesses
                         .iter()
-                        .skip(1)
-                        .all(|matches| matches.contains(candidate))
-                });
-                let source = common_source.unwrap_or_else(|| {
-                    let predecessors = sources
-                        .iter()
-                        .map(|matches| matches[0])
+                        .map(|fact| match fact.evidence {
+                            AffineFactEvidence::Source(source) => source,
+                            AffineFactEvidence::Derivation(_) => unreachable!(),
+                        })
                         .collect::<Vec<_>>()
                         .into_boxed_slice();
                     let join_ordinal = u32::try_from(self.joined_source_proofs.len())
-                        .expect("joined local invariant count exceeds the u32 identity space");
+                        .expect("joined affine fact count exceeds the u32 identity space");
                     self.joined_source_proofs
                         .push(JoinedSourceProofProvenance { predecessors });
-                    SourceAffineFactRef::JoinedSourceProof { join_ordinal }
-                });
-                ActiveAffineFact { source, inequality }
+                    AffineFactEvidence::Source(SourceAffineFactRef::JoinedSourceProof {
+                        join_ordinal,
+                    })
+                } else {
+                    // Derivation and source identities are explanation only.
+                    // The canonical all-predecessor intersection above is the
+                    // sole authority for retaining this conclusion.
+                    first_evidence
+                };
+                ActiveAffineFact {
+                    inequality,
+                    evidence,
+                    active_loops,
+                }
             })
             .collect()
     }
@@ -7373,9 +7890,7 @@ impl Analyzer<'_, '_> {
         }
         AffineFlowState {
             values,
-            assumptions: Self::intersect_affine_facts(states, |state| &state.assumptions),
-            exports: Self::intersect_affine_facts(states, |state| &state.exports),
-            proofs: self.join_source_proof_facts(states),
+            facts: self.join_affine_facts(states),
             published_invariants: first
                 .affine
                 .published_invariants
@@ -7387,35 +7902,34 @@ impl Analyzer<'_, '_> {
                 })
                 .map(|(declaration, inequality)| (*declaration, inequality.clone()))
                 .collect(),
-            // Equality includes the exact value atoms and originating proof.
-            // Therefore this only preserves the same incoming theorem. Two
-            // branches that independently compute equal-looking divisions
-            // need a separate value-delivery transfer before their facts can
-            // be merged; silently equating their atoms would be unsound.
-            division_images: first
-                .affine
-                .division_images
-                .iter()
-                .filter(|candidate| {
-                    states
-                        .iter()
-                        .skip(1)
-                        .all(|state| state.affine.division_images.contains(candidate))
-                })
-                .cloned()
-                .collect(),
         }
     }
 
     fn join_flows(&mut self, states: &[ProofFlowState]) -> ProofFlowState {
-        let facts = states
+        // Close L0 contradiction before any structural intersection. An
+        // unreachable predecessor is neutral: it cannot erase a live affine
+        // value, published invariant name, or canonical fact. Keeping all
+        // promoted L0 states in `join_at` still records their contradiction
+        // proofs as join parents. When every predecessor is contradictory,
+        // the affine component is deliberately empty because L0 proves every
+        // downstream goal.
+        let mut promoted = states.to_vec();
+        for state in &mut promoted {
+            self.promote_flow_contradiction(state);
+        }
+        let contributing = promoted
+            .iter()
+            .filter(|state| !state.facts.all_derivable)
+            .cloned()
+            .collect::<Vec<_>>();
+        let facts = promoted
             .iter()
             .map(|states| states.facts.clone())
             .collect::<Vec<_>>();
         let event = self.derivations.event(FlowEventKind::Join, None);
         let entry_images = (0..self.entry_images.len())
             .map(|index| {
-                states
+                contributing
                     .iter()
                     .filter_map(|state| state.entry_images[index])
                     .min()
@@ -7430,7 +7944,7 @@ impl Analyzer<'_, '_> {
                 event,
             ),
             entry_images,
-            affine: self.join_affine_states(states),
+            affine: self.join_affine_states(&contributing),
         }
     }
 
@@ -7872,9 +8386,10 @@ impl Analyzer<'_, '_> {
         let Some(inequality) = Self::affine_less_equal(&scaled_quotient, &dividend) else {
             return;
         };
-        state.division_images.push(AutomaticAffineFact {
+        state.facts.push(ActiveAffineFact {
             inequality,
-            parent: established.parent,
+            evidence: AffineFactEvidence::Derivation(established.parent),
+            active_loops: Vec::new(),
         });
     }
 
@@ -7954,7 +8469,7 @@ impl Analyzer<'_, '_> {
         expression: &CheckedAffineExpression,
         state: &mut AffineFlowState,
         check: &mut AffineCheckState,
-    ) -> Option<AffineForm> {
+    ) -> Result<AffineForm, AffineCheckError> {
         enum Pending<'expression> {
             Visit(&'expression CheckedAffineExpression),
             Add,
@@ -7974,7 +8489,9 @@ impl Analyzer<'_, '_> {
                         let value = if let Some(value) = state.values.get(binding) {
                             value.clone()
                         } else {
-                            let value = self.new_affine_binding_atom(*binding)?;
+                            let value = self
+                                .new_affine_binding_atom(*binding)
+                                .ok_or(AffineCheckError::CoefficientMismatch)?;
                             state.values.insert(*binding, value.clone());
                             value
                         };
@@ -7998,23 +8515,27 @@ impl Analyzer<'_, '_> {
                     }
                 },
                 Pending::Add => {
-                    let right = values.pop()?;
-                    let left = values.pop()?;
-                    values.push(left.add(&right, check).ok()?);
+                    let right = values.pop().ok_or(AffineCheckError::CoefficientMismatch)?;
+                    let left = values.pop().ok_or(AffineCheckError::CoefficientMismatch)?;
+                    values.push(left.add(&right, check)?);
                 }
                 Pending::Subtract => {
-                    let right = values.pop()?;
-                    let left = values.pop()?;
-                    values.push(left.subtract(&right, check).ok()?);
+                    let right = values.pop().ok_or(AffineCheckError::CoefficientMismatch)?;
+                    let left = values.pop().ok_or(AffineCheckError::CoefficientMismatch)?;
+                    values.push(left.subtract(&right, check)?);
                 }
                 Pending::Scale(constant) => {
-                    let value = values.pop()?;
-                    values.push(value.scale(constant, check).ok()?);
+                    let value = values.pop().ok_or(AffineCheckError::CoefficientMismatch)?;
+                    values.push(value.scale(constant, check)?);
                 }
             }
         }
-        let result = values.pop()?;
-        values.is_empty().then_some(result)
+        let result = values.pop().ok_or(AffineCheckError::CoefficientMismatch)?;
+        if values.is_empty() {
+            Ok(result)
+        } else {
+            Err(AffineCheckError::CoefficientMismatch)
+        }
     }
 
     fn checked_loop_invariant_inequality(
@@ -8024,6 +8545,7 @@ impl Analyzer<'_, '_> {
         check: &mut AffineCheckState,
     ) -> Option<AffineInequality> {
         self.checked_affine_relation_inequality(&invariant.relation, state, check)
+            .ok()
     }
 
     /// INV-1 base is a simultaneous batch: every target is checked against
@@ -8065,22 +8587,27 @@ impl Analyzer<'_, '_> {
         state: &mut AffineFlowState,
     ) {
         for (source_ordinal, invariant) in invariants.iter().enumerate() {
-            let target = self.checked_loop_invariant_inequality(
-                invariant,
+            let target = self.checked_affine_relation_inequality(
+                &invariant.relation,
                 state,
                 &mut AffineCheckState::new(),
             );
-            if base_batch && let Some(inequality) = target {
+            self.invariant_targets
+                .insert(invariant.declaration, target.clone());
+            if base_batch && let Ok(inequality) = target {
                 state
                     .published_invariants
                     .insert(invariant.declaration, inequality.clone());
-                state.assumptions.push(ActiveAffineFact {
-                    source: SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
-                        loop_id,
-                        source_ordinal: u32::try_from(source_ordinal)
-                            .expect("loop invariant ordinal exceeds u32"),
-                    }),
+                state.facts.push(ActiveAffineFact {
                     inequality,
+                    evidence: AffineFactEvidence::Source(SourceAffineFactRef::LoopInvariant(
+                        SourceLoopInvariantRef {
+                            loop_id,
+                            source_ordinal: u32::try_from(source_ordinal)
+                                .expect("loop invariant ordinal exceeds u32"),
+                        },
+                    )),
+                    active_loops: vec![loop_id],
                 });
             }
         }
@@ -8180,10 +8707,10 @@ impl Analyzer<'_, '_> {
         relation: &CheckedAffineRelation,
         state: &mut AffineFlowState,
         check: &mut AffineCheckState,
-    ) -> Option<AffineInequality> {
+    ) -> Result<AffineInequality, AffineCheckError> {
         let left = self.checked_affine_form(&relation.left, state, check)?;
         let right = self.checked_affine_form(&relation.right, state, check)?;
-        AffineInequality::from_bounded_forms(&left, &right, relation.bound, check).ok()
+        AffineInequality::from_bounded_forms(&left, &right, relation.bound, check)
     }
 
     /// Projects the exact source relation into L0 when its normalized binding
@@ -8266,23 +8793,39 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    fn source_proof_check(
+    fn source_proof_formation_failure(error: AffineCheckError) -> SourceProofCertificateFailure {
+        match error {
+            AffineCheckError::ArithmeticOverflow => {
+                SourceProofCertificateFailure::ArithmeticOverflow
+            }
+            AffineCheckError::LimitExceeded(_) => SourceProofCertificateFailure::FormationCapacity,
+            AffineCheckError::CoefficientMismatch | AffineCheckError::InvalidCertificateFactor => {
+                unreachable!("a checked affine source has inconsistent internal structure")
+            }
+        }
+    }
+
+    fn source_proof_premise_results(
         &mut self,
         premises: &[Option<AffineInequality>],
         l0_premises: &[Option<Relation>],
+        named_premises: &[bool],
         published_premises: &[bool],
-        combination: Result<bool, SourceProofCertificateFailure>,
-        redundant: bool,
         values: &AffineFlowState,
         facts: &FactState,
-    ) -> SourceProofCheck {
-        let premises = premises
+    ) -> Vec<bool> {
+        premises
             .iter()
             .zip(l0_premises)
+            .zip(named_premises)
             .zip(published_premises)
-            .map(|((premise, relation), published)| {
-                if *published {
-                    return true;
+            .map(|(((premise, relation), named), published)| {
+                // A bare invariant name means that exact declaration's
+                // published theorem, not merely any proposition with the same
+                // normalized inequality. Only a relation-form use asks AUTO
+                // to prove its written source from the entering context.
+                if *named {
+                    return *published;
                 }
                 let Some(premise) = premise.as_ref() else {
                     return false;
@@ -8300,87 +8843,117 @@ impl Analyzer<'_, '_> {
                     .disposition
                     == ProofDisposition::Proved
             })
-            .collect();
-        let certificate_failure = combination.as_ref().err().copied();
-        SourceProofCheck {
-            premises,
-            combination: combination.unwrap_or(false),
-            certificate_failure,
-            redundant,
-        }
+            .collect()
     }
 
-    /// Checks the one weighted combination the source writer selected.
+    /// Forms the one weighted premise sum the source writer selected.
     ///
     /// The written premises are multiplied and summed exactly in source order.
-    /// The remaining proposition `target - sum` may be discharged only by the
-    /// existing direct L0 closure or fixed interval rule at the entering
-    /// program point. This route never selects another affine premise, derives
-    /// a multiplier, or retries a subset.
-    fn source_proof_combination(
-        &mut self,
-        target: &AffineInequality,
+    /// This phase depends only on the formed source propositions and written
+    /// factors. It deliberately runs before premise availability is judged.
+    fn source_proof_sum(
+        &self,
         premises: &[(AffineInequality, i128)],
-        values: &AffineFlowState,
-        facts: &FactState,
-    ) -> Result<bool, SourceProofCertificateFailure> {
+    ) -> Result<AffineInequality, (SourceProofCertificateFailure, u32)> {
         let actual = u32::try_from(premises.len()).unwrap_or(u32::MAX);
         if premises.len() > MAX_CERTIFICATE_PREMISES {
-            return Err(SourceProofCertificateFailure::UseCapacity {
-                maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
-                    .expect("certificate capacity fits u32"),
-                actual,
-            });
+            let maximum =
+                u32::try_from(MAX_CERTIFICATE_PREMISES).expect("certificate capacity fits u32");
+            return Err((
+                SourceProofCertificateFailure::UseCapacity { maximum, actual },
+                maximum,
+            ));
         }
 
         let mut first_by_premise = HashMap::new();
         for (index, (premise, factor)) in premises.iter().enumerate() {
             let index = u32::try_from(index).expect("certificate capacity fits u32");
             if *factor <= 0 {
-                return Err(SourceProofCertificateFailure::InvalidFactor { use_index: index });
+                return Err((
+                    SourceProofCertificateFailure::InvalidFactor { use_index: index },
+                    index,
+                ));
             }
             if let Some(first) = first_by_premise.insert(premise.clone(), index) {
-                return Err(SourceProofCertificateFailure::RepeatedUse {
-                    first,
-                    repeated: index,
-                });
+                return Err((
+                    SourceProofCertificateFailure::RepeatedUse {
+                        first,
+                        repeated: index,
+                    },
+                    index,
+                ));
             }
         }
 
-        let scaled = premises
-            .iter()
-            .map(|(inequality, factor)| ScaledAffinePremise {
+        // Build the written sum one source entry at a time. Besides preserving
+        // source order, this records the exact entry whose scale or addition
+        // first exceeds the proof arithmetic or affine formation domain.
+        let mut sum = None;
+        for (index, (inequality, factor)) in premises.iter().enumerate() {
+            let index = u32::try_from(index).expect("certificate capacity fits u32");
+            let written = ScaledAffinePremise {
                 inequality,
                 factor: *factor,
-            })
-            .collect::<Vec<_>>();
+            };
+            let mut check = AffineCheckState::new();
+            let formed = if let Some(previous) = sum.as_ref() {
+                sum_explicit_scaled_inequalities(
+                    &[
+                        ScaledAffinePremise {
+                            inequality: previous,
+                            factor: 1,
+                        },
+                        written,
+                    ],
+                    &mut check,
+                )
+            } else {
+                sum_explicit_scaled_inequalities(&[written], &mut check)
+            };
+            sum = Some(formed.map_err(|error| {
+                let failure = match error {
+                    AffineCheckError::ArithmeticOverflow => {
+                        SourceProofCertificateFailure::ArithmeticOverflow
+                    }
+                    AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises) => {
+                        SourceProofCertificateFailure::UseCapacity {
+                            maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
+                                .expect("certificate capacity fits u32"),
+                            actual,
+                        }
+                    }
+                    AffineCheckError::LimitExceeded(_) => {
+                        SourceProofCertificateFailure::FormationCapacity
+                    }
+                    AffineCheckError::InvalidCertificateFactor => {
+                        SourceProofCertificateFailure::InvalidFactor { use_index: index }
+                    }
+                    AffineCheckError::CoefficientMismatch => {
+                        SourceProofCertificateFailure::FormationCapacity
+                    }
+                };
+                (failure, index)
+            })?);
+        }
+        sum.ok_or((SourceProofCertificateFailure::FormationCapacity, 0))
+    }
+
+    /// Checks the final writer-selected residual after every source proposition
+    /// and its scaled sum have formed.
+    ///
+    /// `target - sum` may be discharged only by the existing direct L0 closure
+    /// or fixed interval rule at the entering program point. This route never
+    /// selects another affine premise, derives a multiplier, or retries a
+    /// subset.
+    fn source_proof_residual(
+        &mut self,
+        target: &AffineInequality,
+        sum: &AffineInequality,
+        values: &AffineFlowState,
+        facts: &FactState,
+    ) -> Result<bool, SourceProofCertificateFailure> {
         let mut check = AffineCheckState::new();
-        let sum = match sum_explicit_scaled_inequalities(&scaled, &mut check) {
-            Ok(sum) => sum,
-            Err(AffineCheckError::ArithmeticOverflow) => {
-                return Err(SourceProofCertificateFailure::ArithmeticOverflow);
-            }
-            Err(AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises)) => {
-                return Err(SourceProofCertificateFailure::UseCapacity {
-                    maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
-                        .expect("certificate capacity fits u32"),
-                    actual,
-                });
-            }
-            Err(AffineCheckError::LimitExceeded(_)) => {
-                return Err(SourceProofCertificateFailure::FormationCapacity);
-            }
-            Err(AffineCheckError::InvalidCertificateFactor) => {
-                let use_index = premises
-                    .iter()
-                    .position(|(_, factor)| *factor <= 0)
-                    .and_then(|index| u32::try_from(index).ok())
-                    .unwrap_or(0);
-                return Err(SourceProofCertificateFailure::InvalidFactor { use_index });
-            }
-            Err(AffineCheckError::CoefficientMismatch) => return Ok(false),
-        };
-        let residual = match AffineInequality::residual_after(target, &sum, &mut check) {
+        let residual = match AffineInequality::residual_after(target, sum, &mut check) {
             Ok(residual) => residual,
             Err(AffineCheckError::ArithmeticOverflow) => {
                 return Err(SourceProofCertificateFailure::ArithmeticOverflow);
@@ -8568,31 +9141,21 @@ impl Analyzer<'_, '_> {
     /// [`Self::affine_l0_index`] for the concrete target or residual.
     fn automatic_affine_premises(
         &self,
-        assumptions: &[ActiveAffineFact],
-        images: &[AutomaticAffineFact],
+        facts: &[ActiveAffineFact],
         check: &mut AffineCheckState,
     ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
         let mut premises = Vec::new();
-        let mut seen = HashSet::new();
-        for assumption in assumptions {
+        for fact in Self::canonical_affine_facts(facts) {
             check.charge(1)?;
-            if seen.insert(assumption.inequality.clone()) {
-                premises.push(AutomaticAffinePremise {
-                    inequality: assumption.inequality.clone(),
-                    source: Some(assumption.source),
-                    parent: None,
-                });
-            }
-        }
-        for image in images {
-            check.charge(1)?;
-            if seen.insert(image.inequality.clone()) {
-                premises.push(AutomaticAffinePremise {
-                    inequality: image.inequality.clone(),
-                    source: None,
-                    parent: Some(image.parent),
-                });
-            }
+            let (source, parent) = match fact.evidence {
+                AffineFactEvidence::Source(source) => (Some(source), None),
+                AffineFactEvidence::Derivation(parent) => (None, Some(parent)),
+            };
+            premises.push(AutomaticAffinePremise {
+                inequality: fact.inequality.clone(),
+                source,
+                parent,
+            });
         }
         Ok(premises)
     }
@@ -8766,7 +9329,7 @@ impl Analyzer<'_, '_> {
     /// L0/interval residual rule. The L0 index contains one strongest entry
     /// per coefficient vector, so strengthening ordinary facts can only make
     /// a residual easier and never removes an earlier witness.
-    fn affine_two_l0_proof(
+    fn affine_l0_then_direct_proof(
         &mut self,
         target: &AffineInequality,
         l0: &AffineL0Index,
@@ -8817,7 +9380,7 @@ impl Analyzer<'_, '_> {
             });
         }
         let automatic = self
-            .automatic_affine_premises(assumptions, &values.division_images, &mut check)
+            .automatic_affine_premises(assumptions, &mut check)
             .ok()?;
 
         // Preserve the complete coefficient-one single-premise route. Every
@@ -8868,9 +9431,11 @@ impl Analyzer<'_, '_> {
         }
 
         // Ordinary L0 relations remain outside the affine premise set. This
-        // final goal-directed route combines at most two indexed L0 images
-        // without making them compete with an explicit source-affine fact.
-        self.affine_two_l0_proof(target, &l0, values, &closed, &mut check)
+        // is the specification's final `DIRECT(T - R)` family: subtract each
+        // strongest indexed L0 image once, then run the ordinary DIRECT check
+        // on the residual. DIRECT may itself close an exact L0 image, but the
+        // route never publishes or recursively saturates either relation.
+        self.affine_l0_then_direct_proof(target, &l0, values, &closed, &mut check)
             .map(|parents| AffineConsequenceProof {
                 premises: Vec::new(),
                 parents,
@@ -8897,20 +9462,21 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .any(|event| Self::affine_event_kills_binding(*binding, event))
         });
-        // `division_images` name AffineTermId value identities, not mutable
-        // bindings. Removing the map above prevents a replacement value from
-        // matching an old image; retaining the image preserves valid aliases.
+        // Published facts name immutable AffineTermId value identities, not
+        // mutable bindings. Removing the map above prevents a replacement
+        // value from matching an old image; retaining each theorem preserves
+        // valid aliases to the old value.
     }
 
     fn expression_effects(
         &mut self,
         expression: &CheckedExpression,
         state: &mut ProofFlowState,
-    ) -> Option<PreparedCall> {
-        let mut prepared = self.judge_expression(expression, state);
+    ) -> ExpressionJudgment {
+        let mut judgment = self.judge_expression(expression, state);
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
-        if let Some(prepared) = &mut prepared {
+        if let Some(prepared) = &mut judgment.prepared_call {
             if !events.is_empty() {
                 self.promote_flow_contradiction(state);
             }
@@ -8933,7 +9499,7 @@ impl Analyzer<'_, '_> {
         } else {
             self.apply_kills(state, &events);
         }
-        prepared
+        judgment
     }
 
     fn walk_set(
@@ -8947,12 +9513,20 @@ impl Analyzer<'_, '_> {
         // [SET-1]: the target's base and offset are evaluated before the
         // right-hand side; both are judged at this point, then the commit
         // kill applies.
-        self.judge_set_target(target, state);
+        let target_reached = self.judge_set_target(target, state);
         let affine_value = self.affine_expression_form(value, &mut state.affine);
-        let prepared = self.expression_effects(value, state);
-        let receiver_route = prepared
-            .as_ref()
-            .and_then(|prepared| self.direct_receiver_route(target, value, prepared));
+        let ExpressionJudgment {
+            prepared_call: prepared,
+            reached: value_reached,
+        } = self.expression_effects(value, state);
+        let commit_reached = target_reached && value_reached;
+        let receiver_route = commit_reached
+            .then(|| {
+                prepared
+                    .as_ref()
+                    .and_then(|prepared| self.direct_receiver_route(target, value, prepared))
+            })
+            .flatten();
         invalidate_goal_origin_for_set(&mut state.facts, target);
         let mut target_kills = Vec::new();
         match target {
@@ -9024,26 +9598,31 @@ impl Analyzer<'_, '_> {
         // [ENT-3.S5, ENT-5]: the committed value exists only after the old
         // target facts have died. An unsupported RHS shape contributes no fact.
         let mut set_image_event = None;
-        self.establish_set_copy_fact(
-            node_path,
-            target,
-            value,
-            &mut state.facts,
-            &mut set_image_event,
-        );
-        if let CheckedSetTarget::Place(place) = target
-            && place.fields.is_empty()
-            && self.affine_binding_type(place.binding).is_some()
-            && let Some(value) = affine_value
-        {
-            state.affine.values.insert(place.binding, value);
+        if commit_reached {
+            self.establish_set_copy_fact(
+                node_path,
+                target,
+                value,
+                &mut state.facts,
+                &mut set_image_event,
+            );
+            if let CheckedSetTarget::Place(place) = target
+                && place.fields.is_empty()
+                && self.affine_binding_type(place.binding).is_some()
+                && let Some(value) = affine_value
+            {
+                state.affine.values.insert(place.binding, value);
+            }
         }
         if let (Some(prepared), Some(target_event)) = (&prepared, target_event) {
             for receiver in &receivers {
                 self.establish_direct_receiver(node_path, receiver, prepared, target_event, state);
             }
         }
-        SetWalkOutcome { target_event }
+        SetWalkOutcome {
+            target_event,
+            commit_reached,
+        }
     }
 
     fn walk_statement(&mut self, statement: &CheckedStatement, state: &mut ProofFlowState) -> bool {
@@ -9054,32 +9633,40 @@ impl Analyzer<'_, '_> {
                 value,
             } => {
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
-                let prepared = self.expression_effects(value, state);
+                let judgment = self.expression_effects(value, state);
                 self.declare(*binding);
-                if self.affine_binding_type(*binding).is_some()
+                if judgment.reached
+                    && self.affine_binding_type(*binding).is_some()
                     && let Some(value) = affine_value
                 {
                     state.affine.values.insert(*binding, value);
                 }
-                if let Some(prepared) = &prepared {
+                if let Some(prepared) = &judgment.prepared_call {
                     self.establish_direct_result(node_path, *binding, value, prepared, state);
                 }
-                if value.ty() == CheckedType::Bool
+                if judgment.reached
+                    && value.ty() == CheckedType::Bool
                     && let Some(relation) = self.direct_comparison(value)
                 {
                     state.facts.origins.insert(*binding, relation);
                 }
-                self.record_goal_origin(*binding, value, &mut state.facts);
+                if judgment.reached {
+                    self.record_goal_origin(*binding, value, &mut state.facts);
+                }
                 // Sources S5, S6, S7, and S9 establish at the binding, after
                 // the initializer's own kills [ENT-3, ENT-5].
                 let mut event = None;
-                let unsigned_division = self.establish_binding_facts(
-                    node_path,
-                    *binding,
-                    value,
-                    &mut state.facts,
-                    &mut event,
-                );
+                let unsigned_division = if judgment.reached {
+                    self.establish_binding_facts(
+                        node_path,
+                        *binding,
+                        value,
+                        &mut state.facts,
+                        &mut event,
+                    )
+                } else {
+                    None
+                };
                 if let Some(established) = unsigned_division {
                     self.establish_unsigned_division_image(
                         *binding,
@@ -9138,9 +9725,10 @@ impl Analyzer<'_, '_> {
                     }
                     _ => None,
                 };
-                let _ = self.walk_set(node_path, target, value, false, state);
+                let outcome = self.walk_set(node_path, target, value, false, state);
                 self.declare(*binding);
-                if self.affine_binding_type(*binding).is_some()
+                if outcome.commit_reached
+                    && self.affine_binding_type(*binding).is_some()
                     && let Some(previous) = previous
                 {
                     state.affine.values.insert(*binding, previous);
@@ -9164,18 +9752,28 @@ impl Analyzer<'_, '_> {
                         }
                     })
                     .collect::<Vec<_>>();
-                let target = self.checked_affine_relation_inequality(
+                let target_result = self.checked_affine_relation_inequality(
                     &proof.target,
                     &mut state.affine,
                     &mut AffineCheckState::new(),
                 );
-                let premises = proof
+                let target_failure = target_result
+                    .as_ref()
+                    .err()
+                    .copied()
+                    .map(Self::source_proof_formation_failure);
+                let target = target_result.as_ref().ok().cloned();
+                self.invariant_targets
+                    .insert(proof.declaration, target_result);
+                let formed_premises = proof
                     .uses
                     .iter()
                     .map(|written_use| match &written_use.source {
-                        CheckedProofUseSource::Named(declaration) => {
-                            state.affine.published_invariants.get(declaration).cloned()
-                        }
+                        CheckedProofUseSource::Named(declaration) => self
+                            .invariant_targets
+                            .get(declaration)
+                            .cloned()
+                            .unwrap_or(Err(AffineCheckError::CoefficientMismatch)),
                         CheckedProofUseSource::Relation(relation) => self
                             .checked_affine_relation_inequality(
                                 relation,
@@ -9184,14 +9782,42 @@ impl Analyzer<'_, '_> {
                             ),
                     })
                     .collect::<Vec<_>>();
+                let source_failure_use_index = formed_premises
+                    .iter()
+                    .position(|premise| premise.is_err())
+                    .map(|index| {
+                        u32::try_from(index).expect("source-proof use index fits the u32 identity")
+                    });
+                let source_failure = source_failure_use_index.map(|index| {
+                    let error = formed_premises
+                        [usize::try_from(index).expect("source-proof use index fits usize")]
+                    .as_ref()
+                    .expect_err("source failure index names a failed source")
+                    .to_owned();
+                    Self::source_proof_formation_failure(error)
+                });
+                let premises = formed_premises
+                    .iter()
+                    .map(|premise| premise.as_ref().ok().cloned())
+                    .collect::<Vec<_>>();
                 let published_premises = proof
                     .uses
                     .iter()
                     .map(|written_use| match &written_use.source {
-                        CheckedProofUseSource::Named(declaration) => {
-                            state.affine.published_invariants.contains_key(declaration)
-                        }
+                        CheckedProofUseSource::Named(declaration) => self
+                            .invariant_targets
+                            .get(declaration)
+                            .and_then(|formed| formed.as_ref().ok())
+                            .zip(state.affine.published_invariants.get(declaration))
+                            .is_some_and(|(declared, published)| declared == published),
                         CheckedProofUseSource::Relation(_) => false,
+                    })
+                    .collect::<Vec<_>>();
+                let named_premises = proof
+                    .uses
+                    .iter()
+                    .map(|written_use| {
+                        matches!(&written_use.source, CheckedProofUseSource::Named(_))
                     })
                     .collect::<Vec<_>>();
                 let certificate_premises = proof
@@ -9217,46 +9843,83 @@ impl Analyzer<'_, '_> {
                         == ProofDisposition::Proved
                 });
                 let redundant = !proof.uses.is_empty() && auto_proved;
-                let combination = if proof.uses.len() > MAX_CERTIFICATE_PREMISES {
-                    Err(SourceProofCertificateFailure::UseCapacity {
-                        maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
-                            .expect("certificate capacity fits u32"),
-                        actual: u32::try_from(proof.uses.len()).unwrap_or(u32::MAX),
-                    })
-                } else if proof.uses.is_empty() {
-                    Ok(auto_proved)
+                let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
+                    None
                 } else {
-                    match (target.as_ref(), certificate_premises.as_deref()) {
-                        (Some(target), Some(premises)) => self.source_proof_combination(
-                            target,
-                            premises,
-                            &state.affine,
-                            &state.facts,
-                        ),
-                        _ => Ok(false),
-                    }
+                    Some(certificate_premises.as_deref().map_or_else(
+                        || Err((SourceProofCertificateFailure::FormationCapacity, 0)),
+                        |premises| self.source_proof_sum(premises),
+                    ))
                 };
 
                 // Every written `use` is proved against the same pre-proof
                 // program point. No premise established by this statement can
                 // help another premise in the same statement.
-                let check = self.source_proof_check(
+                let premise_results = self.source_proof_premise_results(
                     &premises,
                     &l0_premises,
+                    &named_premises,
                     &published_premises,
-                    combination,
-                    redundant,
                     &state.affine,
                     &state.facts,
                 );
+                let certificate_failure = certificate_sum
+                    .as_ref()
+                    .and_then(|sum| sum.as_ref().err().copied());
+                let certificate_failure_kind = certificate_failure.map(|(failure, _)| failure);
+                let certificate_failure_use_index =
+                    certificate_failure.map(|(_, use_index)| use_index);
+                let first_unproved_premise =
+                    premise_results
+                        .iter()
+                        .position(|proved| !proved)
+                        .map(|index| {
+                            u32::try_from(index)
+                                .expect("source-proof use index fits the u32 identity")
+                        });
+                let residual = if proof.uses.is_empty() {
+                    Ok(auto_proved)
+                } else if target_failure.is_some()
+                    || source_failure.is_some()
+                    || certificate_failure_kind.is_some()
+                    || first_unproved_premise.is_some()
+                {
+                    Ok(false)
+                } else {
+                    match (
+                        target.as_ref(),
+                        certificate_sum.as_ref().and_then(|sum| sum.as_ref().ok()),
+                    ) {
+                        (Some(target), Some(sum)) => {
+                            self.source_proof_residual(target, sum, &state.affine, &state.facts)
+                        }
+                        _ => Err(SourceProofCertificateFailure::FormationCapacity),
+                    }
+                };
+                let residual_failure = residual.as_ref().err().copied();
+                let check = SourceProofCheck {
+                    premises: premise_results,
+                    first_unproved_premise,
+                    combination: residual.unwrap_or(false),
+                    target_failure,
+                    source_failure,
+                    source_failure_use_index,
+                    certificate_failure: certificate_failure_kind,
+                    certificate_failure_use_index,
+                    residual_failure,
+                    redundant,
+                };
 
                 if let Some(target) = target {
                     let fact = ActiveAffineFact {
-                        source: SourceAffineFactRef::SourceProof { source_ordinal },
                         inequality: target.clone(),
+                        evidence: AffineFactEvidence::Source(SourceAffineFactRef::SourceProof {
+                            source_ordinal,
+                        }),
+                        active_loops: Vec::new(),
                     };
                     if check.discharged() {
-                        state.affine.proofs.push(fact);
+                        state.affine.facts.push(fact);
                         state
                             .affine
                             .published_invariants
@@ -9265,8 +9928,14 @@ impl Analyzer<'_, '_> {
                 }
                 self.source_proofs.push(SourceProofOutcome {
                     node_path: proof.node_path.clone(),
+                    use_node_paths: proof
+                        .uses
+                        .iter()
+                        .map(|written_use| written_use.node_path.clone())
+                        .collect(),
                     source_ordinal,
                     name: proof.name.clone(),
+                    certificate_written: !proof.uses.is_empty(),
                     check,
                 });
                 true
@@ -9275,14 +9944,19 @@ impl Analyzer<'_, '_> {
                 node_path, value, ..
             } => {
                 let affine_result = self.affine_pure_expression_form(value, &mut state.affine);
-                let _ = self.expression_effects(value, state);
-                self.judge_postcondition_return(node_path, state, affine_result.as_ref());
+                let judgment = self.expression_effects(value, state);
+                self.judge_postcondition_return(
+                    node_path,
+                    state,
+                    affine_result.as_ref(),
+                    judgment.reached,
+                );
                 false
             }
             CheckedStatement::Give {
                 node_path, value, ..
             } => {
-                let _ = self.expression_effects(value, state);
+                let judgment = self.expression_effects(value, state);
                 if let Some((scope_depth, loop_depth, kind, binding, result_type)) =
                     self.gives.last().map(|frame| {
                         (
@@ -9294,8 +9968,8 @@ impl Analyzer<'_, '_> {
                         )
                     })
                 {
-                    let give_goal_origin = if result_type == CheckedType::Bool {
-                        self.direct_goal_expression(value)
+                    let give_goal_origin = if judgment.reached && result_type == CheckedType::Bool {
+                        self.admitted_value_goal_expression(value)
                             .map(|origin| self.intern_goal_expression(origin))
                     } else {
                         None
@@ -9343,8 +10017,13 @@ impl Analyzer<'_, '_> {
                 arms,
                 ..
             } => {
-                let prepared = self.expression_effects(scrutinee, state);
-                let facts = self.arm_facts(scrutinee, *enum_type, &state.facts);
+                let judgment = self.expression_effects(scrutinee, state);
+                let facts = if judgment.reached {
+                    self.arm_facts(scrutinee, *enum_type, &state.facts)
+                } else {
+                    ArmFacts::default()
+                };
+                let prepared = judgment.prepared_call;
                 let mut exits = Vec::new();
                 for arm in arms {
                     let direct_call = prepared
@@ -9371,8 +10050,13 @@ impl Analyzer<'_, '_> {
                 arms,
                 ..
             } => {
-                let prepared = self.expression_effects(scrutinee, state);
-                let facts = self.arm_facts(scrutinee, *enum_type, &state.facts);
+                let judgment = self.expression_effects(scrutinee, state);
+                let facts = if judgment.reached {
+                    self.arm_facts(scrutinee, *enum_type, &state.facts)
+                } else {
+                    ArmFacts::default()
+                };
+                let prepared = judgment.prepared_call;
                 self.gives.push(GiveFrame {
                     scope_depth: self.scopes.len(),
                     loop_depth: self.loops.len(),
@@ -9719,14 +10403,17 @@ impl Analyzer<'_, '_> {
                             continue;
                         }
                         let fact = ActiveAffineFact {
-                            source: SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
-                                loop_id: *id,
-                                source_ordinal: u32::try_from(source_ordinal)
-                                    .expect("loop invariant ordinal exceeds u32"),
-                            }),
                             inequality,
+                            evidence: AffineFactEvidence::Source(
+                                SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
+                                    loop_id: *id,
+                                    source_ordinal: u32::try_from(source_ordinal)
+                                        .expect("loop invariant ordinal exceeds u32"),
+                                }),
+                            ),
+                            active_loops: Vec::new(),
                         };
-                        exhaustion.affine.exports.push(fact);
+                        exhaustion.affine.facts.push(fact);
                     }
                 }
                 Self::remove_active_loop_invariants(
@@ -10182,7 +10869,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn apply_loop_kills_one(&mut self, state: &mut FactState, kills: &LoopKills) {
-        self.project_event_killed_bounds(state, &kills.events);
+        self.materialize_before_event_kill(state, &kills.events);
         state.kill(|term| {
             kills
                 .events
@@ -10456,13 +11143,24 @@ impl Analyzer<'_, '_> {
                 };
                 self.render_goal_projections(base, ty, projections)
             }
-            // Source cannot name this datum: it is the already-evaluated
-            // pre-transfer value of one direct-subscript actual, so the
-            // rendering says which argument it is instead of inventing a
-            // spelling. FN-8's stronger repair for exactly this shape is to
-            // bind it first, which then gives it a name.
-            GoalDatum::EphemeralActual { argument, .. } => {
-                format!("<argument #{argument} pre-transfer value>")
+            // Source cannot name this datum: render its structural source
+            // role rather than inventing an expression that could reread a
+            // different runtime value.
+            GoalDatum::EvaluatedValue {
+                occurrence,
+                captured_type,
+                projections,
+                ..
+            } => {
+                let base = match occurrence {
+                    EvaluatedValueOccurrence::CallArgument { argument, .. } => {
+                        format!("<argument #{argument} pre-transfer value>")
+                    }
+                    EvaluatedValueOccurrence::ObligationOperand { operand, .. } => {
+                        format!("<operand #{operand} evaluated value>")
+                    }
+                };
+                self.render_goal_projections(base, Some(*captured_type), projections)
             }
             GoalDatum::Literal(value) => match value {
                 CheckedValue::Integer { ty, bits } => {
@@ -10699,6 +11397,12 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
         GoalOperation::ArrayLength { .. }
         | GoalOperation::BufferLength { .. }
         | GoalOperation::SliceLength { .. } => render_operation_spelling("len", arguments),
+        GoalOperation::ArrayIndex { .. }
+        | GoalOperation::BufferIndex { .. }
+        | GoalOperation::SliceIndex { .. } => match arguments {
+            [collection, offset] => format!("{collection}[{offset}]"),
+            _ => "<invalid index goal>".to_owned(),
+        },
         GoalOperation::BufferFits { .. } => render_operation_spelling("buffer_fits", arguments),
     }
 }

@@ -1,29 +1,31 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 59 (v0.40 source proof is activated on the work branch; the former
-runtime-assertion releases remain historical evidence)
+Revision: 60 (the source-proof successor to v0.40 is an implementation
+candidate; the former runtime-assertion releases remain historical evidence)
 
-The active language authority is v0.40, SHA-256
+The last activated language authority is v0.40, SHA-256
 `5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`, at the
-stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). The outgoing v0.39
-bytes remain archived at
+stable specification path. The work branch is drafting its source-proof
+successor at [`spec/kernel-spec.md`](../spec/kernel-spec.md); its exact version,
+digest, activation record, and completion status remain open until the
+candidate and its complete evidence agree. The outgoing v0.39 bytes remain archived at
 [`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The v0.40
-conditional merge-time activation record is in
-[`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
-with the owner's merge approval of the exact revision containing it; the batch
-record for v0.39 remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
+activation record is in
+[`governance/APPROVALS.md`](../governance/APPROVALS.md); the batch record for
+v0.39 remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
 [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
 
-The current work branch implements source-carried proof through the ordinary
-semantic compiler. It checks contracts, counted-loop invariants, and explicit
-`prove`/`use` steps; submits every supported partial operation to the same
-deterministic proof context; proves selected-target layout and address domains
-before emission; and erases proof statements before lowering. It contains no
-writer-accessible runtime assertion; internal inconsistencies are ordinary
-compiler defects owned by implementation repair and tests.
+The current work branch is implementing source-carried proof through the
+ordinary semantic compiler. It checks contracts, explicit loop-header
+invariants, and local invariants with optional `use` steps; submits every
+supported partial operation to the same deterministic proof context; proves
+selected-target layout and address domains before emission; and erases proof
+syntax before lowering. It contains no writer-accessible runtime assertion;
+internal inconsistencies are ordinary compiler defects owned by implementation
+repair and tests, not another proof-object or runtime self-validation layer.
 
 ## How to read this outline
 
@@ -66,7 +68,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: v0.40 activated on branch; source-proof implementation complete]`
+`[current: source-proof successor implementation candidate]`
 `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
@@ -102,10 +104,11 @@ Which gap matters next is selected by a project, never by checklist length.
   that runtime-assertion model on this branch.
 - outline:PROOF-11 is the selected successor. Proof is written in `.wf` source
   and checked directly by the normal semantic compiler. Automatic reasoning is
-  deterministic, terminating, work-bounded, and SMT-free. Verified semantic
+  deterministic, terminating, specification-complete for its fixed families,
+  and SMT-free, with no timeout or cumulative work budget. Verified semantic
   consequences serve partial-operation safety, `ensures`, optimization, and
   `par`; proof syntax and diagnostic derivations are erased before runtime
-  lowering. v0.40 removes the former writer assertion and every
+  lowering. The candidate removes the former writer assertion and every
   writer-reachable language trap.
 - outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
@@ -120,10 +123,11 @@ Which gap matters next is selected by a project, never by checklist length.
   reductions before their own workload evidence. For outline:PAR-3 the owner's chartering direction of
   2026-08-23 supplied that evidence and overtook this caution: the branch
   carries a counted-loop reduction candidate, measured on the `grid` family.
-  outline:PAR-2 now carries the fixed direct-own-root, write-only single-binder
-  affine map justified by the same bounds, exact-value, and iteration facts;
-  multi-term ranges, multiple maps of one root, and borrowed-root maps remain
-  parked and still bound by this sentence.
+  outline:PAR-2 now carries the fixed single-binder affine map justified by the
+  same bounds, exact-value, and iteration facts. An identical read map permits
+  read-modify-write, and a live usable `&uniq` output holder may carry the
+  write. Multi-term ranges and multiple maps of one root remain parked and
+  still bound by this sentence.
 - outline:STORE-2 must expose a concrete unsolved representation privilege before
   outline:PROOF-6 can enter a plan.
 - outline:TARGET-2 through outline:TARGET-4 depend on outline:BOUND-1 whenever their authentic milestone
@@ -528,8 +532,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-11 — Source-carried safety proof, summaries, and erasure
 
-`[current: v0.40 activated on branch; implementation complete]`
-`[next: project-selected extensions]`
+`[current: branch implementation candidate]`
+`[next: complete semantics, conformance, whole-gate, and exact identity]`
 
 - **Goal:** admit every partial operation, callable fact, optimization, and
   parallel execution only after finite machine proof. An accepted program may
@@ -539,20 +543,34 @@ creating writer trust or weakening the checked safety envelope.
 - **Selection:** the only author-controlled semantic input is Whitefoot source.
   Contracts, loop invariants, and explicit premise-and-rule proof steps live in
   that source and are checked in the ordinary semantic pass. The compiler uses
-  fixed automatic domains where their result, order, termination, work, and
-  memory are specified. It does not use SMT, a timeout, or heuristic proof
-  search. Internal compiler disagreement is a compiler defect, not another
-  proof obligation.
-- **Current:** `requires`, `ensures`, `invariant`, and `prove`/`use` all enter
-  one ordinary proof context. The checker uses fixed equality, difference-bound,
-  affine, ownership, typestate, effect, layout, address, and target-domain
-  rules; it performs no SMT query or heuristic search. An invariant is proved
-  at the first loop header and for every arbitrary reachable backedge. A proof
-  statement names its premises and the checker verifies each premise and the
-  exact finite combination. Verified postconditions publish facts to callers.
-  Every supported partial operation must submit its exact domain goal and be
-  proved before lowering. Proof syntax and diagnostic derivations are erased;
-  consumers retain only their checked semantic outcomes and permissions.
+  fixed automatic domains whose result, order, termination, and structural
+  input ceilings are specified. It does not use SMT, a timeout, a cumulative
+  proof-work budget, or heuristic proof search. Every admitted rule family runs
+  to its specified completion. Internal compiler disagreement is a compiler
+  defect, not another proof obligation or self-validation layer.
+- **Current candidate:** `requires`, `ensures`, and `invariant` enter one
+  ordinary proof context. A loop-header invariant is proved at entry and for
+  every arbitrary reachable backedge; a local invariant is proved once and may
+  contain explicit `use` steps. AUTO has one exact author-visible boundary:
+  zero-premise direct proof, every coefficient-one single premise, every unordered
+  coefficient-one pair including the same premise twice, then the fixed
+  L0-image route. Combinations that need three or more published affine
+  premises outside that final L0-image route, special elimination routes, and
+  future named nonlinear rules require written `use` guidance.
+  Every use reads the same entering snapshot and publishes nothing; only the
+  outer invariant publishes. Factor one is omitted, a normalized premise may
+  not repeat, and a nonempty use block is invalid when AUTO already proves the
+  target. The checker also uses fixed ownership, initialization, typestate,
+  effect, layout, address, and target-domain rules. Verified postconditions
+  publish facts to callers. Every supported partial operation submits its exact
+  domain goal and must be proved before lowering. Proof syntax and diagnostic
+  derivations are erased; consumers retain only checked semantic outcomes and
+  permissions.
+- **Loop surface:** a counted loop is multiline `for (` with the binding first
+  and zero or more header invariants after it; an ordinary loop may use `loop (`
+  with invariants only. Neither form permits a trailing comma. Header invariants
+  have no use block and their names are body-only. Exact counted exhaustion may
+  export a binder-substituted canonical fact; `break` does not.
 - **Parallel consequence:** `par` consumes that same context together with
   ownership, effect, iteration-index, layout, target-domain, and bounded
   queue/completion facts. The source proof does not add a lock, branch,
@@ -562,12 +580,14 @@ creating writer trust or weakening the checked safety envelope.
   runtime window in `1..2`; qualified non-completion targets execute the same
   generated CFG with a deterministic window of one and direct calls. The
   complete batch drains in source order before slot zero reuse.
-- **Missing / next:** the v0.40 activation has no remaining implementation or
-  evidence item. Future projects may widen bounded completion beyond the one
-  direct shape and operation family or add proof domains only when a selected
-  real program exposes the need. Those are future language/compiler extensions,
-  not v0.40 activation gaps. Heap
-  OOM, stack exhaustion, OS quota, and runtime-start availability are the only
+- **Missing / next:** finish and align grammar, resolution, semantic flow,
+  diagnostics, erasure, conformance, real-program evidence, compile-cost
+  measurement, and proof-driven parallel evidence; then run the complete gate
+  on the exact candidate revision. Only after that evidence agrees can the
+  candidate receive a stable identity or be described as complete. Future
+  projects may widen bounded completion or add proof domains only when a
+  selected real program exposes the need. Heap OOM, stack exhaustion, OS quota,
+  and runtime-start availability are the only
   resource-availability questions deferred in this implementation cycle, and
   their final source-language model is not selected here. Layout,
   target-domain, parallel, and bounded queue/completion proof remain in scope.
@@ -600,7 +620,7 @@ writer.
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter installed]`
-`[next: publish an exact-revision report for the activated source-proof revision]`
+`[next: publish an exact-revision report for the source-proof candidate]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
@@ -611,7 +631,7 @@ writer.
   ordinary test runs. Historical exact-revision results remain in their batch
   and activation records; this outline carries no floating count of its own.
 - **Missing / next:** publish the next independent pass/fail/skip report for
-  the exact activated source-proof revision. Any
+  the exact source-proof candidate revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -722,7 +742,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 - **Goal:** give the AI deterministic, actionable failures that shorten the
   path from rejected source to a correct, efficient program.
-- **Current:** v0.40 requires deterministic rule/location diagnostics
+- **Current:** the source-proof candidate requires deterministic rule/location diagnostics
   and exact failed-goal plus failed-premise records; single-shot writability and repair
   effectiveness are not established.
 - **Missing / next:** measure repair-to-green on real project failures and turn
@@ -856,20 +876,22 @@ and failure semantics survive the runtime implementation.
 
 - **Goal:** prove disjoint subranges or injective indexed writes when
   region-level separation is too coarse.
-- **Current:** v0.40 admits a narrow direct-own-root, write-only map
+- **Current:** the v0.41 candidate admits a narrow one-map-per-root form
   when the discharged OP-4 result retains the offset's exact value `a*i+b`, i
   is the counted binder, and `a != 0`. Copies and checked affine transforms are
   accepted because permission consumes that checked value rather than source
-  shape. Every write to one root must use the same a and b; different owned
-  roots may use different maps. Distinct binder values, ownership, effects,
-  and this fixed rule prove that two iterations do not write the same element.
-  `par` consumes the retained result rather than submitting the access to
-  another checker. There is no `split_uniq` capability or source scheduling
-  marker.
-- **Missing / next:** multiple maps of one root, multi-term ranges,
-  borrowed-root maps, and read/write maps require their own deterministic
-  domain rules and real-program pressure. The compiler may not guess an
-  injectivity lemma or search over index formulas.
+  shape. Every read and write through one root must use the same a and b, so a
+  same-index read-modify-write is local to one iteration. The write root may be
+  owned directly or reached through the live usable `&uniq` holder that made
+  the target writable; different resolved roots may use different maps.
+  Distinct binder values, ownership, effects, and this fixed rule prove that
+  two iterations do not reach the same element. `par` consumes the retained
+  result rather than submitting the access to another checker. There is no
+  `split_uniq` capability or source scheduling marker.
+- **Missing / next:** multiple maps of one root, multi-term or
+  symbolic-stride ranges, and callee-projected element effects require their
+  own deterministic domain rules and real-program pressure. The compiler may
+  not guess an injectivity lemma or search over index formulas.
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
   [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns) ·
   [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
