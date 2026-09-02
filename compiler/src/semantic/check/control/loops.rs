@@ -35,30 +35,6 @@ struct InvariantRelationNormalization {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    fn split_loop_body(&self, node: NodeId) -> Result<(Vec<NodeId>, Vec<NodeId>), CheckStop> {
-        let statements = self.tree.children_with(node, Production::Stmt)?;
-        let mut invariant_nodes = Vec::new();
-        let mut executable_statements = Vec::new();
-        let mut executable_seen = false;
-        for wrapper in statements {
-            let statement = self.tree.only_child(wrapper)?;
-            if self.tree.production(statement)? == Production::InvariantStmt {
-                if executable_seen {
-                    return self.invalid_loop_invariant(
-                        statement,
-                        "an invariant appears after an executable statement in its loop body",
-                        "move every invariant into one contiguous prefix at the start of the loop body",
-                    );
-                }
-                invariant_nodes.push(statement);
-            } else {
-                executable_seen = true;
-                executable_statements.push(wrapper);
-            }
-        }
-        Ok((invariant_nodes, executable_statements))
-    }
-
     fn form_loop_invariants(
         &self,
         nodes: Vec<NodeId>,
@@ -88,7 +64,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let endpoints = self.tree.children_with(node, Production::Atom)?;
+        let binding_node = self
+            .tree
+            .first_child_with(node, Production::ForBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let endpoints = self.tree.children_with(binding_node, Production::Atom)?;
         let [lower_node, upper_node] = endpoints.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
@@ -105,7 +85,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let label = self
             .optional_declaration_at(node, DeclarationRole::LoopLabel)?
             .map(crate::DeclarationRecord::id);
-        let binder_declaration = self.declaration_at(node, DeclarationRole::CountedBinder)?;
+        let binder_declaration =
+            self.declaration_at(binding_node, DeclarationRole::CountedBinder)?;
         let binder_declaration_id = binder_declaration.id();
         let id = Self::allocate_loop(counters.next_loop)?;
         let binder = Self::allocate_binding(counters.next_binding)?;
@@ -152,7 +133,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             preserved: preserved.clone(),
         });
 
-        let (invariant_nodes, executable_statements) = self.split_loop_body(node)?;
+        let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
+        let executable_statements = self.tree.children_with(node, Production::Stmt)?;
         let allowed_invariant_values = header_keys.iter().copied().collect::<HashSet<_>>();
         let invariants = self.form_loop_invariants(
             invariant_nodes,
@@ -461,7 +443,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
 
         let mut body_bindings = base_bindings.clone();
-        let (invariant_nodes, executable_statements) = self.split_loop_body(node)?;
+        let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
+        let executable_statements = self.tree.children_with(node, Production::Stmt)?;
         let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
         let invariants = self.form_loop_invariants(
             invariant_nodes,
