@@ -37,7 +37,7 @@ use super::super::postcondition::{
 use super::affine::{
     AffineCheckError, AffineCheckState, AffineForm, AffineInequality, AffineTermId,
     interval_maximum, interval_proves, maximum_safe_residual_factor, residual_measure_decreases,
-    verify_explicit_inequality_sum,
+    sum_explicit_inequalities,
 };
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
@@ -52,12 +52,12 @@ use super::term::{
 };
 use super::{
     BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedDerivationSet,
-    EntailmentContext, FunctionEntailment, FunctionPostconditionProof, LoopInvariantOutcome,
-    LoopInvariantProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
-    PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, S7Derivation, SourceProofCheck, SourceProofOutcome,
-    VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, fragment_type,
-    overflow_conjuncts_for_values,
+    EntailmentContext, FunctionEntailment, FunctionPostconditionProof, JoinedSourceProofProvenance,
+    LoopInvariantOutcome, LoopInvariantProof, ObligationFamily, ObligationOutcome,
+    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
+    PostconditionEntryImageOutcome, PostconditionExit, S7Derivation, SourceProofCheck,
+    SourceProofOutcome, VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef,
+    fragment_type, overflow_conjuncts_for_values,
 };
 use crate::SYSTEM_OPERATIONS;
 
@@ -597,6 +597,7 @@ fn analyze_candidate_inner(
         counted_derivations: run.counted_derivations,
         loop_invariants: run.loop_invariants,
         source_proofs: run.source_proofs,
+        joined_source_proofs: run.joined_source_proofs,
         s7_derivations: run.s7_derivations,
         postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
@@ -612,6 +613,7 @@ struct AnalysisRun {
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
+    joined_source_proofs: Vec<JoinedSourceProofProvenance>,
     s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
@@ -632,6 +634,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         counted_derivations: Vec::new(),
         loop_invariants: Vec::new(),
         source_proofs: Vec::new(),
+        joined_source_proofs: Vec::new(),
         s7_derivations: Vec::new(),
         postconditions: Vec::new(),
         boolean_decompositions: Vec::new(),
@@ -706,6 +709,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         counted_derivations: analyzer.counted_derivations,
         loop_invariants: analyzer.loop_invariants,
         source_proofs: analyzer.source_proofs,
+        joined_source_proofs: analyzer.joined_source_proofs,
         s7_derivations: analyzer.s7_derivations,
         postconditions: analyzer.postconditions,
         boolean_decompositions: analyzer.boolean_decompositions,
@@ -857,6 +861,7 @@ struct Analyzer<'check, 'unit> {
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
+    joined_source_proofs: Vec<JoinedSourceProofProvenance>,
     s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     /// O11 candidate decomposition sets, recorded at
@@ -7161,6 +7166,74 @@ impl Analyzer<'_, '_> {
             .collect()
     }
 
+    /// Intersects source-proof facts by canonical numeric content, then
+    /// records their predecessor sources for diagnostics.
+    ///
+    /// The first phase deliberately does not inspect `source`: an inequality
+    /// survives exactly when every predecessor contains the same canonical
+    /// value relation. Only after that decision does the second phase either
+    /// reuse one common source reference or append a diagnostic join node.
+    fn join_source_proof_facts(&mut self, states: &[ProofFlowState]) -> Vec<ActiveAffineFact> {
+        let Some(first) = states.first() else {
+            return Vec::new();
+        };
+
+        let mut common_inequalities = Vec::new();
+        for candidate in &first.affine.proofs {
+            if common_inequalities.contains(&candidate.inequality) {
+                continue;
+            }
+            if states.iter().skip(1).all(|state| {
+                state
+                    .affine
+                    .proofs
+                    .iter()
+                    .any(|fact| fact.inequality == candidate.inequality)
+            }) {
+                common_inequalities.push(candidate.inequality.clone());
+            }
+        }
+
+        common_inequalities
+            .into_iter()
+            .map(|inequality| {
+                let sources = states
+                    .iter()
+                    .map(|state| {
+                        state
+                            .affine
+                            .proofs
+                            .iter()
+                            .filter(|fact| fact.inequality == inequality)
+                            .map(|fact| fact.source)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                debug_assert!(sources.iter().all(|matches| !matches.is_empty()));
+
+                let common_source = sources[0].iter().copied().find(|candidate| {
+                    sources
+                        .iter()
+                        .skip(1)
+                        .all(|matches| matches.contains(candidate))
+                });
+                let source = common_source.unwrap_or_else(|| {
+                    let predecessors = sources
+                        .iter()
+                        .map(|matches| matches[0])
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice();
+                    let join_ordinal = u32::try_from(self.joined_source_proofs.len())
+                        .expect("joined source proof count exceeds the u32 identity space");
+                    self.joined_source_proofs
+                        .push(JoinedSourceProofProvenance { predecessors });
+                    SourceAffineFactRef::JoinedSourceProof { join_ordinal }
+                });
+                ActiveAffineFact { source, inequality }
+            })
+            .collect()
+    }
+
     fn join_affine_states(&mut self, states: &[ProofFlowState]) -> AffineFlowState {
         let Some(first) = states.first() else {
             return AffineFlowState::default();
@@ -7232,7 +7305,7 @@ impl Analyzer<'_, '_> {
             values,
             assumptions: Self::intersect_affine_facts(states, |state| &state.assumptions),
             exports: Self::intersect_affine_facts(states, |state| &state.exports),
-            proofs: Self::intersect_affine_facts(states, |state| &state.proofs),
+            proofs: self.join_source_proof_facts(states),
             // Equality includes the exact value atoms and originating proof.
             // Therefore this only preserves the same incoming theorem. Two
             // branches that independently compute equal-looking divisions
@@ -8076,6 +8149,34 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// Checks the one combination the source writer selected.
+    ///
+    /// The written premises are summed with coefficient one. The remaining
+    /// proposition `target - sum` may be discharged only by the existing L0
+    /// closure or fixed interval rule at the pre-proof program point. This
+    /// route never selects another affine premise and never retries a subset.
+    fn source_proof_combination(
+        &mut self,
+        target: &AffineInequality,
+        premises: &[AffineInequality],
+        values: &AffineFlowState,
+        facts: &FactState,
+    ) -> bool {
+        let mut check = AffineCheckState::new();
+        let Ok(sum) = sum_explicit_inequalities(premises, &mut check) else {
+            return false;
+        };
+        let Ok(residual) = AffineInequality::residual_after(target, &sum, &mut check) else {
+            return false;
+        };
+        let candidates = self.affine_l0_candidates(values);
+        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        matches!(
+            self.affine_residual_proof(&residual, &candidates, values, &closed, &mut check),
+            Ok(Some(_))
+        )
+    }
+
     /// Exact maximum of one affine left-hand side under the independently
     /// known L0/type interval of each atom. This is numeric discovery only;
     /// callers must subsequently prove any selected endpoint with
@@ -8848,17 +8949,12 @@ impl Analyzer<'_, '_> {
                     })
                     .collect::<Vec<_>>();
                 let certificate_premises = premises.iter().cloned().collect::<Option<Vec<_>>>();
-                let combination = target
-                    .as_ref()
-                    .zip(certificate_premises.as_deref())
-                    .is_some_and(|(target, premises)| {
-                        verify_explicit_inequality_sum(
-                            premises,
-                            target,
-                            &mut AffineCheckState::new(),
-                        )
-                        .is_ok()
-                    });
+                let combination = match (target.as_ref(), certificate_premises.as_deref()) {
+                    (Some(target), Some(premises)) => {
+                        self.source_proof_combination(target, premises, &state.affine, &state.facts)
+                    }
+                    _ => false,
+                };
 
                 // Every written `use` is proved against the same pre-proof
                 // program point. No premise established by this statement can

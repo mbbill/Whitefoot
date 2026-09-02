@@ -1527,7 +1527,8 @@ command fn main() -> status: own ExitStatus pure {
                 };
                 premises.iter().find_map(|premise| match premise.source {
                     SourceAffineFactRef::LoopInvariant(source) => Some(source.source_ordinal),
-                    SourceAffineFactRef::SourceProof { .. } => None,
+                    SourceAffineFactRef::SourceProof { .. }
+                    | SourceAffineFactRef::JoinedSourceProof { .. } => None,
                 })
             })
             .collect::<Vec<_>>();

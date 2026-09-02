@@ -1,10 +1,11 @@
 //! Focused PRF-1 evidence for finite source-written affine proofs.
 
 use crate::{
-    SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, SourceProofObligation,
+    LoopInvariantProofObligation, SemanticIssueKind, SemanticLocation, SemanticOutcome,
+    SemanticRule, SourceProofObligation,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily};
+use super::super::entailment::{DerivationNode, ObligationFamily, SourceAffineFactRef};
 use super::{with_semantics, with_semantics_dark};
 
 const COMMAND_MAIN: &str =
@@ -160,7 +161,7 @@ fn the_second_unproved_use_is_reported_in_source_order() {
 }
 
 #[test]
-fn proved_premises_must_sum_to_the_written_target_exactly() {
+fn proved_premises_cannot_strengthen_their_written_sum() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
   requires ile(x, middle);
@@ -176,6 +177,277 @@ fn proved_premises_must_sum_to_the_written_target_exactly() {
 {COMMAND_MAIN}"#
     );
     assert_prf1_issue(source.as_bytes(), SourceProofObligation::Combination);
+}
+
+#[test]
+fn proved_premises_may_weaken_their_written_sum_deterministically() {
+    let source = format!(
+        r#"fn retain(x: own u8, middle: own u8) -> result: own u8 pure contract {{
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+}} {{
+  prove upper_bound: ile(x, 255_u8) {{
+    use ile(x, middle);
+    use ile(middle, 254_u8);
+  }}
+  return x;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the fixed residual check must admit the weaker target: {outcome:?}");
+        };
+        let retain = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "retain")
+            .expect("retain function exists");
+        let [proof] = retain.entailment.source_proofs.as_slice() else {
+            panic!("retain has one source proof");
+        };
+        assert_eq!(proof.check.premises, [true, true]);
+        assert!(proof.check.combination);
+        assert!(proof.check.discharged());
+    });
+}
+
+/// The two branches write the same canonical inequality in different forms.
+/// One uses the expression directly; the other names its exact affine value
+/// with a local binder. Numeric intersection keeps the fact, while the joined
+/// source identity records both real proof statements for diagnostics.
+#[test]
+fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
+    let source = format!(
+        r#"fn increment(flag: own Bool, x: own u8, replacement: own u8) -> result: own u8 pure contract {{
+  requires ile(x, 254_u8);
+}} {{
+  let original = x * 1_u8;
+  if flag {{
+    prove expression_form: ile(original + 1_u8, 255_u8) {{
+      use ile(original + 1_u8, 255_u8);
+    }}
+  }} else {{
+    let next = original + 1_u8;
+    prove binder_form: ile(next, 255_u8) {{
+      use ile(next, 255_u8);
+    }}
+  }}
+  set x = replacement;
+  let result = original + 1_u8;
+  return result;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("equivalent source facts must survive the branch join: {outcome:?}");
+        };
+        let increment = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "increment")
+            .expect("increment function exists");
+        super::entailment::validate_derivations(&increment.entailment);
+
+        assert_eq!(increment.entailment.source_proofs.len(), 2);
+        assert!(
+            increment
+                .entailment
+                .source_proofs
+                .iter()
+                .all(|proof| proof.check.discharged())
+        );
+        let [joined] = increment.entailment.joined_source_proofs.as_slice() else {
+            panic!("the branch join retains one diagnostic provenance node");
+        };
+        assert_eq!(
+            joined.predecessors.as_ref(),
+            [
+                SourceAffineFactRef::SourceProof { source_ordinal: 0 },
+                SourceAffineFactRef::SourceProof { source_ordinal: 1 },
+            ]
+        );
+        assert!(increment.entailment.derivations.nodes.iter().any(|node| {
+            matches!(
+                node,
+                DerivationNode::AffineConsequence { premises, .. }
+                    if premises.iter().any(|premise| premise.source
+                        == SourceAffineFactRef::JoinedSourceProof { join_ordinal: 0 })
+            )
+        }));
+    });
+}
+
+#[test]
+fn a_common_source_proof_reference_is_reused_across_a_branch_join() {
+    let source = format!(
+        r#"fn increment(flag: own Bool, x: own u8, replacement: own u8) -> result: own u8 pure contract {{
+  requires ile(x, 254_u8);
+}} {{
+  let original = x * 1_u8;
+  prove common_bound: ile(original, 254_u8) {{
+    use ile(original, 254_u8);
+  }}
+  if flag {{
+    let marker = 0_u8;
+  }} else {{
+    let marker = 1_u8;
+  }}
+  set x = replacement;
+  let result = original + 1_u8;
+  return result;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the common source fact must survive unchanged: {outcome:?}");
+        };
+        let increment = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "increment")
+            .expect("increment function exists");
+        super::entailment::validate_derivations(&increment.entailment);
+        assert!(increment.entailment.joined_source_proofs.is_empty());
+        assert!(increment.entailment.derivations.nodes.iter().any(|node| {
+            matches!(
+                node,
+                DerivationNode::AffineConsequence { premises, .. }
+                    if premises.iter().any(|premise| premise.source
+                        == SourceAffineFactRef::SourceProof { source_ordinal: 0 })
+            )
+        }));
+    });
+}
+
+#[test]
+fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
+    let source = format!(
+        r#"fn increment(flag: own Bool, x: own u8, replacement: own u8) -> result: own u8 pure contract {{
+  requires ile(x, 253_u8);
+}} {{
+  let original = x * 1_u8;
+  if flag {{
+    prove expression_form: ile(original + 1_u8, 255_u8) {{
+      use ile(original, 253_u8);
+    }}
+  }} else {{
+    let next = original + 1_u8;
+    prove binder_form: ile(next, 254_u8) {{
+      use ile(original, 253_u8);
+    }}
+  }}
+  set x = replacement;
+  let result = original + 1_u8;
+  return result;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("different canonical facts must not become one joined fact: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation { .. }
+        ));
+    });
+}
+
+/// The automatic multi-premise rule follows one fixed order. Its first source
+/// fact has the target's coefficient vector but an upper bound weaker by one,
+/// so that fixed route stops with a false constant residual. The source proof
+/// selects the later two exact components and establishes the invariant base.
+#[test]
+fn fixed_order_stops_after_an_earlier_weaker_fact_without_the_source_proof() {
+    let source = format!(
+        r#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+}} {{
+  for weak_seed in 0_u64..0_u64 {{
+    invariant weaker_first: ile(first + second, first_limit + second_limit + 1_u64);
+  }}
+  for first_seed in 0_u64..0_u64 {{
+    invariant first_part: ile(first, first_limit);
+  }}
+  for second_seed in 0_u64..0_u64 {{
+    invariant second_part: ile(second, second_limit);
+  }}
+  let left = first * 1_u64;
+  let left_limit = first_limit * 1_u64;
+  let right = second * 1_u64;
+  let right_limit = second_limit * 1_u64;
+  set first = replacement;
+  set first_limit = replacement;
+  set second = replacement;
+  set second_limit = replacement;
+  prove exact_parts: ile(left + right, left_limit + right_limit) {{
+    use ile(left, left_limit);
+    use ile(right, right_limit);
+  }}
+  for check_seed in 0_u64..0_u64 {{
+    invariant combined: ile(left + right, left_limit + right_limit);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the written premise selection must establish the invariant base: {outcome:?}");
+        };
+        let preserve = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "preserve")
+            .expect("preserve function exists");
+        let proof = preserve
+            .entailment
+            .source_proofs
+            .iter()
+            .find(|proof| proof.name == "exact_parts")
+            .expect("the explicit source proof is retained");
+        assert!(proof.check.discharged());
+        let combined = preserve
+            .entailment
+            .loop_invariants
+            .iter()
+            .find(|invariant| invariant.name == "combined")
+            .expect("the target invariant is retained");
+        assert!(combined.proof.base);
+        assert!(combined.proof.discharged());
+    });
+
+    const PROOF: &str = "  prove exact_parts: ile(left + right, left_limit + right_limit) {\n    use ile(left, left_limit);\n    use ile(right, right_limit);\n  }\n";
+    assert_eq!(source.matches(PROOF).count(), 1);
+    let without_proof = source.replacen(PROOF, "", 1);
+    with_semantics(without_proof.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the fixed automatic route must leave the invariant base unproved: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLoopInvariant {
+            name, obligation, ..
+        } = issue.kind()
+        else {
+            panic!("the counterfactual must fail at INV-1");
+        };
+        assert_eq!(name, "combined");
+        assert_eq!(*obligation, LoopInvariantProofObligation::Base);
+    });
 }
 
 /// One checked source fact may serve every later goal in its dominance region;

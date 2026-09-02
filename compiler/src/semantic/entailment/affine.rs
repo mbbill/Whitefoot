@@ -319,21 +319,15 @@ pub(crate) fn residual_measure_decreases(
     Ok(false)
 }
 
-/// Verifies one author-selected affine certificate by summing its premises in
-/// exactly the supplied order and comparing the canonical result with
-/// `target`.
+/// Sums one author-selected affine certificate in exactly the supplied order.
 ///
-/// The caller is responsible for resolving the written premise names and for
-/// preserving their source order. This core neither selects nor reorders a
-/// premise, guesses a coefficient, searches for a subset, nor weakens the
-/// target. Every premise has the fixed coefficient one. Success means that
-/// both the accumulated coefficient vector and accumulated upper bound equal
-/// the target exactly.
-pub(crate) fn verify_explicit_inequality_sum(
+/// The caller is responsible for proving every written premise independently.
+/// This core only forms the canonical mathematical sum; it neither selects an
+/// additional premise nor searches for coefficients.
+pub(crate) fn sum_explicit_inequalities(
     premises: &[AffineInequality],
-    target: &AffineInequality,
     check: &mut AffineCheckState,
-) -> Result<(), AffineCheckError> {
+) -> Result<AffineInequality, AffineCheckError> {
     if premises.len() > check.limits.max_certificate_premises {
         return Err(AffineCheckError::LimitExceeded(
             AffineCheckLimit::CertificatePremises,
@@ -346,22 +340,10 @@ pub(crate) fn verify_explicit_inequality_sum(
         terms = merge_scaled(&terms, premise.terms(), 1, check)?;
         upper = checked_add(upper, premise.upper())?;
     }
-
-    check.charge(1)?;
-    if upper != target.upper() {
-        return Err(AffineCheckError::CoefficientMismatch);
-    }
-    check.charge(1)?;
-    if terms.len() != target.terms().len() {
-        return Err(AffineCheckError::CoefficientMismatch);
-    }
-    for (formed, expected) in terms.iter().zip(target.terms()) {
-        check.charge(1)?;
-        if formed != expected {
-            return Err(AffineCheckError::CoefficientMismatch);
-        }
-    }
-    Ok(())
+    Ok(AffineInequality {
+        terms: terms.into_boxed_slice(),
+        upper,
+    })
 }
 
 /// Uses one independently known inclusive interval per affine term.  This is
@@ -857,12 +839,8 @@ mod tests {
         let target = inequality(&[(0, 1)], 255_000);
 
         assert_eq!(
-            verify_explicit_inequality_sum(
-                &[per_byte, count_limit],
-                &target,
-                &mut AffineCheckState::new(),
-            ),
-            Ok(())
+            sum_explicit_inequalities(&[per_byte, count_limit], &mut AffineCheckState::new(),),
+            Ok(target)
         );
     }
 
@@ -873,20 +851,15 @@ mod tests {
         let target = inequality(&[(0, 1)], 255_000);
 
         assert_eq!(
-            verify_explicit_inequality_sum(
+            sum_explicit_inequalities(
                 &[per_byte.clone(), count_limit.clone()],
-                &target,
                 &mut AffineCheckState::new(),
             ),
-            Ok(())
+            Ok(target.clone())
         );
         assert_eq!(
-            verify_explicit_inequality_sum(
-                &[count_limit, per_byte],
-                &target,
-                &mut AffineCheckState::new(),
-            ),
-            Ok(())
+            sum_explicit_inequalities(&[count_limit, per_byte], &mut AffineCheckState::new(),),
+            Ok(target)
         );
 
         // These two lists have the same mathematical sum. The safe source
@@ -897,17 +870,15 @@ mod tests {
         let plus_one = inequality(&[], 1);
         let minus_one = inequality(&[], -1);
         assert_eq!(
-            verify_explicit_inequality_sum(
+            sum_explicit_inequalities(
                 &[maximum.clone(), minus_one.clone(), plus_one.clone()],
-                &maximum,
                 &mut AffineCheckState::new(),
             ),
-            Ok(())
+            Ok(maximum.clone())
         );
         assert_eq!(
-            verify_explicit_inequality_sum(
+            sum_explicit_inequalities(
                 &[maximum.clone(), plus_one, minus_one],
-                &maximum,
                 &mut AffineCheckState::new(),
             ),
             Err(AffineCheckError::ArithmeticOverflow)
@@ -915,25 +886,28 @@ mod tests {
     }
 
     #[test]
-    fn explicit_sum_rejects_a_missing_premise_as_an_exact_mismatch() {
+    fn explicit_sum_exposes_a_missing_premise_to_the_residual_checker() {
         let per_byte = inequality(&[(0, 1), (1, -255)], 0);
         let target = inequality(&[(0, 1)], 255_000);
-        assert_eq!(
-            verify_explicit_inequality_sum(&[per_byte], &target, &mut AffineCheckState::new(),),
-            Err(AffineCheckError::CoefficientMismatch)
-        );
+        let formed = sum_explicit_inequalities(&[per_byte], &mut AffineCheckState::new())
+            .expect("the written premise has a canonical sum");
+        assert_ne!(formed, target);
+        let residual =
+            AffineInequality::residual_after(&target, &formed, &mut AffineCheckState::new())
+                .expect("the missing component remains explicit");
+        assert_eq!(coefficients(&residual), vec![(1, 255)]);
+        assert_eq!(residual.upper(), 255_000);
     }
 
     #[test]
     fn explicit_sum_has_a_fixed_premise_capacity() {
         let premises = [inequality(&[(0, 1)], 0), inequality(&[(1, 1)], 0)];
-        let target = inequality(&[(0, 1), (1, 1)], 0);
         let mut check = AffineCheckState::with_limits(AffineCheckLimits {
             max_certificate_premises: 1,
             ..AFFINE_CHECK_LIMITS
         });
         assert_eq!(
-            verify_explicit_inequality_sum(&premises, &target, &mut check),
+            sum_explicit_inequalities(&premises, &mut check),
             Err(AffineCheckError::LimitExceeded(
                 AffineCheckLimit::CertificatePremises
             ))
@@ -1013,23 +987,24 @@ mod tests {
     }
 
     #[test]
-    fn fixed_residual_order_can_stop_on_an_irrelevant_earlier_fact() {
+    fn fixed_residual_order_stops_after_an_earlier_weaker_fact() {
         // B: x <= 1; P: 2x <= 2y; Q: 2y <= x; target: x <= 0.
         // P + Q proves the target, but the fixed automatic order B,P,Q first
         // takes B because it removes x. The residual is then `0 <= -1` and no
         // remaining fact overlaps it. This deliberate incompleteness is why
         // explicit prove/use remains available for author-selected witnesses.
         let target = inequality(&[(0, 1)], 0);
-        let lure = inequality(&[(0, 1)], 1);
+        let weaker_first = inequality(&[(0, 1)], 1);
         let first = inequality(&[(0, 2), (1, -2)], 0);
         let second = inequality(&[(0, -1), (1, 2)], 0);
         let mut check = AffineCheckState::new();
-        let factor = maximum_safe_residual_factor(&target, &lure, &mut check)
+        let factor = maximum_safe_residual_factor(&target, &weaker_first, &mut check)
             .expect("fixed factor")
-            .expect("the lure overlaps x");
+            .expect("the earlier fact overlaps x");
         assert_eq!(factor, 1);
-        let stuck = AffineInequality::residual_after_scaled(&target, &lure, factor, &mut check)
-            .expect("lure residual");
+        let stuck =
+            AffineInequality::residual_after_scaled(&target, &weaker_first, factor, &mut check)
+                .expect("earlier-fact residual");
         assert!(residual_measure_decreases(&target, &stuck, &mut check).unwrap());
         assert_eq!(interval_proves(&stuck, |_| None, &mut check), Ok(false));
         assert_eq!(
@@ -1041,8 +1016,8 @@ mod tests {
             Ok(None)
         );
         assert_eq!(
-            verify_explicit_inequality_sum(&[first, second], &target, &mut check),
-            Ok(())
+            sum_explicit_inequalities(&[first, second], &mut check),
+            Ok(target)
         );
     }
 

@@ -32,6 +32,7 @@ pub(crate) use state::DerivationId;
 pub(crate) use state::DerivationRootKind;
 #[cfg(test)]
 pub(crate) use state::GoalId;
+pub(crate) use state::SourceAffineFactRef;
 use state::{DerivationInventory, DerivationLedger};
 #[cfg(not(test))]
 use term::TermId;
@@ -40,7 +41,7 @@ use term::TermId;
 pub(crate) use state::{
     CountedRootAtom, DerivationNode, FlowEvent, FlowEventId, FlowEventKind, GoalSign,
     ImplicitBoundKind, JoinParent, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    Relation, SourceAffineFactRef,
+    Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -548,7 +549,8 @@ pub(crate) struct LoopInvariantOutcome {
 
 /// One direct PRF-1 result. Premises are retained in source order
 /// so a rejection points to the first unproved `use`; `combination` records
-/// only the deterministic exact-sum check and grants no fact by itself.
+/// only the deterministic written-sum and residual check and grants no fact
+/// by itself.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceProofCheck {
     pub(crate) premises: Vec<bool>,
@@ -569,6 +571,17 @@ pub(crate) struct SourceProofOutcome {
     pub(crate) name: String,
     /// The direct PRF-1 result in the source fact context.
     pub(crate) check: SourceProofCheck,
+}
+
+/// Diagnostic provenance for one source-proof fact retained across a join.
+///
+/// The semantic decision has already been made by intersecting the canonical
+/// inequality on every predecessor. These references only preserve where the
+/// independently established copies came from; they are never replayed and
+/// never participate in acceptance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct JoinedSourceProofProvenance {
+    pub(crate) predecessors: Box<[SourceAffineFactRef]>,
 }
 
 /// The exact written mathematical-one identity admitted by S7. Generic
@@ -808,6 +821,9 @@ pub(crate) struct FunctionEntailment {
     pub(crate) loop_invariants: Vec<LoopInvariantOutcome>,
     /// Erased finite source proofs in statement order.
     pub(crate) source_proofs: Vec<SourceProofOutcome>,
+    /// Diagnostic-only DAG nodes introduced when equal source-proof facts
+    /// meet at structural joins. Dense ordinals are function-local.
+    pub(crate) joined_source_proofs: Vec<JoinedSourceProofProvenance>,
     /// Every admitted S7 relation, in structural source and operand order.
     /// Each entry owns one required source root.
     pub(crate) s7_derivations: Vec<S7Derivation>,

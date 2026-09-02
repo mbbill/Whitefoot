@@ -476,7 +476,14 @@ pub(crate) struct SourceLoopInvariantRef {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum SourceAffineFactRef {
     LoopInvariant(SourceLoopInvariantRef),
-    SourceProof { source_ordinal: u32 },
+    SourceProof {
+        source_ordinal: u32,
+    },
+    /// Diagnostic-only identity for one canonical source-proof inequality
+    /// established independently on every predecessor of a structural join.
+    JoinedSourceProof {
+        join_ordinal: u32,
+    },
 }
 
 /// One source-affine premise selected by the fixed automatic residual rule.
@@ -1359,6 +1366,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                         (1, source.loop_id.0, source.source_ordinal)
                     }
                     SourceAffineFactRef::SourceProof { source_ordinal } => (2, source_ordinal, 0),
+                    SourceAffineFactRef::JoinedSourceProof { join_ordinal } => (3, join_ordinal, 0),
                 };
                 let factor = premise.factor as u128;
                 return [

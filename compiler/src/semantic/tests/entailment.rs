@@ -684,6 +684,62 @@ fn validate_counted_derivation_set(
     }
 }
 
+fn assert_source_affine_fact_resolves(summary: &FunctionEntailment, source: SourceAffineFactRef) {
+    let mut pending = vec![source];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(source) = pending.pop() {
+        if !seen.insert(source) {
+            continue;
+        }
+        match source {
+            SourceAffineFactRef::LoopInvariant(source) => {
+                let mut matching = summary.loop_invariants.iter().filter(|invariant| {
+                    invariant.loop_id == source.loop_id
+                        && invariant.source_ordinal == source.source_ordinal
+                });
+                let invariant = matching
+                    .next()
+                    .expect("affine consequence source invariant must resolve");
+                assert!(
+                    matching.next().is_none(),
+                    "source invariant reference is unique"
+                );
+                assert!(invariant.proof.discharged());
+            }
+            SourceAffineFactRef::SourceProof { source_ordinal } => {
+                let proof = summary
+                    .source_proofs
+                    .iter()
+                    .find(|proof| proof.source_ordinal == source_ordinal)
+                    .expect("affine consequence source proof must resolve");
+                assert!(proof.check.discharged());
+            }
+            SourceAffineFactRef::JoinedSourceProof { join_ordinal } => {
+                let provenance = summary
+                    .joined_source_proofs
+                    .get(join_ordinal as usize)
+                    .expect("joined source proof reference must resolve");
+                assert!(
+                    provenance.predecessors.len() >= 2,
+                    "a diagnostic join records every structural predecessor"
+                );
+                for predecessor in provenance.predecessors.iter().copied() {
+                    if let SourceAffineFactRef::JoinedSourceProof {
+                        join_ordinal: predecessor_ordinal,
+                    } = predecessor
+                    {
+                        assert!(
+                            predecessor_ordinal < join_ordinal,
+                            "joined source proof provenance is a backward DAG"
+                        );
+                    }
+                    pending.push(predecessor);
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     assert_eq!(
         summary.inventory.terms.len(),
@@ -1021,30 +1077,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 for premise in premises {
                     assert!(premise.factor > 0);
-                    match premise.source {
-                        SourceAffineFactRef::LoopInvariant(source) => {
-                            let mut matching = summary.loop_invariants.iter().filter(|invariant| {
-                                invariant.loop_id == source.loop_id
-                                    && invariant.source_ordinal == source.source_ordinal
-                            });
-                            let invariant = matching
-                                .next()
-                                .expect("affine consequence source invariant must resolve");
-                            assert!(
-                                matching.next().is_none(),
-                                "source invariant reference is unique"
-                            );
-                            assert!(invariant.proof.discharged());
-                        }
-                        SourceAffineFactRef::SourceProof { source_ordinal } => {
-                            let proof = summary
-                                .source_proofs
-                                .iter()
-                                .find(|proof| proof.source_ordinal == source_ordinal)
-                                .expect("affine consequence source proof must resolve");
-                            assert!(proof.check.discharged());
-                        }
-                    }
+                    assert_source_affine_fact_resolves(summary, premise.source);
                 }
                 if let Some(relation) = relation {
                     assert_relation_terms_resolve(summary, relation);
