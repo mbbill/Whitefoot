@@ -135,7 +135,7 @@ Warm-Tree
 $ComputeExpected = Join-Path $Out "compute.expected"
 $IoExpected = Join-Path $Out "io.expected"
 $MixedExpected = Join-Path $Out "mixed.expected"
-Write-AsciiFile -Path $ComputeExpected -Text "420a993efa7437a1 41fa962893d45299"
+Write-AsciiFile -Path $ComputeExpected -Text "420a993efa7437a1 41fa962893d45299`n"
 Write-AsciiFile -Path $IoExpected -Text "18028327385673861873 00000000000134217728`n"
 Write-AsciiFile -Path $MixedExpected -Text "17574306422404092952`n"
 
