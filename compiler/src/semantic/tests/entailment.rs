@@ -1010,7 +1010,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             }
             DerivationNode::AffineConsequence {
                 relation,
-                premise,
+                premises,
                 parents,
             } => {
                 for parent in parents {
@@ -1019,12 +1019,13 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
                     ));
                 }
-                if let Some(premise) = premise {
-                    match premise {
-                        SourceAffineFactRef::LoopInvariant(premise) => {
+                for premise in premises {
+                    assert!(premise.factor > 0);
+                    match premise.source {
+                        SourceAffineFactRef::LoopInvariant(source) => {
                             let mut matching = summary.loop_invariants.iter().filter(|invariant| {
-                                invariant.loop_id == premise.loop_id
-                                    && invariant.source_ordinal == premise.source_ordinal
+                                invariant.loop_id == source.loop_id
+                                    && invariant.source_ordinal == source.source_ordinal
                             });
                             let invariant = matching
                                 .next()
@@ -1039,7 +1040,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             let proof = summary
                                 .source_proofs
                                 .iter()
-                                .find(|proof| proof.source_ordinal == *source_ordinal)
+                                .find(|proof| proof.source_ordinal == source_ordinal)
                                 .expect("affine consequence source proof must resolve");
                             assert!(proof.check.discharged());
                         }
@@ -1813,7 +1814,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                                 if place.root == PlaceRoot::Binding(source.binding)
                                     && !place.deref
                                     && place.fields.is_empty()
-                                    && *row == source.row
+                            && *row == source.row
                         ));
                     }
                     _ => panic!("S7 root kind, metadata, and relation must agree"),

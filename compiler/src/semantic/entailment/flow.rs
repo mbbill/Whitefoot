@@ -36,12 +36,13 @@ use super::super::postcondition::{
 };
 use super::affine::{
     AffineCheckError, AffineCheckState, AffineForm, AffineInequality, AffineTermId,
-    interval_maximum, interval_proves, verify_explicit_inequality_sum,
+    interval_maximum, interval_proves, maximum_safe_residual_factor, residual_measure_decreases,
+    verify_explicit_inequality_sum,
 };
 use super::state::{
-    ClosedState, CountedRootAtom, DerivationId, DerivationInventory, DerivationLedger,
-    DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind, GoalId,
-    GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
+    AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
+    DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
+    GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
     PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef, close,
     close_excluding_term, contradiction_without_proofs, join_at, materialize_closure_at,
 };
@@ -356,8 +357,19 @@ struct PostconditionExitProof {
 }
 
 struct AffineConsequenceProof {
-    premise: Option<SourceAffineFactRef>,
+    premises: Vec<AffinePremiseUse>,
     parents: Vec<DerivationId>,
+}
+
+struct AffineL0Candidate {
+    term: TermId,
+    value: AffineForm,
+}
+
+struct AutomaticAffinePremise {
+    inequality: AffineInequality,
+    source: Option<SourceAffineFactRef>,
+    parent: Option<DerivationId>,
 }
 
 struct AffineIntervalEndpointProof {
@@ -4826,7 +4838,7 @@ impl Analyzer<'_, '_> {
         };
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: None,
-            premise: proof.premise,
+            premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
         ProofResult {
@@ -4945,7 +4957,7 @@ impl Analyzer<'_, '_> {
         };
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: Some(Box::new(relation.clone())),
-            premise: proof.premise,
+            premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
         let derivation = self.derivations.intern(DerivationNode::GoalProjection {
@@ -5024,7 +5036,7 @@ impl Analyzer<'_, '_> {
         };
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: None,
-            premise: proof.premise,
+            premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
         ProofResult {
@@ -5226,7 +5238,7 @@ impl Analyzer<'_, '_> {
         };
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: Some(Box::new(relation.clone())),
-            premise: proof.premise,
+            premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
         let derivation = goal.map_or(consequence, |goal| {
@@ -5315,7 +5327,7 @@ impl Analyzer<'_, '_> {
                 });
                 let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
                     relation,
-                    premise: endpoint.consequence.premise,
+                    premises: endpoint.consequence.premises.into_boxed_slice(),
                     parents: endpoint.consequence.parents,
                 });
                 selected = ProvedNumericUpperBound {
@@ -5511,7 +5523,7 @@ impl Analyzer<'_, '_> {
         let proof = self.affine_target_proof(target, &assumptions, affine, facts)?;
         Some(self.derivations.intern(DerivationNode::AffineConsequence {
             relation: relation.map(Box::new),
-            premise: proof.premise,
+            premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         }))
     }
@@ -6547,7 +6559,7 @@ impl Analyzer<'_, '_> {
                 };
                 consequences.push(self.derivations.intern(DerivationNode::AffineConsequence {
                     relation: None,
-                    premise: proof.premise,
+                    premises: proof.premises.into_boxed_slice(),
                     parents: proof.parents,
                 }));
             }
@@ -6632,7 +6644,7 @@ impl Analyzer<'_, '_> {
         .map(|proof| {
             self.derivations.intern(DerivationNode::AffineConsequence {
                 relation: None,
-                premise: proof.premise,
+                premises: proof.premises.into_boxed_slice(),
                 parents: proof.parents,
             })
         })
@@ -7971,11 +7983,147 @@ impl Analyzer<'_, '_> {
         )
     }
 
+    /// Builds the fixed L0 vocabulary before closure. Each live integer
+    /// binding contributes its ordinary term and its exact current affine
+    /// value; Z is the fixed zero candidate. Later matching never invents a
+    /// term after the closed state was formed.
+    fn affine_l0_candidates(&mut self, values: &AffineFlowState) -> Vec<AffineL0Candidate> {
+        let mut candidates = vec![AffineL0Candidate {
+            term: ZERO,
+            value: AffineForm::constant(0),
+        }];
+        let mut bindings = values.values.keys().copied().collect::<Vec<_>>();
+        bindings.sort_by_key(|binding| binding.0);
+        for binding in bindings {
+            let Some(ty) = self.affine_binding_type(binding) else {
+                continue;
+            };
+            let term = self.terms.intern(TermKind::Place(
+                PlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                ty,
+            ));
+            candidates.push(AffineL0Candidate {
+                term,
+                value: values.values[&binding].clone(),
+            });
+        }
+        candidates
+    }
+
+    /// Converts each live ordinary difference fact whose two endpoints have
+    /// exact affine values into the same canonical inequality vocabulary.
+    /// FactState stores no source ordering, so this bridge uses the unique
+    /// `(left term, right term)` order. Implicit type edges are not inserted
+    /// here; they remain the final interval rule rather than candidate facts.
+    fn automatic_affine_premises(
+        &self,
+        assumptions: &[ActiveAffineFact],
+        candidates: &[AffineL0Candidate],
+        facts: &FactState,
+        check: &mut AffineCheckState,
+    ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
+        let mut premises = Vec::new();
+        let mut seen = HashSet::new();
+        for assumption in assumptions {
+            check.charge(1)?;
+            if seen.insert(assumption.inequality.clone()) {
+                premises.push(AutomaticAffinePremise {
+                    inequality: assumption.inequality.clone(),
+                    source: Some(assumption.source),
+                    parent: None,
+                });
+            }
+        }
+        let values = candidates
+            .iter()
+            .map(|candidate| (candidate.term, &candidate.value))
+            .collect::<HashMap<_, _>>();
+        let mut bounds = facts
+            .bounds
+            .iter()
+            .map(|(&(left, right), &bound)| (left, right, bound))
+            .collect::<Vec<_>>();
+        bounds.sort_unstable();
+        for (left, right, bound) in bounds {
+            check.charge(1)?;
+            let (Some(left_value), Some(right_value)) = (values.get(&left), values.get(&right))
+            else {
+                continue;
+            };
+            let inequality =
+                AffineInequality::from_bounded_forms(left_value, right_value, bound, check)?;
+            if seen.insert(inequality.clone()) {
+                premises.push(AutomaticAffinePremise {
+                    inequality,
+                    source: None,
+                    parent: Some(facts.bound_proofs[&(left, right)]),
+                });
+            }
+        }
+        Ok(premises)
+    }
+
+    fn affine_consequence_from_residual(
+        selected: &[(usize, i128)],
+        automatic: &[AutomaticAffinePremise],
+        mut parents: Vec<DerivationId>,
+    ) -> AffineConsequenceProof {
+        let mut premises = Vec::new();
+        for &(index, factor) in selected {
+            let premise = &automatic[index];
+            if let Some(source) = premise.source {
+                premises.push(AffinePremiseUse { source, factor });
+            }
+            if let Some(parent) = premise.parent {
+                parents.push(parent);
+            }
+        }
+        parents.sort_unstable_by_key(|parent| parent.0);
+        parents.dedup();
+        AffineConsequenceProof { premises, parents }
+    }
+
+    /// Matches one affine residual exactly against `left_value - right_value`
+    /// and then asks the ordinary difference-bound closure for the required
+    /// bound on the corresponding source terms. Candidate order is the fixed
+    /// binding order above; no subset selection or rewriting search occurs.
+    fn affine_l0_proof(
+        &mut self,
+        inequality: &AffineInequality,
+        candidates: &[AffineL0Candidate],
+        closed: &ClosedState,
+        check: &mut AffineCheckState,
+    ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
+        for left in candidates {
+            for right in candidates {
+                check.charge(1)?;
+                let candidate = AffineInequality::from_forms(&left.value, &right.value, check)?;
+                if candidate.terms() != inequality.terms() {
+                    continue;
+                }
+                let requested = inequality
+                    .upper()
+                    .checked_sub(candidate.upper())
+                    .ok_or(AffineCheckError::ArithmeticOverflow)?;
+                if let Some(parent) =
+                    closed.bound_proof(left.term, right.term, requested, &mut self.derivations)
+                {
+                    return Ok(Some(vec![parent]));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     fn affine_interval_proof(
         &mut self,
         inequality: &AffineInequality,
         values: &AffineFlowState,
-        facts: &FactState,
+        closed: &ClosedState,
         check: &mut AffineCheckState,
     ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
         let mut requested = inequality
@@ -8020,7 +8168,6 @@ impl Analyzer<'_, '_> {
             term_intervals.insert(atom_id, (minimum, maximum, terms));
         }
 
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
         }
@@ -8081,6 +8228,23 @@ impl Analyzer<'_, '_> {
         Ok(Some(parents))
     }
 
+    fn affine_residual_proof(
+        &mut self,
+        inequality: &AffineInequality,
+        candidates: &[AffineL0Candidate],
+        values: &AffineFlowState,
+        closed: &ClosedState,
+        check: &mut AffineCheckState,
+    ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
+        if closed.contradictory() {
+            return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
+        }
+        if let Some(parents) = self.affine_l0_proof(inequality, candidates, closed, check)? {
+            return Ok(Some(parents));
+        }
+        self.affine_interval_proof(inequality, values, closed, check)
+    }
+
     fn affine_target_proof(
         &mut self,
         target: &AffineInequality,
@@ -8088,21 +8252,30 @@ impl Analyzer<'_, '_> {
         values: &AffineFlowState,
         facts: &FactState,
     ) -> Option<AffineConsequenceProof> {
+        let mut check = AffineCheckState::new();
+        let candidates = self.affine_l0_candidates(values);
+        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         if let Some(parents) = self
-            .affine_interval_proof(target, values, facts, &mut AffineCheckState::new())
+            .affine_residual_proof(target, &candidates, values, &closed, &mut check)
             .ok()?
         {
             return Some(AffineConsequenceProof {
-                premise: None,
+                premises: Vec::new(),
                 parents,
             });
         }
-        for assumption in assumptions {
-            let Ok(residual) = AffineInequality::residual_after(
-                target,
-                &assumption.inequality,
-                &mut AffineCheckState::new(),
-            ) else {
+        let automatic = self
+            .automatic_affine_premises(assumptions, &candidates, facts, &mut check)
+            .ok()?;
+
+        // Preserve the existing complete one-premise route before the
+        // intentionally incomplete multi-premise reduction. This phase is
+        // source-affine order followed by canonical L0 term-pair order, and
+        // gives every fact exactly coefficient one.
+        for (index, assumption) in automatic.iter().enumerate() {
+            let Ok(residual) =
+                AffineInequality::residual_after(target, &assumption.inequality, &mut check)
+            else {
                 // This fixed candidate cannot participate in an i128
                 // coefficient-one residual. It grants no authority, but it
                 // must not hide a later independently representable source
@@ -8110,18 +8283,79 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             let Ok(proof) =
-                self.affine_interval_proof(&residual, values, facts, &mut AffineCheckState::new())
+                self.affine_residual_proof(&residual, &candidates, values, &closed, &mut check)
             else {
                 continue;
             };
             if let Some(parents) = proof {
-                return Some(AffineConsequenceProof {
-                    premise: Some(assumption.source),
+                return Some(Self::affine_consequence_from_residual(
+                    &[(index, 1)],
+                    &automatic,
                     parents,
-                });
+                ));
             }
         }
-        None
+
+        // R2 is one canonical, non-backtracking path. At each iteration it
+        // scans unused facts in source-affine-then-canonical-L0 order and
+        // permanently selects the first whose greatest no-sign-crossing
+        // factor strictly decreases the
+        // lexicographic absolute-coefficient residual measure. Therefore it
+        // performs at most N selections and N(N+1)/2 candidate scans; all
+        // arithmetic shares this proof attempt's fixed affine work budget.
+        let mut residual = target.clone();
+        let mut used = vec![false; automatic.len()];
+        let mut selected_premises = Vec::new();
+        loop {
+            let mut selected = None;
+            for (index, assumption) in automatic.iter().enumerate() {
+                if used[index] {
+                    continue;
+                }
+                check.charge(1).ok()?;
+                // Source-affine facts may be applied by their maximal safe
+                // factor. An ordinary L0 proof is retained as one parent and
+                // therefore participates once; the checker never expands a
+                // large numeric factor into repeated derivation edges.
+                let Some(safe_factor) =
+                    maximum_safe_residual_factor(&residual, &assumption.inequality, &mut check)
+                        .ok()?
+                else {
+                    continue;
+                };
+                let factor = if assumption.parent.is_some() {
+                    1
+                } else {
+                    safe_factor
+                };
+                let Ok(candidate) = AffineInequality::residual_after_scaled(
+                    &residual,
+                    &assumption.inequality,
+                    factor,
+                    &mut check,
+                ) else {
+                    continue;
+                };
+                if residual_measure_decreases(&residual, &candidate, &mut check).ok()? {
+                    selected = Some((index, factor, candidate));
+                    break;
+                }
+            }
+            let (index, factor, next) = selected?;
+            used[index] = true;
+            residual = next;
+            selected_premises.push((index, factor));
+            if let Some(parents) = self
+                .affine_residual_proof(&residual, &candidates, values, &closed, &mut check)
+                .ok()?
+            {
+                return Some(Self::affine_consequence_from_residual(
+                    &selected_premises,
+                    &automatic,
+                    parents,
+                ));
+            }
+        }
     }
 
     fn affine_event_kills_binding(binding: BindingId, event: &KillEvent) -> bool {

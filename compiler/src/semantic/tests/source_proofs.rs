@@ -91,9 +91,12 @@ fn an_exact_source_proof_discharges_a_following_integer_domain() {
                 matches!(
                     node,
                     DerivationNode::AffineConsequence {
-                        premise: Some(SourceAffineFactRef::SourceProof { source_ordinal: 0 }),
+                        premises,
                         ..
-                    }
+                    } if premises.iter().any(|premise| matches!(
+                        premise.source,
+                        SourceAffineFactRef::SourceProof { source_ordinal: 0 }
+                    ))
                 )
             }),
             "retained derivations: {:#?}",

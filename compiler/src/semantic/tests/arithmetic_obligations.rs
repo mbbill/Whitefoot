@@ -80,6 +80,66 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// R1 bridges the ordinary true-edge difference fact `right <= left` into
+/// the affine domain goal for two nonconstant subtraction operands.
+#[test]
+fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
+    let source = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
+  let ordered = ile(right, left);
+  if ordered {
+    let difference = left - right;
+    return difference;
+  } else {
+    return 0_u64;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the guarded subtraction must use its true-edge fact: {outcome:?}");
+        };
+        let distance = named(&checked.data.functions, "distance");
+        let subtractions = distance
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        let [subtraction] = subtractions.as_slice() else {
+            panic!("the exact subtraction retains one integer-domain obligation");
+        };
+        assert!(subtraction.discharged);
+        super::entailment::validate_derivations(&distance.entailment);
+    });
+
+    let unguarded = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
+  let difference = left - right;
+  return difference;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(unguarded, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the unguarded subtraction must remain unproved: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                ..
+            }
+        ));
+    });
+}
+
 /// The loop-counter shape from the recorded measurements: the counted
 /// binder's `binder < upper_capture` body fact plus the capture's implicit
 /// type bound discharge `i + 1_u64` by the same transitive closure the

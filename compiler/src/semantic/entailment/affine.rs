@@ -38,7 +38,7 @@ pub(crate) enum AffineExpression {
 }
 
 /// One nonzero coefficient in a canonical affine left-hand side.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct AffineCoefficient {
     term: AffineTermId,
     coefficient: i128,
@@ -152,7 +152,7 @@ impl AffineCoefficient {
 ///
 /// Terms are strictly ordered by identity and zero coefficients are removed.
 /// Private fields ensure all values pass the same checked canonicalization.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct AffineInequality {
     terms: Box<[AffineCoefficient]>,
     upper: i128,
@@ -201,6 +201,19 @@ impl AffineInequality {
         })
     }
 
+    /// Forms the proposition `left - right <= bound` from two exact current
+    /// values and one already-established ordinary difference bound.
+    pub(crate) fn from_bounded_forms(
+        left: &AffineForm,
+        right: &AffineForm,
+        bound: i128,
+        check: &mut AffineCheckState,
+    ) -> Result<Self, AffineCheckError> {
+        let mut inequality = Self::from_forms(left, right, check)?;
+        inequality.upper = checked_add(inequality.upper, bound)?;
+        Ok(inequality)
+    }
+
     /// Removes one already-established premise with coefficient one.
     ///
     /// If interval facts prove the returned inequality, adding `premise`
@@ -212,11 +225,98 @@ impl AffineInequality {
         premise: &Self,
         check: &mut AffineCheckState,
     ) -> Result<Self, AffineCheckError> {
+        Self::residual_after_scaled(target, premise, 1, check)
+    }
+
+    /// Removes one already-established premise multiplied by the written
+    /// mathematical factor selected by the deterministic residual rule.
+    pub(crate) fn residual_after_scaled(
+        target: &Self,
+        premise: &Self,
+        factor: i128,
+        check: &mut AffineCheckState,
+    ) -> Result<Self, AffineCheckError> {
         Ok(Self {
-            terms: merge_scaled(target.terms(), premise.terms(), -1, check)?.into_boxed_slice(),
-            upper: checked_sub(target.upper, premise.upper)?,
+            terms: merge_scaled(target.terms(), premise.terms(), checked_neg(factor)?, check)?
+                .into_boxed_slice(),
+            upper: checked_sub(target.upper, checked_mul(premise.upper, factor)?)?,
         })
     }
+}
+
+/// Selects the greatest positive integer factor that cancels at least one
+/// same-sign coefficient without crossing zero in any same-sign overlap.
+/// `None` means that this premise cannot make the current residual smaller by
+/// the fixed rule. Terms are visited once in canonical identity order.
+pub(crate) fn maximum_safe_residual_factor(
+    residual: &AffineInequality,
+    premise: &AffineInequality,
+    check: &mut AffineCheckState,
+) -> Result<Option<i128>, AffineCheckError> {
+    let mut residual_index = 0;
+    let mut premise_index = 0;
+    let mut factor = None::<u128>;
+    while residual_index < residual.terms().len() && premise_index < premise.terms().len() {
+        check.charge(1)?;
+        let residual_term = residual.terms()[residual_index];
+        let premise_term = premise.terms()[premise_index];
+        match residual_term.term().cmp(&premise_term.term()) {
+            std::cmp::Ordering::Less => residual_index += 1,
+            std::cmp::Ordering::Greater => premise_index += 1,
+            std::cmp::Ordering::Equal => {
+                if residual_term.coefficient().signum() == premise_term.coefficient().signum() {
+                    let candidate = residual_term.coefficient().unsigned_abs()
+                        / premise_term.coefficient().unsigned_abs();
+                    factor = Some(factor.map_or(candidate, |current| current.min(candidate)));
+                }
+                residual_index += 1;
+                premise_index += 1;
+            }
+        }
+    }
+    let Some(factor) = factor.filter(|factor| *factor != 0) else {
+        return Ok(None);
+    };
+    Ok(i128::try_from(factor).ok())
+}
+
+/// The well-founded residual measure is the lexicographic vector of absolute
+/// coefficients over the fixed affine term universe. This checks whether one
+/// candidate is strictly smaller without materializing the dense vector.
+pub(crate) fn residual_measure_decreases(
+    before: &AffineInequality,
+    after: &AffineInequality,
+    check: &mut AffineCheckState,
+) -> Result<bool, AffineCheckError> {
+    let mut before_index = 0;
+    let mut after_index = 0;
+    while before_index < before.terms().len() || after_index < after.terms().len() {
+        check.charge(1)?;
+        let before_term = before.terms().get(before_index).copied();
+        let after_term = after.terms().get(after_index).copied();
+        let next = match (before_term, after_term) {
+            (Some(before), Some(after)) => before.term().min(after.term()),
+            (Some(before), None) => before.term(),
+            (None, Some(after)) => after.term(),
+            (None, None) => break,
+        };
+        let before_magnitude = before_term
+            .filter(|term| term.term() == next)
+            .map_or(0, |term| term.coefficient().unsigned_abs());
+        let after_magnitude = after_term
+            .filter(|term| term.term() == next)
+            .map_or(0, |term| term.coefficient().unsigned_abs());
+        if before_term.is_some_and(|term| term.term() == next) {
+            before_index += 1;
+        }
+        if after_term.is_some_and(|term| term.term() == next) {
+            after_index += 1;
+        }
+        if before_magnitude != after_magnitude {
+            return Ok(after_magnitude < before_magnitude);
+        }
+    }
+    Ok(false)
 }
 
 /// Verifies one author-selected affine certificate by summing its premises in
@@ -369,7 +469,7 @@ impl AffineCheckState {
         Self { limits, used: 0 }
     }
 
-    fn charge(&mut self, amount: u64) -> Result<(), AffineCheckError> {
+    pub(crate) fn charge(&mut self, amount: u64) -> Result<(), AffineCheckError> {
         let used = self
             .used
             .checked_add(amount)
@@ -868,6 +968,81 @@ mod tests {
                 &mut check,
             ),
             Ok(false)
+        );
+    }
+
+    #[test]
+    fn residual_factor_eliminates_repeated_coefficient_one_uses_in_one_step() {
+        let residual = inequality(&[(0, 6), (1, -6)], 0);
+        let premise = inequality(&[(0, 2), (1, -2)], 0);
+        let mut check = AffineCheckState::new();
+        let factor = maximum_safe_residual_factor(&residual, &premise, &mut check)
+            .expect("fixed factor calculation")
+            .expect("same-sign overlap");
+        assert_eq!(factor, 3);
+        let reduced =
+            AffineInequality::residual_after_scaled(&residual, &premise, factor, &mut check)
+                .expect("scaled residual");
+        assert!(reduced.terms().is_empty());
+        assert_eq!(reduced.upper(), 0);
+        assert!(
+            residual_measure_decreases(&residual, &reduced, &mut check)
+                .expect("well-founded measure")
+        );
+    }
+
+    #[test]
+    fn residual_measure_rejects_an_earlier_term_regression() {
+        let before = inequality(&[(1, 1)], 0);
+        let after = inequality(&[(0, -1)], 0);
+        assert_eq!(
+            residual_measure_decreases(&before, &after, &mut AffineCheckState::new()),
+            Ok(false),
+            "introducing an earlier canonical term is not progress"
+        );
+    }
+
+    #[test]
+    fn opposite_sign_overlap_does_not_supply_a_safe_factor() {
+        let residual = inequality(&[(0, 1)], 0);
+        let premise = inequality(&[(0, -1)], 0);
+        assert_eq!(
+            maximum_safe_residual_factor(&residual, &premise, &mut AffineCheckState::new()),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn fixed_residual_order_can_stop_on_an_irrelevant_earlier_fact() {
+        // B: x <= 1; P: 2x <= 2y; Q: 2y <= x; target: x <= 0.
+        // P + Q proves the target, but the fixed automatic order B,P,Q first
+        // takes B because it removes x. The residual is then `0 <= -1` and no
+        // remaining fact overlaps it. This deliberate incompleteness is why
+        // explicit prove/use remains available for author-selected witnesses.
+        let target = inequality(&[(0, 1)], 0);
+        let lure = inequality(&[(0, 1)], 1);
+        let first = inequality(&[(0, 2), (1, -2)], 0);
+        let second = inequality(&[(0, -1), (1, 2)], 0);
+        let mut check = AffineCheckState::new();
+        let factor = maximum_safe_residual_factor(&target, &lure, &mut check)
+            .expect("fixed factor")
+            .expect("the lure overlaps x");
+        assert_eq!(factor, 1);
+        let stuck = AffineInequality::residual_after_scaled(&target, &lure, factor, &mut check)
+            .expect("lure residual");
+        assert!(residual_measure_decreases(&target, &stuck, &mut check).unwrap());
+        assert_eq!(interval_proves(&stuck, |_| None, &mut check), Ok(false));
+        assert_eq!(
+            maximum_safe_residual_factor(&stuck, &first, &mut check),
+            Ok(None)
+        );
+        assert_eq!(
+            maximum_safe_residual_factor(&stuck, &second, &mut check),
+            Ok(None)
+        );
+        assert_eq!(
+            verify_explicit_inequality_sum(&[first, second], &target, &mut check),
+            Ok(())
         );
     }
 

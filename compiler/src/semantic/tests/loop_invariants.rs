@@ -368,9 +368,9 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             weigh.entailment.derivations.nodes[parent.0 as usize],
             DerivationNode::AffineConsequence {
-                premise: Some(_),
+                ref premises,
                 ..
-            }
+            } if !premises.is_empty()
         ));
         let domain = weigh
             .entailment
@@ -390,9 +390,9 @@ command fn main() -> status: own ExitStatus pure {
         assert!(parents.iter().any(|parent| matches!(
             weigh.entailment.derivations.nodes[parent.0 as usize],
             DerivationNode::AffineConsequence {
-                premise: Some(_),
+                ref premises,
                 ..
-            }
+            } if !premises.is_empty()
         )));
 
         let published = postcondition
@@ -636,9 +636,9 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             function.entailment.derivations.nodes[parent.0 as usize],
             DerivationNode::AffineConsequence {
-                premise: Some(_),
+                ref premises,
                 ..
-            }
+            } if !premises.is_empty()
         ));
     });
 }
@@ -752,9 +752,9 @@ fn active_invariant_proves_a_real_array_index_obligation() {
             used_invariant |= matches!(
                 retained,
                 DerivationNode::AffineConsequence {
-                    premise: Some(_),
+                    premises,
                     ..
-                }
+                } if !premises.is_empty()
             );
             stack.extend(retained.parent_ids());
         }
@@ -831,9 +831,9 @@ command fn main() -> status: own ExitStatus pure {
             used_exhaustion |= matches!(
                 retained,
                 DerivationNode::AffineConsequence {
-                    premise: Some(_),
+                    premises,
                     ..
-                }
+                } if !premises.is_empty()
             );
             stack.extend(retained.parent_ids());
         }
@@ -852,9 +852,9 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             finish.entailment.derivations.nodes[parent.0 as usize],
             DerivationNode::AffineConsequence {
-                premise: Some(_),
+                ref premises,
                 ..
-            }
+            } if !premises.is_empty()
         ));
     });
 }
@@ -960,9 +960,9 @@ command fn main() -> status: own ExitStatus pure {
             used_invariant |= matches!(
                 retained,
                 DerivationNode::AffineConsequence {
-                    premise: Some(_),
+                    premises,
                     ..
-                }
+                } if !premises.is_empty()
             );
             stack.extend(retained.parent_ids());
         }
@@ -1037,9 +1037,9 @@ command fn main() -> status: own ExitStatus pure {
                 used_exhaustion |= matches!(
                     retained,
                     DerivationNode::AffineConsequence {
-                        premise: Some(_),
+                        premises,
                         ..
-                    }
+                    } if !premises.is_empty()
                 );
                 stack.extend(retained.parent_ids());
             }
@@ -1111,12 +1111,14 @@ command fn main() -> status: own ExitStatus pure {
                 }
                 seen[position] = true;
                 let retained = &function.entailment.derivations.nodes[position];
-                if let DerivationNode::AffineConsequence {
-                    premise: Some(SourceAffineFactRef::LoopInvariant(premise)),
-                    ..
-                } = retained
-                {
-                    used_expected_invariant |= premise.source_ordinal == u32::from(range.conjunct);
+                if let DerivationNode::AffineConsequence { premises, .. } = retained {
+                    used_expected_invariant |= premises.iter().any(|premise| {
+                        matches!(
+                            premise.source,
+                            SourceAffineFactRef::LoopInvariant(source)
+                                if source.source_ordinal == u32::from(range.conjunct)
+                        )
+                    });
                 }
                 stack.extend(retained.parent_ids());
             }
@@ -1183,13 +1185,13 @@ command fn main() -> status: own ExitStatus pure {
         let mut premise_ordinals = parents
             .iter()
             .filter_map(|parent| {
-                let DerivationNode::AffineConsequence { premise, .. } =
+                let DerivationNode::AffineConsequence { premises, .. } =
                     &function.entailment.derivations.nodes[parent.0 as usize]
                 else {
                     panic!("each product-domain parent must prove one affine endpoint");
                 };
-                premise.and_then(|premise| match premise {
-                    SourceAffineFactRef::LoopInvariant(premise) => Some(premise.source_ordinal),
+                premises.iter().find_map(|premise| match premise.source {
+                    SourceAffineFactRef::LoopInvariant(source) => Some(source.source_ordinal),
                     SourceAffineFactRef::SourceProof { .. } => None,
                 })
             })
@@ -1330,9 +1332,13 @@ command fn main() -> status: own ExitStatus pure {
             used_outer_exhaustion |= matches!(
                 retained,
                 DerivationNode::AffineConsequence {
-                    premise: Some(SourceAffineFactRef::LoopInvariant(premise)),
+                    premises,
                     ..
-                } if premise.loop_id == completed_rows.loop_id
+                } if premises.iter().any(|premise| matches!(
+                    premise.source,
+                    SourceAffineFactRef::LoopInvariant(source)
+                        if source.loop_id == completed_rows.loop_id
+                ))
             );
             stack.extend(retained.parent_ids());
         }
@@ -1394,12 +1400,12 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The four assignments replace every value mentioned by the invariant. Two
-/// independent difference facts remain, but neither one nor the interval
-/// domain proves their four-term sum. The written exact sum is therefore the
-/// only affine fact that can establish the arbitrary backedge.
+/// The four assignments replace every value mentioned by the invariant. The
+/// fixed residual rule composes the two still-live L0 requirements in
+/// canonical term-pair order, so the explicit proof remains valid but is no
+/// longer required for this common two-bound backedge.
 #[test]
-fn an_outer_backedge_consumes_the_source_proof_target() {
+fn automatic_residual_reduction_composes_two_live_l0_facts() {
     let source = br#"fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
   requires ile(first, first_limit);
   requires ile(second, second_limit);
@@ -1458,15 +1464,33 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(source.matches(PROOF).count(), 1);
     let without_proof = source.replacen(PROOF, "", 1);
     with_semantics(without_proof.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the fixed two-premise reduction must prove the backedge: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "preserve_pair_bounds")
+            .expect("preserve_pair_bounds function exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("the no-proof form retains one invariant");
+        };
+        assert_eq!(invariant.proof.step, Some(true));
+        assert!(function.entailment.source_proofs.is_empty());
+    });
+
+    let missing_second = without_proof.replacen("  requires ile(second, second_limit);\n", "", 1);
+    with_semantics(missing_second.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("removing the sole combined fact must leave the backedge unproved: {outcome:?}");
+            panic!("one missing bound must leave the backedge unproved: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Inv1);
         let SemanticIssueKind::UndischargedLoopInvariant {
             name, obligation, ..
         } = issue.kind()
         else {
-            panic!("the counterfactual must fail at the invariant backedge");
+            panic!("the incomplete premise set must fail at the invariant backedge");
         };
         assert_eq!(name, "combined");
         assert_eq!(*obligation, LoopInvariantProofObligation::Backedge);

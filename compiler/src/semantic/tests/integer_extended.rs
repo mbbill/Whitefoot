@@ -146,9 +146,9 @@ command fn main() -> status: own ExitStatus pure {
                 used_exhaustion |= matches!(
                     retained,
                     DerivationNode::AffineConsequence {
-                        premise: Some(_),
+                        premises,
                         ..
-                    }
+                    } if !premises.is_empty()
                 );
                 stack.extend(retained.parent_ids());
             }

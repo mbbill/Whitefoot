@@ -284,9 +284,12 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             allocate.entailment.derivations.nodes[ceiling.0 as usize],
             DerivationNode::AffineConsequence {
-                premise: Some(SourceAffineFactRef::SourceProof { source_ordinal: 0 }),
+                ref premises,
                 ..
-            }
+            } if premises.iter().any(|premise| matches!(
+                premise.source,
+                SourceAffineFactRef::SourceProof { source_ordinal: 0 }
+            ))
         ));
     });
 }

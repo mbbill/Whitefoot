@@ -321,10 +321,11 @@ pub(crate) enum DerivationNode {
         parents: Vec<DerivationId>,
     },
     /// One fixed affine consequence used by an integer-domain, bounds,
-    /// callable-boundary, or postcondition judgment. The optional premise
-    /// identifies the source loop invariant subtracted once; parents are the
-    /// L0 interval endpoints used by that subtraction. This is
-    /// ordinary compiler analysis metadata retained for diagnostics.
+    /// callable-boundary, or postcondition judgment. `premises` records every
+    /// source fact and its positive integer factor in the deterministic
+    /// residual reduction; parents are the L0 facts used to close the final
+    /// residual. This is ordinary compiler analysis metadata retained for
+    /// diagnostics.
     AffineConsequence {
         /// Exact L0 conclusion when this affine step feeds an ordinary bound
         /// or goal projection. General integer-domain and postcondition
@@ -332,7 +333,7 @@ pub(crate) enum DerivationNode {
         /// conclusion is held out of line so it does not widen every entry in
         /// the multi-million-node derivation arena.
         relation: Option<Box<Relation>>,
-        premise: Option<SourceAffineFactRef>,
+        premises: Box<[AffinePremiseUse]>,
         parents: Vec<DerivationId>,
     },
     /// One signed goal derived from a fixed normalization clause.
@@ -476,6 +477,13 @@ pub(crate) struct SourceLoopInvariantRef {
 pub(crate) enum SourceAffineFactRef {
     LoopInvariant(SourceLoopInvariantRef),
     SourceProof { source_ordinal: u32 },
+}
+
+/// One source-affine premise selected by the fixed automatic residual rule.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct AffinePremiseUse {
+    pub(crate) source: SourceAffineFactRef,
+    pub(crate) factor: i128,
 }
 
 /// The retained content of one [`DerivationNode::PostconditionCall`].
@@ -993,9 +1001,9 @@ impl DerivationLedger {
         depends |= matches!(
             node,
             DerivationNode::AffineConsequence {
-                premise: Some(_),
+                premises,
                 ..
-            }
+            } if !premises.is_empty()
         );
         if !depends
             && !matches!(
@@ -1217,9 +1225,12 @@ impl DerivationLedger {
                         parents.capacity() * size_of::<DerivationId>()
                     }
                     DerivationNode::AffineConsequence {
-                        relation, parents, ..
+                        relation,
+                        premises,
+                        parents,
                     } => {
                         parents.capacity() * size_of::<DerivationId>()
+                            + premises.len() * size_of::<AffinePremiseUse>()
                             + relation.as_ref().map_or(0, |_| size_of::<Relation>())
                     }
                     DerivationNode::PostconditionDeliveryJoin { detail } => {
@@ -1334,22 +1345,36 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
             })
         }
         DerivationNode::AffineConsequence {
-            premise, parents, ..
+            premises, parents, ..
         } => {
-            let fixed = match premise {
-                Some(SourceAffineFactRef::LoopInvariant(premise)) => {
-                    [1, premise.loop_id.0, premise.source_ordinal]
-                }
-                Some(SourceAffineFactRef::SourceProof { source_ordinal }) => {
-                    [2, *source_ordinal, 0]
-                }
-                None => [0, 0, 0],
-            };
-            fixed.get(index).copied().or_else(|| {
-                parents
-                    .get(index.checked_sub(fixed.len())?)
-                    .map(|parent| parent.0)
-            })
+            const WORDS_PER_PREMISE: usize = 7;
+            if index == 0 {
+                return u32::try_from(premises.len()).ok();
+            }
+            let premise_word = index - 1;
+            if let Some(premise) = premises.get(premise_word / WORDS_PER_PREMISE) {
+                let (tag, first, second) = match premise.source {
+                    SourceAffineFactRef::LoopInvariant(source) => {
+                        (1, source.loop_id.0, source.source_ordinal)
+                    }
+                    SourceAffineFactRef::SourceProof { source_ordinal } => (2, source_ordinal, 0),
+                };
+                let factor = premise.factor as u128;
+                return [
+                    tag,
+                    first,
+                    second,
+                    (factor >> 96) as u32,
+                    (factor >> 64) as u32,
+                    (factor >> 32) as u32,
+                    factor as u32,
+                ]
+                .get(premise_word % WORDS_PER_PREMISE)
+                .copied();
+            }
+            parents
+                .get(premise_word.checked_sub(premises.len() * WORDS_PER_PREMISE)?)
+                .map(|parent| parent.0)
         }
         DerivationNode::GoalNormalization {
             goal,

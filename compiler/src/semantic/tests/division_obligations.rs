@@ -617,9 +617,9 @@ command fn main() -> status: own ExitStatus pure {
                 used_invariant |= matches!(
                     retained,
                     DerivationNode::AffineConsequence {
-                        premise: Some(_),
+                        premises,
                         ..
-                    }
+                    } if !premises.is_empty()
                 );
                 stack.extend(retained.parent_ids());
             }
