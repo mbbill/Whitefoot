@@ -40,13 +40,15 @@ int wf_windows_bridge_init_probe_iocp_init(
     wf_completion_runtime *runtime,
     wf_windows_iocp_entry *entry_storage,
     size_t entry_capacity,
-    DWORD concurrency
+    DWORD concurrency,
+    unsigned options
 ) {
     (void)adapter;
     (void)runtime;
     (void)entry_storage;
     (void)entry_capacity;
     (void)concurrency;
+    (void)options;
     return ERROR_NOT_ENOUGH_MEMORY;
 }
 
