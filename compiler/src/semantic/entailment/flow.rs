@@ -35,9 +35,8 @@ use super::super::postcondition::{
     PostconditionReturnPlace, PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
 };
 use super::affine::{
-    AffineCheckError, AffineCheckState, AffineForm, AffineInequality, AffineTermId,
-    interval_maximum, interval_proves, maximum_safe_residual_factor, residual_measure_decreases,
-    sum_explicit_inequalities,
+    AffineCheckError, AffineCheckState, AffineCoefficient, AffineForm, AffineInequality,
+    AffineTermId, interval_maximum, interval_proves, sum_explicit_inequalities,
 };
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
@@ -378,10 +377,62 @@ struct AffineL0Candidate {
     value: AffineForm,
 }
 
+struct AffineL0Entry {
+    inequality: AffineInequality,
+    left: TermId,
+    right: TermId,
+    bound: i128,
+}
+
+#[derive(Default)]
+struct AffineL0Index {
+    entries: Vec<AffineL0Entry>,
+    by_terms: HashMap<Box<[AffineCoefficient]>, usize>,
+}
+
+impl AffineL0Index {
+    fn entry(&self, terms: &[AffineCoefficient]) -> Option<&AffineL0Entry> {
+        self.by_terms.get(terms).map(|index| &self.entries[*index])
+    }
+}
+
 struct AutomaticAffinePremise {
     inequality: AffineInequality,
     source: Option<SourceAffineFactRef>,
     parent: Option<DerivationId>,
+}
+
+/// Exhausts the unordered coefficient-one premise pairs, including `(p, p)`.
+///
+/// Candidate arithmetic is isolated: an unrepresentable pair is skipped and
+/// cannot hide a later representable witness. Returning after a successful
+/// callback is acceptance-order independent because every earlier candidate
+/// has already failed and adding another premise cannot remove an existing
+/// pair from this source-shaped finite set.
+fn first_two_premise_residual<T>(
+    target: &AffineInequality,
+    premises: &[AutomaticAffinePremise],
+    check: &mut AffineCheckState,
+    mut prove: impl FnMut(&AffineInequality, &mut AffineCheckState) -> Option<T>,
+) -> Option<(usize, usize, T)> {
+    for first in 0..premises.len() {
+        for second in first..premises.len() {
+            let pair = [
+                premises[first].inequality.clone(),
+                premises[second].inequality.clone(),
+            ];
+            let Ok(sum) = sum_explicit_inequalities(&pair, check) else {
+                continue;
+            };
+            let Ok(residual) = AffineInequality::residual_after(target, &sum, check) else {
+                continue;
+            };
+            if let Some(proof) = prove(&residual, check) {
+                return Some((first, second, proof));
+            }
+        }
+    }
+    None
 }
 
 struct AffineIntervalEndpointProof {
@@ -8171,8 +8222,9 @@ impl Analyzer<'_, '_> {
         };
         let candidates = self.affine_l0_candidates(values);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
         matches!(
-            self.affine_residual_proof(&residual, &candidates, values, &closed, &mut check),
+            self.affine_residual_proof(&residual, &l0, values, &closed, &mut check),
             Ok(Some(_))
         )
     }
@@ -8288,16 +8340,63 @@ impl Analyzer<'_, '_> {
         candidates
     }
 
-    /// Converts each live ordinary difference fact whose two endpoints have
-    /// exact affine values into the same canonical inequality vocabulary.
-    /// FactState stores no source ordering, so this bridge uses the unique
-    /// `(left term, right term)` order. Implicit type edges are not inserted
-    /// here; they remain the final interval rule rather than candidate facts.
+    /// Builds the goal-query index for ordinary difference bounds.
+    ///
+    /// This is an ephemeral view over the already-closed L0 state, not a copy
+    /// of `FactState::bounds` in the affine premise set. For each canonical
+    /// affine coefficient vector it retains the strongest live L0 image. A
+    /// target or residual can therefore query exactly its own vector without
+    /// making every L0 edge participate in affine premise enumeration.
+    fn affine_l0_index(
+        &self,
+        candidates: &[AffineL0Candidate],
+        closed: &ClosedState,
+        check: &mut AffineCheckState,
+    ) -> AffineL0Index {
+        let mut index = AffineL0Index::default();
+        for left in candidates {
+            for right in candidates {
+                let Some(bound) = closed.tight_bound(left.term, right.term) else {
+                    continue;
+                };
+                let Ok(inequality) =
+                    AffineInequality::from_bounded_forms(&left.value, &right.value, bound, check)
+                else {
+                    // This L0 image is outside the affine i128 vocabulary.
+                    // It cannot suppress another representable image.
+                    continue;
+                };
+                let key: Box<[AffineCoefficient]> = inequality.terms().into();
+                if let Some(existing) = index.by_terms.get(&key).copied() {
+                    if inequality.upper() < index.entries[existing].inequality.upper() {
+                        index.entries[existing] = AffineL0Entry {
+                            inequality,
+                            left: left.term,
+                            right: right.term,
+                            bound,
+                        };
+                    }
+                    continue;
+                }
+                let entry = index.entries.len();
+                index.by_terms.insert(key, entry);
+                index.entries.push(AffineL0Entry {
+                    inequality,
+                    left: left.term,
+                    right: right.term,
+                    bound,
+                });
+            }
+        }
+        index
+    }
+
+    /// Collects only explicit source-affine facts and automatic value images.
+    /// Ordinary difference bounds remain in L0 and are queried through
+    /// [`Self::affine_l0_index`] for the concrete target or residual.
     fn automatic_affine_premises(
         &self,
         assumptions: &[ActiveAffineFact],
-        candidates: &[AffineL0Candidate],
-        facts: &FactState,
         images: &[AutomaticAffineFact],
         check: &mut AffineCheckState,
     ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
@@ -8310,32 +8409,6 @@ impl Analyzer<'_, '_> {
                     inequality: assumption.inequality.clone(),
                     source: Some(assumption.source),
                     parent: None,
-                });
-            }
-        }
-        let values = candidates
-            .iter()
-            .map(|candidate| (candidate.term, &candidate.value))
-            .collect::<HashMap<_, _>>();
-        let mut bounds = facts
-            .bounds
-            .iter()
-            .map(|(&(left, right), &bound)| (left, right, bound))
-            .collect::<Vec<_>>();
-        bounds.sort_unstable();
-        for (left, right, bound) in bounds {
-            check.charge(1)?;
-            let (Some(left_value), Some(right_value)) = (values.get(&left), values.get(&right))
-            else {
-                continue;
-            };
-            let inequality =
-                AffineInequality::from_bounded_forms(left_value, right_value, bound, check)?;
-            if seen.insert(inequality.clone()) {
-                premises.push(AutomaticAffinePremise {
-                    inequality,
-                    source: None,
-                    parent: Some(facts.bound_proofs[&(left, right)]),
                 });
             }
         }
@@ -8372,36 +8445,23 @@ impl Analyzer<'_, '_> {
         AffineConsequenceProof { premises, parents }
     }
 
-    /// Matches one affine residual exactly against `left_value - right_value`
-    /// and then asks the ordinary difference-bound closure for the required
-    /// bound on the corresponding source terms. Candidate order is the fixed
-    /// binding order above; no subset selection or rewriting search occurs.
+    /// Queries the strongest closed L0 image with exactly this affine vector.
     fn affine_l0_proof(
         &mut self,
         inequality: &AffineInequality,
-        candidates: &[AffineL0Candidate],
+        index: &AffineL0Index,
         closed: &ClosedState,
-        check: &mut AffineCheckState,
     ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
-        for left in candidates {
-            for right in candidates {
-                check.charge(1)?;
-                let candidate = AffineInequality::from_forms(&left.value, &right.value, check)?;
-                if candidate.terms() != inequality.terms() {
-                    continue;
-                }
-                let requested = inequality
-                    .upper()
-                    .checked_sub(candidate.upper())
-                    .ok_or(AffineCheckError::ArithmeticOverflow)?;
-                if let Some(parent) =
-                    closed.bound_proof(left.term, right.term, requested, &mut self.derivations)
-                {
-                    return Ok(Some(vec![parent]));
-                }
-            }
+        let Some(entry) = index.entry(inequality.terms()) else {
+            return Ok(None);
+        };
+        if entry.inequality.upper() > inequality.upper() {
+            return Ok(None);
         }
-        Ok(None)
+        let parent = closed
+            .bound_proof(entry.left, entry.right, entry.bound, &mut self.derivations)
+            .ok_or(AffineCheckError::CoefficientMismatch)?;
+        Ok(Some(vec![parent]))
     }
 
     fn affine_interval_proof(
@@ -8516,7 +8576,7 @@ impl Analyzer<'_, '_> {
     fn affine_residual_proof(
         &mut self,
         inequality: &AffineInequality,
-        candidates: &[AffineL0Candidate],
+        l0: &AffineL0Index,
         values: &AffineFlowState,
         closed: &ClosedState,
         check: &mut AffineCheckState,
@@ -8524,10 +8584,45 @@ impl Analyzer<'_, '_> {
         if closed.contradictory() {
             return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
         }
-        if let Some(parents) = self.affine_l0_proof(inequality, candidates, closed, check)? {
+        if let Some(parents) = self.affine_l0_proof(inequality, l0, closed)? {
             return Ok(Some(parents));
         }
         self.affine_interval_proof(inequality, values, closed, check)
+    }
+
+    /// Exhausts one coefficient-one L0 premise followed by the direct
+    /// L0/interval residual rule. The L0 index contains one strongest entry
+    /// per coefficient vector, so strengthening ordinary facts can only make
+    /// a residual easier and never removes an earlier witness.
+    fn affine_two_l0_proof(
+        &mut self,
+        target: &AffineInequality,
+        l0: &AffineL0Index,
+        values: &AffineFlowState,
+        closed: &ClosedState,
+        check: &mut AffineCheckState,
+    ) -> Option<Vec<DerivationId>> {
+        for entry in &l0.entries {
+            let Ok(residual) = AffineInequality::residual_after(target, &entry.inequality, check)
+            else {
+                continue;
+            };
+            let Ok(Some(mut parents)) =
+                self.affine_residual_proof(&residual, l0, values, closed, check)
+            else {
+                continue;
+            };
+            let Some(parent) =
+                closed.bound_proof(entry.left, entry.right, entry.bound, &mut self.derivations)
+            else {
+                continue;
+            };
+            parents.push(parent);
+            parents.sort_unstable_by_key(|parent| parent.0);
+            parents.dedup();
+            return Some(parents);
+        }
+        None
     }
 
     fn affine_target_proof(
@@ -8540,9 +8635,9 @@ impl Analyzer<'_, '_> {
         let mut check = AffineCheckState::new();
         let candidates = self.affine_l0_candidates(values);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
-        if let Some(parents) = self
-            .affine_residual_proof(target, &candidates, values, &closed, &mut check)
-            .ok()?
+        let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
+        if let Ok(Some(parents)) =
+            self.affine_residual_proof(target, &l0, values, &closed, &mut check)
         {
             return Some(AffineConsequenceProof {
                 premises: Vec::new(),
@@ -8550,19 +8645,12 @@ impl Analyzer<'_, '_> {
             });
         }
         let automatic = self
-            .automatic_affine_premises(
-                assumptions,
-                &candidates,
-                facts,
-                &values.division_images,
-                &mut check,
-            )
+            .automatic_affine_premises(assumptions, &values.division_images, &mut check)
             .ok()?;
 
-        // Preserve the existing complete one-premise route before the
-        // intentionally incomplete multi-premise reduction. This phase is
-        // source-affine order, canonical L0 term-pair order, then automatic
-        // value-image order, and gives every fact exactly coefficient one.
+        // Preserve the complete coefficient-one single-premise route. Every
+        // premise is tried independently; an arithmetic error in one candidate
+        // cannot suppress a later source or value-image fact.
         for (index, assumption) in automatic.iter().enumerate() {
             let Ok(residual) =
                 AffineInequality::residual_after(target, &assumption.inequality, &mut check)
@@ -8573,8 +8661,7 @@ impl Analyzer<'_, '_> {
                 // fact in the same deterministic candidate order.
                 continue;
             };
-            let Ok(proof) =
-                self.affine_residual_proof(&residual, &candidates, values, &closed, &mut check)
+            let Ok(proof) = self.affine_residual_proof(&residual, &l0, values, &closed, &mut check)
             else {
                 continue;
             };
@@ -8587,67 +8674,35 @@ impl Analyzer<'_, '_> {
             }
         }
 
-        // R2 is one canonical, non-backtracking path. At each iteration it
-        // scans unused facts in source-affine, canonical-L0, then automatic
-        // value-image order and
-        // permanently selects the first whose greatest no-sign-crossing
-        // factor strictly decreases the
-        // lexicographic absolute-coefficient residual measure. Therefore it
-        // performs at most N selections and N(N+1)/2 candidate scans; all
-        // arithmetic shares this proof attempt's fixed affine work budget.
-        let mut residual = target.clone();
-        let mut used = vec![false; automatic.len()];
-        let mut selected_premises = Vec::new();
-        loop {
-            let mut selected = None;
-            for (index, assumption) in automatic.iter().enumerate() {
-                if used[index] {
-                    continue;
-                }
-                check.charge(1).ok()?;
-                // Source-affine facts may be applied by their maximal safe
-                // factor. An ordinary L0 proof is retained as one parent and
-                // therefore participates once; the checker never expands a
-                // large numeric factor into repeated derivation edges.
-                let Some(safe_factor) =
-                    maximum_safe_residual_factor(&residual, &assumption.inequality, &mut check)
-                        .ok()?
-                else {
-                    continue;
-                };
-                let factor = if assumption.parent.is_some() {
-                    1
-                } else {
-                    safe_factor
-                };
-                let Ok(candidate) = AffineInequality::residual_after_scaled(
-                    &residual,
-                    &assumption.inequality,
-                    factor,
-                    &mut check,
-                ) else {
-                    continue;
-                };
-                if residual_measure_decreases(&residual, &candidate, &mut check).ok()? {
-                    selected = Some((index, factor, candidate));
-                    break;
-                }
-            }
-            let (index, factor, next) = selected?;
-            used[index] = true;
-            residual = next;
-            selected_premises.push((index, factor));
-            if let Some(parents) = self
-                .affine_residual_proof(&residual, &candidates, values, &closed, &mut check)
-                .ok()?
-            {
-                return Some(Self::affine_consequence_from_residual(
-                    &selected_premises,
-                    &automatic,
-                    parents,
-                ));
-            }
+        // R2 exhausts the source-shaped set of unordered coefficient-one
+        // pairs, including one premise used twice. There is no greedy state,
+        // backtracking cutoff, or cumulative work budget: fact order changes
+        // only which successful derivation is retained, never acceptance.
+        if let Some((first, second, parents)) =
+            first_two_premise_residual(target, &automatic, &mut check, |residual, check| {
+                self.affine_residual_proof(residual, &l0, values, &closed, check)
+                    .ok()
+                    .flatten()
+            })
+        {
+            let selected = if first == second {
+                vec![(first, 2)]
+            } else {
+                vec![(first, 1), (second, 1)]
+            };
+            return Some(Self::affine_consequence_from_residual(
+                &selected, &automatic, parents,
+            ));
         }
+
+        // Ordinary L0 relations remain outside the affine premise set. This
+        // final goal-directed route combines at most two indexed L0 images
+        // without making them compete with an explicit source-affine fact.
+        self.affine_two_l0_proof(target, &l0, values, &closed, &mut check)
+            .map(|parents| AffineConsequenceProof {
+                premises: Vec::new(),
+                parents,
+            })
     }
 
     fn affine_event_kills_binding(binding: BindingId, event: &KillEvent) -> bool {
@@ -10445,5 +10500,121 @@ mod goal_origin_kill_tests {
         invalidate_goal_origin_for_set(&mut state, &target);
 
         assert!(!state.goal_origins.contains_key(&binding));
+    }
+}
+
+#[cfg(test)]
+mod affine_pair_tests {
+    use super::{
+        AffineCheckState, AffineInequality, AffineTermId, AutomaticAffinePremise,
+        first_two_premise_residual, interval_proves,
+    };
+
+    fn inequality(terms: &[(u32, i128)], upper: i128) -> AffineInequality {
+        let terms = terms
+            .iter()
+            .map(|&(term, coefficient)| (AffineTermId::from_index(term), coefficient))
+            .collect::<Vec<_>>();
+        AffineInequality::from_terms(&terms, upper, &mut AffineCheckState::new())
+            .expect("test inequality is representable")
+    }
+
+    fn premise(inequality: AffineInequality) -> AutomaticAffinePremise {
+        AutomaticAffinePremise {
+            inequality,
+            source: None,
+            parent: None,
+        }
+    }
+
+    fn interval_closes_without_atoms(
+        residual: &AffineInequality,
+        check: &mut AffineCheckState,
+    ) -> Option<()> {
+        interval_proves(residual, |_| None, check)
+            .ok()
+            .filter(|proved| *proved)
+            .map(|_| ())
+    }
+
+    #[test]
+    fn two_premise_enumeration_includes_one_fact_used_twice() {
+        let target = inequality(&[(0, 2)], 0);
+        let premises = [premise(inequality(&[(0, 1)], 0))];
+        let selected = first_two_premise_residual(
+            &target,
+            &premises,
+            &mut AffineCheckState::new(),
+            interval_closes_without_atoms,
+        );
+        assert!(matches!(selected, Some((0, 0, ()))));
+    }
+
+    #[test]
+    fn two_independent_facts_close_while_three_remain_outside_the_pair_rule() {
+        let premises = [
+            premise(inequality(&[(0, 1)], 0)),
+            premise(inequality(&[(1, 1)], 0)),
+            premise(inequality(&[(2, 1)], 0)),
+        ];
+        let two = first_two_premise_residual(
+            &inequality(&[(0, 1), (1, 1)], 0),
+            &premises,
+            &mut AffineCheckState::new(),
+            interval_closes_without_atoms,
+        );
+        assert!(two.is_some());
+
+        let three = first_two_premise_residual(
+            &inequality(&[(0, 1), (1, 1), (2, 1)], 0),
+            &premises,
+            &mut AffineCheckState::new(),
+            interval_closes_without_atoms,
+        );
+        assert!(three.is_none());
+    }
+
+    #[test]
+    fn premise_and_term_order_do_not_change_pair_acceptance() {
+        let forward = [
+            premise(inequality(&[(0, 1)], 1)),
+            premise(inequality(&[(0, 2), (1, -2)], 0)),
+            premise(inequality(&[(0, -1), (1, 2)], 0)),
+        ];
+        let reverse = [
+            premise(inequality(&[(0, 2), (1, -1)], 0)),
+            premise(inequality(&[(0, -2), (1, 2)], 0)),
+            premise(inequality(&[(1, 1)], 1)),
+        ];
+        let forward_result = first_two_premise_residual(
+            &inequality(&[(0, 1)], 0),
+            &forward,
+            &mut AffineCheckState::new(),
+            interval_closes_without_atoms,
+        );
+        let reverse_result = first_two_premise_residual(
+            &inequality(&[(1, 1)], 0),
+            &reverse,
+            &mut AffineCheckState::new(),
+            interval_closes_without_atoms,
+        );
+        assert!(forward_result.is_some());
+        assert!(reverse_result.is_some());
+    }
+
+    #[test]
+    fn one_unrepresentable_pair_does_not_hide_a_later_pair() {
+        let premises = [
+            premise(inequality(&[(0, i128::MAX)], 0)),
+            premise(inequality(&[(0, 2), (1, -2)], 0)),
+            premise(inequality(&[(0, -1), (1, 2)], 0)),
+        ];
+        let selected = first_two_premise_residual(
+            &inequality(&[(0, 1)], 0),
+            &premises,
+            &mut AffineCheckState::new(),
+            interval_closes_without_atoms,
+        );
+        assert!(matches!(selected, Some((1, 2, ()))));
     }
 }

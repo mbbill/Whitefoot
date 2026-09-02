@@ -1,8 +1,7 @@
 //! Focused PRF-1 evidence for finite source-written affine proofs.
 
 use crate::{
-    LoopInvariantProofObligation, SemanticIssueKind, SemanticLocation, SemanticOutcome,
-    SemanticRule, SourceProofObligation,
+    SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, SourceProofObligation,
 };
 
 use super::super::entailment::{DerivationNode, ObligationFamily, SourceAffineFactRef};
@@ -364,12 +363,12 @@ fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
     });
 }
 
-/// The automatic multi-premise rule follows one fixed order. Its first source
-/// fact has the target's coefficient vector but an upper bound weaker by one,
-/// so that fixed route stops with a false constant residual. The source proof
-/// selects the later two exact components and establishes the invariant base.
+/// A redundant earlier fact has the target's coefficient vector but an upper
+/// bound weaker by one. Exhaustive pair checking must still find the two later
+/// exact components; adding the weaker fact cannot turn acceptance into
+/// rejection.
 #[test]
-fn fixed_order_stops_after_an_earlier_weaker_fact_without_the_source_proof() {
+fn an_earlier_weaker_fact_does_not_hide_a_later_two_premise_proof() {
     let source = format!(
         r#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
   requires ile(first, first_limit);
@@ -435,18 +434,24 @@ fn fixed_order_stops_after_an_earlier_weaker_fact_without_the_source_proof() {
     assert_eq!(source.matches(PROOF).count(), 1);
     let without_proof = source.replacen(PROOF, "", 1);
     with_semantics(without_proof.as_bytes(), |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the fixed automatic route must leave the invariant base unproved: {outcome:?}");
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the exhaustive pair route must ignore the weaker fact: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Inv1);
-        let SemanticIssueKind::UndischargedLoopInvariant {
-            name, obligation, ..
-        } = issue.kind()
-        else {
-            panic!("the counterfactual must fail at INV-1");
-        };
-        assert_eq!(name, "combined");
-        assert_eq!(*obligation, LoopInvariantProofObligation::Base);
+        let preserve = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "preserve")
+            .expect("preserve function exists");
+        assert!(preserve.entailment.source_proofs.is_empty());
+        let combined = preserve
+            .entailment
+            .loop_invariants
+            .iter()
+            .find(|invariant| invariant.name == "combined")
+            .expect("the target invariant is retained");
+        assert!(combined.proof.base);
+        assert!(combined.proof.discharged());
     });
 }
 

@@ -3,8 +3,9 @@
 //! This module normalizes checked affine expressions, carries exact affine
 //! value forms, constructs canonical inequalities, and applies the fixed
 //! coefficient-one residual and interval rules used by semantic checking. It
-//! performs no heuristic search, every `i128` operation is checked, and every
-//! operation is charged against compiler-owned work limits.
+//! performs no heuristic search and every `i128` operation is checked. Work is
+//! counted for measurement, but a cumulative compiler budget never changes
+//! whether a source proposition is accepted.
 
 /// Dense identity of one term in a semantic-checker-owned affine vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -244,81 +245,6 @@ impl AffineInequality {
     }
 }
 
-/// Selects the greatest positive integer factor that cancels at least one
-/// same-sign coefficient without crossing zero in any same-sign overlap.
-/// `None` means that this premise cannot make the current residual smaller by
-/// the fixed rule. Terms are visited once in canonical identity order.
-pub(crate) fn maximum_safe_residual_factor(
-    residual: &AffineInequality,
-    premise: &AffineInequality,
-    check: &mut AffineCheckState,
-) -> Result<Option<i128>, AffineCheckError> {
-    let mut residual_index = 0;
-    let mut premise_index = 0;
-    let mut factor = None::<u128>;
-    while residual_index < residual.terms().len() && premise_index < premise.terms().len() {
-        check.charge(1)?;
-        let residual_term = residual.terms()[residual_index];
-        let premise_term = premise.terms()[premise_index];
-        match residual_term.term().cmp(&premise_term.term()) {
-            std::cmp::Ordering::Less => residual_index += 1,
-            std::cmp::Ordering::Greater => premise_index += 1,
-            std::cmp::Ordering::Equal => {
-                if residual_term.coefficient().signum() == premise_term.coefficient().signum() {
-                    let candidate = residual_term.coefficient().unsigned_abs()
-                        / premise_term.coefficient().unsigned_abs();
-                    factor = Some(factor.map_or(candidate, |current| current.min(candidate)));
-                }
-                residual_index += 1;
-                premise_index += 1;
-            }
-        }
-    }
-    let Some(factor) = factor.filter(|factor| *factor != 0) else {
-        return Ok(None);
-    };
-    Ok(i128::try_from(factor).ok())
-}
-
-/// The well-founded residual measure is the lexicographic vector of absolute
-/// coefficients over the fixed affine term universe. This checks whether one
-/// candidate is strictly smaller without materializing the dense vector.
-pub(crate) fn residual_measure_decreases(
-    before: &AffineInequality,
-    after: &AffineInequality,
-    check: &mut AffineCheckState,
-) -> Result<bool, AffineCheckError> {
-    let mut before_index = 0;
-    let mut after_index = 0;
-    while before_index < before.terms().len() || after_index < after.terms().len() {
-        check.charge(1)?;
-        let before_term = before.terms().get(before_index).copied();
-        let after_term = after.terms().get(after_index).copied();
-        let next = match (before_term, after_term) {
-            (Some(before), Some(after)) => before.term().min(after.term()),
-            (Some(before), None) => before.term(),
-            (None, Some(after)) => after.term(),
-            (None, None) => break,
-        };
-        let before_magnitude = before_term
-            .filter(|term| term.term() == next)
-            .map_or(0, |term| term.coefficient().unsigned_abs());
-        let after_magnitude = after_term
-            .filter(|term| term.term() == next)
-            .map_or(0, |term| term.coefficient().unsigned_abs());
-        if before_term.is_some_and(|term| term.term() == next) {
-            before_index += 1;
-        }
-        if after_term.is_some_and(|term| term.term() == next) {
-            after_index += 1;
-        }
-        if before_magnitude != after_magnitude {
-            return Ok(after_magnitude < before_magnitude);
-        }
-    }
-    Ok(false)
-}
-
 /// Sums one author-selected affine certificate in exactly the supplied order.
 ///
 /// The caller is responsible for proving every written premise independently.
@@ -396,7 +322,6 @@ struct AffineCheckLimits {
     max_input_terms: usize,
     max_terms: usize,
     max_certificate_premises: usize,
-    max_work: u64,
 }
 
 /// Compiler-owned deterministic ceilings. They are ordinary checker
@@ -406,7 +331,6 @@ const AFFINE_CHECK_LIMITS: AffineCheckLimits = AffineCheckLimits {
     max_input_terms: 4_096,
     max_terms: 4_096,
     max_certificate_premises: 4_096,
-    max_work: 10_000_000,
 };
 
 /// One finite capacity of an affine semantic-check operation.
@@ -416,7 +340,6 @@ pub(crate) enum AffineCheckLimit {
     InputTerms,
     ResultTerms,
     CertificatePremises,
-    Work,
 }
 
 /// Deterministic failure from the affine arithmetic checker.
@@ -427,7 +350,7 @@ pub(crate) enum AffineCheckError {
     CoefficientMismatch,
 }
 
-/// Fixed-work state shared by affine operations in one semantic checking unit.
+/// Structural limits and measured work for one affine checking unit.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AffineCheckState {
     limits: AffineCheckLimits,
@@ -452,14 +375,7 @@ impl AffineCheckState {
     }
 
     pub(crate) fn charge(&mut self, amount: u64) -> Result<(), AffineCheckError> {
-        let used = self
-            .used
-            .checked_add(amount)
-            .ok_or(AffineCheckError::LimitExceeded(AffineCheckLimit::Work))?;
-        if used > self.limits.max_work {
-            return Err(AffineCheckError::LimitExceeded(AffineCheckLimit::Work));
-        }
-        self.used = used;
+        self.used = self.used.saturating_add(amount);
         Ok(())
     }
 }
@@ -584,10 +500,7 @@ fn insert_coefficient(
     {
         let combined = checked_add(existing.coefficient, coefficient)?;
         if combined == 0 {
-            check.charge(
-                u64::try_from(terms.len() - lower)
-                    .map_err(|_| AffineCheckError::LimitExceeded(AffineCheckLimit::Work))?,
-            )?;
+            check.charge((terms.len() - lower) as u64)?;
             terms.remove(lower);
         } else {
             check.charge(1)?;
@@ -601,10 +514,7 @@ fn insert_coefficient(
             AffineCheckLimit::ResultTerms,
         ));
     }
-    check.charge(
-        u64::try_from(terms.len() - lower + 1)
-            .map_err(|_| AffineCheckError::LimitExceeded(AffineCheckLimit::Work))?,
-    )?;
+    check.charge((terms.len() - lower + 1) as u64)?;
     terms.insert(lower, AffineCoefficient { term, coefficient });
     Ok(())
 }
@@ -946,82 +856,6 @@ mod tests {
     }
 
     #[test]
-    fn residual_factor_eliminates_repeated_coefficient_one_uses_in_one_step() {
-        let residual = inequality(&[(0, 6), (1, -6)], 0);
-        let premise = inequality(&[(0, 2), (1, -2)], 0);
-        let mut check = AffineCheckState::new();
-        let factor = maximum_safe_residual_factor(&residual, &premise, &mut check)
-            .expect("fixed factor calculation")
-            .expect("same-sign overlap");
-        assert_eq!(factor, 3);
-        let reduced =
-            AffineInequality::residual_after_scaled(&residual, &premise, factor, &mut check)
-                .expect("scaled residual");
-        assert!(reduced.terms().is_empty());
-        assert_eq!(reduced.upper(), 0);
-        assert!(
-            residual_measure_decreases(&residual, &reduced, &mut check)
-                .expect("well-founded measure")
-        );
-    }
-
-    #[test]
-    fn residual_measure_rejects_an_earlier_term_regression() {
-        let before = inequality(&[(1, 1)], 0);
-        let after = inequality(&[(0, -1)], 0);
-        assert_eq!(
-            residual_measure_decreases(&before, &after, &mut AffineCheckState::new()),
-            Ok(false),
-            "introducing an earlier canonical term is not progress"
-        );
-    }
-
-    #[test]
-    fn opposite_sign_overlap_does_not_supply_a_safe_factor() {
-        let residual = inequality(&[(0, 1)], 0);
-        let premise = inequality(&[(0, -1)], 0);
-        assert_eq!(
-            maximum_safe_residual_factor(&residual, &premise, &mut AffineCheckState::new()),
-            Ok(None)
-        );
-    }
-
-    #[test]
-    fn fixed_residual_order_stops_after_an_earlier_weaker_fact() {
-        // B: x <= 1; P: 2x <= 2y; Q: 2y <= x; target: x <= 0.
-        // P + Q proves the target, but the fixed automatic order B,P,Q first
-        // takes B because it removes x. The residual is then `0 <= -1` and no
-        // remaining fact overlaps it. This deliberate incompleteness is why
-        // explicit prove/use remains available for author-selected witnesses.
-        let target = inequality(&[(0, 1)], 0);
-        let weaker_first = inequality(&[(0, 1)], 1);
-        let first = inequality(&[(0, 2), (1, -2)], 0);
-        let second = inequality(&[(0, -1), (1, 2)], 0);
-        let mut check = AffineCheckState::new();
-        let factor = maximum_safe_residual_factor(&target, &weaker_first, &mut check)
-            .expect("fixed factor")
-            .expect("the earlier fact overlaps x");
-        assert_eq!(factor, 1);
-        let stuck =
-            AffineInequality::residual_after_scaled(&target, &weaker_first, factor, &mut check)
-                .expect("earlier-fact residual");
-        assert!(residual_measure_decreases(&target, &stuck, &mut check).unwrap());
-        assert_eq!(interval_proves(&stuck, |_| None, &mut check), Ok(false));
-        assert_eq!(
-            maximum_safe_residual_factor(&stuck, &first, &mut check),
-            Ok(None)
-        );
-        assert_eq!(
-            maximum_safe_residual_factor(&stuck, &second, &mut check),
-            Ok(None)
-        );
-        assert_eq!(
-            sum_explicit_inequalities(&[first, second], &mut check),
-            Ok(target)
-        );
-    }
-
-    #[test]
     fn every_i128_operation_is_checked() {
         let nested_scale = multiply(i128::MAX, multiply(2, term(1)));
         assert_eq!(
@@ -1070,13 +904,12 @@ mod tests {
     }
 
     #[test]
-    fn fixed_work_accounting_stops_expression_and_work_limits() {
+    fn structural_limits_reject_shape_while_cumulative_work_only_measures() {
         let limits = AffineCheckLimits {
             max_expression_nodes: 2,
             max_input_terms: 8,
             max_terms: 8,
             max_certificate_premises: 8,
-            max_work: 100,
         };
         let mut check = AffineCheckState::with_limits(limits);
         assert_eq!(
@@ -1086,13 +919,17 @@ mod tests {
             ))
         );
 
-        let mut check = AffineCheckState::with_limits(AffineCheckLimits {
-            max_work: 1,
-            ..AFFINE_CHECK_LIMITS
-        });
-        assert_eq!(
-            AffineInequality::from_terms(&[(AffineTermId::from_index(0), 1)], 0, &mut check),
-            Err(AffineCheckError::LimitExceeded(AffineCheckLimit::Work))
-        );
+        let mut check = AffineCheckState::new();
+        check
+            .charge(u64::MAX)
+            .expect("work measurement cannot reject");
+        check
+            .charge(1)
+            .expect("saturated measurement cannot reject");
+        let inequality =
+            AffineInequality::from_terms(&[(AffineTermId::from_index(0), 1)], 0, &mut check)
+                .expect("cumulative work never changes affine acceptance");
+        assert_eq!(inequality.upper(), 0);
+        assert_eq!(check.used(), u64::MAX);
     }
 }
