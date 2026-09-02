@@ -373,6 +373,7 @@ jobs:
             fail_capacity "the capacity observer did not compile" "$?"
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
             -x ir "$capacity_dir/completion-windows-capacity.ll" \
+            -x none \
             "$capacity_dir/windows-runtime.o" \
             "$capacity_dir/wf-floor-windows.o" \
             "$capacity_dir/windows-completion.o" \
