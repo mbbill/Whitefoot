@@ -2217,3 +2217,242 @@ command fn main() -> status: own ExitStatus pure {
         }));
     });
 }
+
+/// [INV-1, ENT-5, ENT-6] An ordinary loop carries no compiler-owned guard, so
+/// a body that increments a cursor under a source guard must publish that
+/// guard where its premises are still live. The published conclusion is a
+/// theorem over the pre-write value images and therefore survives the
+/// increment's own SET-1 target kill to the backedge.
+#[test]
+fn a_published_guard_discharges_an_ordinary_loop_cursor_increment() {
+    let source = br#"fn advance(limit: own u64) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let below = ilt(cursor, limit);
+    if below {
+      invariant guarded: ilt(cursor, limit);
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the published guard must discharge the backedge: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "advance")
+            .expect("advance exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("advance retains one header invariant");
+        };
+        assert_eq!(invariant.name, "bounded");
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
+        let [guard] = function.entailment.source_proofs.as_slice() else {
+            panic!("advance retains one body invariant");
+        };
+        assert_eq!(guard.name, "guarded");
+        assert!(guard.check.discharged());
+    });
+}
+
+/// [INV-1] The same increment without any guard on its reaching path leaves
+/// the header relation unproved at the backedge. The diagnostic names the
+/// written relation, not an internal value image.
+#[test]
+fn an_unguarded_cursor_increment_fails_the_ordinary_loop_backedge() {
+    let source = br#"fn advance(limit: own u64, leave: own Bool) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    if leave {
+      break;
+    } else {
+      set cursor = cursor + 1_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unguarded increment must reject at the backedge: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLoopInvariant {
+            name,
+            obligation,
+            required_relation,
+            ..
+        } = issue.kind()
+        else {
+            panic!(
+                "expected an undischarged loop invariant, got {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(name, "bounded");
+        assert_eq!(*obligation, LoopInvariantProofObligation::Backedge);
+        assert_eq!(required_relation, "ile(cursor, limit)");
+    });
+}
+
+/// [INV-1, ENT-5, ENT-6] A source guard alone is an ordinary L0 relation over
+/// the mutable cursor place. The increment's own SET-1 target kill removes it
+/// and establishes no post-write image, and the L0-to-affine index is an
+/// ephemeral view of the current difference-bound state rather than a
+/// published affine premise. The backedge is therefore unproved until the
+/// writer publishes the guard, which is exactly the repair the test above
+/// applies.
+#[test]
+fn an_unpublished_guard_does_not_survive_the_cursor_write_to_the_backedge() {
+    let source = br#"fn advance(limit: own u64) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let below = ilt(cursor, limit);
+    if below {
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unpublished guard must reject at the backedge: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLoopInvariant {
+            name,
+            obligation,
+            required_relation,
+            ..
+        } = issue.kind()
+        else {
+            panic!(
+                "expected an undischarged loop invariant, got {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(name, "bounded");
+        assert_eq!(*obligation, LoopInvariantProofObligation::Backedge);
+        assert_eq!(required_relation, "ile(cursor, limit)");
+    });
+}
+
+/// [INV-1] A body invariant placed after the cursor write states the same
+/// relation as the header at that program point. It is one ordinary
+/// program-point obligation proved from the published guard, and it coexists
+/// with the header's own base and backedge obligations.
+#[test]
+fn a_body_invariant_after_the_write_and_the_ordinary_header_are_both_proved() {
+    let source = br#"fn advance(limit: own u64) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let below = ilt(cursor, limit);
+    if below {
+      invariant guarded: ilt(cursor, limit);
+      set cursor = cursor + 1_u64;
+      invariant advanced: ile(cursor, limit);
+    } else {
+      break;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("both invariant placements must check: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "advance")
+            .expect("advance exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("advance retains one header invariant");
+        };
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
+        let [guarded, advanced] = function.entailment.source_proofs.as_slice() else {
+            panic!("advance retains both body invariants");
+        };
+        assert_eq!(guarded.name, "guarded");
+        assert!(guarded.check.discharged());
+        assert_eq!(advanced.name, "advanced");
+        assert!(advanced.check.discharged());
+    });
+}
+
+/// [INV-1, ENT-5] A body whose only exit is a `break` reaches no backedge, so
+/// the preservation batch is vacuous. The write on that break edge is not a
+/// continuing kill and the base obligation is still checked.
+#[test]
+fn a_break_only_body_creates_no_ordinary_loop_backedge_obligation() {
+    let source = br#"fn stop(limit: own u64) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    set cursor = limit;
+    break;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a break-only body must leave the backedge vacuous: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "stop")
+            .expect("stop exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("stop retains one header invariant");
+        };
+        assert_eq!(invariant.name, "bounded");
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, None);
+    });
+}
