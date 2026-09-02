@@ -449,8 +449,23 @@ impl CompiledProgram {
     /// a default build no runtime is linked and neither spelling reaches
     /// anything.
     pub fn run_with_workers(&self, workers: Option<&str>) -> Output {
+        self.run_with_workers_and_arguments(workers, &[])
+    }
+
+    /// Runs with an explicit worker setting and raw invocation arguments.
+    ///
+    /// This is the argument-bearing counterpart to [`Self::run_with_workers`]:
+    /// it keeps the runtime environment under test control while allowing a
+    /// program to select a larger deterministic workload through `command.args`.
+    pub fn run_with_workers_and_arguments(
+        &self,
+        workers: Option<&str>,
+        arguments: &[&[u8]],
+    ) -> Output {
         let mut command = Command::new(&self.executable);
-        command.current_dir(&self.directory);
+        command
+            .current_dir(&self.directory)
+            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)));
         match workers {
             Some(count) => command.env("WF_WORKERS", count),
             None => command.env_remove("WF_WORKERS"),

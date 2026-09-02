@@ -135,6 +135,7 @@ Warm-Tree
 $ComputeExpected = Join-Path $Out "compute.expected"
 $IoExpected = Join-Path $Out "io.expected"
 $MixedExpected = Join-Path $Out "mixed.expected"
+$ComputeArguments = @("batch", "batch", "batch")
 Write-AsciiFile -Path $ComputeExpected -Text "420a993efa7437a1 41fa962893d45299`n"
 Write-AsciiFile -Path $IoExpected -Text "18028327385673861873 00000000000134217728`n"
 Write-AsciiFile -Path $MixedExpected -Text "17574306422404092952`n"
@@ -263,8 +264,12 @@ $ObservedExitCode = $ObservedProcess.ExitCode
 $ObservedProcess.Dispose()
 $ExpectedMixedText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($MixedExpected))
 $ObservedLine = $ObservedStderr.TrimEnd([char[]]"`r`n")
+$ObservedPattern = (
+    '^windows-native-mixed-probe status=pass started={0} executed=[1-9][0-9]* grants=[1-9][0-9]* publishes=1024 overlap_publishes=1024 submissions=1025 publications=1025 consumes=1025 helpers=1 fallback=0$' -f
+    ($Workers - 1)
+)
 if ($ObservedExitCode -ne 0 -or $ObservedStdout -cne $ExpectedMixedText `
-    -or $ObservedLine -notmatch '^windows-native-mixed-probe status=pass started=[1-9][0-9]* executed=[1-9][0-9]* grants=[1-9][0-9]* overlap_publishes=[1-9][0-9]* submissions=[1-9][0-9]* publications=[1-9][0-9]* consumes=[1-9][0-9]* fallback=0$') {
+    -or $ObservedLine -cnotmatch $ObservedPattern) {
     throw "mixed identity observer failed: exit=$ObservedExitCode stdout=[$ObservedStdout] stderr=[$ObservedStderr]"
 }
 [IO.File]::WriteAllText(
@@ -288,6 +293,7 @@ $HostLines = @(
     "logical processors visible: $([Environment]::ProcessorCount)",
     "workers: $Workers",
     "affinity mask: 0x$AffinityHex",
+    "compute batches per sampled child: $($ComputeArguments.Count + 1)",
     "memory bytes: $($Os.TotalVisibleMemorySize * 1024)",
     "power: $Power",
     "clang: $ClangVersion",
@@ -299,11 +305,11 @@ $HostLines = @(
 
 $Variants = @{
     "compute.seq" = @{
-        Exe = $ComputeSeq; Args = @(); Expected = $ComputeExpected
+        Exe = $ComputeSeq; Args = $ComputeArguments; Expected = $ComputeExpected
         Workers = $false; RequireIocp = $false
     }
     "compute.par" = @{
-        Exe = $ComputePar; Args = @(); Expected = $ComputeExpected
+        Exe = $ComputePar; Args = $ComputeArguments; Expected = $ComputeExpected
         Workers = $true; RequireIocp = $false
     }
     "io.direct" = @{

@@ -199,10 +199,21 @@ plus IOCP pair, followed by a direct sequential/full pair that prevents the
 two component improvements from hiding a net mixed regression. The exact
 mixed window is source-level
 `read_at, compute_pair, read_at`; `compute_pair` contains the independent
-`churn, churn` pair. Before timing, an observed link requires the first read to
-be outstanding at every compute publication, a non-owner worker execution,
-matching submission/publication/consume counts, and zero fallback. Its fixed
-tree oracle is `17574306422404092952\n`.
+`churn, churn` pair. Before timing, an observed link requires all requested
+non-owner workers to start, a non-owner execution and successful steal, all
+1024 compute publications to occur while the first read is outstanding,
+exactly 1025 accepted/published/consumed completion operations, exactly one
+blocking helper execution (the overlapped open, beside 1024 IOCP reads), and
+zero fallback. Its fixed tree oracle is `17574306422404092952\n`.
+
+The compute pair gives both builds three inert command arguments.
+`par_layout.wf` counts the complete invocation vector, including the invoked
+name, and therefore runs four identical batches in one process. Every batch
+resets both fold seeds, so the exact 34-byte oracle is unchanged. This makes
+the shorter parallel side about 1.4 seconds on the qualifying host and measures
+one initialized pool's steady-state work instead of trying to stabilize a
+sub-second process by weakening the spread bound or averaging repeated pool
+startups. Ordinary argument-free corpus runs still execute one batch.
 
 Each cohort records fifteen candidate/reference ratios, alternating order in
 each pair, after two unrecorded warm-up pairs. A cohort with ratio MAD above

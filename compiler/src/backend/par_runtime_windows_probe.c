@@ -39,14 +39,24 @@ void wf__mixed_observed_file_open_join(
     unsigned *open_outcome
 );
 uint64_t wf__completion_file_fallback_submissions(void);
+uint64_t wf__completion_file_helper_executions(void);
 uint64_t wf__completion_file_submissions(void);
 uint64_t wf__completion_publications(void);
 uint64_t wf__completion_windows_iocp_in_flight(void);
 
+static volatile LONG64 wf_par_mixed_publishes;
 static volatile LONG64 wf_par_mixed_overlap_publishes;
 static volatile LONG64 wf_par_mixed_consumes;
 
+/* The observed fixture has 1024 compute pairs. Each pair publishes once while
+ * its source-earlier positioned read is outstanding. The completion ledger
+ * also contains the one source-earlier open that the emitter can overlap; the
+ * source-last open and positioned reads remain direct by construction. */
+#define WF_PAR_MIXED_EXPECTED_PUBLISHES UINT64_C(1024)
+#define WF_PAR_MIXED_EXPECTED_COMPLETIONS UINT64_C(1025)
+
 void wf__par_publish(void *frame, void (*fn)(void *)) {
+    (void)InterlockedIncrement64(&wf_par_mixed_publishes);
     if (wf__completion_windows_iocp_in_flight() != 0) {
         (void)InterlockedIncrement64(&wf_par_mixed_overlap_publishes);
     }
@@ -83,6 +93,12 @@ static void wf_par_probe_report(void) {
     unsigned long executed = wf__par_worker_execution_count();
     unsigned long grants = wf__par_grant_count();
 #if defined(WF_PAR_MIXED_PROBE)
+    unsigned long long publishes =
+        (unsigned long long)InterlockedCompareExchange64(
+            &wf_par_mixed_publishes,
+            0,
+            0
+        );
     unsigned long long overlap_publishes =
         (unsigned long long)InterlockedCompareExchange64(
             &wf_par_mixed_overlap_publishes,
@@ -101,24 +117,31 @@ static void wf_par_probe_report(void) {
         (unsigned long long)wf__completion_publications();
     unsigned long long fallback =
         (unsigned long long)wf__completion_file_fallback_submissions();
+    unsigned long long helpers =
+        (unsigned long long)wf__completion_file_helper_executions();
     int passed = started > 0 && executed > 0 && grants > 0
-        && overlap_publishes == (unsigned long long)grants
-        && submissions > 0 && publications == submissions
-        && consumes == submissions && fallback == 0;
+        && publishes == WF_PAR_MIXED_EXPECTED_PUBLISHES
+        && overlap_publishes == publishes
+        && submissions == WF_PAR_MIXED_EXPECTED_COMPLETIONS
+        && publications == WF_PAR_MIXED_EXPECTED_COMPLETIONS
+        && consumes == WF_PAR_MIXED_EXPECTED_COMPLETIONS
+        && helpers == 1 && fallback == 0;
 
     fprintf(
         stderr,
         "windows-native-mixed-probe status=%s started=%lu executed=%lu "
-        "grants=%lu overlap_publishes=%llu submissions=%llu "
-        "publications=%llu consumes=%llu fallback=%llu\n",
+        "grants=%lu publishes=%llu overlap_publishes=%llu submissions=%llu "
+        "publications=%llu consumes=%llu helpers=%llu fallback=%llu\n",
         passed ? "pass" : "fail",
         started,
         executed,
         grants,
+        publishes,
         overlap_publishes,
         submissions,
         publications,
         consumes,
+        helpers,
         fallback
     );
 #else

@@ -189,8 +189,13 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
-  doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes.";
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap), traps {
+  doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
+  let batches = 1_u64;
+  region 'arguments {
+    let invocation_count = args_count<'arguments>(args: &'arguments args);
+    set batches = invocation_count;
+  }
   let tree = build(depth: 6_u64, w: 512.0_f64);
   let words = buffer_new(8192_u64, 0.25_f64);
   let room = len(words);
@@ -209,39 +214,55 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     }
     set w = w +wrap 1_u64;
   }
-  let i = 0_u64;
   let last = 0.0_f64;
-  let seed = 16.0_f64;
-  loop @reps {
-    let done = ieq(i, 800_u64);
-    if done {
-      break @reps;
+  let batch = 0_u64;
+  loop @layout_batches {
+    let all_batches_done = ige(batch, batches);
+    if all_batches_done {
+      break @layout_batches;
     }
-    region 'tree {
-      region 'words {
-        let total = layout<'tree, 'words>(node: &uniq 'tree tree, words: &'words words, inh: seed);
-        set last = total;
+    let i = 0_u64;
+    let seed = 16.0_f64;
+    loop @reps {
+      let done = ieq(i, 800_u64);
+      if done {
+        break @reps;
       }
+      region 'tree {
+        region 'words {
+          let total = layout<'tree, 'words>(node: &uniq 'tree tree, words: &'words words, inh: seed);
+          set last = total;
+        }
+      }
+      set seed = fadd.strict(seed, 0.0625_f64);
+      set i = i +wrap 1_u64;
     }
-    set seed = fadd.strict(seed, 0.0625_f64);
-    set i = i +wrap 1_u64;
+    set batch = batch +wrap 1_u64;
   }
-  let j = 0_u64;
   let banded = 0.0_f64;
-  let band_seed = 16.0_f64;
-  loop @band_reps {
-    let done = ieq(j, 800_u64);
-    if done {
-      break @band_reps;
+  let band_batch = 0_u64;
+  loop @band_batches {
+    let all_batches_done = ige(band_batch, batches);
+    if all_batches_done {
+      break @band_batches;
     }
-    region 'banded_tree {
-      region 'banded_words {
-        let total = layout_banded<'banded_tree, 'banded_words>(node: &uniq 'banded_tree tree, words: &'banded_words words, count: 4096_u64, inh: band_seed);
-        set banded = total;
+    let j = 0_u64;
+    let band_seed = 16.0_f64;
+    loop @band_reps {
+      let done = ieq(j, 800_u64);
+      if done {
+        break @band_reps;
       }
+      region 'banded_tree {
+        region 'banded_words {
+          let total = layout_banded<'banded_tree, 'banded_words>(node: &uniq 'banded_tree tree, words: &'banded_words words, count: 4096_u64, inh: band_seed);
+          set banded = total;
+        }
+      }
+      set band_seed = fadd.strict(band_seed, 0.0625_f64);
+      set j = j +wrap 1_u64;
     }
-    set band_seed = fadd.strict(band_seed, 0.0625_f64);
-    set j = j +wrap 1_u64;
+    set band_batch = band_batch +wrap 1_u64;
   }
   let last_bits = reinterpret<f64, u64>(last);
   let banded_bits = reinterpret<f64, u64>(banded);
