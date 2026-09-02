@@ -445,6 +445,22 @@ pub(crate) fn normalize_less_equal(
     right: &AffineExpression,
     check: &mut AffineCheckState,
 ) -> Result<AffineInequality, AffineCheckError> {
+    normalize_bounded_less_equal(left, right, 0, check)
+}
+
+/// Normalizes one explicit `left - right <= bound` expression after both
+/// source expressions have been formed in the written direction.
+///
+/// Ordered-root checking uses this after applying the root's fixed direction:
+/// `ige(a, b)` reaches this function as `b - a <= 0`, while `igt(a, b)`
+/// reaches it as `b - a <= -1`. This prevents a discarded forward direction
+/// from deciding formation success at an `i128` boundary.
+pub(crate) fn normalize_bounded_less_equal(
+    left: &AffineExpression,
+    right: &AffineExpression,
+    bound: i128,
+    check: &mut AffineCheckState,
+) -> Result<AffineInequality, AffineCheckError> {
     let mut scheduled_nodes = 0_usize;
     // Form every child before applying its parent operation. In particular,
     // an outer multiplication by zero cannot erase an overflowing inner
@@ -452,7 +468,7 @@ pub(crate) fn normalize_less_equal(
     // its own before the zero is applied.
     let left = normalize_expression(left, check, &mut scheduled_nodes)?;
     let right = normalize_expression(right, check, &mut scheduled_nodes)?;
-    AffineInequality::from_forms(&left, &right, check)
+    AffineInequality::from_bounded_forms(&left, &right, bound, check)
 }
 
 #[derive(Clone, Copy)]

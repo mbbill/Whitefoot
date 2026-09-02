@@ -26,8 +26,8 @@ use super::super::model::{
     CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor, CheckedEnumType,
     CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
     CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedNumericType, CheckedSetTarget, CheckedStatement, CheckedType,
-    CheckedValue, FloatType, IntegerType, ValueInitializerKind,
+    CheckedNominalKind, CheckedNumericType, CheckedProofUseSource, CheckedSetTarget,
+    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, ValueInitializerKind,
 };
 use super::super::places::{BindingSummary, PlaceMap, ResolvedPlace};
 use super::super::postcondition::{
@@ -117,6 +117,7 @@ struct EntryImageRecord {
 /// A `loop` frame collecting break-edge states for the continuation join.
 struct LoopFrame {
     id: CheckedLoopId,
+    invariant_declarations: Box<[crate::DeclarationId]>,
     scope_depth: usize,
     /// The compiler-owned counted binder while this is a `for` frame. An
     /// ordinary `loop` has no binder and contributes no affine index image.
@@ -199,6 +200,10 @@ struct AffineFlowState {
     assumptions: Vec<ActiveAffineFact>,
     exports: Vec<ActiveAffineFact>,
     proofs: Vec<ActiveAffineFact>,
+    /// Exact immutable theorem image published by each resolved invariant
+    /// declaration. Resolution owns visibility; this map carries only the
+    /// canonical proposition proved at that declaration's execution point.
+    published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
     /// Fixed unsigned literal-division consequences over exact runtime value
     /// atoms. A binding kill removes the binding-to-value map, not a theorem
     /// about the old value: a later value receives another atom, while a live
@@ -3268,7 +3273,11 @@ impl Analyzer<'_, '_> {
         self.exit_counted_capture_scope_one(&mut states.facts, range_path);
     }
 
-    fn remove_active_loop_invariants(state: &mut AffineFlowState, loop_id: CheckedLoopId) {
+    fn remove_active_loop_invariants(
+        state: &mut AffineFlowState,
+        loop_id: CheckedLoopId,
+        declarations: &[crate::DeclarationId],
+    ) {
         let retain = |assumption: &ActiveAffineFact| {
             !matches!(
                 assumption.source,
@@ -3279,6 +3288,9 @@ impl Analyzer<'_, '_> {
             )
         };
         state.assumptions.retain(retain);
+        for declaration in declarations {
+            state.published_invariants.remove(declaration);
+        }
     }
 
     fn affine_facts(state: &AffineFlowState) -> Vec<ActiveAffineFact> {
@@ -3314,13 +3326,19 @@ impl Analyzer<'_, '_> {
             .loops
             .iter()
             .skip(loop_depth)
-            .map(|frame| (frame.id, frame.capture_path.clone()))
+            .map(|frame| {
+                (
+                    frame.id,
+                    frame.capture_path.clone(),
+                    frame.invariant_declarations.clone(),
+                )
+            })
             .collect::<Vec<_>>();
-        for (loop_id, path) in loops {
+        for (loop_id, path, declarations) in loops {
             if let Some(path) = path {
                 self.exit_counted_capture_scope(states, &path);
             }
-            Self::remove_active_loop_invariants(&mut states.affine, loop_id);
+            Self::remove_active_loop_invariants(&mut states.affine, loop_id, &declarations);
         }
     }
 
@@ -7358,6 +7376,17 @@ impl Analyzer<'_, '_> {
             assumptions: Self::intersect_affine_facts(states, |state| &state.assumptions),
             exports: Self::intersect_affine_facts(states, |state| &state.exports),
             proofs: self.join_source_proof_facts(states),
+            published_invariants: first
+                .affine
+                .published_invariants
+                .iter()
+                .filter(|(declaration, inequality)| {
+                    states.iter().skip(1).all(|state| {
+                        state.affine.published_invariants.get(declaration) == Some(*inequality)
+                    })
+                })
+                .map(|(declaration, inequality)| (*declaration, inequality.clone()))
+                .collect(),
             // Equality includes the exact value atoms and originating proof.
             // Therefore this only preserves the same incoming theorem. Two
             // branches that independently compute equal-looking divisions
@@ -8042,6 +8071,9 @@ impl Analyzer<'_, '_> {
                 &mut AffineCheckState::new(),
             );
             if base_batch && let Some(inequality) = target {
+                state
+                    .published_invariants
+                    .insert(invariant.declaration, inequality.clone());
                 state.assumptions.push(ActiveAffineFact {
                     source: SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
                         loop_id,
@@ -8238,6 +8270,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         premises: &[Option<AffineInequality>],
         l0_premises: &[Option<Relation>],
+        published_premises: &[bool],
         combination: Result<bool, SourceProofCertificateFailure>,
         redundant: bool,
         values: &AffineFlowState,
@@ -8246,7 +8279,11 @@ impl Analyzer<'_, '_> {
         let premises = premises
             .iter()
             .zip(l0_premises)
-            .map(|(premise, relation)| {
+            .zip(published_premises)
+            .map(|((premise, relation), published)| {
+                if *published {
+                    return true;
+                }
                 let Some(premise) = premise.as_ref() else {
                     return false;
                 };
@@ -9120,7 +9157,12 @@ impl Analyzer<'_, '_> {
                 let l0_premises = proof
                     .uses
                     .iter()
-                    .map(|written_use| self.checked_affine_relation_l0(&written_use.relation))
+                    .map(|written_use| match &written_use.source {
+                        CheckedProofUseSource::Named(_) => None,
+                        CheckedProofUseSource::Relation(relation) => {
+                            self.checked_affine_relation_l0(relation)
+                        }
+                    })
                     .collect::<Vec<_>>();
                 let target = self.checked_affine_relation_inequality(
                     &proof.target,
@@ -9130,12 +9172,26 @@ impl Analyzer<'_, '_> {
                 let premises = proof
                     .uses
                     .iter()
-                    .map(|written_use| {
-                        self.checked_affine_relation_inequality(
-                            &written_use.relation,
-                            &mut state.affine,
-                            &mut AffineCheckState::new(),
-                        )
+                    .map(|written_use| match &written_use.source {
+                        CheckedProofUseSource::Named(declaration) => {
+                            state.affine.published_invariants.get(declaration).cloned()
+                        }
+                        CheckedProofUseSource::Relation(relation) => self
+                            .checked_affine_relation_inequality(
+                                relation,
+                                &mut state.affine,
+                                &mut AffineCheckState::new(),
+                            ),
+                    })
+                    .collect::<Vec<_>>();
+                let published_premises = proof
+                    .uses
+                    .iter()
+                    .map(|written_use| match &written_use.source {
+                        CheckedProofUseSource::Named(declaration) => {
+                            state.affine.published_invariants.contains_key(declaration)
+                        }
+                        CheckedProofUseSource::Relation(_) => false,
                     })
                     .collect::<Vec<_>>();
                 let certificate_premises = proof
@@ -9187,6 +9243,7 @@ impl Analyzer<'_, '_> {
                 let check = self.source_proof_check(
                     &premises,
                     &l0_premises,
+                    &published_premises,
                     combination,
                     redundant,
                     &state.affine,
@@ -9200,6 +9257,10 @@ impl Analyzer<'_, '_> {
                     };
                     if check.discharged() {
                         state.affine.proofs.push(fact);
+                        state
+                            .affine
+                            .published_invariants
+                            .insert(proof.declaration, target);
                     }
                 }
                 self.source_proofs.push(SourceProofOutcome {
@@ -9374,9 +9435,14 @@ impl Analyzer<'_, '_> {
                 );
                 self.apply_loop_kills(state, &kills, None);
                 self.activate_loop_invariant_batch(*id, invariants, base_batch, &mut state.affine);
+                let invariant_declarations = invariants
+                    .iter()
+                    .map(|invariant| invariant.declaration)
+                    .collect::<Vec<_>>();
                 let head_entry_images = state.entry_images.clone();
                 self.loops.push(LoopFrame {
                     id: *id,
+                    invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: self.scopes.len(),
                     counted_binder: None,
                     capture_path: None,
@@ -9408,7 +9474,11 @@ impl Analyzer<'_, '_> {
                 let frame = self.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
                 for break_state in &mut breaks {
-                    Self::remove_active_loop_invariants(&mut break_state.affine, *id);
+                    Self::remove_active_loop_invariants(
+                        &mut break_state.affine,
+                        *id,
+                        &invariant_declarations,
+                    );
                 }
                 let has_breaks = !breaks.is_empty();
                 // The continuation is the join over the break edges; with no
@@ -9529,8 +9599,13 @@ impl Analyzer<'_, '_> {
                 self.activate_loop_invariant_batch(*id, invariants, base_batch, &mut state.affine);
 
                 let head = state.clone();
+                let invariant_declarations = invariants
+                    .iter()
+                    .map(|invariant| invariant.declaration)
+                    .collect::<Vec<_>>();
                 self.loops.push(LoopFrame {
                     id: *id,
+                    invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: outer_scope_depth,
                     counted_binder: Some(*binder),
                     capture_path: Some(range_path.clone()),
@@ -9612,7 +9687,11 @@ impl Analyzer<'_, '_> {
                 let frame = self.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
                 for break_state in &mut breaks {
-                    Self::remove_active_loop_invariants(&mut break_state.affine, *id);
+                    Self::remove_active_loop_invariants(
+                        &mut break_state.affine,
+                        *id,
+                        &invariant_declarations,
+                    );
                 }
 
                 // Unlike an ordinary loop, the real false-header edge always
@@ -9650,7 +9729,11 @@ impl Analyzer<'_, '_> {
                         exhaustion.affine.exports.push(fact);
                     }
                 }
-                Self::remove_active_loop_invariants(&mut exhaustion.affine, *id);
+                Self::remove_active_loop_invariants(
+                    &mut exhaustion.affine,
+                    *id,
+                    &invariant_declarations,
+                );
                 self.exit_scopes_to(&mut exhaustion, outer_scope_depth);
                 self.exit_counted_capture_scope(&mut exhaustion, &range_path);
                 let mut exits = Vec::with_capacity(1 + breaks.len());

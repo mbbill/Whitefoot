@@ -208,6 +208,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         allowed_values: &HashSet<DeclarationId>,
         names: &mut HashSet<String>,
     ) -> Result<CheckedLoopInvariant, CheckStop> {
+        let declaration = self.declaration_at(node, DeclarationRole::Invariant)?;
         let identifiers = self.tree.direct_identifiers(node)?;
         let [name_token, relation_token] = identifiers.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -236,6 +237,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         Ok(CheckedLoopInvariant {
             loop_id,
+            declaration: declaration.id(),
             name,
             relation,
         })

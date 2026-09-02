@@ -7,14 +7,16 @@ use crate::{
 };
 
 use super::super::super::entailment::affine::{
-    AffineCheckError, AffineCheckState, AffineExpression, AffineTermId, normalize_less_equal,
+    AffineCheckError, AffineCheckState, AffineExpression, AffineTermId,
+    normalize_bounded_less_equal,
 };
 use super::super::super::model::{
     CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation, CheckedMode,
-    CheckedProofUse, CheckedSourceProof, CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    CheckedProofUse, CheckedProofUseSource, CheckedSourceProof, CheckedStatement, CheckedType,
+    CheckedValue, IntegerType,
 };
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding};
-use super::{ControlCounters, StatementResult};
+use super::StatementResult;
 
 /// The semantic owner of the shared proof-only affine expression grammar.
 /// The syntax and arithmetic limits are identical; only lookup roles and
@@ -22,25 +24,31 @@ use super::{ControlCounters, StatementResult};
 #[derive(Clone, Copy)]
 pub(super) enum AffineProofOwner {
     LoopInvariant,
-    SourceProof,
+    LocalInvariant,
 }
 
 impl AffineProofOwner {
     const fn value_role(self) -> LexicalUseRole {
         match self {
             Self::LoopInvariant => LexicalUseRole::InvariantValue,
-            Self::SourceProof => LexicalUseRole::ProofValue,
+            Self::LocalInvariant => LexicalUseRole::InvariantValue,
         }
     }
 }
 
+#[derive(Clone, Copy)]
+struct OrderedRelationNormalization {
+    reverse: bool,
+    bound: i128,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    pub(super) fn check_source_proof(
+    pub(super) fn check_local_invariant(
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        counters: &mut ControlCounters<'_>,
     ) -> Result<StatementResult, CheckStop> {
+        let declaration = self.declaration_at(node, crate::DeclarationRole::Invariant)?;
         let identifiers = self.tree.direct_identifiers(node)?;
         let [name_token, relation_token] = identifiers.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -48,52 +56,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let name = std::str::from_utf8(self.tree.token_bytes(*name_token)?)
             .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
             .to_owned();
-        if counters.proof_names.contains(&name) {
-            return self.invalid_affine_proof(
-                AffineProofOwner::SourceProof,
-                node,
-                "one lexical scope contains two local invariants with the same name",
-                "give every local invariant in this lexical scope a distinct name",
-            );
+        if name != declaration.spelling() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        counters.proof_names.push(name.clone());
-        self.require_ile_relation(AffineProofOwner::SourceProof, node, *relation_token)?;
 
         let allowed_values = bindings.keys().copied().collect::<HashSet<_>>();
-        let target = self.check_affine_relation(
+        let target = self.check_ordered_affine_relation(
             node,
+            *relation_token,
             bindings,
             &allowed_values,
-            AffineProofOwner::SourceProof,
+            AffineProofOwner::LocalInvariant,
         )?;
         let premise_nodes = self.tree.children_with(node, Production::ProofPremise)?;
         let mut uses = Vec::with_capacity(premise_nodes.len());
         for premise_node in premise_nodes {
-            let factor = self.source_proof_factor(premise_node)?;
+            let factor = self.invariant_use_factor(premise_node)?;
             let identifiers = self.tree.direct_identifiers(premise_node)?;
-            let [relation_token] = identifiers.as_slice() else {
+            let [carrier_token] = identifiers.as_slice() else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
-            self.require_ile_relation(
-                AffineProofOwner::SourceProof,
-                premise_node,
-                *relation_token,
-            )?;
+            let relation_form = !self
+                .tree
+                .children_with(premise_node, Production::AffineExpr)?
+                .is_empty();
+            let source = if relation_form {
+                CheckedProofUseSource::Relation(self.check_ordered_affine_relation(
+                    premise_node,
+                    *carrier_token,
+                    bindings,
+                    &allowed_values,
+                    AffineProofOwner::LocalInvariant,
+                )?)
+            } else {
+                let usage = self.use_at(premise_node, LexicalUseRole::InvariantFact)?;
+                let ResolvedTarget::Source {
+                    declaration,
+                    class: DeclarationClass::Invariant,
+                } = usage.target()
+                else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                CheckedProofUseSource::Named(declaration)
+            };
             uses.push(CheckedProofUse {
                 node_path: self.tree.path(premise_node)?.clone(),
                 factor,
-                relation: self.check_affine_relation(
-                    premise_node,
-                    bindings,
-                    &allowed_values,
-                    AffineProofOwner::SourceProof,
-                )?,
+                source,
             });
         }
 
         Ok(Self::continuing_statement(
             CheckedStatement::Proof(CheckedSourceProof {
                 node_path: self.tree.path(node)?.clone(),
+                declaration: declaration.id(),
                 name,
                 target,
                 uses,
@@ -106,9 +122,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// The lexer already classifies bare `[0-9]+` as `digits`; typed runtime
     /// literals are deliberately a different terminal. This keeps the
-    /// multiplier independent of machine integer types. Omission and an
-    /// explicitly written `1 *` both normalize to factor one.
-    fn source_proof_factor(&self, node: NodeId) -> Result<i128, CheckStop> {
+    /// multiplier independent of machine integer types. Omission is the
+    /// canonical spelling of factor one; an explicit `1 *` is rejected.
+    fn invariant_use_factor(&self, node: NodeId) -> Result<i128, CheckStop> {
         let Some(token) = self
             .tree
             .direct_token_with(node, crate::syntax::terminal::TerminalPredicate::Digits)?
@@ -118,15 +134,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let bytes = self.tree.token_bytes(token)?;
         if bytes == b"0" {
             return self.invalid_affine_proof(
-                AffineProofOwner::SourceProof,
+                AffineProofOwner::LocalInvariant,
                 node,
                 "a use multiplier is zero",
                 "write a positive bare-decimal multiplier, or omit it when it is one",
             );
         }
+        if bytes == b"1" {
+            return self.invalid_affine_proof(
+                AffineProofOwner::LocalInvariant,
+                node,
+                "an explicitly written use multiplier one is not canonical",
+                "omit `1 *` from this use",
+            );
+        }
         if bytes.len() > 1 && bytes.first() == Some(&b'0') {
             return self.invalid_affine_proof(
-                AffineProofOwner::SourceProof,
+                AffineProofOwner::LocalInvariant,
                 node,
                 "a use multiplier is not in canonical decimal form",
                 "remove leading zeroes from the positive bare-decimal multiplier",
@@ -137,7 +161,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .and_then(|digits| digits.parse::<i128>().ok())
         else {
             return self.invalid_affine_proof(
-                AffineProofOwner::SourceProof,
+                AffineProofOwner::LocalInvariant,
                 node,
                 "a use multiplier exceeds the positive i128 proof domain",
                 "write a positive bare-decimal multiplier no greater than 170141183460469231731687303715884105727",
@@ -146,24 +170,72 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(factor)
     }
 
-    pub(super) fn require_ile_relation(
+    fn ordered_relation_normalization(
         &self,
         owner: AffineProofOwner,
         node: NodeId,
         relation_token: usize,
-    ) -> Result<(), CheckStop> {
-        if self.tree.token_bytes(relation_token)? == b"ile" {
-            return Ok(());
+    ) -> Result<OrderedRelationNormalization, CheckStop> {
+        let normalization = match self.tree.token_bytes(relation_token)? {
+            b"ile" => OrderedRelationNormalization {
+                reverse: false,
+                bound: 0,
+            },
+            b"ilt" => OrderedRelationNormalization {
+                reverse: false,
+                bound: -1,
+            },
+            b"ige" => OrderedRelationNormalization {
+                reverse: true,
+                bound: 0,
+            },
+            b"igt" => OrderedRelationNormalization {
+                reverse: true,
+                bound: -1,
+            },
+            _ => {
+                return self.invalid_affine_proof(
+                    owner,
+                    node,
+                    "the invariant root is not an admitted ordered integer relation",
+                    "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
+                );
+            }
+        };
+        Ok(normalization)
+    }
+
+    pub(super) fn check_ordered_affine_relation(
+        &self,
+        node: NodeId,
+        relation_token: usize,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+        owner: AffineProofOwner,
+    ) -> Result<CheckedAffineRelation, CheckStop> {
+        let normalization = self.ordered_relation_normalization(owner, node, relation_token)?;
+        let mut relation = self.form_affine_relation(node, bindings, allowed_values, owner)?;
+        if normalization.reverse {
+            std::mem::swap(&mut relation.left, &mut relation.right);
         }
-        self.invalid_affine_proof(
-            owner,
-            node,
-            "the affine proof relation is not the admitted `ile` relation",
-            "write `ile(left, right)` at this proof relation",
-        )
+        relation.bound = normalization.bound;
+        self.validate_affine_relation(node, &relation, owner)?;
+        Ok(relation)
     }
 
     pub(super) fn check_affine_relation(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+        owner: AffineProofOwner,
+    ) -> Result<CheckedAffineRelation, CheckStop> {
+        let relation = self.form_affine_relation(node, bindings, allowed_values, owner)?;
+        self.validate_affine_relation(node, &relation, owner)?;
+        Ok(relation)
+    }
+
+    fn form_affine_relation(
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -176,12 +248,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let left = self.check_affine_expression(*left_node, bindings, allowed_values, owner)?;
         let right = self.check_affine_expression(*right_node, bindings, allowed_values, owner)?;
-        let affine_left = checked_affine_expression(&left)
+        Ok(CheckedAffineRelation {
+            node_path: self.tree.path(node)?.clone(),
+            left,
+            right,
+            bound: 0,
+        })
+    }
+
+    fn validate_affine_relation(
+        &self,
+        node: NodeId,
+        relation: &CheckedAffineRelation,
+        owner: AffineProofOwner,
+    ) -> Result<(), CheckStop> {
+        let affine_left = checked_affine_expression(&relation.left)
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let affine_right = checked_affine_expression(&right)
+        let affine_right = checked_affine_expression(&relation.right)
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let mut affine_check = AffineCheckState::new();
-        match normalize_less_equal(&affine_left, &affine_right, &mut affine_check).map(drop) {
+        match normalize_bounded_less_equal(
+            &affine_left,
+            &affine_right,
+            relation.bound,
+            &mut affine_check,
+        )
+        .map(drop)
+        {
             Ok(()) => {}
             Err(AffineCheckError::ArithmeticOverflow) => {
                 return self.invalid_affine_proof(
@@ -201,12 +294,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             Err(_) => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
-        Ok(CheckedAffineRelation {
-            node_path: self.tree.path(node)?.clone(),
-            left,
-            right,
-            bound: 0,
-        })
+        Ok(())
     }
 
     fn check_affine_expression(
@@ -414,7 +502,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             AffineProofOwner::LoopInvariant => {
                 self.invalid_loop_invariant(node, reason, mechanical_fix)
             }
-            AffineProofOwner::SourceProof => self.issue_node(
+            AffineProofOwner::LocalInvariant => self.issue_node(
                 SemanticRule::Prf1,
                 node,
                 SemanticIssueKind::InvalidSourceProof {

@@ -72,9 +72,6 @@ pub(super) struct ControlCounters<'state> {
     /// kept only to render the owner in a release-attributed EFF-2
     /// diagnostic. Every allocation site pushes exactly one name.
     pub(super) binding_names: &'state mut Vec<String>,
-    /// PRF-1 proof labels already written in this function. Labels are
-    /// diagnostic identities, not lexical declarations or premise selectors.
-    pub(super) proof_names: &'state mut Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -174,11 +171,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(Self::continuing_statement(statement, value.effects))
             }
-            Production::InvariantStmt => self.invalid_loop_invariant(
-                node,
-                "an invariant is not in the direct prefix of a counted-loop body",
-                "move the invariant to the beginning of the directly enclosing for body",
-            ),
+            Production::InvariantStmt => self.check_local_invariant(node, bindings),
             Production::ReturnStmt => {
                 let expression_node = self
                     .tree

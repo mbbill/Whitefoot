@@ -28,14 +28,14 @@ fn assert_prf1_issue(source: &[u8], expected: SourceProofObligation) {
         assert_eq!(name, "upper_bound");
         assert_eq!(*obligation, expected);
         let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("PRF-1 must cite the complete prove statement");
+            panic!("PRF-1 must cite the complete invariant statement");
         };
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("proof source is UTF-8");
         assert!(
-            cited.starts_with("prove upper_bound: ile("),
-            "PRF-1 cited {cited:?} instead of the complete prove statement"
+            cited.starts_with("invariant upper_bound: ile("),
+            "PRF-1 cited {cited:?} instead of the complete invariant statement"
         );
         assert!(cited.ends_with('}'));
     });
@@ -625,7 +625,7 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
   requires ile(b, b_limit);
   requires ile(c, c_limit);
 }} {{
-  prove total: ile(a + b + c, a_limit + b_limit + c_limit) {{
+  invariant total: ile(a + b + c, a_limit + b_limit + c_limit) {{
     use ile(a, a_limit);
     use ile(b, b_limit);
     use ile(c, c_limit);
@@ -661,7 +661,7 @@ fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
         r#"fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {{
   requires ile(value, limit);
 }} {{
-  prove upper_bound: ile(value, limit) {{
+  invariant upper_bound: ile(value, limit) {{
     use ile(value, limit);
   }}
   return unit;
@@ -678,7 +678,7 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
         r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {{
   requires ile(value, limit);
 }} {{
-  prove upper_bound: ile(3_u64 * value, 3_u64 * limit) {{
+  invariant upper_bound: ile(3_u64 * value, 3_u64 * limit) {{
     use ile(value, limit);
     use ile(value, limit);
     use ile(value, limit);
@@ -695,4 +695,151 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
             repeated: 1,
         },
     );
+}
+
+#[test]
+fn explicit_factors_apply_to_relation_and_named_uses() {
+    let source = format!(
+        r#"fn relation_scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  invariant scaled: ile(4_u64 * value, 4_u64 * limit) {{
+    use 4 * ile(value, limit);
+  }}
+  return unit;
+}}
+
+fn named_scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  invariant unit_bound: ile(value, limit);
+  invariant scaled: ile(4_u64 * value, 4_u64 * limit) {{
+    use 4 * unit_bound;
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("both explicit-factor source forms must check: {outcome:?}");
+        };
+        for (name, count) in [("relation_scale", 1), ("named_scale", 2)] {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("focused function exists");
+            assert_eq!(function.entailment.source_proofs.len(), count);
+            assert!(
+                function
+                    .entailment
+                    .source_proofs
+                    .iter()
+                    .all(|proof| proof.check.discharged())
+            );
+        }
+    });
+}
+
+#[test]
+fn a_named_use_keeps_the_published_value_image_across_set() {
+    let source = format!(
+        r#"fn update(value: own u64, replacement: own u64, limit: own u64) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  invariant before: ile(value, limit);
+  set value = replacement;
+  invariant after: ile(4_u64 * value, 4_u64 * limit) {{
+    use 4 * before;
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the old theorem image must not rebind to the replacement: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Prf1);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedSourceProof {
+                name,
+                obligation: SourceProofObligation::Combination,
+                ..
+            } if name == "after"
+        ));
+    });
+}
+
+#[test]
+fn all_ordered_invariant_roots_normalize_to_their_written_direction() {
+    let source = format!(
+        r#"fn ordered(a: own i32, b: own i32, c: own i32, d: own i32, e: own i32, f: own i32, g: own i32, h: own i32) -> result: own unit pure contract {{
+  requires ile(a, b);
+  requires ilt(c, d);
+  requires ige(e, f);
+  requires igt(g, h);
+}} {{
+  invariant le: ile(a, b);
+  invariant lt: ilt(c, d);
+  invariant ge: ige(e, f);
+  invariant gt: igt(g, h);
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("all four ordered roots must retain their exact direction: {outcome:?}");
+        };
+        let ordered = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "ordered")
+            .expect("ordered function exists");
+        assert_eq!(ordered.entailment.source_proofs.len(), 4);
+        assert!(
+            ordered
+                .entailment
+                .source_proofs
+                .iter()
+                .all(|proof| proof.check.discharged())
+        );
+    });
+}
+
+#[test]
+fn an_explicit_factor_one_is_not_canonical_source() {
+    let source = format!(
+        r#"fn scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
+  requires ile(value, limit);
+}} {{
+  invariant scaled: ile(4_u64 * value, 4_u64 * limit) {{
+    use 1 * ile(value, limit);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an explicit factor one must reject canonically: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Prf1);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::InvalidSourceProof {
+                reason: "an explicitly written use multiplier one is not canonical",
+                ..
+            }
+        ));
+    });
 }

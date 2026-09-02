@@ -1505,12 +1505,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
 
-        let mut proof_names = Vec::new();
         let mut counters = ControlCounters {
             next_binding: &mut next_binding,
             next_loop: &mut next_loop,
             binding_names: &mut binding_names,
-            proof_names: &mut proof_names,
         };
         let parameter_bindings = bindings.clone();
         let requirements = if let Some(node) = self

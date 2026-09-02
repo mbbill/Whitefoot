@@ -66,6 +66,7 @@ pub(crate) struct CheckedAffineRelation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedLoopInvariant {
     pub(crate) loop_id: CheckedLoopId,
+    pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) relation: CheckedAffineRelation,
 }
@@ -80,7 +81,18 @@ pub(crate) struct CheckedLoopInvariant {
 pub(crate) struct CheckedProofUse {
     pub(crate) node_path: NodePath,
     pub(crate) factor: i128,
-    pub(crate) relation: CheckedAffineRelation,
+    pub(crate) source: CheckedProofUseSource,
+}
+
+/// The source selected by one written `use`.
+///
+/// A named source is the immutable theorem image published by the resolved
+/// invariant declaration. A relation source is independently proved by AUTO
+/// in the local invariant's entering context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedProofUseSource {
+    Named(DeclarationId),
+    Relation(CheckedAffineRelation),
 }
 
 /// One erased source-written local invariant. Every `use` and the target are
@@ -93,6 +105,7 @@ pub(crate) struct CheckedProofUse {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedSourceProof {
     pub(crate) node_path: NodePath,
+    pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) target: CheckedAffineRelation,
     pub(crate) uses: Vec<CheckedProofUse>,
