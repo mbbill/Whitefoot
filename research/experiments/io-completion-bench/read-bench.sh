@@ -32,6 +32,8 @@ ROUNDS=${ROUNDS:-9}
 WARMUP=${WARMUP:-2}
 EXPECTED_READ_64K=${EXPECTED_READ_64K:-"09425560703784339892 00000000002147483648"}
 EXPECTED_READ_4K=${EXPECTED_READ_4K:-"18028327385673861873 00000000000134217728"}
+READ_NAME_ARGS="f00000.dat f00001.dat f00002.dat f00003.dat f00004.dat f00005.dat f00006.dat f00007.dat"
+READ_NAME_PLAN_ARGS=$(printf '\tf00000.dat\tf00001.dat\tf00002.dat\tf00003.dat\tf00004.dat\tf00005.dat\tf00006.dat\tf00007.dat')
 PROBES=${PROBES:-16}
 THRESHOLD_US=${THRESHOLD_US:-40}
 TOLERANCE_PERCENT=${TOLERANCE_PERCENT:-10}
@@ -70,8 +72,8 @@ $OUT/wide8_seq:$EXPECTED_READ_64K
 $OUT/read_baseline $OUT/tree direct $READS_4K 4096:$EXPECTED_READ_4K
 $OUT/narrow_4k:$EXPECTED_READ_4K
 $OUT/narrow_4k_seq:$EXPECTED_READ_4K
-$OUT/wide8_4k:$EXPECTED_READ_4K
-$OUT/wide8_4k_seq:$EXPECTED_READ_4K"
+$OUT/wide8_4k $READ_NAME_ARGS:$EXPECTED_READ_4K
+$OUT/wide8_4k_seq $READ_NAME_ARGS:$EXPECTED_READ_4K"
 if [ "$HOST" = Linux ]; then
     verify_lines="$verify_lines
 $OUT/read_baseline $OUT/tree uring $READS_64K 65536 8:$EXPECTED_READ_64K"
@@ -97,6 +99,7 @@ emit_plan() {
     reads=$1
     window=$2
     suffix=$3
+    wide8_args=$4
     printf 'N.direct\t\t%s/read_baseline\t%s/tree\tdirect\t%s\t%s\n' "$OUT" "$OUT" "$reads" "$window"
     for t in 1 2 4 8; do
         printf 'N.pool%s\t\t%s/read_baseline\t%s/tree\tpool\t%s\t%s\t%s\n' \
@@ -109,19 +112,19 @@ emit_plan() {
         done
     fi
     printf 'S.narrow\t\t%s/narrow%s_seq\n' "$OUT" "$suffix"
-    printf 'S.wide8\t\t%s/wide8%s_seq\n' "$OUT" "$suffix"
+    printf 'S.wide8\t\t%s/wide8%s_seq%s\n' "$OUT" "$suffix" "$wide8_args"
     printf 'C.narrow.default\t\t%s/narrow%s\n' "$OUT" "$suffix"
-    printf 'C.wide8.default\t\t%s/wide8%s\n' "$OUT" "$suffix"
+    printf 'C.wide8.default\t\t%s/wide8%s%s\n' "$OUT" "$suffix" "$wide8_args"
     for h in 0 1 4; do
         printf 'C.narrow.h%s\tWF_IO_HELPERS=%s\t%s/narrow%s\n' "$h" "$h" "$OUT" "$suffix"
     done
     for h in 0 1 2 4 8; do
-        printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t%s/wide8%s\n' "$h" "$h" "$OUT" "$suffix"
+        printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t%s/wide8%s%s\n' "$h" "$h" "$OUT" "$suffix" "$wide8_args"
     done
 }
 
-emit_plan "$READS_64K" 65536 "" > "$OUT/plan-64k.txt"
-emit_plan "$READS_4K" 4096 _4k > "$OUT/plan-4k.txt"
+emit_plan "$READS_64K" 65536 "" "" > "$OUT/plan-64k.txt"
+emit_plan "$READS_4K" 4096 _4k "$READ_NAME_PLAN_ARGS" > "$OUT/plan-4k.txt"
 
 # Regenerates the tree so that none of it is resident. The generator flushes
 # each file and then, on Linux, drops its pages; a cache policy on a reading

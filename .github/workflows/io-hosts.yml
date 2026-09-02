@@ -493,6 +493,63 @@ jobs:
             throw "the HostString boundary wrote stderr"
           }
 
+      # The HostString probe above and the native namespace probe cover the
+      # two ends of this path independently. This compiler-emitted program
+      # closes the boundary between them: it losslessly copies two wider-code-
+      # unit argument names into source buffers and feeds those exact ranges to
+      # open_file. U+4241 and U+4242 have little-endian bytes AB and BB, so the
+      # ASCII decoys make an accidental byte-name interpretation observable.
+      # The same source runs once with every operation direct, then through the
+      # production completion lowering with IOCP required.
+      - name: Open target-native Windows components from compiler-emitted buffers
+        shell: pwsh
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/windows-component-open"
+          [void](New-Item -ItemType Directory -Force -Path $directory)
+          $source = "research/experiments/io-completion-bench/programs/windows_component_open.wf"
+          $compiler = ".\compiler\target\debug\whitefootc.exe"
+          $direct = Join-Path $directory "component-open-direct.exe"
+          $completion = Join-Path $directory "component-open-completion.exe"
+          & $compiler --no-overlap $source -o $direct
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $compiler $source -o $completion
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $nameA = [string][char]0x4241
+          $nameB = [string][char]0x4242
+          [IO.File]::WriteAllBytes((Join-Path $directory $nameA), [byte[]](87))
+          [IO.File]::WriteAllBytes((Join-Path $directory $nameB), [byte[]](88))
+          [IO.File]::WriteAllBytes((Join-Path $directory "AB"), [byte[]](68))
+          [IO.File]::WriteAllBytes((Join-Path $directory "BB"), [byte[]](69))
+          $expected = [byte[]](87, 88)
+
+          Push-Location $directory
+          try {
+            & $direct $nameA $nameB > direct.out 2> direct.err
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $env:WF_REQUIRE_WINDOWS_IOCP = "1"
+            & $completion $nameA $nameB > completion.out 2> completion.err
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Remove-Item Env:WF_REQUIRE_WINDOWS_IOCP -ErrorAction SilentlyContinue
+            Pop-Location
+          }
+
+          foreach ($variant in @("direct", "completion")) {
+            $actual = [IO.File]::ReadAllBytes((Join-Path $directory "$variant.out"))
+            if ($actual.Length -ne $expected.Length) {
+              throw "$variant component-open output has the wrong length"
+            }
+            for ($index = 0; $index -lt $expected.Length; $index += 1) {
+              if ($actual[$index] -ne $expected[$index]) {
+                throw "$variant component-open output selected the wrong native name"
+              }
+            }
+            if ((Get-Item (Join-Path $directory "$variant.err")).Length -ne 0) {
+              throw "$variant component-open run wrote diagnostics"
+            }
+          }
+
       # Correct bytes alone would also be produced by a sequential fallback.
       # The production driver must preserve those bytes and reject malformed
       # pool configuration. Then the same real Whitefoot module is linked with

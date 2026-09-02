@@ -64,6 +64,9 @@ READS_64K ?= 32768
 READS_4K ?= 32768
 EXPECTED_READ_64K ?= 09425560703784339892 00000000002147483648
 EXPECTED_READ_4K ?= 18028327385673861873 00000000000134217728
+READ_NAME_ARGS := f00000.dat f00001.dat f00002.dat f00003.dat \
+	f00004.dat f00005.dat f00006.dat f00007.dat
+READ_NAME_PLAN_ARGS := f00000.dat\tf00001.dat\tf00002.dat\tf00003.dat\tf00004.dat\tf00005.dat\tf00006.dat\tf00007.dat
 
 # The read table is measured to medians of fifteen on macOS, because the host
 # is shared with an endpoint-security stack whose interference is bursty, and
@@ -295,8 +298,8 @@ read-verify: read-build read-gen
 			"$(BUILD)/read_baseline $(BIGTREE) direct $(READS_4K) 4096:$(EXPECTED_READ_4K)" \
 			"$(BUILD)/read_heavy_narrow_4k:$(EXPECTED_READ_4K)" \
 			"$(BUILD)/read_heavy_narrow_4k_seq:$(EXPECTED_READ_4K)" \
-			"$(BUILD)/read_heavy_wide8_4k:$(EXPECTED_READ_4K)" \
-			"$(BUILD)/read_heavy_wide8_4k_seq:$(EXPECTED_READ_4K)"; do \
+			"$(BUILD)/read_heavy_wide8_4k $(READ_NAME_ARGS):$(EXPECTED_READ_4K)" \
+			"$(BUILD)/read_heavy_wide8_4k_seq $(READ_NAME_ARGS):$(EXPECTED_READ_4K)"; do \
 			command=$${line%%:*}; want=$${line#*:}; \
 			if [ "$$nocache" = 1 ]; then got=$$(WF_IO_NOCACHE=1 $$command); \
 			else got=$$($$command); fi; \
@@ -339,14 +342,14 @@ $(WORK)/read-plan-4k.txt: Makefile | prepare
 		printf 'N.pool%s\t\t$(BUILD)/read_baseline\t$(BIGTREE)\tpool\t$(READS_4K)\t4096\t%s\n' $$t $$t; \
 	done; \
 	printf 'S.narrow\t\t$(BUILD)/read_heavy_narrow_4k_seq\n'; \
-	printf 'S.wide8\t\t$(BUILD)/read_heavy_wide8_4k_seq\n'; \
+	printf 'S.wide8\t\t$(BUILD)/read_heavy_wide8_4k_seq\t$(READ_NAME_PLAN_ARGS)\n'; \
 	printf 'C.narrow.default\t\t$(BUILD)/read_heavy_narrow_4k\n'; \
-	printf 'C.wide8.default\t\t$(BUILD)/read_heavy_wide8_4k\n'; \
+	printf 'C.wide8.default\t\t$(BUILD)/read_heavy_wide8_4k\t$(READ_NAME_PLAN_ARGS)\n'; \
 	for h in 0 1 4; do \
 		printf 'C.narrow.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_narrow_4k\n' $$h $$h; \
 	done; \
 	for h in 0 1 2 4 8; do \
-		printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_wide8_4k\n' $$h $$h; \
+		printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/read_heavy_wide8_4k\t$(READ_NAME_PLAN_ARGS)\n' $$h $$h; \
 	done; \
 	} > $@
 

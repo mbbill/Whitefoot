@@ -20,8 +20,9 @@
 #include <unistd.h>
 #endif
 
-/* The Whitefoot programs render this name shape from an index with fixed
- * arithmetic, so it is ten bytes wide and never varies. */
+/* Every generated file has this ten-byte portable display name. Whitefoot
+ * workloads that must also run on a wider-code-unit target receive the names
+ * through argv and preserve that target's native bytes. */
 #define WF_BENCH_NAME_FORMAT "f%05lu.dat"
 #define WF_BENCH_NAME_BYTES 10
 

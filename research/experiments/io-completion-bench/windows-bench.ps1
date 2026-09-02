@@ -136,6 +136,10 @@ $ComputeExpected = Join-Path $Out "compute.expected"
 $IoExpected = Join-Path $Out "io.expected"
 $MixedExpected = Join-Path $Out "mixed.expected"
 $ComputeArguments = @("batch", "batch", "batch")
+$IoArguments = @(
+    "f00000.dat", "f00001.dat", "f00002.dat", "f00003.dat",
+    "f00004.dat", "f00005.dat", "f00006.dat", "f00007.dat"
+)
 Write-AsciiFile -Path $ComputeExpected -Text "420a993efa7437a1 41fa962893d45299`n"
 Write-AsciiFile -Path $IoExpected -Text "18028327385673861873 00000000000134217728`n"
 Write-AsciiFile -Path $MixedExpected -Text "17574306422404092952`n"
@@ -313,11 +317,11 @@ $Variants = @{
         Workers = $true; RequireIocp = $false
     }
     "io.direct" = @{
-        Exe = $IoDirect; Args = @(); Expected = $IoExpected
+        Exe = $IoDirect; Args = $IoArguments; Expected = $IoExpected
         Workers = $false; RequireIocp = $false
     }
     "io.iocp" = @{
-        Exe = $IoIocp; Args = @(); Expected = $IoExpected
+        Exe = $IoIocp; Args = $IoArguments; Expected = $IoExpected
         Workers = $false; RequireIocp = $true
     }
     "mixed.seq" = @{
@@ -480,6 +484,8 @@ function Run-QualifiedCohort {
 }
 
 try {
+    [void](Invoke-Sample -Variant "io.direct" -Label "preflight.io.direct")
+    [void](Invoke-Sample -Variant "io.iocp" -Label "preflight.io.iocp")
     $Results = @(
         Run-QualifiedCohort -Name "compute" -Reference "compute.seq" -Candidate "compute.par"
         Run-QualifiedCohort -Name "io-warm" -Reference "io.direct" -Candidate "io.iocp"

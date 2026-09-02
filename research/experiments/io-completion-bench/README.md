@@ -84,6 +84,13 @@ its file and its window-aligned offset from *k* alone, so the narrow program,
 the eight-wide one, and every native baseline traverse exactly the same list
 and fold exactly the same value.
 
+The 4 KiB eight-wide source is also the Windows qualification workload. Its
+eight fixed file names arrive as command arguments and are copied through
+`host_copy_bytes` before `open_file`: ten bytes on a one-byte target and twenty
+UTF-16LE bytes on Windows. The direct and completion builds therefore receive
+the same target-native component ranges without either a source fallback or a
+runtime transcode.
+
 The opens are inside the timed region — the runner times whole processes — but
 there are exactly eight of them in every line, N, S, and C alike. At 116 us
 each that is 0.93 ms against a table whose fastest line is over a hundred
@@ -191,6 +198,10 @@ processor mask. `windows_runner.c` takes each sample with
 stderr, or stdout different from the committed exact oracle invalidates the
 sample before its time is reported. A sampled child or the untimed observer
 that exceeds two minutes is terminated and invalidates the run.
+
+Before any timed cohort, one direct and one IOCP 4 KiB read-heavy sample must
+both publish the exact oracle. This keeps a target-native path or fixture
+failure from being discovered only after the compute cohort has completed.
 
 The five alternating paired cohorts are compute (`par_layout.wf`, default
 against `--par`), warm 4 KiB reads (`--no-overlap` against production IOCP),
