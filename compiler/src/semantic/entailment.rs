@@ -542,6 +542,14 @@ pub(crate) struct LoopInvariantOutcome {
     pub(crate) loop_id: CheckedLoopId,
     pub(crate) source_ordinal: u32,
     pub(crate) name: String,
+    /// Canonical source-language rendering of the relation required on the
+    /// preheader edge. This deliberately names source bindings rather than
+    /// checker-owned affine terms.
+    pub(crate) base_target: String,
+    /// Canonical source-language rendering of the relation required on a
+    /// reachable backedge. A counted loop substitutes the hidden next binder
+    /// value (`i + 1_u64`); an ordinary loop has no hidden substitution.
+    pub(crate) backedge_target: String,
     /// The source fact context's induction result. This is the semantic result
     /// consumed by diagnostics and later proof queries.
     pub(crate) proof: LoopInvariantProof,

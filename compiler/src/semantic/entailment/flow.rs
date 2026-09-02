@@ -8060,6 +8060,7 @@ impl Analyzer<'_, '_> {
         invariants: &[CheckedLoopInvariant],
         base: &[bool],
         step: &[Option<bool>],
+        counted_binder: Option<BindingId>,
     ) {
         for (index, invariant) in invariants.iter().enumerate() {
             self.loop_invariants.push(LoopInvariantOutcome {
@@ -8067,11 +8068,78 @@ impl Analyzer<'_, '_> {
                 loop_id,
                 source_ordinal: u32::try_from(index).expect("loop invariant ordinal exceeds u32"),
                 name: invariant.name.clone(),
+                base_target: self.render_checked_invariant_relation(&invariant.relation, None),
+                backedge_target: self
+                    .render_checked_invariant_relation(&invariant.relation, counted_binder),
                 proof: LoopInvariantProof {
                     base: base[index],
                     step: step[index],
                 },
             });
+        }
+    }
+
+    /// Renders one INV-1 incoming-edge target using only source spellings.
+    ///
+    /// The checked relation contains immutable binding identities, which are
+    /// appropriate for proof but useless in a source diagnostic. For a
+    /// counted backedge the only compiler-written value transition is the
+    /// hidden unit update, so occurrences of that binder are rendered as the
+    /// exact source expression the writer must preserve. Ordinary loops pass
+    /// no binder and therefore render the header relation unchanged.
+    fn render_checked_invariant_relation(
+        &self,
+        relation: &CheckedAffineRelation,
+        counted_next_binder: Option<BindingId>,
+    ) -> String {
+        let left = self.render_checked_affine_expression(&relation.left, counted_next_binder);
+        let right = self.render_checked_affine_expression(&relation.right, counted_next_binder);
+        match relation.bound {
+            0 => format!("ile({left}, {right})"),
+            -1 => format!("ilt({left}, {right})"),
+            // INV-1 formation currently admits only strict and non-strict
+            // ordered roots. Keep a source-level fallback so an internal
+            // inconsistency never leaks an affine term identity.
+            bound => format!("ile(({left} - {right}), {bound}_i128)"),
+        }
+    }
+
+    fn render_checked_affine_expression(
+        &self,
+        expression: &CheckedAffineExpression,
+        counted_next_binder: Option<BindingId>,
+    ) -> String {
+        match &expression.kind {
+            CheckedAffineExpressionKind::Constant { value, ty } => {
+                format!("{value}_{}", integer_type_name(*ty))
+            }
+            CheckedAffineExpressionKind::Local { binding, .. } => {
+                let name = self.binding_name(*binding);
+                if counted_next_binder == Some(*binding) {
+                    format!("({name} + 1_u64)")
+                } else {
+                    name
+                }
+            }
+            CheckedAffineExpressionKind::Add(left, right) => format!(
+                "({} + {})",
+                self.render_checked_affine_expression(left, counted_next_binder),
+                self.render_checked_affine_expression(right, counted_next_binder)
+            ),
+            CheckedAffineExpressionKind::Subtract(left, right) => format!(
+                "({} - {})",
+                self.render_checked_affine_expression(left, counted_next_binder),
+                self.render_checked_affine_expression(right, counted_next_binder)
+            ),
+            CheckedAffineExpressionKind::MultiplyByConstant {
+                constant,
+                constant_ty,
+                value,
+            } => format!(
+                "({constant}_{} * {})",
+                integer_type_name(*constant_ty),
+                self.render_checked_affine_expression(value, counted_next_binder)
+            ),
         }
     }
 
@@ -9335,7 +9403,7 @@ impl Analyzer<'_, '_> {
                         }));
                     }
                 }
-                self.record_loop_invariant_outcomes(*id, invariants, &base, &step);
+                self.record_loop_invariant_outcomes(*id, invariants, &base, &step, None);
 
                 let frame = self.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
@@ -9538,7 +9606,7 @@ impl Analyzer<'_, '_> {
                     }
                 }
 
-                self.record_loop_invariant_outcomes(*id, invariants, &base, &step);
+                self.record_loop_invariant_outcomes(*id, invariants, &base, &step, Some(*binder));
                 let step_batch = step.iter().all(|proved| proved.unwrap_or(true));
                 let export = lower_le_upper && base_batch && step_batch && hidden_update;
                 let frame = self.loops.pop();

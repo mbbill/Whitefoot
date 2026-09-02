@@ -2740,6 +2740,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it at the next loop header"
                         }
                     };
+                    let required_relation = match obligation {
+                        crate::LoopInvariantProofObligation::Base => outcome.base_target.clone(),
+                        crate::LoopInvariantProofObligation::Backedge => {
+                            outcome.backedge_target.clone()
+                        }
+                    };
                     Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Inv1,
                         location: SemanticLocation::SourceNode(
@@ -2749,6 +2755,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::UndischargedLoopInvariant {
                             name: outcome.name.clone(),
                             obligation,
+                            required_relation,
                             mechanical_fix,
                         },
                     }))

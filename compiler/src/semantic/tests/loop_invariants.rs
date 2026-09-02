@@ -40,6 +40,31 @@ fn assert_invariant_issue(source: &[u8], expected: LoopInvariantProofObligation)
     });
 }
 
+fn assert_invariant_required_relation(source: &[u8], expected: &str) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected an INV-1 source rejection, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLoopInvariant {
+            obligation: LoopInvariantProofObligation::Backedge,
+            required_relation,
+            ..
+        } = issue.kind()
+        else {
+            panic!(
+                "expected an undischarged invariant backedge, got {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(required_relation, expected);
+        assert!(
+            !required_relation.contains("AffineTermId"),
+            "an INV-1 diagnostic must not expose checker-owned term identities"
+        );
+    });
+}
+
 #[test]
 fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -271,6 +296,50 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         LoopInvariantProofObligation::Backedge,
+    );
+}
+
+#[test]
+fn ordinary_backedge_diagnostic_prints_the_source_relation() {
+    assert_invariant_required_relation(
+        br#"fn repeat(leave: own Bool) -> result: own unit pure {
+  let value = 0_u64;
+  loop {
+    invariant limit: ile(value, 0_u64);
+    if leave {
+      break;
+    } else {
+      set value = 1_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        "ile(value, 0_u64)",
+    );
+}
+
+#[test]
+fn counted_backedge_diagnostic_prints_the_hidden_next_binder() {
+    assert_invariant_required_relation(
+        br#"fn accumulate() -> result: own unit pure {
+  let sum = 0_u64;
+  for i in 0_u64..2_u64 {
+    invariant limit: ile(sum, 255_u64 * i);
+    set sum = 256_u64;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        "ile(sum, (255_u64 * (i + 1_u64)))",
     );
 }
 
@@ -1734,6 +1803,76 @@ command fn main() -> status: own ExitStatus pure {
             "the later requirement must descend from count_cells' verified postcondition"
         );
     });
+}
+
+#[test]
+fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
+    let source = br#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64, leave: own Bool) -> result: own unit pure contract {
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+} {
+  let left = 0_u64;
+  let left_limit = 0_u64;
+  let middle = 0_u64;
+  let middle_limit = 0_u64;
+  let right = 0_u64;
+  let right_limit = 0_u64;
+  loop {
+    invariant limit: ile(left + middle + right, left_limit + middle_limit + right_limit);
+    if leave {
+      break;
+    } else {
+      set left = first;
+      set left_limit = first_limit;
+      set middle = second;
+      set middle_limit = second_limit;
+      set right = third;
+      set right_limit = third_limit;
+      prove restored: ile(left + middle + right, left_limit + middle_limit + right_limit) {
+        use ile(left, left_limit);
+        use ile(middle, middle_limit);
+        use ile(right, right_limit);
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the local proof fact must establish the ordinary backedge: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "preserve")
+            .expect("preserve exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("preserve retains one loop invariant");
+        };
+        assert_eq!(invariant.proof.step, Some(true));
+        let [proof] = function.entailment.source_proofs.as_slice() else {
+            panic!("preserve retains one local source proof");
+        };
+        assert!(proof.check.discharged());
+    });
+
+    let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
+    let without_proof = source.replacen(
+        "      prove restored: ile(left + middle + right, left_limit + middle_limit + right_limit) {\n        use ile(left, left_limit);\n        use ile(middle, middle_limit);\n        use ile(right, right_limit);\n      }\n",
+        "",
+        1,
+    );
+    assert_invariant_issue(
+        without_proof.as_bytes(),
+        LoopInvariantProofObligation::Backedge,
+    );
 }
 
 /// The four assignments replace every value mentioned by the invariant. The
