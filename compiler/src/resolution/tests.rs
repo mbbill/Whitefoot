@@ -1541,6 +1541,52 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
 }
 
 #[test]
+fn header_invariant_names_are_invisible_after_their_loop() {
+    for source in [
+        br#"fn probe(limit: own u64) -> result: own unit pure {
+  for (
+    index in 0_u64..limit,
+    invariant ceiling: ile(index, limit)
+  ) {
+  }
+  invariant after: ile(0_u64, limit) {
+    use ceiling;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn probe(value: own u64) -> result: own unit pure {
+  loop (
+    invariant stable: ile(value, value)
+  ) {
+    break;
+  }
+  invariant after: ile(value, value) {
+    use stable;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a header invariant name must end with its loop: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Inv1);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::InvisibleUse {
+                    role: LexicalUseRole::InvariantFact,
+                    ..
+                }
+            ));
+        });
+    }
+}
+
+#[test]
 fn counted_range_label_is_non_enclosing_after_the_loop() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range (

@@ -223,18 +223,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(relation)
     }
 
-    pub(super) fn check_affine_relation(
-        &self,
-        node: NodeId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-        allowed_values: &HashSet<DeclarationId>,
-        owner: AffineProofOwner,
-    ) -> Result<CheckedAffineRelation, CheckStop> {
-        let relation = self.form_affine_relation(node, bindings, allowed_values, owner)?;
-        self.validate_affine_relation(node, &relation, owner)?;
-        Ok(relation)
-    }
-
     fn form_affine_relation(
         &self,
         node: NodeId,

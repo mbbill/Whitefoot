@@ -1717,8 +1717,8 @@ command fn main() -> status: own ExitStatus pure {
 /// proves the outer step, and the outer exhaustion export proves the function
 /// postcondition. The caller then uses that verified postcondition to satisfy
 /// a different function's requirement.
-/// The written proof is the exact algebraic bridge from inner exhaustion to
-/// the arbitrary outer backedge; its target belongs in that body proof context.
+/// The body-local invariant publishes the exact algebraic bridge from inner
+/// exhaustion to the arbitrary outer backedge.
 #[test]
 fn nested_invariants_publish_a_postcondition_consumed_by_a_later_requirement() {
     let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
@@ -1742,9 +1742,7 @@ fn count_cells(rows: own u64) -> result: own u64 pure contract {
     ) {
       set total = total + 1_u64;
     }
-    invariant completed_row: ile(total, 4_u64 *(row + 1_u64)) {
-      use ile(total, 4_u64 * row + 4_u64);
-    }
+    invariant completed_row: ile(total, 4_u64 *(row + 1_u64));
   }
   return total;
 }
@@ -1955,8 +1953,7 @@ command fn main() -> status: own ExitStatus pure {
 
 /// The four assignments replace every value mentioned by the invariant. The
 /// fixed residual rule composes the two still-live L0 requirements in
-/// canonical term-pair order, so the explicit proof remains valid but is no
-/// longer required for this common two-bound backedge.
+/// canonical term-pair order, without requiring a body-local invariant.
 #[test]
 fn automatic_residual_reduction_composes_two_live_l0_facts() {
     let source = br#"fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
@@ -1975,10 +1972,6 @@ fn automatic_residual_reduction_composes_two_live_l0_facts() {
     set left_limit = first_limit;
     set right = second;
     set right_limit = second_limit;
-    invariant restored: ile(left + right, left_limit + right_limit) {
-      use ile(left, left_limit);
-      use ile(right, right_limit);
-    }
   }
   return unit;
 }
@@ -1989,7 +1982,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the source proof target must establish the outer backedge: {outcome:?}");
+            panic!("the automatic residual rule must establish the outer backedge: {outcome:?}");
         };
         let function = checked
             .data
@@ -2005,37 +1998,11 @@ command fn main() -> status: own ExitStatus pure {
         assert!(invariant.proof.base);
         assert_eq!(invariant.proof.step, Some(true));
 
-        let [proof] = function.entailment.source_proofs.as_slice() else {
-            panic!("preserve_pair_bounds retains one source proof");
-        };
-        assert_eq!(proof.name, "restored");
-        assert_eq!(proof.check.premises, [true, true]);
-        assert!(proof.check.combination);
-        assert!(proof.check.discharged());
-    });
-
-    const PROOF: &str = "    invariant restored: ile(left + right, left_limit + right_limit) {\n      use ile(left, left_limit);\n      use ile(right, right_limit);\n    }\n";
-    let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
-    assert_eq!(source.matches(PROOF).count(), 1);
-    let without_proof = source.replacen(PROOF, "", 1);
-    with_semantics(without_proof.as_bytes(), |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the fixed two-premise reduction must prove the backedge: {outcome:?}");
-        };
-        let function = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "preserve_pair_bounds")
-            .expect("preserve_pair_bounds function exists");
-        let [invariant] = function.entailment.loop_invariants.as_slice() else {
-            panic!("the no-proof form retains one invariant");
-        };
-        assert_eq!(invariant.proof.step, Some(true));
         assert!(function.entailment.source_proofs.is_empty());
     });
 
-    let missing_second = without_proof.replacen("  requires ile(second, second_limit);\n", "", 1);
+    let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
+    let missing_second = source.replacen("  requires ile(second, second_limit);\n", "", 1);
     with_semantics(missing_second.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("one missing bound must leave the backedge unproved: {outcome:?}");

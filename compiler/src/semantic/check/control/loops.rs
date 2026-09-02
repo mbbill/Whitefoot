@@ -28,12 +28,6 @@ pub(in crate::semantic::check) struct BreakState {
     bindings: HashMap<DeclarationId, LocalBinding>,
 }
 
-#[derive(Clone, Copy)]
-struct InvariantRelationNormalization {
-    reverse: bool,
-    bound: i128,
-}
-
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     fn form_loop_invariants(
         &self,
@@ -223,17 +217,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "give every invariant in this loop a distinct name",
             );
         }
-        let normalization = self.invariant_relation_normalization(node, *relation_token)?;
-        let mut relation = self.check_affine_relation(
+        let relation = self.check_ordered_affine_relation(
             node,
+            *relation_token,
             bindings,
             allowed_values,
             AffineProofOwner::LoopInvariant,
         )?;
-        if normalization.reverse {
-            std::mem::swap(&mut relation.left, &mut relation.right);
-        }
-        relation.bound = normalization.bound;
 
         Ok(CheckedLoopInvariant {
             loop_id,
@@ -241,39 +231,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name,
             relation,
         })
-    }
-
-    fn invariant_relation_normalization(
-        &self,
-        node: NodeId,
-        relation_token: usize,
-    ) -> Result<InvariantRelationNormalization, CheckStop> {
-        let normalization = match self.tree.token_bytes(relation_token)? {
-            b"ile" => InvariantRelationNormalization {
-                reverse: false,
-                bound: 0,
-            },
-            b"ilt" => InvariantRelationNormalization {
-                reverse: false,
-                bound: -1,
-            },
-            b"ige" => InvariantRelationNormalization {
-                reverse: true,
-                bound: 0,
-            },
-            b"igt" => InvariantRelationNormalization {
-                reverse: true,
-                bound: -1,
-            },
-            _ => {
-                return self.invalid_loop_invariant(
-                    node,
-                    "the invariant root is not an admitted ordered integer relation",
-                    "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
-                );
-            }
-        };
-        Ok(normalization)
     }
 
     pub(super) fn invalid_loop_invariant<ResultValue>(
