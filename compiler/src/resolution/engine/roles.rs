@@ -271,58 +271,57 @@ fn classify_node(
                 complete_counts,
             )?;
         }
-        Production::InvariantStmt => {
+        Production::InvariantStmt | Production::HeaderInvariant => {
             let [name, relation] = names.as_slice() else {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
             if name_predicate(classified, *name) != Some(TerminalPredicate::Identifier)
                 || name_predicate(classified, *relation) != Some(TerminalPredicate::Identifier)
             {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            }
-            for carrier in [*name, *relation] {
-                add_complete(
-                    classified,
-                    owner,
-                    carrier,
-                    RawRoleKind::InvariantCarrier,
-                    roles,
-                    complete_counts,
-                )?;
-            }
-        }
-        Production::ProofStmt => {
-            let [name, relation] = names.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            if name_predicate(classified, *name) != Some(TerminalPredicate::Identifier)
-                || name_predicate(classified, *relation) != Some(TerminalPredicate::Identifier)
-            {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            }
-            for carrier in [*name, *relation] {
-                add_complete(
-                    classified,
-                    owner,
-                    carrier,
-                    RawRoleKind::ProofCarrier,
-                    roles,
-                    complete_counts,
-                )?;
-            }
-        }
-        Production::ProofPremise => {
-            let [relation] = names.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            if name_predicate(classified, *relation) != Some(TerminalPredicate::Identifier) {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             }
             add_complete(
                 classified,
                 owner,
+                *name,
+                RawRoleKind::Declaration(DeclarationRole::Invariant),
+                roles,
+                complete_counts,
+            )?;
+            add_complete(
+                classified,
+                owner,
                 *relation,
-                RawRoleKind::ProofCarrier,
+                RawRoleKind::InvariantCarrier,
+                roles,
+                complete_counts,
+            )?;
+        }
+        Production::ProofPremise => {
+            let [carrier] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            if name_predicate(classified, *carrier) != Some(TerminalPredicate::Identifier) {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            }
+            let relation_form = topology
+                .node_children(owner)
+                .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
+                .iter()
+                .any(|child| {
+                    topology
+                        .node(*child)
+                        .is_some_and(|record| record.production == Production::AffineExpr)
+                });
+            add_complete(
+                classified,
+                owner,
+                *carrier,
+                if relation_form {
+                    RawRoleKind::InvariantCarrier
+                } else {
+                    RawRoleKind::LexicalUse(LexicalUseRole::InvariantFact)
+                },
                 roles,
                 complete_counts,
             )?;
@@ -331,13 +330,7 @@ fn classify_node(
             classified,
             owner,
             &names,
-            RawRoleKind::LexicalUse(
-                if ancestor_with_production(topology, owner, Production::ProofStmt).is_some() {
-                    LexicalUseRole::ProofValue
-                } else {
-                    LexicalUseRole::InvariantValue
-                },
-            ),
+            RawRoleKind::LexicalUse(LexicalUseRole::InvariantValue),
             roles,
             complete_counts,
         )?,
@@ -346,6 +339,14 @@ fn classify_node(
             owner,
             &names,
             RawRoleKind::Declaration(DeclarationRole::Let),
+            roles,
+            complete_counts,
+        )?,
+        Production::ForBinding => add_single(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::Declaration(DeclarationRole::CountedBinder),
             roles,
             complete_counts,
         )?,
@@ -363,42 +364,20 @@ fn classify_node(
             }
             _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
         },
-        Production::ForStmt => {
-            let (label, binder) = match names.as_slice() {
-                [binder]
-                    if name_predicate(classified, *binder)
-                        == Some(TerminalPredicate::Identifier) =>
-                {
-                    (None, *binder)
-                }
-                [label, binder]
-                    if name_predicate(classified, *label) == Some(TerminalPredicate::Label)
-                        && name_predicate(classified, *binder)
-                            == Some(TerminalPredicate::Identifier) =>
-                {
-                    (Some(*label), *binder)
-                }
-                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
-            };
-            if let Some(label) = label {
+        Production::ForStmt => match names.as_slice() {
+            [] => {}
+            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
                 add_complete(
                     classified,
                     owner,
-                    label,
+                    *label,
                     RawRoleKind::Declaration(DeclarationRole::LoopLabel),
                     roles,
                     complete_counts,
                 )?;
             }
-            add_complete(
-                classified,
-                owner,
-                binder,
-                RawRoleKind::Declaration(DeclarationRole::CountedBinder),
-                roles,
-                complete_counts,
-            )?;
-        }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
         Production::RegionStmt => add_single(
             classified,
             owner,

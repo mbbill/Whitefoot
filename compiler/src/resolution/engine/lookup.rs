@@ -261,6 +261,7 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
             vec![DeclarationClass::Value]
         }
+        LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
 }
 
@@ -305,6 +306,7 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
             vec![DeclarationClass::Value]
         }
+        LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
 }
 
@@ -329,5 +331,6 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         LexicalUseRole::GenericNumericSuffix => ResolutionRule::Form5,
         LexicalUseRole::InvariantValue => ResolutionRule::Inv1,
         LexicalUseRole::ProofValue => ResolutionRule::Prf1,
+        LexicalUseRole::InvariantFact => ResolutionRule::Inv1,
     }
 }

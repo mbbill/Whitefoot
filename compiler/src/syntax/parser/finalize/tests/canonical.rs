@@ -485,9 +485,9 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
 fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
     // `(` remains in FORM-2's general right-attachment set, so the affine
     // parenthesized factor is `*(...)`, with no proof-syntax exception.
-    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    invariant limit: ile(index + 1_u64 *(1_u64), upper);\n    break @range;\n  }\n  return unit;\n}\n";
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: ile(index + 1_u64 *(1_u64), upper)\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range index in lower .. upper{\ninvariant limit : ile ( index+1_u64 * ( 1_u64 ) ,upper ) ; break @range;\n}\nreturn unit;\n}\n";
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range( index in lower .. upper,invariant limit : ile ( index+1_u64 * ( 1_u64 ) ,upper )){\nbreak @range;\n}\nreturn unit;\n}\n";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
@@ -499,16 +499,27 @@ fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
 }
 
 #[test]
-fn finite_proof_blocks_render_their_header_and_premises_canonically() {
-    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove ordered: ile(left + 1_i32, right + 1_i32) {\n    use ile(left, right);\n    use ile(0_i32, 0_i32);\n  }\n  return unit;\n}\n";
+fn local_invariant_certificates_render_their_header_and_steps_canonically() {
+    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: ile(left + 1_i32, right + 1_i32) {\n    use 2 * ile(left, right);\n    use earlier;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ prove ordered : ile ( left+1_i32,right+1_i32 ) { use ile ( left , right ) ; use ile(0_i32,0_i32); } return unit; }";
+    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ invariant ordered : ile ( left+1_i32,right+1_i32 ) { use 2 * ile ( left , right ) ; use earlier; } return unit; }";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
     );
     assert_eq!(
         rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}
+
+#[test]
+fn ordinary_loop_header_invariants_use_the_same_multiline_layout() {
+    let canonical = b"fn probe(value: own i32) -> result: own unit pure {\n  loop @again (\n    invariant stable: ile(value, value)\n  ) {\n    break @again;\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(value:own i32)->result:own unit pure{ loop @again(invariant stable : ile(value,value)){ break @again; } return unit; }";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
     );
 }

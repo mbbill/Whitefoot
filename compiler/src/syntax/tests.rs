@@ -115,8 +115,8 @@ fn every_external_shape_is_classified_context_free() {
 }
 
 #[test]
-fn retired_runtime_check_spellings_are_ordinary_identifiers() {
-    for spelling in [b"check".as_slice(), b"trap".as_slice()] {
+fn retired_statement_spellings_are_ordinary_identifiers() {
+    for spelling in [b"check".as_slice(), b"trap".as_slice(), b"prove".as_slice()] {
         let inputs = [SourceInput::new("identifier.wf", spelling)];
         let bundle = source_bundle(&inputs).expect("identifier source must be constructible");
         let lexed = lexed(&bundle).expect("identifier must remain one lower-word token");
@@ -125,7 +125,7 @@ fn retired_runtime_check_spellings_are_ordinary_identifiers() {
             ACTIVE_KERNEL_SPEC_HASH,
             TerminalLimits { max_tokens: 1 },
         ) else {
-            panic!("retired runtime-check spelling must classify as an ordinary identifier");
+            panic!("retired statement spelling must classify as an ordinary identifier");
         };
         assert_eq!(classified.tokens().len(), 1);
         assert!(

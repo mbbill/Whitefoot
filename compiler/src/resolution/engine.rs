@@ -63,9 +63,6 @@ enum RawRoleKind {
     /// One INV-1 direct IDENT whose spelling is judged by the semantic
     /// invariant checker rather than entered into a lexical domain.
     InvariantCarrier,
-    /// One PRF-1 proof name or relation IDENT. It is checked by the semantic
-    /// proof-statement owner and never enters a lexical namespace.
-    ProofCarrier,
 }
 
 impl RawRoleKind {
@@ -77,7 +74,6 @@ impl RawRoleKind {
             Self::DeferredUse(_) => 3,
             Self::TableChecked => 4,
             Self::InvariantCarrier => 5,
-            Self::ProofCarrier => 6,
         }
     }
 }
@@ -304,8 +300,7 @@ fn build_tables(
             // Table-checked carriers await the FN-7 kind-table capability, and
             RawRoleKind::Selector(_)
             | RawRoleKind::TableChecked
-            | RawRoleKind::InvariantCarrier
-            | RawRoleKind::ProofCarrier => {}
+            | RawRoleKind::InvariantCarrier => {}
         }
     }
 
@@ -698,6 +693,7 @@ fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
             vec![DeclarationClass::Value]
         }
         DeclarationRole::LoopLabel => vec![DeclarationClass::Label],
+        DeclarationRole::Invariant => vec![DeclarationClass::Invariant],
     }
 }
 
@@ -708,9 +704,9 @@ fn declaration_scope(
 ) -> Result<ScopeId, ResolutionCompilerFailure> {
     match declaration_role {
         DeclarationRole::Variant => Ok(ScopeId(0)),
-        DeclarationRole::LoopLabel
-        | DeclarationRole::CountedBinder
-        | DeclarationRole::LocalRegion => scopes.declaration_scope(role.owner),
+        DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
+            scopes.declaration_scope(role.owner)
+        }
         _ => Ok(role.scope),
     }
 }
@@ -728,7 +724,9 @@ fn declaration_visibility(
         DeclarationRole::NamedConst
         | DeclarationRole::ConstGeneric
         | DeclarationRole::Parameter
-        | DeclarationRole::Let => node_end(topology, role.owner)?.value(),
+        | DeclarationRole::Let
+        | DeclarationRole::CountedBinder
+        | DeclarationRole::Invariant => node_end(topology, role.owner)?.value(),
         DeclarationRole::MatchBinder => {
             let list = ancestor_with_production(topology, role.owner, Production::FieldbindList)
                 .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
@@ -802,6 +800,7 @@ fn declaration_domain(class: DeclarationClass) -> Option<DeclarationDomain> {
         DeclarationClass::Contract => Some(DeclarationDomain::Contract),
         DeclarationClass::Region => Some(DeclarationDomain::Region),
         DeclarationClass::Label => Some(DeclarationDomain::Label),
+        DeclarationClass::Invariant => Some(DeclarationDomain::Invariant),
         DeclarationClass::OperationFamily => None,
     }
 }

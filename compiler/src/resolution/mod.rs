@@ -197,6 +197,8 @@ pub enum DeclarationClass {
     Region,
     /// Loop label.
     Label,
+    /// One machine-checked invariant fact named by source.
+    Invariant,
     /// One distinct OP-1 spelling.
     OperationFamily,
 }
@@ -216,6 +218,8 @@ pub enum DeclarationDomain {
     Region,
     /// Loop labels.
     Label,
+    /// Machine-checked invariant facts.
+    Invariant,
 }
 
 impl DeclarationDomain {
@@ -227,6 +231,7 @@ impl DeclarationDomain {
             Self::Contract => 3,
             Self::Region => 4,
             Self::Label => 5,
+            Self::Invariant => 6,
         }
     }
 }
@@ -264,6 +269,8 @@ pub enum DeclarationRole {
     MatchBinder,
     /// D15: counted-range binder.
     CountedBinder,
+    /// A named invariant fact visible after its checked declaration point.
+    Invariant,
 }
 
 /// Dependent declaration roles X01 through X03.
@@ -324,6 +331,8 @@ pub enum LexicalUseRole {
     InvariantValue,
     /// One local integer value named by a PRF-1 finite source-proof factor.
     ProofValue,
+    /// One earlier named invariant selected by a local `use` step.
+    InvariantFact,
 }
 
 /// Deferred member and field uses resolved by the semantic owner type.

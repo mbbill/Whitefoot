@@ -107,6 +107,8 @@ const ENUM_ORDER: &[&str] = &[
     "infix_tail",
     "infix_op",
     "for_stmt",
+    "for_binding",
+    "header_invariant",
     "requires_clause",
     "ensures_clause",
     "result_route",
@@ -117,7 +119,6 @@ const ENUM_ORDER: &[&str] = &[
     "affine_term",
     "affine_factor",
     "affine_add_op",
-    "proof_stmt",
     "proof_premise",
 ];
 

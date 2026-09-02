@@ -179,7 +179,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "an invariant is not in the direct prefix of a counted-loop body",
                 "move the invariant to the beginning of the directly enclosing for body",
             ),
-            Production::ProofStmt => self.check_source_proof(node, bindings, counters),
             Production::ReturnStmt => {
                 let expression_node = self
                     .tree

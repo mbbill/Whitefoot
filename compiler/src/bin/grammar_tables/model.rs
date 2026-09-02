@@ -163,7 +163,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("%checked", "PercentChecked"),
         ("for", "For"),
         ("invariant", "Invariant"),
-        ("prove", "Prove"),
         ("use", "Use"),
         ("in", "In"),
         ("..", "DotDot"),

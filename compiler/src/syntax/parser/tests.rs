@@ -530,11 +530,13 @@ let previous = replace deref(pointer).field = ordinary;
 user<T, 'r, 2>(arg: ordinary);
 return unit;
 loop @again { break @again; }
-for @range index in 0_u64..1_u64 {
-invariant limit: ile(index + 1_u64 * (1_u64), 2_u64);
+for @range (
+index in 0_u64..1_u64,
+invariant limit: ile(index + 1_u64 * (1_u64), 2_u64)
+) {
 break @range;
 }
-prove parser_proof: ile(ordinary + 1_i32, moved + 1_i32) {
+invariant parser_proof: ile(ordinary + 1_i32, moved + 1_i32) {
 use ile(ordinary, moved);
 use ile(0_i32, 0_i32);
 }
@@ -570,7 +572,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 81);
+    assert_eq!(productions().len(), 82);
     assert_eq!(
         parsed
             .tree
@@ -624,9 +626,9 @@ const BODY_CHECK_STATEMENT: &[u8] =
 
 const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures ieq(result, value);\n} {\n  return value;\n}\n";
 
-const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    invariant limit: ile(index + 1_u64 * (1_u64), upper);\n    break @range;\n  }\n  return unit;\n}\n";
+const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: ile(index + 1_u64 * (1_u64), upper)\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
 
-const PROOF_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove ordered: ile(left + 1_i32, right + 1_i32) {\n    use ile(left, right);\n    use ile(0_i32, 0_i32);\n  }\n  return unit;\n}\n";
+const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: ile(left + 1_i32, right + 1_i32) {\n    use 2 * ile(left, right);\n    use prior_order;\n  }\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -795,12 +797,12 @@ fn active_contract_parses_the_complete_counted_range_statement() {
 }
 
 #[test]
-fn active_contract_parses_and_finalizes_a_finite_proof_statement() {
-    let outcome = parse_active("proof.wf", PROOF_STATEMENT);
+fn active_contract_parses_and_finalizes_a_local_invariant_certificate() {
+    let outcome = parse_active("invariant.wf", LOCAL_INVARIANT_STATEMENT);
     let ParseOutcome::Complete(parsed) = outcome else {
-        panic!("the active tables must derive a finite proof statement: {outcome:?}");
+        panic!("the active tables must derive a local invariant certificate: {outcome:?}");
     };
-    let proof_statements = parsed
+    let invariant_statements = parsed
         .tree
         .elements
         .iter()
@@ -808,7 +810,7 @@ fn active_contract_parses_and_finalizes_a_finite_proof_statement() {
             matches!(
                 element,
                 DerivationElement::Production {
-                    production: Production::ProofStmt,
+                    production: Production::InvariantStmt,
                     ..
                 }
             )
@@ -828,7 +830,7 @@ fn active_contract_parses_and_finalizes_a_finite_proof_statement() {
             )
         })
         .count();
-    assert_eq!(proof_statements, 1);
+    assert_eq!(invariant_statements, 1);
     assert_eq!(proof_premises, 2);
 
     let FinalizeOutcome::Complete(_) = finalize(
@@ -843,44 +845,50 @@ fn active_contract_parses_and_finalizes_a_finite_proof_statement() {
             max_sources: 16,
         },
     ) else {
-        panic!("the finite proof statement must finalize");
+        panic!("the local invariant certificate must finalize");
     };
 }
 
 #[test]
-fn proof_fixed_words_are_not_identifier_spellings() {
-    for source in [
-        b"fn prove() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
-        b"fn probe() -> result: own unit pure {\n  let use = 0_i32;\n  return unit;\n}\n",
-    ] {
-        let ParseOutcome::SourceIssue(issue) = parse_active("reserved-proof.wf", source) else {
-            panic!("prove/use must be excluded from IDENT");
-        };
-        assert_eq!(issue.rule(), SyntaxRule::Form3);
-    }
+fn retired_prove_spelling_is_an_identifier_but_use_remains_reserved() {
+    let ordinary = b"fn prove() -> result: own unit pure {\n  return unit;\n}\n";
+    assert!(
+        matches!(
+            parse_active("ordinary-prove.wf", ordinary),
+            ParseOutcome::Complete(_)
+        ),
+        "the retired prove keyword must return to IDENT"
+    );
+
+    let reserved =
+        b"fn probe() -> result: own unit pure {\n  let use = 0_i32;\n  return unit;\n}\n";
+    let ParseOutcome::SourceIssue(issue) = parse_active("reserved-use.wf", reserved) else {
+        panic!("use must remain excluded from IDENT");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form3);
 }
 
 #[test]
-fn malformed_proof_statements_stop_at_their_first_grammar_boundary() {
+fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove empty: ile(left, right) {\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant empty: ile(left, right) {\n  }\n  return unit;\n}\n".as_slice(),
             b"}".as_slice(),
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove missing_semicolon: ile(left, right) {\n    use ile(left, right)\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_semicolon: ile(left, right) {\n    use ile(left, right)\n  }\n  return unit;\n}\n",
             b"}",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove missing_comma: ile(left right) {\n    use ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_comma: ile(left right) {\n    use ile(left, right);\n  }\n  return unit;\n}\n",
             b"right",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove missing_open: ile(left, right)\n    use ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_open: ile(left, right)\n    use ile(left, right);\n  }\n  return unit;\n}\n",
             b"use",
         ),
         (
-            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  prove affine_only: ile(value, limit) {\n    use ile(value.field, limit);\n  }\n  return unit;\n}\n",
+            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: ile(value, limit) {\n    use ile(value.field, limit);\n  }\n  return unit;\n}\n",
             b".",
         ),
         (
@@ -891,13 +899,13 @@ fn malformed_proof_statements_stop_at_their_first_grammar_boundary() {
             b"disguised",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  prove disguised_premise: ile(left, right) {\n    Bogus ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant disguised_premise: ile(left, right) {\n    Bogus ile(left, right);\n  }\n  return unit;\n}\n",
             b"Bogus",
         ),
     ] {
-        let outcome = parse_active("malformed-proof.wf", source);
+        let outcome = parse_active("malformed-invariant.wf", source);
         let ParseOutcome::SourceIssue(issue) = outcome else {
-            panic!("malformed proof statement must reject: {outcome:?}");
+            panic!("malformed local invariant must reject: {outcome:?}");
         };
         assert_eq!(issue_bytes(source, issue), boundary);
     }
@@ -905,7 +913,7 @@ fn malformed_proof_statements_stop_at_their_first_grammar_boundary() {
     let source = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  use ile(left, right);\n  return unit;\n}\n";
     let outcome = parse_active("stray-use.wf", source);
     let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("a proof premise outside a proof block must reject: {outcome:?}");
+        panic!("a use step outside an invariant block must reject: {outcome:?}");
     };
     assert_eq!(issue.rule(), SyntaxRule::Form3);
     assert_eq!(issue_bytes(source, issue), b"use");
@@ -919,9 +927,16 @@ fn loop_labels_and_break_labels_are_independently_optional() {
   loop {
     break;
   }
-  for index in 0_u64..1_u64 {
-    invariant within_range: ile(index, 1_u64);
+  for (
+    index in 0_u64..1_u64,
+    invariant within_range: ile(index, 1_u64)
+  ) {
     break;
+  }
+  loop @checked (
+    invariant nonnegative: ile(0_u64, 1_u64)
+  ) {
+    break @checked;
   }
   loop @outer {
     loop {
@@ -952,32 +967,36 @@ fn counted_range_fixed_words_are_not_identifier_spellings() {
 fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for 0_u64 in lower..upper {\n  }\n  return unit;\n}\n".as_slice(),
-            b"0_u64".as_slice(),
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    invariant wrong_first: ile(lower, upper),\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
+            b"invariant".as_slice(),
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range in lower..upper {\n  }\n  return unit;\n}\n",
-            b"in",
-        ),
-        (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index lower..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index lower..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b"lower",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in ..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in ..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b"..",
         ),
         (
-            b"fn probe() -> result: own unit pure {\n  for @range index in 0_u64 . 1_u64 {\n  }\n  return unit;\n}\n",
+            b"fn probe() -> result: own unit pure {\n  for @range (\n    index in 0_u64 . 1_u64,\n  ) {\n  }\n  return unit;\n}\n",
             b".",
         ),
         (
-            b"fn probe(lower: own u64) -> result: own unit pure {\n  for @range index in lower.. {\n  }\n  return unit;\n}\n",
-            b"{",
+            b"fn probe(lower: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..,\n  ) {\n  }\n  return unit;\n}\n",
+            b",",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b"..",
+        ),
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n  ) {\n  }\n  return unit;\n}\n",
+            b")",
+        ),
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: ile(lower, upper) {\n      use ile(lower, upper);\n    },\n  ) {\n  }\n  return unit;\n}\n",
+            b"{",
         ),
     ] {
         let outcome = parse_active("malformed-range.wf", source);
