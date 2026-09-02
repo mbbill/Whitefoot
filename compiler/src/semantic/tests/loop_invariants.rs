@@ -79,10 +79,345 @@ fn an_invariant_must_be_in_the_direct_counted_body_prefix() {
         assert_eq!(
             issue.kind(),
             &SemanticIssueKind::InvalidLoopInvariant {
-                reason: "an invariant appears after an executable statement in its counted body",
-                mechanical_fix: "move every invariant into one contiguous prefix at the start of the counted body",
+                reason: "an invariant appears after an executable statement in its loop body",
+                mechanical_fix: "move every invariant into one contiguous prefix at the start of the loop body",
             }
         );
+    });
+}
+
+#[test]
+fn ordered_invariant_roots_have_exact_integer_normalization() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  for i in 0_u64..1_u64 {
+    invariant nonstrict_forward: ile(i, 1_u64);
+    invariant nonstrict_reverse: ige(1_u64, i);
+    invariant strict_forward: ilt(i, 2_u64);
+    invariant strict_reverse: igt(2_u64, i);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("all four ordered invariant roots must normalize: {outcome:?}");
+        };
+        let invariants = &checked.data.functions[0].entailment.loop_invariants;
+        assert_eq!(invariants.len(), 4);
+        assert!(invariants.iter().all(|invariant| invariant.proof.base));
+        assert!(
+            invariants
+                .iter()
+                .all(|invariant| invariant.proof.step == Some(true))
+        );
+    });
+
+    for source in [
+        br#"command fn main() -> status: own ExitStatus pure {
+  for i in 0_u64..1_u64 {
+    invariant limit: ilt(i, 1_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"command fn main() -> status: own ExitStatus pure {
+  for i in 0_u64..1_u64 {
+    invariant limit: igt(1_u64, i);
+  }
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ] {
+        with_semantics(source, |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("strict order must reject equality at the next header: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Inv1);
+            assert!(matches!(
+                issue.kind(),
+                SemanticIssueKind::UndischargedLoopInvariant {
+                    name,
+                    obligation: LoopInvariantProofObligation::Backedge,
+                    ..
+                } if name == "limit"
+            ));
+        });
+    }
+}
+
+#[test]
+fn equality_and_disequality_are_not_invariant_roots() {
+    for source in [
+        br#"command fn main() -> status: own ExitStatus pure {
+  for i in 0_u64..1_u64 {
+    invariant same: ieq(i, i);
+  }
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"command fn main() -> status: own ExitStatus pure {
+  for i in 0_u64..1_u64 {
+    invariant different: ine(i, 2_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ] {
+        with_semantics(source, |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a non-ordered invariant root must be rejected: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Inv1);
+            assert_eq!(
+                issue.kind(),
+                &SemanticIssueKind::InvalidLoopInvariant {
+                    reason: "the invariant root is not an admitted ordered integer relation",
+                    mechanical_fix: "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
+                }
+            );
+        });
+    }
+}
+
+#[test]
+fn ordinary_loop_invariant_is_inductive_at_an_arbitrary_header() {
+    let source = br#"fn repeat(leave: own Bool) -> result: own unit pure {
+  let value = 0_u64;
+  loop {
+    invariant limit: ile(value, 0_u64);
+    if leave {
+      break;
+    } else {
+      set value = 0_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the ordinary-loop induction must check: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "repeat")
+            .expect("repeat function exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("repeat retains one source invariant");
+        };
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
+    });
+}
+
+#[test]
+fn ordinary_loop_invariant_must_precede_executable_statements() {
+    let source = br#"fn misplaced() -> result: own unit pure {
+  loop {
+    let value = 0_u64;
+    invariant limit: ile(value, 0_u64);
+    break;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an ordinary-loop invariant after code must be rejected: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::InvalidLoopInvariant {
+                reason: "an invariant appears after an executable statement in its loop body",
+                mechanical_fix: "move every invariant into one contiguous prefix at the start of the loop body",
+            }
+        );
+    });
+}
+
+#[test]
+fn ordinary_loop_write_must_preserve_the_next_header_invariant() {
+    assert_invariant_issue(
+        br#"fn repeat(leave: own Bool) -> result: own unit pure {
+  let value = 0_u64;
+  loop {
+    invariant limit: ile(value, 0_u64);
+    if leave {
+      break;
+    } else {
+      set value = 1_u64;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        LoopInvariantProofObligation::Backedge,
+    );
+}
+
+#[test]
+fn ordinary_loop_break_does_not_export_its_header_invariant() {
+    let source = br#"fn leave_loop(leave: own Bool) -> result: own unit pure {
+  let value = 0_u64;
+  loop {
+    invariant limit: ile(value, 0_u64);
+    if leave {
+      break;
+    } else {
+      set value = 0_u64;
+    }
+  }
+  let not_proved = 0_u64 - value;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an ordinary break must not export its header invariant: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+    });
+}
+
+#[test]
+fn ordinary_loop_batch_uses_all_invariants_for_each_backedge() {
+    let source = br#"fn preserve_pair(a: own u64, b: own u64, c: own u64, d: own u64, leave: own Bool) -> result: own unit pure contract {
+  requires ile(a, b);
+  requires ile(c, d);
+} {
+  let first = a;
+  let first_limit = b;
+  let second = c;
+  let second_limit = d;
+  let combined_left = 0_u64;
+  let combined_right = 0_u64;
+  let combined_left_limit = 0_u64;
+  let combined_right_limit = 0_u64;
+  loop {
+    invariant combined: ile(combined_left + combined_right, combined_left_limit + combined_right_limit);
+    invariant first_order: ile(first, first_limit);
+    invariant second_order: ile(second, second_limit);
+    if leave {
+      break;
+    } else {
+      set combined_left = first;
+      set combined_right = second;
+      set combined_left_limit = first_limit;
+      set combined_right_limit = second_limit;
+      set first = first;
+      set first_limit = first_limit;
+      set second = second;
+      set second_limit = second_limit;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the complete invariant batch must prove the combined backedge: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "preserve_pair")
+            .expect("preserve_pair function exists");
+        let invariants = &function.entailment.loop_invariants;
+        assert_eq!(invariants.len(), 3);
+        assert!(invariants.iter().all(|invariant| invariant.proof.base));
+        assert!(
+            invariants
+                .iter()
+                .all(|invariant| invariant.proof.step == Some(true))
+        );
+    });
+
+    let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
+    let without_second = source.replacen(
+        "    invariant second_order: ile(second, second_limit);\n",
+        "",
+        1,
+    );
+    with_semantics(without_second.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!(
+                "the missing second premise must leave the combined backedge unproved: {outcome:?}"
+            );
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedLoopInvariant {
+                name,
+                obligation: LoopInvariantProofObligation::Backedge,
+                ..
+            } if name == "combined"
+        ));
+    });
+}
+
+#[test]
+fn a_failed_base_batch_grants_no_ordinary_header_assumption() {
+    let source = br#"fn unknown_order(left: own u64, right: own u64, leave: own Bool) -> result: own unit pure {
+  loop {
+    invariant first: ile(left, right);
+    invariant second: ile(left, right);
+    if leave {
+      break;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark checking must retain the failed batch: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "unknown_order")
+            .expect("unknown_order function exists");
+        let [first, second] = function.entailment.loop_invariants.as_slice() else {
+            panic!("unknown_order retains both invariants");
+        };
+        for invariant in [first, second] {
+            assert!(!invariant.proof.base);
+            assert_eq!(invariant.proof.step, Some(false));
+        }
     });
 }
 

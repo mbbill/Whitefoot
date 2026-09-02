@@ -28,7 +28,58 @@ pub(in crate::semantic::check) struct BreakState {
     bindings: HashMap<DeclarationId, LocalBinding>,
 }
 
+#[derive(Clone, Copy)]
+struct InvariantRelationNormalization {
+    reverse: bool,
+    bound: i128,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn split_loop_body(&self, node: NodeId) -> Result<(Vec<NodeId>, Vec<NodeId>), CheckStop> {
+        let statements = self.tree.children_with(node, Production::Stmt)?;
+        let mut invariant_nodes = Vec::new();
+        let mut executable_statements = Vec::new();
+        let mut executable_seen = false;
+        for wrapper in statements {
+            let statement = self.tree.only_child(wrapper)?;
+            if self.tree.production(statement)? == Production::InvariantStmt {
+                if executable_seen {
+                    return self.invalid_loop_invariant(
+                        statement,
+                        "an invariant appears after an executable statement in its loop body",
+                        "move every invariant into one contiguous prefix at the start of the loop body",
+                    );
+                }
+                invariant_nodes.push(statement);
+            } else {
+                executable_seen = true;
+                executable_statements.push(wrapper);
+            }
+        }
+        Ok((invariant_nodes, executable_statements))
+    }
+
+    fn form_loop_invariants(
+        &self,
+        nodes: Vec<NodeId>,
+        loop_id: CheckedLoopId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+    ) -> Result<Vec<CheckedLoopInvariant>, CheckStop> {
+        let mut names = HashSet::new();
+        let mut invariants = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            invariants.push(self.check_loop_invariant(
+                node,
+                loop_id,
+                bindings,
+                allowed_values,
+                &mut names,
+            )?);
+        }
+        Ok(invariants)
+    }
+
     pub(super) fn check_counted_range(
         &self,
         function: &FunctionSignature,
@@ -101,38 +152,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             preserved: preserved.clone(),
         });
 
-        let statements = self.tree.children_with(node, Production::Stmt)?;
-        let mut invariant_nodes = Vec::new();
-        let mut executable_statements = Vec::new();
-        let mut executable_seen = false;
-        for wrapper in statements {
-            let statement = self.tree.only_child(wrapper)?;
-            if self.tree.production(statement)? == Production::InvariantStmt {
-                if executable_seen {
-                    return self.invalid_loop_invariant(
-                        statement,
-                        "an invariant appears after an executable statement in its counted body",
-                        "move every invariant into one contiguous prefix at the start of the counted body",
-                    );
-                }
-                invariant_nodes.push(statement);
-            } else {
-                executable_seen = true;
-                executable_statements.push(wrapper);
-            }
-        }
-        let mut invariant_names = HashSet::new();
+        let (invariant_nodes, executable_statements) = self.split_loop_body(node)?;
         let allowed_invariant_values = header_keys.iter().copied().collect::<HashSet<_>>();
-        let mut invariants = Vec::with_capacity(invariant_nodes.len());
-        for invariant_node in invariant_nodes {
-            invariants.push(self.check_loop_invariant(
-                invariant_node,
-                id,
-                &body_bindings,
-                &allowed_invariant_values,
-                &mut invariant_names,
-            )?);
-        }
+        let invariants = self.form_loop_invariants(
+            invariant_nodes,
+            id,
+            &body_bindings,
+            &allowed_invariant_values,
+        )?;
         let checked = self.check_block(
             function,
             &executable_statements,
@@ -209,23 +236,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !names.insert(name.clone()) {
             return self.invalid_loop_invariant(
                 node,
-                "a counted loop contains two invariants with the same name",
-                "give every invariant in this counted loop a distinct name",
+                "a loop contains two invariants with the same name",
+                "give every invariant in this loop a distinct name",
             );
         }
-        self.require_ile_relation(AffineProofOwner::LoopInvariant, node, *relation_token)?;
-        let relation = self.check_affine_relation(
+        let normalization = self.invariant_relation_normalization(node, *relation_token)?;
+        let mut relation = self.check_affine_relation(
             node,
             bindings,
             allowed_values,
             AffineProofOwner::LoopInvariant,
         )?;
+        if normalization.reverse {
+            std::mem::swap(&mut relation.left, &mut relation.right);
+        }
+        relation.bound = normalization.bound;
 
         Ok(CheckedLoopInvariant {
             loop_id,
             name,
             relation,
         })
+    }
+
+    fn invariant_relation_normalization(
+        &self,
+        node: NodeId,
+        relation_token: usize,
+    ) -> Result<InvariantRelationNormalization, CheckStop> {
+        let normalization = match self.tree.token_bytes(relation_token)? {
+            b"ile" => InvariantRelationNormalization {
+                reverse: false,
+                bound: 0,
+            },
+            b"ilt" => InvariantRelationNormalization {
+                reverse: false,
+                bound: -1,
+            },
+            b"ige" => InvariantRelationNormalization {
+                reverse: true,
+                bound: 0,
+            },
+            b"igt" => InvariantRelationNormalization {
+                reverse: true,
+                bound: -1,
+            },
+            _ => {
+                return self.invalid_loop_invariant(
+                    node,
+                    "the invariant root is not an admitted ordered integer relation",
+                    "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
+                );
+            }
+        };
+        Ok(normalization)
     }
 
     pub(super) fn invalid_loop_invariant<ResultValue>(
@@ -397,10 +461,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
 
         let mut body_bindings = base_bindings.clone();
-        let statements = self.tree.children_with(node, Production::Stmt)?;
+        let (invariant_nodes, executable_statements) = self.split_loop_body(node)?;
+        let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
+        let invariants = self.form_loop_invariants(
+            invariant_nodes,
+            id,
+            &body_bindings,
+            &allowed_invariant_values,
+        )?;
         let checked = self.check_block(
             function,
-            &statements,
+            &executable_statements,
             &mut body_bindings,
             counters,
             ControlScope {
@@ -438,6 +509,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::Loop {
                 id,
+                invariants,
                 body: checked.statements,
                 backedge_drops,
             },

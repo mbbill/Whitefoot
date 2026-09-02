@@ -162,7 +162,7 @@ pub enum SemanticRule {
     Sys8,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
-    /// Proof-only counted-loop invariant formation.
+    /// Proof-only loop invariant formation.
     Inv1,
     /// Finite source-written affine proof formation and checking.
     Prf1,
@@ -380,11 +380,12 @@ pub enum StaticObligationDisposition {
 /// Which INV-1 induction obligation a source loop invariant failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoopInvariantProofObligation {
-    /// The invariant did not follow from the counted-range preheader facts at the
-    /// first loop header.
+    /// The invariant did not follow from the loop preheader facts at the first
+    /// loop header.
     Base,
     /// Some reachable normal body fallthrough did not preserve the invariant
-    /// through the hidden unit binder update into the next loop header.
+    /// at the next loop header. A counted loop includes its hidden unit binder
+    /// update in this transition.
     Backedge,
 }
 
@@ -622,7 +623,7 @@ pub enum SemanticIssueKind {
         /// The exact source-level restructuring required by GRAM-4.
         mechanical_fix: &'static str,
     },
-    /// A proof-only counted-loop invariant violates INV-1 formation.
+    /// A proof-only loop invariant violates INV-1 formation.
     InvalidLoopInvariant {
         reason: &'static str,
         mechanical_fix: &'static str,

@@ -50,14 +50,17 @@ pub(crate) enum CheckedAffineExpressionKind {
     },
 }
 
-/// One source-written affine `ile(left, right)` relation. The checker has
-/// already admitted the expression vocabulary, but this record alone grants
-/// no fact: INV-1 or PRF-1 must still prove its owning judgment.
+/// One normalized source-written affine ordered relation. `left - right <=
+/// bound` has `bound == 0` for non-strict order and `bound == -1` for strict
+/// integer order. The checker has already admitted the expression vocabulary,
+/// but this record alone grants no fact: INV-1 or PRF-1 must still prove its
+/// owning judgment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedAffineRelation {
     pub(crate) node_path: NodePath,
     pub(crate) left: CheckedAffineExpression,
     pub(crate) right: CheckedAffineExpression,
+    pub(crate) bound: i128,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1732,6 +1735,9 @@ pub(crate) enum CheckedStatement {
     },
     Loop {
         id: CheckedLoopId,
+        /// Formed source invariants awaiting the normal semantic proof
+        /// checker. Their presence alone grants no authority.
+        invariants: Vec<CheckedLoopInvariant>,
         body: Vec<CheckedStatement>,
         backedge_drops: Vec<CheckedDrop>,
     },

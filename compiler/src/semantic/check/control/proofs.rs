@@ -156,6 +156,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node_path: self.tree.path(node)?.clone(),
             left,
             right,
+            bound: 0,
         })
     }
 

@@ -7872,6 +7872,84 @@ impl Analyzer<'_, '_> {
         self.checked_affine_relation_inequality(&invariant.relation, state, check)
     }
 
+    /// INV-1 base is a simultaneous batch: every target is checked against
+    /// the same preheader state before any invariant from the batch becomes an
+    /// assumption.
+    fn prove_loop_invariant_bases(
+        &mut self,
+        invariants: &[CheckedLoopInvariant],
+        state: &mut ProofFlowState,
+    ) -> Vec<bool> {
+        invariants
+            .iter()
+            .map(|invariant| {
+                let target = self.checked_loop_invariant_inequality(
+                    invariant,
+                    &mut state.affine,
+                    &mut AffineCheckState::new(),
+                );
+                target.as_ref().is_some_and(|target| {
+                    self.prove(
+                        ProofContext::new(&state.facts, &state.affine),
+                        ProofGoal::Affine { inequality: target },
+                    )
+                    .disposition
+                        == ProofDisposition::Proved
+                })
+            })
+            .collect()
+    }
+
+    /// Installs the complete invariant batch at a generic loop header only
+    /// after every base judgment succeeded. No source-order prefix can lend
+    /// authority to a later base case.
+    fn activate_loop_invariant_batch(
+        &mut self,
+        loop_id: CheckedLoopId,
+        invariants: &[CheckedLoopInvariant],
+        base_batch: bool,
+        state: &mut AffineFlowState,
+    ) {
+        for (source_ordinal, invariant) in invariants.iter().enumerate() {
+            let target = self.checked_loop_invariant_inequality(
+                invariant,
+                state,
+                &mut AffineCheckState::new(),
+            );
+            if base_batch && let Some(inequality) = target {
+                state.assumptions.push(ActiveAffineFact {
+                    source: SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
+                        loop_id,
+                        source_ordinal: u32::try_from(source_ordinal)
+                            .expect("loop invariant ordinal exceeds u32"),
+                    }),
+                    inequality,
+                });
+            }
+        }
+    }
+
+    fn record_loop_invariant_outcomes(
+        &mut self,
+        loop_id: CheckedLoopId,
+        invariants: &[CheckedLoopInvariant],
+        base: &[bool],
+        step: &[Option<bool>],
+    ) {
+        for (index, invariant) in invariants.iter().enumerate() {
+            self.loop_invariants.push(LoopInvariantOutcome {
+                node_path: invariant.relation.node_path.clone(),
+                loop_id,
+                source_ordinal: u32::try_from(index).expect("loop invariant ordinal exceeds u32"),
+                name: invariant.name.clone(),
+                proof: LoopInvariantProof {
+                    base: base[index],
+                    step: step[index],
+                },
+            });
+        }
+    }
+
     fn checked_affine_relation_inequality(
         &mut self,
         relation: &CheckedAffineRelation,
@@ -7880,7 +7958,7 @@ impl Analyzer<'_, '_> {
     ) -> Option<AffineInequality> {
         let left = self.checked_affine_form(&relation.left, state, check)?;
         let right = self.checked_affine_form(&relation.right, state, check)?;
-        AffineInequality::from_forms(&left, &right, check).ok()
+        AffineInequality::from_bounded_forms(&left, &right, relation.bound, check).ok()
     }
 
     /// Projects the exact source relation into L0 when its normalized binding
@@ -7931,7 +8009,8 @@ impl Analyzer<'_, '_> {
         let mut check = AffineCheckState::new();
         let left = source_form(&relation.left, &mut bindings, &mut check)?;
         let right = source_form(&relation.right, &mut bindings, &mut check)?;
-        let inequality = AffineInequality::from_forms(&left, &right, &mut check).ok()?;
+        let inequality =
+            AffineInequality::from_bounded_forms(&left, &right, relation.bound, &mut check).ok()?;
         let mut term = |coefficient: super::affine::AffineCoefficient| {
             let binding = *bindings.get(coefficient.term().index() as usize)?;
             let fragment = fragment_type(CheckedType::Integer(self.affine_binding_type(binding)?))?;
@@ -8951,11 +9030,19 @@ impl Analyzer<'_, '_> {
                 }
                 true
             }
-            CheckedStatement::Loop { id, body, .. } => {
-                // [ENT-5] no-induction loop rule: the head state is the state
-                // before the loop minus every fact a continuing kill event in
-                // the body may kill. The body's normal exit is this loop's
-                // backedge; exits from the body are not.
+            CheckedStatement::Loop {
+                id,
+                invariants,
+                body,
+                ..
+            } => {
+                let base = self.prove_loop_invariant_bases(invariants, state);
+                let base_batch = base.iter().all(|proved| *proved);
+
+                // The generic header starts from the preheader minus every
+                // fact a continuing kill may invalidate. Invariants then add
+                // precisely the author-written induction hypotheses whose
+                // complete base batch succeeded.
                 let mut kills = LoopKills::default();
                 self.collect_continuing_loop_kills(
                     body,
@@ -8964,6 +9051,7 @@ impl Analyzer<'_, '_> {
                     &mut kills,
                 );
                 self.apply_loop_kills(state, &kills, None);
+                self.activate_loop_invariant_batch(*id, invariants, base_batch, &mut state.affine);
                 let head_entry_images = state.entry_images.clone();
                 self.loops.push(LoopFrame {
                     id: *id,
@@ -8972,10 +9060,34 @@ impl Analyzer<'_, '_> {
                     capture_path: None,
                     breaks: Vec::new(),
                 });
-                let mut head = state.clone();
-                let _ = self.walk_block(body, &mut head);
+                let mut body_state = state.clone();
+                let body_falls_through = self.walk_block(body, &mut body_state);
+
+                let mut step = vec![None; invariants.len()];
+                if body_falls_through {
+                    for (index, invariant) in invariants.iter().enumerate() {
+                        let target = self.checked_loop_invariant_inequality(
+                            invariant,
+                            &mut body_state.affine,
+                            &mut AffineCheckState::new(),
+                        );
+                        step[index] = Some(target.as_ref().is_some_and(|target| {
+                            self.prove(
+                                ProofContext::new(&body_state.facts, &body_state.affine),
+                                ProofGoal::Affine { inequality: target },
+                            )
+                            .disposition
+                                == ProofDisposition::Proved
+                        }));
+                    }
+                }
+                self.record_loop_invariant_outcomes(*id, invariants, &base, &step);
+
                 let frame = self.loops.pop();
-                let breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
+                let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
+                for break_state in &mut breaks {
+                    Self::remove_active_loop_invariants(&mut break_state.affine, *id);
+                }
                 let has_breaks = !breaks.is_empty();
                 // The continuation is the join over the break edges; with no
                 // break it is the contradictory all-derivable state, matching
@@ -9059,25 +9171,7 @@ impl Analyzer<'_, '_> {
                         == ProofDisposition::Proved
                 });
 
-                // INV-1 base is a simultaneous batch. No source invariant is an
-                // assumption while any base target is being checked.
-                let mut base = Vec::with_capacity(invariants.len());
-                for invariant in invariants {
-                    let target = self.checked_loop_invariant_inequality(
-                        invariant,
-                        &mut state.affine,
-                        &mut AffineCheckState::new(),
-                    );
-                    let proved = target.as_ref().is_some_and(|target| {
-                        self.prove(
-                            ProofContext::new(&state.facts, &state.affine),
-                            ProofGoal::Affine { inequality: target },
-                        )
-                        .disposition
-                            == ProofDisposition::Proved
-                    });
-                    base.push(proved);
-                }
+                let base = self.prove_loop_invariant_bases(invariants, state);
                 let base_batch = base.iter().all(|proved| *proved);
 
                 let mut kills = LoopKills::default();
@@ -9110,28 +9204,7 @@ impl Analyzer<'_, '_> {
                     .new_affine_binding_atom(*binder)
                     .expect("a checked counted binder has one u64 affine value");
                 state.affine.values.insert(*binder, header_binder);
-                let mut header_targets = Vec::with_capacity(invariants.len());
-                for (source_ordinal, invariant) in invariants.iter().enumerate() {
-                    let target = self.checked_loop_invariant_inequality(
-                        invariant,
-                        &mut state.affine,
-                        &mut AffineCheckState::new(),
-                    );
-                    if let Some(target) = &target {
-                        let active = ActiveAffineFact {
-                            source: SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
-                                loop_id: *id,
-                                source_ordinal: u32::try_from(source_ordinal)
-                                    .expect("loop invariant ordinal exceeds u32"),
-                            }),
-                            inequality: target.clone(),
-                        };
-                        if base_batch {
-                            state.affine.assumptions.push(active);
-                        }
-                    }
-                    header_targets.push(target);
-                }
+                self.activate_loop_invariant_batch(*id, invariants, base_batch, &mut state.affine);
 
                 let head = state.clone();
                 self.loops.push(LoopFrame {
@@ -9211,20 +9284,7 @@ impl Analyzer<'_, '_> {
                     }
                 }
 
-                for (index, invariant) in invariants.iter().enumerate() {
-                    let proof = LoopInvariantProof {
-                        base: base[index],
-                        step: step[index],
-                    };
-                    self.loop_invariants.push(LoopInvariantOutcome {
-                        node_path: invariant.relation.node_path.clone(),
-                        loop_id: *id,
-                        source_ordinal: u32::try_from(index)
-                            .expect("loop invariant ordinal exceeds u32"),
-                        name: invariant.name.clone(),
-                        proof,
-                    });
-                }
+                self.record_loop_invariant_outcomes(*id, invariants, &base, &step);
                 let step_batch = step.iter().all(|proved| proved.unwrap_or(true));
                 let export = lower_le_upper && base_batch && step_batch && hidden_update;
                 let frame = self.loops.pop();

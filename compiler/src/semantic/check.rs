@@ -2734,10 +2734,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     };
                     let mechanical_fix = match obligation {
                         crate::LoopInvariantProofObligation::Base => {
-                            "weaken or correct this invariant, or establish the missing facts before the counted range so the invariant holds at the first loop header"
+                            "weaken or correct this invariant, or establish the missing facts before the loop so the invariant holds at the first loop header"
                         }
                         crate::LoopInvariantProofObligation::Backedge => {
-                            "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it through the hidden unit binder update"
+                            "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it at the next loop header"
                         }
                     };
                     Err(CheckStop::source_issue(SemanticIssue {

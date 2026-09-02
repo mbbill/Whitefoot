@@ -804,7 +804,7 @@ pub(crate) struct FunctionEntailment {
     /// One complete five-relation/eight-atomic S11 group per counted
     /// statement, in deterministic statement-walk order.
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,
-    /// Source-written counted-loop invariants in statement order.
+    /// Source-written loop invariants in statement order.
     pub(crate) loop_invariants: Vec<LoopInvariantOutcome>,
     /// Erased finite source proofs in statement order.
     pub(crate) source_proofs: Vec<SourceProofOutcome>,
