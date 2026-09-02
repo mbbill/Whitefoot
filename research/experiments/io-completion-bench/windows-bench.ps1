@@ -269,7 +269,7 @@ $ObservedProcess.Dispose()
 $ExpectedMixedText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($MixedExpected))
 $ObservedLine = $ObservedStderr.TrimEnd([char[]]"`r`n")
 $ObservedPattern = (
-    '^windows-native-mixed-probe status=pass started={0} executed=[1-9][0-9]* grants=[1-9][0-9]* publishes=1024 overlap_publishes=1024 submissions=1025 publications=1025 consumes=1025 helpers=1 fallback=0$' -f
+    '^windows-native-mixed-probe status=pass started={0} executed=[1-9][0-9]* grants=[1-9][0-9]* publishes=1024 outstanding_publishes=1024 kernel_overlap_publishes=[0-9]+ inline_completions=[0-9]+ dequeued_completions=[0-9]+ submissions=1025 publications=1025 consumes=1025 helpers=1 fallback=0$' -f
     ($Workers - 1)
 )
 if ($ObservedExitCode -ne 0 -or $ObservedStdout -cne $ExpectedMixedText `

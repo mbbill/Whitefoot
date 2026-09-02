@@ -125,6 +125,10 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/completion"
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -DWF_WINDOWS_IOCP_READ_CALL=wf_windows_iocp_probe_read \
+            -DWF_WINDOWS_IOCP_WRITE_CALL=wf_windows_iocp_probe_write \
+            -DWF_WINDOWS_IOCP_RESULT_CALL=wf_windows_iocp_probe_result \
+            -DWF_WINDOWS_IOCP_NOTIFICATION_CALL=wf_windows_iocp_probe_notification \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
             compiler/src/backend/completion/windows_completion.c \

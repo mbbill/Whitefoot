@@ -157,7 +157,8 @@ static BOOL CALLBACK wf_windows_bridge_initialize(
         &wf_windows_bridge_runtime,
         wf_windows_bridge_entries,
         WF_WINDOWS_BRIDGE_CAPACITY,
-        0
+        0,
+        WF_WINDOWS_IOCP_INLINE_SYNCHRONOUS_SUCCESS
     );
     if (error == 0) {
         error = wf_windows_completion_bind_iocp(
@@ -583,6 +584,20 @@ static size_t wf_windows_bridge_drain(void) {
             return total;
         }
     }
+}
+
+/* Harvests only the event owned by this join instead of sweeping all 64 core
+ * slots on every turn. */
+static void wf_windows_bridge_drain_token(const void *token_storage) {
+    wf_completion_event event;
+    if (token_storage == NULL) {
+        abort();
+    }
+    (void)wf_completion_drain_token(
+        &wf_windows_bridge_runtime,
+        *(const wf_completion_token *)token_storage,
+        &event
+    );
 }
 
 static int wf_windows_bridge_progress(
@@ -1103,7 +1118,6 @@ int wf__completion_file_take(
     if (value == NULL || error_code == NULL) {
         abort();
     }
-    (void)wf_windows_bridge_drain();
     if (!wf_windows_bridge_take_result(token_storage, &result)) {
         return 0;
     }
@@ -1126,6 +1140,7 @@ void wf__completion_file_join(
         uint64_t observed = wf_completion_wake_epoch(
             &wf_windows_bridge_runtime
         );
+        wf_windows_bridge_drain_token(token_storage);
         if (wf__completion_file_take(token_storage, value, error_code)) {
             return;
         }
@@ -1144,7 +1159,7 @@ void wf__completion_file_open_join(
         uint64_t observed = wf_completion_wake_epoch(
             &wf_windows_bridge_runtime
         );
-        (void)wf_windows_bridge_drain();
+        wf_windows_bridge_drain_token(token_storage);
         if (wf_windows_bridge_take_result(token_storage, &result)) {
             if (result.kind != WF_WINDOWS_FILE_OPEN_AT
                 || value == NULL || error_code == NULL
@@ -1232,6 +1247,18 @@ uint64_t wf__completion_file_submissions(void) {
 
 uint64_t wf__completion_windows_iocp_in_flight(void) {
     return (uint64_t)wf_windows_iocp_in_flight(&wf_windows_bridge_adapter);
+}
+
+uint64_t wf__completion_windows_iocp_inline_completions(void) {
+    return wf_windows_iocp_statistics_snapshot(
+        &wf_windows_bridge_adapter
+    ).inline_completions;
+}
+
+uint64_t wf__completion_windows_iocp_dequeued_completions(void) {
+    return wf_windows_iocp_statistics_snapshot(
+        &wf_windows_bridge_adapter
+    ).dequeued_completions;
 }
 
 uint64_t wf__completion_file_fallback_submissions(void) { return 0; }

@@ -669,6 +669,13 @@ size_t wf_completion_drain(
         || event_capacity == 0 || scan_budget == 0) {
         return 0;
     }
+    /* A publisher increments this durable count before advancing the wake
+     * epoch. Avoid a compare-exchange on every slot when there is no event to
+     * find; a scheduler racing a later publication observes the changed epoch
+     * before it can park. */
+    if (wf_windows_load64(&runtime->ready_events) == 0) {
+        return 0;
+    }
     start = wf_windows_advance_cursor(
         &runtime->drain_cursor,
         runtime->slot_count,
@@ -715,6 +722,60 @@ size_t wf_completion_drain(
         wf_windows_notify_scheduler(runtime);
     }
     return produced;
+}
+
+size_t wf_completion_drain_token(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    wf_completion_event *event
+) {
+    wf_completion_slot *slot;
+    void *dependent_frame = NULL;
+    int wake_consumer = 0;
+    if (event == NULL || !wf_windows_token_slot(runtime, token, &slot)) {
+        return 0;
+    }
+    /* A token owner asks on every join turn. Make the overwhelmingly common
+     * negative answer one read, then decide the generation and event take
+     * together below. */
+    if (InterlockedCompareExchange(&slot->event_pending, 0, 0) == 0) {
+        return 0;
+    }
+    AcquireSRWLockExclusive(&slot->publication_lock);
+    if (slot->generation != token.generation
+        || InterlockedCompareExchange(&slot->event_pending, 0, 1) != 1) {
+        ReleaseSRWLockExclusive(&slot->publication_lock);
+        return 0;
+    }
+    event->token.slot = token.slot;
+    event->token.generation = slot->generation;
+    event->milestones = slot->milestones;
+    event->terminal_kind = slot->terminal_kind;
+    if (slot->dependent_frame != NULL
+        && (slot->milestones & slot->dependent_requirement)
+            == slot->dependent_requirement) {
+        dependent_frame = slot->dependent_frame;
+        slot->dependent_frame = NULL;
+        slot->dependent_requirement = 0;
+    }
+    slot->event_drained = 1;
+    if (slot->consume_waiting != 0) {
+        slot->consume_waiting = 0;
+        wake_consumer = 1;
+    }
+    ReleaseSRWLockExclusive(&slot->publication_lock);
+    InterlockedDecrement64(&runtime->ready_events);
+    InterlockedIncrement64(&runtime->stat_drained_events);
+    if (dependent_frame != NULL) {
+        if (runtime->ready_frame == NULL) {
+            abort();
+        }
+        runtime->ready_frame(dependent_frame);
+    }
+    if (wake_consumer != 0) {
+        wf_windows_notify_scheduler(runtime);
+    }
+    return 1;
 }
 
 size_t wf_completion_ready_event_count(const wf_completion_runtime *runtime) {

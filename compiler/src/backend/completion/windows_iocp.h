@@ -91,6 +91,13 @@ enum wf_windows_iocp_entry_state {
     WF_WINDOWS_IOCP_ENTRY_IN_FLIGHT = 2
 };
 
+enum wf_windows_iocp_option {
+    /* Suppress the otherwise redundant completion-port packet when an
+     * overlapped request returns success synchronously. The adapter publishes
+     * that already-terminal request on the submitting thread. */
+    WF_WINDOWS_IOCP_INLINE_SYNCHRONOUS_SUCCESS = 1u << 0
+};
+
 /* OVERLAPPED is first so the completion packet maps to a stable preallocated
  * operation entry without a side table or allocation. */
 typedef struct wf_windows_iocp_entry {
@@ -105,6 +112,8 @@ typedef struct wf_windows_iocp_statistics {
     uint64_t submissions;
     uint64_t capacity_waits;
     uint64_t immediate_failures;
+    uint64_t inline_completions;
+    uint64_t dequeued_completions;
     uint64_t completions;
     uint64_t publication_failures;
 } wf_windows_iocp_statistics;
@@ -125,23 +134,28 @@ typedef struct wf_windows_iocp_adapter {
     /* Ordinary values count active progress calls. Two high sentinels close
      * entry atomically during and after destroy. */
     _Atomic size_t progress_gate;
+    unsigned options;
     unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
     _Atomic uint64_t stat_capacity_waits;
     _Atomic uint64_t stat_immediate_failures;
+    _Atomic uint64_t stat_inline_completions;
+    _Atomic uint64_t stat_dequeued_completions;
     _Atomic uint64_t stat_completions;
     _Atomic uint64_t stat_publication_failures;
 } wf_windows_iocp_adapter;
 
-/* Creates one shared IOCP.  `entry_storage` is the entire userspace operation
- * capacity; there is no per-operation allocation. */
+/* Creates one shared IOCP. `entry_storage` is the entire userspace operation
+ * capacity; there is no per-operation allocation. Options are immutable and
+ * applied to every file associated with this adapter. */
 int wf_windows_iocp_init(
     wf_windows_iocp_adapter *adapter,
     wf_completion_runtime *runtime,
     wf_windows_iocp_entry *entry_storage,
     size_t entry_capacity,
-    DWORD concurrency
+    DWORD concurrency,
+    unsigned options
 );
 
 /* Installs the completion core's wait-accounting and lifecycle hooks before

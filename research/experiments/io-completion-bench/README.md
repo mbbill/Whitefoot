@@ -212,10 +212,12 @@ mixed window is source-level
 `read_at, compute_pair, read_at`; `compute_pair` contains the independent
 `churn, churn` pair. Before timing, an observed link requires all requested
 non-owner workers to start, a non-owner execution and successful steal, all
-1024 compute publications to occur while the first read is outstanding,
-exactly 1025 accepted/published/consumed completion operations, exactly one
-blocking helper execution (the overlapped open, beside 1024 IOCP reads), and
-zero fallback. Its fixed tree oracle is `17574306422404092952\n`.
+1024 compute publications to occur while the source still owns the first read,
+and records separately how many of those reads remained kernel-in-flight and
+how many synchronous-success reads published inline. It also requires exactly
+1025 accepted/published/consumed completion operations, exactly one blocking
+helper execution (the overlapped open, beside 1024 IOCP reads), and zero
+fallback. Its fixed tree oracle is `17574306422404092952\n`.
 
 The compute pair gives both builds three inert command arguments.
 `par_layout.wf` counts the complete invocation vector, including the invoked

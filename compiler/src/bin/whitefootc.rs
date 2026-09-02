@@ -38,6 +38,13 @@ use whitefoot::{module_requires_parallel_runtime, module_requires_writer_schedul
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
+// The compiler walks typed source and lowering trees recursively. Windows
+// gives the process's primary thread a 1 MiB stack by default, which is small
+// enough for an ordinary region-and-match-heavy program to exhaust while the
+// same source compiles on the other hosts. Own the driver thread's stack so a
+// source program's acceptance does not depend on the host executable format.
+const COMPILER_DRIVER_STACK_BYTES: usize = 8 * 1024 * 1024;
+
 fn clang_executable() -> &'static str {
     if cfg!(target_os = "windows") {
         "clang"
@@ -136,9 +143,27 @@ const WINDOWS_RUNTIME_COMPILE_UNITS: &[&str] = &[
 ];
 
 fn main() {
-    if let Err(message) = run() {
-        eprintln!("whitefootc: {message}");
-        std::process::exit(1);
+    let driver = match std::thread::Builder::new()
+        .name("whitefootc-driver".to_owned())
+        .stack_size(COMPILER_DRIVER_STACK_BYTES)
+        .spawn(run)
+    {
+        Ok(driver) => driver,
+        Err(error) => {
+            eprintln!("whitefootc: cannot start the compiler driver: {error}");
+            std::process::exit(1);
+        }
+    };
+    match driver.join() {
+        Ok(Ok(())) => {}
+        Ok(Err(message)) => {
+            eprintln!("whitefootc: {message}");
+            std::process::exit(1);
+        }
+        // The panic hook on the driver thread has already printed the panic.
+        // Preserve Rust's ordinary panic exit status without printing a
+        // second, less useful panic from this joining thread.
+        Err(_) => std::process::exit(101),
     }
 }
 

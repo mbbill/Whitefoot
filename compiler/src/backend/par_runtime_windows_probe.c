@@ -43,9 +43,12 @@ uint64_t wf__completion_file_helper_executions(void);
 uint64_t wf__completion_file_submissions(void);
 uint64_t wf__completion_publications(void);
 uint64_t wf__completion_windows_iocp_in_flight(void);
+uint64_t wf__completion_windows_iocp_inline_completions(void);
+uint64_t wf__completion_windows_iocp_dequeued_completions(void);
 
 static volatile LONG64 wf_par_mixed_publishes;
-static volatile LONG64 wf_par_mixed_overlap_publishes;
+static volatile LONG64 wf_par_mixed_outstanding_publishes;
+static volatile LONG64 wf_par_mixed_kernel_overlap_publishes;
 static volatile LONG64 wf_par_mixed_consumes;
 
 /* The observed fixture has 1024 compute pairs. Each pair publishes once while
@@ -56,9 +59,25 @@ static volatile LONG64 wf_par_mixed_consumes;
 #define WF_PAR_MIXED_EXPECTED_COMPLETIONS UINT64_C(1025)
 
 void wf__par_publish(void *frame, void (*fn)(void *)) {
+    LONG64 consumes = InterlockedCompareExchange64(
+        &wf_par_mixed_consumes,
+        0,
+        0
+    );
     (void)InterlockedIncrement64(&wf_par_mixed_publishes);
+    /* A native completion remains source-owned until the later join whether
+     * the kernel still owns it or a synchronous success published inline.
+     * Count that stable source-order fact separately from the instantaneous
+     * kernel state so the fast path is not mislabeled as a fallback. */
+    if (wf__completion_file_submissions() > (uint64_t)consumes) {
+        (void)InterlockedIncrement64(
+            &wf_par_mixed_outstanding_publishes
+        );
+    }
     if (wf__completion_windows_iocp_in_flight() != 0) {
-        (void)InterlockedIncrement64(&wf_par_mixed_overlap_publishes);
+        (void)InterlockedIncrement64(
+            &wf_par_mixed_kernel_overlap_publishes
+        );
     }
     wf__mixed_observed_par_publish(frame, fn);
 }
@@ -99,9 +118,15 @@ static void wf_par_probe_report(void) {
             0,
             0
         );
-    unsigned long long overlap_publishes =
+    unsigned long long outstanding_publishes =
         (unsigned long long)InterlockedCompareExchange64(
-            &wf_par_mixed_overlap_publishes,
+            &wf_par_mixed_outstanding_publishes,
+            0,
+            0
+        );
+    unsigned long long kernel_overlap_publishes =
+        (unsigned long long)InterlockedCompareExchange64(
+            &wf_par_mixed_kernel_overlap_publishes,
             0,
             0
         );
@@ -119,25 +144,37 @@ static void wf_par_probe_report(void) {
         (unsigned long long)wf__completion_file_fallback_submissions();
     unsigned long long helpers =
         (unsigned long long)wf__completion_file_helper_executions();
+    unsigned long long inline_completions =
+        (unsigned long long)wf__completion_windows_iocp_inline_completions();
+    unsigned long long dequeued_completions =
+        (unsigned long long)wf__completion_windows_iocp_dequeued_completions();
     int passed = started > 0 && executed > 0 && grants > 0
         && publishes == WF_PAR_MIXED_EXPECTED_PUBLISHES
-        && overlap_publishes == publishes
+        && outstanding_publishes == publishes
         && submissions == WF_PAR_MIXED_EXPECTED_COMPLETIONS
         && publications == WF_PAR_MIXED_EXPECTED_COMPLETIONS
         && consumes == WF_PAR_MIXED_EXPECTED_COMPLETIONS
+        && inline_completions <= WF_PAR_MIXED_EXPECTED_PUBLISHES
+        && inline_completions + dequeued_completions
+            == WF_PAR_MIXED_EXPECTED_PUBLISHES
         && helpers == 1 && fallback == 0;
 
     fprintf(
         stderr,
         "windows-native-mixed-probe status=%s started=%lu executed=%lu "
-        "grants=%lu publishes=%llu overlap_publishes=%llu submissions=%llu "
-        "publications=%llu consumes=%llu helpers=%llu fallback=%llu\n",
+        "grants=%lu publishes=%llu outstanding_publishes=%llu "
+        "kernel_overlap_publishes=%llu inline_completions=%llu "
+        "dequeued_completions=%llu submissions=%llu publications=%llu "
+        "consumes=%llu helpers=%llu fallback=%llu\n",
         passed ? "pass" : "fail",
         started,
         executed,
         grants,
         publishes,
-        overlap_publishes,
+        outstanding_publishes,
+        kernel_overlap_publishes,
+        inline_completions,
+        dequeued_completions,
         submissions,
         publications,
         consumes,

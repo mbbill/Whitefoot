@@ -3,6 +3,11 @@ CC ?= cc
 NM ?= nm
 WINDOWS_CC ?= zig cc
 WINDOWS_OBJDUMP ?= objdump
+WINDOWS_IOCP_PROBE_DEFINES := \
+	-DWF_WINDOWS_IOCP_READ_CALL=wf_windows_iocp_probe_read \
+	-DWF_WINDOWS_IOCP_WRITE_CALL=wf_windows_iocp_probe_write \
+	-DWF_WINDOWS_IOCP_RESULT_CALL=wf_windows_iocp_probe_result \
+	-DWF_WINDOWS_IOCP_NOTIFICATION_CALL=wf_windows_iocp_probe_notification
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
@@ -431,9 +436,10 @@ completion-windows-cross:
 		"$(COMPLETION_TMP)/windows-zig-local"
 	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
 	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) -Isrc/backend \
+		$(WINDOWS_CC) -target x86_64-windows-gnu \
+			-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+			$(WINDOWS_IOCP_PROBE_DEFINES) \
+			-I$(COMPLETION_DIR) -Isrc/backend \
 		$(COMPLETION_DIR)/windows_completion.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
 		$(COMPLETION_DIR)/windows_completion_probe.c \

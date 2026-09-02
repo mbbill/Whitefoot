@@ -242,6 +242,15 @@ size_t wf_completion_drain(
     size_t event_capacity,
     size_t scan_budget
 );
+/* Drains the pending event for one exact token without sweeping unrelated
+ * slots. The generation check and pending-event take are one transition under
+ * the slot publication lock, so a retired token cannot drain its reused
+ * slot's new operation. Returns 1 when it took the event, otherwise 0. */
+size_t wf_completion_drain_token(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    wf_completion_event *event
+);
 size_t wf_completion_ready_event_count(const wf_completion_runtime *runtime);
 
 enum wf_completion_transition_result wf_completion_observe(
