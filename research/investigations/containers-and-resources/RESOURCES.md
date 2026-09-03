@@ -2,8 +2,9 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> second draft, after falsifier round 1; this file has been brought to that draft
-> and carries no rule text of its own.
+> **third draft, after falsifier round 2**; this file has been brought to that
+> draft and carries no rule text of its own. Where a sentence here disagrees with
+> `DESIGN.md`, `DESIGN.md` wins.
 
 The resource half of the batch 0116 drafting round, reduced to the material
 `DESIGN.md` does not carry: the goals and non-goals it was written against, and
@@ -42,48 +43,62 @@ beside this file in `EVIDENCE-owner-discussion-2026-08-31.md`.
 | the verified/reasoned register       | DESIGN.md section 6, re-run and extended |
 ```
 
-## What round 2 changed, so this file is not read as current
+## What round 3 changed, so this file is not read as current
 
-`DESIGN.md`'s first draft was falsified in four passes, and six of the resource
-half's decisions did not survive. The walkthroughs below are written against the
-surviving design; if one contradicts `DESIGN.md`, `DESIGN.md` wins.
+`DESIGN.md`'s second draft was falsified in four more passes. Round 2 found as many
+breaks as round 1, and most of the new ones were opened by round-1 repairs added one
+per finding. The third draft consolidates: fifty-three rules instead of sixty-five,
+each stating its judgment, what it publishes and what it amends, with the amendment
+register derived from those `Amends:` lines. The walkthroughs below are written
+against it; where one disagrees, `DESIGN.md` wins.
 
-- **The judgment is two-stage.** `source-resource-closed` is a source judgment over
-  program text alone — heap-freedom, acyclicity, the per-domain symbolic
-  summaries, no reentrancy. The concrete envelope is a target-stage
-  materialization whose failure is a qualification failure citing no language
-  rule. The first draft made a source rejection depend on the register allocator,
-  the optimizer, and the linked runtime.
-- **`E` is a table over the lane counts the target supports, not a single list**,
-  because parallel permission is never an obligation and `W = 1` must always be
-  legal; and `PreStart` may descend the table rather than reporting a start
-  failure at the largest row.
-- **A tail edge is one whose caller frame is dead**, not one written in a return
-  statement. The syntactic conditions admitted a mutual tail recursion carrying a
-  live borrow of a caller local, which compiles today (probes `f2b`,
-  `f8_tailframe`) and whose rewrite would alias or unbound the frame.
-- **A reserved extent lives in the reserving activation's frame**, one per
-  activation. Static placement plus a framed-out row made one extent invisible to
-  [PAR-1] and shared by every overlapped activation.
-- **Saturation is unreachable, not answered.** Every runtime store is a covered
-  store with a published capacity, and the program's peak demand on it is composed
-  by the same algebra as a pool's. The first draft licensed inline execution,
-  which nests a chain no stack term counts, and waiting, which is a hang.
-- **Every provider-owned release names its provider.** A heap free and a pool
-  release carry comparable footprints; the first draft gave the first an empty row
-  and the second a `writes(pool)` row, which made two concurrent frees invisible to
-  [PAR-1] and left nothing ordering a `Heap`'s death after its allocations'.
+- **A store has a provenance, and release is linear.** A provider-derived value
+  carries an [OWN-5]-style origin set naming the *place* it was acquired from
+  ([PROV-3]), and a value whose backing is reclaimed per value has **no
+  compiler-derived release** at all: it is disposed by an operation that names the
+  same provider its acquisition named, checked against that origin ([PROV-6], law
+  L13). The second draft made the release derived and named its store by *type*,
+  which names a region, and a region may hold many stores; two pools of one type in
+  one region let a lease be returned to the wrong one.
+- **Reservation is region-local, and its placement is written.** `pool_frame`,
+  `pool_extent`, `arena_frame` and `arena_extent`, with the region argument opened
+  by the reserving function ([PROV-5]). The region-locality is what stops a helper
+  returning a value confined to its caller's region while the extent lives in the
+  helper's own frame; the placement choice is what lets a page table or a DMA ring
+  be a `region` item of `E` rather than bytes inside a stack total (L6).
+- **A helper can lend a provider onward**, because [PROV-7]'s condition is on the
+  **loan** region and not on region-freedom. The second draft's condition admitted
+  `box_new` and refused `pool_take`, `arena_new` and `seq_lease`, so it delivered
+  the capability story for goal B and left goal A ending at `main`.
+- **The loop rule has content.** The second draft's "structural capacity cutoff
+  (`len <= cap`)" is a standing identity that holds everywhere, so it discharged
+  every retaining loop vacuously. 3.3.1 now states the condition on the
+  *acquisitions*, and [RES-3] adds the sentence that makes stage two a substitution:
+  a bound is a closed expression in constants and profile symbols, and a figure
+  naming a runtime value is not a bound.
+- **Stage one is target-independent.** The arena algebra uses only the ceiling
+  `K<T>`, and `E` carries a source-stage ceiling beside a target-stage exact figure
+  ([RES-2], [RES-5]).
+- **A loop with no resolved break has no normal successor**, full stop ([STK-4]).
+  The second draft's "and no other exit" still refused every driver loop that
+  reports an error outward, which is verified: probe `n3_propagate_loop`.
+- **Backpressure is required, not deleted.** [RUN-1] forbids covered acquisition
+  after the barrier absolutely and *requires* a bounded admission discipline, which
+  is what lazy chunking is; and [RUN-2] makes sequential `par` and `lanes(1)` a rule
+  for a resource-closed build, because the stolen-task-on-a-waiting-lane's-stack
+  nesting is a soundness problem for [STK-3] and no compiler check catches it.
 
-Two smaller corrections: the store-state vocabulary `live`, `capacity` and
-`remaining` is retired into the one measure algebra `len`, `cap`, `room`, so a
-provider and a container are read with the same three terms; and `L8` is split, so
-that a store's own refusal is an ordinary fact on the `Err` edge and the checked
-spelling of an acquisition is worth having.
+Two things the second draft filed as open questions are answered here on the
+merits: region-parametric nominals are admitted ([CNT-4]), and the reentrancy
+premise is deleted rather than weakened, because v0.40 has no source form declaring
+a reentrant entry point. Execution contexts, interrupt entry and context switching
+are a separate follow-on design, out of scope for this batch; `DESIGN.md` 1.4 states
+the interface it inherits.
 
 Vocabulary note: the walkthroughs below were written before the two drafts were
-unified and spelled the container operations `fixed_vector_new`,
-`fixed_vector_push` and `heap_vector_new`. They now use `DESIGN.md` section 3.12's
-chosen spellings.
+unified. They now use `DESIGN.md` 3.12's chosen spellings, `seq_reserve` is split
+into `seq_reserve_heap` and `seq_reserve_arena`, and a receiver-threading statement
+is spelled `update p by op(args);` ([LIV-3]).
 
 ## 1. Goals and non-goals
 
@@ -150,7 +165,7 @@ error [RES-5]: this program cannot be resource-closed: it reaches the general he
      whether the next contiguous aligned request has a home
    = restructure: give the store a capacity the compiler can check --
      FixedVector<Record, N> over frame storage, or PoolVector over a
-     Pool<'p, Record, N> reserved by pool_static; or drop the resource_closed
+     Pool<'p, Record, N> reserved by pool_frame; or drop the resource_closed
      marker and handle OutOfMemory as a value
 ```
 
@@ -168,14 +183,15 @@ Note the path in the diagnostic runs from `main` to the operation, not to
 `buffer_new`. The `Heap` is reached through a parameter, and [PROV-4] roots the
 reaching relation in the **selected type at the leaf** of each `allocates` path,
 so a provider carried inside an aggregate is still found. The first draft rooted
-it in the formal's own type, which a struct field defeats — verified today by
-probe `f5b`, where an opaque affine capability travels in a struct field and both
-rows stay silent about it.
+it in the formal's own type, which a struct field defeats, verified today by probe
+`f5b`. [PROV-4] additionally reads `writes` paths, because after [PROV-6] a
+*release* names its provider too, so a program that only frees still reaches the
+store.
 
 ### 2.2 From recursive descent to an explicit work list
 
 ```wf-design
-fn parse_node['a](input: &'a Span<'a, u8>, at: own u64) -> result: own Node pure {
+fn parse_node['a](input: &'a Span<'a, u8>, at: own u64) -> result: own Node reads(input) {
   doc "Parses one node, recursing into its children.";
   ...
   let child = parse_node<'a>(input: input, at: next);
@@ -213,7 +229,7 @@ The fix turns the implicit stack into a declared one, and the declared one is an
 envelope item the writer chose:
 
 ```wf-design
-fn parse['a](input: &'a Span<'a, u8>) -> result: own Result<Node, TooDeep> pure {
+fn parse['a](input: &'a Span<'a, u8>) -> result: own Result<Node, TooDeep> reads(input) {
   doc "Parses the whole input with an explicit pending-node stack.";
   let pending = seq_fixed<Frame, 64>();
   loop @walk {
@@ -222,40 +238,60 @@ fn parse['a](input: &'a Span<'a, u8>) -> result: own Result<Node, TooDeep> pure 
 }
 ```
 
+Two rows are worth reading against `DESIGN.md`. The row is `reads(input)` and not
+`pure`, because [EFF-2] checks the row both ways and a read through a shared
+parameter is exhibited; the second draft printed `pure` here, which is a live
+rejection class. And `loop @walk` reaches `parse`'s return only through a resolved
+`break`; [STK-4] gives a loop an edge to its normal successor **if and only if some
+break resolves to it**, which is what makes a break-free driver loop a legal entry
+body and what the second draft's extra clause still refused.
+
 ### 2.3 From an unbounded store to a bounded one
 
 ```wf-design
   for @fill (i in 0_u64..count) {
-    let blank_bytes = array_new<u8, 4096>(0_u8);
-    let blank = Page(bytes: blank_bytes);
-    let page = pool_take<'p, 'c>(pool: &uniq 'c pages, value: move blank);
-    set kept = seq_place(vector: move kept, value: move page);
+    region 'c {
+      let blank_bytes = array_new<u8, 4096>(0_u8);
+      let blank = Page(bytes: blank_bytes);
+      let page = pool_take(pool: &uniq 'c pages, value: move blank);
+      update kept by seq_place(value: move page);
+    }
   }
 ```
+
+The `region 'c` inside the loop body is not decoration: [OWN-11]'s borrow half
+requires a `borrow_expr` in a loop body to name a region introduced there, and
+[OWN-10] requires it to be opened after `pages` is bound. Probes `r2_1` and `r2_2`
+in `DESIGN.md` 6.1 are the two halves of that discipline.
 
 ```text
 error [RES-6]: this loop's demand on 'p has no finite bound
   --> pager.wf:12:16
    |
-12 |     let page = pool_take<'p, 'c>(pool: &uniq 'c pages, value: move blank);
-   |                ^^^^^^^^^ acquires one slot of Pool<'p, Page, 64>
-13 |     set kept = seq_place(vector: move kept, value: move page);
-   |                ^^^^^^^^^ retains it past the backedge
+12 |       let page = pool_take(pool: &uniq 'c pages, value: move blank);
+   |                  ^^^^^^^^^ acquires one slot of Pool<'p, Page, 64>
+13 |       update kept by seq_place(value: move page);
+   |                      ^^^^^^^^^ retains it past the backedge
    |
    = per iteration, on the fallthrough exit: peak 1, delta +1 on 'p
-   = the loop runs 0..count, and count is a runtime value with no upper bound in
-     this ProofContext, so the peak is unbounded
+   = the loop runs 0..count, and count is a runtime value, so the composed peak is
+     not a closed expression in constants and profile symbols and is not a bound
    = supply one of:
        a requires on count (`requires ile(count, 64_u64);`)
-       a structural cutoff in the loop (`let n = len(kept); let full =
-         ieq(n, 64_u64); if full { break @fill; }`)
+       a dominating branch on room(kept) with a break on its false edge, so the
+         acquisition is discharged from a header invariant
        an invariant relating the two stores
          (`invariant slots_match: ile(len(pages), len(kept))`)
-       or the checked spelling, and handle PoolExhausted
+       or the checked spelling, whose refusal exit is a real exit with delta 0
 ```
 
 The proved spelling and the checked spelling are both accepted, and both keep the
-program resource-closed — this is [RES-8], and it is what the writer picks between:
+program resource-closed. That is [RES-6], and it is what the writer picks between.
+Note which alternative the third draft deleted: the second draft offered "a
+structural capacity cutoff (`len <= cap`)", which is a standing identity of [MSR-2]
+that holds of every measured place at every point and therefore discharged every
+loop vacuously. What it was reaching for is a condition on the *acquisitions*, and
+3.3.1 now states it as one.
 
 ```wf-design
   for @fill (
@@ -265,10 +301,12 @@ program resource-closed — this is [RES-8], and it is what the writer picks bet
     let spare = room(kept);
     let more = igt(spare, 0_u64);
     if more {
-      let blank_bytes = array_new<u8, 4096>(0_u8);
-      let blank = Page(bytes: blank_bytes);
-      let page = pool_take<'p, 'c>(pool: &uniq 'c pages, value: move blank);
-      set kept = seq_place(vector: move kept, value: move page);
+      region 'c {
+        let blank_bytes = array_new<u8, 4096>(0_u8);
+        let blank = Page(bytes: blank_bytes);
+        let page = pool_take(pool: &uniq 'c pages, value: move blank);
+        update kept by seq_place(value: move page);
+      }
     } else {
       break @fill;
     }
@@ -278,16 +316,18 @@ program resource-closed — this is [RES-8], and it is what the writer picks bet
 or, when the writer would rather answer the refusal than prove it away:
 
 ```wf-design
-    let blank_bytes = array_new<u8, 4096>(0_u8);
-    let blank = Page(bytes: blank_bytes);
-    let attempt = pool_take_checked<'p, 'c>(pool: &uniq 'c pages, value: move blank);
-    match attempt {
-      Ok(value: page) => {
-        set kept = seq_place(vector: move kept, value: move page);
-      }
-      Err(error: refused) => {
-        let recovered = move refused.rejected;
-        break @fill;
+    region 'c {
+      let blank_bytes = array_new<u8, 4096>(0_u8);
+      let blank = Page(bytes: blank_bytes);
+      let attempt = pool_take_checked(pool: &uniq 'c pages, value: move blank);
+      match attempt {
+        Ok(value: page) => {
+          update kept by seq_place(value: move page);
+        }
+        Err(error: refused) => {
+          let recovered = move refused.rejected;
+          break @fill;
+        }
       }
     }
 ```
@@ -296,12 +336,19 @@ The fourth repair is the one the first draft offered and could not deliver, twic
 over. Its result type `Result<slot<'p, Page>, PoolExhausted<Page>>` was rejected by
 [FN-2] as a region-bearing generic argument and by [STOR-5] as a region-bearing
 enum payload, so no checked acquisition anywhere in the design was a program;
-`DESIGN.md` [CNT-6] admits it, because the instance's own type names `'p` and the
+`DESIGN.md` [CNT-4] admits it, because the instance's own type names `'p` and the
 instance is therefore itself confined. And under the draft's L8 the `Err` arm was
-unreachable in the abstract demand semantics, so the `break` never executed and
-the loop's backedge delta stayed `+1`; the split L8 lets the judgment read the
-store's own `room(pages) = Z` on that edge, which is a fact about the store rather
-than a claim about the program's survival.
+unreachable in the abstract demand semantics, so the `break` never executed and the
+loop's backedge delta stayed `+1`; the split L8 lets the judgment read the store's
+own `room(pages) = Z` on that edge, which [RES-6] now declares as that row's `Err`
+relation rather than leaving it to the reader.
+
+One statement is missing from every snippet above and its absence is deliberate: a
+`slot<'p, Page>` is **linear** [PROV-6], so each retained page is disposed by
+`pool_release(pool: ..., item: move page)` before the region ends, or by moving the
+container out; `kept` is a `FixedVector<slot<'p, Page>, 64>`, so it is linear too
+and cannot simply be dropped. That is the change law L13 makes, and it is what the
+second draft's derived release hid.
 
 The proved repair also depends on `room` being readable. Under the first draft's
 L15 it was not, so a dominating branch could bound `len(kept)` and never reach a
@@ -311,22 +358,24 @@ unwritable in both of its forms.
 ## 3. Evidence
 
 The verified-versus-reasoned register that stood here has moved to `DESIGN.md`
-section 6, where every probe was re-run and eleven more were added. Three of the
-new ones bear directly on this half: `r1_relend` and `r1_relend_affine` show that
-a helper holding `&uniq 'b P` cannot lend it onward at all today, which is why
-`DESIGN.md` [PROV-9] exists and without which no function but `main` could
-allocate; and `r1_ambient` re-confirms that the heap is ambient today, which is the
-single fact this half exists to change.
+section 6. Four probes bear directly on this half. `r1_relend` and
+`r1_relend_affine` show that a helper holding `&uniq 'b P` cannot lend it onward at
+all today, which is why [PROV-7] exists and without which no function but `main`
+could allocate. `r1_ambient` re-confirms that the heap is ambient today, which is
+one of the two facts this half exists to change. And `r2_5` is the other: a callee
+that takes `own box<u64>`, never returns it, and declares `pure` compiles, so a heap
+free happens where no signature mentions it and no [PAR-1] footprint can see it,
+which is what law L13 and [PROV-6] replace.
 
 The `--stack-ledger` read of `tests/programs/recursive_tree.wf` is worth keeping
 here in one sentence, because three rules rest on it: it reports `main` and the
 entry body as two **disjoint roots** rather than one chain, and the entry chain
 runs through the compiler's drop glue into `wf_resource_abort`. That is why
-[STK-3] quantifies over a context's whole chain in both directions rather than
-over the writer's call graph from `main`, why [STK-4] must give the guard-page
-handler's alternate stack an item of its own, and why [RES-7]'s claim that the
-abort site has a reachable caller today is a reading of emitted code rather than
-an assumption.
+[STK-3] quantifies over a context's whole chain in both directions rather than over
+the writer's call graph from `main`, why [STK-5] gives the guard-page handler's
+alternate stack an item of its own for a resource-closed build, and why [RES-6]'s
+claim that the abort site has a reachable caller today is a reading of emitted code
+rather than an assumption.
 
 Nothing in this file is verified. Every program above is design text and compiles
 nowhere.
