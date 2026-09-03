@@ -499,6 +499,25 @@ fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
 }
 
 #[test]
+fn a_counted_header_without_an_invariant_stays_on_one_line() {
+    // FORM-2 breaks a loop header apart only to set its `header_invariant`
+    // clauses on their own lines. A counted `for` whose header is nothing but
+    // its binding has no invariant to set apart, so the whole header stays on
+    // one line and the three-line spelling of that same header is rejected.
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (index in lower..upper) {\n    break @range;\n  }\n  for (other in lower..upper) {\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range(\n  index in lower..upper\n){\nbreak @range;\n}\nfor( other in lower .. upper ){}\nreturn unit;\n}\n";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
+        Some(canonical.as_slice())
+    );
+    assert_eq!(
+        rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}
+
+#[test]
 fn local_invariant_certificates_render_their_header_and_steps_canonically() {
     let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: ile(left + 1_i32, right + 1_i32) {\n    use 2 * ile(left, right);\n    use earlier;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);

@@ -4614,9 +4614,7 @@ fn a_counted_range_discharges_its_binder_and_safe_predecessor_indices() {
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
-  for @items (
-    i in 1_u64..4_u64
-  ) {
+  for @items (i in 1_u64..4_u64) {
     let previous = i -wrap 1_u64;
     let current_value = values[i];
     let previous_value = values[previous];
@@ -4643,9 +4641,7 @@ fn a_counted_range_does_not_prove_the_next_index_or_an_unrelated_carried_index()
 
 fn read(values: own array<i32, count>, j: own u64) -> result: own i32 pure {
   let total = 0_i32;
-  for @items (
-    i in 0_u64..4_u64
-  ) {
+  for @items (i in 0_u64..4_u64) {
     let next = i +wrap 1_u64;
     let current_value = values[i];
     let next_value = values[next];
@@ -4674,9 +4670,7 @@ fn a_counted_upper_needs_an_independent_relation_to_the_storage_length() {
 
 fn read(values: own array<i32, count>, upper: own u64) -> result: own i32 pure {
   let total = 0_i32;
-  for @items (
-    i in 0_u64..upper
-  ) {
+  for @items (i in 0_u64..upper) {
     let value = values[i];
     set total = total +wrap value;
   }
@@ -4701,9 +4695,7 @@ fn killed_middles_preserve_survivor_consequences_in_counted_and_ordinary_flow() 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let upper = 4_u64;
   let total = 0_i32;
-  for @items (
-    i in 0_u64..upper
-  ) {
+  for @items (i in 0_u64..upper) {
     set upper = 0_u64;
     let value = values[i];
     set total = total +wrap value;
@@ -4874,60 +4866,40 @@ fn maybe(fail: own Bool) -> result: own Result<unit, Stop> pure {
 }
 
 fn mixed_edges(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> result: own Result<unit, Stop> pure {
-  for @zero (
-    zero in 0_u64..0_u64
-  ) {
+  for @zero (zero in 0_u64..0_u64) {
   }
-  for @reversed (
-    reversed in 2_u64..1_u64
-  ) {
+  for @reversed (reversed in 2_u64..1_u64) {
   }
-  for @singleton (
-    singleton in 0_u64..1_u64
-  ) {
+  for @singleton (singleton in 0_u64..1_u64) {
   }
-  for @maximum (
-    maximum in 18446744073709551614_u64..18446744073709551615_u64
-  ) {
+  for @maximum (maximum in 18446744073709551614_u64..18446744073709551615_u64) {
   }
   let mutable_lower = lower;
   let mutable_upper = upper;
-  for @mutated (
-    at in mutable_lower..mutable_upper
-  ) {
+  for @mutated (at in mutable_lower..mutable_upper) {
     set mutable_lower = 0_u64;
     set mutable_upper = 0_u64;
     if leave {
       break @mutated;
     }
   }
-  for @returning (
-    at in 0_u64..1_u64
-  ) {
+  for @returning (at in 0_u64..1_u64) {
     if leave {
       return Ok<unit, Stop>(value: unit);
     }
   }
-  for @propagating (
-    at in 0_u64..1_u64
-  ) {
+  for @propagating (at in 0_u64..1_u64) {
     let ignored = propagate maybe(fail: fail);
   }
-  for @outer_counted (
-    outer in 0_u64..1_u64
-  ) {
-    for @inner_counted (
-      inner in 0_u64..1_u64
-    ) {
+  for @outer_counted (outer in 0_u64..1_u64) {
+    for @inner_counted (inner in 0_u64..1_u64) {
       if leave {
         break @inner_counted;
       }
     }
   }
   loop @ordinary {
-    for @breaking (
-      at in 0_u64..1_u64
-    ) {
+    for @breaking (at in 0_u64..1_u64) {
       if leave {
         break @ordinary;
       } else {
@@ -4998,9 +4970,7 @@ fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own
   } else {
     return unit;
   }
-  for @impossible (
-    i in 0_u64..1_u64
-  ) {
+  for @impossible (i in 0_u64..1_u64) {
   }
   return unit;
 }
@@ -5011,9 +4981,7 @@ fn joined(values: own array<i32, count>, x: own u64) -> result: own i32 pure {
     let impossible = x;
   }
   let total = 0_i32;
-  for @items (
-    i in 0_u64..upper
-  ) {
+  for @items (i in 0_u64..upper) {
     let item = values[i];
     set total = total +wrap item;
   }
@@ -5091,9 +5059,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn inconsistent_counted_root_metadata_fails_the_test_checker() {
     let source = br#"fn probe(upper: own u64) -> result: own unit pure {
-  for @items (
-    i in 0_u64..upper
-  ) {
+  for @items (i in 0_u64..upper) {
   }
   return unit;
 }
@@ -5174,13 +5140,9 @@ command fn main() -> status: own ExitStatus pure {
 fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
     let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> result: own unit pure {
   let upper = len(values);
-  for @first (
-    i in 0_u64..upper
-  ) {
+  for @first (i in 0_u64..upper) {
   }
-  for @second (
-    j in 1_u64..upper
-  ) {
+  for @second (j in 1_u64..upper) {
   }
   return unit;
 }
@@ -5247,9 +5209,7 @@ fn a_break_free_zero_trip_counted_continuation_is_reachable_not_contradictory() 
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
-  for @empty (
-    i in 4_u64..4_u64
-  ) {
+  for @empty (i in 4_u64..4_u64) {
     let ignored = i;
   }
   return values[9_u64];
@@ -5271,9 +5231,7 @@ fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  for @maybe (
-    n in 0_u64..1_u64
-  ) {
+  for @maybe (n in 0_u64..1_u64) {
     if ilt(i, 4_u64) {
       let ignored = n;
     } else {
@@ -5304,9 +5262,7 @@ fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> result: o
     return 0_i32;
   }
   loop @outer {
-    for @inner (
-      n in 0_u64..1_u64
-    ) {
+    for @inner (n in 0_u64..1_u64) {
       set i = i +wrap 1_u64;
       let ignored = n;
     }
@@ -7647,9 +7603,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_counted_loop_body_bound_reaches_only_its_dominated_obligation() {
     let source = br#"fn read(values: own array<i32, 4>, leave: own Bool) -> result: own i32 pure {
-  for (
-    index in 0_u64..4_u64
-  ) {
+  for (index in 0_u64..4_u64) {
     let value = values[index];
     if leave {
       return value;
@@ -7760,9 +7714,7 @@ fn counted_flow_publishes_one_exact_originating_outcome_shape() {
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
-  for @items (
-    i in 0_u64..4_u64
-  ) {
+  for @items (i in 0_u64..4_u64) {
     let value = values[i];
     set total = total +wrap value;
   }
@@ -8371,9 +8323,7 @@ fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
 }
 
 fn probe(holder: own Holder) -> result: own unit reads(holder.value) {
-  for @items (
-    i in deref(holder.value)..1_u64
-  ) {
+  for @items (i in deref(holder.value)..1_u64) {
   }
   return unit;
 }
@@ -8416,9 +8366,7 @@ fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
 fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.upper) {
   region 'r {
     let holder = &uniq 'r limit;
-    for @items (
-      i in 0_u64..deref(holder).upper
-    ) {
+    for @items (i in 0_u64..deref(holder).upper) {
       set deref(holder).upper = 0_u64;
       need(index: i, upper: deref(holder).upper);
     }
@@ -8445,9 +8393,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
     let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit reads(holder) {
-  for @items (
-    i in deref(deref(holder))..1_u64
-  ) {
+  for @items (i in deref(deref(holder))..1_u64) {
   }
   return unit;
 }
@@ -8478,9 +8424,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
     let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads(holder) {
-  for @items (
-    i in deref(deref(deref(holder)))..1_u64
-  ) {
+  for @items (i in deref(deref(deref(holder)))..1_u64) {
   }
   return unit;
 }
@@ -8513,9 +8457,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
     let source = br#"fn probe(holder: own box<u64>) -> result: own unit reads(holder) {
-  for @items (
-    i in deref(holder)..1_u64
-  ) {
+  for @items (i in deref(holder)..1_u64) {
   }
   return unit;
 }
@@ -8542,9 +8484,7 @@ command fn main() -> status: own ExitStatus pure {
 fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
     let source = br#"fn probe() -> result: own unit allocates(heap) {
   let holder = box_new(0_u64);
-  for @items (
-    i in deref(holder)..1_u64
-  ) {
+  for @items (i in deref(holder)..1_u64) {
   }
   return unit;
 }

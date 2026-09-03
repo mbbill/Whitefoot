@@ -42,9 +42,7 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   if full {
     let grown = capacity + 128_u64;
     let fresh = buffer_new(grown, value);
-    for @copy (
-      at in 0_u64..capacity
-    ) {
+    for @copy (at in 0_u64..capacity) {
       let byte = deref(s).buf[at];
       set fresh[at] = byte;
     }

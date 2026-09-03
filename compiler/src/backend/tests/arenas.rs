@@ -104,9 +104,7 @@ fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  for @turns (
-    i in 0_u64..200_u64
-  ) {
+  for @turns (i in 0_u64..200_u64) {
     region 'r {
       let a = arena_new<'r, i32>(1_i32);
       let b = arena_new<'r, i32>(2_i32);
@@ -162,9 +160,7 @@ command fn main() -> status: own ExitStatus pure {
 fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
     let llvm = compile(
         br#"command fn main() -> status: own ExitStatus pure {
-  for @turns (
-    i in 0_u64..4_u64
-  ) {
+  for @turns (i in 0_u64..4_u64) {
     region 'r {
       let a = arena_new<'r, i32>(9_i32);
       let v = deref(a);

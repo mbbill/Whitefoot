@@ -1,8 +1,6 @@
 fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8 reads(bytes) {
   let room = len(deref(bytes));
-  for (
-    offset in 0_u64..room
-  ) {
+  for (offset in 0_u64..room) {
     let byte = deref(bytes)[offset];
     let intact = ieq(byte, 90_u8);
     if intact {

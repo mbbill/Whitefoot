@@ -275,13 +275,11 @@ which same-region argument a returned view references.
 
 Problem: a fixed ascending index walk needs the current index bound inside the
 body without hand-written termination tests, increments, or assertions.
-Pattern: write the closed multiline header below when both endpoints are
+Pattern: write the closed one-line header below when both endpoints are
 `own u64` terms or constants:
 
 ```whitefoot
-for (
-  i in lower..upper
-) {
+for (i in lower..upper) {
   consume(i);
 }
 ```
@@ -421,9 +419,7 @@ beyond it are the previous iteration's.
 Pattern: construct the per-iteration scratch **inside** the loop body.
 
 ```whitefoot
-for @scan (
-  index in 0_u64..8192_u64
-) {
+for @scan (index in 0_u64..8192_u64) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
   region 'name {
@@ -689,9 +685,7 @@ Problem: a loop reads a file per iteration and writes one line to an output —
 given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
 
 ```whitefoot
-for @scan (
-  index in 0_u64..8_u64
-) {
+for @scan (index in 0_u64..8_u64) {
   /* P15's reserve, open, and read; then */
   region 'say {
     let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
@@ -717,9 +711,7 @@ outside the loop being taken in index order.
 ```whitefoot
 let page = buffer_new(8_u64, 0_u8);
 let room = len(page);
-for @scan (
-  index in 0_u64..8_u64
-) {
+for @scan (index in 0_u64..8_u64) {
   /* reserve, open, and read into the iteration's own data buffer */
   let writable = ilt(index, room);
   if writable {

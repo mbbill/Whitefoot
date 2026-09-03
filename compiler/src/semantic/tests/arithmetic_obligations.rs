@@ -149,9 +149,7 @@ command fn main() -> status: own ExitStatus pure {
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let n = 10_u64;
-  for @steps (
-    i in 0_u64..n
-  ) {
+  for @steps (i in 0_u64..n) {
     let next = i + 1_u64;
   }
   return exit_status(code: 0_u8);

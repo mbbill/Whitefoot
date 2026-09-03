@@ -25,9 +25,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
   let admitted = ile(filled, capacity);
   let length = len(text);
   if admitted {
-    for @append (
-      at in filled..capacity
-    ) {
+    for @append (at in filled..capacity) {
       let taken = at -wrap filled;
       let done = ige(taken, length);
       if done {

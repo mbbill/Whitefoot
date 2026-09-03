@@ -358,9 +358,7 @@ command fn main(command.stdout as out: own Output, command.stderr as err: own Ou
 const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
-  for @scan (
-    index in 0_u64..12_u64
-  ) {
+  for @scan (index in 0_u64..12_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -387,9 +385,7 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
 
 const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(4_u64, 97_u8);
-  for @scan (
-    index in 0_u64..1_u64
-  ) {
+  for @scan (index in 0_u64..1_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -413,9 +409,7 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
   set names[2_u64] = 99_u8;
   set names[3_u64] = 100_u8;
   set names[4_u64] = 101_u8;
-  for @scan (
-    index in 0_u64..5_u64
-  ) {
+  for @scan (index in 0_u64..5_u64) {
     let end = index + 1_u64;
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);

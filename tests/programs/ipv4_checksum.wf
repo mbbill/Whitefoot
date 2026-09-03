@@ -7,9 +7,7 @@ fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header)
 } {
   let length = len(header);
   let sum = 0_u32;
-  for (
-    offset in 0_u64..length
-  ) {
+  for (offset in 0_u64..length) {
     let byte = header[offset];
     let wide = cvt<u8, u32>(byte);
     let parity = iand(offset, 1_u64);

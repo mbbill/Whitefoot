@@ -97,7 +97,7 @@ Placement supplies the extra control-flow meaning:
 - a body or ordinary-block invariant is a one-time program-point fact.
 
 The complete `weigh` shape shows how a function postcondition, a loop contract,
-and ordinary operation goals connect. The canonical counted header is
+and ordinary operation goals connect. A counted header carrying an invariant is
 multiline and has no trailing comma:
 
 ```wf
@@ -130,12 +130,11 @@ checker substitutes `i := count`; the resulting `sum <= 255*count` plus
 relations becomes a runtime check.
 
 The first `for` header item must be the binding; every later item must be an
-`invariant`. A zero-invariant counted loop still uses the closed header:
+`invariant`. A zero-invariant counted loop still uses the closed header, which
+renders on one line because it has no invariant to set apart:
 
 ```wf
-for (
-  i in 0_u64..count
-) {
+for (i in 0_u64..count) {
   consume(i);
 }
 ```

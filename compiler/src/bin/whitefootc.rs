@@ -670,9 +670,7 @@ mod tests {
     const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Writes one line per iteration to standard output.";
   let page = buffer_new(8_u64, 0_u8);
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'say {
       let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
     }

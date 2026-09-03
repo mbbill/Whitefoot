@@ -149,9 +149,7 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
 fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
     let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
-  for @items (
-    i in 18446744073709551614_u64..18446744073709551615_u64
-  ) {
+  for @items (i in 18446744073709551614_u64..18446744073709551615_u64) {
     set total = i;
   }
   return total;
@@ -207,9 +205,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_break_and_return_edges_do_not_enter_the_hidden_update() {
     let source = br#"fn leave_by_break(stop: own Bool) -> result: own u64 pure {
-  for @scan (
-    i in 0_u64..2_u64
-  ) {
+  for @scan (i in 0_u64..2_u64) {
     if stop {
       break @scan;
     }
@@ -218,9 +214,7 @@ fn counted_break_and_return_edges_do_not_enter_the_hidden_update() {
 }
 
 fn leave_by_return(stop: own Bool) -> result: own u64 pure {
-  for @scan (
-    i in 0_u64..2_u64
-  ) {
+  for @scan (i in 0_u64..2_u64) {
     if stop {
       return 9_u64;
     }
@@ -315,9 +309,7 @@ fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows
     let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
   let upper = 2_u64;
-  for @items (
-    i in 0_u64..upper
-  ) {
+  for @items (i in 0_u64..upper) {
     region 'r {
       let held = &'r i;
       let seen = deref(held);
@@ -359,12 +351,8 @@ command fn main() -> status: own ExitStatus pure {
 fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
     let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
-  for @outer (
-    i in 0_u64..4_u64
-  ) {
-    for @inner (
-      j in 0_u64..4_u64
-    ) {
+  for @outer (i in 0_u64..4_u64) {
+    for @inner (j in 0_u64..4_u64) {
       set total = total +wrap 1_u64;
       break @inner;
     }
@@ -943,14 +931,10 @@ command fn main() -> status: own ExitStatus pure {
 fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @plain (
-    index in 0_u64..1_u64
-  ) {
+  for @plain (index in 0_u64..1_u64) {
     set total = total +wrap 1_u64;
   }
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1040,9 +1024,7 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1092,9 +1074,7 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
-  for @first (
-    index in 0_u64..3_u64
-  ) {
+  for @first (index in 0_u64..3_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1108,9 +1088,7 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
       }
     }
   }
-  for @second (
-    index in 0_u64..3_u64
-  ) {
+  for @second (index in 0_u64..3_u64) {
     region 'g {
       let permit = reserve_file<'g>(factory: &uniq 'g files);
       region 'm {

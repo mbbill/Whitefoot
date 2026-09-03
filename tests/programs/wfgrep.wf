@@ -139,9 +139,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
   let admitted = ile(filled, capacity);
   let length = len(text);
   if admitted {
-    for @append (
-      at in filled..capacity
-    ) {
+    for @append (at in filled..capacity) {
       let taken = at -wrap filled;
       let done = ige(taken, length);
       if done {
@@ -451,9 +449,7 @@ fn scan_line['i, 'p](input: &'i buffer<u8>, available: own u64, scan: own u64, p
   let pattern_room = len(deref(pattern));
   let terminator = available;
   let hit = empty_pattern;
-  for @walk_line (
-    probe in scan..available
-  ) {
+  for @walk_line (probe in scan..available) {
     let byte = deref(input)[probe];
     let newline = ieq(byte, 10_u8);
     if newline {
