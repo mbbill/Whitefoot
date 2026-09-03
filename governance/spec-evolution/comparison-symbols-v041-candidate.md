@@ -96,6 +96,25 @@ where an atom is expected ([GRAM-5]), and `use 3 * a <= b;` does not derive
   `docs/why-whitefoot.md` (current examples only; the historical kernels in
   Part II keep their historical spelling), `docs/current-plan.md`,
   `docs/roadmap.md` (FLOOR-5), `mcts_mem/whitefoot/surface-form/operation-spelling.md`.
+- Research programs: the programs a maintained runner still compiles
+  through the current compiler are respelled by the same rewriter and were
+  compiled through the branch compiler afterwards: the ten
+  `research/experiments/io-completion-bench/programs/*.wf` benchmarks that
+  the `io-bench` and `io-hosts` workflows build, and
+  `research/experiments/buffer-initialization-cost/drain.wf`. Programs that
+  already failed to parse on `main` for an unrelated reason (the `for @label`
+  loop form in `many_files_loop.wf` and the three
+  `research/experiments/wfgrep-double-walk/shapes/*.wf`), and the dated
+  evidence under `research/investigations/` and
+  `research/experiments/blind-writer/`, keep the spelling of the
+  specification they were written against; they are records, not derived
+  material.
+- Conformance cases that reached `main` after this branch was cut are
+  brought to the candidate spelling on the merge of `main` into the branch:
+  `set2-neg-arena-replace-target` (two delimited calls) and
+  `set2-pos-box-descriptor-replace` (two comparisons);
+  `stor5-neg-box-new-arena-content` needed no change. Verdicts and rule
+  citations are unchanged.
 
 ## 5. Modified rules (complete replacement deltas, verbatim anchors)
 
