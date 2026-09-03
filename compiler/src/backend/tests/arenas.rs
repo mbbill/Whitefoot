@@ -6,9 +6,9 @@ use super::*;
 
 const BYTE_ARENA_NODE: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let item = arena_new<'r, u8>(7_u8);
+    let item = arena_new::<'r, u8>(7_u8);
     let value = deref(item);
-    if ine(value, 7_u8) {
+    if value != 7_u8 {
       return exit_status(code: 1_u8);
     }
   }
@@ -97,7 +97,7 @@ fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
     let llvm = compile(
         br#"fn early() -> result: own i32 pure {
   region 'e {
-    let a = arena_new<'e, i32>(5_i32);
+    let a = arena_new::<'e, i32>(5_i32);
     let v = deref(a);
     return v;
   }
@@ -106,37 +106,37 @@ fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
 command fn main() -> status: own ExitStatus pure {
   for @turns (i in 0_u64..200_u64) {
     region 'r {
-      let a = arena_new<'r, i32>(1_i32);
-      let b = arena_new<'r, i32>(2_i32);
+      let a = arena_new::<'r, i32>(1_i32);
+      let b = arena_new::<'r, i32>(2_i32);
       let first = deref(a);
       let second = deref(b);
-      if ine(first, 1_i32) {
+      if first != 1_i32 {
         return exit_status(code: 1_u8);
       }
-      if ine(second, 2_i32) {
+      if second != 2_i32 {
         return exit_status(code: 2_u8);
       }
     }
   }
   let got = early();
-  if ine(got, 5_i32) {
+  if got != 5_i32 {
     return exit_status(code: 3_u8);
   }
   region 'outer {
-    let base = arena_new<'outer, i32>(7_i32);
+    let base = arena_new::<'outer, i32>(7_i32);
     region 'inner {
-      let extra = arena_new<'inner, i32>(30_i32);
+      let extra = arena_new::<'inner, i32>(30_i32);
       let left = deref(base);
       let right = deref(extra);
-      if ine(left, 7_i32) {
+      if left != 7_i32 {
         return exit_status(code: 4_u8);
       }
-      if ine(right, 30_i32) {
+      if right != 30_i32 {
         return exit_status(code: 5_u8);
       }
     }
     let after = deref(base);
-    if ine(after, 7_i32) {
+    if after != 7_i32 {
       return exit_status(code: 6_u8);
     }
   }
@@ -162,9 +162,9 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
         br#"command fn main() -> status: own ExitStatus pure {
   for @turns (i in 0_u64..4_u64) {
     region 'r {
-      let a = arena_new<'r, i32>(9_i32);
+      let a = arena_new::<'r, i32>(9_i32);
       let v = deref(a);
-      if ine(v, 9_i32) {
+      if v != 9_i32 {
         return exit_status(code: 1_u8);
       }
       break @turns;
@@ -172,14 +172,14 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
   }
   region 'outer {
     region 'inner {
-      let a = arena_new<'outer, i32>(3_i32);
-      let b = arena_new<'inner, i32>(4_i32);
+      let a = arena_new::<'outer, i32>(3_i32);
+      let b = arena_new::<'inner, i32>(4_i32);
       let x = deref(a);
       let y = deref(b);
-      if ine(x, 3_i32) {
+      if x != 3_i32 {
         return exit_status(code: 2_u8);
       }
-      if ine(y, 4_i32) {
+      if y != 4_i32 {
         return exit_status(code: 3_u8);
       }
     }
@@ -204,14 +204,14 @@ fn a_within_region_arena_delivery_executes() {
   let flag = True();
   region 'r {
     let picked = if flag {
-      let a = arena_new<'r, i32>(11_i32);
+      let a = arena_new::<'r, i32>(11_i32);
       give move a;
     } else {
-      let b = arena_new<'r, i32>(22_i32);
+      let b = arena_new::<'r, i32>(22_i32);
       give move b;
     }
     let v = deref(picked);
-    if ine(v, 11_i32) {
+    if v != 11_i32 {
       return exit_status(code: 1_u8);
     }
   }

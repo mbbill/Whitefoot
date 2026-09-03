@@ -2,9 +2,9 @@ fn count_to(limit: own u64) -> reached: own u64 pure {
   doc "expect REJECT [INV-1]: the backedge sets cursor to a value that does not preserve bounded, so the invariant is unproved on re-entry; a wrong accept would let cursor race past limit.";
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
-    let remaining = ilt(cursor, limit);
+    let remaining = cursor < limit;
     if remaining {
       set cursor = cursor + 3_u64;
     } else {

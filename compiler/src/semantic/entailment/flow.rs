@@ -6278,7 +6278,7 @@ impl Analyzer<'_, '_> {
         None
     }
 
-    /// Judges OP-9 through either the exact total `buffer_fits<T>(n)` goal
+    /// Judges OP-9 through either the exact total `buffer_fits::<T>(n)` goal
     /// or its one canonical L0 component. The component is used only in this
     /// direction: proving the comparison authorizes the allocation, while a
     /// predicate fact does not publish an ambient comparison fact.
@@ -6323,7 +6323,7 @@ impl Analyzer<'_, '_> {
             .ok()
         });
         let rendered = format!(
-            "buffer_fits<{:?}>({})",
+            "buffer_fits::<{:?}>({})",
             element,
             self.render_expression(length)
         );
@@ -8662,12 +8662,12 @@ impl Analyzer<'_, '_> {
         let left = self.render_checked_affine_expression(&relation.left, counted_next_binder);
         let right = self.render_checked_affine_expression(&relation.right, counted_next_binder);
         match relation.bound {
-            0 => format!("ile({left}, {right})"),
-            -1 => format!("ilt({left}, {right})"),
+            0 => format!("{left} <= {right}"),
+            -1 => format!("{left} < {right}"),
             // INV-1 formation currently admits only strict and non-strict
             // ordered roots. Keep a source-level fallback so an internal
             // inconsistency never leaks an affine term identity.
-            bound => format!("ile(({left} - {right}), {bound}_i128)"),
+            bound => format!("({left} - {right}) <= {bound}_i128"),
         }
     }
 
@@ -11465,13 +11465,13 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
             render_operation_spelling(operation.spelling(), arguments)
         }
         GoalOperation::EnumEquality { equal, .. } => {
-            render_operation_spelling(if *equal { "ieq" } else { "ine" }, arguments)
+            render_operation_spelling(if *equal { "eeq" } else { "ene" }, arguments)
         }
         GoalOperation::NumericConversion {
             source,
             destination,
         } => format!(
-            "cvt<{}, {}>({})",
+            "cvt::<{}, {}>({})",
             numeric_type_name(*source),
             numeric_type_name(*destination),
             arguments.join(", ")
@@ -11480,7 +11480,7 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
             source,
             destination,
         } => format!(
-            "reinterpret<{}, {}>({})",
+            "reinterpret::<{}, {}>({})",
             numeric_type_name(*source),
             numeric_type_name(*destination),
             arguments.join(", ")

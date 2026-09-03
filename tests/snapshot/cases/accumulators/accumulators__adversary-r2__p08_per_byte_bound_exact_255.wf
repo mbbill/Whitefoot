@@ -3,11 +3,11 @@ command fn main() -> status: own ExitStatus pure {
   let count = 0_u8;
   for (
     i in 0_u64..255_u64,
-    invariant bound: ile(count, i)
+    invariant bound: count <= i
   ) {
     set count = count + 1_u8;
   }
-  if ieq(count, 255_u8) {
+  if count == 255_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

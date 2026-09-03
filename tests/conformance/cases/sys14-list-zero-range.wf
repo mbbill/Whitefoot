@@ -2,14 +2,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "A zero-length destination range is a well-formed request that transfers nothing [SYS-8, SYS-14]: it yields `ListBytes(next: 0, entries: 0)`, never `ListEnd`. End of enumeration is a separate outcome from an empty transfer, exactly as a full buffer is a separate outcome from end of input, so a program cannot read a zero endpoint as exhaustion.";
   let entries = buffer_new(1024_u64, 0_u8);
   region 'c {
-    let permit = reserve_file<'c>(factory: &uniq 'c files);
-    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
+    let permit = reserve_file::<'c>(factory: &uniq 'c files);
+    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
         region 'b {
-          match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 0_u64) {
+          match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 0_u64) {
             ListBytes(next: bytes, entries: reported) => {
-              if ieq(bytes, 0_u64) {
-                if ieq(reported, 0_u64) {
+              if bytes == 0_u64 {
+                if reported == 0_u64 {
                   return exit_status(code: 0_u8);
                 }
               }

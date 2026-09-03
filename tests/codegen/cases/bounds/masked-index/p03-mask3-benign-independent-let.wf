@@ -8,6 +8,6 @@ fn lookup(x: own u64) -> result: own u8 pure {
 
 command fn main() -> status: own ExitStatus traps {
   let value = lookup(x: 5_u64);
-  claim benign_let_drift: ieq(value, 22_u8) because "benign let drift";
+  claim benign_let_drift: value == 22_u8 because "benign let drift";
   return exit_status(code: 0_u8);
 }

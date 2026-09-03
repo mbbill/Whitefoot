@@ -17,14 +17,14 @@ fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T 
 command fn main() -> status: own ExitStatus pure {
   let left32 = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
   let right32 = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
-  let product32 = dot3<f32>(left: move left32, right: move right32);
+  let product32 = dot3::<f32>(left: move left32, right: move right32);
   if feq(product32, 32.0_f32) {
   } else {
     return exit_status(code: 1_u8);
   }
   let left64 = Vector3<f64>(x: -2.0_f64, y: 3.0_f64, z: 5.0_f64);
   let right64 = Vector3<f64>(x: 7.0_f64, y: 11.0_f64, z: 13.0_f64);
-  let product64 = dot3<f64>(left: move left64, right: move right64);
+  let product64 = dot3::<f64>(left: move left64, right: move right64);
   if feq(product64, 84.0_f64) {
   } else {
     return exit_status(code: 1_u8);

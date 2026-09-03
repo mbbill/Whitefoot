@@ -1,0 +1,5 @@
+command fn main() -> status: own ExitStatus pure {
+  let narrow = 7_u8;
+  let wide = cvt<u8, u32>(narrow);
+  return exit_status(code: 0_u8);
+}

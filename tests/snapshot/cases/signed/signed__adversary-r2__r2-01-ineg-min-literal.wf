@@ -1,6 +1,6 @@
 fn safe_negate(n: own i32) -> result: own i32 pure {
   doc "A dominating guard against MIN(i32) makes ineg's OP-2 obligation discharge normally.";
-  if igt(n, -2147483648_i32) {
+  if n > -2147483648_i32 {
     return ineg(n);
   }
   return 0_i32;
@@ -9,12 +9,12 @@ fn safe_negate(n: own i32) -> result: own i32 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: exact ineg(-2147483648_i32) violates ineg.defined (x != MIN(T)) [OP-2].";
   let guarded = safe_negate(n: 5_i32);
-  if ieq(guarded, -5_i32) {
+  if guarded == -5_i32 {
   } else {
     return exit_status(code: 2_u8);
   }
   let bad = ineg(-2147483648_i32);
-  if ieq(bad, 0_i32) {
+  if bad == 0_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

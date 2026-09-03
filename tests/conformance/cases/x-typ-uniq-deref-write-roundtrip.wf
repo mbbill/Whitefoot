@@ -5,7 +5,7 @@ command fn main() -> status: own ExitStatus pure {
     let p = &uniq 'r a;
     set deref(p) = 42_i32;
   }
-  if ieq(a, 42_i32) {
+  if a == 42_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

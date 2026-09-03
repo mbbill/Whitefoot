@@ -2,16 +2,16 @@ command fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: ordinary loop-stmt (no counted binder) with a single header invariant, exits via break.";
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, 4_u64)
+    invariant bounded: cursor <= 4_u64
   ) {
-    let remaining = ilt(cursor, 4_u64);
+    let remaining = cursor < 4_u64;
     if remaining {
       set cursor = cursor + 1_u64;
     } else {
       break;
     }
   }
-  let correct = ieq(cursor, 4_u64);
+  let correct = cursor == 4_u64;
   if correct {
   } else {
     return exit_status(code: 1_u8);

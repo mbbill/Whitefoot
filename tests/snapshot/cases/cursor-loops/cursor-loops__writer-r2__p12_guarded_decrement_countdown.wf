@@ -1,11 +1,11 @@
 fn countdown_sum(start: own u64) -> total: own u64 pure {
-  doc "ACCEPT: an ordinary loop counts a cursor down to zero, guarded by an ige check before every wrap decrement.";
+  doc "ACCEPT: an ordinary loop counts a cursor down to zero, guarded by a `>=` check before every wrap decrement.";
   let cursor = start;
   let total = 0_u64;
   loop (
-    invariant bounded: ile(cursor, start)
+    invariant bounded: cursor <= start
   ) {
-    let more = igt(cursor, 0_u64);
+    let more = cursor > 0_u64;
     if more {
       set total = total +wrap cursor;
       set cursor = cursor - 1_u64;
@@ -18,7 +18,7 @@ fn countdown_sum(start: own u64) -> total: own u64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let total = countdown_sum(start: 5_u64);
-  let correct = ieq(total, 15_u64);
+  let correct = total == 15_u64;
   if correct {
   } else {
     return exit_status(code: 1_u8);

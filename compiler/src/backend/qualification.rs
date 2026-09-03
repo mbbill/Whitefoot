@@ -152,7 +152,15 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // failures still stop internally. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.39 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.40";
+// v0.41 comparison-symbol review (2026-09-03): the six integer comparisons
+// are respelled as infix operators and a call writes its type arguments
+// after `::`; both are front-end spellings of unchanged operation rows, and
+// the comparison rows still lower to the same signed or unsigned `icmp`
+// predicates the named calls selected. Invariant and use-step relations
+// erase before lowering as before. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.40 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.41";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

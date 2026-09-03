@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus pure {
   let inner_atom_0001 = Inner(v: 10_i32);
   let o = Outer(inner: move inner_atom_0001, k: 5_i32);
   let s = o.inner.v +wrap o.k;
-  if ieq(s, 15_i32) {
+  if s == 15_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

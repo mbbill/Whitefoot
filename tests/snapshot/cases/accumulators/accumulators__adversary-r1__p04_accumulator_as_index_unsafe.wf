@@ -4,10 +4,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let count = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant bound: ile(count, i)
+    invariant bound: count <= i
   ) {
     let byte = data[i];
-    let matches = ieq(byte, 7_u8);
+    let matches = byte == 7_u8;
     if matches {
       set count = count + 1_u64;
     }

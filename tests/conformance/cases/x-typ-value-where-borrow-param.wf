@@ -6,7 +6,7 @@ command fn main() -> status: own ExitStatus pure {
   doc "Passing an own i32 value where a &'r i32 borrow parameter is declared [TYPE-5].";
   let a = 5_i32;
   region 'call_region {
-    let r = needs_ref<'call_region>(p: a);
+    let r = needs_ref::<'call_region>(p: a);
   }
   return exit_status(code: 0_u8);
 }

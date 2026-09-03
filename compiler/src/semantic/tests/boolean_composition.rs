@@ -160,8 +160,8 @@ fn assert_comparison_member(
 #[test]
 fn passed_band_guard_establishes_positive_conjuncts_and_discharges_both() {
     let source = br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
-  let low_ok = ilt(low, 8_u64);
-  let high_ok = ilt(high, 8_u64);
+  let low_ok = low < 8_u64;
+  let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
   if both {
     let first = table[low];
@@ -190,8 +190,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn bor_guard_false_edge_establishes_negative_disjuncts_and_discharges() {
     let source = br#"fn get(table: own array<u8, 4>, symbol: own u64) -> result: own u8 pure {
-  let below = ilt(symbol, 0_u64);
-  let above = ige(symbol, 4_u64);
+  let below = symbol < 0_u64;
+  let above = symbol >= 4_u64;
   let invalid = bor(below, above);
   if invalid {
     return 0_u8;
@@ -216,9 +216,9 @@ command fn main() -> status: own ExitStatus pure {
     assert_binding_members(&summary, named, GoalSign::Negative);
     let entry = entry_with_root(&summary, CheckedBooleanOperation::Or, GoalSign::Negative);
     assert_eq!(entry.members.len(), 2);
-    // -ilt(symbol, 0): projection symbol - 0 <= -1, negated at activation.
+    // -symbol < 0: projection symbol - 0 <= -1, negated at activation.
     assert_comparison_member(&summary, entry.members[0], GoalSign::Negative, 0, -1);
-    // -ige(symbol, 4): projection normalizes ge by operand swap, 4 - symbol <= 0.
+    // -symbol >= 4: projection normalizes ge by operand swap, 4 - symbol <= 0.
     let above = &summary.inventory.goals[entry.members[1].0.0 as usize];
     let Some(Relation::Bound { left, bound, .. }) = &above.projection else {
         panic!("the ige member must retain its projection: {above:?}");
@@ -244,8 +244,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn disjunctive_signs_and_bxor_record_nothing() {
     let source = br#"fn classify(a: own u64, b: own u64) -> result: own u64 pure {
-  let a_small = ilt(a, 16_u64);
-  let b_small = ilt(b, 16_u64);
+  let a_small = a < 16_u64;
+  let b_small = b < 16_u64;
   let both = band(a_small, b_small);
   let either = bor(a_small, b_small);
   let mixed = bxor(a_small, b_small);
@@ -301,8 +301,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn bnot_flips_recursively_without_rewriting() {
     let source = br#"fn guard(table: own array<u8, 8>, index: own u64) -> result: own u8 pure {
-  let low = ilt(index, 4_u64);
-  let high = ige(index, 8_u64);
+  let low = index < 4_u64;
+  let high = index >= 8_u64;
   let outside = bor(low, high);
   let inside = bnot(outside);
   if inside {
@@ -317,7 +317,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let summary = entailment(source, "guard");
-    // The recursion reaches `-ilt(index, 4)`, which discharges the subscript.
+    // The recursion reaches `-index < 4`, which discharges the subscript.
     assert_eq!(summary.obligations.len(), 1);
     assert!(summary.obligations[0].discharged);
     // Both edges record both parents: the named `inside` binding and its
@@ -354,8 +354,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn band_requirement_and_guard_share_the_same_conjuncts() {
     let source = br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure contract {
-  define low_ok = ilt(low, 8_u64);
-  define high_ok = ilt(high, 8_u64);
+  define low_ok = low < 8_u64;
+  define high_ok = high < 8_u64;
   define both = band(low_ok, high_ok);
   requires both;
 } {
@@ -364,8 +364,8 @@ fn band_requirement_and_guard_share_the_same_conjuncts() {
 }
 
 fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
-  let low_ok = ilt(low, 8_u64);
-  let high_ok = ilt(high, 8_u64);
+  let low_ok = low < 8_u64;
+  let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
   if both {
     return pick(table: move table, low: low, high: high);
@@ -415,8 +415,8 @@ fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() 
         br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
-  let at_ok = ilt(at, room);
-  let next_ok = ilt(next, room);
+  let at_ok = at < room;
+  let next_ok = next < room;
   let both = band(at_ok, next_ok);
   if both {
     let first = deref(input)[at];
@@ -434,8 +434,8 @@ command fn main() -> status: own ExitStatus pure {
         br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
-  let at_ok = ilt(at, room);
-  let next_ok = ilt(next, room);
+  let at_ok = at < room;
+  let next_ok = next < room;
   if at_ok {
     if next_ok {
       let first = deref(input)[at];
@@ -476,8 +476,8 @@ fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
         br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
-  let at_ok = ilt(at, room);
-  let next_ok = ilt(next, room);
+  let at_ok = at < room;
+  let next_ok = next < room;
   let both = band(at_ok, next_ok);
   if both {
     let first = deref(input)[at];
@@ -498,8 +498,8 @@ command fn main() -> status: own ExitStatus pure {
         br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
-  let at_ok = ilt(at, room);
-  let next_ok = ilt(next, room);
+  let at_ok = at < room;
+  let next_ok = next < room;
   let both = band(at_ok, next_ok);
   if both {
     return 0_u8;
@@ -533,8 +533,8 @@ fn band_over_derived_bindings_proves_no_unnamed_bound() {
   let next = at +wrap 1_u64;
   let far = at +wrap 2_u64;
   let room = len(deref(input));
-  let at_ok = ilt(at, room);
-  let next_ok = ilt(next, room);
+  let at_ok = at < room;
+  let next_ok = next < room;
   let both = band(at_ok, next_ok);
   if both {
     let first = deref(input)[at];
@@ -560,8 +560,8 @@ command fn main() -> status: own ExitStatus pure {
         br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
-  let at_ok = ilt(at, room);
-  let next_ok = ilt(next, room);
+  let at_ok = at < room;
+  let next_ok = next < room;
   let either = bor(at_ok, next_ok);
   if either {
     return deref(input)[next];

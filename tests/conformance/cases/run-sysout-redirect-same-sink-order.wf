@@ -5,7 +5,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let page = buffer_new(8_u64, 0_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -16,7 +16,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   region 'e {
     region 't {
-      match write_once<'e, 't>(output: &uniq 'e out, source: &'t second, start: 0_u64, end: 2_u64) {
+      match write_once::<'e, 't>(output: &uniq 'e out, source: &'t second, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -26,20 +26,20 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
   }
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file<'c>(factory: &uniq 'c files);
-                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                let permit = reserve_file::<'c>(factory: &uniq 'c files);
+                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     region 'f {
                       region 'd {
-                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
-                            let combined = ieq(n, 4_u64);
+                            let combined = n == 4_u64;
                             if combined {
                             } else {
                               return exit_status(code: 12_u8);
@@ -58,22 +58,22 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                     let byte1 = page[1_u64];
                     let byte2 = page[2_u64];
                     let byte3 = page[3_u64];
-                    let head0 = ieq(byte0, 65_u8);
+                    let head0 = byte0 == 65_u8;
                     if head0 {
                     } else {
                       return exit_status(code: 15_u8);
                     }
-                    let head1 = ieq(byte1, 65_u8);
+                    let head1 = byte1 == 65_u8;
                     if head1 {
                     } else {
                       return exit_status(code: 16_u8);
                     }
-                    let tail0 = ieq(byte2, 66_u8);
+                    let tail0 = byte2 == 66_u8;
                     if tail0 {
                     } else {
                       return exit_status(code: 17_u8);
                     }
-                    let tail1 = ieq(byte3, 66_u8);
+                    let tail1 = byte3 == 66_u8;
                     if tail1 {
                       return exit_status(code: 0_u8);
                     } else {

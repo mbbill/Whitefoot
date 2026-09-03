@@ -1,9 +1,9 @@
 fn nibble_value(digit: own u8) -> result: own u8 pure {
-  let is_decimal = ile(digit, 57_u8);
+  let is_decimal = digit <= 57_u8;
   let value = if is_decimal {
     give digit -wrap 48_u8;
   } else {
-    let is_lower = ige(digit, 97_u8);
+    let is_lower = digit >= 97_u8;
     let offset = if is_lower {
       give digit -wrap 97_u8;
     } else {
@@ -27,13 +27,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let pair = 0_u64;
   let out_index = 0_u64;
   loop @pairs {
-    if ige(pair, input_length) {
+    if pair >= input_length {
       break @pairs;
     }
     let low_index = pair +wrap 1_u64;
-    let high_ok = ilt(pair, input_length);
-    let low_ok = ilt(low_index, input_length);
-    let out_ok = ilt(out_index, output_room);
+    let high_ok = pair < input_length;
+    let low_ok = low_index < input_length;
+    let out_ok = out_index < output_room;
     let indices_ok = band(high_ok, low_ok);
     if band(indices_ok, out_ok) {
     } else {
@@ -49,8 +49,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     set pair = pair +wrap 2_u64;
     set out_index = out_index +wrap 1_u64;
   }
-  let first_ok = ieq(output[0_u64], 10_u8);
-  let second_ok = ieq(output[1_u64], 255_u8);
+  let first_ok = output[0_u64] == 10_u8;
+  let second_ok = output[1_u64] == 255_u8;
   if band(first_ok, second_ok) {
   } else {
     return exit_status(code: 4_u8);

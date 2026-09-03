@@ -2,10 +2,10 @@ command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: signed ishr is arithmetic and sign-extends; the shift amount obligation k < K is a literal fact.";
   let negative = -16_i32;
   let amount = 2_u32;
-  let has_valid_amount = ilt(amount, 32_u32);
+  let has_valid_amount = amount < 32_u32;
   if has_valid_amount {
     let shifted = ishr(negative, amount);
-    if ieq(shifted, -4_i32) {
+    if shifted == -4_i32 {
       return exit_status(code: 0_u8);
     } else {
       return exit_status(code: 1_u8);

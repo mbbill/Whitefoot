@@ -1,5 +1,5 @@
 fn unproved(value: own i32, choose: own Bool) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   if choose {
     return 0_i32;

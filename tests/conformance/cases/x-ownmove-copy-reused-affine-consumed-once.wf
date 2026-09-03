@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
     return exit_status(code: 2_u8);
   }
   let t = s + n;
-  if ieq(t, 42_i32) {
+  if t == 42_i32 {
   } else {
     return exit_status(code: 3_u8);
   }

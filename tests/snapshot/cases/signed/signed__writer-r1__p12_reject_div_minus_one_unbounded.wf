@@ -6,13 +6,13 @@ fn negate(n: own i32) -> result: own i32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let sample = 5_i32;
-  let is_positive = igt(sample, 0_i32);
+  let is_positive = sample > 0_i32;
   if is_positive {
   } else {
     return exit_status(code: 4_u8);
   }
   let a = negate(n: sample);
-  if ieq(a, -5_i32) {
+  if a == -5_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

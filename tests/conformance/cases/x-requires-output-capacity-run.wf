@@ -1,7 +1,7 @@
 fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> function_result: own u64 reads(source), writes(out) contract {
   define out_length = len(deref(out));
   define source_length = len(source);
-  requires ile(source_length, out_length);
+  requires source_length <= out_length;
 } {
   let length = len(source);
   for (offset in 0_u64..length) {
@@ -17,14 +17,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output = buffer_new(length, 0_u8);
   region 'copy_region {
     let destination = &uniq 'copy_region output;
-    let written = copy_bytes<'copy_region>(out: move destination, source: move source);
-    if ieq(written, length) {
+    let written = copy_bytes::<'copy_region>(out: move destination, source: move source);
+    if written == length {
     } else {
       return exit_status(code: 201_u8);
     }
   }
   let last = output[3_u64];
-  if ieq(last, 7_u8) {
+  if last == 7_u8 {
   } else {
     return exit_status(code: 202_u8);
   }

@@ -630,10 +630,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Atom)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let operator = self
-            .tree
-            .first_child_with(tail, Production::InfixOp)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let operator = self.infix_operator_node(tail)?;
         let right = self
             .tree
             .first_child_with(tail, Production::Atom)?
@@ -649,11 +646,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
+    /// The operator child of an `infix_tail`: its `infix_op` or its
+    /// `compare_op` node, whichever the tail selected [GRAM-5].
+    pub(super) fn infix_operator_node(&self, tail: NodeId) -> Result<NodeId, CheckStop> {
+        if let Some(operator) = self.tree.first_child_with(tail, Production::InfixOp)? {
+            return Ok(operator);
+        }
+        self.tree
+            .first_child_with(tail, Production::CompareOp)?
+            .ok_or_else(|| SemanticCompilerFailure::InvalidCanonicalTree.into())
+    }
+
     /// [OP-1] the exact operator token, and the row it spells.
     ///
     /// Bare `+ - * / %` are proof-required exact rows; `defined` names their
     /// total Bool domain queries. The remaining suffixes keep their existing
-    /// value-result policies.
+    /// value-result policies. The six `compare_op` spellings are the total
+    /// integer comparison rows.
     pub(super) fn infix_operation(
         &self,
         operator: NodeId,
@@ -683,6 +692,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             b"%" => CheckedIntegerOperation::RemainderExact,
             b"%defined" => CheckedIntegerOperation::RemainderDefined,
             b"%checked" => CheckedIntegerOperation::RemainderChecked,
+            b"==" => CheckedIntegerOperation::Equal,
+            b"!=" => CheckedIntegerOperation::NotEqual,
+            b"<" => CheckedIntegerOperation::Less,
+            b"<=" => CheckedIntegerOperation::LessEqual,
+            b">" => CheckedIntegerOperation::Greater,
+            b">=" => CheckedIntegerOperation::GreaterEqual,
             _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         })
     }

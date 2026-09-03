@@ -2200,14 +2200,14 @@ struct Pair {
 }
 
 fn below(value: own u64) -> result: own unit pure contract {
-  requires ilt(value, 4_u64);
+  requires value < 4_u64;
 } {
   return unit;
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
-  if ile(i, p.count) {
-    if ilt(p.count, 4_u64) {
+  if i <= p.count {
+    if p.count < 4_u64 {
       let item = values[i];
       below(value: i);
       return item;
@@ -2262,11 +2262,11 @@ fn normalized_derivations_are_byte_identical_across_twenty_analyses() {
 
 fn read(values: own array<i32, count>, i: own u64, left: own Bool) -> result: own i32 pure {
   if left {
-    if ilt(i, 4_u64) {
+    if i < 4_u64 {
     } else {
       return 0_i32;
     }
-  } else if ilt(i, 4_u64) {
+  } else if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -2307,7 +2307,7 @@ fn a_dominating_branch_discharges_the_guarded_index_and_not_the_other_arm() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     return values[i];
   } else {
     return values[i];
@@ -2387,19 +2387,19 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn s1_true_and_false_edges_retain_their_exact_comparison_roots() {
     let source = br#"fn need_below(value: own u64) -> result: own unit pure contract {
-  requires ilt(value, 4_u64);
+  requires value < 4_u64;
 } {
   return unit;
 }
 
 fn need_at_least(value: own u64) -> result: own unit pure contract {
-  requires ige(value, 4_u64);
+  requires value >= 4_u64;
 } {
   return unit;
 }
 
 fn caller(value: own u64) -> result: own unit pure {
-  if ilt(value, 4_u64) {
+  if value < 4_u64 {
     need_below(value: value);
   } else {
     need_at_least(value: value);
@@ -2504,7 +2504,7 @@ fn a_bool_binding_carries_its_comparison_to_the_match_when_no_kill_intervenes() 
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let flag = ilt(i, 4_u64);
+  let flag = i < 4_u64;
   if flag {
     return values[i];
   } else {
@@ -2524,7 +2524,7 @@ fn a_set_between_initializer_and_use_invalidates_the_comparison_origin() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let flag = ilt(i, 4_u64);
+  let flag = i < 4_u64;
   set i = i +wrap 1_u64;
   if flag {
     return values[i];
@@ -2559,8 +2559,8 @@ struct Pair {
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
-  if ile(i, p.count) {
-    if ilt(p.count, 4_u64) {
+  if i <= p.count {
+    if p.count < 4_u64 {
       return values[i];
     } else {
       return 0_i32;
@@ -2586,8 +2586,8 @@ fn disequality_strengthens_a_weak_bound_to_a_strict_one() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ile(i, 4_u64) {
-    if ieq(i, 4_u64) {
+  if i <= 4_u64 {
+    if i == 4_u64 {
       return 0_i32;
     } else {
       return values[i];
@@ -2612,14 +2612,14 @@ command fn main() -> status: own ExitStatus pure {
 fn equality_retains_both_directed_parents_and_reflexive_implicit_support() {
     let source =
         br#"fn need_equal(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ieq(left, right);
+  requires left == right;
 } {
   return unit;
 }
 
 fn directed(left: own u64, right: own u64) -> result: own unit pure {
-  if ile(left, right) {
-    if ile(right, left) {
+  if left <= right {
+    if right <= left {
       need_equal(left: left, right: right);
     } else {
       return unit;
@@ -2680,7 +2680,7 @@ fn a_contradictory_state_discharges_every_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn below_minimum(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 0_u64) {
+  if i < 0_u64 {
     return values[9_u64];
   } else {
     return 0_i32;
@@ -2688,7 +2688,7 @@ fn below_minimum(values: own array<i32, count>, i: own u64) -> result: own i32 p
 }
 
 fn above_maximum(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if igt(i, 18446744073709551615_u64) {
+  if i > 18446744073709551615_u64 {
     return values[9_u64];
   } else {
     return 0_i32;
@@ -2740,8 +2740,8 @@ fn eat(p: own Pair) -> result: own unit pure {
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
-  if ile(i, p.count) {
-    if ilt(p.count, 4_u64) {
+  if i <= p.count {
+    if p.count < 4_u64 {
       eat(p: move p);
       return values[i];
     } else {
@@ -2782,8 +2782,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn assigning_a_middle_vertex_projects_a_bound_needed_after_the_write() {
     let source = br#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+  requires x <= middle;
+  requires middle <= 254_u8;
 } {
   set middle = replacement;
   let result = x + 1_u8;
@@ -2816,8 +2816,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn projection_does_not_preserve_a_bound_when_the_final_endpoint_is_written() {
     let source = br#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+  requires x <= middle;
+  requires middle <= 254_u8;
 } {
   set middle = replacement;
   set x = 255_u8;
@@ -2844,12 +2844,12 @@ fn projection_does_not_preserve_a_bound_through_a_moved_alias_write_to_its_endpo
 }
 
 fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+  requires x <= middle;
+  requires middle <= 254_u8;
 } {
   region 'w {
     let holder = &uniq 'w x;
-    overwrite<'w>(value: move holder);
+    overwrite::<'w>(value: move holder);
   }
   let result = x + 1_u8;
   return result;
@@ -2876,7 +2876,7 @@ struct Pair {
 }
 
 fn read(values: own array<i32, count>, p: own Pair) -> result: own i32 reads(p.count), writes(p.count, p.other) {
-  if ilt(p.count, 4_u64) {
+  if p.count < 4_u64 {
     set p.other = 9_u64;
     let kept = values[p.count];
     set p.count = 9_u64;
@@ -2916,9 +2916,9 @@ fn bump['w](p: &uniq 'w u64) -> result: own unit writes(p) {
 }
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     region 'w {
-      bump<'w>(p: &uniq 'w i);
+      bump::<'w>(p: &uniq 'w i);
     }
     return values[i];
   } else {
@@ -2953,9 +2953,9 @@ fn peek['r](p: &'r u64) -> result: own u64 reads(p) {
 }
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     region 'r {
-      let seen = peek<'r>(p: &'r i);
+      let seen = peek::<'r>(p: &'r i);
     }
     return values[i];
   } else {
@@ -2992,8 +2992,8 @@ fn a_join_keeps_the_weakest_bound_held_on_every_continuing_arm() {
 const count: u64 = 4_u64;
 
 fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 2_u64) {
-  } else if ilt(i, 4_u64) {
+  if i < 2_u64 {
+  } else if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -3029,30 +3029,30 @@ command fn main() -> status: own ExitStatus pure {
 fn a_join_keeps_a_disequality_derived_in_opposite_strict_orientations() {
     let source =
         br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ine(left, right);
+  requires left != right;
 } {
   return unit;
 }
 
 fn need_left_below_right(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ilt(left, right);
+  requires left < right;
 } {
   return unit;
 }
 
 fn need_right_below_left(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ilt(right, left);
+  requires right < left;
 } {
   return unit;
 }
 
 fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
-  } else if ilt(right, left) {
+  } else if right < left {
   } else {
     return unit;
   }
@@ -3102,22 +3102,22 @@ command fn main() -> status: own ExitStatus pure {
 fn a_joined_derived_disequality_strengthens_a_later_weak_bound() {
     let source =
         br#"fn need_left_below_right(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ilt(left, right);
+  requires left < right;
 } {
   return unit;
 }
 
 fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
-  } else if ilt(right, left) {
+  } else if right < left {
   } else {
     return unit;
   }
-  if ile(left, right) {
+  if left <= right {
   } else {
     return unit;
   }
@@ -3165,18 +3165,18 @@ command fn main() -> status: own ExitStatus pure {
 fn a_write_kills_a_disequality_materialized_by_a_join() {
     let source =
         br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ine(left, right);
+  requires left != right;
 } {
   return unit;
 }
 
 fn kept(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
-  } else if ilt(right, left) {
+  } else if right < left {
   } else {
     return unit;
   }
@@ -3186,11 +3186,11 @@ fn kept(left: own u64, right: own u64, choose: own Bool) -> result: own unit pur
 
 fn killed(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
-  } else if ilt(right, left) {
+  } else if right < left {
   } else {
     return unit;
   }
@@ -3233,18 +3233,18 @@ command fn main() -> status: own ExitStatus pure {
 fn joins_keep_disequality_across_same_strict_explicit_and_mixed_grounds() {
     let source =
         br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ine(left, right);
+  requires left != right;
 } {
   return unit;
 }
 
 fn same_strict(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
-  } else if ilt(left, right) {
+  } else if left < right {
   } else {
     return unit;
   }
@@ -3254,11 +3254,11 @@ fn same_strict(left: own u64, right: own u64, choose: own Bool) -> result: own u
 
 fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ine(left, right) {
+    if left != right {
     } else {
       return unit;
     }
-  } else if ine(right, left) {
+  } else if right != left {
   } else {
     return unit;
   }
@@ -3268,11 +3268,11 @@ fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> result: own
 
 fn mixed(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ine(left, right) {
+    if left != right {
     } else {
       return unit;
     }
-  } else if ilt(right, left) {
+  } else if right < left {
   } else {
     return unit;
   }
@@ -3321,28 +3321,28 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_many_way_join_keeps_mixed_disequality_and_ignores_a_contradictory_input() {
     let source = br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ine(left, right);
+  requires left != right;
 } {
   return unit;
 }
 
 fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> result: own unit pure {
   if first {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
   } else if second {
-    if ine(left, right) {
+    if left != right {
     } else {
       return unit;
     }
   } else if third {
-    if ilt(right, left) {
+    if right < left {
     } else {
       return unit;
     }
-  } else if ilt(0_u64, 0_u64) {
+  } else if 0_u64 < 0_u64 {
   } else {
     return unit;
   }
@@ -3381,18 +3381,18 @@ command fn main() -> status: own ExitStatus pure {
 fn equality_missing_relation_and_a_kill_each_prevent_disequality_survival() {
     let source =
         br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ine(left, right);
+  requires left != right;
 } {
   return unit;
 }
 
 fn equality_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
-  } else if ieq(left, right) {
+  } else if left == right {
   } else {
     return unit;
   }
@@ -3402,7 +3402,7 @@ fn equality_input(left: own u64, right: own u64, choose: own Bool) -> result: ow
 
 fn missing_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
@@ -3413,12 +3413,12 @@ fn missing_input(left: own u64, right: own u64, choose: own Bool) -> result: own
 
 fn killed_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
     set left = left +wrap 1_u64;
-  } else if ilt(right, left) {
+  } else if right < left {
   } else {
     return unit;
   }
@@ -3447,17 +3447,17 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn derived_disequality_closure_preserves_contradiction_and_no_loop_induction() {
     let source = br#"fn impossible() -> result: own unit pure contract {
-  requires ilt(1_u64, 0_u64);
+  requires 1_u64 < 0_u64;
 } {
   return unit;
 }
 
 fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> result: own unit pure {
-  if ile(left, right) {
+  if left <= right {
   } else {
     return unit;
   }
-  if ilt(right, left) {
+  if right < left {
   } else {
     return unit;
   }
@@ -3466,11 +3466,11 @@ fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> result: o
 }
 
 fn both_strict(left: own u64, right: own u64) -> result: own unit pure {
-  if ilt(left, right) {
+  if left < right {
   } else {
     return unit;
   }
-  if ilt(right, left) {
+  if right < left {
   } else {
     return unit;
   }
@@ -3480,11 +3480,11 @@ fn both_strict(left: own u64, right: own u64) -> result: own unit pure {
 
 fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, left) {
+    if left < left {
     } else {
       return unit;
     }
-  } else if ilt(right, right) {
+  } else if right < right {
   } else {
     return unit;
   }
@@ -3495,7 +3495,7 @@ fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> result:
 fn no_induction(left: own u64, right: own u64, leave: own Bool) -> result: own unit pure {
   loop @again {
     need_distinct(left: left, right: right);
-    if ilt(left, right) {
+    if left < right {
     } else {
       return unit;
     }
@@ -3507,7 +3507,7 @@ fn no_induction(left: own u64, right: own u64, leave: own Bool) -> result: own u
 }
 
 fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contract {
-  requires ine(left, right);
+  requires left != right;
 } {
   return unit;
 }
@@ -3567,7 +3567,7 @@ fn an_arm_that_leaves_by_return_contributes_nothing_to_the_join() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -3595,7 +3595,7 @@ fn a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact() {
 fn read(values: own array<i32, count>, pick: own Bool) -> result: own i32 pure {
   if pick {
     let j = 0_u64;
-    if ilt(j, 4_u64) {
+    if j < 4_u64 {
       return values[j];
     } else {
       return 0_i32;
@@ -3631,7 +3631,7 @@ fn a_fact_about_an_outer_binding_survives_a_region_exit() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   region 'a {
-    if ilt(i, 4_u64) {
+    if i < 4_u64 {
     } else {
       return 0_i32;
     }
@@ -3667,7 +3667,7 @@ fn a_break_edge_carries_surviving_facts_to_the_loop_continuation() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   loop @l {
-    if ilt(i, 4_u64) {
+    if i < 4_u64 {
       break @l;
     } else {
       return 0_i32;
@@ -3693,7 +3693,7 @@ fn a_kill_before_the_break_edge_leaves_the_continuation_unproved() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   loop @l {
-    if ilt(i, 4_u64) {
+    if i < 4_u64 {
       set i = i +wrap 1_u64;
       break @l;
     } else {
@@ -3719,7 +3719,7 @@ fn give_edges_join_at_the_value_match_continuation_with_arm_facts_dead() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let picked = if ilt(i, 4_u64) {
+  let picked = if i < 4_u64 {
     give values[i];
   } else {
     give 0_i32;
@@ -3747,19 +3747,19 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn value_if_delivery_joins_unequal_bounds_through_direct_edge_parents() {
     let source = br#"fn guard(value: own i32) -> result: own unit pure contract {
-  requires ilt(value, 128_i32);
+  requires value < 128_i32;
 } {
   return unit;
 }
 
 fn choose(value: own i32, narrow: own Bool) -> result: own unit pure {
   let picked = if narrow {
-    if ilt(value, 8_i32) {
+    if value < 8_i32 {
       give value;
     } else {
       return unit;
     }
-  } else if ilt(value, 128_i32) {
+  } else if value < 128_i32 {
     give value;
   } else {
     return unit;
@@ -3905,7 +3905,7 @@ fn missing_value_if_evidence_and_value_match_create_no_delivery_roots() {
 
 fn missing(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
-    if ilt(value, 8_i32) {
+    if value < 8_i32 {
       give value;
     } else {
       return value;
@@ -3919,14 +3919,14 @@ fn missing(value: own i32, narrow: own Bool) -> result: own i32 pure {
 fn matched(value: own i32, choice: own Choice) -> result: own i32 pure {
   let picked = match choice {
     Narrow() => {
-      if ilt(value, 8_i32) {
+      if value < 8_i32 {
         give value;
       } else {
         return value;
       }
     }
     Wide() => {
-      if ilt(value, 128_i32) {
+      if value < 128_i32 {
         give value;
       } else {
         return value;
@@ -3967,12 +3967,12 @@ command fn main() -> status: own ExitStatus pure {
 fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
     let source = br#"fn computed(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
-    if ilt(value, 8_i32) {
+    if value < 8_i32 {
       give value +wrap 0_i32;
     } else {
       return value;
     }
-  } else if ilt(value, 128_i32) {
+  } else if value < 128_i32 {
     give value +wrap 0_i32;
   } else {
     return value;
@@ -3983,14 +3983,14 @@ fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
 fn scoped(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
     let limit = ixor(value, 1_i32);
-    if ine(value, limit) {
+    if value != limit {
       give value;
     } else {
       return value;
     }
   } else {
     let limit = ixor(value, 2_i32);
-    if ine(value, limit) {
+    if value != limit {
       give value;
     } else {
       return value;
@@ -4030,12 +4030,12 @@ command fn main() -> status: own ExitStatus pure {
 fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
     let source = br#"fn choose(value: own i32, impossible: own Bool) -> result: own i32 pure {
   let picked = if impossible {
-    if ilt(value, value) {
+    if value < value {
       give value;
     } else {
       return value;
     }
-  } else if ilt(value, 128_i32) {
+  } else if value < 128_i32 {
     give value;
   } else {
     return value;
@@ -4098,13 +4098,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn one_structural_value_if_delivery_retains_exact_originating_edge_order() {
     let source = br#"fn guard(value: own i32) -> result: own unit pure contract {
-  requires ilt(value, 128_i32);
+  requires value < 128_i32;
 } {
   return unit;
 }
 
 fn choose(value: own i32, side: own Bool) -> result: own unit pure {
-  if ilt(value, 128_i32) {
+  if value < 128_i32 {
     let picked = if side {
       give value;
     } else {
@@ -4156,7 +4156,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_local_invariant_does_not_discard_an_unrelated_no_ensures_value_if_delivery() {
     let source = br#"fn choose(value: own i32, side: own Bool) -> result: own i32 pure {
-  if ilt(value, 128_i32) {
+  if value < 128_i32 {
     let picked = if side {
       give value;
     } else {
@@ -4169,9 +4169,9 @@ fn a_local_invariant_does_not_discard_an_unrelated_no_ensures_value_if_delivery(
 }
 
 fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 pure contract {
-  requires ile(position, 3_u64);
+  requires position <= 3_u64;
 } {
-  invariant bounded: ile(position, 3_u64);
+  invariant bounded: position <= 3_u64;
   return values[position];
 }
 
@@ -4209,7 +4209,7 @@ fn source(flag: own Bool) -> result: own Result<u64, Fail> pure {
 }
 
 fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> result: own Result<i32, Fail> pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     let v = propagate source(flag: flag);
     let a = values[i];
     return Ok<i32, Fail>(value: a);
@@ -4238,7 +4238,7 @@ fn a_loop_body_kill_removes_the_fact_from_every_iteration_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4246,7 +4246,7 @@ fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   loop @l {
     let inside = values[i];
     set i = i +wrap 1_u64;
-    if ilt(i, 4_u64) {
+    if i < 4_u64 {
     } else {
       break @l;
     }
@@ -4278,7 +4278,7 @@ fn a_kill_free_loop_body_keeps_the_entry_fact_at_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4305,7 +4305,7 @@ fn d1h_and_d1i_distinguish_a_return_inside_the_loop_from_one_after_it() {
     let source = br#"const count: u64 = 4_u64;
 
 fn return_inside(values: own array<i32, count>, i: own u64, stop: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4320,7 +4320,7 @@ fn return_inside(values: own array<i32, count>, i: own u64, stop: own Bool) -> r
 }
 
 fn return_after(values: own array<i32, count>, i: own u64, stop: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4355,7 +4355,7 @@ fn a_kill_followed_only_by_the_current_loop_break_does_not_poison_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4383,7 +4383,7 @@ fn a_kill_followed_only_by_an_enclosing_break_does_not_poison_the_inner_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool, leave_inner: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4431,7 +4431,7 @@ fn source(fail: own Bool) -> result: own Result<u64, Fail> pure {
 }
 
 fn read(values: own array<i32, count>, i: own u64, fail: own Bool, leave: own Bool) -> result: own Result<i32, Fail> pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return Ok<i32, Fail>(value: 0_i32);
   }
@@ -4461,7 +4461,7 @@ fn an_else_free_continuing_kill_still_poisons_the_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4493,7 +4493,7 @@ fn a_give_to_an_initializer_inside_the_loop_carries_its_kill_to_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4528,11 +4528,11 @@ fn a_mixed_branch_ignores_the_return_only_kill_but_keeps_the_continuing_one() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(left: own array<i32, count>, right: own array<i32, count>, i: own u64, j: own u64, stop: own Bool, leave: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
-  if ilt(j, 4_u64) {
+  if j < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4568,7 +4568,7 @@ fn a_nested_loop_own_break_carries_kills_to_the_outer_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -4697,7 +4697,7 @@ fn read(values: own array<i32, count>) -> result: own i32 pure {
 
 fn ordinary(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let upper = 4_u64;
-  if ilt(i, upper) {
+  if i < upper {
     set upper = 0_u64;
     return values[i];
   } else {
@@ -4775,9 +4775,9 @@ fn a_write_preserves_a_survivor_bound_derived_through_disequality_strengthening(
     let source = br#"const count: u64 = 3_u64;
 
 fn read(values: own array<i32, count>, index: own u64, middle: own u64) -> result: own i32 pure contract {
-  requires ile(index, middle);
-  requires ine(index, middle);
-  requires ile(middle, 3_u64);
+  requires index <= middle;
+  requires index != middle;
+  requires middle <= 3_u64;
 } {
   set middle = 0_u64;
   return values[index];
@@ -4812,7 +4812,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_write_preserves_a_survivor_bound_derived_through_an_implicit_type_edge() {
     let source =
         br#"fn increment(value: own u8, byte_limit: own u8) -> result: own u8 pure contract {
-  requires ilt(value, byte_limit);
+  requires value < byte_limit;
 } {
   set byte_limit = 0_u8;
   return value + 1_u8;
@@ -4954,11 +4954,11 @@ fn counted_roots_cover_contradictory_preheaders_and_neutral_join_predecessors() 
 
 fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    if ilt(left, left) {
+    if left < left {
     } else {
       return unit;
     }
-  } else if ilt(right, right) {
+  } else if right < right {
   } else {
     return unit;
   }
@@ -4969,7 +4969,7 @@ fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own
 
 fn joined(values: own array<i32, count>, x: own u64) -> result: own i32 pure {
   let upper = 1_u64;
-  if ilt(x, 0_u64) {
+  if x < 0_u64 {
     let impossible = x;
   }
   let total = 0_i32;
@@ -5140,10 +5140,10 @@ fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small = array_new<u8, 2>(0_u8);
-  ranges<2>(values: move small);
-  let large = array_new<u8, 5>(0_u8);
-  ranges<5>(values: move large);
+  let small = array_new::<u8, 2>(0_u8);
+  ranges::<2>(values: move small);
+  let large = array_new::<u8, 5>(0_u8);
+  ranges::<5>(values: move large);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5224,7 +5224,7 @@ fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   for @maybe (n in 0_u64..1_u64) {
-    if ilt(i, 4_u64) {
+    if i < 4_u64 {
       let ignored = n;
     } else {
       return 0_i32;
@@ -5249,7 +5249,7 @@ fn a_nested_counted_loop_kill_can_reach_an_outer_ordinary_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -5308,7 +5308,7 @@ fn a_nested_index_offset_is_no_term_and_renders_its_canonical_bytes() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> result: own u8 pure {
-  if ilt(j, 4_u64) {
+  if j < 4_u64 {
     return lens[order[j]];
   } else {
     return 0_u8;
@@ -5449,7 +5449,7 @@ fn continue_after_failed_set() -> result: own u8 pure {
 }
 
 fn return_after_failed_set(value: own u8) -> result: own u8 pure contract {
-  ensures igt(result, value);
+  ensures result > value;
 } {
   let current = 0_u8;
   set current = value + 1_u8;
@@ -5547,7 +5547,7 @@ fn an_allocation_length_equality_proves_a_constant_offset_and_a_runtime_length_d
 }
 
 fn runtime(n: own u64) -> result: own u8 allocates(heap) contract {
-  requires buffer_fits<u8>(n);
+  requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
   return b[3_u64];
@@ -5592,14 +5592,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_allocation_length_binding_carries_the_length_into_a_branch() {
-    // `let m = len<T>(P)` establishes m = len(P), so a branch over m is a
+    // `let m = len::<T>(P)` establishes m = len(P), so a branch over m is a
     // branch over the length itself [ENT-3] S6.
     let source = br#"fn read(n: own u64, i: own u64) -> result: own u8 allocates(heap) contract {
-  requires buffer_fits<u8>(n);
+  requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
   let m = len(b);
-  if ilt(i, m) {
+  if i < m {
     return b[i];
   } else {
     return 0_u8;
@@ -5642,10 +5642,10 @@ fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
     // but first projects the already true 3 < len(b) consequence whose two
     // endpoints survive the write.
     let source = br#"fn kept(n: own u64) -> result: own u8 allocates(heap) contract {
-  requires buffer_fits<u8>(n);
+  requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
-  if ilt(3_u64, n) {
+  if 3_u64 < n {
     set b[0_u64] = 1_u8;
     return b[3_u64];
   } else {
@@ -5654,10 +5654,10 @@ fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
 }
 
 fn killed(n: own u64) -> result: own u8 allocates(heap) contract {
-  requires buffer_fits<u8>(n);
+  requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
-  if ilt(3_u64, n) {
+  if 3_u64 < n {
     set n = 0_u64;
     return b[3_u64];
   } else {
@@ -5803,7 +5803,7 @@ fn set_targets_carry_the_same_obligation_in_target_position() {
     let source = br#"const count: u64 = 4_u64;
 
 fn write(values: own array<u16, count>, i: own u64) -> result: own u16 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     set values[i] = 9_u16;
     return 1_u16;
   } else {
@@ -5839,15 +5839,15 @@ fn a_true_guard_establishes_its_comparison_on_the_selected_edge() {
 fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
   let bounded = 0_u64;
   loop @select_bound {
-    if ieq(bounded, input) {
+    if bounded == input {
       break @select_bound;
-    } else if ieq(bounded, 3_u64) {
+    } else if bounded == 3_u64 {
       break @select_bound;
     } else {
       set bounded = bounded +wrap 1_u64;
     }
   }
-  if ilt(bounded, 4_u64) {
+  if bounded < 4_u64 {
     return values[bounded];
   }
   return 0_i32;
@@ -5856,15 +5856,15 @@ fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
 fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
   let bounded = 0_u64;
   loop @select_bound {
-    if ieq(bounded, input) {
+    if bounded == input {
       break @select_bound;
-    } else if ieq(bounded, 3_u64) {
+    } else if bounded == 3_u64 {
       break @select_bound;
     } else {
       set bounded = bounded +wrap 1_u64;
     }
   }
-  let ok = ilt(bounded, 4_u64);
+  let ok = bounded < 4_u64;
   if ok {
     return values[bounded];
   }
@@ -5894,9 +5894,9 @@ fn a_true_band_guard_establishes_its_conjuncts_not_a_whole_tree_relation() {
 fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_raw: own u64, right_raw: own u64) -> result: own i32 pure {
   let left = 0_u64;
   loop @select_left {
-    if ieq(left, left_raw) {
+    if left == left_raw {
       break @select_left;
-    } else if ieq(left, 3_u64) {
+    } else if left == 3_u64 {
       break @select_left;
     } else {
       set left = left +wrap 1_u64;
@@ -5904,16 +5904,16 @@ fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_ra
   }
   let right = 0_u64;
   loop @select_right {
-    if ieq(right, right_raw) {
+    if right == right_raw {
       break @select_right;
-    } else if ieq(right, 3_u64) {
+    } else if right == 3_u64 {
       break @select_right;
     } else {
       set right = right +wrap 1_u64;
     }
   }
-  let left_inside = ilt(left, 4_u64);
-  let right_inside = ilt(right, 4_u64);
+  let left_inside = left < 4_u64;
+  let right_inside = right < 4_u64;
   if band(left_inside, right_inside) {
     let first = left_values[left];
     let second = right_values[right];
@@ -5941,7 +5941,7 @@ fn read(values: own array<i32, count>) -> result: own i32 pure {
   let k = 2_u64;
   let j = k;
   let narrow = 3_u16;
-  let widened = cvt<u16, u64>(narrow);
+  let widened = cvt::<u16, u64>(narrow);
   let first = values[j];
   let second = values[widened];
   return first +wrap second;
@@ -5977,7 +5977,7 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
     // are killed, S5 publishes `start = back`; no runtime check is needed.
     let source = br#"fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
   let n = len(deref(data));
-  let have_room = ige(n, 8_u64);
+  let have_room = n >= 8_u64;
   let start = 0_u64;
   let out = 0_u8;
   if have_room {
@@ -5992,7 +5992,7 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let input = buffer_new(4096_u64, 7_u8);
   region 'r {
-    let byte = tail_byte<'r>(data: &'r input);
+    let byte = tail_byte::<'r>(data: &'r input);
   }
   return exit_status(code: 0_u8);
 }
@@ -6019,7 +6019,7 @@ fn a_scope_exit_keeps_a_closed_consequence_that_does_not_name_the_local() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let out = 0_u64;
-  if ilt(i, 3_u64) {
+  if i < 3_u64 {
     let next = i +wrap 1_u64;
     set out = next;
   } else {
@@ -6053,7 +6053,7 @@ fn a_set_commit_kills_the_old_target_fact_before_publishing_the_new_copy() {
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
   let offset = 0_u64;
-  if ilt(offset, 4_u64) {
+  if offset < 4_u64 {
   } else {
     return 0_i32;
   }
@@ -6088,7 +6088,7 @@ fn a_wrapping_offset_commit_publishes_the_image_its_let_spelling_publishes() {
     let direct = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
-  if ilt(replacement, 4_u64) {
+  if replacement < 4_u64 {
     let offset = 0_u64;
     set offset = replacement +wrap 0_u64;
     return values[offset];
@@ -6104,7 +6104,7 @@ command fn main() -> status: own ExitStatus pure {
     let through_let = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
-  if ilt(replacement, 4_u64) {
+  if replacement < 4_u64 {
     let offset = 0_u64;
     let shifted = replacement +wrap 0_u64;
     set offset = shifted;
@@ -6138,7 +6138,7 @@ fn a_set_right_hand_side_outside_every_value_source_publishes_no_image() {
     let direct = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
-  if ilt(replacement, 4_u64) {
+  if replacement < 4_u64 {
     let offset = 0_u64;
     set offset = replacement +wrap replacement;
     return values[offset];
@@ -6154,7 +6154,7 @@ command fn main() -> status: own ExitStatus pure {
     let through_let = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
-  if ilt(replacement, 4_u64) {
+  if replacement < 4_u64 {
     let offset = 0_u64;
     let doubled = replacement +wrap replacement;
     set offset = doubled;
@@ -6191,7 +6191,7 @@ fn a_wrapping_subtraction_commit_publishes_no_post_write_image() {
     let direct = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
-  if ilt(replacement, 4_u64) {
+  if replacement < 4_u64 {
     let offset = 0_u64;
     set offset = replacement -wrap 1_u64;
     return values[offset];
@@ -6207,7 +6207,7 @@ command fn main() -> status: own ExitStatus pure {
     let through_let = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
-  if ilt(replacement, 4_u64) {
+  if replacement < 4_u64 {
     let offset = 0_u64;
     let lowered = replacement -wrap 1_u64;
     set offset = lowered;
@@ -6240,10 +6240,10 @@ fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, n: own u64) -> result: own i32 pure {
-  if ilt(n, 4_u64) {
-    match cvt<u64, u8>(n) {
+  if n < 4_u64 {
+    match cvt::<u64, u8>(n) {
       Ok(value: small) => {
-        let widened = cvt<u8, u64>(small);
+        let widened = cvt::<u8, u64>(small);
         return values[widened];
       }
       Err(error: narrowed) => {
@@ -6274,8 +6274,8 @@ command fn main() -> status: own ExitStatus pure {
 fn unsigned_remainder_publishes_its_strict_divisor_bound() {
     let source =
         br#"fn reduce(dividend: own u64, divisor: own u64) -> result: own u64 pure contract {
-  requires ine(divisor, 0_u64);
-  ensures ilt(result, divisor);
+  requires divisor != 0_u64;
+  ensures result < divisor;
 } {
   let remainder = dividend % divisor;
   return remainder;
@@ -6551,7 +6551,7 @@ fn wrong_shift_mode(count: own u32) -> result: own u32 pure contract {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let ignored = generic<u32>(count: 2_u32);
+  let ignored = generic::<u32>(count: 2_u32);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6576,7 +6576,7 @@ command fn main() -> status: own ExitStatus pure {
 fn postcondition_exit_and_aggregate_roots_match_retained_metadata() {
     let source =
         br#"fn identity(value: own i32, choose: own Bool) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   if choose {
     return value;
@@ -6602,13 +6602,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn caller_postcondition_sources_retain_the_originating_parents() {
     let b_first = br#"fn callee(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
 
 fn caller(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let called = callee(value: value);
   return called;
@@ -6638,14 +6638,14 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let u_fallback = br#"fn normalized(value: own i32) -> result: own i32 pure contract {
-  requires ieq(value, 1_i32);
-  ensures ieq(result, value);
+  requires value == 1_i32;
+  ensures result == value;
 } {
   return 1_i32;
 }
 
 fn caller() -> result: own i32 pure contract {
-  ensures ieq(result, 1_i32);
+  ensures result == 1_i32;
 } {
   let called = normalized(value: 1_i32);
   return called;
@@ -6683,13 +6683,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn direct_match_and_value_match_retain_only_selected_payload_routes() {
     let source = br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure contract {
-  ensures when Ok(value: payload): ieq(payload, value);
+  ensures when Ok(value: payload): payload == value;
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
 fn direct(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   match callee(value: value) {
     Ok(value: payload) => {
@@ -6768,19 +6768,19 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn direct_and_selected_receivers_retain_one_source_context_route_root() {
     let source = br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
 
 fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
-  ensures when Ok(value: payload): ieq(payload, value);
+  ensures when Ok(value: payload): payload == value;
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
 fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
-  requires ieq(left, right);
+  requires left == right;
 } {
   return unit;
 }
@@ -6846,7 +6846,7 @@ fn a_proved_exact_offset_establishes_its_equality_unconditionally() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 3_u64) {
+  if i < 3_u64 {
     let next = i + 1_u64;
     return values[next];
   } else {
@@ -6891,8 +6891,8 @@ fn a_wrapping_offset_establishes_only_where_the_range_is_already_proved() {
     let source = br#"const count: u64 = 4_u64;
 
 fn guarded(values: own array<i32, count>, p: own u64) -> result: own i32 pure {
-  if ilt(p, 4_u64) {
-    if ige(p, 1_u64) {
+  if p < 4_u64 {
+    if p >= 1_u64 {
       let s = p -wrap 1_u64;
       return values[s];
     } else {
@@ -6904,7 +6904,7 @@ fn guarded(values: own array<i32, count>, p: own u64) -> result: own i32 pure {
 }
 
 fn unguarded(values: own array<i32, count>, p: own u64) -> result: own i32 pure {
-  if ilt(p, 4_u64) {
+  if p < 4_u64 {
     let s = p -wrap 1_u64;
     return values[s];
   } else {
@@ -6933,7 +6933,7 @@ fn a_checked_offset_establishes_in_the_ok_arm_only_and_dies_with_its_base() {
     let source = br#"const count: u64 = 4_u64;
 
 fn direct(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 3_u64) {
+  if i < 3_u64 {
     match i +checked 1_u64 {
       Ok(value: next) => {
         return values[next];
@@ -6948,7 +6948,7 @@ fn direct(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
 }
 
 fn through_binding(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 3_u64) {
+  if i < 3_u64 {
     let outcome = i +checked 1_u64;
     match outcome {
       Ok(value: next) => {
@@ -6964,7 +6964,7 @@ fn through_binding(values: own array<i32, count>, i: own u64) -> result: own i32
 }
 
 fn killed(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 3_u64) {
+  if i < 3_u64 {
     let outcome = i +checked 1_u64;
     set i = 9_u64;
     match outcome {
@@ -7010,7 +7010,7 @@ const inside: array<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
 const outside: array<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
 
 fn low(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     let bound = inside[i];
     return values[bound];
   } else {
@@ -7019,7 +7019,7 @@ fn low(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
 }
 
 fn high(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  if ilt(i, 4_u64) {
+  if i < 4_u64 {
     let bound = outside[i];
     return values[bound];
   } else {
@@ -7063,7 +7063,7 @@ fn a_requirement_establishes_its_substituted_relation_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure contract {
-  define ok = ilt(i, 4_u64);
+  define ok = i < 4_u64;
   requires ok;
 } {
   return values[i];
@@ -7093,7 +7093,7 @@ fn a_requires_chain_substitutes_repeatedly_and_reads_a_length_call() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure contract {
   define n = len(values);
-  define ok = ilt(i, n);
+  define ok = i < n;
   requires ok;
 } {
   return values[i];
@@ -7119,7 +7119,7 @@ fn every_occurrence_of_a_requires_local_substitutes() {
 
 fn read(values: own array<i32, count>) -> result: own i32 pure contract {
   define n = len(values);
-  define ok = ilt(n, n);
+  define ok = n < n;
   requires ok;
 } {
   return values[9_u64];
@@ -7143,8 +7143,8 @@ fn a_band_s4_goal_establishes_its_conjuncts_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure contract {
-  define low = ilt(i, 4_u64);
-  define high = ige(i, 0_u64);
+  define low = i < 4_u64;
+  define high = i >= 0_u64;
   define ok = band(low, high);
   requires ok;
 } {
@@ -7170,7 +7170,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_failed_system_endpoint_expression_prevents_unreached_range_obligations() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
+    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
   }
   return unit;
 }
@@ -7197,7 +7197,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
+    match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -7238,11 +7238,11 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 fn ordinary_source_relations_discharge_both_system_ranges() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
-  requires ile(start, end);
-  requires ile(end, capacity);
+  requires start <= end;
+  requires end <= capacity;
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
+    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
   }
   return unit;
 }
@@ -7298,10 +7298,10 @@ command fn main() -> status: own ExitStatus pure {
 fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 2>) -> result: own unit reads(output, source), writes(output) {
   let capacity = len(deref(source));
-  if ile(endpoints[0_u64], endpoints[1_u64]) {
-    if ile(endpoints[1_u64], capacity) {
+  if endpoints[0_u64] <= endpoints[1_u64] {
+    if endpoints[1_u64] <= capacity {
       region 'attempt {
-        let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
+        let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
       }
     }
   }
@@ -7366,7 +7366,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_nonterm_system_endpoint_is_never_replaced_by_the_zero_term() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
+    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
   }
   return unit;
 }
@@ -7401,10 +7401,10 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
 
 fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len(deref(source));
-  let enough = ile(3_u64, source_length);
+  let enough = 3_u64 <= source_length;
   if enough {
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
+      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -7418,10 +7418,10 @@ fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
 
 fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len(deref(source));
-  let enough = ile(4_u64, source_length);
+  let enough = 4_u64 <= source_length;
   if enough {
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
+      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -7435,9 +7435,9 @@ fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(4_u64, 0_u8);
-  let table = array_new<u8, count>(0_u8);
+  let table = array_new::<u8, count>(0_u8);
   region 'publication {
-    under<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, table: move table);
+    under::<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, table: move table);
   }
   return exit_status(code: 0_u8);
 }
@@ -7473,14 +7473,14 @@ fn a_transfer_endpoint_bound_enters_the_observing_arm_only() {
     let source = br#"const count: u64 = 4_u64;
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  let table = array_new<u8, count>(0_u8);
+  let table = array_new::<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 0_u64) {
+    match arg_get::<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd sink, start: 0_u64, end: 3_u64) {
+            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd sink, start: 0_u64, end: 3_u64) {
               Ok(value: copied) => {
                 let good = table[copied];
               }
@@ -7520,14 +7520,14 @@ fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
     let source = br#"const count: u64 = 4_u64;
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  let table = array_new<u8, count>(0_u8);
+  let table = array_new::<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 0_u64) {
+    match arg_get::<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_utf8<'v, 'd>(value: &'v text, destination: &uniq 'd sink, start: 0_u64, end: 3_u64) {
+            match host_copy_utf8::<'v, 'd>(value: &'v text, destination: &uniq 'd sink, start: 0_u64, end: 3_u64) {
               Ok(value: copied) => {
                 let good = table[copied];
               }
@@ -7563,10 +7563,10 @@ fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
 
 fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
-  requires ile(3_u64, capacity);
+  requires 3_u64 <= capacity;
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: 3_u64);
+    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: 3_u64);
     match outcome {
       Ok(value: written) => {
         let sample = table[written];
@@ -7580,10 +7580,10 @@ fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8,
 
 fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
-  requires ile(limit, capacity);
+  requires limit <= capacity;
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: limit);
+    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: limit);
     set limit = 9_u64;
     match outcome {
       Ok(value: written) => {
@@ -7598,9 +7598,9 @@ fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, c
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(3_u64, 0_u8);
-  let table = array_new<u8, count>(0_u8);
+  let table = array_new::<u8, count>(0_u8);
   region 'publication {
-    deferred<'publication>(output: move out, source: &'publication batch, table: move table, limit: 3_u64);
+    deferred::<'publication>(output: move out, source: &'publication batch, table: move table, limit: 3_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -7631,21 +7631,21 @@ fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
     let source = br#"const count: u64 = 4_u64;
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
-  let table = array_new<u8, count>(0_u8);
+  let table = array_new::<u8, count>(0_u8);
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file<'c>(factory: &uniq 'c files);
-                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                let permit = reserve_file::<'c>(factory: &uniq 'c files);
+                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(64_u64, 0_u8);
                     region 'f {
                       region 'd {
-                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
                           ReadBytes(next: n) => {
                             let sample = table[n];
                           }
@@ -7692,8 +7692,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
 #[test]
 fn a_zero_argument_call_goal_is_discharged_in_its_originating_context() {
     let source = br#"fn need() -> result: own unit pure contract {
-  define first = ilt(0_u64, 1_u64);
-  define second = ilt(1_u64, 2_u64);
+  define first = 0_u64 < 1_u64;
+  define second = 1_u64 < 2_u64;
   define complete = band(first, second);
   requires complete;
 } {
@@ -8492,7 +8492,7 @@ fn counted_range_kills_a_borrowed_projected_endpoint_after_a_write() {
 }
 
 fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
-  requires ilt(index, upper);
+  requires index < upper;
 } {
   return unit;
 }
@@ -8799,8 +8799,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn whole_goal_sources_and_boolean_introduction_discharge_exact_parents() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
-  define positive = igt(value, 0_u64);
-  define small = ilt(value, 10_u64);
+  define positive = value > 0_u64;
+  define small = value < 10_u64;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -8808,8 +8808,8 @@ fn whole_goal_sources_and_boolean_introduction_discharge_exact_parents() {
 }
 
 fn from_branch(value: own u64) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   let complete = band(positive, small);
   if complete {
     guarded(value: value);
@@ -8820,8 +8820,8 @@ fn from_branch(value: own u64) -> result: own unit pure {
 }
 
 fn from_requirement(value: own u64) -> result: own unit pure contract {
-  define positive = igt(value, 0_u64);
-  define small = ilt(value, 10_u64);
+  define positive = value > 0_u64;
+  define small = value < 10_u64;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -8830,8 +8830,8 @@ fn from_requirement(value: own u64) -> result: own unit pure contract {
 }
 
 fn from_children(value: own u64) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   if positive {
     if small {
       guarded(value: value);
@@ -8845,8 +8845,8 @@ fn from_children(value: own u64) -> result: own unit pure {
 }
 
 fn from_false(value: own u64) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   let complete = band(positive, small);
   if complete {
     return unit;
@@ -8883,13 +8883,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_exact_comparison_call_retains_every_positive_derivation_ground() {
     let source = br#"fn below(value: own u64) -> result: own unit pure contract {
-  requires ilt(value, 10_u64);
+  requires value < 10_u64;
 } {
   return unit;
 }
 
 fn exact(value: own u64) -> result: own unit pure {
-  let small = ilt(value, 10_u64);
+  let small = value < 10_u64;
   if small {
     below(value: value);
   } else {
@@ -8899,7 +8899,7 @@ fn exact(value: own u64) -> result: own unit pure {
 }
 
 fn projected(value: own u64) -> result: own unit pure {
-  let at_most_nine = ile(value, 9_u64);
+  let at_most_nine = value <= 9_u64;
   if at_most_nine {
     below(value: value);
   } else {
@@ -8948,8 +8948,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
-  define positive = igt(value, 0_u64);
-  define small = ilt(value, 10_u64);
+  define positive = value > 0_u64;
+  define small = value < 10_u64;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -8957,8 +8957,8 @@ fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
 }
 
 fn both(value: own u64, choose: own Bool) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   let complete = band(positive, small);
   if choose {
     if complete {
@@ -8974,8 +8974,8 @@ fn both(value: own u64, choose: own Bool) -> result: own unit pure {
 }
 
 fn one(value: own u64, choose: own Bool) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   let complete = band(positive, small);
   if choose {
     if complete {
@@ -9019,13 +9019,13 @@ fn a_computed_bool_truth_survives_an_origin_write_but_its_expansion_does_not() {
 }
 
 fn below(value: own u64) -> result: own unit pure contract {
-  requires ilt(value, 10_u64);
+  requires value < 10_u64;
 } {
   return unit;
 }
 
 fn probe(value: own u64) -> result: own unit pure {
-  let small = ilt(value, 10_u64);
+  let small = value < 10_u64;
   if small {
     set value = 20_u64;
     need_true(value: small);
@@ -9055,8 +9055,8 @@ command fn main() -> status: own ExitStatus pure {
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
     let source =
         br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads(value) contract {
-  define positive = igt(deref(deref(value)), 0_i32);
-  define small = ilt(deref(deref(value)), 10_i32);
+  define positive = deref(deref(value)) > 0_i32;
+  define small = deref(deref(value)) < 10_i32;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -9066,12 +9066,12 @@ fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
 
 fn caller() -> result: own unit allocates(heap) {
   let owner = box_new(5_i32);
-  let positive = igt(deref(owner), 0_i32);
-  let small = ilt(deref(owner), 10_i32);
+  let positive = deref(owner) > 0_i32;
+  let small = deref(owner) < 10_i32;
   let complete = band(positive, small);
   if complete {
     region 'r {
-      observe<'r>(value: &'r owner);
+      observe::<'r>(value: &'r owner);
     }
   } else {
     return unit;
@@ -9100,13 +9100,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn setting_an_intermediate_bool_binding_stops_later_origin_expansion() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
-  requires igt(value, 0_u64);
+  requires value > 0_u64;
 } {
   return unit;
 }
 
 fn caller(value: own u64) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
+  let positive = value > 0_u64;
   let alias = positive;
   set positive = False();
   if alias {
@@ -9159,7 +9159,7 @@ fn through_holder(first: own Bool, second: own Bool) -> result: own unit pure {
 fn through_call(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
   region 'r {
-    mutate<'r>(value: &uniq 'r source);
+    mutate::<'r>(value: &uniq 'r source);
   }
   let alias = source;
   if alias {
@@ -9185,8 +9185,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn combined_contradiction_survives_ordinary_set_kills_of_goal_and_l0_support() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
-  define positive = igt(value, 0_u64);
-  define small = ilt(value, 10_u64);
+  define positive = value > 0_u64;
+  define small = value < 10_u64;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -9194,8 +9194,8 @@ fn combined_contradiction_survives_ordinary_set_kills_of_goal_and_l0_support() {
 }
 
 fn signed(value: own u64) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   let complete = band(positive, small);
   if complete {
     if complete {
@@ -9211,8 +9211,8 @@ fn signed(value: own u64) -> result: own unit pure {
 }
 
 fn l0(value: own u64) -> result: own unit pure {
-  if ilt(value, 5_u64) {
-    if ige(value, 5_u64) {
+  if value < 5_u64 {
+    if value >= 5_u64 {
       set value = value +wrap 1_u64;
       guarded(value: value);
     } else {
@@ -9255,23 +9255,23 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn contradiction_survives_effectful_prepared_call_writes_before_fn8() {
     let source = br#"fn rewrite['r](out: &uniq 'r i32) -> result: own i32 writes(out) contract {
-  ensures ieq(result, 0_i32);
+  ensures result == 0_i32;
 } {
   set deref(out) = 0_i32;
   return 0_i32;
 }
 
 fn need_negative(value: own i32) -> result: own unit pure contract {
-  requires ilt(value, 0_i32);
+  requires value < 0_i32;
 } {
   return unit;
 }
 
 fn caller(slot: own i32) -> result: own unit pure {
-  if ilt(slot, 5_i32) {
-    if ige(slot, 5_i32) {
+  if slot < 5_i32 {
+    if slot >= 5_i32 {
       region 'r {
-        let rewritten = rewrite<'r>(out: &uniq 'r slot);
+        let rewritten = rewrite::<'r>(out: &uniq 'r slot);
       }
       need_negative(value: slot);
     } else {
@@ -9304,20 +9304,20 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn contradiction_survives_direct_receiver_set_target_kill_before_fn8() {
     let source = br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
 
 fn need_negative(value: own i32) -> result: own unit pure contract {
-  requires ilt(value, 0_i32);
+  requires value < 0_i32;
 } {
   return unit;
 }
 
 fn caller(slot: own i32, replacement: own i32) -> result: own unit pure {
-  if ilt(slot, 5_i32) {
-    if ige(slot, 5_i32) {
+  if slot < 5_i32 {
+    if slot >= 5_i32 {
       set slot = choose(ignored: slot, value: replacement);
       need_negative(value: slot);
     } else {
@@ -9350,8 +9350,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
-  define positive = igt(value, 0_u64);
-  define small = ilt(value, 10_u64);
+  define positive = value > 0_u64;
+  define small = value < 10_u64;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -9359,8 +9359,8 @@ fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
 }
 
 fn caller(value: own u64) -> result: own unit pure {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
+  let positive = value > 0_u64;
+  let small = value < 10_u64;
   let complete = band(positive, small);
   if complete {
     guarded(value: value);
@@ -9395,8 +9395,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn fn8_call_rejection_carries_the_complete_deterministic_payload() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
-  define positive = igt(value, 0_u64);
-  define small = ilt(value, 10_u64);
+  define positive = value > 0_u64;
+  define small = value < 10_u64;
   define complete = band(positive, small);
   requires complete;
 } {
@@ -9433,7 +9433,7 @@ command fn main() -> status: own ExitStatus pure {
         // [SYS-8] already print their residual this way.
         assert_eq!(
             detail.instantiated_goal,
-            "band(igt(value, 0_u64), ilt(value, 10_u64))"
+            "band(value > 0_u64, value < 10_u64)"
         );
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(
@@ -9452,13 +9452,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn actual_obligations_precede_fn8_and_admitted_index_goals_use_the_source_fix() {
     let admitted_actual = br#"fn positive(value: own u8) -> result: own unit pure contract {
-  requires ilt(value, 10_u8);
+  requires value < 10_u8;
 } {
   return unit;
 }
 
 fn caller() -> result: own unit pure {
-  let values = array_new<u8, 2>(3_u8);
+  let values = array_new::<u8, 2>(3_u8);
   positive(value: values[0_u64]);
   return unit;
 }
@@ -9476,7 +9476,7 @@ command fn main() -> status: own ExitStatus pure {
             panic!("expected FN-8 payload, got {:?}", issue.kind());
         };
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
-        assert_eq!(detail.instantiated_goal, "ilt(values[0_u64], 10_u8)");
+        assert_eq!(detail.instantiated_goal, "values[0_u64] < 10_u8");
         assert_eq!(
             detail.mechanical_fix,
             "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
@@ -9512,13 +9512,13 @@ command fn main() -> status: own ExitStatus pure {
     assert!(admitted.call_goals[0].derivation.is_none());
 
     let failed_actual = br#"fn positive(value: own u8) -> result: own unit pure contract {
-  requires ilt(value, 10_u8);
+  requires value < 10_u8;
 } {
   return unit;
 }
 
 fn caller() -> result: own unit pure {
-  let values = array_new<u8, 2>(3_u8);
+  let values = array_new::<u8, 2>(3_u8);
   positive(value: values[9_u64]);
   return unit;
 }
@@ -9552,7 +9552,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
     let source =
         br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads(value), writes(value) contract {
-  requires ilt(deref(value), 10_u64);
+  requires deref(value) < 10_u64;
 } {
   let old = deref(value);
   set deref(value) = old;
@@ -9560,13 +9560,13 @@ fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call
 }
 
 fn caller(value: own u64) -> result: own unit pure {
-  let small = ilt(value, 10_u64);
+  let small = value < 10_u64;
   if small {
     region 'first {
-      update<'first>(value: &uniq 'first value);
+      update::<'first>(value: &uniq 'first value);
     }
     region 'second {
-      update<'second>(value: &uniq 'second value);
+      update::<'second>(value: &uniq 'second value);
     }
   } else {
     return unit;
@@ -9603,22 +9603,22 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn writing_back_an_independent_copy_preserves_the_call_precondition() {
     let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
-  requires ilt(deref(value), 10_u64);
+  requires deref(value) < 10_u64;
 } {
   let seen = deref(value);
   return unit;
 }
 
 fn update['r](value: &uniq 'r u64) -> result: own unit reads(value), writes(value) contract {
-  requires ilt(deref(value), 10_u64);
+  requires deref(value) < 10_u64;
 } {
   region 'first {
-    observe<'first>(value: &'first deref(value));
+    observe::<'first>(value: &'first deref(value));
   }
   let old = deref(value);
   set deref(value) = old;
   region 'second {
-    observe<'second>(value: &'second deref(value));
+    observe::<'second>(value: &'second deref(value));
   }
   return unit;
 }
@@ -9679,7 +9679,7 @@ command fn main() -> status: own ExitStatus pure {
 fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
     let source = br#"fn sized(values: own array<u8, 2>) -> result: own unit pure contract {
   define size = len(values);
-  define exact = ieq(size, 2_u64);
+  define exact = size == 2_u64;
   define complete = band(exact, exact);
   requires complete;
 } {
@@ -9688,7 +9688,7 @@ fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
 
 fn caller(values: own array<u8, 2>) -> result: own unit pure {
   let size = len(values);
-  let exact = ieq(size, 2_u64);
+  let exact = size == 2_u64;
   let complete = band(exact, exact);
   if complete {
     set values[0_u64] = 9_u8;
@@ -9724,13 +9724,13 @@ fn array_fill_participates_only_in_body_origin_expansion() {
 }
 
 fn probe() -> result: own unit pure {
-  let values = array_new<u8, 4>(0_u8);
+  let values = array_new::<u8, 4>(0_u8);
   let first_size = len(values);
-  let first_exact = ieq(first_size, 4_u64);
+  let first_exact = first_size == 4_u64;
   let first = band(first_exact, first_exact);
   if first {
     let second_size = len(values);
-    let second_exact = ieq(second_size, 4_u64);
+    let second_exact = second_size == 4_u64;
     let second = band(second_exact, second_exact);
     if second {
       return unit;
@@ -9757,14 +9757,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn s4_is_independent_of_forward_and_mutually_recursive_traversal_order() {
     let source = br#"fn first(value: own u64) -> result: own unit pure contract {
-  requires ilt(value, 10_u64);
+  requires value < 10_u64;
 } {
   second(value: value);
   return unit;
 }
 
 fn second(value: own u64) -> result: own unit pure contract {
-  requires ilt(value, 10_u64);
+  requires value < 10_u64;
 } {
   first(value: value);
   return unit;
@@ -9800,9 +9800,9 @@ fn a_forward_concrete_generic_call_uses_its_substituted_goal() {
 }
 
 fn caller(value: own i32) -> result: own unit pure {
-  let positive = igt(value, 0_i32);
+  let positive = value > 0_i32;
   if positive {
-    let result = guarded<i32>(value: value);
+    let result = guarded::<i32>(value: value);
   } else {
     return unit;
   }
@@ -9810,7 +9810,7 @@ fn caller(value: own i32) -> result: own unit pure {
 }
 
 fn guarded<T: Int>(value: own T) -> result: own T pure contract {
-  requires igt(value, 0_T);
+  requires value > 0_T;
 } {
   return value;
 }
@@ -9844,10 +9844,10 @@ fn concrete_const_instances_keep_function_local_derivation_inventories() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small = array_new<u8, 2>(7_u8);
-  let small_first = first<2>(values: move small);
-  let large = array_new<u8, 5>(9_u8);
-  let large_first = first<5>(values: move large);
+  let small = array_new::<u8, 2>(7_u8);
+  let small_first = first::<2>(values: move small);
+  let large = array_new::<u8, 5>(9_u8);
+  let large_first = first::<5>(values: move large);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9918,10 +9918,10 @@ fn write_left['r](pair: &uniq 'r Pair, value: own u64) -> result: own unit write
 
 fn preserve_right(pair: own Pair, values: own array<u8, 4>) -> result: own u8 reads(pair.right), writes(pair.left) contract {
   define room = len(values);
-  requires ilt(pair.right, room);
+  requires pair.right < room;
 } {
   region 'write {
-    write_left<'write>(pair: &uniq 'write pair, value: 0_u64);
+    write_left::<'write>(pair: &uniq 'write pair, value: 0_u64);
   }
   return values[pair.right];
 }
@@ -9948,13 +9948,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_array_length_equality_survives_a_root_replace_after_a_join() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let arr = array_new<u32, 4>(1_u32);
+  let arr = array_new::<u32, 4>(1_u32);
   let before = arr[0_u64];
-  let ok = ieq(before, 1_u32);
+  let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
-  let fresh = array_new<u32, 4>(9_u32);
+  let fresh = array_new::<u32, 4>(9_u32);
   let old = replace arr = move fresh;
   let after = arr[0_u64];
   return exit_status(code: 0_u8);
@@ -9975,13 +9975,13 @@ fn an_array_length_equality_survives_a_root_replace_after_a_join() {
 #[test]
 fn an_array_length_verdict_is_invariant_under_an_unrelated_binding() {
     let after_the_replace = br#"command fn main() -> status: own ExitStatus pure {
-  let arr = array_new<u32, 4>(1_u32);
+  let arr = array_new::<u32, 4>(1_u32);
   let before = arr[0_u64];
-  let ok = ieq(before, 1_u32);
+  let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
-  let fresh = array_new<u32, 4>(9_u32);
+  let fresh = array_new::<u32, 4>(9_u32);
   let old = replace arr = move fresh;
   let novel = 123456_u64;
   let after = arr[0_u64];
@@ -9989,14 +9989,14 @@ fn an_array_length_verdict_is_invariant_under_an_unrelated_binding() {
 }
 "#;
     let before_the_read = br#"command fn main() -> status: own ExitStatus pure {
-  let arr = array_new<u32, 4>(1_u32);
+  let arr = array_new::<u32, 4>(1_u32);
   let novel = 123456_u64;
   let before = arr[0_u64];
-  let ok = ieq(before, 1_u32);
+  let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
-  let fresh = array_new<u32, 4>(9_u32);
+  let fresh = array_new::<u32, 4>(9_u32);
   let old = replace arr = move fresh;
   let after = arr[0_u64];
   return exit_status(code: 0_u8);
@@ -10025,7 +10025,7 @@ fn a_write_still_kills_an_established_bound_on_its_target() {
     let source = br#"fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
   let room = len(b);
   let offset = 0_u64;
-  let inside = ilt(offset, room);
+  let inside = offset < room;
   if inside {
   } else {
     return 0_u8;

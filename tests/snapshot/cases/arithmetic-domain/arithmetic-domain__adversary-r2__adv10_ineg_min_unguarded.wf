@@ -5,7 +5,7 @@ fn negate(n: own i32) -> result: own i32 pure {
 }
 
 fn negate_guarded(n: own i32) -> result: own i32 pure contract {
-  requires igt(n, -2147483648_i32);
+  requires n > -2147483648_i32;
 } {
   doc "Contrast: excluding i32::MIN by contract makes the same exact ineg total, unlike negate above which has no such guard.";
   let negated = ineg(n);

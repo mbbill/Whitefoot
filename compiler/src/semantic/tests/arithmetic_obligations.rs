@@ -32,7 +32,7 @@ fn named<'functions>(
 #[test]
 fn a_verified_requirement_discharges_the_literal_site() {
     let source = br#"fn bump(x: own u64) -> result: own u64 pure contract {
-  requires ilt(x, 1000_u64);
+  requires x < 1000_u64;
 } {
   let y = x + 1_u64;
   return y;
@@ -86,7 +86,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
     let source = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
-  let ordered = ile(right, left);
+  let ordered = right <= left;
   if ordered {
     let difference = left - right;
     return difference;
@@ -217,7 +217,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_dominating_branch_discharges_the_site() {
     let source = br#"fn bump(x: own u64) -> result: own u64 pure {
-  if ile(x, 100_u64) {
+  if x <= 100_u64 {
     let y = x + 1_u64;
     return y;
   } else {
@@ -364,7 +364,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 #[test]
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let a = array_new<u8, 2>(7_u8);
+  let a = array_new::<u8, 2>(7_u8);
   let y = a[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -453,7 +453,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
     let source = br#"fn combine(start: own u64, parent: own u64) -> result: own u64 pure contract {
-  requires ile(parent, 9223372036854775807_u64);
+  requires parent <= 9223372036854775807_u64;
 } {
   let doubled = parent * 2_u64;
   let addition_defined = start +defined doubled;
@@ -633,7 +633,7 @@ fn a_body_domain_failure_precedes_the_backedge_it_breaks() {
   let sum = 0_u32;
   for (
     i in 0_u64..4_u64,
-    invariant carried: ile(sum, 255_u32)
+    invariant carried: sum <= 255_u32
   ) {
     let doubled = step + step;
     set sum = doubled;

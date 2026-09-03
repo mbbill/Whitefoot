@@ -14,7 +14,7 @@ fn propagate_binds_ok_payloads_and_returns_err_values() {
 }
 
 fn step(x: own i32) -> result: own Result<i32, StepError> pure {
-  if ilt(x, 0_i32) {
+  if x < 0_i32 {
     let negative_atom_0001 = Negative();
     return Err<i32, StepError>(error: negative_atom_0001);
   } else {
@@ -33,7 +33,7 @@ command fn main() -> status: own ExitStatus pure {
   let accepted = forward(x: 41_i32);
   match move accepted {
     Ok(value: accepted_value) => {
-      if ine(accepted_value, 42_i32) {
+      if accepted_value != 42_i32 {
         return exit_status(code: 1_u8);
       }
     }

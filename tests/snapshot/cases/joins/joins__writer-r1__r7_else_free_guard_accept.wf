@@ -1,7 +1,7 @@
 fn pick_byte(b: own buffer<u8>, i: own u64) -> result: own u8 reads(b) {
-  doc "ACCEPT: the single else-free if returns on the out-of-range edge, so the true edge never reaches the join and the fallthrough continuation carries the negated fact ilt(i, room), discharging the subscript's OP-4.";
+  doc "ACCEPT: the single else-free if returns on the out-of-range edge, so the true edge never reaches the join and the fallthrough continuation carries the negated fact i < room, discharging the subscript's OP-4.";
   let room = len(b);
-  let out_of_range = ige(i, room);
+  let out_of_range = i >= room;
   if out_of_range {
     return 0_u8;
   }

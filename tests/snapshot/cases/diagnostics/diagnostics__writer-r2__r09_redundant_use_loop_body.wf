@@ -5,8 +5,8 @@ command fn main() -> status: own ExitStatus pure {
   let margin = 1_u64;
   let widened = count +wrap margin;
   for (i in 0_u64..count) {
-    invariant bounded: ile(i, count) {
-      use ige(count, 0_u64);
+    invariant bounded: i <= count {
+      use count >= 0_u64;
     }
     let seen = i;
     let doubled_seen = seen +wrap seen;

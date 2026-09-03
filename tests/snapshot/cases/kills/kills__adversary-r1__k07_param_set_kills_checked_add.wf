@@ -1,15 +1,15 @@
 fn bump(x: own u8) -> result: own u8 pure contract {
-  requires ile(x, 100_u8);
+  requires x <= 100_u8;
 } {
-  doc "expect REJECT [OP-2]: set x = 250_u8 kills the requires(ile(x, 100)) fact that discharged the overflow obligation for x + 10_u8; a wrong accept means 250+10 overflows u8 with no runtime check.";
+  doc "expect REJECT [OP-2]: set x = 250_u8 kills the requires(x <= 100) fact that discharged the overflow obligation for x + 10_u8; a wrong accept means 250+10 overflows u8 with no runtime check.";
   set x = 250_u8;
   let bumped = x + 10_u8;
   return bumped;
 }
 
 fn safe_add(x: own u8, y: own u8) -> result: own u8 pure contract {
-  requires ile(x, 100_u8);
-  requires ile(y, 100_u8);
+  requires x <= 100_u8;
+  requires y <= 100_u8;
 } {
   return x + y;
 }
@@ -17,7 +17,7 @@ fn safe_add(x: own u8, y: own u8) -> result: own u8 pure contract {
 command fn main() -> status: own ExitStatus pure {
   let value = bump(x: 5_u8);
   let summed = safe_add(x: 10_u8, y: 20_u8);
-  if ieq(summed, 30_u8) {
+  if summed == 30_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

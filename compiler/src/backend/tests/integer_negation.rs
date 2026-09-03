@@ -4,12 +4,12 @@ use super::{compile, compile_and_run};
 fn executes_every_negation_mode_for_every_signed_width() {
     let template = r#"command fn main() -> status: own ExitStatus pure {
   let wrapped = ineg.wrap($MIN_$TYPE);
-  if ieq(wrapped, $MIN_$TYPE) {
+  if wrapped == $MIN_$TYPE {
   } else {
     return exit_status(code: 1_u8);
   }
   let exact = ineg(-42_$TYPE);
-  if ieq(exact, 42_$TYPE) {
+  if exact == 42_$TYPE {
   } else {
     return exit_status(code: 2_u8);
   }
@@ -26,7 +26,7 @@ fn executes_every_negation_mode_for_every_signed_width() {
   let safe_result = ineg.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      if ieq(safe_value, 42_$TYPE) {
+      if safe_value == 42_$TYPE {
       } else {
         return exit_status(code: 5_u8);
       }

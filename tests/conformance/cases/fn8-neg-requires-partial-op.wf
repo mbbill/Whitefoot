@@ -1,6 +1,6 @@
 fn partial_op(x: own i32) -> result: own i32 pure contract {
   define incremented = x + 1_i32;
-  define permitted = igt(incremented, x);
+  define permitted = incremented > x;
   requires permitted;
 } {
   doc "Only pure-total operations are legal in a static contract; a proof-required exact operation is partial and violates FN-8 even though it has no runtime fallback.";

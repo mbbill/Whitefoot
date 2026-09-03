@@ -1,13 +1,13 @@
 fn half_budget(total: own u8, used: own u8) -> remaining: own u8 pure contract {
-  requires ilt(used, total);
+  requires used < total;
 } {
   doc "ACCEPT: half's published even bound is exactly two times the target's coefficient vector, so the floor-division weakening admits the target.";
   let span = total - used;
   let half = span / 2_u8;
   let extended = used + half;
-  invariant bounded: ilt(extended, total) {
-    use ilt(used, total);
-    use ile(2_u8 * half, span);
+  invariant bounded: extended < total {
+    use used < total;
+    use 2_u8 * half <= span;
   }
   return extended;
 }

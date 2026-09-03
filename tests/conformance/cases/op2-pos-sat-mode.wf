@@ -1,7 +1,7 @@
 command fn main() -> return_value: own ExitStatus pure {
   doc "OP-2: add/sub carry the sat mode; unsigned clamps to the type ceiling (OP-8).";
   let a = 18446744073709551615_u64 +sat 1_u64;
-  if ieq(a, 18446744073709551615_u64) {
+  if a == 18446744073709551615_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

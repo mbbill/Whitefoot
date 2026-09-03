@@ -2,9 +2,9 @@ fn triple_bounded(count: own u64) -> total: own u64 pure {
   let total = 0_u64;
   for (
     i in 0_u64..count,
-    invariant bound: ile(total, i)
+    invariant bound: total <= i
   ) {
-    invariant combo: ile(total, i);
+    invariant combo: total <= i;
     set total = total + 1_u64;
   }
   return total;
@@ -13,7 +13,7 @@ fn triple_bounded(count: own u64) -> total: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a body invariant_stmt inside the loop re-states the header invariant's target by name-scope; AUTO discharges it from the published header fact, proving the header invariant is in scope through the body [INV-1].";
   let total = triple_bounded(count: 4_u64);
-  if ieq(total, 4_u64) {
+  if total == 4_u64 {
   } else {
     let failed = exit_status(code: 1_u8);
     return move failed;

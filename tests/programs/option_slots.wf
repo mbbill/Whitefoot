@@ -4,17 +4,17 @@ struct OptVec {
 }
 
 fn optvec_new(capacity: own u64) -> result: own OptVec allocates(heap) contract {
-  requires buffer_fits<Option<u32>>(capacity);
-  requires ile(capacity, 1000_u64);
+  requires buffer_fits::<Option<u32>>(capacity);
+  requires capacity <= 1000_u64;
 } {
-  let empty = buffer_vacant<u32>(capacity);
+  let empty = buffer_vacant::<u32>(capacity);
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
 fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
-  let has_room = ilt(count, cap);
+  let has_room = count < cap;
   if has_room {
   } else {
     return unit;
@@ -35,14 +35,14 @@ fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.b
 
 fn optvec_pop['a](v: &uniq 'a OptVec) -> result: own u32 reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
-  let nonempty = igt(count, 0_u64);
+  let nonempty = count > 0_u64;
   if nonempty {
   } else {
     return 0_u32;
   }
   let last = count - 1_u64;
   let cap = len(deref(v).buf);
-  let in_range = ilt(last, cap);
+  let in_range = last < cap;
   if in_range {
   } else {
     return 0_u32;
@@ -60,7 +60,7 @@ fn optvec_pop['a](v: &uniq 'a OptVec) -> result: own u32 reads(v.buf, v.fill), w
 }
 
 fn boxed_slots() -> result: own unit allocates(heap) {
-  let slots = buffer_vacant<box<u64>>(3_u64);
+  let slots = buffer_vacant::<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
   let vacant = replace slots[0_u64] = move wrapped;
@@ -88,7 +88,7 @@ fn boxed_slots() -> result: own unit allocates(heap) {
     }
     Some(value: payload) => {
       let observed = deref(payload);
-      if ieq(observed, 11_u64) {
+      if observed == 11_u64 {
       } else {
         return unit;
       }
@@ -100,23 +100,23 @@ fn boxed_slots() -> result: own unit allocates(heap) {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let v = optvec_new(capacity: 4_u64);
   region 'p {
-    optvec_push<'p>(v: &uniq 'p v, x: 10_u32);
+    optvec_push::<'p>(v: &uniq 'p v, x: 10_u32);
   }
   region 'q {
-    optvec_push<'q>(v: &uniq 'q v, x: 20_u32);
+    optvec_push::<'q>(v: &uniq 'q v, x: 20_u32);
   }
   region 'r {
-    optvec_push<'r>(v: &uniq 'r v, x: 30_u32);
+    optvec_push::<'r>(v: &uniq 'r v, x: 30_u32);
   }
   region 's {
-    let top = optvec_pop<'s>(v: &uniq 's v);
-    if ieq(top, 30_u32) {
+    let top = optvec_pop::<'s>(v: &uniq 's v);
+    if top == 30_u32 {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   let remaining = v.fill;
-  if ieq(remaining, 2_u64) {
+  if remaining == 2_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

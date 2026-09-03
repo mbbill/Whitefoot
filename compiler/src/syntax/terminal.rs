@@ -11,8 +11,9 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// v0.21 added, less the `index` spelling v0.22 released to IDENT, plus the
 /// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings —
 /// and the three v0.25 counted-range spellings, plus v0.28's `ensures`,
-/// v0.33's contract, command, and integer-domain spellings, and the current
-/// proof spellings. Retired source atoms are removed from this current-grammar
+/// v0.33's contract, command, and integer-domain spellings, the v0.40 proof
+/// spellings, and v0.41's four compound comparisons and call-site `::`
+/// delimiter. Retired source atoms are removed from this current-grammar
 /// inventory; the dense indices are compiler-local and are never serialized.
 /// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
@@ -205,10 +206,20 @@ pub enum FixedTerminal {
     Invariant,
     /// `use`.
     Use,
+    /// `==`.
+    EqualEqual,
+    /// `!=`.
+    BangEqual,
+    /// `<=`.
+    LessEqual,
+    /// `>=`.
+    GreaterEqual,
+    /// `::`.
+    ColonColon,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 93] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -295,7 +306,12 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 93] = [
     FixedTerminal::Percent,
     FixedTerminal::PercentDefined,
     FixedTerminal::PercentChecked,
+    FixedTerminal::EqualEqual,
+    FixedTerminal::BangEqual,
+    FixedTerminal::LessEqual,
+    FixedTerminal::GreaterEqual,
     FixedTerminal::Move,
+    FixedTerminal::ColonColon,
     FixedTerminal::Deref,
     FixedTerminal::Pure,
     FixedTerminal::Reads,
@@ -407,6 +423,11 @@ impl FixedTerminal {
             Self::PercentDefined => "%defined",
             Self::Invariant => "invariant",
             Self::Use => "use",
+            Self::EqualEqual => "==",
+            Self::BangEqual => "!=",
+            Self::LessEqual => "<=",
+            Self::GreaterEqual => ">=",
+            Self::ColonColon => "::",
         }
     }
 
@@ -492,21 +513,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 101] = {
-    let mut predicates = [TerminalPredicate::Identifier; 101];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 106] = {
+    let mut predicates = [TerminalPredicate::Identifier; 106];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[93] = TerminalPredicate::Identifier;
-    predicates[94] = TerminalPredicate::TypeIdentifier;
-    predicates[95] = TerminalPredicate::RegionIdentifier;
-    predicates[96] = TerminalPredicate::Label;
-    predicates[97] = TerminalPredicate::OperationName;
-    predicates[98] = TerminalPredicate::Literal;
-    predicates[99] = TerminalPredicate::String;
-    predicates[100] = TerminalPredicate::Digits;
+    predicates[98] = TerminalPredicate::Identifier;
+    predicates[99] = TerminalPredicate::TypeIdentifier;
+    predicates[100] = TerminalPredicate::RegionIdentifier;
+    predicates[101] = TerminalPredicate::Label;
+    predicates[102] = TerminalPredicate::OperationName;
+    predicates[103] = TerminalPredicate::Literal;
+    predicates[104] = TerminalPredicate::String;
+    predicates[105] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -514,14 +535,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 93,
-            Self::TypeIdentifier => 94,
-            Self::RegionIdentifier => 95,
-            Self::Label => 96,
-            Self::OperationName => 97,
-            Self::Literal => 98,
-            Self::String => 99,
-            Self::Digits => 100,
+            Self::Identifier => 98,
+            Self::TypeIdentifier => 99,
+            Self::RegionIdentifier => 100,
+            Self::Label => 101,
+            Self::OperationName => 102,
+            Self::Literal => 103,
+            Self::String => 104,
+            Self::Digits => 105,
         }
     }
 
@@ -776,8 +797,8 @@ mod tests {
         assert_eq!(FixedTerminal::Replace as u8, 84);
         assert_eq!(FixedTerminal::Invariant as u8, 91);
         assert_eq!(FixedTerminal::Use as u8, 92);
-        assert_eq!(TerminalPredicate::Identifier.index(), 93);
-        assert_eq!(TerminalPredicate::Digits.index(), 100);
+        assert_eq!(TerminalPredicate::Identifier.index(), 98);
+        assert_eq!(TerminalPredicate::Digits.index(), 105);
     }
 
     #[test]

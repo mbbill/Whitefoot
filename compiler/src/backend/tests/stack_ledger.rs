@@ -37,10 +37,10 @@ use super::{build_executable, compile, test_directory};
 fn wide_frame_source(depth: u64) -> Vec<u8> {
     format!(
         r#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {{
-  let pad = array_new<u64, 256>(v);
-  let wide = cvt<u8, u64>(i);
+  let pad = array_new::<u64, 256>(v);
+  let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
-  let done = ieq(depth, 0_u64);
+  let done = depth == 0_u64;
   if done {{
     return pad[wide];
   }}
@@ -53,13 +53,13 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
   let count = 0_u64;
   region 'invocation {{
-    set count = args_count<'invocation>(args: &'invocation args);
+    set count = args_count::<'invocation>(args: &'invocation args);
   }}
-  match cvt<u64, u8>(count) {{
+  match cvt::<u64, u8>(count) {{
     Ok(value: idx) => {{
       let depth = count *wrap {depth}_u64;
       let r = spine(depth: depth, v: 3_u64, i: idx);
-      let ok = igt(r, 0_u64);
+      let ok = r > 0_u64;
       if ok {{
         return exit_status(code: 0_u8);
       }}
@@ -158,7 +158,7 @@ fn reported_levels(lines: &[String], name: &str) -> u64 {
 /// Builds the program at one depth and reports whether it completed.
 ///
 /// A run that did not complete must have run out of stack and said so. Exit 0
-/// is not the only thing this fixture can produce — it has its own `igt(r, 0)`
+/// is not the only thing this fixture can produce — it has its own `r > 0`
 /// false arm at exit 1 — and a bare signal is a third outcome, so a bare
 /// "did not exit 0" would let the ceiling half pass against a floor that had
 /// stopped reporting altogether.

@@ -55,7 +55,7 @@ fn division_outcomes(
 #[test]
 fn a_positive_requirement_discharges_an_unsigned_site() {
     let source = br#"fn ratio(n: own u64, divisor: own u64) -> result: own u64 pure contract {
-  requires igt(divisor, 0_u64);
+  requires divisor > 0_u64;
 } {
   let q = n / divisor;
   return q;
@@ -85,7 +85,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_canonical_branch_discharges_the_site() {
     let source = br#"fn ratio(n: own u64, divisor: own u64) -> result: own u64 pure {
-  if ine(divisor, 0_u64) {
+  if divisor != 0_u64 {
     let q = n / divisor;
     return q;
   } else {
@@ -271,7 +271,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
     let source = br#"fn negate(n: own i32) -> result: own i32 pure contract {
-  requires igt(n, -100_i32);
+  requires n > -100_i32;
 } {
   let q = n / -1_i32;
   return q;
@@ -434,7 +434,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn unsigned_literal_division_publishes_the_quotient_bound() {
     let source = br#"fn half_floor(count: own u64) -> result: own u64 pure contract {
-  ensures ile(result, count);
+  ensures result <= count;
 } {
   let quotient = count / 2_u64;
   return quotient;
@@ -467,7 +467,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn unsigned_literal_division_publishes_the_scaled_quotient_image() {
     let source = br#"fn doubled_floor(count: own u64) -> result: own u64 pure contract {
-  ensures ile(result, count);
+  ensures result <= count;
 } {
   let quotient = count / 2_u64;
   let doubled = quotient * 2_u64;
@@ -508,13 +508,13 @@ command fn main() -> status: own ExitStatus pure {
 fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
     let source = br#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
   define room = len(deref(table));
-  requires ilt(lo, hi);
-  requires ile(hi, room);
+  requires lo < hi;
+  requires hi <= room;
 } {
   let span = hi - lo;
   let half = span / 2_u64;
   let mid = lo + half;
-  invariant inside: ile(2_u64 * mid + 1_u64, 2_u64 * hi);
+  invariant inside: 2_u64 * mid + 1_u64 <= 2_u64 * hi;
   let byte = deref(table)[mid];
   return byte;
 }
@@ -552,7 +552,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn signed_literal_division_does_not_publish_unsigned_ordering_images() {
     let source = br#"fn signed_half(value: own i32) -> result: own i32 pure contract {
-  ensures ile(result, value);
+  ensures result <= value;
 } {
   let quotient = value / 2_i32;
   return quotient;
@@ -654,7 +654,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_live_alias_keeps_the_old_quotient_value_image_after_set() {
     let source = br#"fn alias_before_set(count: own u64, replacement: own u64) -> result: own u64 pure contract {
-  ensures ile(result, count);
+  ensures result <= count;
 } {
   let quotient = count / 2_u64;
   let saved = quotient;
@@ -718,10 +718,10 @@ fn a_generic_divisor_site_uses_one_static_domain_requirement() {
 command fn main() -> status: own ExitStatus pure {
   let a = 10_i32;
   let b = 3_i32;
-  let signed = ratio<i32>(n: a, d: b);
+  let signed = ratio::<i32>(n: a, d: b);
   let x = 10_u32;
   let y = 3_u32;
-  let unsigned = ratio<u32>(n: x, d: y);
+  let unsigned = ratio::<u32>(n: x, d: y);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -739,7 +739,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
     let required = br#"fn ratio(divisor: own i32) -> result: own i32 pure contract {
-  requires ine(divisor, 0_i32);
+  requires divisor != 0_i32;
 } {
   let q = 100_i32 / divisor;
   return q;
@@ -761,7 +761,7 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
     let branched = br#"fn ratio(d: own i32) -> result: own i32 pure {
-  if ine(d, 0_i32) {
+  if d != 0_i32 {
     let q = 100_i32 / d;
     return q;
   } else {
@@ -812,20 +812,20 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn active_invariants_prove_signed_division_and_remainder_domains() {
     let source = br#"fn exact_pairs(dividend_start: own i32, divisor_start: own i32, limit: own u64) -> result: own unit pure contract {
-  requires ile(-10_i32, dividend_start);
-  requires ile(dividend_start, 100_i32);
-  requires ile(1_i32, divisor_start);
-  requires ile(divisor_start, 100_i32);
-  requires ile(limit, 10_u64);
+  requires -10_i32 <= dividend_start;
+  requires dividend_start <= 100_i32;
+  requires 1_i32 <= divisor_start;
+  requires divisor_start <= 100_i32;
+  requires limit <= 10_u64;
 } {
   let dividend = dividend_start;
   let divisor = divisor_start;
   for @items (
     i in 0_u64..limit,
-    invariant dividend_lower: ile(-10_i32, dividend),
-    invariant dividend_progress: ile(dividend, dividend_start + i),
-    invariant divisor_positive: ile(1_i32, divisor),
-    invariant divisor_progress: ile(divisor, divisor_start + i)
+    invariant dividend_lower: -10_i32 <= dividend,
+    invariant dividend_progress: dividend <= dividend_start + i,
+    invariant divisor_positive: 1_i32 <= divisor,
+    invariant divisor_progress: divisor <= divisor_start + i
   ) {
     let quotient_positive = -2147483648_i32 / divisor;
     let remainder_positive = -2147483648_i32 % divisor;
@@ -917,7 +917,7 @@ fn an_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 1>(0_u8);
+  let values = array_new::<u8, 1>(0_u8);
   let result = increment(values: move values);
   return exit_status(code: result);
 }
@@ -963,7 +963,7 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 1>(0_u8);
+  let values = array_new::<u8, 1>(0_u8);
   let result = increment_after_write(values: move values);
   return exit_status(code: result);
 }
@@ -987,7 +987,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_buffer_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
     let source = br#"fn increment['v](values: &'v buffer<u8>) -> result: own u8 reads(values) {
   let room = len(deref(values));
-  if ilt(0_u64, room) {
+  if 0_u64 < room {
     if deref(values)[0_u64] +defined 1_u8 {
       let result = deref(values)[0_u64] + 1_u8;
       return result;
@@ -1035,7 +1035,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
     let source = br#"fn increment['v](values: own slice<'v, u8>) -> result: own u8 reads(values) {
   let room = len(values);
-  if ilt(0_u64, room) {
+  if 0_u64 < room {
     if values[0_u64] +defined 1_u8 {
       let result = values[0_u64] + 1_u8;
       return result;

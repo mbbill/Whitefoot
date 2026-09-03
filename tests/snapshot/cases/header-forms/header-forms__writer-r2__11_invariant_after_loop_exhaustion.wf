@@ -2,18 +2,18 @@ fn touch_count(count: own u64) -> total: own u64 pure {
   let total = 0_u64;
   for (
     i in 0_u64..count,
-    invariant bound: ile(total, i)
+    invariant bound: total <= i
   ) {
     set total = total + 1_u64;
   }
-  invariant exhausted: ile(total, count);
+  invariant exhausted: total <= count;
   return total;
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the counted for's exact-exhaustion consequence substitutes the captured upper endpoint for the binder and is available to a body invariant_stmt right after the loop [INV-1].";
   let total = touch_count(count: 6_u64);
-  if ieq(total, 6_u64) {
+  if total == 6_u64 {
   } else {
     let failed = exit_status(code: 1_u8);
     return move failed;

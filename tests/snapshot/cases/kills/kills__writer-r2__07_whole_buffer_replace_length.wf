@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let line = buffer_new(4_u64, 0_u8);
   let room = len(line);
   let first_end = 4_u64;
-  let first_fits = ile(first_end, room);
+  let first_fits = first_end <= room;
   if first_fits {
   } else {
     return exit_status(code: 1_u8);
@@ -12,13 +12,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let old = replace line = move grown;
   let room2 = len(line);
   let second_end = 10_u64;
-  let second_fits = ile(second_end, room2);
+  let second_fits = second_end <= room2;
   if second_fits {
   } else {
     return exit_status(code: 1_u8);
   }
   let sample = line[9_u64];
-  let correct = ieq(sample, 7_u8);
+  let correct = sample == 7_u8;
   if correct {
   } else {
     return exit_status(code: 1_u8);

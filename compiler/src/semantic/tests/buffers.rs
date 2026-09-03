@@ -72,9 +72,9 @@ command fn main() -> status: own ExitStatus pure {
     });
 
     let exact = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
-  ensures ile(result, 9223372036854775807_u64);
+  ensures result <= 9223372036854775807_u64;
 } {
-  let within = ile(n, 9223372036854775807_u64);
+  let within = n <= 9223372036854775807_u64;
   if within {
     return n;
   } else {
@@ -100,7 +100,7 @@ command fn main() -> status: own ExitStatus pure {
     });
 
     let component = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
-  let within = ile(n, 9223372036854775807_u64);
+  let within = n <= 9223372036854775807_u64;
   if within {
     let values = buffer_new(n, 0_u16);
   }
@@ -134,10 +134,10 @@ command fn main() -> status: own ExitStatus pure {
     });
 
     let refuted = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
-  let fits = buffer_fits<u8>(n);
+  let fits = buffer_fits::<u8>(n);
   let does_not_fit = bnot(fits);
   if does_not_fit {
-    let within = ile(n, 18446744073709551615_u64);
+    let within = n <= 18446744073709551615_u64;
     if within {
       let values = buffer_new(n, 0_u8);
     }
@@ -176,7 +176,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn allocation_fit_retains_and_installs_the_proved_source_length_ceiling() {
     let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) contract {
-  requires ile(n, 1000_u64);
+  requires n <= 1000_u64;
 } {
   let values = buffer_new(n, 0_u16);
   return unit;
@@ -221,10 +221,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 fn a_local_invariant_allocation_ceiling_is_installed_in_the_target_domain() {
     let source =
         br#"fn allocate(n: own u64, middle: own u64) -> result: own unit allocates(heap) contract {
-  requires ile(n, middle);
-  requires ile(middle, 1000_u64);
+  requires n <= middle;
+  requires middle <= 1000_u64;
 } {
-  invariant bounded: ile(n, 1000_u64);
+  invariant bounded: n <= 1000_u64;
   let values = buffer_new(n, 0_u16);
   return unit;
 }
@@ -268,12 +268,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 fn an_affine_invariant_supplies_the_only_tight_allocation_ceiling() {
     let source =
         br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
-  requires ile(half, 500_u64);
+  requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
-  let within = ile(n, doubled);
+  let within = n <= doubled;
   if within {
-    invariant tight: ile(n, 1000_u64);
+    invariant tight: n <= 1000_u64;
     let values = buffer_new(n, 0_u16);
   }
   return unit;
@@ -321,7 +321,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_ordinary_branch_fact_gives_the_allocation_ceiling() {
     let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
-  let within = ile(n, 777_u64);
+  let within = n <= 777_u64;
   if within {
     let values = buffer_new(n, 0_u16);
   }
@@ -357,7 +357,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_exact_buffer_fits_fact_retains_its_language_ceiling_when_no_tighter_bound_exists() {
     let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
-  let fits = buffer_fits<u16>(n);
+  let fits = buffer_fits::<u16>(n);
   if fits {
     let values = buffer_new(n, 0_u16);
   }
@@ -396,8 +396,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let array_fit = buffer_fits<array<u8, 4>>(0_u64);
-  let buffer_fit = buffer_fits<buffer<u8>>(0_u64);
+  let array_fit = buffer_fits::<array<u8, 4>>(0_u64);
+  let buffer_fit = buffer_fits::<buffer<u8>>(0_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -431,8 +431,8 @@ fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
 #[test]
 fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let array_fit = buffer_fits<array<u64, 0>>(18446744073709551615_u64);
-  let slots = buffer_vacant<array<u64, 0>>(0_u64);
+  let array_fit = buffer_fits::<array<u64, 0>>(18446744073709551615_u64);
+  let slots = buffer_vacant::<array<u64, 0>>(0_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -482,7 +482,7 @@ fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let values = make();
   let length = len(values);
-  let ok = ilt(2_u64, length);
+  let ok = 2_u64 < length;
   if ok {
   } else {
     return exit_status(code: 1_u8);
@@ -592,7 +592,7 @@ fn buffer_effect_rows_are_checked_both_ways() {
 #[test]
 fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<box<u64>>(3_u64);
+  let slots = buffer_vacant::<box<u64>>(3_u64);
   let count = len(slots);
   return exit_status(code: 0_u8);
 }
@@ -655,17 +655,17 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
     );
     // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // [TYPE-5]: the one operand is the own u64 length.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant::<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -675,7 +675,7 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
 fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
     assert_rule(
         br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
-  let slots = buffer_vacant<slice<'r, u8>>(2_u64);
+  let slots = buffer_vacant::<slice<'r, u8>>(2_u64);
   return unit;
 }
 
@@ -696,7 +696,7 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     // read; it stops as capability, not as a source rejection.
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   region 'v {
     let view = slice_of(&'v slots);
   }
@@ -761,7 +761,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let right = buffer_new(4_u64, 0_u64);
   let columns = Columns(left: move left, right: move right);
   let left_room = len(columns.left);
-  let ok = ilt(2_u64, left_room);
+  let ok = 2_u64 < left_room;
   if ok {
     set columns.left[2_u64] = 7_u64;
     let value = columns.left[2_u64];
@@ -892,7 +892,7 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Stor5,
         expected.clone(),
     );
-    // The operation half. In v0.22 this was `buffer_new<slice<'r, u8>>(…)`,
+    // The operation half. In v0.22 this was `buffer_new::<slice<'r, u8>>(…)`,
     // whose *written* element carried the violation and was cited at the
     // `targ`; A1 deletes that argument [OP-9], and a region-bearing fill is
     // then caught by the flat-element requirement citing OP-1 before STOR-5 is
@@ -935,7 +935,7 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
         br#"fn fill['d](destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
   let room = len(deref(destination));
-  let inside = ilt(at, room);
+  let inside = at < room;
   if inside {
     set deref(destination)[at] = 65_u8;
   }
@@ -945,11 +945,11 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
 
 fn emit['s](source: &'s buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
   define capacity = len(deref(source));
-  requires ile(length, capacity);
+  requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
   let first = 0_u8;
-  let present = ilt(0_u64, length);
+  let present = 0_u64 < length;
   if present {
     set first = deref(source)[0_u64];
   }
@@ -962,12 +962,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let room = len(line);
   let end = 0_u64;
   region 'x {
-    set end = fill<'x>(destination: &uniq 'x line, at: end);
+    set end = fill::<'x>(destination: &uniq 'x line, at: end);
   }
-  let fits = ile(end, room);
+  let fits = end <= room;
   if fits {
     region 'e {
-      let sent = emit<'e>(source: &'e line, length: end);
+      let sent = emit::<'e>(source: &'e line, length: end);
     }
   }
   return exit_status(code: 0_u8);
@@ -983,7 +983,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         br#"fn fill['d](destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
   let room = len(deref(destination));
-  let inside = ilt(at, room);
+  let inside = at < room;
   if inside {
     set deref(destination)[at] = 65_u8;
   }
@@ -993,11 +993,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 fn emit['s](source: &'s buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
   define capacity = len(deref(source));
-  requires ile(length, capacity);
+  requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
   let first = 0_u8;
-  let present = ilt(0_u64, length);
+  let present = 0_u64 < length;
   if present {
     set first = deref(source)[0_u64];
   }
@@ -1009,10 +1009,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let line = buffer_new(64_u64, 0_u8);
   let end = 0_u64;
   region 'x {
-    set end = fill<'x>(destination: &uniq 'x line, at: end);
+    set end = fill::<'x>(destination: &uniq 'x line, at: end);
   }
   region 'e {
-    let sent = emit<'e>(source: &'e line, length: end);
+    let sent = emit::<'e>(source: &'e line, length: end);
   }
   return exit_status(code: 0_u8);
 }
@@ -1030,7 +1030,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 fn an_indexed_buffer_fits_guard_discharges_the_same_allocation_goal() {
     let source =
         br#"fn make_buffer(lengths: own array<u64, 1>) -> result: own buffer<u8> allocates(heap) {
-  if buffer_fits<u8>(lengths[0_u64]) {
+  if buffer_fits::<u8>(lengths[0_u64]) {
     return buffer_new(lengths[0_u64], 0_u8);
   } else {
     return buffer_new(0_u64, 0_u8);
@@ -1038,7 +1038,7 @@ fn an_indexed_buffer_fits_guard_discharges_the_same_allocation_goal() {
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  let lengths = array_new<u64, 1>(1_u64);
+  let lengths = array_new::<u64, 1>(1_u64);
   let result = make_buffer(lengths: move lengths);
   return exit_status(code: 0_u8);
 }

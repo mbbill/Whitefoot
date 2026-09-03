@@ -1,7 +1,7 @@
 fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
   define source_length = len(src);
   define output_length = len(deref(out));
-  define enough_output = ige(output_length, source_length);
+  define enough_output = output_length >= source_length;
   requires enough_output;
 } {
   let source_length = len(src);
@@ -10,68 +10,68 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
   let state = 0_u8;
   let value = 0_u32;
   for (i in 0_u64..source_length) {
-    let output_in_range = ilt(count, output_length);
+    let output_in_range = count < output_length;
     if output_in_range {
     } else {
       return count;
     }
     let byte = src[i];
-    let in_ground = ieq(state, 0_u8);
+    let in_ground = state == 0_u8;
     if in_ground {
-      let ascii = ile(byte, 127_u8);
+      let ascii = byte <= 127_u8;
       if ascii {
-        let event = cvt<u8, u32>(byte);
+        let event = cvt::<u8, u32>(byte);
         set deref(out)[count] = event;
         set count = count +wrap 1_u64;
       } else {
-        let two_low = ige(byte, 194_u8);
-        let two_high = ile(byte, 223_u8);
+        let two_low = byte >= 194_u8;
+        let two_high = byte <= 223_u8;
         let two = band(two_low, two_high);
         if two {
           let payload = byte -wrap 192_u8;
-          set value = cvt<u8, u32>(payload);
+          set value = cvt::<u8, u32>(payload);
           set state = 1_u8;
         } else {
-          let e0 = ieq(byte, 224_u8);
+          let e0 = byte == 224_u8;
           if e0 {
             let payload = byte -wrap 224_u8;
-            set value = cvt<u8, u32>(payload);
+            set value = cvt::<u8, u32>(payload);
             set state = 3_u8;
           } else {
-            let e_low = ige(byte, 225_u8);
-            let e_high = ile(byte, 239_u8);
+            let e_low = byte >= 225_u8;
+            let e_high = byte <= 239_u8;
             let e_range = band(e_low, e_high);
-            let not_ed = ine(byte, 237_u8);
+            let not_ed = byte != 237_u8;
             let regular_e = band(e_range, not_ed);
             if regular_e {
               let payload = byte -wrap 224_u8;
-              set value = cvt<u8, u32>(payload);
+              set value = cvt::<u8, u32>(payload);
               set state = 2_u8;
             } else {
-              let ed = ieq(byte, 237_u8);
+              let ed = byte == 237_u8;
               if ed {
                 let payload = byte -wrap 224_u8;
-                set value = cvt<u8, u32>(payload);
+                set value = cvt::<u8, u32>(payload);
                 set state = 4_u8;
               } else {
-                let f0 = ieq(byte, 240_u8);
+                let f0 = byte == 240_u8;
                 if f0 {
                   let payload = byte -wrap 240_u8;
-                  set value = cvt<u8, u32>(payload);
+                  set value = cvt::<u8, u32>(payload);
                   set state = 6_u8;
                 } else {
-                  let f_low = ige(byte, 241_u8);
-                  let f_high = ile(byte, 243_u8);
+                  let f_low = byte >= 241_u8;
+                  let f_high = byte <= 243_u8;
                   let regular_f = band(f_low, f_high);
                   if regular_f {
                     let payload = byte -wrap 240_u8;
-                    set value = cvt<u8, u32>(payload);
+                    set value = cvt::<u8, u32>(payload);
                     set state = 5_u8;
                   } else {
-                    let f4 = ieq(byte, 244_u8);
+                    let f4 = byte == 244_u8;
                     if f4 {
                       let payload = byte -wrap 240_u8;
-                      set value = cvt<u8, u32>(payload);
+                      set value = cvt::<u8, u32>(payload);
                       set state = 7_u8;
                     } else {
                       set deref(out)[count] = 1114112_u32;
@@ -85,14 +85,14 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
         }
       }
     } else {
-      let continuation_low = ige(byte, 128_u8);
-      let continuation_high = ile(byte, 191_u8);
+      let continuation_low = byte >= 128_u8;
+      let continuation_high = byte <= 191_u8;
       let continuation = band(continuation_low, continuation_high);
-      let state_one = ieq(state, 1_u8);
+      let state_one = state == 1_u8;
       if state_one {
         if continuation {
           let payload = byte -wrap 128_u8;
-          let payload_wide = cvt<u8, u32>(payload);
+          let payload_wide = cvt::<u8, u32>(payload);
           let shifted = value *wrap 64_u32;
           let event = shifted +wrap payload_wide;
           set deref(out)[count] = event;
@@ -104,11 +104,11 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
           set state = 0_u8;
         }
       } else {
-        let state_two = ieq(state, 2_u8);
+        let state_two = state == 2_u8;
         if state_two {
           if continuation {
             let payload = byte -wrap 128_u8;
-            let payload_wide = cvt<u8, u32>(payload);
+            let payload_wide = cvt::<u8, u32>(payload);
             let shifted = value *wrap 64_u32;
             set value = shifted +wrap payload_wide;
             set state = 1_u8;
@@ -118,14 +118,14 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
             set state = 0_u8;
           }
         } else {
-          let state_three = ieq(state, 3_u8);
+          let state_three = state == 3_u8;
           if state_three {
-            let lower = ige(byte, 160_u8);
-            let upper = ile(byte, 191_u8);
+            let lower = byte >= 160_u8;
+            let upper = byte <= 191_u8;
             let valid = band(lower, upper);
             if valid {
               let payload = byte -wrap 128_u8;
-              let payload_wide = cvt<u8, u32>(payload);
+              let payload_wide = cvt::<u8, u32>(payload);
               let shifted = value *wrap 64_u32;
               set value = shifted +wrap payload_wide;
               set state = 1_u8;
@@ -135,14 +135,14 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
               set state = 0_u8;
             }
           } else {
-            let state_four = ieq(state, 4_u8);
+            let state_four = state == 4_u8;
             if state_four {
-              let lower = ige(byte, 128_u8);
-              let upper = ile(byte, 159_u8);
+              let lower = byte >= 128_u8;
+              let upper = byte <= 159_u8;
               let valid = band(lower, upper);
               if valid {
                 let payload = byte -wrap 128_u8;
-                let payload_wide = cvt<u8, u32>(payload);
+                let payload_wide = cvt::<u8, u32>(payload);
                 let shifted = value *wrap 64_u32;
                 set value = shifted +wrap payload_wide;
                 set state = 1_u8;
@@ -152,11 +152,11 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
                 set state = 0_u8;
               }
             } else {
-              let state_five = ieq(state, 5_u8);
+              let state_five = state == 5_u8;
               if state_five {
                 if continuation {
                   let payload = byte -wrap 128_u8;
-                  let payload_wide = cvt<u8, u32>(payload);
+                  let payload_wide = cvt::<u8, u32>(payload);
                   let shifted = value *wrap 64_u32;
                   set value = shifted +wrap payload_wide;
                   set state = 2_u8;
@@ -166,14 +166,14 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
                   set state = 0_u8;
                 }
               } else {
-                let state_six = ieq(state, 6_u8);
+                let state_six = state == 6_u8;
                 if state_six {
-                  let lower = ige(byte, 144_u8);
-                  let upper = ile(byte, 191_u8);
+                  let lower = byte >= 144_u8;
+                  let upper = byte <= 191_u8;
                   let valid = band(lower, upper);
                   if valid {
                     let payload = byte -wrap 128_u8;
-                    let payload_wide = cvt<u8, u32>(payload);
+                    let payload_wide = cvt::<u8, u32>(payload);
                     let shifted = value *wrap 64_u32;
                     set value = shifted +wrap payload_wide;
                     set state = 2_u8;
@@ -183,12 +183,12 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
                     set state = 0_u8;
                   }
                 } else {
-                  let lower = ige(byte, 128_u8);
-                  let upper = ile(byte, 143_u8);
+                  let lower = byte >= 128_u8;
+                  let upper = byte <= 143_u8;
                   let valid = band(lower, upper);
                   if valid {
                     let payload = byte -wrap 128_u8;
-                    let payload_wide = cvt<u8, u32>(payload);
+                    let payload_wide = cvt::<u8, u32>(payload);
                     let shifted = value *wrap 64_u32;
                     set value = shifted +wrap payload_wide;
                     set state = 2_u8;
@@ -227,8 +227,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set input[14_u64] = 130_u8;
   let output = buffer_new(15_u64, 99_u32);
   region 'parse_region {
-    let produced = parse<'parse_region>(out: &uniq 'parse_region output, src: move input);
-    if ieq(produced, 6_u64) {
+    let produced = parse::<'parse_region>(out: &uniq 'parse_region output, src: move input);
+    if produced == 6_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
@@ -240,31 +240,31 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let event_four = output[4_u64];
   let event_five = output[5_u64];
   let event_tail = output[6_u64];
-  if ieq(event_zero, 65_u32) {
+  if event_zero == 65_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(event_one, 162_u32) {
+  if event_one == 162_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(event_two, 8364_u32) {
+  if event_two == 8364_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(event_three, 128512_u32) {
+  if event_three == 128512_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(event_four, 1114112_u32) {
+  if event_four == 1114112_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(event_five, 1114112_u32) {
+  if event_five == 1114112_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(event_tail, 99_u32) {
+  if event_tail == 99_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

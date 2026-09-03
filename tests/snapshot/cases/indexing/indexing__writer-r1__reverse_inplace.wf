@@ -5,10 +5,10 @@ fn reverse_bytes(buf: own buffer<u8>) -> out: own buffer<u8> reads(buf), writes(
   let lo = 0_u64;
   let hi = capacity;
   loop @rev (
-    invariant lo_bound: ile(lo, capacity),
-    invariant hi_bound: ile(hi, capacity)
+    invariant lo_bound: lo <= capacity,
+    invariant hi_bound: hi <= capacity
   ) {
-    let has_more = ilt(lo, hi);
+    let has_more = lo < hi;
     if has_more {
     } else {
       break @rev;
@@ -33,17 +33,17 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set buf[4_u64] = 5_u8;
   let reversed = reverse_bytes(buf: move buf);
   let width = len(reversed);
-  if ieq(width, 5_u64) {
+  if width == 5_u64 {
   } else {
     return exit_status(code: 3_u8);
   }
   let first = reversed[0_u64];
   let last = reversed[4_u64];
-  if ieq(first, 5_u8) {
+  if first == 5_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(last, 1_u8) {
+  if last == 1_u8 {
   } else {
     return exit_status(code: 2_u8);
   }

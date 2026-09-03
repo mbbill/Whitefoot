@@ -1,28 +1,28 @@
 fn pick_byte(b: own buffer<u8>, i: own u64, outer: own Bool, inner: own Bool) -> result: own u8 reads(b) {
-  doc "ACCEPT: each of the three flattened leaves of the nested if/else-if/else proves ilt(i, room) on its own true edge before returning on the false edge, so both the inner and the outer ENT-5 joins carry the common bound to the shared subscript.";
+  doc "ACCEPT: each of the three flattened leaves of the nested if/else-if/else proves i < room on its own true edge before returning on the false edge, so both the inner and the outer ENT-5 joins carry the common bound to the shared subscript.";
   let room = len(b);
   if outer {
     if inner {
-      let a_bound = ilt(i, room);
+      let a_bound = i < room;
       if a_bound {
       } else {
         return 0_u8;
       }
     } else {
-      let b_bound = ilt(i, room);
+      let b_bound = i < room;
       if b_bound {
       } else {
         return 0_u8;
       }
     }
   } else if inner {
-    let c_bound = ilt(i, room);
+    let c_bound = i < room;
     if c_bound {
     } else {
       return 0_u8;
     }
   } else {
-    let d_bound = ilt(i, room);
+    let d_bound = i < room;
     if d_bound {
     } else {
       return 0_u8;

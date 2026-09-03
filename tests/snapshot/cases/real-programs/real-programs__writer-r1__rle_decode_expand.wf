@@ -11,25 +11,25 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output_index = 0_u64;
   let pair = 0_u64;
   loop @pairs {
-    if ige(pair, encoded_length) {
+    if pair >= encoded_length {
       break @pairs;
     }
     let count_index = pair +wrap 1_u64;
-    let pair_ok = ilt(pair, encoded_length);
-    let count_slot_ok = ilt(count_index, encoded_length);
+    let pair_ok = pair < encoded_length;
+    let count_slot_ok = count_index < encoded_length;
     if band(pair_ok, count_slot_ok) {
     } else {
       return exit_status(code: 1_u8);
     }
     let value = encoded[pair];
     let count = encoded[count_index];
-    let count_wide = cvt<u8, u64>(count);
+    let count_wide = cvt::<u8, u64>(count);
     let k = 0_u64;
     loop @expand {
-      if ige(k, count_wide) {
+      if k >= count_wide {
         break @expand;
       }
-      if ilt(output_index, output_room) {
+      if output_index < output_room {
       } else {
         return exit_status(code: 2_u8);
       }
@@ -39,9 +39,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
     set pair = pair +wrap 2_u64;
   }
-  let length_ok = ieq(output_index, 5_u64);
-  let front_ok = ieq(output[0_u64], 7_u8);
-  let back_ok = ieq(output[4_u64], 9_u8);
+  let length_ok = output_index == 5_u64;
+  let front_ok = output[0_u64] == 7_u8;
+  let back_ok = output[4_u64] == 9_u8;
   let ends_ok = band(front_ok, back_ok);
   if band(length_ok, ends_ok) {
   } else {

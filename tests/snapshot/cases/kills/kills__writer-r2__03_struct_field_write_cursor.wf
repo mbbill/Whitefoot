@@ -5,26 +5,26 @@ struct Ring {
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- writing filter.cursor kills the old bound on that field [ENT-5](a); each iteration reestablishes it before indexing.";
-  let samples = array_new<u32, 4>(0_u32);
+  let samples = array_new::<u32, 4>(0_u32);
   let ring = Ring(samples: move samples, cursor: 0_u64);
   let total = 0_u32;
   let mark = 0_u32;
   for (step in 0_u64..6_u64) {
-    let write_ok = ilt(ring.cursor, 4_u64);
+    let write_ok = ring.cursor < 4_u64;
     if write_ok {
     } else {
       return exit_status(code: 1_u8);
     }
     set ring.samples[ring.cursor] = mark;
     set mark = mark +wrap 1_u32;
-    let read_ok = ilt(ring.cursor, 4_u64);
+    let read_ok = ring.cursor < 4_u64;
     if read_ok {
     } else {
       return exit_status(code: 1_u8);
     }
     let value = ring.samples[ring.cursor];
     set total = total +wrap value;
-    let at_end = ieq(ring.cursor, 3_u64);
+    let at_end = ring.cursor == 3_u64;
     let next_cursor = if at_end {
       give 0_u64;
     } else {
@@ -32,7 +32,7 @@ command fn main() -> status: own ExitStatus pure {
     }
     set ring.cursor = next_cursor;
   }
-  let correct = ieq(total, 15_u32);
+  let correct = total == 15_u32;
   if correct {
   } else {
     return exit_status(code: 1_u8);

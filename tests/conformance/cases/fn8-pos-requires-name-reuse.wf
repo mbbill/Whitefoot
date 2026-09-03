@@ -1,5 +1,5 @@
 fn increment(x: own i32) -> result: own i32 pure contract {
-  define value = ige(x, 0_i32);
+  define value = x >= 0_i32;
   requires value;
 } {
   doc "A requirement local's scope ends with the clause, so its name is fresh again in the body [FN-8/TYPE-6].";
@@ -9,7 +9,7 @@ fn increment(x: own i32) -> result: own i32 pure contract {
 
 command fn main() -> status: own ExitStatus pure {
   let value = increment(x: 7_i32);
-  if ieq(value, 8_i32) {
+  if value == 8_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

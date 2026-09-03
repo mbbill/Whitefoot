@@ -32,11 +32,16 @@ fn assert_invariant_issue(source: &[u8], expected: LoopInvariantProofObligation)
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("invariant source is UTF-8");
+        // The citation is the whole invariant node: a header relation ends at
+        // its last affine token, a local invariant at its `;`, and neither
+        // stops inside the relation or runs into the next header item.
         assert!(
-            cited.starts_with("invariant limit: ile("),
+            cited.starts_with("invariant limit: ")
+                && cited.contains(" <= ")
+                && !cited.contains('\n')
+                && !cited.ends_with(','),
             "INV-1 cited {cited:?} instead of the complete invariant statement"
         );
-        assert!(cited.ends_with(')'));
     });
 }
 
@@ -70,7 +75,7 @@ fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(i, 1_u64)
+    invariant limit: i <= 1_u64
   ) {
   }
   return exit_status(code: 0_u8);
@@ -93,7 +98,7 @@ fn a_body_local_invariant_is_not_a_counted_header_invariant() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   for (i in 0_u64..1_u64) {
     let value = i;
-    invariant limit: ile(i, 1_u64);
+    invariant limit: i <= 1_u64;
   }
   return exit_status(code: 0_u8);
 }
@@ -117,10 +122,10 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant nonstrict_forward: ile(i, 1_u64),
-    invariant nonstrict_reverse: ige(1_u64, i),
-    invariant strict_forward: ilt(i, 2_u64),
-    invariant strict_reverse: igt(2_u64, i)
+    invariant nonstrict_forward: i <= 1_u64,
+    invariant nonstrict_reverse: 1_u64 >= i,
+    invariant strict_forward: i < 2_u64,
+    invariant strict_reverse: 2_u64 > i
   ) {
   }
   return exit_status(code: 0_u8);
@@ -144,7 +149,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
         br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant limit: ilt(i, 1_u64)
+    invariant limit: i < 1_u64
   ) {
   }
   return exit_status(code: 0_u8);
@@ -154,7 +159,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
         br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant limit: igt(1_u64, i)
+    invariant limit: 1_u64 > i
   ) {
   }
   return exit_status(code: 0_u8);
@@ -185,7 +190,7 @@ fn equality_and_disequality_are_not_invariant_roots() {
         br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant same: ieq(i, i)
+    invariant same: i == i
   ) {
   }
   return exit_status(code: 0_u8);
@@ -195,7 +200,7 @@ fn equality_and_disequality_are_not_invariant_roots() {
         br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant different: ine(i, 2_u64)
+    invariant different: i != 2_u64
   ) {
   }
   return exit_status(code: 0_u8);
@@ -211,8 +216,8 @@ fn equality_and_disequality_are_not_invariant_roots() {
             assert_eq!(
                 issue.kind(),
                 &SemanticIssueKind::InvalidInvariant {
-                    reason: "the invariant root is not an admitted ordered integer relation",
-                    mechanical_fix: "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
+                    reason: "the invariant relation is not an admitted ordered integer relation",
+                    mechanical_fix: "write `<=`, `<`, `>=`, or `>` between the two affine expressions; equality and disequality are not invariant relations",
                 }
             );
         });
@@ -224,7 +229,7 @@ fn ordinary_loop_invariant_is_inductive_at_an_arbitrary_header() {
     let source = br#"fn repeat(leave: own Bool) -> result: own unit pure {
   let value = 0_u64;
   loop (
-    invariant limit: ile(value, 0_u64)
+    invariant limit: value <= 0_u64
   ) {
     if leave {
       break;
@@ -262,7 +267,7 @@ fn ordinary_loop_without_a_break_has_a_contradictory_continuation() {
     let source = br#"fn repeat_forever() -> result: own unit pure {
   let value = 0_u64;
   loop (
-    invariant limit: ile(value, 0_u64)
+    invariant limit: value <= 0_u64
   ) {
     set value = 0_u64;
   }
@@ -304,7 +309,7 @@ fn a_body_local_invariant_is_not_an_ordinary_loop_header_invariant() {
     let source = br#"fn misplaced() -> result: own unit pure {
   loop {
     let value = 0_u64;
-    invariant limit: ile(value, 0_u64);
+    invariant limit: value <= 0_u64;
     break;
   }
   return unit;
@@ -339,7 +344,7 @@ fn ordinary_loop_write_must_preserve_the_next_header_invariant() {
         br#"fn repeat(leave: own Bool) -> result: own unit pure {
   let value = 0_u64;
   loop (
-    invariant limit: ile(value, 0_u64)
+    invariant limit: value <= 0_u64
   ) {
     if leave {
       break;
@@ -364,7 +369,7 @@ fn ordinary_backedge_diagnostic_prints_the_source_relation() {
         br#"fn repeat(leave: own Bool) -> result: own unit pure {
   let value = 0_u64;
   loop (
-    invariant limit: ile(value, 0_u64)
+    invariant limit: value <= 0_u64
   ) {
     if leave {
       break;
@@ -379,7 +384,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        "ile(value, 0_u64)",
+        "value <= 0_u64",
     );
 }
 
@@ -390,7 +395,7 @@ fn counted_backedge_diagnostic_prints_the_hidden_next_binder() {
   let sum = 0_u64;
   for (
     i in 0_u64..2_u64,
-    invariant limit: ile(sum, 255_u64 * i)
+    invariant limit: sum <= 255_u64 * i
   ) {
     set sum = 256_u64;
   }
@@ -401,7 +406,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        "ile(sum, (255_u64 * (i + 1_u64)))",
+        "sum <= (255_u64 * (i + 1_u64))",
     );
 }
 
@@ -410,7 +415,7 @@ fn ordinary_loop_break_does_not_export_its_header_invariant() {
     let source = br#"fn leave_loop(leave: own Bool) -> result: own unit pure {
   let value = 0_u64;
   loop (
-    invariant limit: ile(value, 0_u64)
+    invariant limit: value <= 0_u64
   ) {
     if leave {
       break;
@@ -437,8 +442,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_loop_batch_uses_all_invariants_for_each_backedge() {
     let source = br#"fn preserve_pair(a: own u64, b: own u64, c: own u64, d: own u64, leave: own Bool) -> result: own unit pure contract {
-  requires ile(a, b);
-  requires ile(c, d);
+  requires a <= b;
+  requires c <= d;
 } {
   let first = a;
   let first_limit = b;
@@ -449,9 +454,9 @@ fn ordinary_loop_batch_uses_all_invariants_for_each_backedge() {
   let combined_left_limit = 0_u64;
   let combined_right_limit = 0_u64;
   loop (
-    invariant combined: ile(combined_left + combined_right, combined_left_limit + combined_right_limit),
-    invariant first_order: ile(first, first_limit),
-    invariant second_order: ile(second, second_limit)
+    invariant combined: combined_left + combined_right <= combined_left_limit + combined_right_limit,
+    invariant first_order: first <= first_limit,
+    invariant second_order: second <= second_limit
   ) {
     if leave {
       break;
@@ -495,8 +500,8 @@ command fn main() -> status: own ExitStatus pure {
 
     let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
     let without_second = source.replacen(
-        "    invariant first_order: ile(first, first_limit),\n    invariant second_order: ile(second, second_limit)\n",
-        "    invariant first_order: ile(first, first_limit)\n",
+        "    invariant first_order: first <= first_limit,\n    invariant second_order: second <= second_limit\n",
+        "    invariant first_order: first <= first_limit\n",
         1,
     );
     with_semantics(without_second.as_bytes(), |outcome| {
@@ -521,8 +526,8 @@ command fn main() -> status: own ExitStatus pure {
 fn a_failed_base_batch_grants_no_ordinary_header_assumption() {
     let source = br#"fn unknown_order(left: own u64, right: own u64, leave: own Bool) -> result: own unit pure {
   loop (
-    invariant first: ile(left, right),
-    invariant second: ile(left, right)
+    invariant first: left <= right,
+    invariant second: left <= right
   ) {
     if leave {
       break;
@@ -561,7 +566,7 @@ fn zero_trip_range_still_requires_the_invariant_base_case() {
         br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..0_u64,
-    invariant limit: ile(1_u64, i)
+    invariant limit: 1_u64 <= i
   ) {
   }
   return exit_status(code: 0_u8);
@@ -578,7 +583,7 @@ fn normal_body_fallthrough_must_preserve_the_invariant() {
   let sum = 0_u64;
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(sum, i)
+    invariant limit: sum <= i
   ) {
     set sum = 2_u64;
   }
@@ -595,7 +600,7 @@ fn a_conditional_unit_step_preserves_the_invariant_through_an_affine_join() {
   let completed = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant limit: ile(completed, i)
+    invariant limit: completed <= i
   ) {
     if flag {
       set completed = completed + 1_u64;
@@ -633,7 +638,7 @@ fn an_affine_join_does_not_hide_a_branch_that_advances_too_far() {
   let completed = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant limit: ile(completed, i)
+    invariant limit: completed <= i
   ) {
     if flag {
       set completed = completed + 2_u64;
@@ -656,7 +661,7 @@ fn an_affine_join_retains_a_negative_constant_delta() {
   let offset = 0_i32;
   for (
     i in 0_u64..2_u64,
-    invariant limit: ile(offset, 0_i32)
+    invariant limit: offset <= 0_i32
   ) {
     if flag {
       set offset = -1_i32;
@@ -697,7 +702,7 @@ fn separate_joined_bindings_do_not_share_one_delta_atom() {
   let right = 0_u64;
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(left, right)
+    invariant limit: left <= right
   ) {
     if flag {
       set left = 1_u64;
@@ -723,7 +728,7 @@ fn a_matching_break_is_not_a_backedge() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(i, 0_u64)
+    invariant limit: i <= 0_u64
   ) {
     break;
   }
@@ -743,11 +748,11 @@ fn a_matching_break_is_not_a_backedge() {
 #[test]
 fn requirement_facts_seed_the_originating_invariant_context() {
     let source = br#"fn bounded(start: own u64) -> result: own unit pure contract {
-  requires ile(start, 0_u64);
+  requires start <= 0_u64;
 } {
   for (
     i in start..start,
-    invariant limit: ile(i, 0_u64)
+    invariant limit: i <= 0_u64
   ) {
     break;
   }
@@ -778,7 +783,7 @@ command fn main() -> status: own ExitStatus pure {
         br#"fn bounded(start: own u64) -> result: own unit pure {
   for (
     i in start..start,
-    invariant limit: ile(i, 0_u64)
+    invariant limit: i <= 0_u64
   ) {
     break;
   }
@@ -797,17 +802,17 @@ command fn main() -> status: own ExitStatus pure {
 fn source_invariant_discharges_the_weigh_addition_domain() {
     let source = br#"fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
   define capacity = len(deref(weights));
-  requires ile(count, capacity);
-  requires ile(count, 1000_u64);
-  ensures ile(total, 255000_u32);
+  requires count <= capacity;
+  requires count <= 1000_u64;
+  ensures total <= 255000_u32;
 } {
   let sum = 0_u32;
   for (
     i in 0_u64..count,
-    invariant per_byte: ile(sum, 255_u32 * i)
+    invariant per_byte: sum <= 255_u32 * i
   ) {
     let w = deref(weights)[i];
-    let wide = cvt<u8, u32>(w);
+    let wide = cvt::<u8, u32>(w);
     set sum = sum + wide;
   }
   return sum;
@@ -815,10 +820,10 @@ fn source_invariant_discharges_the_weigh_addition_domain() {
 
 fn add_one['w](weights: &'w buffer<u8>, count: own u64) -> result: own u32 reads(weights) contract {
   define capacity = len(deref(weights));
-  requires ile(count, capacity);
-  requires ile(count, 1000_u64);
+  requires count <= capacity;
+  requires count <= 1000_u64;
 } {
-  let total = weigh<'w>(weights: weights, count: count);
+  let total = weigh::<'w>(weights: weights, count: count);
   let incremented = total + 1_u32;
   return incremented;
 }
@@ -949,8 +954,8 @@ fn later_invariant_backedge_can_use_an_earlier_invariant() {
   let y = 0_u64;
   for (
     i in 0_u64..10_u64,
-    invariant x_tracks_i: ile(x, i),
-    invariant limit: ile(y, i)
+    invariant x_tracks_i: x <= i,
+    invariant limit: y <= i
   ) {
     set y = x;
     set x = i;
@@ -975,7 +980,7 @@ fn later_invariant_backedge_can_use_an_earlier_invariant() {
   let y = 0_u64;
   for (
     i in 0_u64..10_u64,
-    invariant limit: ile(y, i)
+    invariant limit: y <= i
   ) {
     set y = x;
     set x = i;
@@ -990,12 +995,12 @@ fn later_invariant_backedge_can_use_an_earlier_invariant() {
 #[test]
 fn descending_range_does_not_publish_a_false_exhaustion_substitution() {
     let source = br#"fn descending(value: own u64) -> result: own u64 pure contract {
-  requires ile(value, 2_u64);
-  ensures ile(result, 1_u64);
+  requires value <= 2_u64;
+  ensures result <= 1_u64;
 } {
   for (
     i in 2_u64..1_u64,
-    invariant limit: ile(value, i)
+    invariant limit: value <= i
   ) {
   }
   return value;
@@ -1035,12 +1040,12 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn matching_break_removes_false_header_exhaustion_facts_at_the_join() {
     let source = br#"fn may_stop(stop: own Bool) -> result: own u64 pure contract {
-  ensures ile(result, 1_u64);
+  ensures result <= 1_u64;
 } {
   let value = 0_u64;
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(value, i)
+    invariant limit: value <= i
   ) {
     if stop {
       set value = 2_u64;
@@ -1083,12 +1088,12 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn no_backedge_invariant_can_finish_with_a_safe_false_header_exit() {
     let source = br#"fn zero_trip(value: own u64) -> result: own u64 pure contract {
-  requires ile(value, 0_u64);
-  ensures ile(result, 0_u64);
+  requires value <= 0_u64;
+  ensures result <= 0_u64;
 } {
   for (
     i in 0_u64..0_u64,
-    invariant limit: ile(value, i)
+    invariant limit: value <= i
   ) {
     return 0_u64;
   }
@@ -1152,7 +1157,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn failed_invariant_withholds_other_summaries_in_the_same_scc() {
     let source = br#"fn left(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let ignored = right(value: value);
   return value;
@@ -1162,7 +1167,7 @@ fn right(value: own i32) -> result: own i32 pure {
   let ignored = left(value: value);
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(1_u64, i)
+    invariant limit: 1_u64 <= i
   ) {
     break;
   }
@@ -1219,11 +1224,11 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn active_invariant_proves_a_real_array_index_obligation() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 4>(0_u8);
+  let values = array_new::<u8, 4>(0_u8);
   let at = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant position: ile(at, i)
+    invariant position: at <= i
   ) {
     let value = values[at];
     set at = at + 1_u64;
@@ -1278,19 +1283,19 @@ fn active_invariant_proves_a_real_array_index_obligation() {
 #[test]
 fn one_exhaustion_fact_proves_a_requirement_and_postcondition() {
     let source = br#"fn accept_total(value: own u32) -> result: own unit pure contract {
-  requires ile(value, 255000_u32);
+  requires value <= 255000_u32;
 } {
   return unit;
 }
 
 fn finish(count: own u64) -> result: own u32 pure contract {
-  requires ile(count, 1000_u64);
-  ensures ile(result, 255000_u32);
+  requires count <= 1000_u64;
+  ensures result <= 255000_u32;
 } {
   let total = 0_u32;
   for (
     i in 0_u64..count,
-    invariant per_item: ile(total, 255_u32 * i)
+    invariant per_item: total <= 255_u32 * i
   ) {
     set total = total + 255_u32;
   }
@@ -1374,7 +1379,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn matching_break_does_not_publish_an_exhaustion_fact_to_a_later_call() {
     let source = br#"fn accept_small(value: own u64) -> result: own unit pure contract {
-  requires ile(value, 1_u64);
+  requires value <= 1_u64;
 } {
   return unit;
 }
@@ -1383,7 +1388,7 @@ fn finish_or_stop(stop: own Bool) -> result: own unit pure {
   let value = 0_u64;
   for (
     i in 0_u64..1_u64,
-    invariant position: ile(value, i)
+    invariant position: value <= i
   ) {
     if stop {
       set value = 2_u64;
@@ -1424,12 +1429,12 @@ command fn main() -> status: own ExitStatus pure {
 fn active_invariant_proves_a_dynamic_buffer_index_obligation() {
     let source = br#"fn read_prefix['v](values: &'v buffer<u8>, count: own u64) -> result: own unit reads(values) contract {
   define capacity = len(deref(values));
-  requires ile(count, capacity);
+  requires count <= capacity;
 } {
   let index = 0_u64;
   for (
     i in 0_u64..count,
-    invariant position: ile(index, i)
+    invariant position: index <= i
   ) {
     let value = deref(values)[index];
     set index = index + 1_u64;
@@ -1493,17 +1498,17 @@ command fn main() -> status: own ExitStatus pure {
 fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
     let source =
         br#"fn allocate_prefix(count: own u64) -> result: own unit allocates(heap) contract {
-  requires ile(count, 1000_u64);
+  requires count <= 1000_u64;
 } {
   let length = 0_u64;
   for (
     i in 0_u64..count,
-    invariant produced: ile(length, i)
+    invariant produced: length <= i
   ) {
     set length = length + 1_u64;
   }
   let filled = buffer_new(length, 0_u16);
-  let vacant = buffer_vacant<u8>(length);
+  let vacant = buffer_vacant::<u8>(length);
   return unit;
 }
 
@@ -1573,20 +1578,20 @@ command fn main() -> status: own ExitStatus pure {
 fn exhaustion_facts_prove_both_system_range_components() {
     let source = br#"fn publish_prefix['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
-  requires ile(limit, capacity);
+  requires limit <= capacity;
 } {
   let start = 0_u64;
   let end = 0_u64;
   for (
     i in 0_u64..limit,
-    invariant ordered: ile(start, end),
-    invariant within_prefix: ile(end, i)
+    invariant ordered: start <= end,
+    invariant within_prefix: end <= i
   ) {
     set start = end;
     set end = end + 1_u64;
   }
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
+    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
   }
   return unit;
 }
@@ -1653,14 +1658,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn independent_invariant_intervals_discharge_two_operand_exact_multiplication() {
     let source = br#"fn bounded_product(count: own u64) -> result: own u64 pure contract {
-  requires ile(count, 1000_u64);
+  requires count <= 1000_u64;
 } {
   let left = 0_u64;
   let right = 0_u64;
   for (
     i in 0_u64..count,
-    invariant left_at_head: ile(left, i),
-    invariant right_at_head: ile(right, i)
+    invariant left_at_head: left <= i,
+    invariant right_at_head: right <= i
   ) {
     let product = left * right;
     set left = i;
@@ -1732,15 +1737,15 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn interval_product_checks_the_two_cross_endpoint_pairs() {
     let source = br#"fn mixed(left: own i8, right: own i8) -> result: own unit pure contract {
-  requires ile(left, 1_i8);
-  requires ile(0_i8, right);
-  requires ile(right, 2_i8);
+  requires left <= 1_i8;
+  requires 0_i8 <= right;
+  requires right <= 2_i8;
 } {
   for (
     i in 0_u64..1_u64,
-    invariant left_upper: ile(left, 1_i8),
-    invariant right_lower: ile(0_i8, right),
-    invariant right_upper: ile(right, 2_i8)
+    invariant left_upper: left <= 1_i8,
+    invariant right_lower: 0_i8 <= right,
+    invariant right_upper: right <= 2_i8
   ) {
     let product = left * right;
     break;
@@ -1769,33 +1774,33 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn nested_invariants_publish_a_postcondition_consumed_by_a_later_requirement() {
     let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
-  requires ile(value, 12_u64);
+  requires value <= 12_u64;
 } {
   return unit;
 }
 
 fn count_cells(rows: own u64) -> result: own u64 pure contract {
-  requires ile(rows, 3_u64);
-  ensures ile(result, 12_u64);
+  requires rows <= 3_u64;
+  ensures result <= 12_u64;
 } {
   let total = 0_u64;
   for (
     row in 0_u64..rows,
-    invariant completed_rows: ile(total, 4_u64 * row)
+    invariant completed_rows: total <= 4_u64 * row
   ) {
     for (
       column in 0_u64..4_u64,
-      invariant completed_cells: ile(total, 4_u64 * row + column)
+      invariant completed_cells: total <= 4_u64 * row + column
     ) {
       set total = total + 1_u64;
     }
-    invariant completed_row: ile(total, 4_u64 *(row + 1_u64));
+    invariant completed_row: total <= 4_u64 *(row + 1_u64);
   }
   return total;
 }
 
 fn caller(rows: own u64) -> result: own unit pure contract {
-  requires ile(rows, 3_u64);
+  requires rows <= 3_u64;
 } {
   let total = count_cells(rows: rows);
   let ignored = accept_total(value: total);
@@ -1930,9 +1935,9 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
     let source = br#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64, leave: own Bool) -> result: own unit pure contract {
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
 } {
   let left = 0_u64;
   let left_limit = 0_u64;
@@ -1941,7 +1946,7 @@ fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
   let right = 0_u64;
   let right_limit = 0_u64;
   loop (
-    invariant limit: ile(left + middle + right, left_limit + middle_limit + right_limit)
+    invariant limit: left + middle + right <= left_limit + middle_limit + right_limit
   ) {
     if leave {
       break;
@@ -1952,10 +1957,10 @@ fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
       set middle_limit = second_limit;
       set right = third;
       set right_limit = third_limit;
-      invariant restored: ile(left + middle + right, left_limit + middle_limit + right_limit) {
-        use ile(left, left_limit);
-        use ile(middle, middle_limit);
-        use ile(right, right_limit);
+      invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {
+        use left <= left_limit;
+        use middle <= middle_limit;
+        use right <= right_limit;
       }
     }
   }
@@ -1988,7 +1993,7 @@ command fn main() -> status: own ExitStatus pure {
 
     let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
     let without_proof = source.replacen(
-        "      invariant restored: ile(left + middle + right, left_limit + middle_limit + right_limit) {\n        use ile(left, left_limit);\n        use ile(middle, middle_limit);\n        use ile(right, right_limit);\n      }\n",
+        "      invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {\n        use left <= left_limit;\n        use middle <= middle_limit;\n        use right <= right_limit;\n      }\n",
         "",
         1,
     );
@@ -2004,8 +2009,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn automatic_residual_reduction_composes_two_live_l0_facts() {
     let source = br#"fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
+  requires first <= first_limit;
+  requires second <= second_limit;
 } {
   let left = 0_u64;
   let left_limit = 0_u64;
@@ -2013,7 +2018,7 @@ fn automatic_residual_reduction_composes_two_live_l0_facts() {
   let right_limit = 0_u64;
   for (
     i in 0_u64..2_u64,
-    invariant combined: ile(left + right, left_limit + right_limit)
+    invariant combined: left + right <= left_limit + right_limit
   ) {
     set left = first;
     set left_limit = first_limit;
@@ -2049,7 +2054,7 @@ command fn main() -> status: own ExitStatus pure {
     });
 
     let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
-    let missing_second = source.replacen("  requires ile(second, second_limit);\n", "", 1);
+    let missing_second = source.replacen("  requires second <= second_limit;\n", "", 1);
     with_semantics(missing_second.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("one missing bound must leave the backedge unproved: {outcome:?}");
@@ -2072,7 +2077,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_inner_break_does_not_export_its_exhaustion_fact_to_a_later_requirement() {
     let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
-  requires ile(value, 4_u64);
+  requires value <= 4_u64;
 } {
   return unit;
 }
@@ -2081,11 +2086,11 @@ fn count_or_stop(stop: own Bool) -> result: own unit pure {
   let total = 0_u64;
   for (
     row in 0_u64..1_u64,
-    invariant outer_range: ile(row, 1_u64)
+    invariant outer_range: row <= 1_u64
   ) {
     for (
       column in 0_u64..4_u64,
-      invariant completed: ile(total, column)
+      invariant completed: total <= column
     ) {
       if stop {
         set total = 5_u64;
@@ -2151,7 +2156,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_exhaustion_export_and_a_break_local_invariant_join_by_canonical_fact() {
     let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
-  requires ile(value, 4_u64);
+  requires value <= 4_u64;
 } {
   return unit;
 }
@@ -2160,10 +2165,10 @@ fn count_or_stop(stop: own Bool) -> result: own unit pure {
   let total = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant completed: ile(total, i)
+    invariant completed: total <= i
   ) {
     if stop {
-      invariant break_total: ile(total, 4_u64);
+      invariant break_total: total <= 4_u64;
       break;
     }
     set total = total + 1_u64;
@@ -2233,11 +2238,11 @@ fn a_published_guard_discharges_an_ordinary_loop_cursor_increment() {
     let source = br#"fn advance(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
-    let below = ilt(cursor, limit);
+    let below = cursor < limit;
     if below {
-      invariant guarded: ilt(cursor, limit);
+      invariant guarded: cursor < limit;
       set cursor = cursor + 1_u64;
     } else {
       break;
@@ -2291,11 +2296,11 @@ command fn main() -> status: own ExitStatus pure {
 fn an_unguarded_cursor_increment_fails_the_ordinary_loop_backedge() {
     let source =
         br#"fn advance(limit: own u64, leave: own Bool) -> result: own unit pure contract {
-  requires ilt(limit, 1000_u64);
+  requires limit < 1000_u64;
 } {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
     if leave {
       break;
@@ -2329,7 +2334,7 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(name, "bounded");
         assert_eq!(*obligation, LoopInvariantProofObligation::Backedge);
-        assert_eq!(required_relation, "ile(cursor, limit)");
+        assert_eq!(required_relation, "cursor <= limit");
     });
 }
 
@@ -2351,9 +2356,9 @@ fn a_guarded_cursor_increment_reaches_the_ordinary_loop_backedge() {
     let source = br#"fn advance(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
-    let below = ilt(cursor, limit);
+    let below = cursor < limit;
     if below {
       set cursor = cursor + 1_u64;
     } else {
@@ -2395,9 +2400,9 @@ fn a_direct_cursor_increment_and_its_let_spelling_agree() {
     let direct = br#"fn advance(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
-    let below = ilt(cursor, limit);
+    let below = cursor < limit;
     if below {
       set cursor = cursor + 1_u64;
     } else {
@@ -2414,9 +2419,9 @@ command fn main() -> status: own ExitStatus pure {
     let through_let = br#"fn advance(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
-    let below = ilt(cursor, limit);
+    let below = cursor < limit;
     if below {
       let next = cursor + 1_u64;
       set cursor = next;
@@ -2463,13 +2468,13 @@ fn a_body_invariant_after_the_write_and_the_ordinary_header_are_both_proved() {
     let source = br#"fn advance(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
-    let below = ilt(cursor, limit);
+    let below = cursor < limit;
     if below {
-      invariant guarded: ilt(cursor, limit);
+      invariant guarded: cursor < limit;
       set cursor = cursor + 1_u64;
-      invariant advanced: ile(cursor, limit);
+      invariant advanced: cursor <= limit;
     } else {
       break;
     }
@@ -2514,7 +2519,7 @@ fn a_break_only_body_creates_no_ordinary_loop_backedge_obligation() {
     let source = br#"fn stop(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
-    invariant bounded: ile(cursor, limit)
+    invariant bounded: cursor <= limit
   ) {
     set cursor = limit;
     break;
@@ -2559,16 +2564,16 @@ fn a_failing_body_probe_is_reported_before_the_header_backedge() {
     let source = br#"fn narrow(room: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
   let hi = room;
   loop (
-    invariant bounds: ile(hi, room)
+    invariant bounds: hi <= room
   ) {
-    if ile(cand, room) {
+    if cand <= room {
     } else {
       return 0_u64;
     }
     if flag {
       set hi = cand;
     }
-    invariant reprove: ile(hi, room);
+    invariant reprove: hi <= room;
   }
   return hi;
 }
@@ -2598,7 +2603,7 @@ command fn main() -> status: own ExitStatus pure {
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         assert_eq!(
             std::str::from_utf8(&source[start..end]).expect("cited bytes are text"),
-            "invariant reprove: ile(hi, room);",
+            "invariant reprove: hi <= room;",
             "the rejection lands on the body probe, not on the loop header",
         );
     });

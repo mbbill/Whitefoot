@@ -2,13 +2,13 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   doc "Reads one byte through four independent positioned operations. In the Windows test-only two-slot completion runtime, three eligible submissions force the third to return core-capacity status 2; every byte is then published in source order.";
   let published = buffer_new(4_u64, 0_u8);
   region 'arg {
-    match arg_get<'arg>(args: &'arg args, position: 1_u64) {
+    match arg_get::<'arg>(args: &'arg args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'open {
-              let permit = reserve_file<'open>(factory: &uniq 'open files);
-              match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
+              let permit = reserve_file::<'open>(factory: &uniq 'open files);
+              match open_read::<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
                 Ok(value: file) => {
                   let bytes0 = buffer_new(1_u64, 0_u8);
                   let bytes1 = buffer_new(1_u64, 0_u8);
@@ -16,10 +16,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   let bytes3 = buffer_new(1_u64, 0_u8);
                   region 'file {
                     region 'data {
-                      let read0 = read_at<'file, 'data>(file: &'file file, destination: &uniq 'data bytes0, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                      let read1 = read_at<'file, 'data>(file: &'file file, destination: &uniq 'data bytes1, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                      let read2 = read_at<'file, 'data>(file: &'file file, destination: &uniq 'data bytes2, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                      let read3 = read_at<'file, 'data>(file: &'file file, destination: &uniq 'data bytes3, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                      let read0 = read_at::<'file, 'data>(file: &'file file, destination: &uniq 'data bytes0, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                      let read1 = read_at::<'file, 'data>(file: &'file file, destination: &uniq 'data bytes1, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                      let read2 = read_at::<'file, 'data>(file: &'file file, destination: &uniq 'data bytes2, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                      let read3 = read_at::<'file, 'data>(file: &'file file, destination: &uniq 'data bytes3, file_offset: 0_u64, start: 0_u64, end: 1_u64);
                     }
                   }
                   set published[0_u64] = bytes0[0_u64];
@@ -27,9 +27,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   set published[2_u64] = bytes2[0_u64];
                   set published[3_u64] = bytes3[0_u64];
                   region 'output {
-                    match write_once<'output, 'output>(output: &uniq 'output out, source: &'output published, start: 0_u64, end: 4_u64) {
+                    match write_once::<'output, 'output>(output: &uniq 'output out, source: &'output published, start: 0_u64, end: 4_u64) {
                       Ok(value: written) => {
-                        if ieq(written, 4_u64) {
+                        if written == 4_u64 {
                           return exit_status(code: 0_u8);
                         } else {
                           return exit_status(code: 5_u8);

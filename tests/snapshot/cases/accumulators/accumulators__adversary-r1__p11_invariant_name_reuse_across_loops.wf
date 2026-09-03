@@ -3,19 +3,19 @@ command fn main() -> status: own ExitStatus pure {
   let count_a = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant bound: ile(count_a, i)
+    invariant bound: count_a <= i
   ) {
     set count_a = count_a + 1_u64;
   }
   let count_b = 0_u64;
   for (
     j in 0_u64..5_u64,
-    invariant bound: ile(count_b, j)
+    invariant bound: count_b <= j
   ) {
     set count_b = count_b + 1_u64;
   }
   let total = count_a + count_b;
-  if ieq(total, 10_u64) {
+  if total == 10_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

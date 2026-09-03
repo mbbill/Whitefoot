@@ -9,7 +9,7 @@ fn sum_to(limit: own u64) -> total: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- zero-invariant counted for uses the one-line header form [P11].";
   let total = sum_to(limit: 6_u64);
-  if ieq(total, 6_u64) {
+  if total == 6_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

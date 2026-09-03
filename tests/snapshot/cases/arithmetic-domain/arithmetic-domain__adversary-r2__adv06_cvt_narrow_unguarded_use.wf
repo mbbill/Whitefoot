@@ -1,12 +1,12 @@
 fn narrow_direct(x: own i32) -> result: own i8 pure {
   doc "Expected REJECT [OP-6, TYPE-4]: cvt<i32,i8> is not total (i32 -> i8 loses range), so it must return Result<i8, NarrowError> and be matched, not used directly as an i8. Violating value x=200_i32 is not representable in i8.";
-  let narrowed = cvt<i32, i8>(x);
+  let narrowed = cvt::<i32, i8>(x);
   return move narrowed;
 }
 
 fn narrow_matched(x: own i32) -> result: own i8 pure {
   doc "Contrast: the correct sibling matches the Result and picks a total fallback, unlike narrow_direct which tries to use the Result value bare as i8.";
-  match cvt<i32, i8>(x) {
+  match cvt::<i32, i8>(x) {
     Ok(value: v) => {
       return v;
     }

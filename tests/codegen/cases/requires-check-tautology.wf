@@ -1,5 +1,5 @@
 fn guarded(x: own u64) -> result: own u64 pure contract {
-  define same = ieq(x, x);
+  define same = x == x;
   requires same;
 } {
   return x;

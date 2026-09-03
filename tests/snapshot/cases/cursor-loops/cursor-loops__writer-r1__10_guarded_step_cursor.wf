@@ -3,12 +3,12 @@ command fn main() -> status: own ExitStatus pure {
   let cursor = 0_u64;
   let steps = 0_u32;
   loop @walk {
-    let at_bound = ige(cursor, 10_u64);
+    let at_bound = cursor >= 10_u64;
     if at_bound {
       break @walk;
     }
     let remainder_check = steps % 2_u32;
-    let is_even = ieq(remainder_check, 0_u32);
+    let is_even = remainder_check == 0_u32;
     let stride = if is_even {
       give 2_u64;
     } else {
@@ -17,7 +17,7 @@ command fn main() -> status: own ExitStatus pure {
     set cursor = cursor +wrap stride;
     set steps = steps +wrap 1_u32;
   }
-  if ieq(steps, 7_u32) {
+  if steps == 7_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

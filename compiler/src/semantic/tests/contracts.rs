@@ -504,7 +504,7 @@ fn positional_region_alpha_equality_includes_slice_type_regions() {
 
 fn read_first['input](bytes: own slice<'input, u8>) -> result: own u8 reads(bytes) {
   let room = len(bytes);
-  let ok = ilt(0_u64, room);
+  let ok = 0_u64 < room;
   if ok {
     return bytes[0_u64];
   } else {

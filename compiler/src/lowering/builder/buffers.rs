@@ -44,7 +44,7 @@ impl IrBuilder<'_> {
         )
     }
 
-    /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: the element is the
+    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: the element is the
     /// interned `Option<T>` instance and every element starts as its
     /// compiler-minted `None()`.
     pub(super) fn lower_buffer_vacant(

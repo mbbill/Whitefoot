@@ -8,7 +8,7 @@ fn view['r](state: &'r State) -> function_result: &'r State pure {
 
 fn inspect['r](state: &'r State) -> function_result: own unit pure {
   doc "TYPE-7: a reference-returning call is still a reference value and cannot be matched without an explicit holder and dereference.";
-  match view<'r>(state: state) {
+  match view::<'r>(state: state) {
     Ready() => {
     }
   }

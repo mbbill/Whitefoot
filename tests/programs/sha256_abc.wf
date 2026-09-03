@@ -50,7 +50,7 @@ fn sha256_majority(x: own u32, y: own u32, z: own u32) -> result: own u32 pure {
 }
 
 fn sha256_abc_word_zero() -> result: own u32 pure {
-  let schedule = array_new<u32, 64>(0_u32);
+  let schedule = array_new::<u32, 64>(0_u32);
   for @copy_block (copy_index in 0_u64..16_u64) {
     let source_word = sha256_abc_block[copy_index];
     set schedule[copy_index] = source_word;
@@ -107,14 +107,14 @@ fn sha256_abc_word_zero() -> result: own u32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let direct_digest_word = sha256_abc_word_zero();
-  if ieq(direct_digest_word, 3128432319_u32) {
+  if direct_digest_word == 3128432319_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
   let iteration = 0_u64;
   let accumulated = 0_u32;
   loop @sustained_hashing {
-    let finished = ieq(iteration, 1024_u64);
+    let finished = iteration == 1024_u64;
     if finished {
       break @sustained_hashing;
     }
@@ -122,7 +122,7 @@ command fn main() -> status: own ExitStatus pure {
     set accumulated = accumulated +wrap digest_word;
     set iteration = iteration +wrap 1_u64;
   }
-  if ieq(accumulated, 3764059136_u32) {
+  if accumulated == 3764059136_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

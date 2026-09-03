@@ -59,9 +59,9 @@ command fn main() -> status: own ExitStatus pure {
   let v = 5_i32;
   region 'a {
     let h = &'a v;
-    source<'a>(x: h);
+    source::<'a>(x: h);
   }
-  if ine(v, 5_i32) {
+  if v != 5_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -98,12 +98,12 @@ command fn main() -> status: own ExitStatus pure {
   let v = 1_i32;
   region 'a {
     let h = &uniq 'a v;
-    let r = passthru<'a>(x: &uniq 'a deref(h));
+    let r = passthru::<'a>(x: &uniq 'a deref(h));
     region 'c {
-      bump<'c>(n: &uniq 'c deref(r));
+      bump::<'c>(n: &uniq 'c deref(r));
     }
   }
-  if ine(v, 42_i32) {
+  if v != 42_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -129,9 +129,9 @@ fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
 command fn main() -> status: own ExitStatus pure {
   let a = 0_i32;
   region 'r {
-    bump<'r>(n: &uniq 'r a);
+    bump::<'r>(n: &uniq 'r a);
   }
-  if ine(a, 42_i32) {
+  if a != 42_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -182,13 +182,13 @@ command fn main() -> status: own ExitStatus pure {
   let fallback = Empty();
   region 'r {
     let held = &'r packet;
-    let read = inspect<'r>(packet: held);
-    if ine(read, 41_i32) {
+    let read = inspect::<'r>(packet: held);
+    if read != 41_i32 {
       return exit_status(code: 1_u8);
     }
     let hollow = &'r fallback;
-    let zero = inspect<'r>(packet: hollow);
-    if ine(zero, 0_i32) {
+    let zero = inspect::<'r>(packet: hollow);
+    if zero != 0_i32 {
       return exit_status(code: 2_u8);
     }
   }

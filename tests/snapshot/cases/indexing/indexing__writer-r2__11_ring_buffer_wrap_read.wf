@@ -1,9 +1,9 @@
 fn drain_into['r, 'd](ring: &'r buffer<u8>, start: own u64, count: own u64, out: &uniq 'd buffer<u8>) -> result: own unit reads(ring), writes(out) contract {
   define capacity = len(deref(ring));
   define out_room = len(deref(out));
-  requires igt(capacity, 0_u64);
-  requires ilt(start, capacity);
-  requires ile(count, out_room);
+  requires capacity > 0_u64;
+  requires start < capacity;
+  requires count <= out_room;
 } {
   let capacity = len(deref(ring));
   for (i in 0_u64..count) {
@@ -28,15 +28,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set ring[3_u64] = 13_u8;
   let out = buffer_new(5_u64, 0_u8);
   region 'r {
-    drain_into<'r, 'r>(ring: &'r ring, start: 2_u64, count: 5_u64, out: &uniq 'r out);
+    drain_into::<'r, 'r>(ring: &'r ring, start: 2_u64, count: 5_u64, out: &uniq 'r out);
   }
   let first = out[0_u64];
-  if ieq(first, 12_u8) {
+  if first == 12_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
   let wrapped = out[2_u64];
-  if ieq(wrapped, 10_u8) {
+  if wrapped == 10_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

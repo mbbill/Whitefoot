@@ -10,10 +10,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let first_count = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant first_bound: ile(first_count, i)
+    invariant first_bound: first_count <= i
   ) {
     let byte = first[i];
-    let is_nonzero = ige(byte, 1_u8);
+    let is_nonzero = byte >= 1_u8;
     if is_nonzero {
       set first_count = first_count + 1_u64;
     }
@@ -21,16 +21,16 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let second_count = 0_u64;
   for (
     j in 0_u64..5_u64,
-    invariant second_bound: ile(second_count, j)
+    invariant second_bound: second_count <= j
   ) {
     let byte = second[j];
-    let is_nonzero = ige(byte, 1_u8);
+    let is_nonzero = byte >= 1_u8;
     if is_nonzero {
       set second_count = second_count + 1_u64;
     }
   }
   let total = first_count + second_count;
-  if ieq(total, 5_u64) {
+  if total == 5_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

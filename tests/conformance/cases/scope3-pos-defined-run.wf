@@ -2,7 +2,7 @@ command fn main() -> status: own ExitStatus pure {
   doc "An accepted program has defined behavior and runs to normal exit [SCOPE-3].";
   let a = 20_i32;
   let b = a + 22_i32;
-  if ieq(b, 42_i32) {
+  if b == 42_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

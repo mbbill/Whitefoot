@@ -7,6 +7,6 @@ command fn main() -> status: own ExitStatus pure {
   let a = 1_i32;
   let b = 2_i32;
   let h = Holder(value: 0_i32);
-  set h.value = ieq(a, b);
+  set h.value = a == b;
   return exit_status(code: 0_u8);
 }

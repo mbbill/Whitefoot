@@ -6,13 +6,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let sum = 0_u64;
   for (
     i in 0_u64..half,
-    invariant per_byte: ile(sum, 255_u64 * i)
+    invariant per_byte: sum <= 255_u64 * i
   ) {
     let byte = data[i];
-    let wide = cvt<u8, u64>(byte);
+    let wide = cvt::<u8, u64>(byte);
     set sum = sum + wide;
   }
-  if ieq(sum, 30_u64) {
+  if sum == 30_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

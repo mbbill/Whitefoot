@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
   let p = Even(n: d);
   match p {
     Even(n: v) => {
-      if ieq(d, 14_i32) {
+      if d == 14_i32 {
       } else {
         return exit_status(code: 201_u8);
       }

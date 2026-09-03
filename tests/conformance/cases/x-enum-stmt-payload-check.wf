@@ -10,7 +10,7 @@ command fn main() -> status: own ExitStatus pure {
     Num(n: v) => {
       let bounded = v % 1073741824_i32;
       let d = bounded * 2_i32;
-      let expected = ieq(d, 42_i32);
+      let expected = d == 42_i32;
       if expected {
         return exit_status(code: 0_u8);
       } else {

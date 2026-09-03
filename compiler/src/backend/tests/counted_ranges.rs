@@ -28,10 +28,10 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
   for @max_empty (i in 18446744073709551615_u64..18446744073709551615_u64) {
     set total = total +wrap 100_u64;
   }
-  if ine(max_visits, 1_u64) {
+  if max_visits != 1_u64 {
     return 1000_u64;
   }
-  if ine(max_seen, 18446744073709551614_u64) {
+  if max_seen != 18446744073709551614_u64 {
     return 1001_u64;
   }
   let upper = 3_u64;
@@ -48,7 +48,7 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
       set total = total +wrap 1_u64;
       break @inner;
     }
-    if ieq(i, 1_u64) {
+    if i == 1_u64 {
       break @outer;
     }
   }
@@ -57,7 +57,7 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
 
 command fn main() -> status: own ExitStatus pure {
   let result = exercise();
-  if ine(result, 8_u64) {
+  if result != 8_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

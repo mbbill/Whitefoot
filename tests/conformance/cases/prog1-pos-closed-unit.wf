@@ -4,10 +4,10 @@ fn helper(x: own i32) -> return_value: own i32 pure {
 }
 
 command fn main() -> return_value: own ExitStatus pure {
-  doc "PROG-1 closed world: helper is defined in-unit, ieq/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
+  doc "PROG-1 closed world: helper is defined in-unit, `==`/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
   let a = 6_i32;
   let b = helper(x: a);
-  if ieq(b, 7_i32) {
+  if b == 7_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

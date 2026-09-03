@@ -7,16 +7,16 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let zero_count = 0_u64;
   for (
     i in 0_u64..6_u64,
-    invariant count_bound: ile(zero_count, i)
+    invariant count_bound: zero_count <= i
   ) {
     let byte = data[i];
-    let is_nonzero = ige(byte, 1_u8);
+    let is_nonzero = byte >= 1_u8;
     if is_nonzero {
     } else {
       set zero_count = zero_count + 1_u64;
     }
   }
-  if ieq(zero_count, 3_u64) {
+  if zero_count == 3_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

@@ -52,7 +52,7 @@ fn depth['r](chain: &'r box<Chain>) -> result: own u64 reads(chain) {
       return 0_u64;
     }
     More(next: inner) => {
-      let below = depth<'r>(chain: inner);
+      let below = depth::<'r>(chain: inner);
       return below +wrap 1_u64;
     }
   }
@@ -64,8 +64,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let one = More(next: move bottom);
   let boxed = box_new(move one);
   region 'chain {
-    let measured = depth<'chain>(chain: &'chain boxed);
-    if ieq(measured, 1_u64) {
+    let measured = depth::<'chain>(chain: &'chain boxed);
+    if measured == 1_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
@@ -156,7 +156,7 @@ pub(super) fn spine_source(depth: u64) -> Vec<u8> {
 }}
 
 fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
-  let done = ieq(depth, 0_u64);
+  let done = depth == 0_u64;
   if done {{
     return v;
   }}
@@ -168,9 +168,9 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
 
 command fn main() -> status: own ExitStatus pure {{
   let total = spine(depth: {depth}_u64, v: 1.0009765625_f64);
-  let bits = reinterpret<f64, u64>(total);
+  let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
-  match cvt<u64, u8>(low) {{
+  match cvt::<u64, u8>(low) {{
     Ok(value: byte) => {{
       return exit_status(code: byte);
     }}
@@ -777,7 +777,7 @@ fn both(n: own u64) -> result: own u64 allocates(heap) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let r = both(n: 5_u64);
-  let ok = igt(r, 0_u64);
+  let ok = r > 0_u64;
   if ok {
     return exit_status(code: 0_u8);
   }
@@ -827,7 +827,7 @@ fn page_size() -> usize {
 /// index through a type range leaves the optimizer unable to decide the load.
 const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allocates(heap) {
   let b = buffer_new(4000000000000000000_u64, 7_u8);
-  let wide = cvt<u8, u64>(i);
+  let wide = cvt::<u8, u64>(i);
   let element = b[wide];
   return element;
 }
@@ -835,9 +835,9 @@ const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allo
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let count = 0_u64;
   region 'invocation {
-    set count = args_count<'invocation>(args: &'invocation args);
+    set count = args_count::<'invocation>(args: &'invocation args);
   }
-  match cvt<u64, u8>(count) {
+  match cvt::<u64, u8>(count) {
     Ok(value: v) => {
       let r = giant(i: v);
       return exit_status(code: r);
@@ -857,7 +857,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 /// dynamic length fits.
 const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 allocates(heap) {
   let filled = buffer_new(4_u64, 5_u64);
-  let vacant = buffer_vacant<u32>(4_u64);
+  let vacant = buffer_vacant::<u32>(4_u64);
   let boxed = box_new(7_u64);
   let held = deref(boxed);
   let filled_len = len(filled);
@@ -865,7 +865,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 alloc
   let total = held +wrap filled_len;
   set total = total +wrap vacant_len;
   region 'a {
-    let kept = arena_new<'a, u64>(3_u64);
+    let kept = arena_new::<'a, u64>(3_u64);
     let seen = deref(kept);
     set total = total +wrap seen;
   }
@@ -874,7 +874,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 alloc
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let total = shapes(n: 4_u64);
-  match cvt<u64, u8>(total) {
+  match cvt::<u64, u8>(total) {
     Ok(value: byte) => {
       return exit_status(code: byte);
     }
@@ -990,10 +990,10 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
 /// the stack pointer by roughly three hundred kilobytes at once.
 const LARGE_FRAME_SPINE: &[u8] =
     br#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
-  let pad = array_new<u64, 7168>(v);
-  let wide = cvt<u8, u64>(i);
+  let pad = array_new::<u64, 7168>(v);
+  let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
-  let done = ieq(depth, 0_u64);
+  let done = depth == 0_u64;
   if done {
     return pad[wide];
   }
@@ -1006,13 +1006,13 @@ const LARGE_FRAME_SPINE: &[u8] =
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
   region 'invocation {
-    set count = args_count<'invocation>(args: &'invocation args);
+    set count = args_count::<'invocation>(args: &'invocation args);
   }
-  match cvt<u64, u8>(count) {
+  match cvt::<u64, u8>(count) {
     Ok(value: idx) => {
       let depth = count *wrap 20000_u64;
       let r = spine(depth: depth, v: 3_u64, i: idx);
-      let ok = igt(r, 0_u64);
+      let ok = r > 0_u64;
       if ok {
         return exit_status(code: 0_u8);
       }
@@ -1172,7 +1172,7 @@ fn buffer_chain_source(depth: u64) -> Vec<u8> {
 }}
 
 fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
-  let slots = buffer_vacant<Chain>(1_u64);
+  let slots = buffer_vacant::<Chain>(1_u64);
   let filled = Some<Chain>(value: move inner);
   let vacant = replace slots[0_u64] = move filled;
   match vacant {{
@@ -1186,7 +1186,7 @@ fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
 }}
 
 command fn main() -> status: own ExitStatus allocates(heap) {{
-  let holder = buffer_vacant<Chain>(1_u64);
+  let holder = buffer_vacant::<Chain>(1_u64);
   let seed = Nil();
   let seeded = Some<Chain>(value: move seed);
   let empty = replace holder[0_u64] = move seeded;
@@ -1225,7 +1225,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
 const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<box<u64>>(2_u64);
+  let slots = buffer_vacant::<box<u64>>(2_u64);
   let boxed = box_new(7_u64);
   let wrapped = Some<box<u64>>(value: move boxed);
   let vacant = replace slots[0_u64] = move wrapped;
@@ -1432,7 +1432,7 @@ const BUFFER_CYCLE: &[u8] = br#"enum Chain {
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  let inner = buffer_vacant<Chain>(2_u64);
+  let inner = buffer_vacant::<Chain>(2_u64);
   let b = box_new(move inner);
   let node = Cons(kids: move b);
   return exit_status(code: 0_u8);
@@ -1495,13 +1495,13 @@ const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
 }
 
 fn leafy() -> result: own Chain allocates(heap) {
-  let slots = buffer_vacant<Chain>(1_u64);
+  let slots = buffer_vacant::<Chain>(1_u64);
   let held = box_new(move slots);
   return Cons(kids: move held);
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<Chain>(4_u64);
+  let slots = buffer_vacant::<Chain>(4_u64);
   let child0 = leafy();
   let first = Some<Chain>(value: move child0);
   let hole0 = replace slots[0_u64] = move first;

@@ -1,6 +1,6 @@
 fn get_bounded['r](b: &'r buffer<u8>, i: own u64) -> value: own u8 reads(b) contract {
   define room = len(deref(b));
-  requires ilt(i, room);
+  requires i < room;
 } {
   return deref(b)[i];
 }
@@ -11,14 +11,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let narrow = buffer_new(4_u64, 2_u8);
   region 'r {
     let wp = &'r wide;
-    let first = get_bounded<'r>(b: wp, i: 7_u64);
-    if ieq(first, 1_u8) {
+    let first = get_bounded::<'r>(b: wp, i: 7_u64);
+    if first == 1_u8 {
     } else {
       return exit_status(code: 201_u8);
     }
     let np = &'r narrow;
-    let second = get_bounded<'r>(b: np, i: 7_u64);
-    if ieq(second, 2_u8) {
+    let second = get_bounded::<'r>(b: np, i: 7_u64);
+    if second == 2_u8 {
     } else {
       return exit_status(code: 202_u8);
     }

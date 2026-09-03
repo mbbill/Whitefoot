@@ -78,16 +78,14 @@ fn operator_forms_take_their_maximal_lowercase_suffix() {
     );
 }
 
-/// [GRAM-1] the compound set is exactly `->`, `=>`, and `..`, and the bytes that
-/// spelled a comparison operator form nothing longer than themselves.
-///
-/// The comparison halves are the control: `==`, `<=`, and `>=` are here for
-/// their *absence* as compound tokens, because the owner's cancellation of the
-/// infix comparisons is what put them back to two tokens each. `!=` cannot
-/// appear at all — `!` is a raw lexical defect, asserted in `edge_cases.rs`.
+/// [GRAM-1] the compound set is exactly `->`, `=>`, `..`, `==`, `!=`, `<=`,
+/// `>=`, and `::`, each formed when its two bytes are adjacent and never
+/// otherwise: `a == b` is three tokens, `< j` and `> k` keep their single
+/// bytes, and a lone `=` or `:` stays what it was. `!` outside `!=` remains a
+/// raw lexical defect, asserted in `edge_cases.rs`.
 #[test]
 fn compound_punctuation_beats_its_single_byte_prefixes() {
-    let observed = observed(b"a == b <= d >= e -> f => g h..i < j > k = l\n");
+    let observed = observed(b"a == b <= d >= e -> f => g h..i < j > k = l m != n o::p q: r\n");
     let tokens: Vec<_> = observed
         .iter()
         .filter(|(_, label)| label.starts_with("token:"))
@@ -97,14 +95,11 @@ fn compound_punctuation_beats_its_single_byte_prefixes() {
         tokens,
         [
             "token:LowerWordForm",
-            "token:Equal",
-            "token:Equal",
+            "token:EqualEqual",
             "token:LowerWordForm",
-            "token:LeftAngle",
-            "token:Equal",
+            "token:LessEqual",
             "token:LowerWordForm",
-            "token:RightAngle",
-            "token:Equal",
+            "token:GreaterEqual",
             "token:LowerWordForm",
             "token:ThinArrow",
             "token:LowerWordForm",
@@ -118,6 +113,15 @@ fn compound_punctuation_beats_its_single_byte_prefixes() {
             "token:RightAngle",
             "token:LowerWordForm",
             "token:Equal",
+            "token:LowerWordForm",
+            "token:LowerWordForm",
+            "token:BangEqual",
+            "token:LowerWordForm",
+            "token:LowerWordForm",
+            "token:ColonColon",
+            "token:LowerWordForm",
+            "token:LowerWordForm",
+            "token:Colon",
             "token:LowerWordForm",
         ]
     );
@@ -149,7 +153,7 @@ fn dotted_mode_boundary_is_exact_and_dotless_ops_remain_words() {
 
 #[test]
 fn all_fixed_symbols_preserve_longest_two_byte_forms() {
-    let observed = observed(b"(){}[]<>,:;.= -> => .. &\n");
+    let observed = observed(b"(){}[]<>,:;.= -> => .. & == != <= >= ::\n");
     let kinds: Vec<_> = observed
         .iter()
         .filter_map(|(_, label)| label.strip_prefix("token:"))
@@ -174,6 +178,11 @@ fn all_fixed_symbols_preserve_longest_two_byte_forms() {
             "FatArrow",
             "DotDot",
             "Ampersand",
+            "EqualEqual",
+            "BangEqual",
+            "LessEqual",
+            "GreaterEqual",
+            "ColonColon",
         ]
     );
 }

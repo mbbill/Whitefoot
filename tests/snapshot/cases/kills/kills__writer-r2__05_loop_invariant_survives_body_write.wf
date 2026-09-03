@@ -4,13 +4,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let sum = 0_u32;
   for (
     i in 0_u64..5_u64,
-    invariant per_byte: ile(sum, 255_u32 * i)
+    invariant per_byte: sum <= 255_u32 * i
   ) {
     let w = weights[i];
-    let wide = cvt<u8, u32>(w);
+    let wide = cvt::<u8, u32>(w);
     set sum = sum + wide;
   }
-  let correct = ieq(sum, 15_u32);
+  let correct = sum == 15_u32;
   if correct {
   } else {
     return exit_status(code: 1_u8);

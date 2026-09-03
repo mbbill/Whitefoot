@@ -18,7 +18,7 @@ fn apply(op: own Op, x: own i32) -> result: own i32 pure {
 command fn main() -> status: own ExitStatus pure {
   let inc_atom_0001 = Inc();
   let r = apply(op: inc_atom_0001, x: 41_i32);
-  if ieq(r, 42_i32) {
+  if r == 42_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

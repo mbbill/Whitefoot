@@ -14,7 +14,7 @@ command fn main() -> status: own ExitStatus pure {
       give 0_i32;
     }
   }
-  if ieq(r, 42_i32) {
+  if r == 42_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

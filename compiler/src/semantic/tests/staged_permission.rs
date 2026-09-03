@@ -146,15 +146,15 @@ fn an_exit_edge_written_in_the_prologue_is_admitted() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    let done = ige(index, 2_u64);
+    let done = index >= 2_u64;
     if done {
       break @scan;
     }
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -201,9 +201,9 @@ fn each_loop_that_performs_io_is_judged_on_its_own() {
   for @outer (outer_index in 0_u64..2_u64) {
     let outer_name = buffer_new(16_u64, 97_u8);
     region 'of {
-      let outer_permit = reserve_file<'of>(factory: &uniq 'of files);
+      let outer_permit = reserve_file::<'of>(factory: &uniq 'of files);
       region 'on {
-        match open_file<'of, 'on>(permit: move outer_permit, root: &'of cwd, name: &'on outer_name, start: 0_u64, end: 4_u64) {
+        match open_file::<'of, 'on>(permit: move outer_permit, root: &'of cwd, name: &'on outer_name, start: 0_u64, end: 4_u64) {
           Ok(value: outer_handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -215,9 +215,9 @@ fn each_loop_that_performs_io_is_judged_on_its_own() {
     for @inner (inner_index in 0_u64..2_u64) {
       let inner_name = buffer_new(16_u64, 97_u8);
       region 'if {
-        let inner_permit = reserve_file<'if>(factory: &uniq 'if files);
+        let inner_permit = reserve_file::<'if>(factory: &uniq 'if files);
         region 'in {
-          match open_file<'if, 'in>(permit: move inner_permit, root: &'if cwd, name: &'in inner_name, start: 0_u64, end: 4_u64) {
+          match open_file::<'if, 'in>(permit: move inner_permit, root: &'if cwd, name: &'in inner_name, start: 0_u64, end: 4_u64) {
             Ok(value: inner_handle) => {
               set seen = seen +wrap 1_u64;
             }
@@ -256,12 +256,12 @@ fn a_submission_reached_on_only_some_paths_has_no_cut() {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let wanted = ilt(index, 2_u64);
+    let wanted = index < 2_u64;
     if wanted {
       region 'f {
-        let permit = reserve_file<'f>(factory: &uniq 'f files);
+        let permit = reserve_file::<'f>(factory: &uniq 'f files);
         region 'n {
-          match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
             Ok(value: handle) => {
               set seen = seen +wrap 1_u64;
             }
@@ -293,16 +293,16 @@ fn a_submission_written_inside_a_loop_of_the_body_has_no_cut() {
   for @scan (index in 0_u64..4_u64) {
     let inner = 0_u64;
     loop @twice {
-      let done = ige(inner, 2_u64);
+      let done = inner >= 2_u64;
       if done {
         break @twice;
       }
       set inner = inner +wrap 1_u64;
       let name = buffer_new(16_u64, 97_u8);
       region 'f {
-        let permit = reserve_file<'f>(factory: &uniq 'f files);
+        let permit = reserve_file::<'f>(factory: &uniq 'f files);
         region 'n {
-          match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
             Ok(value: handle) => {
               set seen = seen +wrap 1_u64;
             }
@@ -354,9 +354,9 @@ fn a_break_after_the_submission_denies() {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -407,14 +407,14 @@ fn a_break_after_the_submission_denies() {
 #[test]
 fn a_give_leaving_the_loop_denies_and_one_delivered_inside_it_does_not() {
     let leaving = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  let taken = ieq(1_u64, 1_u64);
+  let taken = 1_u64 == 1_u64;
   let outcome = if taken {
     for @scan (index in 0_u64..4_u64) {
       let name = buffer_new(16_u64, 97_u8);
       region 'f {
-        let permit = reserve_file<'f>(factory: &uniq 'f files);
+        let permit = reserve_file::<'f>(factory: &uniq 'f files);
         region 'n {
-          match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
             Ok(value: handle) => {
               give 1_u64;
             }
@@ -442,11 +442,11 @@ fn a_give_leaving_the_loop_denies_and_one_delivered_inside_it_does_not() {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
-            let taken = ieq(index, 0_u64);
+            let taken = index == 0_u64;
             let weight = if taken {
               give 1_u64;
             } else {
@@ -499,13 +499,13 @@ fn an_enclosing_enumeration_cursor_can_never_be_replicated() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
   region 'c {
-    let permit = reserve_file<'c>(factory: &uniq 'c files);
-    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
+    let permit = reserve_file::<'c>(factory: &uniq 'c files);
+    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
         for @scan (index in 0_u64..4_u64) {
           let entries = buffer_new(1024_u64, 0_u8);
           region 'b {
-            match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
+            match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
               ListBytes(next: bytes, entries: reported) => {
                 set total = total +wrap reported;
               }
@@ -574,12 +574,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'c {
-              set seen = touch<'c>(cell: &uniq 'c cell);
+              set seen = touch::<'c>(cell: &uniq 'c cell);
             }
           }
           Err(error: problem) => {
@@ -614,12 +614,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let name = buffer_new(16_u64, 97_u8);
     let touched = 0_u64;
     region 'c {
-      set touched = touch<'c>(cell: &uniq 'c cell);
+      set touched = touch::<'c>(cell: &uniq 'c cell);
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap touched;
           }
@@ -678,9 +678,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = weigh(left: total, right: index);
           }
@@ -733,11 +733,11 @@ fn a_construction_whose_elements_are_affine_costs_the_loop_nothing() {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let slots = buffer_vacant<u64>(4_u64);
+    let slots = buffer_vacant::<u64>(4_u64);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -791,15 +791,15 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
     region 'b {
       let holder = &uniq 'b shared;
       let room = len(deref(holder));
-      let fits = ilt(0_u64, room);
+      let fits = 0_u64 < room;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
       }
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -839,15 +839,15 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
     region 'b {
       let holder = &uniq 'b scratch;
       let room = len(deref(holder));
-      let fits = ilt(0_u64, room);
+      let fits = 0_u64 < room;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
       }
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -886,9 +886,9 @@ fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() 
       set total = total +wrap seen;
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -928,9 +928,9 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
     let seen = len(table);
     set total = total +wrap seen;
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -957,7 +957,7 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
 fn an_expression_statement_refuses_as_a_form_and_names_the_let_binding() {
     let source = br#"fn stamp['b](slot: &uniq 'b buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
   let room = len(deref(slot));
-  let wide = ilt(0_u64, room);
+  let wide = 0_u64 < room;
   if wide {
     set deref(slot)[0_u64] = 7_u8;
   }
@@ -969,12 +969,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let name = buffer_new(16_u64, 97_u8);
     let scratch = buffer_new(8_u64, 0_u8);
     region 's {
-      stamp<'s>(slot: &uniq 's scratch, index: index);
+      stamp::<'s>(slot: &uniq 's scratch, index: index);
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -1016,9 +1016,9 @@ fn a_discarded_owned_result_refuses_as_its_own_form() {
     let name = buffer_new(16_u64, 97_u8);
     buffer_new(8_u64, 0_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -1064,12 +1064,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'c {
-              set seen = peek<'c>(cell: &uniq 'c cell);
+              set seen = peek::<'c>(cell: &uniq 'c cell);
             }
           }
           Err(error: problem) => {
@@ -1098,11 +1098,11 @@ fn a_statement_interposed_after_the_submission_is_judged_like_any_other() {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let bound = ilt(carried, 4_u64);
+    let bound = carried < 4_u64;
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set carried = carried +wrap 1_u64;
             set seen = seen +wrap 1_u64;
@@ -1138,15 +1138,15 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let name = buffer_new(16_u64, 97_u8);
     let counted = 0_u64;
     region 't {
-      set counted = total<'t>(source: &'t table);
+      set counted = total::<'t>(source: &'t table);
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'u {
-              set seen = total<'u>(source: &'u table);
+              set seen = total::<'u>(source: &'u table);
             }
           }
           Err(error: problem) => {
@@ -1236,9 +1236,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let carried = pair.a;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set pair.b = pair.b +wrap carried;
           }
@@ -1286,9 +1286,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let previous = replace carrier = Carrier(tag: index, spare: 0_u64);
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             let seen = carrier.tag;
             set total = total +wrap seen;
@@ -1339,9 +1339,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   for @scan (index in 0_u64..4_u64) {
     let fresh = buffer_new(16_u64, 98_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -1407,12 +1407,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let held = Holder(name: move seed, seen: 0_u64);
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
           Ok(value: handle) => {
             region 'b {
-              let done = bump<'b>(holder: &uniq 'b held);
+              let done = bump::<'b>(holder: &uniq 'b held);
             }
           }
           Err(error: problem) => {
@@ -1467,9 +1467,9 @@ fn a_propagate_whose_right_hand_side_is_the_cut_leaves_from_the_remainder() {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
-      let permit = reserve_file<'p>(factory: &uniq 'p files);
+      let permit = reserve_file::<'p>(factory: &uniq 'p files);
       region 'n {
-        let handle = propagate open_file<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64);
+        let handle = propagate open_file::<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64);
         set total = total +wrap 1_u64;
       }
     }
@@ -1479,7 +1479,7 @@ fn a_propagate_whose_right_hand_side_is_the_cut_leaves_from_the_remainder() {
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   region 'c {
-    match scan_all<'c>(cwd: &'c cwd, files: move files) {
+    match scan_all::<'c>(cwd: &'c cwd, files: move files) {
       Ok(value: counted) => {
       }
       Err(error: problem) => {
@@ -1533,9 +1533,9 @@ fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own R
     let kept = propagate classify(index: index);
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
-      let permit = reserve_file<'p>(factory: &uniq 'p files);
+      let permit = reserve_file::<'p>(factory: &uniq 'p files);
       region 'n {
-        match open_file<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -1550,7 +1550,7 @@ fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own R
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   region 'c {
-    match scan_all<'c>(cwd: &'c cwd, files: move files) {
+    match scan_all::<'c>(cwd: &'c cwd, files: move files) {
       Ok(value: counted) => {
       }
       Err(error: problem) => {
@@ -1589,9 +1589,9 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
     let name = buffer_new(16_u64, 97_u8);
     set name[0_u64] = 98_u8;
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -1609,14 +1609,14 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let room = len(name);
-    let fits = ilt(index, room);
+    let fits = index < room;
     if fits {
       set name[index] = 98_u8;
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -1633,14 +1633,14 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   let seen = 0_u64;
   for @scan (
     index in 0_u64..4_u64,
-    invariant index_bound: ile(index, 4_u64)
+    invariant index_bound: index <= 4_u64
   ) {
     let name = buffer_new(16_u64, 97_u8);
     set name[index] = 98_u8;
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -1684,14 +1684,14 @@ fn an_invariant_proved_accumulator_index_keeps_its_cross_segment_dependency() {
   let seen = 0_u64;
   for @scan (
     index in 0_u64..4_u64,
-    invariant seen_bound: ile(seen, index)
+    invariant seen_bound: seen <= index
   ) {
     let name = buffer_new(16_u64, 97_u8);
     set name[seen] = 98_u8;
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -1725,9 +1725,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     let carried = work.seen;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             let bumped = carried +wrap 1_u64;
             let previous = replace work = Work(seen: bumped, code: 0_u64);
@@ -1749,13 +1749,13 @@ const ITERATION_OWN_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -1781,16 +1781,16 @@ const UNCOUNTED_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own Direct
   let opened = 0_u64;
   let index = 0_u64;
   loop @scan {
-    let done = ige(index, 4_u64);
+    let done = index >= 4_u64;
     if done {
       break @scan;
     }
     set index = index +wrap 1_u64;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }
@@ -1809,9 +1809,9 @@ const EXIT_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set seen = seen +wrap 1_u64;
           }
@@ -1832,13 +1832,13 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -1862,10 +1862,10 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
 
 const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp['b](slot: &uniq 'b buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
   let room = len(deref(slot));
-  let sized = ilt(0_u64, room);
+  let sized = 0_u64 < room;
   if sized {
     let parity = index % 2_u64;
-    let odd = ieq(parity, 1_u64);
+    let odd = parity == 1_u64;
     if odd {
       set deref(slot)[0_u64] = 7_u8;
     }
@@ -1875,13 +1875,13 @@ const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp['b](slot: &uniq 'b buffer<u8>,
 
 fn first_byte['b](source: &'b buffer<u8>) -> result: own u64 reads(source) {
   let room = len(deref(source));
-  let sized = ilt(0_u64, room);
+  let sized = 0_u64 < room;
   if sized {
   } else {
     return 0_u64;
   }
   let byte = deref(source)[0_u64];
-  return cvt<u8, u64>(byte);
+  return cvt::<u8, u64>(byte);
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
@@ -1890,16 +1890,16 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 's {
-      let stamped = stamp<'s>(slot: &uniq 's scratch, index: index);
+      let stamped = stamp::<'s>(slot: &uniq 's scratch, index: index);
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             let seen = 0_u64;
             region 'r {
-              set seen = first_byte<'r>(source: &'r scratch);
+              set seen = first_byte::<'r>(source: &'r scratch);
             }
             set total = total +wrap seen;
           }

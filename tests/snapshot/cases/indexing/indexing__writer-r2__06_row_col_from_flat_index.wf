@@ -5,15 +5,15 @@ fn pixel_at['r](grid: &'r buffer<u8>, width: own u64, height: own u64, row: own 
     return 0_u8;
   }
   let capacity = width * height;
-  if ieq(area, capacity) {
+  if area == capacity {
   } else {
     return 0_u8;
   }
-  if ilt(row, height) {
+  if row < height {
   } else {
     return 0_u8;
   }
-  if ilt(col, width) {
+  if col < width {
   } else {
     return 0_u8;
   }
@@ -27,7 +27,7 @@ fn pixel_at['r](grid: &'r buffer<u8>, width: own u64, height: own u64, row: own 
     return 0_u8;
   }
   let flat = row_width + col;
-  if ilt(flat, area) {
+  if flat < area {
   } else {
     return 0_u8;
   }
@@ -36,12 +36,12 @@ fn pixel_at['r](grid: &'r buffer<u8>, width: own u64, height: own u64, row: own 
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "ACCEPT: every partial arithmetic step (width*height, row*width, the +col) is guarded by its own dominating .defined branch, and the flattened row*width+col subscript is guarded by its own direct ilt(flat, area) branch [OP-2, OP-4].";
+  doc "ACCEPT: every partial arithmetic step (width*height, row*width, the +col) is guarded by its own dominating .defined branch, and the flattened row*width+col subscript is guarded by its own direct flat < area branch [OP-2, OP-4].";
   let grid = buffer_new(12_u64, 0_u8);
   set grid[7_u64] = 42_u8;
   region 'r {
-    let value = pixel_at<'r>(grid: &'r grid, width: 4_u64, height: 3_u64, row: 1_u64, col: 3_u64);
-    if ieq(value, 42_u8) {
+    let value = pixel_at::<'r>(grid: &'r grid, width: 4_u64, height: 3_u64, row: 1_u64, col: 3_u64);
+    if value == 42_u8 {
     } else {
       return exit_status(code: 1_u8);
     }

@@ -5,13 +5,13 @@ struct MovingWindow {
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- maintains a 4-slot fixed-point moving-average window over a struct field with a proved cursor bound";
-  let history = array_new<u32, 4>(0_u32);
+  let history = array_new::<u32, 4>(0_u32);
   let window = MovingWindow(history: move history, cursor: 0_u64);
-  let inputs = array_new<u32, 6>(400_u32);
+  let inputs = array_new::<u32, 6>(400_u32);
   let last_average = 0_u32;
   for (frame in 0_u64..6_u64) {
     let sample = inputs[frame];
-    let write_ok = ilt(window.cursor, 4_u64);
+    let write_ok = window.cursor < 4_u64;
     if write_ok {
     } else {
       return exit_status(code: 1_u8);
@@ -31,7 +31,7 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
     set last_average = average;
-    let at_end = ieq(window.cursor, 3_u64);
+    let at_end = window.cursor == 3_u64;
     let next_cursor = if at_end {
       give 0_u64;
     } else {
@@ -39,7 +39,7 @@ command fn main() -> status: own ExitStatus pure {
     }
     set window.cursor = next_cursor;
   }
-  if ieq(last_average, 400_u32) {
+  if last_average == 400_u32 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -790,11 +790,11 @@ command fn main() -> status: own ExitStatus pure {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  if ine(observed, 42_i32) {
+  if observed != 42_i32 {
     return exit_status(code: 1_u8);
   }
   let preserved = outer.other;
-  if ine(preserved, 7_i32) {
+  if preserved != 7_i32 {
     return exit_status(code: 2_u8);
   }
   let selected = if flag {
@@ -804,10 +804,10 @@ command fn main() -> status: own ExitStatus pure {
     set number = 10_i32;
     give number;
   }
-  if ine(selected, 43_i32) {
+  if selected != 43_i32 {
     return exit_status(code: 3_u8);
   }
-  if ine(number, 43_i32) {
+  if number != 43_i32 {
     return exit_status(code: 4_u8);
   }
   return exit_status(code: 0_u8);
@@ -911,34 +911,34 @@ fn infix_operators_execute_the_rows_they_name() {
   let a = 20_i32;
   let b = a + 22_i32;
   let want = 42_i32;
-  if ine(b, want) {
+  if b != want {
     return exit_status(code: 1_u8);
   }
   let hi = 2147483647_i32;
   let wrapped = hi +wrap 1_i32;
   let low = -2147483648_i32;
-  if ine(wrapped, low) {
+  if wrapped != low {
     return exit_status(code: 2_u8);
   }
   let saturated = hi +sat 1_i32;
-  if ine(saturated, hi) {
+  if saturated != hi {
     return exit_status(code: 3_u8);
   }
   let quotient = 43_i32 / 2_i32;
-  if ine(quotient, 21_i32) {
+  if quotient != 21_i32 {
     return exit_status(code: 4_u8);
   }
   let rest = 43_i32 % 2_i32;
-  if ine(rest, 1_i32) {
+  if rest != 1_i32 {
     return exit_status(code: 5_u8);
   }
-  if ieq(a, b) {
+  if a == b {
     return exit_status(code: 6_u8);
   }
-  if igt(a, b) {
+  if a > b {
     return exit_status(code: 7_u8);
   }
-  if ilt(b, a) {
+  if b < a {
     return exit_status(code: 8_u8);
   }
   return exit_status(code: 0_u8);
@@ -966,12 +966,12 @@ fn an_infix_returned_from_a_function_executes() {
 }
 
 fn eq(a: own i32, b: own i32) -> result: own Bool pure {
-  return ieq(a, b);
+  return a == b;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let sum = add(a: 20_i32, b: 22_i32);
-  if ine(sum, 42_i32) {
+  if sum != 42_i32 {
     return exit_status(code: 1_u8);
   }
   let same = eq(a: 7_i32, b: 7_i32);
@@ -1065,7 +1065,7 @@ struct Envelope {
 }
 
 fn step(value: own i32) -> result: own Result<i32, StepError> pure {
-  if ilt(value, 0_i32) {
+  if value < 0_i32 {
     let error = Failed();
     return Err<i32, StepError>(error: error);
   } else {
@@ -1112,7 +1112,7 @@ command fn main() -> status: own ExitStatus pure {
   let multiply_result = 6_i16 *checked 7_i16;
   match move multiply_result {
     Ok(value: product) => {
-      if ine(product, 42_i16) {
+      if product != 42_i16 {
         return exit_status(code: 3_u8);
       }
     }
@@ -1123,7 +1123,7 @@ command fn main() -> status: own ExitStatus pure {
   let success = forward(value: 7_i32);
   match move success {
     Ok(value: answer) => {
-      if ine(answer, 42_i64) {
+      if answer != 42_i64 {
         return exit_status(code: 5_u8);
       }
     }
@@ -1142,7 +1142,7 @@ command fn main() -> status: own ExitStatus pure {
   let field_success = forward_field(value: 7_i32);
   match move field_success {
     Ok(value: field_answer) => {
-      if ine(field_answer, 42_i64) {
+      if field_answer != 42_i64 {
         return exit_status(code: 8_u8);
       }
     }
@@ -1162,7 +1162,7 @@ command fn main() -> status: own ExitStatus pure {
   match move pair_result {
     Ok(value: pair) => {
       let total = pair.left +wrap pair.right;
-      if ine(total, 42_i32) {
+      if total != 42_i32 {
         return exit_status(code: 11_u8);
       }
     }
@@ -1207,16 +1207,16 @@ fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
     set outer = outer +wrap 1_i32;
     let inner = 0_i32;
     loop @inner_loop {
-      if ige(outer, 3_i32) {
+      if outer >= 3_i32 {
         break @outer_loop;
       }
-      if ige(inner, 2_i32) {
+      if inner >= 2_i32 {
         break @inner_loop;
       }
       set inner = inner +wrap 1_i32;
     }
   }
-  if ine(outer, 3_i32) {
+  if outer != 3_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -1275,46 +1275,46 @@ fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign(
   let sut = 10_u32 - 3_u32;
   let mst = 6_i64 * 7_i64;
   let mut = 6_u64 * 7_u64;
-  if ine(aw, -128_i8) {
+  if aw != -128_i8 {
     return exit_status(code: 1_u8);
   }
-  if ine(sw, 255_u8) {
+  if sw != 255_u8 {
     return exit_status(code: 2_u8);
   }
-  if ine(mw, 65534_u16) {
+  if mw != 65534_u16 {
     return exit_status(code: 3_u8);
   }
-  if ine(ast, -7_i16) {
+  if ast != -7_i16 {
     return exit_status(code: 4_u8);
   }
-  if ine(aut, 13_u16) {
+  if aut != 13_u16 {
     return exit_status(code: 5_u8);
   }
-  if ine(sst, 7_i32) {
+  if sst != 7_i32 {
     return exit_status(code: 6_u8);
   }
-  if ine(sut, 7_u32) {
+  if sut != 7_u32 {
     return exit_status(code: 7_u8);
   }
-  if ine(mst, 42_i64) {
+  if mst != 42_i64 {
     return exit_status(code: 8_u8);
   }
-  if ine(mut, 42_u64) {
+  if mut != 42_u64 {
     return exit_status(code: 9_u8);
   }
-  if ieq(1_i32, 2_i32) {
+  if 1_i32 == 2_i32 {
     return exit_status(code: 10_u8);
   }
-  if ige(-1_i32, 0_i32) {
+  if -1_i32 >= 0_i32 {
     return exit_status(code: 11_u8);
   }
-  if igt(1_u32, 1_u32) {
+  if 1_u32 > 1_u32 {
     return exit_status(code: 12_u8);
   }
-  if ile(1_i32, -1_i32) {
+  if 1_i32 <= -1_i32 {
     return exit_status(code: 13_u8);
   }
-  if ilt(1_u32, 1_u32) {
+  if 1_u32 < 1_u32 {
     return exit_status(code: 14_u8);
   }
   return exit_status(code: 0_u8);
@@ -1348,7 +1348,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_failing_contract_is_a_static_fn8_rejection() {
     let source = br#"fn only_one(value: own u8) -> result: own unit pure contract {
-  requires ieq(value, 1_u8);
+  requires value == 1_u8;
 } {
   return unit;
 }

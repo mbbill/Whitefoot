@@ -1,6 +1,6 @@
 fn negate_by_div(n: own i32) -> result: own i32 pure {
   doc "ACCEPT: bounding n above i32::MIN discharges the signed-overflow conjunct for the -1 constant divisor [OP-2].";
-  if igt(n, -2147483648_i32) {
+  if n > -2147483648_i32 {
     let m = n / -1_i32;
     return m;
   }
@@ -9,7 +9,7 @@ fn negate_by_div(n: own i32) -> result: own i32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let m = negate_by_div(n: 41_i32);
-  if ieq(m, -41_i32) {
+  if m == -41_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

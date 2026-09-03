@@ -6,9 +6,9 @@ struct Ring {
 
 fn push_slot['r](r: &uniq 'r Ring, value: own u8) -> result: own unit reads(r.slots, r.head, r.used), writes(r.slots) contract {
   define capacity = len(deref(r).slots);
-  requires igt(capacity, 0_u64);
-  requires ilt(deref(r).head, capacity);
-  requires ilt(deref(r).used, capacity);
+  requires capacity > 0_u64;
+  requires deref(r).head < capacity;
+  requires deref(r).used < capacity;
 } {
   let capacity = len(deref(r).slots);
   let head = deref(r).head;
@@ -28,13 +28,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let backing = buffer_new(4_u64, 0_u8);
   let ring = Ring(slots: move backing, head: 1_u64, used: 2_u64);
   let capacity = len(ring.slots);
-  let head_ok = ilt(ring.head, capacity);
-  let used_ok = ilt(ring.used, capacity);
-  if igt(capacity, 0_u64) {
+  let head_ok = ring.head < capacity;
+  let used_ok = ring.used < capacity;
+  if capacity > 0_u64 {
     if head_ok {
       if used_ok {
         region 'r {
-          push_slot<'r>(r: &uniq 'r ring, value: 9_u8);
+          push_slot::<'r>(r: &uniq 'r ring, value: 9_u8);
         }
       } else {
         return exit_status(code: 1_u8);
@@ -46,9 +46,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     return exit_status(code: 1_u8);
   }
   let final_room = len(ring.slots);
-  if ilt(3_u64, final_room) {
+  if 3_u64 < final_room {
     let written = ring.slots[3_u64];
-    if ieq(written, 9_u8) {
+    if written == 9_u8 {
     } else {
       return exit_status(code: 1_u8);
     }

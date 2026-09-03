@@ -2,7 +2,7 @@ fn slack(limit: own u64) -> remaining: own u64 pure {
   let sum = 0_u64;
   for (
     i in 0_u64..limit,
-    invariant sum_bound: ile(sum, i)
+    invariant sum_bound: sum <= i
   ) {
     set sum = sum + 1_u64;
   }
@@ -13,7 +13,7 @@ fn slack(limit: own u64) -> remaining: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- the counted for's exact-exhaustion export discharges a plain, proof-required subtraction right after the loop [INV-1].";
   let remaining = slack(limit: 5_u64);
-  if ieq(remaining, 0_u64) {
+  if remaining == 0_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

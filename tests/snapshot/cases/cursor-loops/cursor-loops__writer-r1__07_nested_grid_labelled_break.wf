@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an outer labelled loop over grid rows and an inner labelled loop over columns search a small grid for a target value, and the inner loop breaks the outer label directly once it is found.";
-  let grid = array_new<u32, 9>(0_u32);
+  let grid = array_new::<u32, 9>(0_u32);
   set grid[0_u64] = 1_u32;
   set grid[1_u64] = 2_u32;
   set grid[2_u64] = 3_u32;
@@ -15,27 +15,27 @@ command fn main() -> status: own ExitStatus pure {
   let found_col = 0_u64;
   let found = False();
   loop @rows {
-    let row_in_bounds = ilt(row, 3_u64);
+    let row_in_bounds = row < 3_u64;
     if row_in_bounds {
     } else {
       break @rows;
     }
     let col = 0_u64;
     loop @cols {
-      let col_in_bounds = ilt(col, 3_u64);
+      let col_in_bounds = col < 3_u64;
       if col_in_bounds {
       } else {
         break @cols;
       }
       let index = row * 3_u64;
       let flat = index + col;
-      let flat_in_bounds = ilt(flat, 9_u64);
+      let flat_in_bounds = flat < 9_u64;
       if flat_in_bounds {
       } else {
         break @cols;
       }
       let cell = grid[flat];
-      let hit = ieq(cell, 6_u32);
+      let hit = cell == 6_u32;
       if hit {
         set found_row = row;
         set found_col = col;
@@ -52,7 +52,7 @@ command fn main() -> status: own ExitStatus pure {
   }
   let row_scaled = found_row * 3_u64;
   let flat_found = row_scaled + found_col;
-  if ieq(flat_found, 5_u64) {
+  if flat_found == 5_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

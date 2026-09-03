@@ -5,13 +5,13 @@ fn negate_min(x: own i16) -> result: own i16 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let sample = -32768_i16;
-  let is_extreme = ieq(sample, -32768_i16);
+  let is_extreme = sample == -32768_i16;
   if is_extreme {
   } else {
     return exit_status(code: 4_u8);
   }
   let a = negate_min(x: sample);
-  if ieq(a, -32768_i16) {
+  if a == -32768_i16 {
   } else {
     return exit_status(code: 1_u8);
   }

@@ -1,14 +1,14 @@
 fn loopy2(limit: own u8, bump: own u8) -> result: own u8 pure contract {
-  requires ile(limit, 5_u8);
+  requires limit <= 5_u8;
 } {
   let cursor = 0_u8;
   let lim = limit;
   loop (
-    invariant bounded: ile(cursor, lim)
+    invariant bounded: cursor <= lim
   ) {
-    let remaining = ilt(cursor, lim);
+    let remaining = cursor < lim;
     if remaining {
-      invariant guarded: ilt(cursor, lim);
+      invariant guarded: cursor < lim;
       set cursor = cursor +wrap 1_u8;
       set lim = bump;
     } else {

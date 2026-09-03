@@ -1,7 +1,7 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "PATH-1: construction from one host string succeeds when the complete code-unit sequence contains no NUL code unit and begins with no target-root prefix. Success retypes the same inline lease with no allocation and no code-unit change, and the released path is a logical consume [SYS-5].";
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {

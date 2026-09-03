@@ -1,5 +1,5 @@
 fn safe_average(total: own u64, d: own u64) -> value: own u64 pure contract {
-  requires ige(d, 1_u64);
+  requires d >= 1_u64;
 } {
   let q = total / d;
   return q;

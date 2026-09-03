@@ -1,7 +1,7 @@
 fn bucket_of(values: own buffer<u8>, n: own u64) -> found: own u8 reads(values) contract {
   define room = len(values);
-  requires ieq(room, 10_u64);
-  requires ilt(n, 101_u64);
+  requires room == 10_u64;
+  requires n < 101_u64;
 } {
   doc "expect REJECT: idx = n/10 with n<101 allows n=100, idx=10, values[10] is out of bounds for room=10; n=100 is the violating input";
   let idx = n / 10_u64;

@@ -1,5 +1,5 @@
 fn bounded(x: own i32) -> result: own i32 pure contract {
-  define permitted = ige(x, 0_i32);
+  define permitted = x >= 0_i32;
   requires permitted;
 } {
   doc "A Bool-valued, pure-total static requirement is one complete goal that every ordinary caller proves before the function body [FN-8].";
@@ -8,7 +8,7 @@ fn bounded(x: own i32) -> result: own i32 pure contract {
 
 command fn main() -> status: own ExitStatus pure {
   let value = bounded(x: 7_i32);
-  if ieq(value, 7_i32) {
+  if value == 7_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

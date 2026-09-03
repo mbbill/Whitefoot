@@ -1,23 +1,23 @@
 fn classify(table: own buffer<u8>, x: own u64, thresh: own u64) -> result: own u8 reads(table) {
-  doc "expected ACCEPT: a three-way else-if chain has each terminal leaf establish ilt(x, room) from a different comparison against thresh, and the joined bound alone discharges the trailing subscript's [OP-4] obligation.";
+  doc "expected ACCEPT: a three-way else-if chain has each terminal leaf establish x < room from a different comparison against thresh, and the joined bound alone discharges the trailing subscript's [OP-4] obligation.";
   let room = len(table);
-  let small = ile(x, thresh);
+  let small = x <= thresh;
   if small {
-    let small_bound = ilt(x, room);
+    let small_bound = x < room;
     if small_bound {
     } else {
       return 0_u8;
     }
   } else {
-    let mid_wide = ilt(thresh, room);
+    let mid_wide = thresh < room;
     if mid_wide {
-      let mid_bound = ilt(x, room);
+      let mid_bound = x < room;
       if mid_bound {
       } else {
         return 0_u8;
       }
     } else {
-      let far_bound = ilt(x, room);
+      let far_bound = x < room;
       if far_bound {
       } else {
         return 0_u8;

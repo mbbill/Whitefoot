@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
   let v = 3_i32;
   region 'r {
     let b = &'r v;
-    takes_one<'r, 'r>(x: b);
+    takes_one::<'r, 'r>(x: b);
   }
   return exit_status(code: 0_u8);
 }

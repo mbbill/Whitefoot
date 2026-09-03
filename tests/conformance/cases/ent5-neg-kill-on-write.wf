@@ -2,7 +2,7 @@ fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
   doc "A fact dies at a `set` commit whose resolved target overlaps the resolved place of any support member [ENT-5](a). The checked branch bounds `offset`, the later commit kills that old bound, and S5 establishes only `offset = start`; because `start` is unbounded, the subscript remains undischarged [OP-4].";
   let room = len(b);
   let offset = 0_u64;
-  let inside = ilt(offset, room);
+  let inside = offset < room;
   if inside {
   } else {
     return 0_u8;

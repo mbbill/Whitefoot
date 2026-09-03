@@ -64,7 +64,7 @@ fn assert_prf1_issue_named(
         match expected_node {
             ExpectedProofIssueNode::Invariant => {
                 assert!(
-                    cited.starts_with(&format!("invariant {expected_name}: ile(")),
+                    cited.starts_with(&format!("invariant {expected_name}: ")),
                     "PRF-1 cited {cited:?} instead of the complete invariant statement"
                 );
                 assert!(cited.ends_with('}'));
@@ -96,10 +96,10 @@ fn assert_prf1_issue_named(
 fn an_automatic_pair_invariant_discharges_op2_after_a_middle_write() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {{
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+  requires x <= middle;
+  requires middle <= 254_u8;
 }} {{
-  invariant upper_bound: ile(x, 254_u8);
+  invariant upper_bound: x <= 254_u8;
   set middle = replacement;
   let result = x + 1_u8;
   return result;
@@ -131,9 +131,9 @@ fn an_automatic_pair_invariant_discharges_op2_after_a_middle_write() {
 fn an_explicit_three_premise_invariant_survives_source_writes() {
     let source = format!(
         r#"fn preserve(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
   let left = a;
   let left_limit = a_limit;
@@ -141,10 +141,10 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
   let middle_limit = b_limit;
   let right = c;
   let right_limit = c_limit;
-  invariant total: ile(left + middle + right, left_limit + middle_limit + right_limit) {{
-    use ile(left, left_limit);
-    use ile(middle, middle_limit);
-    use ile(right, right_limit);
+  invariant total: left + middle + right <= left_limit + middle_limit + right_limit {{
+    use left <= left_limit;
+    use middle <= middle_limit;
+    use right <= right_limit;
   }}
   set a = replacement;
   set a_limit = replacement;
@@ -152,12 +152,12 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
   set b_limit = replacement;
   set c = replacement;
   set c_limit = replacement;
-  invariant retained_scaled: ile(3_u64 * left + 3_u64 * middle + 3_u64 * right, 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit) {{
+  invariant retained_scaled: 3_u64 * left + 3_u64 * middle + 3_u64 * right <= 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit {{
     use 3 * total;
   }}
   for (
     seed in 0_u64..0_u64,
-    invariant retained: ile(3_u64 * left + 3_u64 * middle + 3_u64 * right, 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit)
+    invariant retained: 3_u64 * left + 3_u64 * middle + 3_u64 * right <= 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit
   ) {{
   }}
   return unit;
@@ -204,11 +204,11 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
 fn the_first_unproved_use_is_reported_in_source_order() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
-  requires ile(middle, 254_u8);
+  requires middle <= 254_u8;
 }} {{
-  invariant upper_bound: ile(x, 254_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant upper_bound: x <= 254_u8 {{
+    use x <= middle;
+    use middle <= 254_u8;
   }}
   return x;
 }}
@@ -219,7 +219,7 @@ fn the_first_unproved_use_is_reported_in_source_order() {
         source.as_bytes(),
         SourceProofObligation::Premise(0),
         ExpectedProofIssueNode::Use {
-            source: "use ile(x, middle);",
+            source: "use x <= middle;",
             occurrence: 0,
         },
     );
@@ -229,11 +229,11 @@ fn the_first_unproved_use_is_reported_in_source_order() {
 fn the_second_unproved_use_is_reported_in_source_order() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
-  requires ile(x, middle);
+  requires x <= middle;
 }} {{
-  invariant upper_bound: ile(x, 254_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant upper_bound: x <= 254_u8 {{
+    use x <= middle;
+    use middle <= 254_u8;
   }}
   return x;
 }}
@@ -244,7 +244,7 @@ fn the_second_unproved_use_is_reported_in_source_order() {
         source.as_bytes(),
         SourceProofObligation::Premise(1),
         ExpectedProofIssueNode::Use {
-            source: "use ile(middle, 254_u8);",
+            source: "use middle <= 254_u8;",
             occurrence: 0,
         },
     );
@@ -254,12 +254,12 @@ fn the_second_unproved_use_is_reported_in_source_order() {
 fn proved_premises_cannot_strengthen_their_written_sum() {
     let source = format!(
         r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+  requires x <= middle;
+  requires middle <= 254_u8;
 }} {{
-  invariant upper_bound: ile(x, 253_u8) {{
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant upper_bound: x <= 253_u8 {{
+    use x <= middle;
+    use middle <= 254_u8;
   }}
   return x;
 }}
@@ -277,14 +277,14 @@ fn proved_premises_cannot_strengthen_their_written_sum() {
 fn proved_premises_may_weaken_their_written_sum_deterministically() {
     let source = format!(
         r#"fn retain(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  invariant upper_bound: ile(a + b + c, a_limit + b_limit + c_limit + 1_u64) {{
-    use ile(a, a_limit);
-    use ile(b, b_limit);
-    use ile(c, c_limit);
+  invariant upper_bound: a + b + c <= a_limit + b_limit + c_limit + 1_u64 {{
+    use a <= a_limit;
+    use b <= b_limit;
+    use c <= c_limit;
   }}
   return unit;
 }}
@@ -318,37 +318,37 @@ fn proved_premises_may_weaken_their_written_sum_deterministically() {
 fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
     let source = format!(
         r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
   return unit;
 }}
 
 fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own u32 pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  let left = cvt<u8, u32>(a);
-  let left_limit = cvt<u8, u32>(a_limit);
-  let middle = cvt<u8, u32>(b);
-  let middle_limit = cvt<u8, u32>(b_limit);
-  let right = cvt<u8, u32>(c);
-  let right_limit = cvt<u8, u32>(c_limit);
+  let left = cvt::<u8, u32>(a);
+  let left_limit = cvt::<u8, u32>(a_limit);
+  let middle = cvt::<u8, u32>(b);
+  let middle_limit = cvt::<u8, u32>(b_limit);
+  let right = cvt::<u8, u32>(c);
+  let right_limit = cvt::<u8, u32>(c_limit);
   let first_sum = left + middle;
   let total = first_sum + right;
   let first_limit_sum = left_limit + middle_limit;
   let total_limit = first_limit_sum + right_limit;
   if flag {{
-    invariant expression_form: ile(left + middle + right, left_limit + middle_limit + right_limit) {{
-      use ile(left, left_limit);
-      use ile(middle, middle_limit);
-      use ile(right, right_limit);
+    invariant expression_form: left + middle + right <= left_limit + middle_limit + right_limit {{
+      use left <= left_limit;
+      use middle <= middle_limit;
+      use right <= right_limit;
     }}
   }} else {{
-    invariant binder_form: ile(total, total_limit) {{
-      use ile(left, left_limit);
-      use ile(middle, middle_limit);
-      use ile(right, right_limit);
+    invariant binder_form: total <= total_limit {{
+      use left <= left_limit;
+      use middle <= middle_limit;
+      use right <= right_limit;
     }}
   }}
   need(value: total, limit: total_limit);
@@ -402,30 +402,30 @@ fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u
 fn a_common_source_proof_reference_is_reused_across_a_branch_join() {
     let source = format!(
         r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
   return unit;
 }}
 
 fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own u32 pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  let left = cvt<u8, u32>(a);
-  let left_limit = cvt<u8, u32>(a_limit);
-  let middle = cvt<u8, u32>(b);
-  let middle_limit = cvt<u8, u32>(b_limit);
-  let right = cvt<u8, u32>(c);
-  let right_limit = cvt<u8, u32>(c_limit);
+  let left = cvt::<u8, u32>(a);
+  let left_limit = cvt::<u8, u32>(a_limit);
+  let middle = cvt::<u8, u32>(b);
+  let middle_limit = cvt::<u8, u32>(b_limit);
+  let right = cvt::<u8, u32>(c);
+  let right_limit = cvt::<u8, u32>(c_limit);
   let first_sum = left + middle;
   let total = first_sum + right;
   let first_limit_sum = left_limit + middle_limit;
   let total_limit = first_limit_sum + right_limit;
-  invariant common_bound: ile(total, total_limit) {{
-    use ile(left, left_limit);
-    use ile(middle, middle_limit);
-    use ile(right, right_limit);
+  invariant common_bound: total <= total_limit {{
+    use left <= left_limit;
+    use middle <= middle_limit;
+    use right <= right_limit;
   }}
   if flag {{
     let marker = 0_u32;
@@ -465,33 +465,33 @@ fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u
 fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
     let source = format!(
         r#"fn combine(flag: own Bool, a: own u8, b: own u8, c: own u8, x: own u8, p: own u8, q: own u8) -> result: own u8 pure {{
-  let a_wide = cvt<u8, u16>(a);
-  let b_wide = cvt<u8, u16>(b);
-  let c_wide = cvt<u8, u16>(c);
-  let x_wide = cvt<u8, u16>(x);
-  let p_wide = cvt<u8, u16>(p);
-  let q_wide = cvt<u8, u16>(q);
+  let a_wide = cvt::<u8, u16>(a);
+  let b_wide = cvt::<u8, u16>(b);
+  let c_wide = cvt::<u8, u16>(c);
+  let x_wide = cvt::<u8, u16>(x);
+  let p_wide = cvt::<u8, u16>(p);
+  let q_wide = cvt::<u8, u16>(q);
   let first_link = a_wide + x_wide;
   let second_link = b_wide + p_wide;
   let third_link = c_wide + q_wide;
   let ceiling_link = 255_u16 + x_wide;
-  let first_holds = ile(first_link, p_wide);
+  let first_holds = first_link <= p_wide;
   if first_holds {{
-    let second_holds = ile(second_link, q_wide);
+    let second_holds = second_link <= q_wide;
     if second_holds {{
-      let third_holds = ile(third_link, ceiling_link);
+      let third_holds = third_link <= ceiling_link;
       if third_holds {{
         if flag {{
-          invariant exact: ile(a_wide + b_wide + c_wide, 255_u16) {{
-            use ile(a_wide + x_wide, p_wide);
-            use ile(b_wide + p_wide, q_wide);
-            use ile(c_wide + q_wide, 255_u16 + x_wide);
+          invariant exact: a_wide + b_wide + c_wide <= 255_u16 {{
+            use a_wide + x_wide <= p_wide;
+            use b_wide + p_wide <= q_wide;
+            use c_wide + q_wide <= 255_u16 + x_wide;
           }}
         }} else {{
-          invariant weaker: ile(a_wide + b_wide + c_wide, 256_u16) {{
-            use ile(a_wide + x_wide, p_wide);
-            use ile(b_wide + p_wide, q_wide);
-            use ile(c_wide + q_wide, 255_u16 + x_wide);
+          invariant weaker: a_wide + b_wide + c_wide <= 256_u16 {{
+            use a_wide + x_wide <= p_wide;
+            use b_wide + p_wide <= q_wide;
+            use c_wide + q_wide <= 255_u16 + x_wide;
           }}
         }}
         let first = a + b;
@@ -530,22 +530,22 @@ fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
 fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
     let source = format!(
         r#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
+  requires first <= first_limit;
+  requires second <= second_limit;
 }} {{
   for (
     weak_seed in 0_u64..0_u64,
-    invariant weaker_first: ile(first + second, first_limit + second_limit + 1_u64)
+    invariant weaker_first: first + second <= first_limit + second_limit + 1_u64
   ) {{
   }}
   for (
     first_seed in 0_u64..0_u64,
-    invariant first_part: ile(first, first_limit)
+    invariant first_part: first <= first_limit
   ) {{
   }}
   for (
     second_seed in 0_u64..0_u64,
-    invariant second_part: ile(second, second_limit)
+    invariant second_part: second <= second_limit
   ) {{
   }}
   let left = first * 1_u64;
@@ -558,7 +558,7 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
   set second_limit = replacement;
   for (
     check_seed in 0_u64..0_u64,
-    invariant combined: ile(left + right, left_limit + right_limit)
+    invariant combined: left + right <= left_limit + right_limit
   ) {{
   }}
   return unit;
@@ -569,7 +569,7 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
 
     // The old two-use certificate is retained as negative evidence: AUTO now
     // owns this exact pair, so spelling the same selection is a PRF-1 error.
-    const REDUNDANT: &str = "  invariant exact_parts: ile(left + right, left_limit + right_limit) {\n    use ile(left, left_limit);\n    use ile(right, right_limit);\n  }\n";
+    const REDUNDANT: &str = "  invariant exact_parts: left + right <= left_limit + right_limit {\n    use left <= left_limit;\n    use right <= right_limit;\n  }\n";
     let with_redundant = source.replacen(
         "  for (\n    check_seed",
         &format!("{REDUNDANT}  for (\n    check_seed"),
@@ -611,29 +611,29 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
 fn one_source_proof_fact_discharges_multiple_bounds_and_a_call_requirement() {
     let source = format!(
         r#"fn need(index: own u8) -> result: own unit pure contract {{
-  requires ile(index, 254_u8);
+  requires index <= 254_u8;
 }} {{
   return unit;
 }}
 
 fn read(values: own array<u8, 255>, first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {{
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
-  requires ile(first_limit, 80_u8);
-  requires ile(second_limit, 80_u8);
-  requires ile(third_limit, 93_u8);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 93_u8;
 }} {{
-  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {{
-    use ile(first, first_limit);
-    use ile(second, second_limit);
-    use ile(third, third_limit);
+  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
+    use first <= first_limit;
+    use second <= second_limit;
+    use third <= third_limit;
   }}
-  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
-  invariant in_range: ile(first + second + third, 254_u8);
+  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
+  invariant in_range: first + second + third <= 254_u8;
   let first_two = first + second;
   let index = first_two + third;
-  let array_index = cvt<u8, u64>(index);
+  let array_index = cvt::<u8, u64>(index);
   let loaded_first = values[array_index];
   let loaded_second = values[array_index];
   need(index: index);
@@ -657,21 +657,21 @@ fn read(values: own array<u8, 255>, first: own u8, first_limit: own u8, second: 
 fn a_source_proof_fact_discharges_the_selected_return_postcondition() {
     let source = format!(
         r#"fn bounded(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {{
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
-  requires ile(first_limit, 80_u8);
-  requires ile(second_limit, 80_u8);
-  requires ile(third_limit, 93_u8);
-  ensures ile(result, 254_u8);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 93_u8;
+  ensures result <= 254_u8;
 }} {{
-  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {{
-    use ile(first, first_limit);
-    use ile(second, second_limit);
-    use ile(third, third_limit);
+  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
+    use first <= first_limit;
+    use second <= second_limit;
+    use third <= third_limit;
   }}
-  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
-  invariant total_bound: ile(first + second + third, 254_u8);
+  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
+  invariant total_bound: first + second + third <= 254_u8;
   let first_two = first + second;
   let result = first_two + third;
   return result;
@@ -691,20 +691,20 @@ fn a_source_proof_fact_discharges_the_selected_return_postcondition() {
 fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
     let source = format!(
         r#"fn increment(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, replacement: own u8) -> result: own u8 pure contract {{
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
-  requires ile(first_limit, 80_u8);
-  requires ile(second_limit, 80_u8);
-  requires ile(third_limit, 93_u8);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 93_u8;
 }} {{
-  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {{
-    use ile(first, first_limit);
-    use ile(second, second_limit);
-    use ile(third, third_limit);
+  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
+    use first <= first_limit;
+    use second <= second_limit;
+    use third <= third_limit;
   }}
-  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
-  invariant total_bound: ile(first + second + third, 254_u8);
+  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
+  invariant total_bound: first + second + third <= 254_u8;
   set first = replacement;
   let result = first + second;
   return result;
@@ -757,19 +757,19 @@ fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
 fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
     let source = format!(
         r#"fn preserve_zero(x: own u64) -> result: own unit pure contract {{
-  requires ile(x, 0_u64);
+  requires x <= 0_u64;
 }} {{
   for (
     seed in 0_u64..0_u64,
-    invariant large_nonpositive: ile(9223372036854775808_u64 *(18446744073709551615_u64 * x), 0_u8)
+    invariant large_nonpositive: 9223372036854775808_u64 *(18446744073709551615_u64 * x) <= 0_u8
   ) {{
   }}
   let left = x;
   for (
     i in 0_u64..1_u64,
-    invariant scaled_order: ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x)
+    invariant scaled_order: 18446744073709551615_u64 * left <= 18446744073709551615_u64 * x
   ) {{
-    invariant carried_order: ile(18446744073709551615_u64 * left, 18446744073709551615_u64 * x);
+    invariant carried_order: 18446744073709551615_u64 * left <= 18446744073709551615_u64 * x;
     set left = x;
     break;
   }}
@@ -801,14 +801,14 @@ fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
 fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
     let source = format!(
         r#"fn combine(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  invariant total: ile(a + b + c, a_limit + b_limit + c_limit) {{
-    use ile(a, a_limit);
-    use ile(b, b_limit);
-    use ile(c, c_limit);
+  invariant total: a + b + c <= a_limit + b_limit + c_limit {{
+    use a <= a_limit;
+    use b <= b_limit;
+    use c <= c_limit;
   }}
   return unit;
 }}
@@ -843,15 +843,15 @@ fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() 
     let source = format!(
         r#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
   define room = len(deref(table));
-  requires ilt(lo, hi);
-  requires ile(hi, room);
+  requires lo < hi;
+  requires hi <= room;
 }} {{
   let span = hi - lo;
   let half = span / 2_u64;
   let mid = lo + half;
-  invariant inside: ilt(mid, hi) {{
-    use ilt(lo, hi);
-    use ile(2_u64 * half, span);
+  invariant inside: mid < hi {{
+    use lo < hi;
+    use 2_u64 * half <= span;
   }}
   let byte = deref(table)[mid];
   return byte;
@@ -894,15 +894,15 @@ fn a_signed_certificate_floors_its_halved_bound_toward_negative_infinity() {
     let source = |slack: &str| {
         format!(
             r#"fn ordered(a: own i32, b: own i32, c: own i32, d: own i32, e: own i32, f: own i32) -> result: own unit pure contract {{
-  requires ilt(a, b);
-  requires ilt(c, d);
-  requires ilt(e, f);
+  requires a < b;
+  requires c < d;
+  requires e < f;
 }} {{
-  invariant doubled: ile(2_i32 * a + 1_i32, 2_i32 * b);
-  invariant total: ile(a + c + e + {slack}_i32, b + d + f) {{
+  invariant doubled: 2_i32 * a + 1_i32 <= 2_i32 * b;
+  invariant total: a + c + e + {slack}_i32 <= b + d + f {{
     use doubled;
-    use 2 * ilt(c, d);
-    use 2 * ilt(e, f);
+    use 2 * (c < d);
+    use 2 * (e < f);
   }}
   return unit;
 }}
@@ -943,10 +943,10 @@ fn a_signed_certificate_floors_its_halved_bound_toward_negative_infinity() {
 fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
     let source = format!(
         r#"fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
-  invariant upper_bound: ile(value, limit) {{
-    use ile(value, limit);
+  invariant upper_bound: value <= limit {{
+    use value <= limit;
   }}
   return unit;
 }}
@@ -964,12 +964,12 @@ fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
 fn repeated_normalized_uses_require_one_explicit_multiplier() {
     let source = format!(
         r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
-  invariant upper_bound: ile(3_u64 * value, 3_u64 * limit) {{
-    use ile(value, limit);
-    use ile(value, limit);
-    use ile(value, limit);
+  invariant upper_bound: 3_u64 * value <= 3_u64 * limit {{
+    use value <= limit;
+    use value <= limit;
+    use value <= limit;
   }}
   return unit;
 }}
@@ -983,7 +983,7 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
             repeated: 1,
         },
         ExpectedProofIssueNode::Use {
-            source: "use ile(value, limit);",
+            source: "use value <= limit;",
             occurrence: 1,
         },
     );
@@ -991,10 +991,10 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
 
 #[test]
 fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
-    let written_use = "    use ile(value, limit);\n";
+    let written_use = "    use value <= limit;\n";
     let uses = written_use.repeat(MAX_CERTIFICATE_PREMISES + 1);
     let source = format!(
-        "fn combine(value: own u64, limit: own u64, other: own u64, other_limit: own u64, final_value: own u64, final_limit: own u64) -> result: own unit pure {{\n  invariant upper_bound: ile(value + other + final_value, limit + other_limit + final_limit) {{\n{uses}  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+        "fn combine(value: own u64, limit: own u64, other: own u64, other_limit: own u64, final_value: own u64, final_limit: own u64) -> result: own unit pure {{\n  invariant upper_bound: value + other + final_value <= limit + other_limit + final_limit {{\n{uses}  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
     );
     let maximum = u32::try_from(MAX_CERTIFICATE_PREMISES).expect("capacity fits u32");
     assert_prf1_issue(
@@ -1030,19 +1030,19 @@ fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
 fn explicit_factors_apply_to_relation_and_named_uses() {
     let source = format!(
         r#"fn relation_scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
-  invariant scaled: ile(4_u64 * value, 4_u64 * limit) {{
-    use 4 * ile(value, limit);
+  invariant scaled: 4_u64 * value <= 4_u64 * limit {{
+    use 4 * (value <= limit);
   }}
   return unit;
 }}
 
 fn named_scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
-  invariant unit_bound: ile(value, limit);
-  invariant scaled: ile(4_u64 * value, 4_u64 * limit) {{
+  invariant unit_bound: value <= limit;
+  invariant scaled: 4_u64 * value <= 4_u64 * limit {{
     use 4 * unit_bound;
   }}
   return unit;
@@ -1077,11 +1077,11 @@ fn named_scale(value: own u64, limit: own u64) -> result: own unit pure contract
 fn a_named_use_keeps_the_published_value_image_across_set() {
     let source = format!(
         r#"fn update(value: own u64, replacement: own u64, limit: own u64) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
-  invariant before: ile(value, limit);
+  invariant before: value <= limit;
   set value = replacement;
-  invariant after: ile(4_u64 * value, 4_u64 * limit) {{
+  invariant after: 4_u64 * value <= 4_u64 * limit {{
     use 4 * before;
   }}
   return unit;
@@ -1109,15 +1109,15 @@ fn a_named_use_keeps_the_published_value_image_across_set() {
 fn all_ordered_invariant_roots_normalize_to_their_written_direction() {
     let source = format!(
         r#"fn ordered(a: own i32, b: own i32, c: own i32, d: own i32, e: own i32, f: own i32, g: own i32, h: own i32) -> result: own unit pure contract {{
-  requires ile(a, b);
-  requires ilt(c, d);
-  requires ige(e, f);
-  requires igt(g, h);
+  requires a <= b;
+  requires c < d;
+  requires e >= f;
+  requires g > h;
 }} {{
-  invariant le: ile(a, b);
-  invariant lt: ilt(c, d);
-  invariant ge: ige(e, f);
-  invariant gt: igt(g, h);
+  invariant le: a <= b;
+  invariant lt: c < d;
+  invariant ge: e >= f;
+  invariant gt: g > h;
   return unit;
 }}
 
@@ -1148,10 +1148,10 @@ fn all_ordered_invariant_roots_normalize_to_their_written_direction() {
 fn an_explicit_factor_one_is_not_canonical_source() {
     let source = format!(
         r#"fn scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
-  invariant scaled: ile(4_u64 * value, 4_u64 * limit) {{
-    use 1 * ile(value, limit);
+  invariant scaled: 4_u64 * value <= 4_u64 * limit {{
+    use 1 * (value <= limit);
   }}
   return unit;
 }}
@@ -1177,7 +1177,7 @@ fn an_explicit_factor_one_is_not_canonical_source() {
 fn a_composite_requirement_uses_affine_invariant_leaves() {
     let source = format!(
         r#"fn need(value: own u32, limit: own u32, enabled: own Bool) -> result: own unit pure contract {{
-  define ordered = ile(value, limit);
+  define ordered = value <= limit;
   define accepted = band(ordered, enabled);
   requires accepted;
 }} {{
@@ -1186,24 +1186,24 @@ fn a_composite_requirement_uses_affine_invariant_leaves() {
 
 fn caller(enabled: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own unit pure contract {{
   requires enabled;
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  let left = cvt<u8, u32>(a);
-  let left_limit = cvt<u8, u32>(a_limit);
-  let middle = cvt<u8, u32>(b);
-  let middle_limit = cvt<u8, u32>(b_limit);
-  let right = cvt<u8, u32>(c);
-  let right_limit = cvt<u8, u32>(c_limit);
+  let left = cvt::<u8, u32>(a);
+  let left_limit = cvt::<u8, u32>(a_limit);
+  let middle = cvt::<u8, u32>(b);
+  let middle_limit = cvt::<u8, u32>(b_limit);
+  let right = cvt::<u8, u32>(c);
+  let right_limit = cvt::<u8, u32>(c_limit);
   let first_sum = left + middle;
   let value = first_sum + right;
   let first_limit_sum = left_limit + middle_limit;
   let limit = first_limit_sum + right_limit;
-  invariant total: ile(value, limit) {{
-    use ile(left, left_limit);
-    use ile(middle, middle_limit);
-    use ile(right, right_limit);
+  invariant total: value <= limit {{
+    use left <= left_limit;
+    use middle <= middle_limit;
+    use right <= right_limit;
   }}
   let called = need(value: value, limit: limit, enabled: enabled);
   return unit;
@@ -1249,33 +1249,33 @@ fn caller(enabled: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own
 fn a_contradictory_predecessor_is_neutral_to_an_affine_join() {
     let source = format!(
         r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
-  requires ile(value, limit);
+  requires value <= limit;
 }} {{
   return unit;
 }}
 
 fn retain(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own unit pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  let left = cvt<u8, u32>(a);
-  let left_limit = cvt<u8, u32>(a_limit);
-  let middle = cvt<u8, u32>(b);
-  let middle_limit = cvt<u8, u32>(b_limit);
-  let right = cvt<u8, u32>(c);
-  let right_limit = cvt<u8, u32>(c_limit);
+  let left = cvt::<u8, u32>(a);
+  let left_limit = cvt::<u8, u32>(a_limit);
+  let middle = cvt::<u8, u32>(b);
+  let middle_limit = cvt::<u8, u32>(b_limit);
+  let right = cvt::<u8, u32>(c);
+  let right_limit = cvt::<u8, u32>(c_limit);
   let first_sum = left + middle;
   let value = first_sum + right;
   let first_limit_sum = left_limit + middle_limit;
   let limit = first_limit_sum + right_limit;
-  if ilt(a, a) {{
+  if a < a {{
     set value = 0_u32;
   }} else {{
-    invariant total: ile(value, limit) {{
-      use ile(left, left_limit);
-      use ile(middle, middle_limit);
-      use ile(right, right_limit);
+    invariant total: value <= limit {{
+      use left <= left_limit;
+      use middle <= middle_limit;
+      use right <= right_limit;
     }}
   }}
   need(value: value, limit: limit);
@@ -1308,10 +1308,10 @@ fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
     let source = format!(
         r#"fn named_source(value: own u64, limit: own u64) -> result: own unit pure {{
   loop (
-    invariant header_bound: ile(value, limit)
+    invariant header_bound: value <= limit
   ) {{
-    if ile(value, limit) {{
-      invariant scaled_named: ile(3_u64 * value, 3_u64 * limit) {{
+    if value <= limit {{
+      invariant scaled_named: 3_u64 * value <= 3_u64 * limit {{
         use 3 * header_bound;
       }}
     }}
@@ -1321,9 +1321,9 @@ fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
 }}
 
 fn relation_source(value: own u64, limit: own u64) -> result: own unit pure {{
-  if ile(value, limit) {{
-    invariant scaled_relation: ile(3_u64 * value, 3_u64 * limit) {{
-      use 3 * ile(value, limit);
+  if value <= limit {{
+    invariant scaled_relation: 3_u64 * value <= 3_u64 * limit {{
+      use 3 * (value <= limit);
     }}
   }}
   return unit;
@@ -1379,9 +1379,9 @@ fn repeated_unpublished_named_uses_retain_the_structural_failure() {
     let source = format!(
         r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure {{
   loop (
-    invariant header_bound: ile(value, limit)
+    invariant header_bound: value <= limit
   ) {{
-    invariant scaled: ile(3_u64 * value, 3_u64 * limit) {{
+    invariant scaled: 3_u64 * value <= 3_u64 * limit {{
       use header_bound;
       use 2 * header_bound;
     }}
@@ -1424,9 +1424,9 @@ fn an_unpublished_named_use_does_not_hide_scaled_sum_overflow() {
     let source = format!(
         r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure {{
   loop (
-    invariant doubled: ile(2_u64 * value, 2_u64 * limit)
+    invariant doubled: 2_u64 * value <= 2_u64 * limit
   ) {{
-    invariant scaled: ile(2_u64 * value, 2_u64 * limit) {{
+    invariant scaled: 2_u64 * value <= 2_u64 * limit {{
       use 170141183460469231731687303715884105727 * doubled;
     }}
     break;
@@ -1464,14 +1464,14 @@ fn an_unpublished_named_use_does_not_hide_scaled_sum_overflow() {
 fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
     let source = format!(
         r#"fn combine(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
-  requires ile(a, a_limit);
-  requires ile(b, b_limit);
-  requires ile(c, c_limit);
+  requires a <= a_limit;
+  requires b <= b_limit;
+  requires c <= c_limit;
 }} {{
-  invariant upper_bound: ile(a + b + c, a_limit + b_limit + c_limit) {{
-    use ile(a, a_limit);
-    use 170141183460469231731687303715884105727 * ile(2_u64 * b, 2_u64 * b_limit);
-    use ile(c, c_limit);
+  invariant upper_bound: a + b + c <= a_limit + b_limit + c_limit {{
+    use a <= a_limit;
+    use 170141183460469231731687303715884105727 * (2_u64 * b <= 2_u64 * b_limit);
+    use c <= c_limit;
   }}
   return unit;
 }}
@@ -1482,7 +1482,7 @@ fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
         source.as_bytes(),
         SourceProofObligation::CertificateArithmeticOverflow,
         ExpectedProofIssueNode::Use {
-            source: "use 170141183460469231731687303715884105727 * ile(2_u64 * b, 2_u64 * b_limit);",
+            source: "use 170141183460469231731687303715884105727 * (2_u64 * b <= 2_u64 * b_limit);",
             occurrence: 0,
         },
     );
@@ -1513,12 +1513,12 @@ fn an_unpublished_named_use_does_not_stop_later_duplicate_detection() {
     let source = format!(
         r#"fn combine(value: own u64, limit: own u64, part: own u64, part_limit: own u64) -> result: own unit pure {{
   loop (
-    invariant header_bound: ile(value, limit)
+    invariant header_bound: value <= limit
   ) {{
-    invariant combined: ile(value + 2_u64 * part, limit + 2_u64 * part_limit) {{
+    invariant combined: value + 2_u64 * part <= limit + 2_u64 * part_limit {{
       use header_bound;
-      use ile(part, part_limit);
-      use ile(part, part_limit);
+      use part <= part_limit;
+      use part <= part_limit;
     }}
     break;
   }}
@@ -1558,11 +1558,11 @@ fn an_unpublished_named_use_does_not_stop_later_duplicate_detection() {
 fn current_value_image_overflow_precedes_redundant_block_detection() {
     let source = format!(
         r#"fn expand(value: own u64) -> result: own unit pure contract {{
-  requires ile(value, 0_u64);
+  requires value <= 0_u64;
 }} {{
   let scaled = 18446744073709551615_u64 * value;
-  invariant unchanged: ile(scaled, scaled) {{
-    use ile(18446744073709551615_u64 * scaled, 0_u64);
+  invariant unchanged: scaled <= scaled {{
+    use 18446744073709551615_u64 * scaled <= 0_u64;
   }}
   return unit;
 }}
@@ -1574,7 +1574,7 @@ fn current_value_image_overflow_precedes_redundant_block_detection() {
         SourceProofObligation::CertificateArithmeticOverflow,
         "unchanged",
         ExpectedProofIssueNode::Use {
-            source: "use ile(18446744073709551615_u64 * scaled, 0_u64);",
+            source: "use 18446744073709551615_u64 * scaled <= 0_u64;",
             occurrence: 0,
         },
     );

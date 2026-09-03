@@ -764,10 +764,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expression: NodeId,
         tail: NodeId,
     ) -> Result<(), CheckStop> {
-        let operator = self
-            .tree
-            .first_child_with(tail, Production::InfixOp)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let operator = self.infix_operator_node(tail)?;
         if self.infix_operation(operator)?.is_exact() {
             return self.invalid_clause(clause, entry);
         }

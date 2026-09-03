@@ -1,6 +1,6 @@
 fn sumto(n: own i32) -> result: own i32 pure {
   doc "Recursion is permitted [FN-6]. The guard discharges the exact decrement domain, while the bounded fixture uses wrapping accumulation because arithmetic behavior is not this case's subject.";
-  if ile(n, 0_i32) {
+  if n <= 0_i32 {
     return 0_i32;
   } else {
     let m = n - 1_i32;
@@ -11,7 +11,7 @@ fn sumto(n: own i32) -> result: own i32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let s = sumto(n: 4_i32);
-  if ieq(s, 10_i32) {
+  if s == 10_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

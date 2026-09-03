@@ -586,7 +586,7 @@ pub(crate) fn normalize_less_equal(
 /// source expressions have been formed in the written direction.
 ///
 /// Ordered-root checking uses this after applying the root's fixed direction:
-/// `ige(a, b)` reaches this function as `b - a <= 0`, while `igt(a, b)`
+/// `a >= b` reaches this function as `b - a <= 0`, while `a > b`
 /// reaches it as `b - a <= -1`. This prevents a discarded forward direction
 /// from deciding formation success at an `i128` boundary.
 pub(crate) fn normalize_bounded_less_equal(

@@ -166,7 +166,7 @@ fn named_constants_remain_lexically_declaration_before_use() {
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
     let source = br#"fn probe() -> result: own unit pure {
-  let values = array_new<i32, 4>(0_i32);
+  let values = array_new::<i32, 4>(0_i32);
   return unit;
 }
 "#;
@@ -260,9 +260,9 @@ fn contract_structural_admission_selects_the_earliest_source() {
 #[test]
 fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_scope() {
     let source = br#"fn relation(value: own i32) -> result: own i32 pure contract {
-  define reflexive = ieq(value, value);
+  define reflexive = value == value;
   requires reflexive;
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
@@ -317,7 +317,7 @@ fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_sc
 fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles() {
     for field in ["value", "alternate"] {
         let source = format!(
-            "fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): ieq(result, value);\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
+            "fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): result == value;\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
         );
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -361,14 +361,14 @@ fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles
 
 #[test]
 fn selector_candidates_use_their_exact_form3_reservation_roles() {
-    let plain = br#"fn plain(value: own i32) -> ilt: own i32 pure contract {
-  ensures ieq(ilt, value);
+    let plain = br#"fn plain(value: own i32) -> cvt: own i32 pure contract {
+  ensures cvt == value;
 } {
   return value;
 }
 "#;
     let variant = br#"fn variant(value: own i32) -> result: own Result<i32, i32> pure contract {
-  ensures when Ok(value: ilt): ieq(ilt, value);
+  ensures when Ok(value: cvt): cvt == value;
 } {
   return Ok<i32, i32>(value: value);
 }
@@ -396,9 +396,9 @@ fn selector_candidates_use_their_exact_form3_reservation_roles() {
                 ResolutionIssueKind::ReservedName {
                     spelling,
                     declaration_role,
-                    inventory_ordinal: 24,
+                    inventory_ordinal: 44,
                     ..
-                } if spelling == "ilt" && *declaration_role == expected_role
+                } if spelling == "cvt" && *declaration_role == expected_role
             ));
         });
     }
@@ -407,7 +407,7 @@ fn selector_candidates_use_their_exact_form3_reservation_roles() {
 #[test]
 fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_retained() {
     let unresolved = br#"fn unresolved() -> result: own unit pure contract {
-  ensures ieq(result, missing);
+  ensures result == missing;
 } {
   return unit;
 }
@@ -434,7 +434,7 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
     });
 
     let inventory_conflict = br#"fn conflict(result: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, result);
+  ensures result == result;
 } {
   return result;
 }
@@ -452,8 +452,9 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
             .expect("plain selector candidate");
         assert_eq!(candidate.live_conflicts.len(), 1);
         assert!(candidate.later_local_collision.is_none());
-        assert_eq!(postcondition.provisional_uses.len(), 1);
-        assert_eq!(postcondition.provisional_uses[0].spelling(), "ieq");
+        // The comparison is an operator token since v0.41 and produces no
+        // lexical use; only the two `result` operands remain as selector uses.
+        assert_eq!(postcondition.provisional_uses.len(), 0);
         assert_eq!(postcondition.selector_uses.len(), 2);
         assert!(postcondition.entry_resolution_issue.is_none());
         assert!(postcondition.entry_inventory_issue.is_none());
@@ -463,8 +464,8 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
 #[test]
 fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
     let source = br#"fn poisoned(value: own i32) -> result: own i32 pure contract {
-  define ilt = ieq(value, value);
-  ensures ieq(result, value);
+  define cvt = value == value;
+  ensures result == value;
 } {
   return value;
 }
@@ -480,7 +481,7 @@ fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::Let,
                 ..
-            } if spelling == "ilt"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -489,7 +490,7 @@ fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
 fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory() {
     let source =
         br#"fn unresolved(value: own i32) -> result: own Result<i32, Overflow> pure contract {
-  ensures when Missing(value: result): ieq(result, value);
+  ensures when Missing(value: result): result == value;
 } {
   return Ok<i32, Overflow>(value: value);
 }
@@ -516,8 +517,8 @@ fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory()
 fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
     let requires_into_ensures = br#"fn isolated(value: own i32) -> result: own i32 pure contract {
   define pre = value;
-  requires ieq(pre, value);
-  ensures ieq(result, pre);
+  requires pre == value;
+  ensures result == pre;
 } {
   return value;
 }
@@ -530,7 +531,7 @@ fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
 
     let ensures_into_body = br#"fn isolated(value: own i32) -> result: own i32 pure contract {
   define post = value;
-  ensures ieq(result, post);
+  ensures result == post;
 } {
   return post;
 }
@@ -558,7 +559,7 @@ fn probe() -> result: own unit pure {
 }
 "#;
     let postcondition = br#"fn value<const n: u64>() -> result: own u64 pure contract {
-  ensures ieq(result, result);
+  ensures result == result;
 } {
   return n;
 }
@@ -649,7 +650,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
     // inventory and resolves with the complete system domain. The command
     // entry itself carries no contract [FN-7].
     let admitted = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
-  requires ieq(value, value);
+  requires value == value;
 } {
   return value;
 }
@@ -1042,7 +1043,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
 fn requires_locals_do_not_escape_into_the_function_body() {
     let source = br#"fn guarded() -> result: own unit pure contract {
   define condition = 1_i32;
-  requires ieq(condition, condition);
+  requires condition == condition;
 } {
   return condition;
 }
@@ -1080,7 +1081,7 @@ const value: i32 = 1_i32;
 
 #[test]
 fn dotless_operation_names_are_reserved_from_source_declarations() {
-    with_one_resolution(b"fn ilt() -> result: own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn cvt() -> result: own unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("operation name declaration must reject: {outcome:?}");
         };
@@ -1089,32 +1090,27 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
             issue.kind(),
             ResolutionIssueKind::ReservedName {
                 spelling,
-                inventory_ordinal: 24,
+                inventory_ordinal: 44,
                 ..
-            } if spelling == "ilt"
+            } if spelling == "cvt"
         ));
     });
 }
 
-/// OP-1 (iii): reservation is derived from the op column, so every one of the
-/// six comparisons is reserved again after the owner cancelled their infix
-/// spellings. The test above pins `ilt`, which never moved; this one pins the
-/// four that did, because they were declarable for exactly one revision and a
-/// program written against it must stop compiling.
+/// OP-1: reservation is derived from the op column, so the six retired
+/// comparison names left `DotlessOperationNames` the moment v0.41 respelled
+/// their rows as operators, and a program may declare them like any other
+/// identifier. The operator spellings themselves are not identifiers and
+/// cannot be declared at all, so nothing is reserved on their behalf.
 #[test]
-fn every_comparison_name_is_reserved_from_source_declarations() {
-    for spelling in ["ieq", "ine", "ile", "ige"] {
+fn every_retired_comparison_name_is_a_free_identifier() {
+    for spelling in ["ieq", "ine", "ilt", "ile", "igt", "ige"] {
         let source = format!("fn {spelling}() -> result: own unit pure {{\n}}\n");
         with_one_resolution(source.as_bytes(), |outcome| {
-            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a comparison name declaration must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), ResolutionRule::Form3);
-            assert!(matches!(
-                issue.kind(),
-                ResolutionIssueKind::ReservedName { spelling: declared, .. }
-                    if declared == spelling
-            ));
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a retired comparison name must be declarable: {outcome:?}"
+            );
         });
     }
 }
@@ -1124,7 +1120,7 @@ fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for (
     index in 0_u64..limit,
-    invariant ile: ile(index, limit)
+    invariant cvt: index <= limit
   ) {
     break;
   }
@@ -1142,7 +1138,7 @@ fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::Invariant,
                 ..
-            } if spelling == "ile"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1150,7 +1146,7 @@ fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
 #[test]
 fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
     let source = br#"fn probe(value: own u64) -> result: own unit pure {
-  invariant ile: ile(value, value);
+  invariant cvt: value <= value;
   return unit;
 }
 "#;
@@ -1165,7 +1161,7 @@ fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::Invariant,
                 ..
-            } if spelling == "ile"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1279,7 +1275,7 @@ fn unlabeled_loops_keep_the_counted_binder_without_creating_label_records() {
   }
   for (
     index in 0_u64..limit,
-    invariant ceiling: ile(index, limit)
+    invariant ceiling: index <= limit
   ) {
     break;
   }
@@ -1326,7 +1322,7 @@ fn invariant_names_declare_facts_and_affine_locals_resolve_as_invariant_values()
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range (
     index in 0_u64..limit,
-    invariant ceiling: ile(index, limit)
+    invariant ceiling: index <= limit
   ) {
     break @range;
   }
@@ -1390,7 +1386,7 @@ fn an_unresolved_affine_local_is_reported_as_an_invariant_value() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range (
     index in 0_u64..limit,
-    invariant ceiling: ile(index, missing)
+    invariant ceiling: index <= missing
   ) {
     break @range;
   }
@@ -1496,13 +1492,13 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for (
     index in 0_u64..limit,
-    invariant ceiling: ile(index, limit)
+    invariant ceiling: index <= limit
   ) {
-    invariant repeated: ile(index, limit) {
+    invariant repeated: index <= limit {
       use ceiling;
-      use ile(index, limit);
+      use index <= limit;
     }
-    invariant chained: ile(index, limit) {
+    invariant chained: index <= limit {
       use repeated;
     }
     break;
@@ -1565,7 +1561,7 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
     });
 
     let self_reference = br#"fn probe(value: own i32) -> result: own unit pure {
-  invariant same: ile(value, value) {
+  invariant same: value <= value {
     use same;
   }
   return unit;
@@ -1590,8 +1586,8 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
 #[test]
 fn an_unresolved_relation_use_value_is_reported_by_prf1() {
     let source = br#"fn probe(value: own u64, limit: own u64) -> result: own unit pure {
-  invariant scaled: ile(3_u64 * value, 3_u64 * limit) {
-    use ile(value, missing);
+  invariant scaled: 3_u64 * value <= 3_u64 * limit {
+    use value <= missing;
   }
   return unit;
 }
@@ -1616,16 +1612,16 @@ fn an_unresolved_relation_use_value_is_reported_by_prf1() {
 fn repeated_header_and_local_invariant_names_are_reported_by_inv1() {
     for source in [
         br#"fn probe(value: own u64) -> result: own unit pure {
-  invariant same: ile(value, value);
-  invariant same: ile(value, value);
+  invariant same: value <= value;
+  invariant same: value <= value;
   return unit;
 }
 "#
         .as_slice(),
         br#"fn probe(value: own u64) -> result: own unit pure {
   loop (
-    invariant same: ile(value, value),
-    invariant same: ile(value, value)
+    invariant same: value <= value,
+    invariant same: value <= value
   ) {
     break;
   }
@@ -1654,10 +1650,10 @@ fn header_invariant_names_are_invisible_after_their_loop() {
         br#"fn probe(limit: own u64) -> result: own unit pure {
   for (
     index in 0_u64..limit,
-    invariant ceiling: ile(index, limit)
+    invariant ceiling: index <= limit
   ) {
   }
-  invariant after: ile(0_u64, limit) {
+  invariant after: 0_u64 <= limit {
     use ceiling;
   }
   return unit;
@@ -1666,11 +1662,11 @@ fn header_invariant_names_are_invisible_after_their_loop() {
         .as_slice(),
         br#"fn probe(value: own u64) -> result: own unit pure {
   loop (
-    invariant stable: ile(value, value)
+    invariant stable: value <= value
   ) {
     break;
   }
-  invariant after: ile(value, value) {
+  invariant after: value <= value {
     use stable;
   }
   return unit;
@@ -1718,7 +1714,7 @@ fn counted_range_label_is_non_enclosing_after_the_loop() {
 #[test]
 fn counted_range_binder_uses_the_for_binder_reservation_role() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (ilt in 0_u64..limit) {
+  for @range (cvt in 0_u64..limit) {
     break @range;
   }
   return unit;
@@ -1735,7 +1731,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::ForBinder,
                 ..
-            } if spelling == "ilt"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1857,14 +1853,13 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
 /// not move these rows to a different name — it took them out of the name
 /// domain entirely, which is a property worth a gate of its own.
 ///
-/// The split is smaller than it was: after the owner cancelled the infix
-/// comparisons only arithmetic crosses this line, so `ieq` joins `imin` on the
-/// named side and is a second control rather than a second subject.
+/// Since v0.41 the integer comparisons cross this line with the arithmetic:
+/// `==` is a second respelled subject, and `imin` is the one named control.
 #[test]
 fn a_respelled_family_produces_no_lexical_use_at_all() {
     let source = br#"fn probe() -> result: own unit pure {
   let sum = 1_i32 +wrap 2_i32;
-  let equal = ieq(sum, 3_i32);
+  let equal = sum == 3_i32;
   let named = imin(sum, 3_i32);
   return unit;
 }
@@ -1880,10 +1875,17 @@ fn a_respelled_family_produces_no_lexical_use_at_all() {
             .map(|usage| usage.spelling())
             .collect();
         operations.sort_unstable();
-        // The two named rows in the same function are the control: they prove
-        // the filter finds operation uses at all, so the infix row being
+        // The named row in the same function is the control: it proves the
+        // filter finds operation uses at all, so the two infix rows being
         // absent is the property and not an empty search.
-        assert_eq!(operations, ["ieq", "imin"]);
+        assert_eq!(operations, ["imin"]);
+        assert!(
+            !resolved
+                .lexical_uses()
+                .iter()
+                .any(|usage| usage.spelling() == "=="),
+            "a respelled comparison must produce no lexical use"
+        );
         assert!(
             !resolved
                 .lexical_uses()
@@ -2003,9 +2005,9 @@ fn probe() -> result: own unit pure {
   set deref(made).items = ordinary;
   region 'r {
     let borrowed = &'r ordinary;
-    let called = user<i32, 'r, one>(arg: borrowed);
+    let called = user::<i32, 'r, one>(arg: borrowed);
     let view = move called;
-    let comparison = ieq(ordinary, two);
+    let comparison = ordinary == two;
   }
   loop @done {
     break @done;
@@ -2413,7 +2415,7 @@ fn semantic_stage_order_precedes_source_position_and_inventory_rank_is_event_loc
   missing();
 }
 
-fn ilt() -> result: own unit pure {
+fn cvt() -> result: own unit pure {
 }
 "#;
     with_one_resolution(later_inventory_error, |outcome| {
@@ -2423,7 +2425,7 @@ fn ilt() -> result: own unit pure {
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
 
-    let later_fn8_error = br#"fn ilt() -> result: own unit pure {
+    let later_fn8_error = br#"fn cvt() -> result: own unit pure {
 }
 
 fn guarded() -> result: own unit pure contract {
@@ -2444,7 +2446,7 @@ fn guarded() -> result: own unit pure contract {
 
 const value: i32 = 1_i32;
 
-fn ilt() -> result: own unit pure {
+fn cvt() -> result: own unit pure {
 }
 "#;
     with_one_resolution(earlier_lower_rank, |outcome| {
@@ -2582,18 +2584,19 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
 
 #[test]
 fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
-    // The callee path now covers the families that keep a name; the twenty-one
-    // operator-spelled rows reach their family by operator token and are
-    // covered by `a_respelled_family_produces_no_lexical_use_at_all`. The two
-    // halves are counted here so that a family silently leaving one for the
-    // other cannot pass unnoticed — which is what the owner's cancellation of
-    // the infix comparisons did, moving four families back across this line.
+    // The callee path now covers the families that keep a name; the
+    // twenty-seven operator-spelled rows — twenty-one arithmetic since v0.23
+    // and the six integer comparisons since v0.41 — reach their family by
+    // operator token and are covered by
+    // `a_respelled_family_produces_no_lexical_use_at_all`. The two halves are
+    // counted here so that a family silently leaving one for the other cannot
+    // pass unnoticed.
     let named: Vec<_> = OPERATION_FAMILIES
         .iter()
         .enumerate()
         .filter(|(_, spelling)| !is_operator_family(spelling))
         .collect();
-    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 21);
+    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 27);
 
     let mut source = String::from("fn probe() -> result: own unit pure {\n");
     for (_, operation) in &named {

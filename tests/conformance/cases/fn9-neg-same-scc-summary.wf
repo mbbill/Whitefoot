@@ -1,19 +1,19 @@
 fn recursive_control(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let ignored = recursive_control(value: value);
   return value;
 }
 
 fn first(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let called = second(value: value);
   return called;
 }
 
 fn second(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let called = first(value: value);
   return called;

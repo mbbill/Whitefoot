@@ -3,25 +3,25 @@ fn binary_search['r](table: &'r buffer<u32>, target: own u32) -> found: own Bool
   let lo = 0_u64;
   let hi = room;
   loop (
-    invariant bounds: ile(hi, room)
+    invariant bounds: hi <= room
   ) {
-    let more = ilt(lo, hi);
+    let more = lo < hi;
     if more {
       let span = hi - lo;
       let half = span / 2_u64;
       let mid = lo + half;
-      invariant narrower: ilt(mid, hi) {
-        use ilt(lo, hi);
-        use ile(2_u64 * half, span);
+      invariant narrower: mid < hi {
+        use lo < hi;
+        use 2_u64 * half <= span;
       }
-      if ile(mid, room) {
+      if mid <= room {
       } else {
         return False();
       }
       let candidate = deref(table)[mid];
-      if ieq(candidate, target) {
+      if candidate == target {
         return True();
-      } else if ilt(candidate, target) {
+      } else if candidate < target {
         set lo = mid + 1_u64;
       } else {
         set hi = mid;
@@ -34,7 +34,7 @@ fn binary_search['r](table: &'r buffer<u32>, target: own u32) -> found: own Bool
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for the certified halving, but the narrowing branch that lowers hi joins the branch that does not, so the backedge target ile(hi, room) is unprovable [ENT-6]; the reported header failure also masks the body probe the finder read as a proof.";
+  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for the certified halving, but the narrowing branch that lowers hi joins the branch that does not, so the backedge target hi <= room is unprovable [ENT-6]; the reported header failure also masks the body probe the finder read as a proof.";
   let table = buffer_new(5_u64, 0_u32);
   set table[0_u64] = 1_u32;
   set table[1_u64] = 3_u32;
@@ -42,14 +42,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set table[3_u64] = 7_u32;
   set table[4_u64] = 9_u32;
   region 'r {
-    let found = binary_search<'r>(table: &'r table, target: 7_u32);
+    let found = binary_search::<'r>(table: &'r table, target: 7_u32);
     if found {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   region 'r2 {
-    let missing = binary_search<'r2>(table: &'r2 table, target: 4_u32);
+    let missing = binary_search::<'r2>(table: &'r2 table, target: 4_u32);
     if missing {
       return exit_status(code: 1_u8);
     }

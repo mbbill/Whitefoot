@@ -1,20 +1,20 @@
 fn add_sat(x: own i8, y: own i8) -> result: own i8 pure contract {
-  define x_hundred = ieq(x, 100_i8);
-  define y_hundred = ieq(y, 100_i8);
+  define x_hundred = x == 100_i8;
+  define y_hundred = y == 100_i8;
   define both_hundred = band(x_hundred, y_hundred);
   requires both_hundred;
-  ensures ieq(result, -56_i8);
+  ensures result == -56_i8;
 } {
   doc "expect REJECT: 100_i8 +sat 100_i8 saturates to i8::MAX = 127_i8, not the wrap value -56_i8 (100 + 100 = 200 = 256 - 56 mod 256, i.e. 100_i8 +wrap 100_i8), so this ensures is false.";
   return x +sat y;
 }
 
 fn add_sat_true_ensures(x: own i8, y: own i8) -> result: own i8 pure contract {
-  define x_hundred = ieq(x, 100_i8);
-  define y_hundred = ieq(y, 100_i8);
+  define x_hundred = x == 100_i8;
+  define y_hundred = y == 100_i8;
   define both_hundred = band(x_hundred, y_hundred);
   requires both_hundred;
-  ensures ieq(result, 127_i8);
+  ensures result == 127_i8;
 } {
   doc "The correct saturating result for contrast: 100 sat+ 100 clamps to i8::MAX.";
   return x +sat y;
@@ -22,7 +22,7 @@ fn add_sat_true_ensures(x: own i8, y: own i8) -> result: own i8 pure contract {
 
 command fn main() -> status: own ExitStatus pure {
   let clamped = add_sat_true_ensures(x: 100_i8, y: 100_i8);
-  if ieq(clamped, 127_i8) {
+  if clamped == 127_i8 {
   } else {
     return exit_status(code: 2_u8);
   }

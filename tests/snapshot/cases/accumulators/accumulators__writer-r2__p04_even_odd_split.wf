@@ -1,29 +1,29 @@
 const values: array<u8, 8> =[10_u8, 3_u8, 20_u8, 7_u8, 30_u8, 1_u8, 40_u8, 9_u8];
 
 command fn main() -> status: own ExitStatus pure {
-  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for conditional accumulation into two sums, but one arm advances a sum and the other leaves it, so the body join keeps only a fresh delta atom and the backedge target ile(even_sum, 255_u32 * (i + 1_u64)) is unprovable [ENT-6].";
+  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for conditional accumulation into two sums, but one arm advances a sum and the other leaves it, so the body join keeps only a fresh delta atom and the backedge target even_sum <= 255_u32 * (i + 1_u64) is unprovable [ENT-6].";
   let even_sum = 0_u32;
   let odd_sum = 0_u32;
   for (
     i in 0_u64..8_u64,
-    invariant even_bound: ile(even_sum, 255_u32 * i),
-    invariant odd_bound: ile(odd_sum, 255_u32 * i)
+    invariant even_bound: even_sum <= 255_u32 * i,
+    invariant odd_bound: odd_sum <= 255_u32 * i
   ) {
     let byte = values[i];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     let parity = iand(wide, 1_u32);
-    let is_odd = ieq(parity, 1_u32);
+    let is_odd = parity == 1_u32;
     if is_odd {
       set odd_sum = odd_sum + wide;
     } else {
       set even_sum = even_sum + wide;
     }
   }
-  if ieq(even_sum, 100_u32) {
+  if even_sum == 100_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(odd_sum, 20_u32) {
+  if odd_sum == 20_u32 {
   } else {
     return exit_status(code: 2_u8);
   }

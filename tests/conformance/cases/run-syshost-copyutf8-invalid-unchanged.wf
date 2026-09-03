@@ -2,7 +2,7 @@ fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8
   let room = len(deref(bytes));
   for (offset in 0_u64..room) {
     let byte = deref(bytes)[offset];
-    let intact = ieq(byte, 90_u8);
+    let intact = byte == 90_u8;
     if intact {
     } else {
       return failure;
@@ -15,11 +15,11 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
   doc "SYS-8: host_copy_utf8 validates and measures the encoding first and returns Utf8CopyInvalid without writing any byte. The destination is large enough, so only the validation can have refused the transfer, and the sentinel prefill witnesses that no partial encoding was written [HOST-2].";
   let bytes = buffer_new(8_u64, 90_u8);
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_utf8<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 8_u64) {
+            match host_copy_utf8::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 8_u64) {
               Ok(value: encoded) => {
                 return exit_status(code: 10_u8);
               }
@@ -36,8 +36,8 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
           }
         }
         region 's {
-          let observed = sentinel_status<'s>(bytes: &'s bytes, failure: 12_u8);
-          let intact = ieq(observed, 0_u8);
+          let observed = sentinel_status::<'s>(bytes: &'s bytes, failure: 12_u8);
+          let intact = observed == 0_u8;
           if intact {
           } else {
             return exit_status(code: observed);

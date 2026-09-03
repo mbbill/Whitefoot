@@ -12,16 +12,16 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output_index = 0_u64;
   let i = 0_u64;
   loop @scan {
-    if ige(i, input_length) {
+    if i >= input_length {
       break @scan;
     }
     let value = input[i];
     let count = 1_u8;
     let j = i +wrap 1_u64;
     loop @run {
-      if ilt(j, input_length) {
+      if j < input_length {
         let next = input[j];
-        if ieq(next, value) {
+        if next == value {
           set count = count +wrap 1_u8;
           set j = j +wrap 1_u64;
         } else {
@@ -32,8 +32,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
     }
     let next_slot = output_index +wrap 1_u64;
-    let value_ok = ilt(output_index, output_room);
-    let next_ok = ilt(next_slot, output_room);
+    let value_ok = output_index < output_room;
+    let next_ok = next_slot < output_room;
     if band(value_ok, next_ok) {
       set output[output_index] = value;
       set output[next_slot] = count;
@@ -43,8 +43,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       return exit_status(code: 1_u8);
     }
   }
-  let length_ok = ieq(output_index, 6_u64);
-  let count0_ok = ieq(output[1_u64], 3_u8);
+  let length_ok = output_index == 6_u64;
+  let count0_ok = output[1_u64] == 3_u8;
   if band(length_ok, count0_ok) {
   } else {
     return exit_status(code: 3_u8);

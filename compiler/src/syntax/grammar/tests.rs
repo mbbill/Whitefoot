@@ -10,15 +10,15 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 
 /// The committed inventory's own shape. That this data belongs to the active
 /// specification is checked by regenerating it from the active grammar, in
-/// `committed_tables_are_derived_from_the_active_grammar`. The 3,850 select
-/// rows are the complete two-position derivation of the current 82
+/// `committed_tables_are_derived_from_the_active_grammar`. The 4,305 select
+/// rows are the complete two-position derivation of the current 83
 /// productions, not a separately chosen test allowance.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 82);
-    assert_eq!(DECISIONS.len(), 107);
-    assert_eq!(SELECT_ROWS.len(), 3_850);
-    assert_eq!(diagnostic_terminal_order().len(), 101);
+    assert_eq!(productions().len(), 83);
+    assert_eq!(DECISIONS.len(), 109);
+    assert_eq!(SELECT_ROWS.len(), 4_305);
+    assert_eq!(diagnostic_terminal_order().len(), 106);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
@@ -29,8 +29,11 @@ fn complete_inventory_is_pinned() {
     assert_eq!(productions()[48], Production::HeaderInvariant);
     assert_eq!(productions()[49], Production::InvariantStmt);
     assert_eq!(productions()[50], Production::ProofUse);
-    assert_eq!(productions()[80], Production::Effect);
-    assert_eq!(productions()[81], Production::EffectPath);
+    // `compare_op` sits between `infix_op` and `atom` in [GRAM-5], so every
+    // later production moves one place down the specification order.
+    assert_eq!(productions()[66], Production::CompareOp);
+    assert_eq!(productions()[81], Production::Effect);
+    assert_eq!(productions()[82], Production::EffectPath);
     assert_eq!(Production::ForStmt.index(), 68);
     assert_eq!(Production::ForBinding.index(), 69);
     assert_eq!(Production::HeaderInvariant.index(), 70);
@@ -113,7 +116,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 107);
+    assert_eq!(decisions, 109);
 }
 
 #[test]
@@ -181,7 +184,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 107);
+    assert_eq!(DECISIONS.len(), 109);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -226,6 +229,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 3_850);
+    assert_eq!(total_rows, 4_305);
     assert!(saw_atom_only);
 }

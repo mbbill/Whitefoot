@@ -9,7 +9,7 @@ fn fetch(b: own buffer<u8>, i: own u64, mode: own Mode) -> result: own u8 reads(
   let room = len(b);
   let idx = match mode {
     Zero() => {
-      let inside = ilt(i, room);
+      let inside = i < room;
       if inside {
       } else {
         return 0_u8;
@@ -19,7 +19,7 @@ fn fetch(b: own buffer<u8>, i: own u64, mode: own Mode) -> result: own u8 reads(
     Plus1() => {
       match i +checked 1_u64 {
         Ok(value: idx1) => {
-          let inside1 = ilt(idx1, room);
+          let inside1 = idx1 < room;
           if inside1 {
           } else {
             return 0_u8;
@@ -34,7 +34,7 @@ fn fetch(b: own buffer<u8>, i: own u64, mode: own Mode) -> result: own u8 reads(
     Plus2() => {
       match i +checked 2_u64 {
         Ok(value: idx2) => {
-          let inside2 = ilt(idx2, room);
+          let inside2 = idx2 < room;
           if inside2 {
           } else {
             return 0_u8;

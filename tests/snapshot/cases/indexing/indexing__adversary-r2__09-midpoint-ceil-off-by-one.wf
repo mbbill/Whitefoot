@@ -1,7 +1,7 @@
 fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
   define room = len(table);
-  requires ilt(lo, hi);
-  requires ile(hi, room);
+  requires lo < hi;
+  requires hi <= room;
 } {
   doc "expect REJECT: ceiling midpoint mid=hi-(hi-lo)/2 reaches mid=hi when hi-lo=1; lo=9,hi=10,room=10 gives mid=10, table[10] is out of bounds";
   let span = hi - lo;

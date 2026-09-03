@@ -6,8 +6,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   set name[3_u64] = 109_u8;
   region 'c {
     region 'n {
-      let permit = reserve_file<'c>(factory: &uniq 'c files);
-      match open_file<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file::<'c>(factory: &uniq 'c files);
+      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 4_u64) {
         Ok(value: file) => {
           return exit_status(code: 1_u8);
         }
@@ -26,8 +26,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
               return exit_status(code: 3_u8);
             }
             IsDirectory(code: native_code, origin: native_origin) => {
-              if ieq(native_code, 0_u32) {
-                if ieq(native_origin, 0_u8) {
+              if native_code == 0_u32 {
+                if native_origin == 0_u8 {
                   return exit_status(code: 0_u8);
                 } else {
                   return exit_status(code: 2_u8);

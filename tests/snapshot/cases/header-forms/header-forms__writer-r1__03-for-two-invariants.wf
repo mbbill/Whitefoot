@@ -4,17 +4,17 @@ command fn main() -> status: own ExitStatus pure {
   let count = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant sum_bound: ile(sum, 5_u64 * i),
-    invariant count_bound: ile(count, i)
+    invariant sum_bound: sum <= 5_u64 * i,
+    invariant count_bound: count <= i
   ) {
     set sum = sum + i;
     set count = count + 1_u64;
   }
-  if ieq(sum, 10_u64) {
+  if sum == 10_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(count, 5_u64) {
+  if count == 5_u64 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -3,7 +3,7 @@ const count: u64 = 4_u64;
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   doc "Closure runs before lexical support is forgotten, so an arm-local proof term may establish a surviving relation that does not name it.";
   let out = 0_u64;
-  if ilt(i, 3_u64) {
+  if i < 3_u64 {
     let next = i +wrap 1_u64;
     set out = next;
   } else {

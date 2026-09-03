@@ -12,7 +12,7 @@ fn quad(x: own i32) -> function_result: own i32 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "Three-deep call chain; each caller relies only on the callee signature [FN-1].";
   let q = quad(x: 5_i32);
-  if ieq(q, 20_i32) {
+  if q == 20_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

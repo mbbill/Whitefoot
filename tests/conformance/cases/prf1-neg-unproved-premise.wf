@@ -1,9 +1,9 @@
 fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
-  requires ile(middle, 254_u8);
+  requires middle <= 254_u8;
 } {
-  invariant upper_bound: ile(x, 254_u8) {
-    use ile(x, middle);
-    use ile(middle, 254_u8);
+  invariant upper_bound: x <= 254_u8 {
+    use x <= middle;
+    use middle <= 254_u8;
   }
   return x;
 }

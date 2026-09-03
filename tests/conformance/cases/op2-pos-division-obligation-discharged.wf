@@ -1,6 +1,6 @@
 fn divide(n: own u64, d: own u64) -> return_value: own u64 pure {
   doc "An unsigned bare `/` is in the divisor class [OP-2], so it carries the two-conjunct division obligation [ENT-6] instead of a runtime test. A dominating branch establishes the nonzero divisor, both conjuncts discharge, and the call keeps no runtime zero-divisor check, so the row is `pure`.";
-  if igt(d, 0_u64) {
+  if d > 0_u64 {
     let q = n / d;
     return q;
   }

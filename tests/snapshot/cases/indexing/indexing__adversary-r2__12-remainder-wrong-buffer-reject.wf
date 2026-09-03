@@ -1,6 +1,6 @@
 fn cross_index(small: own buffer<u8>, big: own buffer<u8>, n: own u64) -> found: own u8 reads(small, big) contract {
   define big_room = len(big);
-  requires igt(big_room, 0_u64);
+  requires big_room > 0_u64;
 } {
   doc "expect REJECT: bounded is reduced mod len(big), not mod len(small); small has 4 slots, big has 20, so bounded=15 (n=15,big_room=20) is out of range for small[bounded]";
   let big_room = len(big);

@@ -1,6 +1,6 @@
 fn narrow(x: own i32) -> result: own u8 pure {
   doc "cvt on a non-total pair returns Result and is exact per value [OP-6]; 300 exceeds i8 range so Ok must not be reachable here.";
-  match cvt<i32, i8>(x) {
+  match cvt::<i32, i8>(x) {
     Ok(value: v) => {
       return 1_u8;
     }
@@ -13,7 +13,7 @@ fn narrow(x: own i32) -> result: own u8 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: cvt i32->i8 checked, 300 not representable, Err arm taken.";
   let v = narrow(x: 300_i32);
-  if ieq(v, 0_u8) {
+  if v == 0_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

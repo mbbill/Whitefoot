@@ -126,10 +126,10 @@ running byte sum:
 ```whitefoot
 for (
   i in 0_u64..count,
-  invariant per_byte: ile(sum, 255_u32 * i)
+  invariant per_byte: sum <= 255_u32 * i
 ) {
   let w = deref(weights)[i];
-  let wide = cvt<u8, u32>(w);
+  let wide = cvt::<u8, u32>(w);
   set sum = sum + wide;
 }
 ```
@@ -526,7 +526,7 @@ There is one legal spelling per construct and one legal byte-level formatting, c
 
 ```
 fn clamp_hundred(value: own u64) -> result: own u64 pure contract {
-  ensures ile(result, 100_u64);
+  ensures result <= 100_u64;
 } {
   return imin(value, 100_u64);
 }

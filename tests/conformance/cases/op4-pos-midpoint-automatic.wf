@@ -1,13 +1,13 @@
 fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
   define room = len(table);
-  requires ilt(lo, hi);
-  requires ile(hi, room);
+  requires lo < hi;
+  requires hi <= room;
 } {
   doc "AUTO proves the doubled midpoint relation from the division image and lo < hi, then halves that published fact over the integers, so the subscript needs no written certificate [ENT-6, OP-4].";
   let span = hi - lo;
   let half = span / 2_u64;
   let mid = lo + half;
-  invariant inside: ile(2_u64 * mid + 1_u64, 2_u64 * hi);
+  invariant inside: 2_u64 * mid + 1_u64 <= 2_u64 * hi;
   let byte = table[mid];
   return byte;
 }

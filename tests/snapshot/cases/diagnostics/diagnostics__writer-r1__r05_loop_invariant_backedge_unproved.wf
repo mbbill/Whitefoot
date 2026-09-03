@@ -2,7 +2,7 @@ fn stays_zero(limit: own u64) -> value: own u64 pure {
   let total = 0_u64;
   for (
     i in 0_u64..limit,
-    invariant bounded: ile(total, i)
+    invariant bounded: total <= i
   ) {
   }
   return total;
@@ -13,7 +13,7 @@ command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for (
     i in 0_u64..1_u64,
-    invariant bounded: ile(total, i)
+    invariant bounded: total <= i
   ) {
     set total = 2_u64;
   }

@@ -79,8 +79,8 @@ fn independent_direct_output_operations_are_permitted() {
   region 'out {
     region 'err {
       region 'source {
-        let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-        let second = write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+        let first = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        let second = write_once::<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
       }
     }
   }
@@ -104,8 +104,8 @@ fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'source {
-      let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-      let second = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 1_u64, end: 2_u64);
+      let first = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+      let second = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 1_u64, end: 2_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -127,9 +127,9 @@ fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
   region 'out {
     region 'err {
       region 'source {
-        let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-        let middle = write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
-        let last = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 2_u64, end: 3_u64);
+        let first = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        let middle = write_once::<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+        let last = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 2_u64, end: 3_u64);
       }
     }
   }
@@ -157,16 +157,16 @@ fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
 #[test]
 fn independent_permits_allow_opens_through_one_shared_directory() {
     let source = br#"fn open_two['directory](first_permit: own FilePermit, second_permit: own FilePermit, directory: &'directory DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
-  let first = open_directory_source<'directory>(permit: move first_permit, directory: directory);
-  let second = open_directory_source<'directory>(permit: move second_permit, directory: directory);
+  let first = open_directory_source::<'directory>(permit: move first_permit, directory: directory);
+  let second = open_directory_source::<'directory>(permit: move second_permit, directory: directory);
   return unit;
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'state {
-    let first_permit = reserve_file<'state>(factory: &uniq 'state files);
-    let second_permit = reserve_file<'state>(factory: &uniq 'state files);
-    open_two<'state>(first_permit: move first_permit, second_permit: move second_permit, directory: &'state cwd);
+    let first_permit = reserve_file::<'state>(factory: &uniq 'state files);
+    let second_permit = reserve_file::<'state>(factory: &uniq 'state files);
+    open_two::<'state>(first_permit: move first_permit, second_permit: move second_permit, directory: &'state cwd);
   }
   return exit_status(code: 0_u8);
 }
@@ -188,8 +188,8 @@ fn positioned_reads_on_one_file_with_disjoint_destinations_are_permitted() {
   region 'file {
     region 'left {
       region 'right {
-        let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-        let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+        let first = read_at::<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+        let second = read_at::<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
       }
     }
   }
@@ -250,8 +250,8 @@ fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold<'b>(node: move l);
-      let b = fold<'b>(node: move r);
+      let a = fold::<'b>(node: move l);
+      let b = fold::<'b>(node: move r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -264,7 +264,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {
-    let total = fold<'tree>(node: &uniq 'tree branch0);
+    let total = fold::<'tree>(node: &uniq 'tree branch0);
   }
   return exit_status(code: 0_u8);
 }
@@ -299,8 +299,8 @@ fn set_right['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.right) {
 command fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 0_u64, right: 0_u64);
   region 'r {
-    let first = set_left<'r>(pair: &uniq 'r pair);
-    let second = set_right<'r>(pair: &uniq 'r pair);
+    let first = set_left::<'r>(pair: &uniq 'r pair);
+    let second = set_right::<'r>(pair: &uniq 'r pair);
   }
   return exit_status(code: 0_u8);
 }
@@ -328,8 +328,8 @@ fn depth['b](node: &'b box<BoxNode>) -> result: own u64 reads(node) {
       return 1_u64;
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = depth<'b>(node: l);
-      let b = depth<'b>(node: r);
+      let a = depth::<'b>(node: l);
+      let b = depth::<'b>(node: r);
       return imax(a, b);
     }
   }
@@ -357,9 +357,9 @@ fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(8_u64, 1_u64);
   region 'r {
-    let lo = width<'r>(data: &'r buf);
-    let mid = width<'r>(data: &'r buf);
-    let hi = width<'r>(data: &'r buf);
+    let lo = width::<'r>(data: &'r buf);
+    let mid = width::<'r>(data: &'r buf);
+    let hi = width::<'r>(data: &'r buf);
     let part = imax(mid, hi);
     let total = imax(lo, part);
   }
@@ -391,9 +391,9 @@ command fn main() -> status: own ExitStatus pure {
   let first = 1_u64;
   let second = 2_u64;
   region 'r {
-    let a = bump<'r>(slot: &uniq 'r first);
-    let b = bump<'r>(slot: &uniq 'r second);
-    let c = bump<'r>(slot: &uniq 'r first);
+    let a = bump::<'r>(slot: &uniq 'r first);
+    let b = bump::<'r>(slot: &uniq 'r second);
+    let c = bump::<'r>(slot: &uniq 'r first);
     let part = imax(b, c);
     let total = imax(a, part);
   }
@@ -424,7 +424,7 @@ fn a_dataflow_link_between_siblings_is_denied_by_condition_one() {
 }
 
 fn fold_shift['b](node: &uniq 'b box<BoxNode>, shift: own u64) -> result: own u64 reads(node), writes(node) {
-  let base = fold<'b>(node: move node);
+  let base = fold::<'b>(node: move node);
   return imax(base, shift);
 }
 
@@ -434,8 +434,8 @@ fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold<'b>(node: move l);
-      let b = fold_shift<'b>(node: move r, shift: a);
+      let a = fold::<'b>(node: move l);
+      let b = fold_shift::<'b>(node: move r, shift: a);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -482,8 +482,8 @@ fn overlapping_unique_arguments_are_denied_by_condition_two() {
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region 'r {
-    let lo = bump<'r>(slot: &uniq 'r cell);
-    let hi = bump<'r>(slot: &uniq 'r cell);
+    let lo = bump::<'r>(slot: &uniq 'r cell);
+    let hi = bump::<'r>(slot: &uniq 'r cell);
     let total = imax(lo, hi);
   }
   return exit_status(code: 0_u8);
@@ -528,7 +528,7 @@ fn take(v: own u64) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region 'r {
-    let a = bump<'r>(slot: &uniq 'r cell);
+    let a = bump::<'r>(slot: &uniq 'r cell);
     let b = take(v: cell);
     let total = imax(a, b);
   }
@@ -559,7 +559,7 @@ fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
   let room = len(deref(dst));
   let k = 0_u64;
   loop @go {
-    let done = ige(k, room);
+    let done = k >= room;
     if done {
       break @go;
     }
@@ -576,7 +576,7 @@ fn take(v: own u64) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(4_u64, 1_u64);
   region 'd {
-    let a = fill<'d>(dst: &uniq 'd buf, mark: 9_u64);
+    let a = fill::<'d>(dst: &uniq 'd buf, mark: 9_u64);
     let b = take(v: buf[0_u64]);
     let total = imax(a, b);
   }
@@ -615,7 +615,7 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region 'r {
     let a = take(v: cell);
-    let b = bump<'r>(slot: &uniq 'r cell);
+    let b = bump::<'r>(slot: &uniq 'r cell);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -652,8 +652,8 @@ fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes(slot) {
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region 'r {
-    let a = peek<'r>(v: &'r cell);
-    let b = bump<'r>(slot: &uniq 'r cell);
+    let a = peek::<'r>(v: &'r cell);
+    let b = bump::<'r>(slot: &uniq 'r cell);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -706,7 +706,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_propagating_first_statement_is_denied_by_condition_four() {
     let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
-  return cvt<u32, u8>(v);
+  return cvt::<u32, u8>(v);
 }
 
 fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
@@ -716,7 +716,7 @@ fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
 
 fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes(slot) {
   let narrowed = propagate narrow(v: v);
-  let stamped = stamp<'o>(slot: move slot);
+  let stamped = stamp::<'o>(slot: move slot);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -769,13 +769,13 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       let w = deref(leaf_w);
-      let values = array_new<u8, 8>(0_u8);
+      let values = array_new::<u8, 8>(0_u8);
       let touched = scaled(values: move values, index: w);
       return w;
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = bubble<'b>(node: move l);
-      let b = bubble<'b>(node: move r);
+      let a = bubble::<'b>(node: move l);
+      let b = bubble::<'b>(node: move r);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
@@ -788,8 +788,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {
-    let total = bubble<'tree>(node: &uniq 'tree branch0);
-    if ieq(total, 7_u64) {
+    let total = bubble::<'tree>(node: &uniq 'tree branch0);
+    if total == 7_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
@@ -821,7 +821,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
 
 fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
   let size = len(values);
-  if ilt(index, size) {
+  if index < size {
     return values[index];
   }
   return 0_u8;
@@ -831,13 +831,13 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       let w = deref(leaf_w);
-      let values = array_new<u8, 8>(0_u8);
+      let values = array_new::<u8, 8>(0_u8);
       let touched = scaled(values: move values, index: w);
       return w;
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = bubble<'b>(node: move l);
-      let b = bubble<'b>(node: move r);
+      let a = bubble::<'b>(node: move l);
+      let b = bubble::<'b>(node: move r);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
@@ -850,8 +850,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {
-    let total = bubble<'tree>(node: &uniq 'tree branch0);
-    if ieq(total, 7_u64) {
+    let total = bubble::<'tree>(node: &uniq 'tree branch0);
+    if total == 7_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
@@ -880,7 +880,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     assert!(
         std::str::from_utf8(proved_source)
             .expect("the fixture is UTF-8")
-            .contains("if ilt(index, size)"),
+            .contains("if index < size"),
         "the fixture must keep the dominating source proof in its closure"
     );
 
@@ -914,9 +914,9 @@ fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold<'b>(node: move l, seed: seed);
+      let a = fold::<'b>(node: move l, seed: seed);
       let gap = seed +wrap 1_u64;
-      let b = fold<'b>(node: move r, seed: seed);
+      let b = fold::<'b>(node: move r, seed: seed);
       let kids = imax(a, b);
       let total = imax(kids, gap);
       set deref(slot) = total;
@@ -956,9 +956,9 @@ command fn main() -> status: own ExitStatus pure {
   let left = 1_u64;
   let right = 2_u64;
   region 'r {
-    let a = peek<'r>(value: &'r left);
-    invariant two_steps: ile(0_u64, 2_u64);
-    let b = peek<'r>(value: &'r right);
+    let a = peek::<'r>(value: &'r left);
+    invariant two_steps: 0_u64 <= 2_u64;
+    let b = peek::<'r>(value: &'r right);
     let total = a +wrap b;
   }
   return exit_status(code: 0_u8);
@@ -984,9 +984,9 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
   region 'r {
-    let a = peek<'r>(v: &'r other);
+    let a = peek::<'r>(v: &'r other);
     set cell = 5_u64;
-    let b = peek<'r>(v: &'r cell);
+    let b = peek::<'r>(v: &'r cell);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -1029,9 +1029,9 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
   region 'r {
-    let a = bump<'r>(slot: &uniq 'r cell);
+    let a = bump::<'r>(slot: &uniq 'r cell);
     set cell = 5_u64;
-    let b = peek<'r>(v: &'r other);
+    let b = peek::<'r>(v: &'r other);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -1075,7 +1075,7 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
   region 'r {
-    let a = peek<'r>(v: &'r other);
+    let a = peek::<'r>(v: &'r other);
     set cell = 15_u64;
     let b = take(v: cell);
     let total = imax(a, b);
@@ -1128,7 +1128,7 @@ command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = take(v: cell);
     set cell = 15_u64;
-    let b = peek<'r>(v: &'r other);
+    let b = peek::<'r>(v: &'r other);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -1155,9 +1155,9 @@ fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold<'b>(node: move l, seed: seed);
+      let a = fold::<'b>(node: move l, seed: seed);
       let gap = a +wrap 1_u64;
-      let b = fold<'b>(node: move r, seed: seed);
+      let b = fold::<'b>(node: move r, seed: seed);
       let kids = imax(a, b);
       let total = imax(kids, gap);
       set deref(slot) = total;
@@ -1207,7 +1207,7 @@ fn take(v: own u64) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let other = 2_u64;
   region 'r {
-    let a = peek<'r>(v: &'r other);
+    let a = peek::<'r>(v: &'r other);
     let seed = 7_u64;
     let b = take(v: seed);
     let total = imax(a, b);
@@ -1237,7 +1237,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_interposed_propagate_is_denied_by_condition_four() {
     let source = br#"fn peek['o](slot: &'o u8) -> result: own u64 reads(slot) {
-  return cvt<u8, u64>(deref(slot));
+  return cvt::<u8, u64>(deref(slot));
 }
 
 fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
@@ -1246,9 +1246,9 @@ fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
 }
 
 fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
-  let seen = peek<'o>(slot: b);
+  let seen = peek::<'o>(slot: b);
   let narrowed = propagate outcome;
-  let stamped = stamp<'o>(slot: move a);
+  let stamped = stamp::<'o>(slot: move a);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -1275,18 +1275,18 @@ fn an_unproved_interposed_subscript_is_rejected_before_permission() {
 }
 
 fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other) {
-  let a = peek<'r>(v: other);
+  let a = peek::<'r>(v: other);
   let picked = values[index];
-  let b = peek<'r>(v: cell);
+  let b = peek::<'r>(v: cell);
   return imax(a, b);
 }
 
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
-  let table = array_new<u8, 8>(0_u8);
+  let table = array_new::<u8, 8>(0_u8);
   region 'r {
-    let total = probe<'r>(values: move table, index: 3_u64, cell: &'r cell, other: &'r other);
+    let total = probe::<'r>(values: move table, index: 3_u64, cell: &'r cell, other: &'r other);
   }
   return exit_status(code: 0_u8);
 }
@@ -1306,18 +1306,18 @@ fn a_proved_interposed_subscript_creates_no_exit() {
 }
 
 fn probe['r](values: own array<u8, 8>, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other) {
-  let a = peek<'r>(v: other);
+  let a = peek::<'r>(v: other);
   let picked = values[3_u64];
-  let b = peek<'r>(v: cell);
+  let b = peek::<'r>(v: cell);
   return imax(a, b);
 }
 
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
-  let table = array_new<u8, 8>(0_u8);
+  let table = array_new::<u8, 8>(0_u8);
   region 'r {
-    let total = probe<'r>(values: move table, cell: &'r cell, other: &'r other);
+    let total = probe::<'r>(values: move table, cell: &'r cell, other: &'r other);
   }
   return exit_status(code: 0_u8);
 }
@@ -1353,7 +1353,7 @@ command fn main() -> status: own ExitStatus pure {
   let other = 2_u64;
   let which = Low(w: 3_u64);
   region 'r {
-    let a = peek<'r>(v: &'r other);
+    let a = peek::<'r>(v: &'r other);
     match which {
       Low(w: lw) => {
         let seen = lw;
@@ -1362,7 +1362,7 @@ command fn main() -> status: own ExitStatus pure {
         let seen = hw;
       }
     }
-    let b = peek<'r>(v: &'r cell);
+    let b = peek::<'r>(v: &'r cell);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -1398,8 +1398,8 @@ fn read_only_unique_borrows_of_one_place_are_denied_by_their_loans() {
 command fn main() -> status: own ExitStatus pure {
   let cell = 21_u64;
   region 'c {
-    let a = peek_uniq<'c>(cell: &uniq 'c cell);
-    let b = peek_uniq<'c>(cell: &uniq 'c cell);
+    let a = peek_uniq::<'c>(cell: &uniq 'c cell);
+    let b = peek_uniq::<'c>(cell: &uniq 'c cell);
     let both = a +wrap b;
   }
   return exit_status(code: 0_u8);
@@ -1437,7 +1437,7 @@ fn eat_box(node: own box<u64>) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let node = box_new(41_u64);
   region 'c {
-    let a = ignore_box<'c>(node: &'c node);
+    let a = ignore_box::<'c>(node: &'c node);
     let b = eat_box(node: move node);
     let both = a +wrap b;
   }
@@ -1479,7 +1479,7 @@ fn takeval(v: own u64) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region 'c {
-    let a = bump<'c>(cell: &uniq 'c cell);
+    let a = bump::<'c>(cell: &uniq 'c cell);
     let g = &'c cell;
     let b = takeval(v: 5_u64);
     let seen = deref(g);
@@ -1512,8 +1512,8 @@ fn a_pure_uniqslice() -> result: own u64 allocates(heap) {
   region 'r {
     let v = slice_of(&'r buf);
     region 'd {
-      let a = touch_uniqslice<'d, 'r>(v: &uniq 'd v);
-      let b = touch_uniqslice<'d, 'r>(v: &uniq 'd v);
+      let a = touch_uniqslice::<'d, 'r>(v: &uniq 'd v);
+      let b = touch_uniqslice::<'d, 'r>(v: &uniq 'd v);
       let s = a +wrap b;
       return s;
     }
@@ -1545,9 +1545,9 @@ fn interposed_pure_syscall(x: own u64, name: own HostString) -> result: own u64 
   let p = x;
   let r = x;
   region 'c {
-    let a = quiet<'c>(cell: &uniq 'c p);
+    let a = quiet::<'c>(cell: &uniq 'c p);
     let path = relative_path(value: move name);
-    let b = quiet<'c>(cell: &uniq 'c r);
+    let b = quiet::<'c>(cell: &uniq 'c r);
     let s = a +wrap b;
     match path {
       Ok(value: good) => {
@@ -1595,8 +1595,8 @@ fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
   region 'out {
     region 'err {
       region 'source {
-        let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-        match write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64) {
+        let first = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        match write_once::<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64) {
           Ok(value: written) => {
           }
           Err(error: problem) => {
@@ -1643,13 +1643,13 @@ fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
   region 'out {
     region 'err {
       region 'source {
-        match write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64) {
+        match write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64) {
           Ok(value: written) => {
           }
           Err(error: problem) => {
           }
         }
-        let second = write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+        let second = write_once::<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
       }
     }
   }

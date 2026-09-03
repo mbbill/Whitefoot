@@ -3,15 +3,15 @@ const ipv4_header: array<u8, 20> =[69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 
 fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header) contract {
   define length = len(header);
   define odd = iand(length, 1_u64);
-  requires ieq(odd, 0_u64);
+  requires odd == 0_u64;
 } {
   let length = len(header);
   let sum = 0_u32;
   for (offset in 0_u64..length) {
     let byte = header[offset];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     let parity = iand(offset, 1_u64);
-    if ieq(parity, 0_u64) {
+    if parity == 0_u64 {
       let shifted = ishl.wrap(wide, 8_u32);
       set sum = sum +wrap shifted;
     } else {
@@ -23,7 +23,7 @@ fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header)
   }
   let inverted = inot(sum);
   let checksum_word = iand(inverted, 65535_u32);
-  let narrowed = cvt<u32, u16>(checksum_word);
+  let narrowed = cvt::<u32, u16>(checksum_word);
   let checksum = match narrowed {
     Ok(value: checksum_value) => {
       give checksum_value;
@@ -40,12 +40,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let view = slice_of(&'static_view ipv4_header);
     let view_length = len(view);
     let view_odd = iand(view_length, 1_u64);
-    if ieq(view_odd, 0_u64) {
+    if view_odd == 0_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
-    let checksum = ipv4_checksum<'static_view>(header: move view);
-    if ieq(checksum, 47248_u16) {
+    let checksum = ipv4_checksum::<'static_view>(header: move view);
+    if checksum == 47248_u16 {
     } else {
       return exit_status(code: 1_u8);
     }
@@ -53,11 +53,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let runtime_header = buffer_new(20_u64, 0_u8);
   let offset = 0_u64;
   loop @copy_header {
-    let done = ieq(offset, 20_u64);
+    let done = offset == 20_u64;
     if done {
       break @copy_header;
     }
-    let copy_ok = ilt(offset, 20_u64);
+    let copy_ok = offset < 20_u64;
     if copy_ok {
     } else {
       return exit_status(code: 2_u8);
@@ -70,12 +70,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let view = slice_of(&'runtime_view runtime_header);
     let view_length = len(view);
     let view_odd = iand(view_length, 1_u64);
-    if ieq(view_odd, 0_u64) {
+    if view_odd == 0_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
-    let checksum = ipv4_checksum<'runtime_view>(header: move view);
-    if ieq(checksum, 47248_u16) {
+    let checksum = ipv4_checksum::<'runtime_view>(header: move view);
+    if checksum == 47248_u16 {
     } else {
       return exit_status(code: 1_u8);
     }

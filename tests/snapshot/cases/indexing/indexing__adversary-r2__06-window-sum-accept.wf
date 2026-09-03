@@ -2,17 +2,17 @@ fn window_sum(buf: own buffer<u8>, offset: own u64, length: own u64) -> total: o
   doc "expect ACCEPT: runtime-checked offset+length within room, so every i in offset..end is < room and buf[i] is in bounds";
   let room = len(buf);
   let end = offset +wrap length;
-  let fits = ile(end, room);
-  let ordered = ile(offset, end);
+  let fits = end <= room;
+  let ordered = offset <= end;
   let sum = 0_u64;
   if fits {
     if ordered {
       for (
         i in offset..end,
-        invariant within: ile(end, room)
+        invariant within: end <= room
       ) {
         let byte = buf[i];
-        let widened = cvt<u8, u64>(byte);
+        let widened = cvt::<u8, u64>(byte);
         set sum = sum +wrap widened;
       }
     }
@@ -23,7 +23,7 @@ fn window_sum(buf: own buffer<u8>, offset: own u64, length: own u64) -> total: o
 command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(10_u64, 3_u8);
   let total = window_sum(buf: move buf, offset: 2_u64, length: 5_u64);
-  if ieq(total, 15_u64) {
+  if total == 15_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

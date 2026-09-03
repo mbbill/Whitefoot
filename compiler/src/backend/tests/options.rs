@@ -38,10 +38,10 @@ command fn main() -> status: own ExitStatus pure {
   let found = locate(offset: 3_u64, width: 4_u64);
   match move found {
     Ok(value: found_extent) => {
-      if ine(found_extent.offset, 3_u64) {
+      if found_extent.offset != 3_u64 {
         return exit_status(code: 1_u8);
       }
-      if ine(found_extent.width, 4_u64) {
+      if found_extent.width != 4_u64 {
         return exit_status(code: 2_u8);
       }
     }
@@ -55,7 +55,7 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 4_u8);
     }
     Err(error: absent_code) => {
-      if ine(absent_code, 9_u64) {
+      if absent_code != 9_u64 {
         return exit_status(code: 5_u8);
       }
     }

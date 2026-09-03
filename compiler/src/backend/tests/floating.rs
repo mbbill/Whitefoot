@@ -83,7 +83,7 @@ fn every_direct_float_operation_executes_for_both_widths() {
   } else {
     return exit_status(code: 16_u8);
   }
-  let infinity = finf<$TYPE>();
+  let infinity = finf::<$TYPE>();
   if fgt(infinity, fused) {
   } else {
     return exit_status(code: 17_u8);
@@ -93,7 +93,7 @@ fn every_direct_float_operation_executes_for_both_widths() {
   } else {
     return exit_status(code: 18_u8);
   }
-  let nan = fnan<$TYPE>();
+  let nan = fnan::<$TYPE>();
   if fne(nan, nan) {
   } else {
     return exit_status(code: 19_u8);

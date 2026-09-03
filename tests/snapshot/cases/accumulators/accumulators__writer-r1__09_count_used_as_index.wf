@@ -8,23 +8,23 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let count = 0_u64;
   for (
     i in 0_u64..6_u64,
-    invariant count_bound: ile(count, i)
+    invariant count_bound: count <= i
   ) {
     let byte = data[i];
-    let is_set = ieq(byte, 1_u8);
+    let is_set = byte == 1_u8;
     if is_set {
       set count = count + 1_u64;
     }
   }
   let room = len(marks);
-  let in_bounds = ilt(count, room);
+  let in_bounds = count < room;
   if in_bounds {
     set marks[count] = 9_u8;
   } else {
     return exit_status(code: 1_u8);
   }
   let placed = marks[count];
-  if ieq(placed, 9_u8) {
+  if placed == 9_u8 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -5,25 +5,25 @@ enum Zone {
 }
 
 fn pick_byte(b: own buffer<u8>, i: own u64, zone: own Zone) -> result: own u8 reads(b) {
-  doc "ACCEPT: every match arm independently proves ilt(i, room) before the shared subscript, so ENT-5's all-predecessor join carries the common bound out of the exhaustive match.";
+  doc "ACCEPT: every match arm independently proves i < room before the shared subscript, so ENT-5's all-predecessor join carries the common bound out of the exhaustive match.";
   let room = len(b);
   match zone {
     Head() => {
-      let head_bound = ilt(i, room);
+      let head_bound = i < room;
       if head_bound {
       } else {
         return 0_u8;
       }
     }
     Mid() => {
-      let mid_bound = ilt(i, room);
+      let mid_bound = i < room;
       if mid_bound {
       } else {
         return 0_u8;
       }
     }
     Tail() => {
-      let tail_bound = ilt(i, room);
+      let tail_bound = i < room;
       if tail_bound {
       } else {
         return 0_u8;

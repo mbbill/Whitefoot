@@ -6,7 +6,7 @@ fn guards_every_integer_error_before_llvm() {
   let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {
-      if ieq(quotient_value, 42_$TYPE) {
+      if quotient_value == 42_$TYPE {
       } else {
         return exit_status(code: 1_u8);
       }
@@ -18,7 +18,7 @@ fn guards_every_integer_error_before_llvm() {
   let remainder = 85_$TYPE %checked 43_$TYPE;
   match move remainder {
     Ok(value: remainder_value) => {
-      if ieq(remainder_value, 42_$TYPE) {
+      if remainder_value == 42_$TYPE {
       } else {
         return exit_status(code: 3_u8);
       }

@@ -1,7 +1,7 @@
 fn name_at['n](name: &uniq 'n buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
   let room = len(deref(name));
-  let sized = ige(room, 10_u64);
+  let sized = room >= 10_u64;
   if sized {
   } else {
     return unit;
@@ -11,7 +11,7 @@ fn name_at['n](name: &uniq 'n buffer<u8>, index: own u64) -> result: own unit re
   let position = 5_u64;
   loop @digits {
     let digit = value % 10_u64;
-    let narrowed = cvt<u64, u8>(digit);
+    let narrowed = cvt::<u64, u8>(digit);
     let byte = match narrowed {
       Ok(value: exact) => {
         give 48_u8 +wrap exact;
@@ -20,12 +20,12 @@ fn name_at['n](name: &uniq 'n buffer<u8>, index: own u64) -> result: own unit re
         give 48_u8;
       }
     }
-    let writable = ilt(position, room);
+    let writable = position < room;
     if writable {
       set deref(name)[position] = byte;
     }
     set value = value / 10_u64;
-    let done = ieq(position, 1_u64);
+    let done = position == 1_u64;
     if done {
       break @digits;
     }
@@ -44,13 +44,13 @@ fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64)
   let remaining = value;
   let position = at +wrap 20_u64;
   loop @digits {
-    let done = ile(position, at);
+    let done = position <= at;
     if done {
       break @digits;
     }
     set position = position -wrap 1_u64;
     let digit = remaining % 10_u64;
-    let narrowed = cvt<u64, u8>(digit);
+    let narrowed = cvt::<u64, u8>(digit);
     let byte = match narrowed {
       Ok(value: exact) => {
         give 48_u8 +wrap exact;
@@ -59,7 +59,7 @@ fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64)
         give 48_u8;
       }
     }
-    let writable = ilt(position, room);
+    let writable = position < room;
     if writable {
       set deref(destination)[position] = byte;
     }
@@ -74,17 +74,17 @@ fn fold_bytes['b](source: &'b buffer<u8>, produced: own u64, seed: own u64) -> r
   let sum = seed;
   let at = 0_u64;
   loop @fold {
-    let scanned = ige(at, produced);
+    let scanned = at >= produced;
     if scanned {
       break @fold;
     }
-    let readable = ilt(at, room);
+    let readable = at < room;
     if readable {
     } else {
       break @fold;
     }
     let byte = deref(source)[at];
-    let widened = cvt<u8, u64>(byte);
+    let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;
     set at = at +wrap 1_u64;
@@ -101,25 +101,25 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   let bytes = 0_u64;
   let index = 0_u64;
   loop @scan {
-    let done = ige(index, 8192_u64);
+    let done = index >= 8192_u64;
     if done {
       break @scan;
     }
     region 'name {
-      let rendered = name_at<'name>(name: &uniq 'name name, index: index);
+      let rendered = name_at::<'name>(name: &uniq 'name name, index: index);
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 10_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 10_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
                   ReadBytes(next: produced) => {
                     let digest = 0_u64;
                     region 'fold {
-                      set digest = fold_bytes<'fold>(source: &'fold data, produced: produced, seed: 0_u64);
+                      set digest = fold_bytes::<'fold>(source: &'fold data, produced: produced, seed: 0_u64);
                     }
                     let weight = index +wrap 1_u64;
                     set digest = digest *wrap weight;
@@ -144,26 +144,26 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   let room = len(line);
   let cursor = 0_u64;
   region 'render_sum {
-    set cursor = render_u64<'render_sum>(destination: &uniq 'render_sum line, at: cursor, value: sum);
+    set cursor = render_u64::<'render_sum>(destination: &uniq 'render_sum line, at: cursor, value: sum);
   }
-  let space_fits = ilt(cursor, room);
+  let space_fits = cursor < room;
   if space_fits {
     set line[cursor] = 32_u8;
     set cursor = cursor +wrap 1_u64;
   }
   region 'render_bytes {
-    set cursor = render_u64<'render_bytes>(destination: &uniq 'render_bytes line, at: cursor, value: bytes);
+    set cursor = render_u64::<'render_bytes>(destination: &uniq 'render_bytes line, at: cursor, value: bytes);
   }
-  let end_fits = ilt(cursor, room);
+  let end_fits = cursor < room;
   if end_fits {
     set line[cursor] = 10_u8;
     set cursor = cursor +wrap 1_u64;
   }
   let status = 0_u8;
-  let publishable = ile(cursor, room);
+  let publishable = cursor <= room;
   if publishable {
     region 'publish {
-      match write_once<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, start: 0_u64, end: cursor) {
+      match write_once::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, start: 0_u64, end: cursor) {
         Ok(value: written) => {
         }
         Err(error: problem) => {

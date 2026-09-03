@@ -6,17 +6,17 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let sum = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant sum_bound: ile(sum, 255_u64 * i)
+    invariant sum_bound: sum <= 255_u64 * i
   ) {
     let byte = data[i];
-    let wide = cvt<u8, u64>(byte);
+    let wide = cvt::<u8, u64>(byte);
     set sum = sum + wide;
   }
   let room = len(table);
-  let lookup_ok = ilt(sum, room);
+  let lookup_ok = sum < room;
   if lookup_ok {
     let value = table[sum];
-    if ieq(value, 42_u8) {
+    if value == 42_u8 {
     } else {
       return exit_status(code: 2_u8);
     }

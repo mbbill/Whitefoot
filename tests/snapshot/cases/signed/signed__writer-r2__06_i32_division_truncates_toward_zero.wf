@@ -8,11 +8,11 @@ command fn main() -> status: own ExitStatus pure {
     set quotient = dividend / divisor;
     set remainder = dividend % divisor;
   }
-  if ieq(quotient, -3_i32) {
+  if quotient == -3_i32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(remainder, -1_i32) {
+  if remainder == -1_i32 {
     return exit_status(code: 0_u8);
   } else {
     return exit_status(code: 2_u8);

@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: back = 5 - i for i in 0..5 reaches back=5 when i=0, one past the 5-slot array (OOB)";
-  let data = array_new<u64, 5>(0_u64);
+  let data = array_new::<u64, 5>(0_u64);
   set data[0_u64] = 1_u64;
   set data[1_u64] = 2_u64;
   set data[2_u64] = 3_u64;
@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus pure {
     let value = data[back];
     set total = total +wrap value;
   }
-  let correct = ieq(total, 15_u64);
+  let correct = total == 15_u64;
   if correct {
   } else {
     return exit_status(code: 1_u8);

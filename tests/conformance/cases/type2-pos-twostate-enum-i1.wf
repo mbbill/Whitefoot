@@ -20,7 +20,7 @@ command fn main() -> status: own ExitStatus pure {
   let st = InSpace();
   let i = 0_u64;
   loop @l {
-    if ige(i, 5_u64) {
+    if i >= 5_u64 {
       break @l;
     }
     let nx = flip(s: st);

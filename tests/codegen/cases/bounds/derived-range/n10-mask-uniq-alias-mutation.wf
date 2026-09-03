@@ -6,6 +6,6 @@ fn probe(x: own u32) -> result: own u8 pure {
     let p = &uniq 'r masked;
     set deref(p) = 8_u32;
   }
-  let slot = cvt<u32, u64>(masked);
+  let slot = cvt::<u32, u64>(masked);
   return table[slot];
 }

@@ -3,7 +3,7 @@ use super::{compile, compile_and_run, compile_rejection, emitted_function};
 const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
   define out_length = len(deref(out));
   define source_length = len(source);
-  requires ile(source_length, out_length);
+  requires source_length <= out_length;
 } {
   let length = len(source);
   for (offset in 0_u64..length) {
@@ -19,13 +19,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output = buffer_new(length, 0_u8);
   region 'copy_region {
     let destination = &uniq 'copy_region output;
-    let written = copy_bytes<'copy_region>(out: move destination, source: move source);
-    if ine(written, length) {
+    let written = copy_bytes::<'copy_region>(out: move destination, source: move source);
+    if written != length {
       return exit_status(code: 1_u8);
     }
   }
   let last = output[3_u64];
-  if ine(last, 7_u8) {
+  if last != 7_u8 {
     return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
@@ -49,8 +49,8 @@ fn command_entry_rejects_a_contract_instead_of_emitting_a_wrapper_check() {
 fn contradictory_requirements_emit_an_unreachable_body_without_a_trap() {
     let llvm = compile(
         br#"fn impossible(value: own i32) -> out: own i32 pure contract {
-  requires ieq(value, 0_i32);
-  requires ine(value, 0_i32);
+  requires value == 0_i32;
+  requires value != 0_i32;
 } {
   return value;
 }
@@ -70,15 +70,15 @@ fn contract_define_is_symbolic_and_not_emitted_as_runtime_work() {
     let llvm = compile(
         br#"fn identity(value: own u8) -> out: own u8 pure contract {
   define bits = ipopcount(value);
-  requires ieq(bits, 0_u32);
-  ensures ieq(out, value);
+  requires bits == 0_u32;
+  ensures out == value;
 } {
   return value;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let bits = ipopcount(0_u8);
-  if ieq(bits, 0_u32) {
+  if bits == 0_u32 {
     let zero = identity(value: 0_u8);
     return exit_status(code: zero);
   } else {
@@ -96,15 +96,15 @@ command fn main() -> status: own ExitStatus pure {
 fn contract_define_can_hold_a_float_endpoint_conversion_without_runtime_code() {
     let llvm = compile(
         br#"fn identity(value: own u8) -> out: own u8 pure contract {
-  define converted = cvt<u8, f32>(value);
+  define converted = cvt::<u8, f32>(value);
   requires feq(converted, 1.0_f32);
-  ensures ieq(out, value);
+  ensures out == value;
 } {
   return value;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let converted = cvt<u8, f32>(1_u8);
+  let converted = cvt::<u8, f32>(1_u8);
   if feq(converted, 1.0_f32) {
     let one = identity(value: 1_u8);
     let code = one -wrap 1_u8;
@@ -129,8 +129,8 @@ command fn main() -> status: own ExitStatus pure {
 fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
     let llvm = compile(
         br#"fn bounded(value: own i32) -> out: own i32 pure contract {
-  requires ige(value, 0_i32);
-  ensures ieq(out, value);
+  requires value >= 0_i32;
+  ensures out == value;
 } {
   return value;
 }
@@ -138,7 +138,7 @@ fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
 command fn main() -> status: own ExitStatus pure {
   let value = 7_i32;
   let returned = bounded(value: value);
-  if ine(returned, 7_i32) {
+  if returned != 7_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -160,7 +160,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_requirement_must_be_discharged_at_each_ordinary_call() {
     let failure = compile_rejection(
         br#"fn positive(value: own i32) -> out: own i32 pure contract {
-  requires igt(value, 0_i32);
+  requires value > 0_i32;
 } {
   return value;
 }

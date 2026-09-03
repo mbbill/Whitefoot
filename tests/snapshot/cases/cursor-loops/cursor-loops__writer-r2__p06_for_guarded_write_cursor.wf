@@ -4,10 +4,10 @@ fn count_nonzero(values: own buffer<u64>) -> kept: own u64 reads(values) {
   let write_at = 0_u64;
   for (
     i in 0_u64..length,
-    invariant bounded: ile(write_at, i)
+    invariant bounded: write_at <= i
   ) {
     let value = values[i];
-    let nonzero = ieq(value, 0_u64);
+    let nonzero = value == 0_u64;
     if nonzero {
     } else {
       set write_at = write_at + 1_u64;
@@ -25,7 +25,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set source[4_u64] = 1_u64;
   set source[5_u64] = 2_u64;
   let kept = count_nonzero(values: move source);
-  let correct = ieq(kept, 4_u64);
+  let correct = kept == 4_u64;
   if correct {
   } else {
     return exit_status(code: 1_u8);

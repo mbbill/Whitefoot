@@ -1,9 +1,9 @@
 fn add_bounded(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8) -> total: own u8 pure contract {
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(first_limit, 200_u8);
-  requires ile(second_limit, 55_u8);
-  ensures ile(total, 255_u8);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires first_limit <= 200_u8;
+  requires second_limit <= 55_u8;
+  ensures total <= 255_u8;
 } {
   let total = first + second;
   return total;
@@ -12,7 +12,7 @@ fn add_bounded(first: own u8, first_limit: own u8, second: own u8, second_limit:
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: requires bounds each addend by its own limit and each limit by a literal; ensures the literal-bounded sum.";
   let total = add_bounded(first: 3_u8, first_limit: 10_u8, second: 4_u8, second_limit: 20_u8);
-  if ieq(total, 7_u8) {
+  if total == 7_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

@@ -1,27 +1,27 @@
 fn segment_sum['o, 'd](offsets: &'o buffer<u64>, data: &'d buffer<u32>, segment: own u64) -> total: own u32 reads(offsets, data) {
   let segment_count_plus_one = len(deref(offsets));
-  if igt(segment_count_plus_one, 0_u64) {
+  if segment_count_plus_one > 0_u64 {
   } else {
     return 0_u32;
   }
   let last = segment_count_plus_one - 1_u64;
-  if ilt(segment, last) {
+  if segment < last {
   } else {
     return 0_u32;
   }
   let start = deref(offsets)[segment];
   let next_segment = segment + 1_u64;
-  if ilt(next_segment, segment_count_plus_one) {
+  if next_segment < segment_count_plus_one {
   } else {
     return 0_u32;
   }
   let end = deref(offsets)[next_segment];
   let room = len(deref(data));
-  if ile(start, end) {
+  if start <= end {
   } else {
     return 0_u32;
   }
-  if ile(end, room) {
+  if end <= room {
   } else {
     return 0_u32;
   }
@@ -48,8 +48,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set data[4_u64] = 1_u32;
   set data[5_u64] = 9_u32;
   region 'r {
-    let middle = segment_sum<'r, 'r>(offsets: &'r offsets, data: &'r data, segment: 1_u64);
-    if ieq(middle, 3_u32) {
+    let middle = segment_sum::<'r, 'r>(offsets: &'r offsets, data: &'r data, segment: 1_u64);
+    if middle == 3_u32 {
     } else {
       return exit_status(code: 1_u8);
     }

@@ -8,8 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.40 guidance, including the source-proof forms
-v0.40 activates, the unified-state
+This document carries active v0.41 guidance, including the comparison symbols
+and call-site `::` delimiter v0.41 activates, the source-proof forms introduced
+by v0.40, the unified-state
 completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
 2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
@@ -77,7 +78,7 @@ well-typed UAF).
 Problem: interleaved lifetimes vs bulk free — arenas leak if everything lives
 in one region.
 Pattern: nest regions by phase (request -> pass -> sub-pass); allocate into
-the innermost suitable region with `arena_new<'r, T>(value)`. The returned
+the innermost suitable region with `arena_new::<'r, T>(value)`. The returned
 `arena<'r, T>` stays inside that region, and `deref` reads its content. The
 compiler rejects an arena value that leaves the region rather than promoting
 it implicitly. A value that truly needs a different lifetime therefore belongs
@@ -188,10 +189,10 @@ and the final item has no trailing comma:
 ```whitefoot
 for (
   i in 0_u64..count,
-  invariant per_byte: ile(sum, 255_u32 * i)
+  invariant per_byte: sum <= 255_u32 * i
 ) {
   let w = deref(weights)[i];
-  let wide = cvt<u8, u32>(w);
+  let wide = cvt::<u8, u32>(w);
   set sum = sum + wide;
 }
 ```
@@ -202,7 +203,7 @@ then proves the residual from the `u8` type interval of `wide`. An explicit use
 block would be redundant and invalid. The bound is stated relative to the
 counter, so it carries no overflow conclusion of its own until the counter is
 itself bounded: with `count` an unbounded `len(deref(weights))` the byte-for-byte
-identical loop is undischarged at [INV-1], and one `requires ile(n, 65536_u64)`
+identical loop is undischarged at [INV-1], and one `requires n <= 65536_u64`
 over that length in the function's own contract compiles it. Put a
 cross-function fact in the callee's verified `ensures`; the caller receives it
 only after the callee's return proof succeeds. Use a local
@@ -387,7 +388,7 @@ L0-image route. If none applies, write a local `invariant` and direct its
 finite calculation with `use`.
 
 ```whitefoot
-invariant total_limit: ile(first + second + third, first_limit + second_limit + third_limit) {
+invariant total_limit: first + second + third <= first_limit + second_limit + third_limit {
   use first_bound;
   use second_bound;
   use third_bound;
@@ -404,8 +405,8 @@ twice. The final target may be a direct weakening of the weighted sum.
 
 A nonempty use block is an error when AUTO already proves the outer target.
 The pair family includes the self-pair, so a doubling target such as
-`ile(x + x, limit + limit)` already follows automatically from the single
-premise `ile(x, limit)`, and a use block naming that premise is rejected as a
+`x + x <= limit + limit` already follows automatically from the single
+premise `x <= limit`, and a use block naming that premise is rejected as a
 redundant block rather than accepted as guidance.
 This is a canonical-source rule tied to the exact language version, not a
 warning about a compiler optimization. Use a header invariant when the relation
@@ -437,12 +438,12 @@ for @scan (index in 0_u64..8192_u64) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
   region 'name {
-    let rendered = name_at<'name>(name: &uniq 'name name, index: index);
+    let rendered = name_at::<'name>(name: &uniq 'name name, index: index);
   }
   region 'f {
-    let permit = reserve_file<'f>(factory: &uniq 'f files);
+    let permit = reserve_file::<'f>(factory: &uniq 'f files);
     region 'n {
-      match open_file<'f, 'n>(permit: move permit, root: &'f cwd,
+      match open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
                               name: &'n name, start: 0_u64, end: 10_u64) {
         Ok(value: handle) => { /* read, fold, accumulate */ }
         Err(error: problem) => { }
@@ -481,7 +482,7 @@ copy rather than a fact to rediscover:
   after it is byte-exact):
 
   ```text
-  inline  PAR stage  ‹loop›             for  permitted  staged at open_file<'f, 'f>(…); 5 places classified
+  inline  PAR stage  ‹loop›             for  permitted  staged at open_file::<'f, 'f>(…); 5 places classified
   helper  PAR stage  ‹loop›             for  denied     condition 3: a may-suspend call retains a borrow
                      past its own submission on storage the body writes and the iteration does not
                      introduce; instead, give each iteration its own resource; or, where the body only
@@ -501,7 +502,7 @@ copy rather than a fact to rediscover:
 
   ```text
   owned factory, inline    PAR stage  ‹loop›                   for  permitted  staged at
-                           open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name,
+                           open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name,
                            start: 0_u64, end: 4_u64); 4 places classified
   borrowed factory, inline [OWN-6] InvalidChildReborrow — the program does not compile
   borrowed factory, helper PAR stage  ‹loop›                   for  denied     condition 3: a
@@ -607,12 +608,12 @@ discharge every later requirement from that one binding.
 
 ```whitefoot
 let room = len(line);
-let fits = ile(end, room);
+let fits = end <= room;
 ```
 
 The first line sits above the loop and above every `put_text` that writes
 through `&uniq 'put line`. The second sits inside the loop after all of them,
-and it still discharges `emit_all`'s `requires ile(length, capacity)`, because
+and it still discharges `emit_all`'s `requires length <= capacity`, because
 nothing between the two killed `len(line)`.
 
 Evidence that it compiles as written:
@@ -649,7 +650,7 @@ Pattern: the walk returns its own subtotal, the caller binds it under a fresh
 the record is used as a value — passed, returned, or rebound.
 
 ```whitefoot
-let sub = walk<'recurse, 'c>(factory: &uniq 'recurse deref(factory), directory: dir);
+let sub = walk::<'recurse, 'c>(factory: &uniq 'recurse deref(factory), directory: dir);
 set totals.lines = totals.lines +wrap sub.lines;
 set totals.bytes = totals.bytes +wrap sub.bytes;
 ```
@@ -702,7 +703,7 @@ given its own. (‹loop› is the writer's file and line; verdicts are byte-exac
 for @scan (index in 0_u64..8_u64) {
   /* P15's reserve, open, and read; then */
   region 'say {
-    let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
+    let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
   }
 }
 ```
@@ -727,18 +728,18 @@ let page = buffer_new(8_u64, 0_u8);
 let room = len(page);
 for @scan (index in 0_u64..8_u64) {
   /* reserve, open, and read into the iteration's own data buffer */
-  let writable = ilt(index, room);
+  let writable = index < room;
   if writable {
     set page[index] = data[0_u64];
   }
 }
 region 'say {
-  let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
+  let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
 }
 ```
 
 ```text
-PAR stage  ‹loop›  for  permitted  staged at open_file<'f, 'n>(permit: move permit, root: &'f cwd,
+PAR stage  ‹loop›  for  permitted  staged at open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
            name: &'n name, start: 0_u64, end: 2_u64); 6 places classified
 ```
 
@@ -812,7 +813,7 @@ over that single image:
     } else {
       give wide;
     }
-    invariant addend_bound: ile(addend, 255_u32);
+    invariant addend_bound: addend <= 255_u32;
     set sum = sum + addend;
 ```
 
@@ -825,16 +826,16 @@ is an ordinary result (P12):
     if shrink {
       set hi = candidate;
     }
-    if ile(hi, room) {
+    if hi <= room {
     } else {
       return 0_u64;
     }
 ```
 
 That one guard is enough for a whole binary search: `hi` narrows on one arm of
-the three-way comparison and `lo` on another, re-testing `ile(hi, room)` at the
+the three-way comparison and `lo` on another, re-testing `hi <= room` at the
 end of the body restores the header invariant on every path, and the midpoint's
-own two-premise `ilt(mid, hi)` certificate (P14) then carries that bound down to
+own two-premise `mid < hi` certificate (P14) then carries that bound down to
 the subscript, which needs no guard of its own. The
 other repair is to remove the join: where the non-advancing arm is a real result
 — `break`, `return`, a typed error — there is no join to weaken and the guarded

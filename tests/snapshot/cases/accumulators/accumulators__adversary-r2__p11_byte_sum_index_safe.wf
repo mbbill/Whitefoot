@@ -5,14 +5,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let idx = 0_u64;
   for (
     i in 0_u64..3_u64,
-    invariant bound: ile(idx, 255_u64 * i)
+    invariant bound: idx <= 255_u64 * i
   ) {
     let byte = data[i];
-    let wide = cvt<u8, u64>(byte);
+    let wide = cvt::<u8, u64>(byte);
     set idx = idx + wide;
   }
   let table_len = len(table);
-  let in_bounds = ilt(idx, table_len);
+  let in_bounds = idx < table_len;
   if in_bounds {
   } else {
     return exit_status(code: 2_u8);

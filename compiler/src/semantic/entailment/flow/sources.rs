@@ -485,7 +485,7 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S5: `let x: own T = lit;` establishes x = value(lit);
     /// `let x: own T = p;` with p a term establishes x = p; and
-    /// `let y: own Dst = cvt<Src, Dst>(p);` over a total [OP-6] pair
+    /// `let y: own Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
     /// establishes y = p, the conversion being exactly value-preserving.
     fn establish_copy_fact(
         &mut self,
@@ -529,8 +529,8 @@ impl Analyzer<'_, '_> {
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
-    /// [ENT-3] S6: `buffer_new<T>(n, v)` establishes len(b) = n;
-    /// `len<T>(P)` for a tracked P establishes m = len(P); and
+    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len(b) = n;
+    /// `len::<T>(P)` for a tracked P establishes m = len(P); and
     /// `slice_of…(&'r P)` for a tracked P establishes len(s) = len(P).
     ///
     /// An `array<T, N>` allocation needs no clause here: its length equality
@@ -636,7 +636,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The length term one `len<T>(P)` call reads, over the same place the
+    /// The length term one `len::<T>(P)` call reads, over the same place the
     /// obligation judgment forms for P, so both name one term [ENT-2].
     pub(super) fn length_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
         let (place, array_length) = match value {
@@ -666,7 +666,7 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
     ///
-    /// `iadd.wrap<T>(p, k)` and `isub.wrap<T>(p, k)` with a constant k
+    /// `iadd.wrap::<T>(p, k)` and `isub.wrap::<T>(p, k)` with a constant k
     /// establish s = p ± k only where the closed state already proves the
     /// unwrapped result stays in T's range, so the established equality is
     /// over the mathematical value the wrap did not reach. Exact `+` and `-`
@@ -1183,7 +1183,7 @@ impl Analyzer<'_, '_> {
             .or_else(|| self.boundary_endpoint_outcome(value))
     }
 
-    /// [ENT-3] S7: `iadd.checked<T>(p, k)` and `isub.checked<T>(p, k)` with a
+    /// [ENT-3] S7: `iadd.checked::<T>(p, k)` and `isub.checked::<T>(p, k)` with a
     /// constant k give the `Ok(value: w)` arm w = p ± k; the `Err` arm
     /// establishes nothing.
     fn checked_offset_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {

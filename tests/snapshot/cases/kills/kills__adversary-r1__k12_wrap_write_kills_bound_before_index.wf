@@ -1,8 +1,8 @@
 fn wrap_then_index(table: own buffer<u8>, i: own u64) -> value: own u8 reads(table) contract {
   define room = len(table);
-  requires ilt(i, room);
+  requires i < room;
 } {
-  doc "expect REJECT [OP-4]: set i = i +wrap 250_u64 kills the requires(ilt(i, len(table))) fact via unchecked wraparound before the index; a wrong accept lets i wrap to a huge value and read far past the 6-slot table.";
+  doc "expect REJECT [OP-4]: set i = i +wrap 250_u64 kills the requires(i < len(table)) fact via unchecked wraparound before the index; a wrong accept lets i wrap to a huge value and read far past the 6-slot table.";
   set i = i +wrap 250_u64;
   return table[i];
 }

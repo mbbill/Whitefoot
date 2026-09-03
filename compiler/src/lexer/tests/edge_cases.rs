@@ -33,12 +33,16 @@ fn active_spec_pre_tree_defects_use_the_exact_specified_spans() {
     assert_eq!(issue(b"// comment"), (SourceIssueKind::CommentPrefix, 0, 2));
     assert_eq!(issue(b"/* comment"), (SourceIssueKind::CommentPrefix, 0, 2));
     // `/` now forms an operator token, so the comment-prefix guard is what
-    // still decides `//` and `/*`. `!` is a raw lexical defect in every
-    // position: after the comparison cancellation no token of this language
-    // carries the byte, so `!=` is a defect at its first byte too.
+    // still decides `//` and `/*`. `!` occurs in exactly one token, the
+    // compound `!=`; anywhere else it is a raw lexical defect at its own
+    // byte, including a `!` that the next byte does not complete.
     assert_eq!(issue(b"!"), (SourceIssueKind::UnexpectedByte, 0, 1));
     assert_eq!(issue(b"a ! b"), (SourceIssueKind::UnexpectedByte, 2, 3));
-    assert_eq!(issue(b"a != b"), (SourceIssueKind::UnexpectedByte, 2, 3));
+    assert_eq!(issue(b"a !< b"), (SourceIssueKind::UnexpectedByte, 2, 3));
+    assert!(matches!(
+        crate::lex(&bundle(&[("valid.wf", b"a != b")]), generous_limits()),
+        LexOutcome::Complete(_)
+    ));
     assert_eq!(issue(b"\0"), (SourceIssueKind::InvalidSourceByte, 0, 1));
     assert_eq!(issue(b"\x7f"), (SourceIssueKind::InvalidSourceByte, 0, 1));
 

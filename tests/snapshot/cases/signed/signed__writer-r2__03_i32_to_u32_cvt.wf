@@ -1,6 +1,6 @@
 fn to_unsigned(x: own i32) -> as_unsigned: own u32 pure {
   doc "ACCEPT: cvt<i32, u32> is EXACT and total-pair (OP-6); match routes Ok/Err for mixed signed/unsigned.";
-  match cvt<i32, u32>(x) {
+  match cvt::<i32, u32>(x) {
     Ok(value: v) => {
       return v;
     }
@@ -13,11 +13,11 @@ fn to_unsigned(x: own i32) -> as_unsigned: own u32 pure {
 command fn main() -> status: own ExitStatus pure {
   let positive = to_unsigned(x: 42_i32);
   let negative = to_unsigned(x: -1_i32);
-  if ieq(positive, 42_u32) {
+  if positive == 42_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(negative, 0_u32) {
+  if negative == 0_u32 {
     return exit_status(code: 0_u8);
   } else {
     return exit_status(code: 2_u8);

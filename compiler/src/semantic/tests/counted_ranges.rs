@@ -224,7 +224,7 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
 command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     region 'body {
-      overwrite<'body>(target: &uniq 'body i);
+      overwrite::<'body>(target: &uniq 'body i);
     }
   }
   return exit_status(code: 0_u8);
@@ -427,7 +427,7 @@ fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
     }
     for (
       index in 0_u64..1_u64,
-      invariant within_range: ile(index, 1_u64)
+      invariant within_range: index <= 1_u64
     ) {
       break;
     }

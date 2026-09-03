@@ -2,11 +2,11 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
   doc "SYS-8 rejects an end endpoint beyond the destination length statically, even when start is inside the buffer. The rejected call never reaches a host transfer or runtime fallback.";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 2_u64, end: 6_u64) {
+            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 2_u64, end: 6_u64) {
               Ok(value: copied) => {
                 return exit_status(code: 10_u8);
               }

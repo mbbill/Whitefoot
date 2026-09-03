@@ -11,7 +11,7 @@ command fn main() -> status: own ExitStatus pure {
   let low = -100_i8;
   let high = 20_i8;
   let sum = safe_add(a: low, b: high);
-  if ieq(sum, -80_i8) {
+  if sum == -80_i8 {
     return exit_status(code: 0_u8);
   } else {
     return exit_status(code: 1_u8);

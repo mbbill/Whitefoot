@@ -1,17 +1,17 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: ineg.wrap is total on every signed type including MIN(T); wrapping negation of i8::MIN is i8::MIN itself.";
   let wrapped = ineg.wrap(-128_i8);
-  if ieq(wrapped, -128_i8) {
+  if wrapped == -128_i8 {
   } else {
     return exit_status(code: 1_u8);
   }
   let ordinary = ineg.wrap(5_i8);
-  if ieq(ordinary, -5_i8) {
+  if ordinary == -5_i8 {
   } else {
     return exit_status(code: 2_u8);
   }
   let round_trip = ineg.wrap(wrapped);
-  if ieq(round_trip, -128_i8) {
+  if round_trip == -128_i8 {
   } else {
     return exit_status(code: 3_u8);
   }

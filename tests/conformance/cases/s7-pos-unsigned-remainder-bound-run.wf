@@ -9,7 +9,7 @@ command fn main() -> status: own ExitStatus pure {
   if unexpected {
     return exit_status(code: 1_u8);
   }
-  let expected = ieq(selected, 40_u8);
+  let expected = selected == 40_u8;
   if expected {
     return exit_status(code: 0_u8);
   } else {

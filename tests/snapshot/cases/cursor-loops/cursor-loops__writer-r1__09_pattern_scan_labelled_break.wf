@@ -1,20 +1,20 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an outer labelled loop advances a scan cursor over a text buffer and an inner labelled loop compares a fixed pattern at each position, the inner loop breaking the outer label as soon as a full match is confirmed.";
-  let text = array_new<u8, 6>(0_u8);
+  let text = array_new::<u8, 6>(0_u8);
   set text[0_u64] = 97_u8;
   set text[1_u64] = 98_u8;
   set text[2_u64] = 99_u8;
   set text[3_u64] = 98_u8;
   set text[4_u64] = 99_u8;
   set text[5_u64] = 100_u8;
-  let pattern = array_new<u8, 2>(0_u8);
+  let pattern = array_new::<u8, 2>(0_u8);
   set pattern[0_u64] = 99_u8;
   set pattern[1_u64] = 100_u8;
   let scan_cursor = 0_u64;
   let match_start = 0_u64;
   let matched = False();
   loop @scan {
-    let scan_in_bounds = ilt(scan_cursor, 5_u64);
+    let scan_in_bounds = scan_cursor < 5_u64;
     if scan_in_bounds {
     } else {
       break @scan;
@@ -22,20 +22,20 @@ command fn main() -> status: own ExitStatus pure {
     let match_cursor = 0_u64;
     let all_equal = True();
     loop @check {
-      let check_in_bounds = ilt(match_cursor, 2_u64);
+      let check_in_bounds = match_cursor < 2_u64;
       if check_in_bounds {
       } else {
         break @check;
       }
       let text_index = scan_cursor + match_cursor;
-      let text_index_in_bounds = ilt(text_index, 6_u64);
+      let text_index_in_bounds = text_index < 6_u64;
       if text_index_in_bounds {
       } else {
         break @check;
       }
       let text_byte = text[text_index];
       let pattern_byte = pattern[match_cursor];
-      let equal = ieq(text_byte, pattern_byte);
+      let equal = text_byte == pattern_byte;
       if equal {
       } else {
         set all_equal = False();
@@ -50,7 +50,7 @@ command fn main() -> status: own ExitStatus pure {
     }
     set scan_cursor = scan_cursor + 1_u64;
   }
-  let start_correct = ieq(match_start, 4_u64);
+  let start_correct = match_start == 4_u64;
   let outcome_ok = band(matched, start_correct);
   if outcome_ok {
   } else {

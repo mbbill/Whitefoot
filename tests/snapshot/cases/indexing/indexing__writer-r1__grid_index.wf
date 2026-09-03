@@ -1,6 +1,6 @@
 fn grid_get(cells: own buffer<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own Option<u8> reads(cells) contract {
-  requires ilt(row, height);
-  requires ilt(col, width);
+  requires row < height;
+  requires col < width;
 } {
   doc "ACCEPT: flattened row*width+col grid read; the product and sum are checked, and the flattened offset is tested against the real backing length before the load.";
   match row *checked width {
@@ -8,7 +8,7 @@ fn grid_get(cells: own buffer<u8>, width: own u64, height: own u64, row: own u64
       match row_base +checked col {
         Ok(value: at) => {
           let capacity = len(cells);
-          let fits = ilt(at, capacity);
+          let fits = at < capacity;
           if fits {
           } else {
             return None<u8>();
@@ -33,7 +33,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let found = grid_get(cells: move cells, width: 4_u64, height: 3_u64, row: 2_u64, col: 1_u64);
   match found {
     Some(value: byte) => {
-      if ieq(byte, 99_u8) {
+      if byte == 99_u8 {
         return exit_status(code: 0_u8);
       } else {
         return exit_status(code: 1_u8);

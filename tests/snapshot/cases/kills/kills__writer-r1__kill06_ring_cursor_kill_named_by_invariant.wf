@@ -5,11 +5,11 @@ struct Ring {
 
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: every pass writes both the local pos and the struct field ring.cursor it mirrors, killing the prior iteration's bound; a fresh real branch re-establishes pos's bound before the next iteration's index, per P12.";
-  let slots = array_new<u32, 4>(0_u32);
+  let slots = array_new::<u32, 4>(0_u32);
   let ring = Ring(slots: move slots, cursor: 0_u64);
   let pos = 0_u64;
   for (step in 0_u64..9_u64) {
-    let pos_ok = ilt(pos, 4_u64);
+    let pos_ok = pos < 4_u64;
     if pos_ok {
     } else {
       return exit_status(code: 1_u8);
@@ -17,7 +17,7 @@ command fn main() -> status: own ExitStatus pure {
     let filled = ring.slots[pos];
     let stamped = filled +wrap 1_u32;
     set ring.slots[pos] = stamped;
-    let at_end = ieq(pos, 3_u64);
+    let at_end = pos == 3_u64;
     if at_end {
       set pos = 0_u64;
     } else {
@@ -25,11 +25,11 @@ command fn main() -> status: own ExitStatus pure {
     }
     set ring.cursor = pos;
   }
-  if ieq(ring.slots[0_u64], 3_u32) {
+  if ring.slots[0_u64] == 3_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(ring.slots[1_u64], 2_u32) {
+  if ring.slots[1_u64] == 2_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

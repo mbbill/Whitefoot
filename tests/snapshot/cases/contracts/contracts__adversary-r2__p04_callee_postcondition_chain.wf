@@ -1,18 +1,18 @@
 fn step_one(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
 
 fn step_two(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let a = step_one(value: value);
   return a;
 }
 
 fn step_three(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   let b = step_two(value: value);
   return b;
@@ -21,7 +21,7 @@ fn step_three(value: own i32) -> result: own i32 pure contract {
 command fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: a three-hop postcondition chain (step_one -> step_two -> step_three) each ensures result == value; every hop's ensures is consumed by its caller to discharge its own ensures.";
   let observed = step_three(value: 11_i32);
-  if ieq(observed, 11_i32) {
+  if observed == 11_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

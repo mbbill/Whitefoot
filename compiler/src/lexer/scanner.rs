@@ -63,6 +63,21 @@ impl<'bytes> Scanner<'bytes> {
             b'=' if self.bytes.get(start + 1) == Some(&b'>') => {
                 self.fixed(start, 2, RawKind::Token(TokenKind::FatArrow))
             }
+            b'=' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::EqualEqual))
+            }
+            b'!' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::BangEqual))
+            }
+            b'<' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::LessEqual))
+            }
+            b'>' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::GreaterEqual))
+            }
+            b':' if self.bytes.get(start + 1) == Some(&b':') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::ColonColon))
+            }
             b'/' if matches!(self.bytes.get(start + 1), Some(b'/' | b'*')) => {
                 return Err(RawIssue {
                     start,

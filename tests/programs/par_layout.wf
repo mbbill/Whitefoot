@@ -9,7 +9,7 @@ fn boxed_leaf(w: own f64) -> result: own box<LNode> allocates(heap) {
 }
 
 fn build(depth: own u64, w: own f64) -> result: own box<LNode> allocates(heap) {
-  let done = ieq(depth, 0_u64);
+  let done = depth == 0_u64;
   if done {
     return boxed_leaf(w: w);
   }
@@ -58,7 +58,7 @@ fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 r
   let room = len(deref(words));
   let k = 0_u64;
   loop @scan {
-    let done = ige(k, room);
+    let done = k >= room;
     if done {
       break @scan;
     }
@@ -80,7 +80,7 @@ fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> re
   let total = 0.0_f64;
   let room = len(deref(words));
   let bounded_count = room;
-  let count_fits = ile(count, room);
+  let count_fits = count <= room;
   if count_fits {
     set bounded_count = count;
   }
@@ -101,17 +101,17 @@ fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f6
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
-      let m = measure_words<'w>(words: words, font: v);
+      let m = measure_words::<'w>(words: words, font: v);
       let total = fadd.strict(v, m);
       set deref(lslot) = total;
       return total;
     }
     Branch(left: l, right: r, w: bw, h: bh, out: bslot) => {
       let own_h = cascade(inh: inh, w: deref(bw), h: deref(bh));
-      let m = measure_words<'w>(words: words, font: own_h);
+      let m = measure_words::<'w>(words: words, font: own_h);
       let child_inh = fmul.strict(own_h, 0.5_f64);
-      let a = layout<'b, 'w>(node: move l, words: words, inh: child_inh);
-      let b = layout<'b, 'w>(node: move r, words: words, inh: child_inh);
+      let a = layout::<'b, 'w>(node: move l, words: words, inh: child_inh);
+      let b = layout::<'b, 'w>(node: move r, words: words, inh: child_inh);
       let kids = fadd.strict(a, b);
       let mine = fadd.strict(own_h, m);
       let total = fadd.strict(kids, mine);
@@ -126,17 +126,17 @@ fn layout_banded['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, coun
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
-      let m = measure_band<'w>(words: words, count: count, font: v);
+      let m = measure_band::<'w>(words: words, count: count, font: v);
       let total = fadd.strict(v, m);
       set deref(lslot) = total;
       return total;
     }
     Branch(left: l, right: r, w: bw, h: bh, out: bslot) => {
       let own_h = cascade(inh: inh, w: deref(bw), h: deref(bh));
-      let m = measure_band<'w>(words: words, count: count, font: own_h);
+      let m = measure_band::<'w>(words: words, count: count, font: own_h);
       let child_inh = fmul.strict(own_h, 0.5_f64);
-      let a = layout_banded<'b, 'w>(node: move l, words: words, count: count, inh: child_inh);
-      let b = layout_banded<'b, 'w>(node: move r, words: words, count: count, inh: child_inh);
+      let a = layout_banded::<'b, 'w>(node: move l, words: words, count: count, inh: child_inh);
+      let b = layout_banded::<'b, 'w>(node: move r, words: words, count: count, inh: child_inh);
       let kids = fadd.strict(a, b);
       let mine = fadd.strict(own_h, m);
       let total = fadd.strict(kids, mine);
@@ -148,8 +148,8 @@ fn layout_banded['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, coun
 
 fn hex_digit(v: own u64) -> result: own u8 pure {
   let nibble = iand(v, 15_u64);
-  let small = ilt(nibble, 10_u64);
-  match cvt<u64, u8>(nibble) {
+  let small = nibble < 10_u64;
+  match cvt::<u64, u8>(nibble) {
     Ok(value: byte) => {
       if small {
         return byte +wrap 48_u8;
@@ -168,14 +168,14 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   let rest = value;
   let limit = at +wrap 16_u64;
   loop @digits {
-    let done = ige(cursor, limit);
+    let done = cursor >= limit;
     if done {
       break @digits;
     }
     let shifted = irotl(rest, 4_u32);
     let digit = hex_digit(v: shifted);
     let room = len(deref(destination));
-    let writable = ilt(cursor, room);
+    let writable = cursor < room;
     if writable {
       set deref(destination)[cursor] = digit;
     }
@@ -189,7 +189,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
   let batches = 1_u64;
   region 'arguments {
-    let invocation_count = args_count<'arguments>(args: &'arguments args);
+    let invocation_count = args_count::<'arguments>(args: &'arguments args);
     set batches = invocation_count;
   }
   let tree = build(depth: 6_u64, w: 512.0_f64);
@@ -198,7 +198,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let width = 6.5_f64;
   let w = 0_u64;
   loop @fill {
-    let done = ige(w, room);
+    let done = w >= room;
     if done {
       break @fill;
     }
@@ -213,20 +213,20 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let last = 0.0_f64;
   let batch = 0_u64;
   loop @layout_batches {
-    let all_batches_done = ige(batch, batches);
+    let all_batches_done = batch >= batches;
     if all_batches_done {
       break @layout_batches;
     }
     let i = 0_u64;
     let seed = 16.0_f64;
     loop @reps {
-      let done = ieq(i, 800_u64);
+      let done = i == 800_u64;
       if done {
         break @reps;
       }
       region 'tree {
         region 'words {
-          let total = layout<'tree, 'words>(node: &uniq 'tree tree, words: &'words words, inh: seed);
+          let total = layout::<'tree, 'words>(node: &uniq 'tree tree, words: &'words words, inh: seed);
           set last = total;
         }
       }
@@ -238,20 +238,20 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let banded = 0.0_f64;
   let band_batch = 0_u64;
   loop @band_batches {
-    let all_batches_done = ige(band_batch, batches);
+    let all_batches_done = band_batch >= batches;
     if all_batches_done {
       break @band_batches;
     }
     let j = 0_u64;
     let band_seed = 16.0_f64;
     loop @band_reps {
-      let done = ieq(j, 800_u64);
+      let done = j == 800_u64;
       if done {
         break @band_reps;
       }
       region 'banded_tree {
         region 'banded_words {
-          let total = layout_banded<'banded_tree, 'banded_words>(node: &uniq 'banded_tree tree, words: &'banded_words words, count: 4096_u64, inh: band_seed);
+          let total = layout_banded::<'banded_tree, 'banded_words>(node: &uniq 'banded_tree tree, words: &'banded_words words, count: 4096_u64, inh: band_seed);
           set banded = total;
         }
       }
@@ -260,19 +260,19 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set band_batch = band_batch +wrap 1_u64;
   }
-  let last_bits = reinterpret<f64, u64>(last);
-  let banded_bits = reinterpret<f64, u64>(banded);
+  let last_bits = reinterpret::<f64, u64>(last);
+  let banded_bits = reinterpret::<f64, u64>(banded);
   let report = buffer_new(34_u64, 10_u8);
   set report[16_u64] = 32_u8;
   region 'summary {
-    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: last_bits);
+    let first = spell_hex::<'summary>(destination: &uniq 'summary report, at: 0_u64, value: last_bits);
   }
   region 'second_half {
-    let second = spell_hex<'second_half>(destination: &uniq 'second_half report, at: 17_u64, value: banded_bits);
+    let second = spell_hex::<'second_half>(destination: &uniq 'second_half report, at: 17_u64, value: banded_bits);
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 34_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 34_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

@@ -4,17 +4,17 @@ fn copy_window['a](src: own buffer<u8>, start: own u64, width: own u64, dst: &un
   let room = len(deref(dst));
   let count = 0_u64;
   loop @copy (
-    invariant progress: ile(count, width)
+    invariant progress: count <= width
   ) {
-    let has_more = ilt(count, width);
+    let has_more = count < width;
     if has_more {
     } else {
       break @copy;
     }
     match start +checked count {
       Ok(value: source_at) => {
-        let in_src = ilt(source_at, capacity);
-        let in_dst = ilt(count, room);
+        let in_src = source_at < capacity;
+        let in_dst = count < room;
         if in_src {
         } else {
           break @copy;
@@ -42,19 +42,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set src[5_u64] = 7_u8;
   let dst = buffer_new(3_u64, 0_u8);
   region 'w {
-    let written = copy_window<'w>(src: move src, start: 3_u64, width: 3_u64, dst: &uniq 'w dst);
-    if ieq(written, 3_u64) {
+    let written = copy_window::<'w>(src: move src, start: 3_u64, width: 3_u64, dst: &uniq 'w dst);
+    if written == 3_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   let first = dst[0_u64];
-  if ieq(first, 5_u8) {
+  if first == 5_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
   let last = dst[2_u64];
-  if ieq(last, 7_u8) {
+  if last == 7_u8 {
   } else {
     return exit_status(code: 3_u8);
   }

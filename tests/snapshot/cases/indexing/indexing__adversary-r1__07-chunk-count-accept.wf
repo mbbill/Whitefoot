@@ -1,19 +1,19 @@
 fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own u8 reads(buf, status) contract {
   define data_len = len(buf);
   define status_len = len(status);
-  requires ige(data_len, 3_u64);
-  requires ige(status_len, data_len);
+  requires data_len >= 3_u64;
+  requires status_len >= data_len;
 } {
   doc "expect ACCEPT: chunk_count = data_len / 3 is at least 1 because data_len >= 3; a dominating branch on chunk_count == 0 (never taken here) lets the checker discharge the later chunk_count - 1 subtraction and the status[chunk_count - 1] subscript directly, without needing a nonlinear division-image certificate";
   let data_len = len(buf);
   let status_len = len(status);
   let chunk_count = data_len / 3_u64;
-  let is_zero = ieq(chunk_count, 0_u64);
+  let is_zero = chunk_count == 0_u64;
   if is_zero {
     return status[0_u64];
   } else {
     let last_chunk = chunk_count - 1_u64;
-    let too_far = ige(last_chunk, status_len);
+    let too_far = last_chunk >= status_len;
     if too_far {
       return status[0_u64];
     } else {
@@ -27,7 +27,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(9_u64, 0_u8);
   let stat = buffer_new(9_u64, 3_u8);
   let value = last_chunk_status(buf: move buf, status: move stat);
-  if ieq(value, 3_u8) {
+  if value == 3_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

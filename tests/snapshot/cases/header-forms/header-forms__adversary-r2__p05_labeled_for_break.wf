@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
       break @outer;
     }
   }
-  let correct = ieq(total, 1_u64);
+  let correct = total == 1_u64;
   if correct {
   } else {
     return exit_status(code: 1_u8);

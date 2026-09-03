@@ -1,13 +1,13 @@
 fn scale_twice(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
+  requires first <= first_limit;
+  requires second <= second_limit;
 } {
   doc "expect ACCEPT: bound_b combines bound_a with an explicit factor of 7, and bound_c re-scales bound_b again by 11, a use of a use.";
-  invariant bound_a: ile(first + second, first_limit + second_limit);
-  invariant bound_b: ile(7_u64 * first + 7_u64 * second, 7_u64 * first_limit + 7_u64 * second_limit) {
+  invariant bound_a: first + second <= first_limit + second_limit;
+  invariant bound_b: 7_u64 * first + 7_u64 * second <= 7_u64 * first_limit + 7_u64 * second_limit {
     use 7 * bound_a;
   }
-  invariant bound_c: ile(77_u64 * first + 77_u64 * second, 77_u64 * first_limit + 77_u64 * second_limit) {
+  invariant bound_c: 77_u64 * first + 77_u64 * second <= 77_u64 * first_limit + 77_u64 * second_limit {
     use 11 * bound_b;
   }
   return unit;

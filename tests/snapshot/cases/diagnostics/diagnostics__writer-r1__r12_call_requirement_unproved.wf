@@ -1,6 +1,6 @@
 fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(bytes) contract {
   define room = len(bytes);
-  requires ilt(index, room);
+  requires index < room;
 } {
   return bytes[index];
 }
@@ -8,7 +8,7 @@ fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   doc "expect REJECT: [FN-8] the caller never establishes index < len(bytes) before calling read_at_index";
   region 'a {
-    let index = args_count<'a>(args: &'a args);
+    let index = args_count::<'a>(args: &'a args);
     let bytes = buffer_new(4_u64, 0_u8);
     let value = read_at_index(bytes: move bytes, index: index);
     return exit_status(code: value);
