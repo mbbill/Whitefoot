@@ -15,6 +15,19 @@ It contains one header, all 180 preregistered samples, two summaries, and one
 completion record; power was AC before and after. No sample was removed,
 extended, or rerun.
 
+## Replay status (2026-09-03)
+
+This bundle is frozen v0.17-era evidence. `full_scan.wf` and `early_scan.wf`
+no longer parse under the active specification: a function's result binding
+is now named (`-> result: own u64`, the active grammar's `result_binding`),
+and the `traps` effect both kernels declare was retired in v0.40 together
+with every runtime trap, the very machinery whose guard-dominated bounds
+traps the result below credits LLVM with removing. The Makefile that
+compiled the kernels through the current compiler was removed on 2026-09-03,
+so no research driver names a program the compiler rejects. The kernels, the
+C and Rust controls, the harness, `runner.rs`, and the raw evidence stay as
+the run's record; a replay starts from the freeze commit named above.
+
 ## Result
 
 The primary ratio is `C elapsed / Whitefoot elapsed`; below 1 means Whitefoot
