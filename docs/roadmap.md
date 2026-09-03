@@ -580,6 +580,19 @@ creating writer trust or weakening the checked safety envelope.
   runtime window in `1..2`; qualified non-completion targets execute the same
   generated CFG with a deterministic window of one and direct calls. The
   complete batch drains in source order before slot zero reuse.
+- **Known gap — addressing:** a two-dimensional index such as `r * cols + c`
+  multiplies two nonliteral operands, so its relation is outside the fixed
+  affine fragment that AUTO and written `use` steps share. The writer uses a
+  literal stride or a flat scan today, and widening the fragment waits for a
+  selected real program that needs the general form
+  ([compiler README](../compiler/README.md)).
+- **Known gap — pre-kill closure:** the [ENT-5] kill path currently
+  materializes the complete L0 closure before every kill event and skips that
+  work only when the state is already closed. Projecting only through the dying
+  term is the alternative shape; because either shape must retain the same
+  surviving facts, it is a measured-performance candidate for the runner
+  stages, not an acceptance question
+  ([`spec/kernel-spec.md`](../spec/kernel-spec.md)).
 - **Missing / next:** finish and align grammar, resolution, semantic flow,
   diagnostics, erasure, conformance, real-program evidence, compile-cost
   measurement, and proof-driven parallel evidence; then run the complete gate
