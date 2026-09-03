@@ -17,17 +17,18 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::{SystemTarget, qualify_program};
 use crate::backend::target::{
     PARALLEL_LANE_FRAME_ALIGNMENT, TargetLayout, TargetLayoutFailure, TargetObject,
     parallel_lane_frame_layout,
 };
 
-use super::system::with_ir;
+use super::system::{with_ir, with_parallel_ir};
 use super::{
     HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
     append_completion_runtime, build_executable, compile_and_run, emit, emit_with_overlap,
-    module_requires_completion_runtime, module_requires_parallel_runtime, test_directory,
+    module_requires_parallel_runtime, module_requires_writer_scheduler, test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -941,6 +942,50 @@ fn the_bootstrap_selects_one_world_once() {
     );
 }
 
+/// A Windows `--par` module carries unresolved native-pool obligations instead
+/// of the sequential weak definitions used by the POSIX optional-runtime
+/// path.  Consequently, omitting `par_runtime_windows.c` is a link error and
+/// can never turn a requested Windows backend into the sequential world.
+#[test]
+fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
+    let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+        .expect("the supported Windows target must have a system row");
+    let module = with_parallel_ir(OVERLAPPING_FOLD, |program| {
+        emit_llvm_for_target(program, windows)
+            .expect("the overlap fixture must emit for Windows")
+            .into_string()
+    });
+
+    for declaration in [
+        "declare ptr @wf__par_acquire_lane(i64)",
+        "declare void @wf__par_publish(ptr, ptr)",
+        "declare void @wf__par_join(ptr)",
+        "declare void @wf__par_release(ptr)",
+        "declare i32 @wf__par_pool_active()",
+    ] {
+        assert!(
+            module.contains(declaration),
+            "Windows must leave `{declaration}` for the native runtime:\n{module}"
+        );
+    }
+    for fallback in [
+        "define weak ptr @wf__par_acquire_lane",
+        "define weak void @wf__par_publish",
+        "define weak void @wf__par_join",
+        "define weak void @wf__par_release",
+        "define weak i32 @wf__par_pool_active",
+    ] {
+        assert!(
+            !module.contains(fallback),
+            "Windows must not carry sequential fallback `{fallback}`:\n{module}"
+        );
+    }
+    assert!(
+        module_requires_parallel_runtime(&module),
+        "the Windows declarations must remain a driver-visible link obligation"
+    );
+}
+
 /// A recursion far deeper than the runtime can hold offers for, whose whole
 /// result is published as bytes so a wrong schedule is a wrong output.
 ///
@@ -1651,7 +1696,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
-    let parallel_source = if module_requires_completion_runtime(module) {
+    let parallel_source = if module_requires_writer_scheduler(module) {
         PARALLEL_COMPLETION_RUNTIME_SOURCE
     } else {
         PARALLEL_RUNTIME_SOURCE

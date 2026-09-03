@@ -456,6 +456,127 @@ fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     source.into_bytes()
 }
 
+fn emit_windows_completion(source: &[u8]) -> String {
+    let target = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+        .expect("the native Windows completion target");
+    with_mutated_completion_ir(source, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the Windows completion probe must emit")
+            .into_string()
+    })
+}
+
+#[test]
+fn windows_completion_modules_require_the_native_runtime_at_link_time() {
+    let module = emit_windows_completion(POSITIONED_READS);
+
+    assert!(crate::module_requires_completion_runtime(&module));
+    for declaration in [
+        "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
+        "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)",
+        "declare void @wf__completion_file_join(ptr, ptr, ptr)",
+        "declare void @wf__completion_wait_core_capacity()",
+    ] {
+        assert!(
+            module.contains(declaration),
+            "Windows completion must name the native ABI `{declaration}`:\n{module}"
+        );
+    }
+    assert!(
+        !module.contains("define weak i32 @wf__completion_file_read_submit"),
+        "a missing Windows runtime must be a link error, not a direct backend"
+    );
+    assert!(
+        !module.contains("define weak void @wf__completion_file_join"),
+        "Windows joins must not resolve to an empty optional-runtime body"
+    );
+}
+
+#[test]
+fn windows_core_pressure_materializes_the_oldest_owned_result_and_retries() {
+    let source = more_than_target_capacity_reads(3);
+    let module = emit_windows_completion(&source);
+    let body = emitted_function(&module, "main");
+    let submissions = body
+        .matches("call i32 @wf__completion_file_pread_submit")
+        .count();
+
+    assert_eq!(submissions, 2, "the source-last read remains direct");
+    assert_eq!(
+        body.matches(" = icmp eq i32 ").count(),
+        submissions * 3,
+        "each submit distinguishes DIRECT_ONLY, ACCEPTED, and WAIT_CORE_CAPACITY"
+    );
+    assert_eq!(
+        body.matches(", 2\n  br i1 ").count(),
+        submissions,
+        "status 2 must have its own branch at every submit"
+    );
+    assert_eq!(
+        body.matches("call void @wf__completion_wait_core_capacity()")
+            .count(),
+        submissions,
+        "every site has a no-owned-token capacity wait before retry"
+    );
+    assert_eq!(
+        body.matches("completion.capacity.consume.").count(),
+        2,
+        "the second submit has one consume label and one branch to it"
+    );
+    assert_eq!(
+        body.matches("call void @wf__completion_file_join").count(),
+        3,
+        "two source joins plus one pressure-path materialization consume each token at most once"
+    );
+
+    let lines = body.lines().collect::<Vec<_>>();
+    let wait_verdicts = lines
+        .windows(3)
+        .filter(|window| {
+            window[0].trim().starts_with("completion.verdict.wait.")
+                && window[0].trim().ends_with(':')
+        })
+        .map(|window| window[2])
+        .collect::<Vec<_>>();
+    assert_eq!(wait_verdicts.len(), submissions);
+    for branch in wait_verdicts {
+        assert!(branch.contains("label %completion.capacity."), "{branch}");
+        assert!(
+            branch.contains("label %completion.verdict.invalid."),
+            "{branch}"
+        );
+        assert!(
+            !branch.contains("completion.inline."),
+            "core pressure must never become direct execution: {branch}"
+        );
+    }
+
+    let consume = body
+        .split_once("\ncompletion.capacity.consume.")
+        .expect("the second submit can consume the first request")
+        .1
+        .split_once("\ncompletion.capacity.next.")
+        .expect("the consume arm rejoins the owner scan")
+        .0;
+    assert!(consume.contains("call void @wf__completion_file_join"));
+    let mapped = consume
+        .find("@wf.sys.read.completion(")
+        .expect("the pressure path maps the raw result");
+    let stored = consume[mapped..]
+        .find("\n  store ")
+        .map(|offset| mapped + offset)
+        .expect("the pressure path stores the typed result");
+    let cleared = consume
+        .find("store i1 false")
+        .expect("the pressure path relinquishes target ownership");
+    assert!(mapped < stored && stored < cleared, "{consume}");
+    assert!(consume.contains("br label %completion.submit."));
+    assert!(
+        body.matches("call void @abort()").count() >= submissions,
+        "an unknown runtime verdict must abort"
+    );
+}
+
 /// The logical field pointers of the one target-planned frame in `body`.
 ///
 /// The first GEP level must be derived from the exact struct type allocated at
@@ -568,6 +689,9 @@ fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     assert!(crate::module_requires_completion_runtime(&sequential));
     assert!(crate::module_requires_completion_runtime(&completion));
     assert!(!crate::module_requires_completion_runtime(&pure));
+    assert!(!crate::module_requires_writer_scheduler(&sequential));
+    assert!(!crate::module_requires_writer_scheduler(&completion));
+    assert!(!crate::module_requires_writer_scheduler(&pure));
     assert!(sequential.contains("@wf__completion_file_write_direct"));
     assert!(!sequential.contains("call i32 @wf__completion_file_write_submit"));
     assert!(!pure.contains("wf__completion_"));
@@ -730,6 +854,32 @@ fn source_derived_two_slot_batch_links_and_preserves_every_iteration() {
     std::fs::remove_file(batched_executable).expect("remove batched executable");
     std::fs::remove_file(directory.join("aaaa")).expect("remove fixture file");
     std::fs::remove_dir(directory).expect("remove completion test directory");
+}
+
+/// Windows pressure recovery may inspect a ring element before that iteration
+/// takes its submit arm. Its submission-state array must therefore start false
+/// in the entry prelude, not on a path through the loop body.
+#[test]
+fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
+    let module = emit_windows_completion(BOUNDED_BATCH_OPENS);
+    let body = emitted_function(&module, "main");
+    let initialized = body
+        .find("store [2 x i1] zeroinitializer, ptr ")
+        .expect("the submission-state ring is initialized in the entry prelude");
+    let submit = body
+        .find("call i32 @wf__completion_file_open_at_submit")
+        .expect("the source-derived batch submits an open");
+    let pressure = body
+        .find("completion.capacity.v")
+        .expect("Windows emits a capacity-recovery path");
+    assert!(
+        initialized < submit && initialized < pressure,
+        "the state ring starts false before either an accepted submit or a pressure path"
+    );
+    assert!(
+        module.contains("declare void @abort() noreturn"),
+        "the invalid Windows submit verdict remains fail-closed"
+    );
 }
 
 #[test]
@@ -1396,6 +1546,31 @@ fn component_directory_open_uses_the_same_typed_completion_route() {
     }
     std::fs::remove_file(executable).expect("remove component-open probe");
     std::fs::remove_dir(directory).expect("remove component-open directory");
+}
+
+#[test]
+fn windows_component_completion_stages_one_terminated_utf16_name() {
+    let module = emit_windows_completion(INDEPENDENT_COMPONENT_OPENS);
+    assert!(
+        module.contains("i32 2, i32 2, ptr %"),
+        "a component directory result must be registered as DIRECTORY_ROOT: {module}"
+    );
+    let component = module
+        .split_once("completion.component.entry.")
+        .expect("the Windows completion route validates the component")
+        .1
+        .split_once("call i32 @wf__completion_file_open_at_submit")
+        .expect("the validated component reaches the typed submit")
+        .0;
+
+    assert!(component.contains("load i16"), "{component}");
+    assert!(component.contains("icmp eq i16"), "{component}");
+    assert!(component.contains("add i64") && component.contains(", 2\n"));
+    assert!(component.contains("store i16 0"), "{component}");
+    assert!(
+        !component.contains("store i8 0"),
+        "a one-byte terminator can expose an uninitialized UTF-16 high byte: {component}"
+    );
 }
 
 #[test]

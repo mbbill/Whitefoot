@@ -46,19 +46,28 @@ pub use completion::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, module_requires_completion_runtime,
+    COMPLETION_WINDOWS_BLOCKING_HEADER, COMPLETION_WINDOWS_BLOCKING_SOURCE,
+    COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER,
+    COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
+    COMPLETION_WINDOWS_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
+    WRITER_SCHEDULER_WINDOWS_SOURCE, module_requires_completion_runtime,
+    module_requires_writer_scheduler,
 };
 use floor::FLOOR_RUNTIME_FALLBACK;
-pub use floor::FLOOR_RUNTIME_SOURCE;
 pub use floor::FLOOR_STACK_BYTES;
+pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
 use parallel::{
-    HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK,
+    HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
+    PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
     sequential_clone_symbol,
 };
 pub use parallel::{
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime,
+    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
+    PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE,
+    module_requires_parallel_runtime,
 };
+pub use system::{WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
@@ -279,10 +288,18 @@ fn emit_llvm_for(
     let mut system_declarations = system.declarations;
     if writes_a_record {
         text.push('\n');
-        text.push_str("declare i64 @write(i32, ptr, i64)\n");
-        system_declarations.remove("declare i64 @write(i32, ptr, i64)");
+        if system_target.is_windows() {
+            text.push_str("declare i64 @wf__windows_diagnostic_write(ptr, i64)\n");
+            system_declarations.remove("declare i64 @wf__windows_diagnostic_write(ptr, i64)");
+        } else {
+            text.push_str("declare i64 @write(i32, ptr, i64)\n");
+            system_declarations.remove("declare i64 @write(i32, ptr, i64)");
+        }
     }
-    if writes_a_record || has_matches {
+    if writes_a_record
+        || has_matches
+        || (system_target.is_windows() && (completion_used || stackless.is_some()))
+    {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
@@ -295,9 +312,17 @@ fn emit_llvm_for(
     }
     if latched_resource_record {
         text.push_str(RESOURCE_RECORD_LATCH_FALLBACK);
-        text.push_str(LATCHED_RESOURCE_RECORD_WRITER);
+        text.push_str(if system_target.is_windows() {
+            WINDOWS_LATCHED_RESOURCE_RECORD_WRITER
+        } else {
+            LATCHED_RESOURCE_RECORD_WRITER
+        });
     } else if writes_a_record {
-        text.push_str(SEQUENTIAL_RESOURCE_RECORD_WRITER);
+        text.push_str(if system_target.is_windows() {
+            WINDOWS_SEQUENTIAL_RESOURCE_RECORD_WRITER
+        } else {
+            SEQUENTIAL_RESOURCE_RECORD_WRITER
+        });
     } else if has_matches {
         text.push('\n');
     }
@@ -349,28 +374,52 @@ fn emit_llvm_for(
     // a module that overlaps nothing names no runtime symbol at all.
     if thunks.requires_runtime() {
         text.push('\n');
-        text.push_str(PARALLEL_RUNTIME_FALLBACK);
+        text.push_str(if system_target.is_windows() {
+            PARALLEL_RUNTIME_DECLARATIONS
+        } else {
+            PARALLEL_RUNTIME_FALLBACK
+        });
         if !clones.is_empty() {
-            text.push_str(PARALLEL_POOL_QUERY_FALLBACK);
+            text.push_str(if system_target.is_windows() {
+                PARALLEL_POOL_QUERY_DECLARATION
+            } else {
+                PARALLEL_POOL_QUERY_FALLBACK
+            });
         }
         if thunks.queries_split_budget() {
-            text.push_str(PARALLEL_SPLIT_BUDGET_FALLBACK);
+            text.push_str(if system_target.is_windows() {
+                PARALLEL_SPLIT_BUDGET_DECLARATION
+            } else {
+                PARALLEL_SPLIT_BUDGET_FALLBACK
+            });
         }
         text.push_str(thunks.definitions());
     }
     if completion_used {
         text.push('\n');
-        text.push_str(completion::COMPLETION_RUNTIME_FALLBACK);
+        text.push_str(if system_target.is_windows() {
+            completion::COMPLETION_WINDOWS_RUNTIME_DECLARATIONS
+        } else {
+            completion::COMPLETION_RUNTIME_FALLBACK
+        });
         // Emitted only where a module actually asks for a window, exactly as
         // the split budget's fallback is, so a module that stages no loop
         // names no such symbol at all.
         if functions.contains("@wf__completion_window(") {
-            text.push_str(completion::COMPLETION_WINDOW_FALLBACK);
+            text.push_str(if system_target.is_windows() {
+                completion::COMPLETION_WINDOWS_WINDOW_DECLARATION
+            } else {
+                completion::COMPLETION_WINDOW_FALLBACK
+            });
         }
     }
     if stackless.is_some() {
         text.push('\n');
-        text.push_str(stackless::STACKLESS_RUNTIME_FALLBACK);
+        text.push_str(if system_target.is_windows() {
+            stackless::STACKLESS_WINDOWS_RUNTIME_DECLARATIONS
+        } else {
+            stackless::STACKLESS_RUNTIME_FALLBACK
+        });
     }
     if !functions.is_empty() {
         text.push('\n');
@@ -915,18 +964,25 @@ fn plan_completion_slots(
         let bytes = qualification
             .target()
             .component_limit()
-            .checked_add(1)
+            .checked_add(if qualification.target().is_windows() {
+                2
+            } else {
+                1
+            })
             .ok_or(BackendFailure::CounterOverflow)?;
         add(CompletionSlot::Component, TargetStorageType::bytes(bytes))?;
     }
     if operation == system::CompletionFileOperation::DirectoryNext {
         add(CompletionSlot::Cursor, TargetStorageType::integer(64))?;
     }
-    if !uses_ring {
+    if !uses_ring && !qualification.target().is_windows() {
         return Ok(());
     }
 
     add(CompletionSlot::Submitted, TargetStorageType::integer(1))?;
+    if !uses_ring {
+        return Ok(());
+    }
     match operation {
         system::CompletionFileOperation::Read | system::CompletionFileOperation::Write => {
             add(CompletionSlot::Start, TargetStorageType::integer(64))?;
@@ -2418,6 +2474,11 @@ pub(crate) fn overlapped_clone_symbol(sequential: &str) -> Option<String> {
 /// overlapped world existed, and they are what a default build still gets.
 const SEQUENTIAL_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
 
+/// Windows twin of [`SEQUENTIAL_RESOURCE_RECORD_WRITER`]. The private runtime
+/// call writes the same bytes to the process diagnostic channel without
+/// importing the POSIX file-descriptor ABI into a COFF module.
+const WINDOWS_SEQUENTIAL_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
+
 /// The module's own answer for the shared record latch, and the only state the
 /// resource-record path carries.
 ///
@@ -2462,7 +2523,11 @@ const RESOURCE_RECORD_LATCH_FALLBACK: &str = "\ndefine weak ptr @wf__floor_recor
 /// The park spins on a *volatile* load rather than an empty loop, so no
 /// optimizer may delete the loop and let a losing thread fall through into a
 /// second record.
-const LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %claimed = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
+const LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %acquired = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %acquired, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
+
+/// Windows twin of [`LATCHED_RESOURCE_RECORD_WRITER`], sharing the floor
+/// runtime's first-writer latch while using the native diagnostic channel.
+const WINDOWS_LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %acquired = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %acquired, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
 
 fn llvm_bytes(bytes: &[u8]) -> String {
     let mut encoded = String::with_capacity(bytes.len() * 3);

@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+struct wf_windows_iocp_adapter;
+
 enum wf_completion_phase {
     WF_COMPLETION_FREE = 0,
     WF_COMPLETION_READY = 1,
@@ -109,6 +111,42 @@ typedef struct wf_completion_statistics {
     uint64_t capacity_notifications;
 } wf_completion_statistics;
 
+/* Process-wide descriptor-retirement ledger.  This is the Windows-native
+ * representation of the same contract implemented by runtime.c for POSIX:
+ * overlapping open calls may wait for descriptors held by runtime work, then
+ * retry exactly once in waiter-registration order. */
+typedef struct wf_retirement_waiter {
+    struct wf_retirement_waiter *next;
+    uint64_t seen;
+    size_t (*owed)(void *context);
+    void *owed_context;
+    unsigned resource;
+    int runs_owed;
+    int awarded;
+    int aside;
+} wf_retirement_waiter;
+
+enum wf_retirement_resource {
+    WF_RETIREMENT_NATIVE_HANDLE = 0,
+    WF_RETIREMENT_CRT_DESCRIPTOR = 1,
+    /* Windows exposes several resource-exhaustion classes through one open
+     * operation. This class has no early-return awards: its waiter retries
+     * only after all overlapping host operations have retired. */
+    WF_RETIREMENT_OPEN_QUIESCENCE = 2,
+    WF_RETIREMENT_RESOURCE_COUNT = 3
+};
+
+enum wf_retirement_resource_mask {
+    WF_RETIREMENT_RETURNED_NATIVE_HANDLE = 1u << 0,
+    WF_RETIREMENT_RETURNED_CRT_DESCRIPTOR = 1u << 1
+};
+
+enum wf_retirement_state {
+    WF_RETIREMENT_HAPPENED = 0,
+    WF_RETIREMENT_AWAITED = 1,
+    WF_RETIREMENT_UNREACHABLE = 2
+};
+
 struct wf_completion_runtime {
     wf_completion_slot *slots;
     size_t slot_count;
@@ -122,9 +160,14 @@ struct wf_completion_runtime {
     volatile LONG64 wake_epoch;
     volatile LONG parked_schedulers;
     volatile LONG iocp_waiters;
+    volatile LONG iocp_wake_packets;
 
-    /* When bound, compute and completion publication place a persistent wake
-     * packet on the same IOCP used by real overlapped operations. */
+    /* When bound, compute and completion publication keep enough persistent
+     * wake packets for every announced IOCP waiter. `iocp_wake_packets` is the
+     * exact count successfully posted but not yet reported consumed by the
+     * adapter; repeated notifications only fill a deficit and therefore
+     * coalesce. A real completion may retire its waiter before an older wake
+     * packet is dequeued; that bounded surplus remains reusable. */
     HANDLE wake_port;
     ULONG_PTR wake_key;
 
@@ -159,30 +202,55 @@ int wf_completion_set_ready_callback(
  * A null-OVERLAPPED packet is a scheduler wake, never an I/O result. */
 int wf_windows_completion_bind_iocp(
     wf_completion_runtime *runtime,
+    struct wf_windows_iocp_adapter *adapter,
     HANDLE port,
     ULONG_PTR wake_key
 );
 
 /* Announce/recheck for a scheduler about to wait in
- * GetQueuedCompletionStatus. Persistent IOCP packets close the final race;
- * compute publication posts a null-OVERLAPPED packet only while such a waiter
- * exists. */
+ * GetQueuedCompletionStatus. A notification fills the outstanding packet
+ * count to the announced waiter count while holding the same lock used here,
+ * closing the final race without accumulating one packet per notification.
+ * A bound adapter's progress call withdraws the announcement automatically on
+ * its first dequeue result. `wait_end` is only for cancelling a successful
+ * announcement before entering progress. */
 enum wf_completion_park_result wf_windows_completion_iocp_wait_begin(
     wf_completion_runtime *runtime,
     uint64_t observed_epoch
 );
 void wf_windows_completion_iocp_wait_end(wf_completion_runtime *runtime);
 
+unsigned wf_windows_completion_iocp_waiter_count(
+    const wf_completion_runtime *runtime
+);
+unsigned wf_windows_completion_iocp_wake_packet_count(
+    const wf_completion_runtime *runtime
+);
+
 enum wf_completion_claim_result wf_completion_claim(
     wf_completion_runtime *runtime,
     wf_completion_token *token
 );
+
+/* A non-destructive, advisory capacity check for a scheduler which is about
+ * to park. A true answer does not reserve a slot; the submitter must retry its
+ * exact claim and tolerate another lane winning the race. */
+int wf_completion_has_capacity(const wf_completion_runtime *runtime);
 
 size_t wf_completion_drain(
     wf_completion_runtime *runtime,
     wf_completion_event *events,
     size_t event_capacity,
     size_t scan_budget
+);
+/* Drains the pending event for one exact token without sweeping unrelated
+ * slots. The generation check and pending-event take are one transition under
+ * the slot publication lock, so a retired token cannot drain its reused
+ * slot's new operation. Returns 1 when it took the event, otherwise 0. */
+size_t wf_completion_drain_token(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    wf_completion_event *event
 );
 size_t wf_completion_ready_event_count(const wf_completion_runtime *runtime);
 
@@ -227,6 +295,43 @@ unsigned wf_completion_parked_scheduler_count(
 wf_completion_statistics wf_completion_statistics_snapshot(
     const wf_completion_runtime *runtime
 );
+
+uint64_t wf_completion_descriptor_returns(void);
+uint64_t wf_completion_resource_returns(unsigned resource);
+void wf_completion_resource_returned(unsigned resource);
+void wf_completion_operation_accepted(void);
+void wf_completion_operation_retired(int returned_a_descriptor);
+void wf_completion_operation_retired_resources(unsigned returned_resources);
+void wf_completion_retirement_open_took_a_descriptor(int on_an_award);
+void wf_completion_retirement_open_took_resource(
+    unsigned resource,
+    int on_an_award
+);
+uint64_t wf_completion_retirement_waits(void);
+size_t wf_completion_retirement_waiters(void);
+void wf_completion_retirement_wait_begin(
+    wf_retirement_waiter *waiter,
+    uint64_t seen,
+    size_t (*owed)(void *context),
+    void *owed_context,
+    int runs_owed
+);
+void wf_completion_retirement_wait_begin_resource(
+    wf_retirement_waiter *waiter,
+    uint64_t seen,
+    size_t (*owed)(void *context),
+    void *owed_context,
+    int runs_owed,
+    unsigned resource
+);
+void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
+void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter);
+void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter);
+enum wf_retirement_state wf_completion_retirement_state(
+    wf_retirement_waiter *waiter
+);
+void wf_completion_retirement_sleep(wf_retirement_waiter *waiter);
+void wf_completion_retirement_announces_on(wf_completion_runtime *runtime);
 
 _Static_assert(sizeof(wf_completion_token) == 16u, "completion token ABI");
 _Static_assert(

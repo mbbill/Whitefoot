@@ -84,6 +84,13 @@ its file and its window-aligned offset from *k* alone, so the narrow program,
 the eight-wide one, and every native baseline traverse exactly the same list
 and fold exactly the same value.
 
+The 4 KiB eight-wide source is also the Windows qualification workload. Its
+eight fixed file names arrive as command arguments and are copied through
+`host_copy_bytes` before `open_file`: ten bytes on a one-byte target and twenty
+UTF-16LE bytes on Windows. The direct and completion builds therefore receive
+the same target-native component ranges without either a source fallback or a
+runtime transcode.
+
 The opens are inside the timed region — the runner times whole processes — but
 there are exactly eight of them in every line, N, S, and C alike. At 116 us
 each that is 0.93 ms against a table whose fastest line is over a hundred
@@ -176,6 +183,62 @@ measurement too.
     make -C research/experiments/io-completion-bench bench-read   # macOS tables
     make -C research/experiments/io-completion-bench linux-read   # Linux tables
 
+On native Windows, `windows-bench.ps1` owns a separate production
+qualification:
+
+    pwsh research/experiments/io-completion-bench/windows-bench.ps1 \
+      -Root $PWD -Out $env:TEMP/whitefoot-windows-bench \
+      -Rounds 15 -Warmup 2 -Enforce
+
+It builds every contender from one compiler revision, generates the same eight
+64 MiB deterministic files as the other read-heavy protocols, warms them with
+a complete sequential pass, and pins every sampled child to one recorded
+processor mask. `windows_runner.c` takes each sample with
+`QueryPerformanceCounter` and `GetProcessTimes`; a nonzero exit, a byte of
+stderr, or stdout different from the committed exact oracle invalidates the
+sample before its time is reported. A sampled child or the untimed observer
+that exceeds two minutes is terminated and invalidates the run.
+
+Before any timed cohort, one direct and one IOCP 4 KiB read-heavy sample must
+both publish the exact oracle. This keeps a target-native path or fixture
+failure from being discovered only after the compute cohort has completed.
+
+The five alternating paired cohorts are compute (`par_layout.wf`, default
+against `--par`), warm 4 KiB reads (`--no-overlap` against production IOCP),
+the mixed program's sequential/IOCP control, and its IOCP-only/full compute
+plus IOCP pair, followed by a direct sequential/full pair that prevents the
+two component improvements from hiding a net mixed regression. The exact
+mixed window is source-level
+`read_at, compute_pair, read_at`; `compute_pair` contains the independent
+`churn, churn` pair. Before timing, an observed link requires all requested
+non-owner workers to start, a non-owner execution and successful steal, all
+1024 compute publications to occur while the source still owns the first read,
+and records separately how many of those reads remained kernel-in-flight and
+how many synchronous-success reads published inline. It also requires exactly
+1025 accepted/published/consumed completion operations, exactly one blocking
+helper execution (the overlapped open, beside 1024 IOCP reads), and zero
+fallback. Its fixed tree oracle is `17574306422404092952\n`.
+
+The compute pair gives both builds three inert command arguments.
+`par_layout.wf` counts the complete invocation vector, including the invoked
+name, and therefore runs four identical batches in one process. Every batch
+resets both fold seeds, so the exact 34-byte oracle is unchanged. This makes
+the shorter parallel side about 1.4 seconds on the qualifying host and measures
+one initialized pool's steady-state work instead of trying to stabilize a
+sub-second process by weakening the spread bound or averaging repeated pool
+startups. Ordinary argument-free corpus runs still execute one batch.
+
+Each cohort records fifteen candidate/reference ratios, alternating order in
+each pair, after two unrecorded warm-up pairs. A cohort with ratio MAD above
+5% or p10-to-p90 width above 10% is repeated once and fails as an invalid
+measurement environment if still unstable. The production bounds are compute
+at most 0.90, warm IOCP at most 1.10, and full mixed at most 0.95 relative to
+both its IOCP-only control and the fully sequential program. These are
+same-host runtime qualifications. The host,
+Windows build, CPU, processor mask, memory, power scheme, toolchain, revision,
+and every raw sample ship with the table; a hosted VM is not treated as a
+persistent cross-revision hardware baseline.
+
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local
 filesystem: measuring a bind mount would measure the host's file sharing
@@ -193,8 +256,9 @@ runner. Only paths and the host's own capabilities differ -- `ROOT`, `OUT`,
 `CLANG` and `CARGO_TARGET_DIR` name the paths, and `uname -s` decides whether
 the io_uring lines are in the plan. The `io-bench` workflow's
 `bench-linux-read` and `bench-macos-read` jobs run exactly those bytes; that
-workflow runs on demand and when the runtime or this bundle changes, because
-its tables judge nothing.
+workflow runs on demand and when the runtime or this bundle changes. Those
+Linux and macOS tables judge nothing; the Windows paired protocol above is the
+dedicated qualified gate.
 
 The script differs from `bench-read` in one deliberate way. `bench-read`
 refuses to print a table whose cache-state label the probe did not confirm,
@@ -229,8 +293,10 @@ cache state is checked by the probe above before and after it runs.
 `READ_PROBES`, `READ_THRESHOLD_US`, and `READ_TOLERANCE_PERCENT` set that
 check.
 
-This bundle is deliberately not reachable from the repository's `make check`.
-It generates a large tree, runs for minutes, and reports timings no build
-should depend on. Generated trees, binaries, and raw output stay under
-`$(WHITEFOOT_SCRATCH_ROOT)`; only the summarized table is committed, in
-`research/investigations/io-model/RESULTS.md`.
+This bundle is deliberately not reachable from the repository's canonical
+`make check`. It generates a large tree and runs for minutes, so correctness
+builds do not depend on a performance host. The dedicated `io-bench` workflow
+owns the Windows qualification and the exploratory Linux/macOS tables.
+Generated trees, binaries, and raw output stay in the selected scratch
+directory; durable results retain the host identity and raw artifact beside
+their summarized table.

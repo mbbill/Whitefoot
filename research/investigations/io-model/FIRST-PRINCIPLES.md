@@ -1284,7 +1284,12 @@ only completion semantics does not predetermine the winning target mechanism.
    stackless lowering.
 8. Retain and harden the generic completion record, admission, drain, and wake
    protocol while deleting the rejected bridge machinery.
-9. Qualify Linux and macOS paths, then execute and finish Windows qualification.
+9. Qualify Linux and macOS paths, then execute and finish the x86-64 MSVC
+   Windows row. Native run
+   [33305475906](https://github.com/mbbill/Whitefoot/actions/runs/33305475906)
+   on `f04e15c9` closes that row for the current file-operation slice and the
+   target's wider-code-unit HostString raw-byte route; it does not claim a
+   Windows compute pool or performance result.
 10. Complete functional matrices, hostile schedules, stress, sanitizers,
     maintained programs, and native performance comparisons.
 11. Run canonical `make check` on the exact proposed revision and obtain owner

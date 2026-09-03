@@ -87,6 +87,12 @@ enum wf_completion_publish_result wf_completion_publish_terminal(
     const wf_completion_publication *publication
 );
 
+enum wf_completion_publish_result wf_completion_publish_milestone(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t milestones
+);
+
 enum wf_completion_publish_result wf_completion_publish_inline_terminal(
     wf_completion_runtime *runtime,
     wf_completion_token token,
@@ -94,6 +100,8 @@ enum wf_completion_publish_result wf_completion_publish_inline_terminal(
 );
 
 void wf_completion_notify_capacity(wf_completion_runtime *runtime);
+void wf_completion_operation_accepted(void);
+void wf_completion_operation_retired(int returned_a_descriptor);
 
 #endif
 

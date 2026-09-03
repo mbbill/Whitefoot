@@ -1,9 +1,8 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 61 (v0.40 replaces the runtime claim path with one source-carried
-proof surface; the former runtime-assertion releases remain historical
-evidence)
+Revision: 62 (the native x86-64 MSVC Windows row now requires its compute
+pool and IOCP path and has same-host paired performance evidence)
 
 The active language authority is v0.40, SHA-256
 `15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, carried by
@@ -948,33 +947,48 @@ carries is counted-loop reduction permission, not intra-object disjointness.
 - **Current:** batch 0074's compute lane pool remains the measured baseline.
   The I/O rebuild separately retains bounded generation-checked completion
   records, exact result and loan-release milestones, one
-  compute/target/completion wake decision, typed target-only helpers, real
-  Linux io_uring positioned I/O, and the Windows IOCP foundation. The rejected
-  root/family/Ordered group layer has been removed. The source-proof direction
-  requires explicit finite bounds for queue storage, live completions,
-  publication, and drain before the staged permission is complete. One
-  source-derived fixed two-slot bounded-batch path now exists for a narrow
-  direct staged counted loop. Native POSIX completion targets select a runtime
-  window bounded to `1..2`; qualified targets without native completion keep
-  the same compiler-generated CFG, deterministically use a window of one, and
-  issue direct calls. The generated drain consumes the complete batch in
-  source order before slot zero is reused. Tests cover dynamic per-iteration
-  paths, an odd final batch, the ordinary result/error arm, LLVM emission,
-  linking, and execution. Two staged loops in one function deliberately stay
-  ordinary. Completion drain still precedes dependent-frame readiness, the
-  first tail-wrapper stackless slice can resume on any scheduler lane, and pure
-  compute links no completion runtime.
+  compute/target/completion wake decision, typed target-only helpers, and real
+  Linux io_uring positioned I/O. The rejected root/family/Ordered group layer
+  has been removed. The source-proof direction requires explicit finite bounds
+  for queue storage, live completions, publication, and drain before the staged
+  permission is complete. One source-derived fixed two-slot bounded-batch path
+  now exists for a narrow direct staged counted loop. Native POSIX completion
+  targets select a runtime window bounded to `1..2`; qualified targets without
+  native completion keep the same compiler-generated CFG, deterministically
+  use a window of one, and issue direct calls. The generated drain consumes the
+  complete batch in source order before slot zero is reused. Tests cover
+  dynamic per-iteration paths, an odd final batch, the ordinary result/error
+  arm, LLVM emission, linking, and execution. Two staged loops in one function
+  deliberately stay ordinary. Completion drain still precedes
+  dependent-frame readiness, the first tail-wrapper stackless slice can resume
+  on any scheduler lane, and pure compute links no completion runtime.
+  The exact `x86_64-pc-windows-msvc` row now adds a compiler-owned UTF-16
+  bootstrap, direct and bounded blocking file operations, an IOCP bridge with
+  bounded wake and full-capacity recovery, and a mandatory `--par` compute
+  pool. Eligible IOCP requests never degrade to direct or blocking execution;
+  full capacity retires the oldest addressable one-slot owner or waits for
+  core progress, then retries the same request, while initialization or
+  submission failure stops at the host boundary. The native mixed probe
+  requires a non-owner worker, exact result bytes, and zero eligible fallback.
+  The fixed-host paired performance
+  [run 33651024745](https://github.com/mbbill/Whitefoot/actions/runs/33651024745)
+  accepted its first 15-pair sample on exact revision
+  `a7c49c4d9876461739dd2c63b5600158facc403f`. Its median ratios, where lower
+  is better, were compute `0.2750`, warm IOCP `0.9765`, mixed IOCP control
+  `1.0092`, mixed versus IOCP-only `0.6008`, and mixed versus fully serial
+  `0.6064`.
 - **Missing / next:** generalize selective stackless continuation lowering to
-  branches, loops, multiple suspension points, and non-tail children;
-  widen the two-slot completion driver to additional control-flow shapes,
-  operation families, and deliberate multi-loop selection;
-  measure cold/high-latency and native target workloads; and execute the
-  Windows probe before qualification. Any widening keeps the same bounded
+  branches, loops, multiple suspension points, and non-tail children; widen
+  the two-slot completion driver to additional control-flow shapes, operation
+  families, and deliberate multi-loop selection; and measure cold/high-latency
+  or materially changed target workloads. Any widening keeps the same bounded
   ownership and soundness gates. The final source-language model for host
   resource unavailability remains undecided; that temporary boundary does not
   relax any queue, layout, address, target, or ownership proof.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
-  [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
+  [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md) ·
+  [Windows native runtime gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024878) ·
+  [Windows paired performance gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024745).
 
 ## Boundaries, targets, and deployment
 
@@ -1003,16 +1017,16 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   `DirectoryRead` is a shared selector, host exhaustion remains a typed open
   result, and the permit is erased before the native ABI. Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
-  io_uring work, Windows IOCP foundation, selective stackless slice, and
-  component measurements were retained while the rejected group machinery was
-  removed. The current branch also has one source-derived fixed two-slot
-  bounded batch for the narrow direct staged counted-loop shape. Its native
-  POSIX completion window is `1..2`; qualified non-completion targets preserve
-  the generated CFG with a deterministic window of one and direct calls. It
-  drains every issued result in order before slot zero reuse, including an odd
-  final batch and dynamic per-iteration paths. The following results are
-  historical evidence from the released
-  v0.39 line, not a gate report for the v0.40 bytes. Whole programs
+  io_uring work, Windows IOCP runtime, selective stackless slice, and component
+  measurements were retained while the rejected group machinery was removed.
+  The current branch also has one source-derived fixed two-slot bounded batch
+  for the narrow direct staged counted-loop shape. Its native POSIX completion
+  window is `1..2`; qualified non-completion targets preserve the generated
+  CFG with a deterministic window of one and direct calls. It drains every
+  issued result in order before slot zero reuse, including an odd final batch
+  and dynamic per-iteration paths. The following results are historical
+  evidence from the released v0.39 line, not a gate report for the v0.40 bytes.
+  Whole programs
   were measured on both macOS and Linux with io_uring
   ([batch 0084](done/0084-io-performance.md)): the shipped build is about
   twice its own sequential build on a many-independent-files workload, and
@@ -1029,20 +1043,35 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   conformance cases now pass at their existing verdicts, both
   directory-walking corpus programs compile and run there, and every host limit
   0090 declared for the missing row is removed.
+  The exact `x86_64-pc-windows-msvc` row now executes the compiler-owned
+  UTF-16 command bootstrap, cwd-relative no-follow namespace operations, raw
+  wider-code-unit HostString route, direct and bounded blocking file
+  operations, IOCP submission and completion, the production compiler link,
+  and the native `--par` compute pool. That pool is mandatory and fail-closed.
+  IOCP-eligible requests have zero direct or blocking fallback, and bounded
+  capacity pressure retires the oldest addressable one-slot owner or waits for
+  core progress before retrying the same request. Native correctness
+  [run 33651024878](https://github.com/mbbill/Whitefoot/actions/runs/33651024878)
+  and same-host paired performance
+  [run 33651024745](https://github.com/mbbill/Whitefoot/actions/runs/33651024745)
+  passed on exact revision
+  `a7c49c4d9876461739dd2c63b5600158facc403f`.
 - **Missing / next:** widen stackless lowering beyond single-instruction tail
-  chains; execute and qualify Windows; add a clock reading, keyed directory
-  places, namespace mutation, and network, timer, cancellation, deadline, and
-  finish-required output APIs only with complete ordinary ownership and target
-  contracts. The remaining completion-width question is how to extend the
-  implemented direct counted-loop batch to wider control flow, more operation
-  families, and functions containing multiple staged loops without partial or
-  ambiguous transformation. The open API and target items are enumerated in
-  [batch 0082](done/0082-unified-state-completion-io.md) and [batch
+  chains; add a clock reading, keyed directory places, namespace mutation, and
+  network, timer, cancellation, deadline, and finish-required output APIs only
+  with complete ordinary ownership and target contracts. The remaining
+  completion-width question is how to extend the implemented direct
+  counted-loop batch to wider control flow, more operation families, and
+  functions containing multiple staged loops without partial or ambiguous
+  transformation. The open API and target items are enumerated in [batch
+  0082](done/0082-unified-state-completion-io.md) and [batch
   0084](done/0084-io-performance.md).
 - **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
   [batch record 0084](done/0084-io-performance.md) ·
   [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
   [batch record 0094](done/0094-linux-directory-row.md) ·
+  [Windows native runtime gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024878) ·
+  [Windows paired performance gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024745) ·
   [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·

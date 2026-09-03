@@ -200,10 +200,31 @@ separate exactly-once result-ready, loan-released, and terminal milestones.
 Native queues, helper lanes, wakeups, and completion ports are target-private
 protocol state, never Whitefoot shared storage. The macOS and Linux paths are
 qualified for the implemented operations, including Linux io_uring where its
-route is available. The Windows IOCP core remains execution evidence rather
-than a qualified compiler target. Selective stackless continuation lowering is
-deliberately narrow; unsupported control-flow shapes retain the synchronous
-ABI instead of weakening ownership or completion bounds.
+route is available.
+
+The exact `x86_64-pc-windows-msvc` row is native-qualified for the
+compiler-owned UTF-16 command bootstrap and the direct, bounded blocking, and
+IOCP positioned-I/O routes. An IOCP-eligible request cannot silently use the
+direct or blocking route: handle association or submission failure stops at
+the host boundary. At full bounded storage the emitter retires the oldest
+addressable source-owned generation; when no one-slot owner is addressable it
+waits for core progress, then retries that same request. Native probes require
+zero eligible fallback. Synchronous-success operations publish inline only
+after the runtime has disabled their completion packets; pending operations
+publish through the IOCP worker.
+
+Every emitted Windows `--par` module requires the compiler-owned compute pool
+through hard external ABI obligations. A missing runtime fails to link, and an
+invalid worker configuration or partial startup fails at the host boundary
+instead of selecting sequential execution. The native gate requires a
+non-owner worker to execute and steal source work while preserving the
+sequential build's exact bytes. A fixed-host paired gate qualifies compute,
+warm IOCP, and mixed compute-plus-IOCP execution against matched controls on
+the same revision.
+
+Selective stackless continuation lowering is deliberately narrow; unsupported
+control-flow shapes retain the synchronous ABI instead of weakening ownership
+or completion bounds.
 
 `--par-ledger` prints the permission and actualization explanation for compiler
 development. `--stack-ledger` reports selected-host frame costs. Neither report

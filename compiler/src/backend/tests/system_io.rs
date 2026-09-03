@@ -16,6 +16,10 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 
+use crate::backend::emitter::emit_llvm_for_target;
+use crate::backend::qualification::SystemTarget;
+
+use super::system::with_mutated_completion_ir;
 use super::{
     build_executable, compile, compile_rejection, host_optimized_module, optimized_main,
     test_directory,
@@ -172,6 +176,37 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
   }
 }
 "#;
+
+const COMPLETION_READ_BOUNDARY: &[u8] =
+    include_bytes!("../../../../tests/programs/completion_read_boundary.wf");
+
+#[test]
+fn windows_emits_the_utf16_bootstrap_and_typed_positioned_read_route() {
+    let llvm = with_mutated_completion_ir(COMPLETION_READ_BOUNDARY, |program| {
+        let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+            .expect("Windows x86-64 is a qualified command target");
+        emit_llvm_for_target(program, windows)
+            .expect("the complete open/read slice must emit for Windows")
+            .into_string()
+    });
+
+    assert!(llvm.contains("define i32 @wmain(i32 %argc, ptr %argv)"));
+    assert!(llvm.contains("@wf__windows_open_cwd(ptr null, i32 0)"));
+    assert!(llvm.contains("call i64 @wf__windows_wcslen(ptr %text)"));
+    assert!(llvm.contains("call i32 @wf__windows_relative_path_valid"));
+    assert!(llvm.contains("call ptr @wf__windows_error_location()"));
+    assert!(llvm.contains(
+        "declare i32 @wf__completion_file_open_at_direct(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)"
+    ));
+    assert!(llvm.contains(
+        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+    ));
+    assert!(llvm.contains("@wf__completion_file_pread_submit"));
+    assert!(llvm.contains("@wf__completion_file_pread_direct"));
+    assert!(!llvm.contains("declare ptr @signal"));
+    assert!(!llvm.contains("@pread("));
+    assert!(!llvm.contains("@openat("));
+}
 
 #[test]
 fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
@@ -1231,4 +1266,18 @@ fn every_portable_class_is_mapped_exactly_once_in_inventory_order() {
             }
         }
     }
+}
+
+#[test]
+fn windows_descriptor_exhaustion_is_resource_exhaustion() {
+    use crate::backend::qualification::SystemTarget;
+
+    let target = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+        .expect("the Windows command target is qualified");
+    let exhausted = target
+        .error_classes()
+        .iter()
+        .find(|row| row.class == "ResourceExhausted")
+        .expect("the closed portable class table contains ResourceExhausted");
+    assert_eq!(exhausted.codes, &[4, 8, 14, 1450]);
 }

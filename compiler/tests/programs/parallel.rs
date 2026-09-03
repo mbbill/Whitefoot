@@ -106,6 +106,12 @@ fn the_default_compilation_of_the_demo_names_no_runtime() {
     let program = build_program(&llvm);
     let published = program.run_with_workers(None);
     assert!(published.status.success());
+    let batched = program.run_with_workers_and_arguments(None, &[b"batch", b"batch", b"batch"]);
+    assert!(batched.status.success());
+    assert_eq!(
+        batched.stdout, published.stdout,
+        "the sequential benchmark batches must preserve the exact oracle"
+    );
     assert_eq!(
         published.stdout,
         program.run_with_workers(Some("4")).stdout,
@@ -139,6 +145,18 @@ fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
         "the program publishes two 16-digit values, a separator, and a newline"
     );
     assert!(reference.stderr.is_empty());
+
+    let batched = program.run_with_workers_and_arguments(None, &[b"batch", b"batch", b"batch"]);
+    assert!(
+        batched.status.success(),
+        "the four-batch performance shape must succeed: {}",
+        String::from_utf8_lossy(&batched.stderr)
+    );
+    assert_eq!(
+        batched.stdout, reference.stdout,
+        "repeating the deterministic kernel in one initialized pool moved a byte"
+    );
+    assert!(batched.stderr.is_empty());
 
     for workers in [None, Some("2"), Some("4")] {
         let named = workers.unwrap_or("absent");
@@ -225,6 +243,8 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// silently falling behind the corpus it is intended to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
     &["byte_string.wf"],
+    &["completion_read_boundary.wf"],
+    &["completion_windows_capacity.wf"],
     &["dir_walk.wf"],
     &["feedback_controller.wf"],
     &["fir_filter.wf"],
@@ -233,6 +253,7 @@ const CORPUS_UNITS: &[&[&str]] = &[
     &["geometry_vectors.wf"],
     &["grayscale_pixels.wf"],
     &["growable_vec.wf"],
+    &["host_string_bytes.wf"],
     &["ipv4_checksum.wf"],
     &["mandelbrot_grid.wf"],
     &["option_slots.wf"],

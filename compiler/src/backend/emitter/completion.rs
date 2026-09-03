@@ -22,6 +22,16 @@ pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h"
 pub const WRITER_SCHEDULER_HEADER: &str = include_str!("../completion/writer_scheduler.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
+/// The target-private completion ABI shared by the Windows core and IOCP adapter.
+pub const COMPLETION_WINDOWS_NATIVE_API_HEADER: &str =
+    include_str!("../completion/native_completion_api.h");
+/// The Windows completion core contract embedded in the compiler.
+pub const COMPLETION_WINDOWS_HEADER: &str = include_str!("../completion/windows_completion.h");
+/// The Windows IOCP adapter contract embedded in the compiler.
+pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
+/// The Windows bounded blocking-worker contract embedded in the compiler.
+pub const COMPLETION_WINDOWS_BLOCKING_HEADER: &str =
+    include_str!("../completion/windows_blocking.h");
 /// The finite completion core implementation embedded in the compiler.
 pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.c");
 /// The typed file-adapter implementation embedded in the compiler.
@@ -32,10 +42,50 @@ pub const COMPLETION_BRIDGE_SOURCE: &str = include_str!("../completion/bridge.c"
 pub const WRITER_SCHEDULER_SOURCE: &str = include_str!("../completion/writer_scheduler.c");
 /// The target-guarded Linux io_uring adapter embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/linux_io_uring.c");
+/// The Windows completion core embedded in the compiler.
+pub const COMPLETION_WINDOWS_SOURCE: &str = include_str!("../completion/windows_completion.c");
+/// The Windows IOCP adapter embedded in the compiler.
+pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("../completion/windows_iocp.c");
+/// The Windows bounded blocking-worker adapter embedded in the compiler.
+pub const COMPLETION_WINDOWS_BLOCKING_SOURCE: &str =
+    include_str!("../completion/windows_blocking.c");
+/// The compiler-owned Windows completion bridge embedded in the compiler.
+pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/windows_bridge.c");
+/// The Windows bounded ready-frame scheduler embedded in the compiler.
+pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
+    include_str!("../completion/writer_scheduler_windows.c");
 
 /// The marker definition carried only by a module that actualizes a typed
 /// target operation through completion.
 const COMPLETION_MARKER: &str = "define weak i32 @wf__completion_file_read_submit(i32 %descriptor, ptr %buffer, i64 %count, ptr %token)";
+
+/// Hard completion ABI for COFF modules.
+///
+/// Windows has no optional completion backend: the compiler driver supplies
+/// the native core and IOCP bridge, and omitting either is a link error.  The
+/// capacity wait is part of that same contract.  It lets a submitter which
+/// owns no earlier token wait for another source owner to retire core
+/// capacity without interpreting pressure as permission to run the operation
+/// directly.
+pub(crate) const COMPLETION_WINDOWS_RUNTIME_DECLARATIONS: &str = concat!(
+    "declare i32 @wf__completion_file_read_submit(i32, ptr, i64, ptr)\n",
+    "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)\n",
+    "declare i32 @wf__completion_file_write_submit(i32, ptr, i64, ptr)\n",
+    "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)\n",
+    "declare i32 @wf__completion_file_status_submit(i32, ptr)\n",
+    "declare i32 @wf__completion_file_close_submit(i32, ptr)\n",
+    "declare i32 @wf__completion_directory_next_submit(i32, ptr, i64, ptr, ptr)\n",
+    "declare void @wf__completion_file_join(ptr, ptr, ptr)\n",
+    "declare void @wf__completion_file_open_join(ptr, ptr, ptr, ptr)\n",
+    "declare void @wf__completion_wait_core_capacity()\n",
+);
+
+/// Hard Windows declaration for the staged completion-window query.
+pub(crate) const COMPLETION_WINDOWS_WINDOW_DECLARATION: &str =
+    "declare i64 @wf__completion_window(i64, i64, i64)\n";
+
+const COMPLETION_WINDOWS_MARKER: &str =
+    "declare i32 @wf__completion_file_read_submit(i32, ptr, i64, ptr)";
 
 /// Weak direct-specialization answer for a link without the completion unit.
 /// Returning zero selects the already-qualified direct wrapper.  A standard
@@ -62,6 +112,7 @@ pub(crate) const COMPLETION_WINDOW_FALLBACK: &str = "define weak i64 @wf__comple
 /// True exactly when this emitted module contains a completion actualization.
 pub fn module_requires_completion_runtime(module: &str) -> bool {
     module.contains(COMPLETION_MARKER)
+        || module.contains(COMPLETION_WINDOWS_MARKER)
         || module.contains("@wf__completion_file_pread_submit_writer")
         || module.contains("@wf__completion_file_write_submit_writer")
         || module.contains("@wf__completion_file_pread_direct")
@@ -70,6 +121,18 @@ pub fn module_requires_completion_runtime(module: &str) -> bool {
         || module.contains("@wf__completion_file_status_direct")
         || module.contains("@wf__completion_file_close_direct")
         || module.contains("@wf__completion_directory_next_direct")
+}
+
+/// True exactly when this emitted module can publish a stackless writer frame.
+///
+/// Direct completion calls still need the completion runtime, but they never
+/// enqueue a continuation for a compute worker to resume.  Testing the actual
+/// submit calls, rather than any completion symbol or the weak definitions a
+/// stackless module carries, keeps the parallel runtime's hot steal loop free
+/// of an empty writer-queue probe for an ordinary direct I/O module.
+pub fn module_requires_writer_scheduler(module: &str) -> bool {
+    module.contains("call i32 @wf__completion_file_pread_submit_writer(")
+        || module.contains("call i32 @wf__completion_file_write_submit_writer(")
 }
 
 #[derive(Clone, Debug)]
@@ -315,10 +378,29 @@ impl FunctionEmitter<'_, '_> {
     ) -> Result<CompletionCaptured, BackendFailure> {
         let uses_ring =
             self.pipeline.is_some_and(|pipeline| pipeline.slots() > 1) && self.block_carries;
-        if !uses_ring {
+        let windows_submission =
+            self.qualification.target().is_windows() && role == CompletionSlot::Submitted;
+        if !uses_ring && !windows_submission {
             return Ok(CompletionCaptured::Immediate(value));
         }
         let storage = self.completion_entry_slot(site, role, ty)?;
+        if windows_submission {
+            if storage.slots == 1 {
+                writeln!(
+                    self.entry_prelude,
+                    "  store i1 false, ptr {}",
+                    storage.reservation
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            } else {
+                writeln!(
+                    self.entry_prelude,
+                    "  store [{} x i1] zeroinitializer, ptr {}",
+                    storage.slots, storage.reservation
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+        }
         let pointer = self.completion_storage_pointer(&storage)?;
         writeln!(self.output, "  store {ty} {value}, ptr {pointer}")
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -344,6 +426,185 @@ impl FunctionEmitter<'_, '_> {
         }
     }
 
+    /// Branches on the complete Windows submit verdict without collapsing
+    /// core pressure into the direct route.
+    ///
+    /// A non-Windows target retains the original two-way optional-runtime
+    /// contract byte for byte.  On Windows, `2` means that the request was not
+    /// submitted because the finite core is full.  The source owner first
+    /// consumes the oldest earlier request it still owns, materializes that
+    /// request's typed result, and retries this exact submission.  If it owns
+    /// none, the runtime's unified capacity wait makes progress elsewhere and
+    /// the same submission is retried.  No pressure edge reaches `inline`.
+    fn emit_completion_submit_verdict(
+        &mut self,
+        result: IrValueId,
+        status: &str,
+        accepted: &str,
+        submit_label: &str,
+        inline_label: &str,
+        offered_label: &str,
+    ) -> Result<(), BackendFailure> {
+        if !self.qualification.target().is_windows() {
+            writeln!(
+                self.output,
+                "  {accepted} = icmp eq i32 {status}, 1\n  \
+                 br i1 {accepted}, label %{offered_label}, label %{inline_label}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        }
+
+        let direct = format!("%{}", self.next_temporary()?);
+        let waiting = format!("%{}", self.next_temporary()?);
+        let verdict_label = completion_verdict_label(result);
+        let wait_verdict_label = completion_wait_verdict_label(result);
+        let invalid_label = completion_invalid_verdict_label(result);
+        let capacity_label = completion_capacity_label(result);
+        writeln!(
+            self.output,
+            "  {accepted} = icmp eq i32 {status}, 1\n  \
+             br i1 {accepted}, label %{offered_label}, label %{verdict_label}\n\
+             {verdict_label}:\n  \
+             {direct} = icmp eq i32 {status}, 0\n  \
+             br i1 {direct}, label %{inline_label}, label %{wait_verdict_label}\n\
+             {wait_verdict_label}:\n  \
+             {waiting} = icmp eq i32 {status}, 2\n  \
+             br i1 {waiting}, label %{capacity_label}, label %{invalid_label}\n\
+             {invalid_label}:\n  \
+             call void @abort()\n  \
+             unreachable\n\
+             {capacity_label}:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+
+        let owners = self
+            .handed_out
+            .iter()
+            .filter_map(|pending| match pending {
+                HandedOut::Completion(pending) => Some(pending.clone()),
+                HandedOut::Compute(_) => None,
+            })
+            .collect::<Vec<_>>();
+        for owner in owners {
+            let CompletionCaptured::PerSlot { ty, storage } = &owner.submitted else {
+                return Err(BackendFailure::InvalidIr);
+            };
+            if ty != "i1" {
+                return Err(BackendFailure::InvalidIr);
+            }
+            // A ring owner is retired by a distinct drain slot. The current
+            // submit block does not name that older slot, so global pressure
+            // waits for the normal drain instead of guessing an element.
+            if storage.slots > 1 {
+                continue;
+            }
+            let state = self.completion_storage_pointer(storage)?;
+            let target_owned = format!("%{}", self.next_temporary()?);
+            let consume_label = completion_capacity_consume_label(result, owner.result);
+            let next_label = completion_capacity_next_label(result, owner.result);
+            writeln!(
+                self.output,
+                "  {target_owned} = load i1, ptr {state}\n  \
+                 br i1 {target_owned}, label %{consume_label}, label %{next_label}\n\
+                 {consume_label}:"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            self.emit_windows_completion_materialization(&owner, &state)?;
+            writeln!(
+                self.output,
+                "  br label %{submit_label}\n\
+                 {next_label}:"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        writeln!(
+            self.output,
+            "  call void @wf__completion_wait_core_capacity()\n  \
+             br label %{submit_label}"
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// Consumes one target-owned Windows request and changes its later source
+    /// join into a load from the call site's existing typed result slot.
+    fn emit_windows_completion_materialization(
+        &mut self,
+        pending: &CompletionHandedOut,
+        state: &str,
+    ) -> Result<(), BackendFailure> {
+        let token = self.completion_storage_pointer(&pending.token)?;
+        let result_slot = self.completion_storage_pointer(&pending.result_slot)?;
+        let raw_value = self.completion_storage_pointer(&pending.raw_value)?;
+        let raw_error = self.completion_storage_pointer(&pending.raw_error)?;
+        let completed_value = format!("%{}", self.next_temporary()?);
+        let completed_error = format!("%{}", self.next_temporary()?);
+        let completed = format!("%{}", self.next_temporary()?);
+        let result_llvm = llvm_type(self.program, pending.result_type)?;
+        let (join_call, extra_load, mapper_arguments) = match &pending.mapping {
+            CompletionMapping::Open { outcome } => {
+                let outcome = self.completion_storage_pointer(outcome)?;
+                let completed_outcome = format!("%{}", self.next_temporary()?);
+                (
+                    format!(
+                        "call void @wf__completion_file_open_join(ptr {token}, ptr {raw_value}, \
+                         ptr {raw_error}, ptr {outcome})"
+                    ),
+                    format!("  {completed_outcome} = load i32, ptr {outcome}\n"),
+                    format!(
+                        "i64 {completed_value}, i32 {completed_error}, i32 {completed_outcome}"
+                    ),
+                )
+            }
+            CompletionMapping::Transfer { start, extent } => {
+                let start = self.load_completion_value(start.clone())?;
+                let extent = self.load_completion_value(extent.clone())?;
+                (
+                    format!(
+                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
+                         ptr {raw_error})"
+                    ),
+                    String::new(),
+                    format!(
+                        "i64 {completed_value}, i32 {completed_error}, i64 {start}, i64 {extent}"
+                    ),
+                )
+            }
+            CompletionMapping::DirectoryNext {
+                destination_type,
+                destination,
+                start,
+                extent,
+            } => {
+                let destination = self.load_completion_value(destination.clone())?;
+                let start = self.load_completion_value(start.clone())?;
+                let extent = self.load_completion_value(extent.clone())?;
+                (
+                    format!(
+                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
+                         ptr {raw_error})"
+                    ),
+                    String::new(),
+                    format!(
+                        "i64 {completed_value}, i32 {completed_error}, {destination_type} \
+                         {destination}, i64 {start}, i64 {extent}"
+                    ),
+                )
+            }
+        };
+        writeln!(
+            self.output,
+            "  {join_call}\n  \
+             {completed_value} = load i64, ptr {raw_value}\n  \
+             {completed_error} = load i32, ptr {raw_error}\n  \
+             {extra_load}\
+             {completed} = call {result_llvm} @{}({mapper_arguments})\n  \
+             store {result_llvm} {completed}, ptr {result_slot}\n  \
+             store i1 false, ptr {state}",
+            completion_mapper_symbol(pending.operation),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
     /// Starts one direct file operation before the remaining independent
     /// members run.  All operation storage is allocated in the function entry
     /// block before the adapter can own the request.
@@ -488,25 +749,38 @@ impl FunctionEmitter<'_, '_> {
              br i1 {ineligible}, label %{inline_label}, label %{submit_label}\n\
              {submit_label}:\n  \
              {base} = extractvalue {rendered_buffer} {}, 0\n  \
-             {target} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
-             {status} = call i32 @{submit_symbol}({submit_arguments})\n  \
-             {accepted} = icmp eq i32 {status}, 1\n  \
-             br i1 {accepted}, label %{offered_label}, label %{inline_label}\n\
-             {inline_label}:\n  \
+             {target} = getelementptr inbounds i8, ptr {base}, i64 {}",
+            self.value_name(*end),
+            self.value_name(*start),
+            self.value_name(*buffer),
+            self.value_name(*start),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(
+            self.output,
+            "  {status} = call i32 @{submit_symbol}({submit_arguments})"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.emit_completion_submit_verdict(
+            result,
+            &status,
+            &accepted,
+            &submit_label,
+            &inline_label,
+            &offered_label,
+        )?;
+        writeln!(
+            self.output,
+            "{inline_label}:\n  \
              {inline_result} = call {rendered_type} @{}({})\n  \
              store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
              br label %{offered_label}\n\
              {offered_label}:\n  \
              {submitted} = phi i1 [ true, %{submit_label} ], [ false, %{inline_label} ]",
-            self.value_name(*end),
-            self.value_name(*start),
-            self.value_name(*buffer),
-            self.value_name(*start),
             implementation.symbol(),
             rendered_arguments.join(", "),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-
         let submitted =
             self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
         let captured_start = self.capture_completion_value(
@@ -619,27 +893,50 @@ impl FunctionEmitter<'_, '_> {
         let submitted = format!("%{}", self.next_temporary()?);
         let implementation = self.qualification.operation(operation)?;
         let rendered_arguments = self.rendered_system_arguments(arguments)?;
-        let expected_kind = match completion {
-            CompletionFileOperation::OpenRead | CompletionFileOperation::OpenFile => {
-                system::OPEN_EXPECT_REGULAR
-            }
-            CompletionFileOperation::OpenDirectory
-            | CompletionFileOperation::OpenDirectorySource => system::OPEN_EXPECT_DIRECTORY,
+        let (expected_kind, descriptor_class) = match completion {
+            CompletionFileOperation::OpenRead | CompletionFileOperation::OpenFile => (
+                system::OPEN_EXPECT_REGULAR,
+                system::WINDOWS_DESCRIPTOR_CLASS_READ_FILE,
+            ),
+            CompletionFileOperation::OpenDirectory => (
+                system::OPEN_EXPECT_DIRECTORY,
+                system::WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT,
+            ),
+            CompletionFileOperation::OpenDirectorySource => (
+                system::OPEN_EXPECT_DIRECTORY,
+                system::WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE,
+            ),
             _ => return Err(BackendFailure::InvalidIr),
+        };
+        let descriptor_class_argument = if self.qualification.target().is_windows() {
+            format!(", i32 {descriptor_class}")
+        } else {
+            String::new()
         };
         writeln!(
             self.output,
             "  {status} = call i32 @wf__completion_file_open_at_submit(i32 {}, ptr {path}, \
-             i32 {flags}, i32 0, i32 0, i32 {expected_kind}, ptr {token_pointer})\n  \
-             {accepted} = icmp eq i32 {status}, 1\n  \
-             br i1 {accepted}, label %{offered_label}, label %{inline_label}\n\
-             {inline_label}:\n  \
+             i32 {flags}, i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
+             ptr {token_pointer})",
+            self.value_name(directory),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.emit_completion_submit_verdict(
+            result,
+            &status,
+            &accepted,
+            &request_label,
+            &inline_label,
+            &offered_label,
+        )?;
+        writeln!(
+            self.output,
+            "{inline_label}:\n  \
              {inline_result} = call {rendered_type} @{}({})\n  \
              store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
              br label %{offered_label}\n\
              {offered_label}:\n  \
              {submitted} = phi i1 [ true, %{request_label} ], [ false, %{inline_label} ]",
-            self.value_name(directory),
             implementation.symbol(),
             rendered_arguments.join(", "),
         )
@@ -676,8 +973,13 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         };
         let limit = self.qualification.target().component_limit();
+        let terminator_bytes = if self.qualification.target().is_windows() {
+            2
+        } else {
+            1
+        };
         let slot = limit
-            .checked_add(1)
+            .checked_add(terminator_bytes)
             .ok_or(BackendFailure::CounterOverflow)?;
         let staged = self.completion_entry_slot(
             result,
@@ -694,55 +996,112 @@ impl FunctionEmitter<'_, '_> {
         let index = format!("%{}", self.next_temporary()?);
         let at = format!("%{}", self.next_temporary()?);
         let byte = format!("%{}", self.next_temporary()?);
-        let terminating = format!("%{}", self.next_temporary()?);
-        let separating = format!("%{}", self.next_temporary()?);
-        let refused = format!("%{}", self.next_temporary()?);
-        let next = format!("%{}", self.next_temporary()?);
-        let scanned = format!("%{}", self.next_temporary()?);
-        let terminator = format!("%{}", self.next_temporary()?);
         let scan_entry = format!("completion.component.entry.v{}", result.ordinal());
         let scan = format!("completion.component.scan.v{}", result.ordinal());
         let scan_step = format!("completion.component.step.v{}", result.ordinal());
         let ready = format!("completion.component.ready.v{}", result.ordinal());
         let buffer_ty = self.value_type(*name).ok_or(BackendFailure::InvalidIr)?;
-        writeln!(
-            self.output,
-            "  {extent} = sub i64 {}, {}\n  \
-             {oversize} = icmp ugt i64 {extent}, {limit}\n  \
-             {vacant} = icmp eq i64 {extent}, 0\n  \
-             {unusable} = or i1 {oversize}, {vacant}\n  \
-             br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
-             {scan_entry}:\n  \
-             {base} = extractvalue {} {}, 0\n  \
-             {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
-             br label %{scan}\n\
-             {scan}:\n  \
-             {index} = phi i64 [ 0, %{scan_entry} ], [ {next}, %{scan_step} ]\n  \
-             {at} = getelementptr inbounds i8, ptr {text}, i64 {index}\n  \
-             {byte} = load i8, ptr {at}, align 1\n  \
-             {terminating} = icmp eq i8 {byte}, 0\n  \
-             {separating} = icmp eq i8 {byte}, {}\n  \
-             {refused} = or i1 {terminating}, {separating}\n  \
-             br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
-             {scan_step}:\n  \
-             {next} = add i64 {index}, 1\n  \
-             {scanned} = icmp uge i64 {next}, {extent}\n  \
-             br i1 {scanned}, label %{ready}, label %{scan}\n\
-             {ready}:\n  \
-             call void @llvm.memcpy.p0.p0.i64(ptr {component}, ptr {text}, i64 {extent}, \
-             i1 false)\n  \
-             {terminator} = getelementptr inbounds i8, ptr {component}, i64 {extent}\n  \
-             store i8 0, ptr {terminator}, align 1\n  \
-             br label %{request_label}\n\
-             {request_label}:",
-            self.value_name(*end),
-            self.value_name(*start),
-            llvm_type(self.program, buffer_ty)?,
-            self.value_name(*name),
-            self.value_name(*start),
-            self.qualification.target().root_prefix(),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
+        if self.qualification.target().is_windows() {
+            let width_remainder = format!("%{}", self.next_temporary()?);
+            let misaligned = format!("%{}", self.next_temporary()?);
+            let size_unusable = format!("%{}", self.next_temporary()?);
+            let unit = format!("%{}", self.next_temporary()?);
+            let terminating = format!("%{}", self.next_temporary()?);
+            let slash = format!("%{}", self.next_temporary()?);
+            let backslash = format!("%{}", self.next_temporary()?);
+            let separating = format!("%{}", self.next_temporary()?);
+            let refused = format!("%{}", self.next_temporary()?);
+            let next = format!("%{}", self.next_temporary()?);
+            let scanned = format!("%{}", self.next_temporary()?);
+            let terminator = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {extent} = sub i64 {}, {}\n  \
+                 {oversize} = icmp ugt i64 {extent}, {limit}\n  \
+                 {vacant} = icmp eq i64 {extent}, 0\n  \
+                 {width_remainder} = and i64 {extent}, 1\n  \
+                 {misaligned} = icmp ne i64 {width_remainder}, 0\n  \
+                 {size_unusable} = or i1 {oversize}, {vacant}\n  \
+                 {unusable} = or i1 {size_unusable}, {misaligned}\n  \
+                 br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
+                 {scan_entry}:\n  \
+                 {base} = extractvalue {} {}, 0\n  \
+                 {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
+                 br label %{scan}\n\
+                 {scan}:\n  \
+                 {index} = phi i64 [ 0, %{scan_entry} ], [ {next}, %{scan_step} ]\n  \
+                 {at} = getelementptr inbounds i8, ptr {text}, i64 {index}\n  \
+                 {unit} = load i16, ptr {at}, align 1\n  \
+                 {terminating} = icmp eq i16 {unit}, 0\n  \
+                 {slash} = icmp eq i16 {unit}, 47\n  \
+                 {backslash} = icmp eq i16 {unit}, 92\n  \
+                 {separating} = or i1 {slash}, {backslash}\n  \
+                 {refused} = or i1 {terminating}, {separating}\n  \
+                 br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
+                 {scan_step}:\n  \
+                 {next} = add i64 {index}, 2\n  \
+                 {scanned} = icmp uge i64 {next}, {extent}\n  \
+                 br i1 {scanned}, label %{ready}, label %{scan}\n\
+                 {ready}:\n  \
+                 call void @llvm.memcpy.p0.p0.i64(ptr {component}, ptr {text}, i64 {extent}, \
+                 i1 false)\n  \
+                 {terminator} = getelementptr inbounds i8, ptr {component}, i64 {extent}\n  \
+                 store i16 0, ptr {terminator}, align 1\n  \
+                 br label %{request_label}\n\
+                 {request_label}:",
+                self.value_name(*end),
+                self.value_name(*start),
+                llvm_type(self.program, buffer_ty)?,
+                self.value_name(*name),
+                self.value_name(*start),
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        } else {
+            let terminating = format!("%{}", self.next_temporary()?);
+            let separating = format!("%{}", self.next_temporary()?);
+            let refused = format!("%{}", self.next_temporary()?);
+            let next = format!("%{}", self.next_temporary()?);
+            let scanned = format!("%{}", self.next_temporary()?);
+            let terminator = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {extent} = sub i64 {}, {}\n  \
+                 {oversize} = icmp ugt i64 {extent}, {limit}\n  \
+                 {vacant} = icmp eq i64 {extent}, 0\n  \
+                 {unusable} = or i1 {oversize}, {vacant}\n  \
+                 br i1 {unusable}, label %{inline_label}, label %{scan_entry}\n\
+                 {scan_entry}:\n  \
+                 {base} = extractvalue {} {}, 0\n  \
+                 {text} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
+                 br label %{scan}\n\
+                 {scan}:\n  \
+                 {index} = phi i64 [ 0, %{scan_entry} ], [ {next}, %{scan_step} ]\n  \
+                 {at} = getelementptr inbounds i8, ptr {text}, i64 {index}\n  \
+                 {byte} = load i8, ptr {at}, align 1\n  \
+                 {terminating} = icmp eq i8 {byte}, 0\n  \
+                 {separating} = icmp eq i8 {byte}, {}\n  \
+                 {refused} = or i1 {terminating}, {separating}\n  \
+                 br i1 {refused}, label %{inline_label}, label %{scan_step}\n\
+                 {scan_step}:\n  \
+                 {next} = add i64 {index}, 1\n  \
+                 {scanned} = icmp uge i64 {next}, {extent}\n  \
+                 br i1 {scanned}, label %{ready}, label %{scan}\n\
+                 {ready}:\n  \
+                 call void @llvm.memcpy.p0.p0.i64(ptr {component}, ptr {text}, i64 {extent}, \
+                 i1 false)\n  \
+                 {terminator} = getelementptr inbounds i8, ptr {component}, i64 {extent}\n  \
+                 store i8 0, ptr {terminator}, align 1\n  \
+                 br label %{request_label}\n\
+                 {request_label}:",
+                self.value_name(*end),
+                self.value_name(*start),
+                llvm_type(self.program, buffer_ty)?,
+                self.value_name(*name),
+                self.value_name(*start),
+                self.qualification.target().root_prefix(),
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
         let flags = match completion {
             CompletionFileOperation::OpenDirectory => {
                 self.qualification.target().component_directory_open_flags()
@@ -807,22 +1166,36 @@ impl FunctionEmitter<'_, '_> {
              {submit_label}:\n  \
              store i64 0, ptr {position}, align 8\n  \
              {base} = extractvalue {destination_llvm} {}, 0\n  \
-             {target} = getelementptr inbounds i8, ptr {base}, i64 {}\n  \
-             {status} = call i32 @wf__completion_directory_next_submit(i32 {}, ptr {target}, \
-             i64 {extent}, ptr {position}, ptr {token_pointer})\n  \
-             {accepted} = icmp eq i32 {status}, 1\n  \
-             br i1 {accepted}, label %{offered_label}, label %{inline_label}\n\
-             {inline_label}:\n  \
+             {target} = getelementptr inbounds i8, ptr {base}, i64 {}",
+            self.value_name(*end),
+            self.value_name(*start),
+            self.value_name(*destination),
+            self.value_name(*start),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(
+            self.output,
+            "  {status} = call i32 @wf__completion_directory_next_submit(i32 {}, ptr {target}, \
+             i64 {extent}, ptr {position}, ptr {token_pointer})",
+            self.value_name(*source),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.emit_completion_submit_verdict(
+            result,
+            &status,
+            &accepted,
+            &submit_label,
+            &inline_label,
+            &offered_label,
+        )?;
+        writeln!(
+            self.output,
+            "{inline_label}:\n  \
              {inline_result} = call {rendered_type} @{}({})\n  \
              store {rendered_type} {inline_result}, ptr {result_pointer}\n  \
              br label %{offered_label}\n\
              {offered_label}:\n  \
              {submitted} = phi i1 [ true, %{submit_label} ], [ false, %{inline_label} ]",
-            self.value_name(*end),
-            self.value_name(*start),
-            self.value_name(*destination),
-            self.value_name(*start),
-            self.value_name(*source),
             implementation.symbol(),
             rendered_arguments.join(", "),
         )
@@ -975,6 +1348,38 @@ fn completion_submit_label(value: IrValueId) -> String {
 
 fn completion_inline_label(value: IrValueId) -> String {
     format!("completion.inline.v{}", value.ordinal())
+}
+
+fn completion_verdict_label(value: IrValueId) -> String {
+    format!("completion.verdict.v{}", value.ordinal())
+}
+
+fn completion_wait_verdict_label(value: IrValueId) -> String {
+    format!("completion.verdict.wait.v{}", value.ordinal())
+}
+
+fn completion_invalid_verdict_label(value: IrValueId) -> String {
+    format!("completion.verdict.invalid.v{}", value.ordinal())
+}
+
+fn completion_capacity_label(value: IrValueId) -> String {
+    format!("completion.capacity.v{}", value.ordinal())
+}
+
+fn completion_capacity_consume_label(current: IrValueId, owner: IrValueId) -> String {
+    format!(
+        "completion.capacity.consume.v{}.v{}",
+        current.ordinal(),
+        owner.ordinal()
+    )
+}
+
+fn completion_capacity_next_label(current: IrValueId, owner: IrValueId) -> String {
+    format!(
+        "completion.capacity.next.v{}.v{}",
+        current.ordinal(),
+        owner.ordinal()
+    )
 }
 
 pub(super) fn completion_offered_label(value: IrValueId) -> String {

@@ -2,7 +2,10 @@
 
 use std::process::{Command, Stdio};
 
+use super::system::with_mutated_completion_ir;
 use super::{build_linked_executable, compile, test_directory};
+use crate::backend::emitter::emit_llvm_for_target;
+use crate::backend::qualification::SystemTarget;
 
 const WRITER_SCHEDULER_PROBE: &str = include_str!("../completion/writer_scheduler_probe.c");
 
@@ -71,6 +74,72 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 /// seconds and a host that sees one immediately spends none of it.
 const MIGRATION_ATTEMPTS: usize = 1024;
 
+fn compile_windows_stackless(source: &[u8]) -> String {
+    let target = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+        .expect("the native Windows stackless target");
+    with_mutated_completion_ir(source, |program| {
+        emit_llvm_for_target(program, target)
+            .expect("the Windows stackless probe must emit")
+            .into_string()
+    })
+}
+
+#[test]
+fn windows_stackless_submit_waits_for_capacity_and_retries_its_single_registration() {
+    let module = compile_windows_stackless(STACKLESS_WRAPPER);
+    let tail = module
+        .split("\ndefine internal i1 @wf__stackless_start_")
+        .skip(1)
+        .find(|definition| definition.contains("@wf__completion_file_write_submit_writer"))
+        .expect("the stackless write tail");
+
+    for declaration in [
+        "declare i32 @wf__completion_file_write_submit_writer(i32, ptr, i64, ptr, ptr)",
+        "declare void @wf__completion_wait_core_capacity()",
+        "declare void @wf__writer_begin_suspend(ptr, ptr)",
+        "declare void @abort() noreturn",
+    ] {
+        assert!(
+            module.contains(declaration),
+            "Windows stackless output must name the native ABI `{declaration}`:\n{module}"
+        );
+    }
+    assert_eq!(
+        module
+            .matches("declare void @wf__completion_wait_core_capacity()")
+            .count(),
+        1,
+        "the completion and stackless ABI sets must not redeclare the shared wait helper"
+    );
+    assert!(
+        !module.contains("define weak i32 @wf__completion_file_write_submit_writer"),
+        "a missing Windows stackless runtime must be a link error"
+    );
+    assert!(
+        !module.contains("define weak void @wf__writer_begin_suspend"),
+        "Windows must not retain a weak writer-scheduler fallback"
+    );
+
+    assert_eq!(
+        tail.matches("call i32 @wf__completion_file_write_submit_writer")
+            .count(),
+        1,
+        "capacity retry must jump to the same submit call"
+    );
+    assert!(tail.contains("%direct_only = icmp eq i32 %status, 0"));
+    assert!(tail.contains("%accepted = icmp eq i32 %status, 1"));
+    assert!(tail.contains("%capacity = icmp eq i32 %status, 2"));
+    assert!(tail.contains("br i1 %capacity, label %capacity_wait, label %invalid_submit"));
+    assert!(tail.contains(
+        "capacity_wait:\n  call void @wf__completion_wait_core_capacity()\n  br label %submit"
+    ));
+    assert!(tail.contains("invalid_submit:\n  call void @abort()\n  unreachable"));
+    assert!(
+        !tail.contains("@wf__writer_begin_suspend"),
+        "the tail retry must not register the frame again"
+    );
+}
+
 #[test]
 fn selected_target_validated_root_frame_passes_llvm_verification() {
     let llvm = compile(STACKLESS_WRAPPER);
@@ -106,6 +175,7 @@ fn may_suspend_tail_wrappers_release_the_writer_stack_and_resume_on_a_scheduler_
     assert!(llvm.contains("@wf__stackless_start_"));
     assert!(llvm.contains("@wf__completion_file_write_submit_writer"));
     assert!(llvm.contains("call void @wf__writer_run_root"));
+    assert!(crate::module_requires_writer_scheduler(&llvm));
     assert!(llvm.contains("alloca { [64 x i8], [2 x i64]"));
     assert!(!llvm.contains("setjmp"));
     assert!(!llvm.contains("fiber"));
@@ -227,6 +297,7 @@ fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
     );
     assert!(!llvm.contains("wf__stackless"));
     assert!(!llvm.contains("wf__writer_frame_init"));
+    assert!(!crate::module_requires_writer_scheduler(&llvm));
     assert!(llvm.contains("@wf_main("));
 }
 

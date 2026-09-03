@@ -1,0 +1,183 @@
+fn churn(seed: own u64) -> result: own u64 pure {
+  doc "Runs a fixed integer kernel long enough for the native compute pool to do useful work.";
+  let value = seed;
+  let round = 0_u64;
+  loop @rounds {
+    let done = ieq(round, 65536_u64);
+    if done {
+      break @rounds;
+    }
+    let rotated = irotl(value, 17_u32);
+    set value = ixor(value, rotated);
+    set value = value *wrap 6364136223846793005_u64;
+    set value = value +wrap 1442695040888963407_u64;
+    set round = round +wrap 1_u64;
+  }
+  return value;
+}
+
+fn compute_pair(left_seed: own u64, right_seed: own u64) -> result: own u64 pure {
+  doc "Offers two independent coarse compute kernels while the caller owns an outstanding positioned read.";
+  let left = churn(seed: left_seed);
+  let right = churn(seed: right_seed);
+  let rotated = irotl(right, 23_u32);
+  return ixor(left, rotated);
+}
+
+fn render_u64['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own unit reads(destination), writes(destination) {
+  doc "Renders one twenty-digit zero-padded decimal result.";
+  let room = len(deref(destination));
+  let remaining = value;
+  let position = 20_u64;
+  loop @digits {
+    let done = ieq(position, 0_u64);
+    if done {
+      break @digits;
+    }
+    set position = position -wrap 1_u64;
+    let digit = remaining % 10_u64;
+    let writable = ilt(position, room);
+    if writable {
+      match cvt<u64, u8>(digit) {
+        Ok(value: exact) => {
+          set deref(destination)[position] = 48_u8 +wrap exact;
+        }
+        Err(error: failure) => {
+          set deref(destination)[position] = 63_u8;
+        }
+      }
+    }
+    set remaining = remaining / 10_u64;
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
+  doc "Pairs independent compute calls with independent positioned reads in one production runtime and publishes one deterministic checksum.";
+  let left_data = buffer_new(4096_u64, 0_u8);
+  let right_data = buffer_new(4096_u64, 0_u8);
+  let report = buffer_new(21_u64, 10_u8);
+  region 'left_arg {
+    match arg_get<'left_arg>(args: &'left_arg args, position: 1_u64) {
+      Ok(value: left_text) => {
+        match relative_path(value: move left_text) {
+          Ok(value: left_path) => {
+            region 'right_arg {
+              match arg_get<'right_arg>(args: &'right_arg args, position: 2_u64) {
+                Ok(value: right_text) => {
+                  match relative_path(value: move right_text) {
+                    Ok(value: right_path) => {
+                      region 'open {
+                        let left_permit = reserve_file<'open>(factory: &uniq 'open files);
+                        let right_permit = reserve_file<'open>(factory: &uniq 'open files);
+                        let left_opened = open_read<'open, 'open>(permit: move left_permit, root: &'open cwd, path: &'open left_path);
+                        let right_opened = open_read<'open, 'open>(permit: move right_permit, root: &'open cwd, path: &'open right_path);
+                        match move left_opened {
+                          Ok(value: left_file) => {
+                            match move right_opened {
+                              Ok(value: right_file) => {
+                                let checksum = 0_u64;
+                                let iteration = 0_u64;
+                                loop @work {
+                                  let done = ieq(iteration, 1024_u64);
+                                  if done {
+                                    break @work;
+                                  }
+                                  let left_seed = iteration +wrap 11400714819323198485_u64;
+                                  let right_seed = iteration +wrap 13787848793156543929_u64;
+                                  let block = iand(iteration, 4095_u64);
+                                  let offset = block *wrap 4096_u64;
+                                  region 'handles {
+                                    region 'data {
+                                      let left_read = read_at<'handles, 'data>(file: &'handles left_file, destination: &uniq 'data left_data, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                      let compute = compute_pair(left_seed: left_seed, right_seed: right_seed);
+                                      let right_read = read_at<'handles, 'data>(file: &'handles right_file, destination: &uniq 'data right_data, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                      match move left_read {
+                                        ReadBytes(next: left_next) => {
+                                          if ieq(left_next, 4096_u64) {
+                                          } else {
+                                            return exit_status(code: 11_u8);
+                                          }
+                                        }
+                                        ReadEnd() => {
+                                          return exit_status(code: 12_u8);
+                                        }
+                                        ReadFailed(error: left_problem) => {
+                                          return exit_status(code: 13_u8);
+                                        }
+                                      }
+                                      match move right_read {
+                                        ReadBytes(next: right_next) => {
+                                          if ieq(right_next, 4096_u64) {
+                                          } else {
+                                            return exit_status(code: 14_u8);
+                                          }
+                                        }
+                                        ReadEnd() => {
+                                          return exit_status(code: 15_u8);
+                                        }
+                                        ReadFailed(error: right_problem) => {
+                                          return exit_status(code: 16_u8);
+                                        }
+                                      }
+                                      let left_byte = cvt<u8, u64>(left_data[0_u64]);
+                                      let right_byte = cvt<u8, u64>(right_data[0_u64]);
+                                      set checksum = ixor(checksum, compute);
+                                      set checksum = checksum *wrap 31_u64;
+                                      set checksum = checksum +wrap left_byte;
+                                      set checksum = checksum *wrap 31_u64;
+                                      set checksum = checksum +wrap right_byte;
+                                    }
+                                  }
+                                  set iteration = iteration +wrap 1_u64;
+                                }
+                                region 'report {
+                                  let rendered = render_u64<'report>(destination: &uniq 'report report, value: checksum);
+                                }
+                                region 'output {
+                                  match write_once<'output, 'output>(output: &uniq 'output out, source: &'output report, start: 0_u64, end: 21_u64) {
+                                    Ok(value: published) => {
+                                      if ieq(published, 21_u64) {
+                                        return exit_status(code: 0_u8);
+                                      }
+                                      return exit_status(code: 17_u8);
+                                    }
+                                    Err(error: output_problem) => {
+                                      return exit_status(code: 18_u8);
+                                    }
+                                  }
+                                }
+                              }
+                              Err(error: right_problem) => {
+                                return exit_status(code: 6_u8);
+                              }
+                            }
+                          }
+                          Err(error: left_problem) => {
+                            return exit_status(code: 5_u8);
+                          }
+                        }
+                      }
+                    }
+                    Err(error: right_rejected) => {
+                      return exit_status(code: 4_u8);
+                    }
+                  }
+                }
+                Err(error: right_missing) => {
+                  return exit_status(code: 3_u8);
+                }
+              }
+            }
+          }
+          Err(error: left_rejected) => {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+      Err(error: left_missing) => {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+}

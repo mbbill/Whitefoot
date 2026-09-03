@@ -1,3 +1,7 @@
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0602
+#endif
+
 #include "windows_iocp.h"
 
 #if defined(_WIN32)
@@ -8,6 +12,50 @@
 #include <stdint.h>
 #include <string.h>
 
+#if defined(WF_WINDOWS_IOCP_READ_CALL)
+extern BOOL WINAPI WF_WINDOWS_IOCP_READ_CALL(
+    HANDLE handle,
+    LPVOID buffer,
+    DWORD count,
+    LPDWORD transferred,
+    LPOVERLAPPED overlapped
+);
+#else
+#define WF_WINDOWS_IOCP_READ_CALL ReadFile
+#endif
+
+#if defined(WF_WINDOWS_IOCP_WRITE_CALL)
+extern BOOL WINAPI WF_WINDOWS_IOCP_WRITE_CALL(
+    HANDLE handle,
+    LPCVOID buffer,
+    DWORD count,
+    LPDWORD transferred,
+    LPOVERLAPPED overlapped
+);
+#else
+#define WF_WINDOWS_IOCP_WRITE_CALL WriteFile
+#endif
+
+#if defined(WF_WINDOWS_IOCP_RESULT_CALL)
+extern BOOL WINAPI WF_WINDOWS_IOCP_RESULT_CALL(
+    HANDLE handle,
+    LPOVERLAPPED overlapped,
+    LPDWORD transferred,
+    BOOL wait
+);
+#else
+#define WF_WINDOWS_IOCP_RESULT_CALL GetOverlappedResult
+#endif
+
+#if defined(WF_WINDOWS_IOCP_NOTIFICATION_CALL)
+extern BOOL WINAPI WF_WINDOWS_IOCP_NOTIFICATION_CALL(
+    HANDLE handle,
+    UCHAR flags
+);
+#else
+#define WF_WINDOWS_IOCP_NOTIFICATION_CALL SetFileCompletionNotificationModes
+#endif
+
 _Static_assert(
     offsetof(wf_windows_iocp_entry, overlapped) == 0,
     "OVERLAPPED must identify its preallocated operation entry"
@@ -17,10 +65,15 @@ _Static_assert(
     "completion result cell must hold a Windows file result"
 );
 
+#define WF_WINDOWS_IOCP_PROGRESS_CLOSED (SIZE_MAX - 1u)
+#define WF_WINDOWS_IOCP_PROGRESS_CLOSING SIZE_MAX
+
 static void wf_windows_init_statistics(wf_windows_iocp_adapter *adapter) {
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_immediate_failures, 0);
+    atomic_init(&adapter->stat_inline_completions, 0);
+    atomic_init(&adapter->stat_dequeued_completions, 0);
     atomic_init(&adapter->stat_completions, 0);
     atomic_init(&adapter->stat_publication_failures, 0);
 }
@@ -30,15 +83,21 @@ int wf_windows_iocp_init(
     wf_completion_runtime *runtime,
     wf_windows_iocp_entry *entry_storage,
     size_t entry_capacity,
-    DWORD concurrency
+    DWORD concurrency,
+    unsigned options
 ) {
     size_t index;
     HANDLE port;
     if (adapter == NULL || runtime == NULL || entry_storage == NULL
-        || entry_capacity == 0) {
+        || entry_capacity == 0
+        || (options & ~WF_WINDOWS_IOCP_INLINE_SYNCHRONOUS_SUCCESS) != 0u) {
         return EINVAL;
     }
     memset(adapter, 0, sizeof(*adapter));
+    atomic_init(
+        &adapter->progress_gate,
+        WF_WINDOWS_IOCP_PROGRESS_CLOSED
+    );
     port = CreateIoCompletionPort(
         INVALID_HANDLE_VALUE,
         NULL,
@@ -53,17 +112,48 @@ int wf_windows_iocp_init(
     adapter->wake_key = (ULONG_PTR)runtime;
     adapter->entries = entry_storage;
     adapter->entry_capacity = entry_capacity;
+    adapter->options = options;
     atomic_init(&adapter->entry_cursor, 0);
     atomic_init(&adapter->in_flight, 0);
     wf_windows_init_statistics(adapter);
     for (index = 0; index < entry_capacity; ++index) {
-        memset(&entry_storage[index].overlapped, 0, sizeof(OVERLAPPED));
+        /* Entry storage is caller-owned and may contain arbitrary bytes.  A
+         * free entry must expose neither a stale token nor a stale descriptor
+         * lease before its first reservation. */
+        memset(&entry_storage[index], 0, sizeof(entry_storage[index]));
         atomic_init(
             &entry_storage[index].state,
             WF_WINDOWS_IOCP_ENTRY_FREE
         );
     }
     adapter->initialized = 1;
+    atomic_store_explicit(
+        &adapter->progress_gate,
+        0,
+        memory_order_release
+    );
+    return 0;
+}
+
+int wf_windows_iocp_attach_completion(
+    wf_windows_iocp_adapter *adapter,
+    wf_completion_runtime *runtime,
+    wf_windows_iocp_wait_finished_hook wait_finished,
+    wf_windows_iocp_close_hook close_bound_port
+) {
+    if (adapter == NULL || adapter->initialized == 0
+        || adapter->runtime != runtime || wait_finished == NULL
+        || close_bound_port == NULL) {
+        return EINVAL;
+    }
+    if ((adapter->wait_finished != NULL
+         && adapter->wait_finished != wait_finished)
+        || (adapter->close_bound_port != NULL
+            && adapter->close_bound_port != close_bound_port)) {
+        return EBUSY;
+    }
+    adapter->wait_finished = wait_finished;
+    adapter->close_bound_port = close_bound_port;
     return 0;
 }
 
@@ -86,6 +176,14 @@ int wf_windows_iocp_associate_file(
     if (associated != adapter->port) {
         return (int)GetLastError();
     }
+    if ((adapter->options & WF_WINDOWS_IOCP_INLINE_SYNCHRONOUS_SUCCESS) != 0u
+        && WF_WINDOWS_IOCP_NOTIFICATION_CALL(
+               handle,
+               (UCHAR)(FILE_SKIP_COMPLETION_PORT_ON_SUCCESS
+                   | FILE_SKIP_SET_EVENT_ON_HANDLE)
+           ) == FALSE) {
+        return (int)GetLastError();
+    }
     file->handle = handle;
     file->adapter = adapter;
     return 0;
@@ -98,6 +196,12 @@ static int wf_windows_request_valid(
     if (request == NULL || request->file.adapter != adapter
         || request->file.handle == NULL
         || request->file.handle == INVALID_HANDLE_VALUE
+        || request->lease.generation == 0
+        || request->lease.handle != request->file.handle
+        || request->lease.completion_owner != adapter
+        || request->lease.descriptor_class
+            != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+        || request->lease.mode != WF_WINDOWS_DESCRIPTOR_LEASE_SHARED
         || request->count > MAXDWORD) {
         return 0;
     }
@@ -168,25 +272,41 @@ static int wf_windows_publish(
     wf_windows_file_result result;
     wf_completion_publication publication;
     enum wf_completion_publish_result published;
+    wf_completion_token token = entry->token;
+    enum wf_windows_file_operation_kind kind = entry->kind;
+    wf_windows_descriptor_lease lease = entry->lease;
     /* Positioned file reads use the Whitefoot/POSIX-shaped result contract:
      * reaching the file boundary is a successful zero-byte read.  Windows
      * reports that boundary as ERROR_HANDLE_EOF for overlapped disk I/O. */
-    if (entry->kind == WF_WINDOWS_FILE_READ_AT
+    if (kind == WF_WINDOWS_FILE_READ_AT
         && error_code == ERROR_HANDLE_EOF) {
         error_code = 0;
         transferred = 0;
     }
     memset(&result, 0, sizeof(result));
-    result.kind = entry->kind;
+    result.kind = kind;
     result.value = error_code == 0 ? (int64_t)transferred : -1;
     result.error_code = error_code;
     publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
     publication.terminal_kind = error_code == 0 ? 1u : 2u;
     publication.result = &result;
     publication.result_size = sizeof(result);
+    /* The target no longer touches the descriptor after a dequeued packet or
+     * a synchronous-success result query. Relinquish the generation lease and
+     * operation entry before terminal publication: a fast source consume may
+     * immediately run the derived close and reclaim both the descriptor and
+     * this fixed-capacity entry. */
+    wf__windows_completion_descriptor_lease_release(&lease);
+    memset(&entry->lease, 0, sizeof(entry->lease));
+    atomic_store_explicit(
+        &entry->state,
+        WF_WINDOWS_IOCP_ENTRY_FREE,
+        memory_order_release
+    );
+    atomic_fetch_sub_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     published = wf_completion_publish_terminal(
         adapter->runtime,
-        entry->token,
+        token,
         &publication
     );
     if (published != WF_COMPLETION_PUBLISHED) {
@@ -195,13 +315,9 @@ static int wf_windows_publish(
             1,
             memory_order_relaxed
         );
+    } else {
+        wf_completion_operation_retired(0);
     }
-    atomic_store_explicit(
-        &entry->state,
-        WF_WINDOWS_IOCP_ENTRY_FREE,
-        memory_order_release
-    );
-    atomic_fetch_sub_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(
         &adapter->stat_completions,
         1,
@@ -220,6 +336,7 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
     enum wf_completion_transition_result transition;
     BOOL started;
     DWORD error_code;
+    DWORD transferred = 0;
     ULARGE_INTEGER offset;
 
     if (adapter == NULL || adapter->initialized == 0) {
@@ -262,6 +379,9 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
             : WF_WINDOWS_IOCP_SUBMIT_INVALID;
     }
 
+    entry->lease = request->lease;
+    wf_completion_operation_accepted();
+
     atomic_store_explicit(
         &entry->state,
         WF_WINDOWS_IOCP_ENTRY_IN_FLIGHT,
@@ -274,7 +394,7 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
         memory_order_relaxed
     );
     if (request->kind == WF_WINDOWS_FILE_READ_AT) {
-        started = ReadFile(
+        started = WF_WINDOWS_IOCP_READ_CALL(
             request->file.handle,
             request->buffer.read_buffer,
             (DWORD)request->count,
@@ -282,7 +402,7 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
             &entry->overlapped
         );
     } else {
-        started = WriteFile(
+        started = WF_WINDOWS_IOCP_WRITE_CALL(
             request->file.handle,
             request->buffer.write_buffer,
             (DWORD)request->count,
@@ -291,9 +411,47 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
         );
     }
     if (started != FALSE) {
-        /* An overlapped handle associated with IOCP still queues one packet
-         * for synchronous success.  Adapter-owned handles must never enable
-         * FILE_SKIP_COMPLETION_PORT_ON_SUCCESS. */
+        if ((adapter->options
+             & WF_WINDOWS_IOCP_INLINE_SYNCHRONOUS_SUCCESS) != 0u) {
+            /* The association disabled completion packets only for requests
+             * which return success here. The operation is already complete,
+             * so query its exact byte count without waiting and publish on
+             * the submitter instead of paying for a redundant IOCP round
+             * trip. Pending requests still have exactly one port packet. */
+            if (WF_WINDOWS_IOCP_RESULT_CALL(
+                    request->file.handle,
+                    &entry->overlapped,
+                    &transferred,
+                    FALSE
+                ) == FALSE) {
+                error_code = GetLastError();
+                /* ReadFile/WriteFile returned TRUE, which guarantees that the
+                 * operation is complete. Reusing this entry while Windows
+                 * reports otherwise would turn its OVERLAPPED and buffer into
+                 * dangling storage, so this is an invariant failure rather
+                 * than an I/O result. */
+                if (error_code == ERROR_IO_INCOMPLETE) {
+                    abort();
+                }
+                if (error_code == ERROR_SUCCESS) {
+                    error_code = ERROR_GEN_FAILURE;
+                }
+                transferred = 0;
+            } else {
+                error_code = 0;
+            }
+            atomic_fetch_add_explicit(
+                &adapter->stat_inline_completions,
+                1,
+                memory_order_relaxed
+            );
+            (void)wf_windows_publish(
+                adapter,
+                entry,
+                transferred,
+                error_code
+            );
+        }
         return WF_WINDOWS_IOCP_TARGET_OWNS;
     }
     error_code = GetLastError();
@@ -335,20 +493,72 @@ int wf_windows_iocp_progress(
 ) {
     size_t processed = 0;
     size_t total = 0;
+    size_t gate;
     int first_error = 0;
+    int enter_error = 0;
+    HANDLE port;
+    ULONG_PTR wake_key;
+    wf_completion_runtime *runtime;
+    wf_windows_iocp_wait_finished_hook wait_finished;
     if (published != NULL) {
         *published = 0;
     }
-    if (adapter == NULL || adapter->initialized == 0 || published == NULL
-        || budget == 0) {
+    if (adapter == NULL || published == NULL || budget == 0) {
         return EINVAL;
     }
+    gate = atomic_load_explicit(
+        &adapter->progress_gate,
+        memory_order_acquire
+    );
+    for (;;) {
+        if (gate == WF_WINDOWS_IOCP_PROGRESS_CLOSED) {
+            return EINVAL;
+        }
+        if (gate == WF_WINDOWS_IOCP_PROGRESS_CLOSING) {
+            /* A bound destroy which races an announced waiter must fail its
+             * core close check and reopen this gate. Wait for that decision so
+             * the caller does not have to cancel an untouched announcement. */
+            (void)SwitchToThread();
+            gate = atomic_load_explicit(
+                &adapter->progress_gate,
+                memory_order_acquire
+            );
+            continue;
+        }
+        if (gate + 1u >= WF_WINDOWS_IOCP_PROGRESS_CLOSED) {
+            return EOVERFLOW;
+        }
+        if (atomic_compare_exchange_weak_explicit(
+                &adapter->progress_gate,
+                &gate,
+                gate + 1u,
+                memory_order_acq_rel,
+                memory_order_acquire
+            )) {
+            break;
+        }
+    }
+    if (adapter->initialized == 0) {
+        enter_error = EINVAL;
+    }
+    if (enter_error != 0) {
+        (void)atomic_fetch_sub_explicit(
+            &adapter->progress_gate,
+            1,
+            memory_order_release
+        );
+        return enter_error;
+    }
+    port = adapter->port;
+    wake_key = adapter->wake_key;
+    runtime = adapter->runtime;
+    wait_finished = adapter->wait_finished;
     while (processed < budget) {
         DWORD transferred = 0;
         ULONG_PTR completion_key = 0;
         OVERLAPPED *overlapped = NULL;
         BOOL succeeded = GetQueuedCompletionStatus(
-            adapter->port,
+            port,
             &transferred,
             &completion_key,
             &overlapped,
@@ -357,27 +567,49 @@ int wf_windows_iocp_progress(
         DWORD error_code = succeeded != FALSE ? 0 : GetLastError();
         wf_windows_iocp_entry *entry;
         int error;
+        unsigned legal_wake = overlapped == NULL && succeeded != FALSE
+            && completion_key == wake_key;
+        if (wait_finished != NULL) {
+            error = wait_finished(
+                runtime,
+                port,
+                wake_key,
+                legal_wake
+            );
+            if (first_error == 0 && error != 0) {
+                first_error = error;
+            }
+        }
         if (overlapped == NULL) {
             if (error_code == WAIT_TIMEOUT) {
                 break;
             }
             if (succeeded == FALSE) {
-                first_error = (int)error_code;
+                if (first_error == 0) {
+                    first_error = (int)error_code;
+                }
                 break;
             }
-            if (completion_key != adapter->wake_key) {
-                first_error = EPROTO;
+            if (completion_key != wake_key) {
+                if (first_error == 0) {
+                    first_error = EPROTO;
+                }
                 break;
             }
             /* Scheduler wake packets share the port with target completions,
-             * but they carry no operation and publish no terminal.  They
-             * still consume dequeue budget so a wake flood cannot turn one
-             * progress call into an unbounded loop. */
+             * but they carry no operation and publish no terminal. The bound
+             * core has already withdrawn this waiter and consumed the exact
+             * packet in one lock critical section. */
             processed += 1;
+            if (wait_finished != NULL) {
+                break;
+            }
             continue;
         }
         if (completion_key != (ULONG_PTR)adapter) {
-            first_error = EPROTO;
+            if (first_error == 0) {
+                first_error = EPROTO;
+            }
             break;
         }
         entry = wf_windows_entry_from_overlapped(adapter, overlapped);
@@ -388,6 +620,11 @@ int wf_windows_iocp_progress(
             break;
         }
         processed += 1;
+        atomic_fetch_add_explicit(
+            &adapter->stat_dequeued_completions,
+            1,
+            memory_order_relaxed
+        );
         error = wf_windows_publish(
             adapter,
             entry,
@@ -400,8 +637,16 @@ int wf_windows_iocp_progress(
         if (error == 0) {
             total += 1;
         }
+        if (wait_finished != NULL) {
+            break;
+        }
     }
     *published = total;
+    (void)atomic_fetch_sub_explicit(
+        &adapter->progress_gate,
+        1,
+        memory_order_release
+    );
     return first_error;
 }
 
@@ -420,18 +665,85 @@ size_t wf_windows_iocp_in_flight(const wf_windows_iocp_adapter *adapter) {
     return atomic_load_explicit(&adapter->in_flight, memory_order_acquire);
 }
 
+size_t wf_windows_iocp_active_progress(
+    const wf_windows_iocp_adapter *adapter
+) {
+    size_t gate;
+    if (adapter == NULL) {
+        return 0;
+    }
+    gate = atomic_load_explicit(
+        &adapter->progress_gate,
+        memory_order_acquire
+    );
+    return gate >= WF_WINDOWS_IOCP_PROGRESS_CLOSED ? 0 : gate;
+}
+
 int wf_windows_iocp_destroy(wf_windows_iocp_adapter *adapter) {
-    if (adapter == NULL || adapter->initialized == 0) {
+    int error;
+    size_t expected = 0;
+    if (adapter == NULL) {
+        return EINVAL;
+    }
+    if (!atomic_compare_exchange_strong_explicit(
+            &adapter->progress_gate,
+            &expected,
+            WF_WINDOWS_IOCP_PROGRESS_CLOSING,
+            memory_order_acq_rel,
+            memory_order_acquire
+        )) {
+        return expected == WF_WINDOWS_IOCP_PROGRESS_CLOSED
+            ? EINVAL
+            : EBUSY;
+    }
+    if (adapter->initialized == 0) {
+        atomic_store_explicit(
+            &adapter->progress_gate,
+            WF_WINDOWS_IOCP_PROGRESS_CLOSED,
+            memory_order_release
+        );
         return EINVAL;
     }
     if (wf_windows_iocp_in_flight(adapter) != 0) {
+        atomic_store_explicit(
+            &adapter->progress_gate,
+            0,
+            memory_order_release
+        );
         return EBUSY;
     }
-    if (CloseHandle(adapter->port) == FALSE) {
-        return (int)GetLastError();
+    if (adapter->close_bound_port != NULL) {
+        error = adapter->close_bound_port(
+            adapter->runtime,
+            adapter->port,
+            adapter->wake_key
+        );
+        if (error != 0) {
+            atomic_store_explicit(
+                &adapter->progress_gate,
+                0,
+                memory_order_release
+            );
+            return error;
+        }
+    } else if (CloseHandle(adapter->port) == FALSE) {
+        error = (int)GetLastError();
+        atomic_store_explicit(
+            &adapter->progress_gate,
+            0,
+            memory_order_release
+        );
+        return error;
     }
+    adapter->wait_finished = NULL;
+    adapter->close_bound_port = NULL;
     adapter->port = NULL;
     adapter->initialized = 0;
+    atomic_store_explicit(
+        &adapter->progress_gate,
+        WF_WINDOWS_IOCP_PROGRESS_CLOSED,
+        memory_order_release
+    );
     return 0;
 }
 
@@ -452,6 +764,14 @@ wf_windows_iocp_statistics wf_windows_iocp_statistics_snapshot(
     );
     statistics.immediate_failures = atomic_load_explicit(
         &adapter->stat_immediate_failures,
+        memory_order_relaxed
+    );
+    statistics.inline_completions = atomic_load_explicit(
+        &adapter->stat_inline_completions,
+        memory_order_relaxed
+    );
+    statistics.dequeued_completions = atomic_load_explicit(
+        &adapter->stat_dequeued_completions,
         memory_order_relaxed
     );
     statistics.completions = atomic_load_explicit(

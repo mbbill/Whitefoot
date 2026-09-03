@@ -24,6 +24,11 @@ use super::super::qualification::{
 use super::*;
 use crate::ACTIVE_KERNEL_SPEC_VERSION;
 
+/// The compiler-owned Windows system-runtime contract embedded in the driver.
+pub const WINDOWS_RUNTIME_HEADER: &str = include_str!("../windows_runtime.h");
+/// The compiler-owned Windows system runtime embedded in the driver.
+pub const WINDOWS_RUNTIME_SOURCE: &str = include_str!("../windows_runtime.c");
+
 /// The status a start failure ends the process with.
 ///
 /// [PROG-3]: when the selected target cannot supply a declared standard input
@@ -131,6 +136,25 @@ const DIRECTORY_NEXT_COMPLETION_MAPPER: &str = "wf.sys.directory_next.completion
 const OPEN_FILE_COMPLETION_MAPPER: &str = "wf.sys.open_file.completion";
 pub(super) const OPEN_EXPECT_REGULAR: u32 = 1;
 pub(super) const OPEN_EXPECT_DIRECTORY: u32 = 2;
+pub(super) const WINDOWS_DESCRIPTOR_CLASS_READ_FILE: u32 = 1;
+pub(super) const WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT: u32 = 2;
+pub(super) const WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE: u32 = 3;
+
+fn completion_open_declaration(target: SystemTarget, symbol: &str) -> String {
+    if target.is_windows() {
+        format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)")
+    } else {
+        format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+    }
+}
+
+fn windows_descriptor_class_argument(target: SystemTarget, descriptor_class: u32) -> String {
+    if target.is_windows() {
+        format!(", i32 {descriptor_class}")
+    } else {
+        String::new()
+    }
+}
 
 /// The private constant naming the initial working directory.
 pub(super) const WORKING_DIRECTORY: &str = "@.wf.sys.working.directory";
@@ -214,18 +238,39 @@ pub(super) fn emit_system_interface(
             .ok_or(BackendFailure::InvalidIr)?;
         match ordinal {
             ARGS_COUNT => definitions.push_str(&emit_args_count(implementation)),
-            ARG_GET => definitions.push_str(&emit_arg_get(program, implementation, result)?),
-            HOST_BYTES_LEN => definitions.push_str(&emit_host_bytes_len(implementation)),
+            ARG_GET => {
+                definitions.push_str(&emit_arg_get(program, implementation, result, target)?)
+            }
+            HOST_BYTES_LEN => definitions.push_str(&emit_host_bytes_len(implementation, target)),
             HOST_COPY_BYTES => {
-                definitions.push_str(&emit_host_copy_bytes(program, implementation, result)?);
+                definitions.push_str(&emit_host_copy_bytes(
+                    program,
+                    implementation,
+                    result,
+                    target,
+                )?);
             }
             HOST_UTF8_LEN => {
-                needs_validator = true;
-                definitions.push_str(&emit_host_utf8_len(program, implementation, result)?);
+                needs_validator = !target.is_windows();
+                definitions.push_str(&emit_host_utf8_len(
+                    program,
+                    qualification,
+                    implementation,
+                    result,
+                    target,
+                    target_layout,
+                )?);
             }
             HOST_COPY_UTF8 => {
-                needs_validator = true;
-                definitions.push_str(&emit_host_copy_utf8(program, implementation, result)?);
+                needs_validator = !target.is_windows();
+                definitions.push_str(&emit_host_copy_utf8(
+                    program,
+                    qualification,
+                    implementation,
+                    result,
+                    target,
+                    target_layout,
+                )?);
             }
             RELATIVE_PATH => definitions.push_str(&emit_relative_path(
                 program,
@@ -325,7 +370,12 @@ pub(super) fn emit_system_interface(
     }
 
     let IrEntry::Command { inputs, .. } = program.entry();
-    declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
+    if target.is_windows() {
+        declarations.insert("declare i32 @wf__windows_stdout_descriptor()".to_owned());
+        declarations.insert("declare i32 @wf__windows_stderr_descriptor()".to_owned());
+    } else {
+        declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
+    }
     declarations.insert("declare void @exit(i32) noreturn".to_owned());
     if inputs.contains(&1) {
         declarations.insert(format!(
@@ -335,13 +385,25 @@ pub(super) fn emit_system_interface(
         needs_working_directory = true;
     }
     if needs_working_directory {
-        let storage = TargetStorageType::bytes(2);
+        let storage = if target.is_windows() {
+            TargetStorageType::array(TargetStorageType::integer(16), 2)
+        } else {
+            TargetStorageType::bytes(2)
+        };
         validate_static_storage(target_layout, qualification, program, &storage)
             .map_err(BackendFailure::TargetLayout)?;
-        constants.push_str(&format!(
-            "{WORKING_DIRECTORY} = private unnamed_addr constant {} c\".\\00\", align 1\n",
-            llvm_storage_type(program, &storage)?
-        ));
+        if target.is_windows() {
+            constants.push_str(&format!(
+                "{WORKING_DIRECTORY} = private unnamed_addr constant {} \
+                 [i16 46, i16 0], align 2\n",
+                llvm_storage_type(program, &storage)?
+            ));
+        } else {
+            constants.push_str(&format!(
+                "{WORKING_DIRECTORY} = private unnamed_addr constant {} c\".\\00\", align 1\n",
+                llvm_storage_type(program, &storage)?
+            ));
+        }
     }
 
     Ok(SystemEmission {
@@ -378,9 +440,20 @@ fn operation_declarations(
     target: SystemTarget,
 ) -> Result<Vec<String>, BackendFailure> {
     let fixed: &[&str] = match ordinal {
+        ARG_GET if target.is_windows() => &["declare i64 @wf__windows_wcslen(ptr)"],
         ARG_GET => &["declare i64 @strlen(ptr)"],
-        HOST_COPY_BYTES | HOST_COPY_UTF8 => {
-            &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"]
+        HOST_COPY_BYTES => &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"],
+        HOST_UTF8_LEN if target.is_windows() => {
+            &["declare i32 @wf__windows_utf8_measure(ptr, i64, ptr)"]
+        }
+        HOST_COPY_UTF8 if target.is_windows() => &[
+            "declare i32 @wf__windows_utf8_measure(ptr, i64, ptr)",
+            "declare i32 @wf__windows_utf8_copy(ptr, i64, ptr, i64)",
+            "declare void @abort() noreturn",
+        ],
+        HOST_COPY_UTF8 => &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"],
+        RELATIVE_PATH if target.is_windows() => {
+            &["declare i32 @wf__windows_relative_path_valid(ptr, i64)"]
         }
         RELATIVE_PATH => &["declare ptr @memchr(ptr, i32, i64)"],
         // [PATH-2]: the target's own directory-relative facility, never a
@@ -390,7 +463,7 @@ fn operation_declarations(
             let symbol = target.file_open_symbol();
             return Ok(vec![
                 if target.uses_typed_completion_file_adapter() {
-                    format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                    completion_open_declaration(target, symbol)
                 } else {
                     format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
                 },
@@ -401,7 +474,7 @@ fn operation_declarations(
             let symbol = target.file_open_symbol();
             return Ok(vec![
                 if target.uses_typed_completion_file_adapter() {
-                    format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                    completion_open_declaration(target, symbol)
                 } else {
                     format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
                 },
@@ -413,7 +486,7 @@ fn operation_declarations(
             let open = target.file_open_symbol();
             let mut declarations = vec![
                 if target.uses_typed_completion_file_adapter() {
-                    format!("declare i32 @{open}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+                    completion_open_declaration(target, open)
                 } else {
                     format!("declare i32 @{open}(i32, ptr, i32, ...)")
                 },
@@ -457,6 +530,10 @@ fn operation_declarations(
                     "__getdirentries64",
                     "declare i64 @__getdirentries64(i32, ptr, i64, ptr)"
                 ) | ("getdents64", "declare i64 @getdents64(i32, ptr, i64)")
+                    | (
+                        "wf__windows_directory_batch",
+                        "declare i64 @wf__windows_directory_batch(i32, ptr, i64, ptr)"
+                    )
             );
             if !admitted {
                 return Err(BackendFailure::InvalidIr);
@@ -791,6 +868,7 @@ fn emit_arg_get(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     result: IrType,
+    target: SystemTarget,
 ) -> Result<String, BackendFailure> {
     let shape = outcome_shape(program, result)?;
     let args = representation(SystemResourceType::Args);
@@ -811,6 +889,11 @@ fn emit_arg_get(
     // The lease is an address and a length taken directly out of the
     // command-lifetime backing: no allocation, no byte copy, and no Unicode
     // restriction on the raw byte route [SYS-9, HOST-3].
+    let length = if target.is_windows() {
+        "wf__windows_wcslen"
+    } else {
+        "strlen"
+    };
     Ok(format!(
         "define private {llvm} @{symbol}({args} %args, i64 %position) alwaysinline {{\n\
          entry:\n  \
@@ -821,7 +904,7 @@ fn emit_arg_get(
          %base = extractvalue {args} %args, 0\n  \
          %slot = getelementptr inbounds ptr, ptr %base, i64 %position\n  \
          %text = load ptr, ptr %slot\n  \
-         %length = call i64 @strlen(ptr %text)\n  \
+         %length = call i64 @{length}(ptr %text)\n  \
          %lease.base = insertvalue {lease} zeroinitializer, ptr %text, 0\n  \
          %lease.value = insertvalue {lease} %lease.base, i64 %length, 1\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
@@ -836,12 +919,20 @@ fn emit_arg_get(
     ))
 }
 
-fn emit_host_bytes_len(implementation: ApprovedImplementation) -> String {
+fn emit_host_bytes_len(implementation: ApprovedImplementation, target: SystemTarget) -> String {
     let lease = representation(SystemResourceType::HostString);
+    let measure = if target.is_windows() {
+        format!(
+            "  %units = extractvalue {lease} %value, 1\n  \
+             %length = shl i64 %units, 1\n"
+        )
+    } else {
+        format!("  %length = extractvalue {lease} %value, 1\n")
+    };
     format!(
         "define private i64 @{}({lease} %value) alwaysinline {{\n\
          entry:\n  \
-         %length = extractvalue {lease} %value, 1\n  \
+         {measure}  \
          ret i64 %length\n\
          }}\n\n",
         implementation.symbol()
@@ -850,8 +941,11 @@ fn emit_host_bytes_len(implementation: ApprovedImplementation) -> String {
 
 fn emit_host_utf8_len(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     result: IrType,
+    target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let shape = outcome_shape(program, result)?;
     let lease = representation(SystemResourceType::HostString);
@@ -865,6 +959,39 @@ fn emit_host_utf8_len(
         err_llvm,
         ..
     } = shape;
+    if target.is_windows() {
+        let prologue = render_named_target_frame(
+            program,
+            qualification,
+            target_layout,
+            &[(
+                "%encoded.length",
+                TargetFrameSlot::natural(TargetStorageType::integer(64)),
+            )],
+        )?;
+        return Ok(format!(
+            "define private {llvm} @{symbol}({lease} %value) alwaysinline {{\n\
+             entry:\n\
+             {prologue}  \
+             %text = extractvalue {lease} %value, 0\n  \
+             %units = extractvalue {lease} %value, 1\n  \
+             %valid.native = call i32 @wf__windows_utf8_measure(ptr %text, i64 %units, \
+             ptr %encoded.length)\n  \
+             %valid = icmp eq i32 %valid.native, 1\n  \
+             br i1 %valid, label %encoded, label %invalid\n\
+             encoded:\n  \
+             %length = load i64, ptr %encoded.length, align 8\n  \
+             %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+             %ok = insertvalue {llvm} %ok.tag, i64 %length, {ok_index}\n  \
+             ret {llvm} %ok\n\
+             invalid:\n  \
+             %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %err = insertvalue {llvm} %err.tag, {err_llvm} {invalid}, {err_index}\n  \
+             ret {llvm} %err\n\
+             }}\n\n",
+            symbol = implementation.symbol()
+        ));
+    }
     // On a family whose native code unit is exactly one byte, a valid
     // sequence's UTF-8 encoding is the sequence itself, so the exact encoded
     // length is the byte length [HOST-2, SYS-9]. Validation is complete: the
@@ -892,7 +1019,7 @@ fn emit_host_utf8_len(
 /// Starts one statically discharged half-open range operation. `sub nuw` is
 /// justified by SYS-8's exact `start <= end` call-site obligation; the other
 /// obligation proves `end <= len(buffer)`, so this wrapper has no check or
-/// trap fallback.
+/// runtime-failure fallback.
 fn range_entry(prologue: &str) -> String {
     format!(
         "entry:\n\
@@ -906,6 +1033,7 @@ fn emit_host_copy_bytes(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     result: IrType,
+    target: SystemTarget,
 ) -> Result<String, BackendFailure> {
     let shape = outcome_shape(program, result)?;
     let lease = representation(SystemResourceType::HostString);
@@ -929,6 +1057,14 @@ fn emit_host_copy_bytes(
         ..
     } = shape;
     let entry = range_entry("");
+    let measure = if target.is_windows() {
+        format!(
+            "  %units = extractvalue {lease} %value, 1\n  \
+             %required = shl i64 %units, 1\n"
+        )
+    } else {
+        format!("  %required = extractvalue {lease} %value, 1\n")
+    };
     // The lossless route transfers the target's own code units with no
     // validation and no Unicode restriction [HOST-2]; its only recoverable
     // failure is a destination too small for the exact length, which leaves
@@ -938,7 +1074,7 @@ fn emit_host_copy_bytes(
          i64 %end) alwaysinline {{\n\
          {entry}\
          measure:\n  \
-         %required = extractvalue {lease} %value, 1\n  \
+         {measure}  \
          %room = icmp ule i64 %required, %extent\n  \
          br i1 %room, label %transfer, label %small\n\
          transfer:\n  \
@@ -963,8 +1099,11 @@ fn emit_host_copy_bytes(
 
 fn emit_host_copy_utf8(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     result: IrType,
+    target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let shape = outcome_shape(program, result)?;
     let lease = representation(SystemResourceType::HostString);
@@ -988,7 +1127,68 @@ fn emit_host_copy_utf8(
         err_llvm,
         ..
     } = shape;
-    let entry = range_entry("");
+    let prologue = if target.is_windows() {
+        render_named_target_frame(
+            program,
+            qualification,
+            target_layout,
+            &[(
+                "%required.slot",
+                TargetFrameSlot::natural(TargetStorageType::integer(64)),
+            )],
+        )?
+    } else {
+        String::new()
+    };
+    let entry = range_entry(&prologue);
+    if target.is_windows() {
+        return Ok(format!(
+            "define private {llvm} @{symbol}({lease} %value, {buffer} %destination, i64 %start, \
+             i64 %end) alwaysinline {{\n\
+             {entry}\
+             measure:\n  \
+             %text = extractvalue {lease} %value, 0\n  \
+             %units = extractvalue {lease} %value, 1\n  \
+             %valid.native = call i32 @wf__windows_utf8_measure(ptr %text, i64 %units, \
+             ptr %required.slot)\n  \
+             %valid = icmp eq i32 %valid.native, 1\n  \
+             br i1 %valid, label %fit, label %invalid\n\
+             fit:\n  \
+             %required = load i64, ptr %required.slot, align 8\n  \
+             %room = icmp ule i64 %required, %extent\n  \
+             br i1 %room, label %transfer, label %small\n\
+             transfer:\n  \
+             %base = extractvalue {buffer} %destination, 0\n  \
+             %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+             %copied.native = call i32 @wf__windows_utf8_copy(ptr %text, i64 %units, \
+             ptr %target, i64 %required)\n  \
+             %copied = icmp eq i32 %copied.native, 1\n  \
+             br i1 %copied, label %complete, label %tcb.defect\n\
+             complete:\n  \
+             %next = add nuw i64 %start, %required\n  \
+             %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+             %ok = insertvalue {llvm} %ok.tag, i64 %next, {ok_index}\n  \
+             ret {llvm} %ok\n\
+             small:\n  \
+             %small.tag = insertvalue {err_llvm} zeroinitializer, i32 {small_tag}, 0\n  \
+             %small.value = insertvalue {err_llvm} %small.tag, i64 %required, {small_index}\n  \
+             %small.err = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %small.outcome = insertvalue {llvm} %small.err, {err_llvm} %small.value, \
+             {err_index}\n  \
+             ret {llvm} %small.outcome\n\
+             invalid:\n  \
+             %invalid.value = insertvalue {err_llvm} zeroinitializer, i32 {invalid_tag}, 0\n  \
+             %invalid.err = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %invalid.outcome = insertvalue {llvm} %invalid.err, {err_llvm} %invalid.value, \
+             {err_index}\n  \
+             ret {llvm} %invalid.outcome\n\
+             tcb.defect:\n  \
+             call void @abort()\n  \
+             unreachable\n\
+             }}\n\n",
+            symbol = implementation.symbol()
+        ));
+    }
     // The text route validates and measures the encoding first and returns
     // the invalid or too-small outcome without writing any byte; only then
     // does it copy the complete encoding [SYS-8, HOST-2].
@@ -1051,6 +1251,28 @@ fn emit_relative_path(
         err_llvm,
         ..
     } = shape;
+    if target.is_windows() {
+        return Ok(format!(
+            "define private {llvm} @{symbol}({lease} %value) alwaysinline {{\n\
+             entry:\n  \
+             %text = extractvalue {lease} %value, 0\n  \
+             %length = extractvalue {lease} %value, 1\n  \
+             %admitted.native = call i32 @wf__windows_relative_path_valid(ptr %text, \
+             i64 %length)\n  \
+             %admitted = icmp eq i32 %admitted.native, 1\n  \
+             br i1 %admitted, label %admit, label %reject\n\
+             admit:\n  \
+             %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+             %ok = insertvalue {llvm} %ok.tag, {lease} %value, {ok_index}\n  \
+             ret {llvm} %ok\n\
+             reject:\n  \
+             %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %err = insertvalue {llvm} %err.tag, {err_llvm} {rejected}, {err_index}\n  \
+             ret {llvm} %err\n\
+             }}\n\n",
+            symbol = implementation.symbol()
+        ));
+    }
     // Construction admits exactly a sequence with no NUL code unit that
     // begins with no target-root prefix; on this family that prefix set is one
     // leading separator [PATH-1]. Success retypes the same inline lease with
@@ -1276,6 +1498,8 @@ fn emit_open_read(
         OPEN_READ_COMPLETION_MAPPER,
         SystemResourceType::ReadFile,
     )?;
+    let descriptor_class_argument =
+        windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_READ_FILE);
     let wrapper = if target.uses_typed_completion_file_adapter() {
         let prologue = render_named_target_frame(
             program,
@@ -1298,7 +1522,8 @@ fn emit_open_read(
              {prologue}  \
              %text = extractvalue {path} %path, 0\n  \
              %descriptor = call {file} @{open}({directory} %root, ptr %text, i32 {flags}, \
-             i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}, ptr %open.error.slot, \
+             i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}{descriptor_class_argument}, \
+             ptr %open.error.slot, \
              ptr %open.outcome.slot)\n  \
              %raw.descriptor = sext {file} %descriptor to i64\n  \
              %open.error = load i32, ptr %open.error.slot, align 4\n  \
@@ -1768,7 +1993,39 @@ fn invalid_component(
 /// target separator — so no source-assembled multi-component path reaches the
 /// host and [PATH-1]'s deferral of path algebra stands. Validation precedes
 /// the copy and therefore precedes the host call.
-fn component_validation(buffer: &str, root: u32, component_limit: u64) -> String {
+fn component_validation(buffer: &str, target: SystemTarget) -> String {
+    let component_limit = target.component_limit();
+    if target.is_windows() {
+        return format!(
+            "measure:\n  \
+             %oversize = icmp ugt i64 %extent, {component_limit}\n  \
+             %vacant = icmp eq i64 %extent, 0\n  \
+             %width.remainder = and i64 %extent, 1\n  \
+             %misaligned = icmp ne i64 %width.remainder, 0\n  \
+             %size.unusable = or i1 %oversize, %vacant\n  \
+             %unusable = or i1 %size.unusable, %misaligned\n  \
+             br i1 %unusable, label %invalid, label %scan.entry\n\
+             scan.entry:\n  \
+             %base = extractvalue {buffer} %name, 0\n  \
+             %text = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+             br label %scan\n\
+             scan:\n  \
+             %index = phi i64 [ 0, %scan.entry ], [ %index.next, %scan.step ]\n  \
+             %at = getelementptr inbounds i8, ptr %text, i64 %index\n  \
+             %unit = load i16, ptr %at, align 1\n  \
+             %terminating = icmp eq i16 %unit, 0\n  \
+             %slash = icmp eq i16 %unit, 47\n  \
+             %backslash = icmp eq i16 %unit, 92\n  \
+             %separator = or i1 %slash, %backslash\n  \
+             %refused = or i1 %terminating, %separator\n  \
+             br i1 %refused, label %invalid, label %scan.step\n\
+             scan.step:\n  \
+             %index.next = add i64 %index, 2\n  \
+             %scanned = icmp uge i64 %index.next, %extent\n  \
+             br i1 %scanned, label %open, label %scan\n"
+        );
+    }
+    let root = u32::from(target.root_prefix());
     format!(
         "measure:\n  \
          %oversize = icmp ugt i64 %extent, {component_limit}\n  \
@@ -1901,7 +2158,9 @@ fn emit_open_by_name(
         err_type,
         ..
     } = shape;
-    let slot = target.component_limit() + 1;
+    let terminator_bytes = if target.is_windows() { 2 } else { 1 };
+    let slot = target.component_limit() + terminator_bytes;
+    let component_align = if target.is_windows() { 2 } else { 1 };
     // One shared buffer per wrapper, and deliberately not the per-outstanding-
     // operation storage the handed-out completion sites use. This wrapper's
     // only host call is the synchronous direct open, which resolves the name
@@ -1911,7 +2170,7 @@ fn emit_open_by_name(
     // `FunctionEmitter::completion_entry_slot` indexes a hand-out's storage.
     let mut frame_slots = vec![(
         "%component",
-        TargetFrameSlot::natural(TargetStorageType::bytes(slot)),
+        TargetFrameSlot::aligned(TargetStorageType::bytes(slot), component_align),
     )];
     // The typed adapter performs the descriptor-kind inspection before it
     // publishes the outcome, so only the direct qualified wrapper owns a
@@ -1934,11 +2193,7 @@ fn emit_open_by_name(
     }
     let prologue = render_named_target_frame(program, qualification, target_layout, &frame_slots)?;
     let entry = range_entry(&prologue);
-    let component = component_validation(
-        &buffer,
-        u32::from(target.root_prefix()),
-        target.component_limit(),
-    );
+    let component = component_validation(&buffer, target);
     let (read_error, error) = native_error(target, "failure");
     let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
     let opened_target = if require_regular { "inspect" } else { "live" };
@@ -2020,6 +2275,19 @@ fn emit_open_by_name(
         } else {
             (OPEN_DIRECTORY_COMPLETION_MAPPER, OPEN_EXPECT_DIRECTORY)
         };
+        let descriptor_class_argument = windows_descriptor_class_argument(
+            target,
+            if require_regular {
+                WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+            } else {
+                WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT
+            },
+        );
+        let terminator = if target.is_windows() {
+            "store i16 0, ptr %terminator, align 1"
+        } else {
+            "store i8 0, ptr %terminator, align 1"
+        };
         return Ok(format!(
             "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
              i64 %end) alwaysinline {{\n\
@@ -2029,9 +2297,10 @@ fn emit_open_by_name(
              call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, \
              i1 false)\n  \
              %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
-             store i8 0, ptr %terminator, align 1\n  \
+             {terminator}\n  \
              %descriptor = call {opened} @{open}({directory} %root, ptr %component, i32 {flags}, \
-             i32 0, i32 0, i32 {expected_kind}, ptr %open.error.slot, \
+             i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
+             ptr %open.error.slot, \
              ptr %open.outcome.slot)\n  \
              %raw.descriptor = sext {opened} %descriptor to i64\n  \
              %open.error = load i32, ptr %open.error.slot, align 4\n  \
@@ -2123,6 +2392,8 @@ fn emit_open_directory_source(
         OPEN_LIST_COMPLETION_MAPPER,
         SystemResourceType::DirectorySource,
     )?;
+    let descriptor_class_argument =
+        windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE);
     let wrapper = if target.uses_typed_completion_file_adapter() {
         let prologue = render_named_target_frame(
             program,
@@ -2145,7 +2416,8 @@ fn emit_open_directory_source(
              {prologue}  \
              %descriptor = call {list} @{open}({directory} %directory, \
              ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0, \
-             i32 {OPEN_EXPECT_DIRECTORY}, ptr %open.error.slot, ptr %open.outcome.slot)\n  \
+             i32 {OPEN_EXPECT_DIRECTORY}{descriptor_class_argument}, ptr %open.error.slot, \
+             ptr %open.outcome.slot)\n  \
              %raw.descriptor = sext {list} %descriptor to i64\n  \
              %open.error = load i32, ptr %open.error.slot, align 4\n  \
              %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
@@ -2226,6 +2498,54 @@ fn emit_directory_record_normalizer(
     let native_symlink = enumeration.native_symlink();
     let native_unknown = enumeration.native_unknown();
     let component_limit = target.component_limit();
+    let width_validation = if target.is_windows() {
+        "  %named.remainder = and i64 %named, 1\n  \
+         %named.even = icmp eq i64 %named.remainder, 0\n  \
+         %width.usable = and i1 %naming, %named.even\n"
+    } else {
+        "  %width.usable = and i1 %naming, true\n"
+    };
+    let copy = if target.is_windows() {
+        "copy:\n  \
+         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.store ]\n  \
+         %copy.done = icmp uge i64 %copied, %named\n  \
+         br i1 %copy.done, label %step, label %copy.step\n\
+         copy.step:\n  \
+         %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
+         %copy.unit = load i16, ptr %copy.from, align 1\n  \
+         %copy.nul = icmp eq i16 %copy.unit, 0\n  \
+         %copy.slash = icmp eq i16 %copy.unit, 47\n  \
+         %copy.backslash = icmp eq i16 %copy.unit, 92\n  \
+         %copy.separator = or i1 %copy.slash, %copy.backslash\n  \
+         %copy.invalid = or i1 %copy.nul, %copy.separator\n  \
+         br i1 %copy.invalid, label %tcb.defect, label %copy.store\n\
+         copy.store:\n  \
+         %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
+         store i16 %copy.unit, ptr %copy.to, align 1\n  \
+         %copied.next = add i64 %copied, 2\n  \
+         br label %copy\n"
+            .to_owned()
+    } else {
+        format!(
+            "copy:\n  \
+             %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.store ]\n  \
+             %copy.done = icmp uge i64 %copied, %named\n  \
+             br i1 %copy.done, label %step, label %copy.step\n\
+             copy.step:\n  \
+             %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
+             %copy.byte = load i8, ptr %copy.from, align 1\n  \
+             %copy.nul = icmp eq i8 %copy.byte, 0\n  \
+             %copy.separator = icmp eq i8 %copy.byte, {}\n  \
+             %copy.invalid = or i1 %copy.nul, %copy.separator\n  \
+             br i1 %copy.invalid, label %tcb.defect, label %copy.store\n\
+             copy.store:\n  \
+             %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
+             store i8 %copy.byte, ptr %copy.to, align 1\n  \
+             %copied.next = add i64 %copied, 1\n  \
+             br label %copy\n",
+            target.root_prefix()
+        )
+    };
     // The `header` block's tail, and every block it needs before `validate`
     // sees one `%named`.
     let measure = match enumeration.name_length() {
@@ -2293,7 +2613,8 @@ fn emit_directory_record_normalizer(
          %advancing = icmp uge i64 %record.extent, 1\n  \
          %nameable = icmp ule i64 %named, {component_limit}\n  \
          %naming = icmp uge i64 %named, 1\n  \
-         %named.usable = and i1 %nameable, %naming\n  \
+         {width_validation}  \
+         %named.usable = and i1 %nameable, %width.usable\n  \
          %consistent = and i1 %sized, %bounded\n  \
          %progressive = and i1 %advancing, %named.usable\n  \
          %usable = and i1 %consistent, %progressive\n  \
@@ -2325,22 +2646,7 @@ fn emit_directory_record_normalizer(
          %target.name = getelementptr inbounds i8, ptr %target.record, i64 {ENTRY_HEADER}\n  \
          %source.name = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
          br label %copy\n\
-         copy:\n  \
-         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.store ]\n  \
-         %copy.done = icmp uge i64 %copied, %named\n  \
-         br i1 %copy.done, label %step, label %copy.step\n\
-         copy.step:\n  \
-         %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
-         %copy.byte = load i8, ptr %copy.from, align 1\n  \
-         %copy.nul = icmp eq i8 %copy.byte, 0\n  \
-         %copy.separator = icmp eq i8 %copy.byte, {root}\n  \
-         %copy.invalid = or i1 %copy.nul, %copy.separator\n  \
-         br i1 %copy.invalid, label %tcb.defect, label %copy.store\n\
-         copy.store:\n  \
-         %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
-         store i8 %copy.byte, ptr %copy.to, align 1\n  \
-         %copied.next = add i64 %copied, 1\n  \
-         br label %copy\n\
+         {copy}  \
          step:\n  \
          %source.next = add i64 %source, %record.extent\n  \
          %written.next = add i64 %written, %portable\n  \
@@ -2355,7 +2661,6 @@ fn emit_directory_record_normalizer(
          tcb.defect:\n  \
          call void @abort()\n  \
          unreachable\n",
-        root = target.root_prefix(),
     )
 }
 
@@ -2738,6 +3043,9 @@ pub(super) fn emit_entry(
         return Err(BackendFailure::InvalidIr);
     }
     let target = qualification.target();
+    if target.is_windows() {
+        return emit_windows_entry(program, main, two_worlds, status);
+    }
     let mut body = String::new();
     // [QUAL-2]: a qualified target that cannot establish command-lifetime
     // argument backing for one invocation refuses startup before entry rather
@@ -2876,6 +3184,136 @@ pub(super) fn emit_entry(
         "define i32 @{ENTRY_BODY_SYMBOL}(i32 %argc, ptr %argv) {{\n{body}}}\n\
          \n\
          define i32 @main(i32 %argc, ptr %argv) {{\n  \
+         %status = call i32 @wf__floor_run(i32 %argc, ptr %argv)\n  \
+         ret i32 %status\n}}\n"
+    ))
+}
+
+/// Emits the Windows `wmain` bootstrap.  The MSVC Unicode entry preserves the
+/// command's native UTF-16 argument backing, and the compiler-owned runtime
+/// supplies CRT descriptors backed by the process cwd and standard handles.
+fn emit_windows_entry(
+    program: &IrProgram<'_, '_, '_>,
+    main: &IrFunction,
+    two_worlds: bool,
+    status: &str,
+) -> Result<String, BackendFailure> {
+    let IrEntry::Command { inputs, .. } = program.entry();
+    let mut body = String::from(
+        "entry:\n  \
+         %argv.present = icmp ne ptr %argv, null\n  \
+         %argc.counted = icmp sge i32 %argc, 0\n  \
+         %backing = and i1 %argv.present, %argc.counted\n  \
+         br i1 %backing, label %inputs, label %start.failure\n\
+         inputs:\n",
+    );
+    let mut supplied = Vec::with_capacity(inputs.len());
+    let mut available = Vec::new();
+    for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
+        let expected = expected_input(*ordinal)?;
+        if *ty != system_resource_ir_type(program, expected)? {
+            return Err(BackendFailure::InvalidIr);
+        }
+        match ordinal {
+            0 => {
+                let args = representation(SystemResourceType::Args);
+                writeln!(
+                    body,
+                    "  %count = sext i32 %argc to i64\n  \
+                     %args.base = insertvalue {args} zeroinitializer, ptr %argv, 0\n  \
+                     %args = insertvalue {args} %args.base, i64 %count, 1"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                supplied.push(format!("{args} %args"));
+            }
+            1 => {
+                body.push_str(
+                    "  %cwd = call i32 (ptr, i32, ...) @wf__windows_open_cwd(ptr null, i32 0)\n  \
+                     %cwd.available = icmp sge i32 %cwd, 0\n",
+                );
+                supplied.push("i32 %cwd".to_owned());
+                available.push("%cwd.available");
+            }
+            2 => {
+                body.push_str(
+                    "  %stdout = call i32 @wf__windows_stdout_descriptor()\n  \
+                     %stdout.available = icmp sge i32 %stdout, 0\n",
+                );
+                supplied.push("i32 %stdout".to_owned());
+                available.push("%stdout.available");
+            }
+            3 => {
+                body.push_str(
+                    "  %stderr = call i32 @wf__windows_stderr_descriptor()\n  \
+                     %stderr.available = icmp sge i32 %stderr, 0\n",
+                );
+                supplied.push("i32 %stderr".to_owned());
+                available.push("%stderr.available");
+            }
+            4 => supplied.push("i1 true".to_owned()),
+            _ => return Err(BackendFailure::InvalidIr),
+        }
+    }
+    let ready = match available.as_slice() {
+        [] => "true".to_owned(),
+        [only] => (*only).to_owned(),
+        [first, rest @ ..] => {
+            let mut previous = (*first).to_owned();
+            for (index, condition) in rest.iter().enumerate() {
+                let next = format!("%standard.inputs.{index}");
+                writeln!(body, "  {next} = and i1 {previous}, {condition}")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                previous = next;
+            }
+            previous
+        }
+    };
+    writeln!(body, "  br i1 {ready}, label %enter, label %start.failure")
+        .map_err(|_| BackendFailure::TextEmission)?;
+
+    let symbol = source_symbol(main.name());
+    let arguments = supplied.join(", ");
+    if two_worlds {
+        writeln!(
+            body,
+            "enter:\n  \
+             %par.pool = call i32 @wf__par_pool_active()\n  \
+             %par.requested = icmp ne i32 %par.pool, 0\n  \
+             br i1 %par.requested, label %enter.overlapped, label %enter.sequential\n\
+             enter.overlapped:\n  \
+             %status.overlapped = call {status} @{symbol}({arguments})\n  \
+             br label %enter.selected\n\
+             enter.sequential:\n  \
+             %status.sequential = call {status} @{}({arguments})\n  \
+             br label %enter.selected\n\
+             enter.selected:\n  \
+             %status = phi {status} [ %status.overlapped, %enter.overlapped ], \
+             [ %status.sequential, %enter.sequential ]\n  \
+             %code = zext {status} %status to i32\n  \
+             ret i32 %code\n\
+             start.failure:\n  \
+             call void @exit(i32 {START_FAILURE_STATUS})\n  \
+             unreachable",
+            sequential_clone_symbol(main.name()),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    } else {
+        writeln!(
+            body,
+            "enter:\n  \
+             %status = call {status} @{symbol}({arguments})\n  \
+             %code = zext {status} %status to i32\n  \
+             ret i32 %code\n\
+             start.failure:\n  \
+             call void @exit(i32 {START_FAILURE_STATUS})\n  \
+             unreachable"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    Ok(format!(
+        "define i32 @{ENTRY_BODY_SYMBOL}(i32 %argc, ptr %argv) {{\n{body}}}\n\
+         \n\
+         define i32 @wmain(i32 %argc, ptr %argv) {{\n  \
          %status = call i32 @wf__floor_run(i32 %argc, ptr %argv)\n  \
          ret i32 %status\n}}\n"
     ))
