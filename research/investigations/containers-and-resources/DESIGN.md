@@ -3335,8 +3335,8 @@ appears anywhere in this file.
 ### 6.1 What the current compiler does
 
 Eleven probes were run in the session that wrote this draft, to check what this draft
-newly rests on rather than to re-inherit earlier verdicts. Sources are in
-`scratchpad/repair2/probes/`.
+newly rests on rather than to re-inherit earlier verdicts. The table below describes each probe program closely enough to rewrite it; the sources were session scratch files and are not in the repository.
+
 
 ```text
 | probe               | program                                                      | verdict                                   |
