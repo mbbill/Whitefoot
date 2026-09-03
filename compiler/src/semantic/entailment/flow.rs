@@ -38,7 +38,8 @@ use super::super::postcondition::{
 use super::affine::{
     AffineCheckError, AffineCheckLimit, AffineCheckState, AffineCoefficient, AffineForm,
     AffineInequality, AffineTermId, MAX_CERTIFICATE_PREMISES, ScaledAffinePremise,
-    interval_maximum, interval_proves, sum_explicit_inequalities, sum_explicit_scaled_inequalities,
+    integer_tightenings, interval_maximum, interval_proves, sum_explicit_inequalities,
+    sum_explicit_scaled_inequalities,
 };
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
@@ -412,13 +413,13 @@ struct AutomaticAffinePremise {
 
 /// Exhausts the unordered coefficient-one premise pairs, including `(p, p)`.
 ///
-/// Candidate arithmetic is isolated: an unrepresentable pair is skipped and
-/// cannot hide a later representable witness. Returning after a successful
-/// callback is acceptance-order independent because every earlier candidate
-/// has already failed and adding another premise cannot remove an existing
-/// pair from this source-shaped finite set.
-fn first_two_premise_residual<T>(
-    target: &AffineInequality,
+/// The callback receives each accumulated pair sum and owns the residual
+/// against the target. Candidate arithmetic is isolated: an unrepresentable
+/// pair is skipped and cannot hide a later representable witness. Returning
+/// after a successful callback is acceptance-order independent because every
+/// earlier candidate has already failed and adding another premise cannot
+/// remove an existing pair from this source-shaped finite set.
+fn first_two_premise_candidate<T>(
     premises: &[AutomaticAffinePremise],
     check: &mut AffineCheckState,
     mut prove: impl FnMut(&AffineInequality, &mut AffineCheckState) -> Option<T>,
@@ -432,10 +433,7 @@ fn first_two_premise_residual<T>(
             let Ok(sum) = sum_explicit_inequalities(&pair, check) else {
                 continue;
             };
-            let Ok(residual) = AffineInequality::residual_after(target, &sum, check) else {
-                continue;
-            };
-            if let Some(proof) = prove(&residual, check) {
+            if let Some(proof) = prove(&sum, check) {
                 return Some((first, second, proof));
             }
         }
@@ -8942,7 +8940,8 @@ impl Analyzer<'_, '_> {
     /// and its scaled sum have formed.
     ///
     /// `target - sum` may be discharged only by the existing direct L0 closure
-    /// or fixed interval rule at the entering program point. This route never
+    /// or fixed interval rule at the entering program point, applied to the
+    /// written sum and then to its integer tightenings. This route never
     /// selects another affine premise, derives a multiplier, or retries a
     /// subset.
     fn source_proof_residual(
@@ -8953,8 +8952,10 @@ impl Analyzer<'_, '_> {
         facts: &FactState,
     ) -> Result<bool, SourceProofCertificateFailure> {
         let mut check = AffineCheckState::new();
-        let residual = match AffineInequality::residual_after(target, sum, &mut check) {
-            Ok(residual) => residual,
+        // The untightened residual forms first so an arithmetic or capacity
+        // failure of the written sum keeps its exact PRF-1 diagnostic.
+        match AffineInequality::residual_after(target, sum, &mut check) {
+            Ok(_) => {}
             Err(AffineCheckError::ArithmeticOverflow) => {
                 return Err(SourceProofCertificateFailure::ArithmeticOverflow);
             }
@@ -8964,14 +8965,13 @@ impl Analyzer<'_, '_> {
             Err(
                 AffineCheckError::CoefficientMismatch | AffineCheckError::InvalidCertificateFactor,
             ) => return Ok(false),
-        };
+        }
         let candidates = self.affine_l0_candidates(values);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
-        Ok(matches!(
-            self.affine_residual_proof(&residual, &l0, values, &closed, &mut check),
-            Ok(Some(_))
-        ))
+        Ok(self
+            .affine_candidate_residual_proof(target, sum, &l0, values, &closed, &mut check)
+            .is_some())
     }
 
     /// Exact maximum of one affine left-hand side under the independently
@@ -9325,6 +9325,38 @@ impl Analyzer<'_, '_> {
         self.affine_interval_proof(inequality, values, closed, check)
     }
 
+    /// Checks the fixed `DIRECT(T - S)` residual of one accumulated candidate
+    /// `S`, and then the same residual against each integer tightening of `S`.
+    ///
+    /// Every affine atom denotes a mathematical integer, so an accumulated
+    /// `k * v <= u` with a positive integer `k` dividing every coefficient
+    /// also proves `v <= floor(u / k)`. The tightening factors are functions
+    /// of the candidate and the target alone: this step selects no additional
+    /// premise, guesses no multiplier, and leaves the candidate families
+    /// exactly as fixed by the specification.
+    fn affine_candidate_residual_proof(
+        &mut self,
+        target: &AffineInequality,
+        candidate: &AffineInequality,
+        l0: &AffineL0Index,
+        values: &AffineFlowState,
+        closed: &ClosedState,
+        check: &mut AffineCheckState,
+    ) -> Option<Vec<DerivationId>> {
+        let tightenings = integer_tightenings(candidate, target, check).unwrap_or_default();
+        for accumulated in std::iter::once(candidate).chain(tightenings.iter()) {
+            let Ok(residual) = AffineInequality::residual_after(target, accumulated, check) else {
+                continue;
+            };
+            if let Ok(Some(parents)) =
+                self.affine_residual_proof(&residual, l0, values, closed, check)
+            {
+                return Some(parents);
+            }
+        }
+        None
+    }
+
     /// Exhausts one coefficient-one L0 premise followed by the direct
     /// L0/interval residual rule. The L0 index contains one strongest entry
     /// per coefficient vector, so strengthening ordinary facts can only make
@@ -9338,13 +9370,14 @@ impl Analyzer<'_, '_> {
         check: &mut AffineCheckState,
     ) -> Option<Vec<DerivationId>> {
         for entry in &l0.entries {
-            let Ok(residual) = AffineInequality::residual_after(target, &entry.inequality, check)
-            else {
-                continue;
-            };
-            let Ok(Some(mut parents)) =
-                self.affine_residual_proof(&residual, l0, values, closed, check)
-            else {
+            let Some(mut parents) = self.affine_candidate_residual_proof(
+                target,
+                &entry.inequality,
+                l0,
+                values,
+                closed,
+                check,
+            ) else {
                 continue;
             };
             let Some(parent) =
@@ -9387,20 +9420,17 @@ impl Analyzer<'_, '_> {
         // premise is tried independently; an arithmetic error in one candidate
         // cannot suppress a later source or value-image fact.
         for (index, assumption) in automatic.iter().enumerate() {
-            let Ok(residual) =
-                AffineInequality::residual_after(target, &assumption.inequality, &mut check)
-            else {
-                // This fixed candidate cannot participate in an i128
-                // coefficient-one residual. It grants no authority, but it
-                // must not hide a later independently representable source
-                // fact in the same deterministic candidate order.
-                continue;
-            };
-            let Ok(proof) = self.affine_residual_proof(&residual, &l0, values, &closed, &mut check)
-            else {
-                continue;
-            };
-            if let Some(parents) = proof {
+            // A candidate that cannot participate in an i128 residual grants
+            // no authority, but it must not hide a later independently
+            // representable source fact in the same deterministic order.
+            if let Some(parents) = self.affine_candidate_residual_proof(
+                target,
+                &assumption.inequality,
+                &l0,
+                values,
+                &closed,
+                &mut check,
+            ) {
                 return Some(Self::affine_consequence_from_residual(
                     &[(index, 1)],
                     &automatic,
@@ -9414,10 +9444,8 @@ impl Analyzer<'_, '_> {
         // backtracking cutoff, or cumulative work budget: fact order changes
         // only which successful derivation is retained, never acceptance.
         if let Some((first, second, parents)) =
-            first_two_premise_residual(target, &automatic, &mut check, |residual, check| {
-                self.affine_residual_proof(residual, &l0, values, &closed, check)
-                    .ok()
-                    .flatten()
+            first_two_premise_candidate(&automatic, &mut check, |sum, check| {
+                self.affine_candidate_residual_proof(target, sum, &l0, values, &closed, check)
             })
         {
             let selected = if first == second {
@@ -11465,7 +11493,7 @@ mod goal_origin_kill_tests {
 mod affine_pair_tests {
     use super::{
         AffineCheckState, AffineInequality, AffineTermId, AutomaticAffinePremise,
-        first_two_premise_residual, interval_proves,
+        first_two_premise_candidate, interval_proves,
     };
 
     fn inequality(terms: &[(u32, i128)], upper: i128) -> AffineInequality {
@@ -11495,15 +11523,26 @@ mod affine_pair_tests {
             .map(|_| ())
     }
 
+    /// The pair enumeration hands each accumulated sum to its caller, so these
+    /// tests take the residual against the target exactly where the semantic
+    /// checker does.
+    fn interval_closes_after(
+        target: &AffineInequality,
+    ) -> impl FnMut(&AffineInequality, &mut AffineCheckState) -> Option<()> {
+        move |sum, check| {
+            let residual = AffineInequality::residual_after(target, sum, check).ok()?;
+            interval_closes_without_atoms(&residual, check)
+        }
+    }
+
     #[test]
     fn two_premise_enumeration_includes_one_fact_used_twice() {
         let target = inequality(&[(0, 2)], 0);
         let premises = [premise(inequality(&[(0, 1)], 0))];
-        let selected = first_two_premise_residual(
-            &target,
+        let selected = first_two_premise_candidate(
             &premises,
             &mut AffineCheckState::new(),
-            interval_closes_without_atoms,
+            interval_closes_after(&target),
         );
         assert!(matches!(selected, Some((0, 0, ()))));
     }
@@ -11515,19 +11554,17 @@ mod affine_pair_tests {
             premise(inequality(&[(1, 1)], 0)),
             premise(inequality(&[(2, 1)], 0)),
         ];
-        let two = first_two_premise_residual(
-            &inequality(&[(0, 1), (1, 1)], 0),
+        let two = first_two_premise_candidate(
             &premises,
             &mut AffineCheckState::new(),
-            interval_closes_without_atoms,
+            interval_closes_after(&inequality(&[(0, 1), (1, 1)], 0)),
         );
         assert!(two.is_some());
 
-        let three = first_two_premise_residual(
-            &inequality(&[(0, 1), (1, 1), (2, 1)], 0),
+        let three = first_two_premise_candidate(
             &premises,
             &mut AffineCheckState::new(),
-            interval_closes_without_atoms,
+            interval_closes_after(&inequality(&[(0, 1), (1, 1), (2, 1)], 0)),
         );
         assert!(three.is_none());
     }
@@ -11544,17 +11581,15 @@ mod affine_pair_tests {
             premise(inequality(&[(0, -2), (1, 2)], 0)),
             premise(inequality(&[(1, 1)], 1)),
         ];
-        let forward_result = first_two_premise_residual(
-            &inequality(&[(0, 1)], 0),
+        let forward_result = first_two_premise_candidate(
             &forward,
             &mut AffineCheckState::new(),
-            interval_closes_without_atoms,
+            interval_closes_after(&inequality(&[(0, 1)], 0)),
         );
-        let reverse_result = first_two_premise_residual(
-            &inequality(&[(1, 1)], 0),
+        let reverse_result = first_two_premise_candidate(
             &reverse,
             &mut AffineCheckState::new(),
-            interval_closes_without_atoms,
+            interval_closes_after(&inequality(&[(1, 1)], 0)),
         );
         assert!(forward_result.is_some());
         assert!(reverse_result.is_some());
@@ -11567,11 +11602,10 @@ mod affine_pair_tests {
             premise(inequality(&[(0, 2), (1, -2)], 0)),
             premise(inequality(&[(0, -1), (1, 2)], 0)),
         ];
-        let selected = first_two_premise_residual(
-            &inequality(&[(0, 1)], 0),
+        let selected = first_two_premise_candidate(
             &premises,
             &mut AffineCheckState::new(),
-            interval_closes_without_atoms,
+            interval_closes_after(&inequality(&[(0, 1)], 0)),
         );
         assert!(matches!(selected, Some((1, 2, ()))));
     }

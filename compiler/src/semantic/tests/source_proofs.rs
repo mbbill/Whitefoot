@@ -835,6 +835,110 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
     });
 }
 
+/// The binary-search midpoint. The written sum proves `2*(mid - hi) <= -1`,
+/// which over the integers is exactly `mid < hi`; without the integer
+/// tightening the halved target is outside every fixed residual rule.
+#[test]
+fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() {
+    let source = format!(
+        r#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
+  define room = len(deref(table));
+  requires ilt(lo, hi);
+  requires ile(hi, room);
+}} {{
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: ilt(mid, hi) {{
+    use ilt(lo, hi);
+    use ile(2_u64 * half, span);
+  }}
+  let byte = deref(table)[mid];
+  return byte;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the halved midpoint certificate must discharge OP-4: {outcome:?}");
+        };
+        let probe = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "probe")
+            .expect("probe function exists");
+        let [proof] = probe.entailment.source_proofs.as_slice() else {
+            panic!("probe retains one local certificate");
+        };
+        assert_eq!(proof.check.premises, [true, true]);
+        assert!(proof.check.combination);
+        assert!(!proof.check.redundant);
+        assert!(proof.check.discharged());
+        assert!(
+            probe
+                .entailment
+                .obligations
+                .iter()
+                .all(|outcome| outcome.discharged)
+        );
+    });
+}
+
+/// A signed certificate whose doubled sum has the odd bound -5. The target
+/// holds exactly at the mathematical floor -3 of -5/2; truncation toward zero
+/// would stop at -2 and lose it.
+#[test]
+fn a_signed_certificate_floors_its_halved_bound_toward_negative_infinity() {
+    let source = |slack: &str| {
+        format!(
+            r#"fn ordered(a: own i32, b: own i32, c: own i32, d: own i32, e: own i32, f: own i32) -> result: own unit pure contract {{
+  requires ilt(a, b);
+  requires ilt(c, d);
+  requires ilt(e, f);
+}} {{
+  invariant doubled: ile(2_i32 * a + 1_i32, 2_i32 * b);
+  invariant total: ile(a + c + e + {slack}_i32, b + d + f) {{
+    use doubled;
+    use 2 * ilt(c, d);
+    use 2 * ilt(e, f);
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+        )
+    };
+    with_semantics(source("3").as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the floored halved bound must discharge the target: {outcome:?}");
+        };
+        let ordered = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "ordered")
+            .expect("ordered function exists");
+        let proof = ordered
+            .entailment
+            .source_proofs
+            .iter()
+            .find(|proof| proof.name == "total")
+            .expect("the written certificate is retained");
+        assert_eq!(proof.check.premises, [true, true, true]);
+        assert!(proof.check.combination);
+        assert!(!proof.check.redundant);
+        assert!(proof.check.discharged());
+    });
+    assert_prf1_issue_named(
+        source("4").as_bytes(),
+        SourceProofObligation::Combination,
+        "total",
+        ExpectedProofIssueNode::Invariant,
+    );
+}
+
 #[test]
 fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
     let source = format!(

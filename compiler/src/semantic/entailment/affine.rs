@@ -245,6 +245,135 @@ impl AffineInequality {
     }
 }
 
+/// Divides one accumulated inequality by a positive integer factor that
+/// divides every coefficient exactly, keeping the mathematical floor of its
+/// bound.
+///
+/// Every affine atom denotes a mathematical integer, so `factor * v <= upper`
+/// with a positive `factor` also proves `v <= floor(upper / factor)`. The
+/// floor is taken toward negative infinity, which is the exact strongest
+/// integer consequence; `i128` truncation toward zero would weaken it for a
+/// negative bound. `None` means this factor does not divide the coefficient
+/// vector and therefore tightens nothing.
+pub(crate) fn integer_tightening(
+    inequality: &AffineInequality,
+    factor: i128,
+    check: &mut AffineCheckState,
+) -> Result<Option<AffineInequality>, AffineCheckError> {
+    if factor <= 1 || inequality.terms().is_empty() {
+        return Ok(None);
+    }
+    let mut divided = Vec::with_capacity(inequality.terms().len());
+    for coefficient in inequality.terms() {
+        check.charge(1)?;
+        if coefficient.coefficient() % factor != 0 {
+            return Ok(None);
+        }
+        divided.push((coefficient.term(), coefficient.coefficient() / factor));
+    }
+    let upper = inequality
+        .upper()
+        .checked_div_euclid(factor)
+        .ok_or(AffineCheckError::ArithmeticOverflow)?;
+    Ok(Some(AffineInequality::from_terms(&divided, upper, check)?))
+}
+
+/// The complete fixed list of integer tightenings of one accumulated candidate
+/// against one target, in this order: the positive multiple relating the two
+/// coefficient vectors, then the greatest common divisor of the candidate's
+/// own coefficients.
+///
+/// Both factors are functions of the two coefficient vectors alone. Nothing
+/// here searches for a factor, selects a premise, or forms a candidate outside
+/// the caller's fixed family; a factor that tightens nothing is absent.
+pub(crate) fn integer_tightenings(
+    candidate: &AffineInequality,
+    target: &AffineInequality,
+    check: &mut AffineCheckState,
+) -> Result<Vec<AffineInequality>, AffineCheckError> {
+    let mut factors = Vec::new();
+    if let Some(factor) = target_multiple_factor(candidate, target, check)? {
+        factors.push(factor);
+    }
+    if let Some(factor) = coefficient_gcd(candidate, check)?
+        && !factors.contains(&factor)
+    {
+        factors.push(factor);
+    }
+
+    let mut tightenings = Vec::new();
+    for factor in factors {
+        if let Some(tightened) = integer_tightening(candidate, factor, check)? {
+            tightenings.push(tightened);
+        }
+    }
+    Ok(tightenings)
+}
+
+/// Reads the one positive integer `k` for which the candidate's coefficient
+/// vector is exactly `k` times the target's.
+///
+/// The factor is read from the first coefficient pair and then verified
+/// against every remaining pair, so it is decided rather than searched for.
+fn target_multiple_factor(
+    candidate: &AffineInequality,
+    target: &AffineInequality,
+    check: &mut AffineCheckState,
+) -> Result<Option<i128>, AffineCheckError> {
+    if candidate.terms().len() != target.terms().len() {
+        return Ok(None);
+    }
+    let (Some(first_candidate), Some(first_target)) =
+        (candidate.terms().first(), target.terms().first())
+    else {
+        return Ok(None);
+    };
+    check.charge(1)?;
+    let factor = first_candidate
+        .coefficient()
+        .checked_div(first_target.coefficient())
+        .ok_or(AffineCheckError::ArithmeticOverflow)?;
+    if factor <= 0 || first_candidate.coefficient() % first_target.coefficient() != 0 {
+        return Ok(None);
+    }
+    for (candidate_term, target_term) in candidate.terms().iter().zip(target.terms()) {
+        check.charge(1)?;
+        if candidate_term.term() != target_term.term()
+            || candidate_term.coefficient() != checked_mul(target_term.coefficient(), factor)?
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(factor))
+}
+
+/// The greatest common divisor of one inequality's coefficient magnitudes.
+///
+/// `None` means there is no such positive `i128` value: the inequality has no
+/// term, or its divisor is the magnitude of `i128::MIN` and is unrepresentable.
+fn coefficient_gcd(
+    inequality: &AffineInequality,
+    check: &mut AffineCheckState,
+) -> Result<Option<i128>, AffineCheckError> {
+    let mut divisor = 0_u128;
+    for coefficient in inequality.terms() {
+        check.charge(1)?;
+        let mut left = divisor;
+        let mut right = coefficient.coefficient().unsigned_abs();
+        while right != 0 {
+            check.charge(1)?;
+            let remainder = left % right;
+            left = right;
+            right = remainder;
+        }
+        divisor = left;
+    }
+    if divisor == 0 {
+        return Ok(None);
+    }
+    Ok(i128::try_from(divisor).ok())
+}
+
 /// Sums one author-selected affine certificate in exactly the supplied order.
 ///
 /// The caller is responsible for proving every written premise independently.
@@ -930,6 +1059,99 @@ mod tests {
                 .expect("the missing component remains explicit");
         assert_eq!(coefficients(&residual), vec![(1, 255)]);
         assert_eq!(residual.upper(), 255_000);
+    }
+
+    #[test]
+    fn integer_tightening_divides_the_vector_and_floors_the_bound_toward_negative_infinity() {
+        let mut check = AffineCheckState::new();
+        // 2*(mid - hi) <= -1 proves mid - hi <= -1. Truncation toward zero
+        // would weaken that bound to 0 and lose the midpoint relation.
+        let midpoint = integer_tightening(&inequality(&[(0, 2), (1, -2)], -1), 2, &mut check)
+            .expect("the tightening is representable")
+            .expect("two divides the doubled midpoint relation");
+        assert_eq!(coefficients(&midpoint), vec![(0, 1), (1, -1)]);
+        assert_eq!(midpoint.upper(), -1);
+
+        let positive = integer_tightening(&inequality(&[(0, 3)], 5), 3, &mut check)
+            .expect("the tightening is representable")
+            .expect("three divides the single coefficient");
+        assert_eq!(positive.upper(), 1);
+
+        let negative = integer_tightening(&inequality(&[(0, 3)], -4), 3, &mut check)
+            .expect("the tightening is representable")
+            .expect("three divides the single coefficient");
+        assert_eq!(negative.upper(), -2);
+
+        assert_eq!(
+            integer_tightening(&inequality(&[(0, 2)], 5), 1, &mut check),
+            Ok(None),
+            "a factor of one reproduces the candidate and adds nothing"
+        );
+        assert_eq!(
+            integer_tightening(&inequality(&[], 5), 2, &mut check),
+            Ok(None),
+            "a constant candidate has no coefficient vector to divide"
+        );
+    }
+
+    #[test]
+    fn integer_tightenings_offer_the_target_multiple_before_the_coefficient_divisor() {
+        let candidate = inequality(&[(0, 4), (1, -4)], 7);
+        let target = inequality(&[(0, 2), (1, -2)], 3);
+        let tightenings = integer_tightenings(&candidate, &target, &mut AffineCheckState::new())
+            .expect("both fixed factors are representable");
+        assert_eq!(tightenings.len(), 2);
+        assert_eq!(coefficients(&tightenings[0]), vec![(0, 2), (1, -2)]);
+        assert_eq!(tightenings[0].upper(), 3);
+        assert_eq!(coefficients(&tightenings[1]), vec![(0, 1), (1, -1)]);
+        assert_eq!(tightenings[1].upper(), 1);
+    }
+
+    #[test]
+    fn the_floored_bound_is_the_exact_boundary_of_a_tightened_target() {
+        // 3*t <= 5 proves t <= 1 over the integers and proves no smaller
+        // bound, because t = 1 satisfies the candidate.
+        let candidate = inequality(&[(0, 3)], 5);
+        let mut check = AffineCheckState::new();
+        for (target, closes) in [
+            (inequality(&[(0, 1)], 1), true),
+            (inequality(&[(0, 1)], 0), false),
+        ] {
+            let tightenings = integer_tightenings(&candidate, &target, &mut check)
+                .expect("the fixed factor is representable");
+            let residual = AffineInequality::residual_after(&target, &tightenings[0], &mut check)
+                .expect("the tightened residual is representable");
+            assert!(residual.terms().is_empty());
+            assert_eq!(residual.upper() >= 0, closes);
+        }
+    }
+
+    #[test]
+    fn a_candidate_no_positive_factor_divides_adds_no_tightening() {
+        let candidate = inequality(&[(0, 2), (1, 3)], 7);
+        assert_eq!(
+            integer_tightening(&candidate, 2, &mut AffineCheckState::new()),
+            Ok(None),
+            "two does not divide every coefficient"
+        );
+        assert_eq!(
+            integer_tightenings(
+                &candidate,
+                &inequality(&[(0, 1), (1, 1)], 0),
+                &mut AffineCheckState::new(),
+            ),
+            Ok(Vec::new()),
+            "the target is no multiple of this candidate and its divisor is one"
+        );
+        assert_eq!(
+            integer_tightenings(
+                &inequality(&[(0, i128::MIN)], 0),
+                &inequality(&[(0, 1)], 0),
+                &mut AffineCheckState::new(),
+            ),
+            Ok(Vec::new()),
+            "an unrepresentable divisor grants no authority"
+        );
     }
 
     #[test]
