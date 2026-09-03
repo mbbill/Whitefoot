@@ -15,7 +15,9 @@ per-iteration scratch form [PAR-3] admits (P15), and the three forms the
 2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
 inside P15, the hoisted length fact (P16), and the subtotal-returning walk
 (P17). P18 is the explicit buffer a loop holds in place of the output resource
-it may not hold. References to earlier versions describe historical evidence,
+it may not hold. P19 is the join-image rule for a loop binding advanced under a
+condition, the one place the 2026-09-03 scenario sweep found the catalog
+misleading a writer. References to earlier versions describe historical evidence,
 not a second writable proof surface.
 
 Implementation boundary: the work-branch compiler is being aligned to prove
@@ -197,7 +199,11 @@ for (
 Header entries cannot carry `use` blocks, and their names exist only inside the
 body. Here AUTO subtracts the one published affine premise `per_byte`; DIRECT
 then proves the residual from the `u8` type interval of `wide`. An explicit use
-block would be redundant and invalid. Put a
+block would be redundant and invalid. The bound is stated relative to the
+counter, so it carries no overflow conclusion of its own until the counter is
+itself bounded: with `count` an unbounded `len(deref(weights))` the byte-for-byte
+identical loop is undischarged at [INV-1], and one `requires ile(n, 65536_u64)`
+over that length in the function's own contract compiles it. Put a
 cross-function fact in the callee's verified `ensures`; the caller receives it
 only after the callee's return proof succeeds. Use a local
 `invariant { use ... }` when three or more published affine premises outside
@@ -371,10 +377,14 @@ Problem: the automatic checker knows several affine relations, but the next
 relation needs three or more published affine premises outside the final fixed
 L0-image route, a special elimination route, or an explicit factor. The
 compiler's automatic boundary must not be discovered by
-trial and error. It is fixed by the language: zero-premise direct proof, every
-coefficient-one single premise, every unordered coefficient-one pair including
-the same premise twice, then the final fixed L0-image route. If none applies,
-write a local `invariant` and direct its finite calculation with `use`.
+trial and error, and it cannot be read off the diagnostics either: [DIAG-1]
+reports one rule and one location per rejection, so a probe `invariant` that
+draws no message of its own has not been shown to hold — an earlier failure may
+simply be standing in front of it. The boundary is fixed by the language:
+zero-premise direct proof, every coefficient-one single premise, every unordered
+coefficient-one pair including the same premise twice, then the final fixed
+L0-image route. If none applies, write a local `invariant` and direct its
+finite calculation with `use`.
 
 ```whitefoot
 invariant total_limit: ile(first + second + third, first_limit + second_limit + third_limit) {
@@ -393,6 +403,10 @@ two—factor one must be omitted—and the same normalized premise cannot appear
 twice. The final target may be a direct weakening of the weighted sum.
 
 A nonempty use block is an error when AUTO already proves the outer target.
+The pair family includes the self-pair, so a doubling target such as
+`ile(x + x, limit + limit)` already follows automatically from the single
+premise `ile(x, limit)`, and a use block naming that premise is rejected as a
+redundant block rather than accepted as guidance.
 This is a canonical-source rule tied to the exact language version, not a
 warning about a compiler optimization. Use a header invariant when the relation
 is the induction contract; use `ensures` when it must cross a function
@@ -741,6 +755,107 @@ ordered stage, is also not implemented. Output accumulated through this pattern
 appears only when the one write after the loop runs.
 
 Replaces: writing each line where it is produced, as every other language does.
+
+## P19. Advance a tracked binding the same way on every arm
+
+Problem: a loop header states an invariant over a binding the body updates only
+under a condition — a cursor advanced while input remains, an accumulator folded
+on the matching half, two cursors merged in one loop. The relation is true on
+every execution, and the loop is still rejected at [INV-1].
+
+The rule, in one line: every arm of a body join must leave a tracked binding
+with the same affine image, or with images differing only by a constant;
+otherwise the guard fact dies at the join and the header invariant cannot be
+re-established. [ENT-6]'s value-image join keeps an identical image, and joins
+images that share one nonconstant coefficient vector and differ only in their
+constant to that form plus a fresh delta atom over the incoming constant range.
+Every other combination gives the binding one fresh full-type atom. [ENT-5]'s
+all-predecessor join then keeps only the bounds held on every input, so the
+correlation the writer is reasoning with — the delta is one exactly where
+`i < n` held — is precisely what the join discards, and [INV-1] proves the next
+header target over what is left. No source spelling recovers it: a per-arm or
+tail `invariant` restating the target is not canonically identical across the
+arms, so none of those conclusions survives the join either.
+
+Three body shapes are accepted. The first applies the identical update on every
+arm; only the image is compared, so the condition may be entirely
+data-dependent:
+
+```whitefoot
+    if is_odd {
+      set even_sum = even_sum + wide;
+    } else {
+      set even_sum = even_sum + wide;
+    }
+```
+
+The second adds a different constant on each arm. The images share their
+coefficient vector, so they join to that vector plus a delta atom over the
+incoming constants:
+
+```whitefoot
+    if is_odd {
+      set even_sum = even_sum + 7_u32;
+    } else {
+      set even_sum = even_sum + 200_u32;
+    }
+```
+
+The third lifts the choice out of the control join and into the addend. The
+`value_if` delivers one owned value, the body applies one unconditional update,
+and a local invariant bounds the addend, so the header target is re-established
+over that single image:
+
+```whitefoot
+    let addend = if is_odd {
+      give zero;
+    } else {
+      give wide;
+    }
+    invariant addend_bound: ile(addend, 255_u32);
+    set sum = sum + addend;
+```
+
+Where the update itself must stay conditional, re-expose the fact after the
+join with a dominating guard. The guarded write may lose the relation; one real
+branch on the joined value restores it for the next header, and the false edge
+is an ordinary result (P12):
+
+```whitefoot
+    if shrink {
+      set hi = candidate;
+    }
+    if ile(hi, room) {
+    } else {
+      return 0_u64;
+    }
+```
+
+That one guard is enough for a whole binary search: `hi` narrows on one arm of
+the three-way comparison and `lo` on another, re-testing `ile(hi, room)` at the
+end of the body restores the header invariant on every path, and the midpoint's
+own two-premise `ilt(mid, hi)` certificate (P14) then carries that bound down to
+the subscript, which needs no guard of its own. The
+other repair is to remove the join: where the non-advancing arm is a real result
+— `break`, `return`, a typed error — there is no join to weaken and the guarded
+increment keeps its fact (P8, P12).
+
+Evidence that both verdicts are the language's:
+`tests/conformance/cases/ent6-neg-join-one-arm-advances-accumulator.wf` and
+`tests/conformance/cases/ent6-pos-join-value-if-lifted-addend.wf` are the same
+fold before and after the lift, rejected at [INV-1] and run to exit 0.
+
+Current value: the rejections are mandatory, not a checker weakness, so no
+amount of restating helps and the repair is always structural. One shape has no
+route today — two cursors merged in one loop, each advanced on its own arm,
+where neither the lift nor a dominating guard applies because the header
+invariant is on the cursor the other arm did not move. That is a specification
+question, not a ticket: admitting it needs a way to keep a per-edge published
+conclusion attached to the delta-atom join.
+
+Replaces: the reflex of restating the invariant inside each arm, and the belief
+that a relation true on every execution is therefore provable at a join the
+language deliberately does not make path-sensitive.
 
 ## Known gaps (findings, not yet patterns)
 

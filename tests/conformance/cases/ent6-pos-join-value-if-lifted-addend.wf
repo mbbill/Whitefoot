@@ -1,0 +1,29 @@
+const values: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The same even-index fold with the choice lifted out of the control join and into the addend. The value_if delivers one owned value under [GIVE-1], the body applies one unconditional update, and the single value image sum_h + addend leaves nothing for the [ENT-6] join to weaken. The local invariant bounds the delivered addend by the byte ceiling, so [INV-1] re-establishes the header target on the one incoming edge and the exact addition is admitted; the explicit control observes 2 + 4.";
+  let sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant sum_bound: ile(sum, 255_u32 * i)
+  ) {
+    let byte = values[i];
+    let wide = cvt<u8, u32>(byte);
+    let zero = 0_u32;
+    let parity = iand(wide, 1_u32);
+    let is_odd = ieq(parity, 1_u32);
+    let addend = if is_odd {
+      give zero;
+    } else {
+      give wide;
+    }
+    invariant addend_bound: ile(addend, 255_u32);
+    set sum = sum + addend;
+  }
+  let folded = ieq(sum, 6_u32);
+  if folded {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

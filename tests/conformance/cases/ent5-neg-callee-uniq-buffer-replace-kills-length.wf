@@ -1,0 +1,15 @@
+fn shrink['a](handle: &uniq 'a buffer<u8>) -> discarded: own buffer<u8> reads(handle), writes(handle), allocates(heap) {
+  let smaller = buffer_new(2_u64, 0_u8);
+  let old = replace deref(handle) = move smaller;
+  return move old;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "The callee replaces the whole referent of its &uniq buffer parameter. [EFF-2] projects writes(handle) onto the actual place line, which is the support member of len(line), and [ENT-5] clause (a) makes a whole-place replace of a buffer kill that buffer's length facts. The allocation fact len(line) = 10 must therefore not survive the call, and the later subscript of offset 9 into what is now a two-byte allocation must be rejected at [OP-4] with the residual 9_u64 < len(line).";
+  let line = buffer_new(10_u64, 0_u8);
+  region 'r {
+    let dropped = shrink<'r>(handle: &uniq 'r line);
+  }
+  let tail = line[9_u64];
+  return exit_status(code: 0_u8);
+}
