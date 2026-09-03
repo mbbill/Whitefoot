@@ -826,7 +826,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             "direct write_once must not put an empty writer probe in the compute steal loop"
         );
         for strong_definition in [
-            "void *wf__par_claim(uint64_t bytes) {",
+            "void *wf__par_acquire_lane(uint64_t bytes) {",
             "void wf__par_publish(void *frame, void (*fn)(void *)) {",
             "void wf__par_join(void *frame) {",
             "void wf__par_release(void *frame) {",
@@ -1091,7 +1091,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Writes one line per iteration to standard output.";
   let page = buffer_new(8_u64, 0_u8);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'say {
       let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
     }

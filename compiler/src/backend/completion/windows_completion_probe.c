@@ -377,10 +377,10 @@ static int test_core_product_and_generation(void) {
             operations[0],
             WF_COMPLETION_RESULT_READY,
             &second_frame
-        ) == WF_COMPLETION_DEPEND_ALREADY_READY,
+        ) == WF_COMPLETION_DEPEND_DUPLICATE,
         137
     );
-    PROBE_CHECK(ready_count == 2 && last_ready_frame == &second_frame, 138);
+    PROBE_CHECK(ready_count == 1 && last_ready_frame == &first_frame, 138);
     PROBE_CHECK(
         wf_completion_consume(
             &runtime,

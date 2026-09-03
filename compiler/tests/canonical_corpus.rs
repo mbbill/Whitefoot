@@ -193,7 +193,6 @@ fn manifest_exclusions_cover_only_the_declared_failure_edges() {
     for expectation in [
         Expectation::Accept,
         Expectation::Run(0),
-        Expectation::Trap,
         Expectation::Unsupported,
     ] {
         assert!(!manifest_allows_exclusion(
@@ -326,7 +325,7 @@ fn ex1_block() -> &'static str {
         .0
 }
 
-/// The one conformance case that claims to embody [EX-1].
+/// The one conformance case that is designated to embody [EX-1].
 ///
 /// Identified through the manifest rather than by filename: the case is the
 /// row naming `EX-1` among its rules, and exactly one row does, so renaming or
@@ -367,7 +366,7 @@ fn ex1_case() -> PathBuf {
     assert_eq!(
         named.len(),
         1,
-        "exactly one conformance case may claim [EX-1]; found {named:?}"
+        "exactly one conformance case may cover [EX-1]; found {named:?}"
     );
     repository
         .join("tests")
@@ -387,7 +386,7 @@ fn ex1_case() -> PathBuf {
 /// be extended to `run-ex1-value-match`, an EX-1-*class* program that names no
 /// EX-1 among its rules and is deliberately a superset of the block.
 #[test]
-fn the_case_claiming_ex1_reproduces_its_normative_bytes() {
+fn the_case_covering_ex1_reproduces_its_normative_bytes() {
     let case = ex1_case();
     let bytes = std::fs::read(&case)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", case.display()));

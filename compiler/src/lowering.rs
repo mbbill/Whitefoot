@@ -1,15 +1,15 @@
 //! Target-independent lowering from the semantically checked active Whitefoot specification.
 //!
 //! The private IR records exact value types, nominal construction/projection,
-//! direct calls, retained claims, and explicit control-flow edges. It performs
+//! direct calls, erased source proofs, and explicit control-flow edges. It performs
 //! no source admission, label lookup, exhaustiveness decision, or ownership
 //! judgment.
 
 use crate::semantic::{
     CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
-    CheckedProgram, CheckedRuntimeTargetObligations, CheckedTargetDomainObligation, CheckedType,
-    ClaimSite,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
+    CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
+    CheckedTargetDomainObligation, CheckedType,
 };
 use crate::{SystemRelease, SystemResourceContract};
 
@@ -545,25 +545,6 @@ pub enum IrConstant {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IrClaimSite {
-    pub(crate) rule_id: &'static str,
-    pub(crate) message: String,
-    pub(crate) function: String,
-    pub(crate) node_path: Vec<u32>,
-}
-
-impl From<ClaimSite> for IrClaimSite {
-    fn from(value: ClaimSite) -> Self {
-        Self {
-            rule_id: value.rule_id,
-            message: value.message,
-            function: value.function,
-            node_path: value.node_path.components().to_vec(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrGlobalValue {
     Scalar(IrConstant),
     Array(Vec<IrConstant>),
@@ -614,6 +595,7 @@ pub enum IrTargetDomainObligation {
 pub struct IrRuntimeTargetObligations {
     allocation: IrTargetDomainObligation,
     element_address: IrTargetDomainObligation,
+    source_length_upper_bound: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -657,12 +639,17 @@ impl From<CheckedLayoutCeiling> for IrLayoutCeiling {
     }
 }
 
-impl From<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
-    fn from(value: CheckedRuntimeTargetObligations) -> Self {
-        Self {
+impl TryFrom<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
+    type Error = LoweringFailure;
+
+    fn try_from(value: CheckedRuntimeTargetObligations) -> Result<Self, Self::Error> {
+        Ok(Self {
             allocation: value.allocation().into(),
             element_address: value.element_address().into(),
-        }
+            source_length_upper_bound: value
+                .source_length_upper_bound()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        })
     }
 }
 
@@ -675,6 +662,10 @@ impl IrRuntimeTargetObligations {
                 IrTargetDomainObligation::ElementAddress
             )
         )
+    }
+
+    pub(crate) const fn source_length_upper_bound(self) -> u64 {
+        self.source_length_upper_bound
     }
 }
 
@@ -796,17 +787,15 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
-    /// One claim-aware wide-probe step over a `u8` buffer.
+    /// One semantics-preserving wide-probe step over a `u8` buffer.
     ///
     /// Computes how many upcoming iterations of a recognized byte-walk loop
     /// are provably no-ops: the count of leading bytes at `index ..` that
     /// match no needle, but only when `index + 16 <= min(limit, length)`
     /// bounds both the walk's exit guard and every skipped read; otherwise 0.
-    /// Every byte at which anything observable can happen — a needle hit,
-    /// the exit bound, or any retained `claim` —
-    /// therefore reaches the unchanged scalar body and its own [DIAG-3]
-    /// record. The probe itself never traps and never reports; it reads only
-    /// bytes its internal guard proves in bounds.
+    /// Every byte at which anything observable can happen — a needle hit or
+    /// the exit bound — therefore reaches the unchanged scalar body. The probe
+    /// itself reads only bytes its internal guard proves in bounds.
     BufferProbeSkip {
         buffer: IrValueId,
         index: IrValueId,
@@ -895,10 +884,11 @@ pub enum IrOperation {
     /// renderings and the choice between them is the world, not the source. The
     /// overlapped world asks the runtime what a split of this span may afford
     /// and calls `splitter`; the sequential world calls `chunk`, which *is* the
-    /// loop, so that world runs the code the loop always had. Both take the
-    /// accumulator's incoming value as their first argument and return the
-    /// whole fold, so the site has nothing to recombine and the two renderings
-    /// are one call each.
+    /// loop, so that world runs the code the loop always had. A reduction uses
+    /// the first argument and result for its accumulator. An independent map
+    /// uses `Unit` in both positions as a synchronization token; its observable
+    /// result is the disjoint stores completed before the call returns. The
+    /// site therefore has nothing to recombine in either form.
     ///
     /// `splitter` and `chunk` are ordinary synthesized [`IrFunction`]s: the
     /// splitter's two recursive calls are one ordinary overlap group, so the
@@ -907,8 +897,9 @@ pub enum IrOperation {
     LoopSplit {
         splitter: u32,
         chunk: u32,
-        /// The accumulator's value on entry. It folds into the leftmost chunk,
-        /// which is what keeps the fold's leaf order the source's own.
+        /// A reduction's accumulator on entry, or the `Unit` synchronization
+        /// token of an independent map. A reduction seed folds into the
+        /// leftmost chunk, which keeps its leaf order the source's own.
         seed: IrValueId,
         lower: IrValueId,
         upper: IrValueId,
@@ -929,10 +920,6 @@ pub enum IrInstruction {
         ty: IrType,
         operation: IrOperation,
     },
-    Claim {
-        condition: IrValueId,
-        site: IrClaimSite,
-    },
     StoreBuffer {
         buffer: IrValueId,
         index: IrValueId,
@@ -949,13 +936,12 @@ pub enum IrInstruction {
 /// One compiler-derived release, explicit on the normal control-flow edge
 /// that carries it [STOR-3].
 ///
-/// Every drop and every release is represented before lowering, and release
-/// actions run only on normal edges: a trap runs none [TRAP-1, EFF-4]. The IR
-/// therefore places these records only on `Jump` and `Return` terminators and
-/// as `Drop` instructions in straight-line position, never on a trapping
-/// `Claim`. Their order inside one edge is the checked program's reverse
-/// declaration order, and their position relative to surrounding calls is the
-/// order [EFF-5] requires of every conforming lowering.
+/// Every drop and every release is represented before lowering. The IR places
+/// these records on `Jump` and `Return` terminators and as `Drop` instructions
+/// in straight-line position. Their order inside one edge is the checked
+/// program's reverse declaration order, and their position relative to
+/// surrounding calls is the order [EFF-5] requires of every conforming
+/// lowering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrDrop {
     value: IrValueId,
@@ -1168,9 +1154,9 @@ pub struct IrCompletionWindow {
 }
 
 impl IrCompletionWindow {
-    /// Built by the loop judgment, which does not exist yet, and by the tests
-    /// that exercise everything downstream of it.
-    #[cfg(test)]
+    /// Builds the target-independent bounds carried by a staged-loop
+    /// descriptor. The lowering that owns the loop supplies these values;
+    /// the backend does not infer them.
     pub(crate) const fn new(span: u64, slot_bytes: u64, ceiling: u64) -> Self {
         Self {
             span,
@@ -1198,13 +1184,13 @@ impl IrCompletionWindow {
 /// Three things about emission change when a function carries this. The window
 /// is asked once at the loop's entry block, never per iteration, exactly as
 /// `wf__par_split_budget` is asked. A block named by `carrying` may end with
-/// the loop's target operations still outstanding, which is what makes a back
-/// edge legal with work in flight; every block not named there drains
-/// everything outstanding before its terminator, in hand-out order, which is
-/// what makes the loop's normal exit and every typed exit from the prologue
-/// retire the whole window. And each call site's completion storage is a ring
-/// of [`Self::slots`] operation records rather than one, addressed through the
-/// slot index whichever block reaches it addresses its ring through.
+/// the loop's target operation still outstanding, and the complete driver's
+/// exact drain retires it before result use. This distinction is CFG-owned:
+/// unrelated blocks that happen to sit between feeder and drain in the linear
+/// block vector own neither transition. Each call site's completion storage
+/// is a ring of [`Self::slots`] operation records rather than one, addressed
+/// through the slot index whichever block reaches it addresses its ring
+/// through.
 ///
 /// The ring is what makes a back edge with work in flight *correct* rather
 /// than merely admitted. A carrying block is emitted once and reached many
@@ -1216,57 +1202,116 @@ impl IrCompletionWindow {
 /// entry-block reservation; which element an operation owns is a run-time
 /// choice, and the runtime's window never exceeds the count.
 ///
-/// What this does *not* yet carry is the driver. Nothing here cycles the slot
-/// parameter, and no block joins one named older operation while leaving the
-/// rest in flight — a drain still retires everything the region left. Both are
-/// the loop lowering's work.
+/// Production lowering constructs two complete forms. A one-slot feeder has a
+/// mandatory drain successor. A fixed two-slot bounded batch issues up to the
+/// selected window, drains every issued slot in order, and only then reuses
+/// slot zero. In both forms the generated CFG, not backend inference, owns the
+/// result edge and every reuse boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrCompletionPipeline {
+    /// Checked-tree identity that selected this descriptor.
+    source_loop: CheckedLoopId,
+    /// The only three states a source-derived descriptor can occupy. A
+    /// pending permission is invisible to emission; either driven state owns
+    /// the exact feeder, drain, and result cut points it needs.
+    driver: IrCompletionDriver,
     entry: IrBlockId,
     carrying: Vec<IrBlockId>,
     window: IrCompletionWindow,
     slots: u64,
     slot_index: Vec<(IrBlockId, IrValueId)>,
+    /// The SSA value defined by the entry's compiler-owned window query when
+    /// the generated CFG consumes that answer. The depth-one form asks only
+    /// for scheduling evidence and therefore leaves this absent.
+    window_value: Option<IrValueId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IrCompletionDriver {
+    Pending,
+    OneSlot(IrCompletionOneSlotDriver),
+    BoundedBatch(IrCompletionBatchDriver),
 }
 
 impl IrCompletionPipeline {
-    /// Built by the loop judgment, which does not exist yet, and by the tests
-    /// that exercise everything downstream of it.
+    /// Records one permitted source loop in ordinary lowering without
+    /// actualizing an incomplete schedule.
     ///
-    /// One slot is the descriptor a region with no ring carries: every site
-    /// owns one operation record and the storage is addressed exactly as a
-    /// function with no pipeline addresses it.
-    #[cfg(test)]
-    pub(crate) fn new(
+    /// This is the identity bridge from the checker's [`CheckedLoopId`] to
+    /// target-independent IR. Its empty carrying set is intentional: until
+    /// lowering has produced the slot driver and delayed-result SSA, the
+    /// backend must emit exactly the ordinary schedule.
+    pub(crate) fn pending(
+        source_loop: CheckedLoopId,
         entry: IrBlockId,
-        carrying: Vec<IrBlockId>,
         window: IrCompletionWindow,
     ) -> Self {
         Self {
+            source_loop,
+            driver: IrCompletionDriver::Pending,
             entry,
-            carrying,
+            carrying: Vec::new(),
             window,
             slots: 1,
             slot_index: Vec::new(),
+            window_value: None,
         }
     }
 
-    /// The same descriptor with a ring of `slots` operation records per site,
-    /// and the value each block addresses its slot through.
-    #[cfg(test)]
-    pub(crate) fn with_slots(
-        entry: IrBlockId,
+    /// Records and activates the already-materialized depth-one feeder/drain
+    /// topology.
+    pub(crate) fn plan_one_slot(&mut self, feeder: IrBlockId, drain: IrBlockId, result: IrValueId) {
+        self.carrying = vec![feeder];
+        self.driver = IrCompletionDriver::OneSlot(IrCompletionOneSlotDriver {
+            feeder,
+            drain,
+            result,
+        });
+        // A depth-one driver has no reuse race: the feeder's only successor
+        // is the drain, and the drain joins the operation before dispatching
+        // on its result.  There is therefore no outstanding operation at the
+        // next submission and no slot index to carry.  Mark this exact shape
+        // ready here; wider drivers must still supply explicit slot cycling,
+        // per-slot reuse waits, and exit retirement before they may do so.
+    }
+
+    /// The one-slot topology lowering materialized before activation.
+    pub(crate) const fn planned_driver(&self) -> Option<IrCompletionOneSlotDriver> {
+        match self.driver {
+            IrCompletionDriver::OneSlot(driver) => Some(driver),
+            IrCompletionDriver::Pending | IrCompletionDriver::BoundedBatch(_) => None,
+        }
+    }
+
+    /// Activates a complete bounded-batch driver whose generated CFG proves
+    /// both slot indices are in `0..slots` and drains the whole batch before
+    /// slot zero can be reused.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn plan_bounded_batch(
+        &mut self,
         carrying: Vec<IrBlockId>,
-        window: IrCompletionWindow,
         slots: u64,
         slot_index: Vec<(IrBlockId, IrValueId)>,
-    ) -> Self {
-        Self {
-            entry,
-            carrying,
-            window,
-            slots,
-            slot_index,
+        window_value: IrValueId,
+        feeder: IrBlockId,
+        drain: IrBlockId,
+        result: IrValueId,
+    ) {
+        self.carrying = carrying;
+        self.slots = slots;
+        self.slot_index = slot_index;
+        self.window_value = Some(window_value);
+        self.driver = IrCompletionDriver::BoundedBatch(IrCompletionBatchDriver {
+            feeder,
+            drain,
+            result,
+        });
+    }
+
+    pub(crate) const fn planned_batch_driver(&self) -> Option<IrCompletionBatchDriver> {
+        match self.driver {
+            IrCompletionDriver::BoundedBatch(driver) => Some(driver),
+            IrCompletionDriver::Pending | IrCompletionDriver::OneSlot(_) => None,
         }
     }
 
@@ -1281,6 +1326,17 @@ impl IrCompletionPipeline {
     /// of them are ever occupied, and it never exceeds this.
     pub(crate) const fn slots(&self) -> u64 {
         self.slots
+    }
+
+    /// The checked loop whose staged permission selected this descriptor.
+    pub(crate) const fn source_loop(&self) -> CheckedLoopId {
+        self.source_loop
+    }
+
+    /// Whether lowering supplied every run-time driver obligation required
+    /// before the backend may leave an operation live across an edge.
+    pub(crate) const fn driver_ready(&self) -> bool {
+        !matches!(self.driver, IrCompletionDriver::Pending)
     }
 
     /// The value naming the slot the completion storage addressed in this
@@ -1309,8 +1365,89 @@ impl IrCompletionPipeline {
         self.carrying.contains(&block)
     }
 
+    /// Whether this exact compiler-generated block retires the pipeline's
+    /// outstanding operation before consuming its result.
+    pub(crate) fn drains(&self, block: IrBlockId) -> bool {
+        match self.driver {
+            IrCompletionDriver::OneSlot(driver) => driver.drain == block,
+            IrCompletionDriver::BoundedBatch(driver) => driver.drain == block,
+            IrCompletionDriver::Pending => false,
+        }
+    }
+
+    /// The delayed SSA result owned by a complete driver.
+    pub(crate) const fn driven_result(&self) -> Option<IrValueId> {
+        match self.driver {
+            IrCompletionDriver::OneSlot(driver) => Some(driver.result),
+            IrCompletionDriver::BoundedBatch(driver) => Some(driver.result),
+            IrCompletionDriver::Pending => None,
+        }
+    }
+
     pub(crate) const fn window(&self) -> IrCompletionWindow {
         self.window
+    }
+
+    pub(crate) const fn window_value(&self) -> Option<IrValueId> {
+        self.window_value
+    }
+}
+
+/// One materialized single-slot driver edge.
+///
+/// `feeder` ends immediately after the submitted operation, `drain` is its
+/// only successor and dispatches on `result`, and no next loop submission is
+/// reachable without passing through that drain. These identities are IR
+/// topology, not source coordinates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IrCompletionOneSlotDriver {
+    feeder: IrBlockId,
+    drain: IrBlockId,
+    result: IrValueId,
+}
+
+impl IrCompletionOneSlotDriver {
+    #[cfg(test)]
+    pub(crate) const fn feeder(self) -> IrBlockId {
+        self.feeder
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn drain(self) -> IrBlockId {
+        self.drain
+    }
+
+    pub(crate) const fn result(self) -> IrValueId {
+        self.result
+    }
+}
+
+/// The two semantic cut points of one compiler-generated bounded batch.
+///
+/// `feeder` submits one operation using its proved issue slot. `drain` joins
+/// one operation using its proved retirement slot and defines `result` before
+/// dispatching the source match. The generated CFG, rather than the backend,
+/// owns iteration order, slot reuse, and the complete-drain boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IrCompletionBatchDriver {
+    feeder: IrBlockId,
+    drain: IrBlockId,
+    result: IrValueId,
+}
+
+impl IrCompletionBatchDriver {
+    #[cfg(test)]
+    pub(crate) const fn feeder(self) -> IrBlockId {
+        self.feeder
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn drain(self) -> IrBlockId {
+        self.drain
+    }
+
+    pub(crate) const fn result(self) -> IrValueId {
+        self.result
     }
 }
 
@@ -1398,6 +1535,13 @@ impl IrFunction {
         self.completion_pipeline.as_ref()
     }
 
+    /// The staged descriptor the backend may actualize. A permission whose IR
+    /// shape could not be driven remains retained but invisible to emission.
+    pub(crate) fn driven_completion_pipeline(&self) -> Option<&IrCompletionPipeline> {
+        self.completion_pipeline()
+            .filter(|pipeline| pipeline.driver_ready())
+    }
+
     pub(crate) fn contains_buffer(&self) -> bool {
         self.values
             .iter()
@@ -1462,114 +1606,6 @@ impl IrProgram<'_, '_, '_> {
 
     pub const fn main_ordinal(&self) -> u32 {
         self.main
-    }
-
-    /// Installs one function's staged loop pipeline.
-    ///
-    /// The pipeline is the loop judgment's product, and the judgment does not
-    /// exist yet: `lower_checked` writes `None` into every function. Until it
-    /// does, this is how the backend's carrying and draining behaviour is
-    /// exercised — the caller supplies the block set the judgment will supply,
-    /// and everything downstream of that decision is the shipped path.
-    ///
-    /// It installs a descriptor and nothing else. It cannot admit a program,
-    /// change a verdict, or reach a claim.
-    #[cfg(test)]
-    pub(crate) fn set_completion_pipeline_for_test(
-        &mut self,
-        function_name: &str,
-        pipeline: IrCompletionPipeline,
-    ) -> bool {
-        let Some(function) = self
-            .functions
-            .iter_mut()
-            .find(|function| function.name == function_name)
-        else {
-            return false;
-        };
-        function.completion_pipeline = Some(pipeline);
-        true
-    }
-
-    /// Disconnects a function's lowered body from entry while retaining its
-    /// original blocks as a structurally unreachable graph.  Completion
-    /// backend tests use this narrow mutation to prove that dominator
-    /// validation does not obtain facts from an unreachable cycle's greatest
-    /// fixed point.  The replacement return reuses a same-typed function
-    /// parameter, so the mutation introduces no invented value.
-    #[cfg(test)]
-    pub(crate) fn disconnect_function_body_for_test(&mut self, function_name: &str) -> bool {
-        let Some(function) = self
-            .functions
-            .iter_mut()
-            .find(|function| function.name == function_name)
-        else {
-            return false;
-        };
-        let Some((value, _)) = function
-            .parameters
-            .iter()
-            .find(|(_, ty)| *ty == function.result)
-        else {
-            return false;
-        };
-        let Some(entry) = function.blocks.first_mut() else {
-            return false;
-        };
-        entry.terminator = IrTerminator::Return {
-            value: *value,
-            drops: Vec::new(),
-        };
-        true
-    }
-
-    /// Test-only fault injection for runtime-claim evidence.
-    ///
-    /// The source must first pass the complete claim judgment with a genuine
-    /// residual and must define an ordinary `False()` value in the same
-    /// function before that claim. This mutator changes only the lowered
-    /// claim operand selected by the stable source function/name identity; it
-    /// does not create a writer-visible escape or participate in checking.
-    #[cfg(test)]
-    pub(crate) fn force_claim_false_for_test(
-        &mut self,
-        function_name: &str,
-        claim_name: &str,
-    ) -> bool {
-        let Some(function) = self
-            .functions
-            .iter_mut()
-            .find(|function| function.name == function_name)
-        else {
-            return false;
-        };
-        let Some(false_value) = function.blocks.iter().find_map(|block| {
-            block.instructions.iter().find_map(|instruction| {
-                let IrInstruction::Define {
-                    result,
-                    operation: IrOperation::Constant(IrConstant::Bool(false)),
-                    ..
-                } = instruction
-                else {
-                    return None;
-                };
-                Some(*result)
-            })
-        }) else {
-            return false;
-        };
-        for block in &mut function.blocks {
-            for instruction in &mut block.instructions {
-                let IrInstruction::Claim { condition, site } = instruction else {
-                    continue;
-                };
-                if site.message == claim_name {
-                    *condition = false_value;
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     /// The non-normative ledger lines this lowering added: one per permitted
@@ -1685,42 +1721,6 @@ impl IrProgram<'_, '_, '_> {
             };
             *stored = ty;
             return true;
-        }
-        false
-    }
-
-    /// Test-only malformed-IR probe: emits one submitted completion call a
-    /// second time in place, so a second operation of one call site is handed
-    /// out while the first is still outstanding.
-    ///
-    /// The step selected submits and does not finish, which is exactly what
-    /// leaves its operation outstanding across the duplicate. No schedule this
-    /// lowering forms can produce that shape — a completion hand-out is joined
-    /// before its block's terminator, so control cannot reach a site again
-    /// while its operation is in flight — which is why it has to be injected
-    /// to observe the emitter refuse it rather than share one storage element
-    /// between two live operations.
-    #[cfg(test)]
-    pub(crate) fn duplicate_outstanding_completion_call_for_test(&mut self) -> bool {
-        for function in &mut self.functions {
-            let Some(site) = function
-                .completion_steps
-                .iter()
-                .find(|step| step.submit() && !step.finish())
-                .map(IrCompletionStep::call)
-            else {
-                continue;
-            };
-            for block in &mut function.blocks {
-                let Some(at) = block.instructions.iter().position(|instruction| {
-                    matches!(instruction, IrInstruction::Define { result, .. } if *result == site)
-                }) else {
-                    continue;
-                };
-                let duplicate = block.instructions[at].clone();
-                block.instructions.insert(at + 1, duplicate);
-                return true;
-            }
         }
         false
     }

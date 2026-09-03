@@ -11,7 +11,7 @@ fn step(x: own i32) -> result: own Result<i32, MyErr> pure {
   }
 }
 
-fn use(x: own i32) -> result: own Result<i32, MyErr> pure {
+fn forward(x: own i32) -> result: own Result<i32, MyErr> pure {
   doc "`propagate` binds Ok payload; Err returns Err(err) with same E [ERR-3].";
   let y = propagate step(x: x);
   return Ok<i32, MyErr>(value: y);

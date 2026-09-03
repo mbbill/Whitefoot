@@ -35,6 +35,64 @@ teachability — and one scarce resource that replaces all the human ones: the
 **spec/teaching token budget**, which is the real currency every entry below
 spends or saves.
 
+## Current correction: the proof-carrying systems-language bargain
+
+The source-proof successor now being implemented changes the current answer,
+without rewriting the dated research below. Whitefoot is a proof-carrying
+systems language: the `.wf` source carries checked contracts, loop induction
+relations, local invariants, and explicit finite `use` steps. Every supported
+partial operation is proved before execution or rejected at compile time.
+There is no writer-accessible `unsafe`, assumption, runtime proof trap, or
+hidden fallback.
+
+That proof buys two things with the same facts. First, it raises safety beyond
+“memory-safe most of the time”: accepted code cannot reach an unproved exact
+arithmetic operation, index, address calculation, allocation layout, system
+buffer range, or other supported partial domain. Second, ownership, effects,
+bounds, layout, address, and algebraic facts can remove checks and authorize
+optimizations and `par` permissions. The proof syntax is erased, so the fact
+that justified the machine code adds no runtime proof branch, lock, dependency,
+or scheduling edge.
+
+The price is explicit source. An AI writer sometimes has to state the loop
+relation that connects a function's `ensures` to its body, or list the premises
+of a larger affine calculation. That is an intentional trade: AI may spend
+search and tokens while constructing the program, while the compiler remains a
+small deterministic checker and the human reviews the requested behavior and
+result.
+
+The checker boundary is itself part of the teaching contract. AUTO tries the
+zero-premise direct route, every coefficient-one single premise, every unordered
+coefficient-one premise pair including the same premise twice, and the final
+fixed L0-image route. A calculation needing three or more published affine
+premises outside that final route, a special elimination route, or a future
+named nonlinear rule uses explicit `use` steps inside a local `invariant`.
+Each use reads the same entering snapshot and does
+not publish; only the outer invariant publishes. Factor one is omitted, a
+normalized premise cannot repeat, and a nonempty use block is an error when
+AUTO already proves the target.
+
+No SMT solver, seed, heuristic stopping rule, timeout, machine-speed test, or
+cumulative proof-work budget participates in acceptance. Each
+specification-fixed finite rule family runs to completion. Time estimates help
+decide which family belongs in the language; elapsed time never decides whether
+a particular source program belongs in it.
+
+`par` reads the same checked context as sequential operations. Missing optional
+parallel permission leaves sequential lowering rather than rejecting the
+program. If overlapping execution is selected, its independence, map or
+reduction, layout, target-domain, and bounded completion premises are proved
+before emission. Only external resource availability—heap or stack exhaustion,
+operating-system quota, and runtime-start resources—is temporarily outside the
+current source-outcome model. Layout, address, target, and bounded completion
+proof are not deferred.
+
+The work branch is still an implementation candidate. It is not complete or
+activated until the specification, compiler, conformance evidence, real
+programs, documentation, and canonical gate agree on one exact revision.
+Everything below retains its dated evidential status and must not override this
+current correction.
+
 ## 1. Performance: facts the writer cannot refuse to state
 
 - **Effect rows → cross-boundary optimization.** Verified `reads/writes/
@@ -64,8 +122,10 @@ spends or saves.
   vanilla rustc. *Status:* ADOPTED; current compiler path is proof-only.
 - **Per-operation numeric semantics.** Wrapping, checked, and saturating forms
   are explicit values. Exact arithmetic is admitted only after its matching
-  total `.defined` goal is proved; an explicit `claim` over that goal is the
-  sole runtime backstop. Debug and release are therefore the same program,
+  total `.defined` goal is proved. The dated design used an explicit `claim` as
+  a runtime backstop; v0.40 instead rejects an
+  unproved exact operation and provides no writer trap. Debug and release are
+  therefore the same program,
   with neither signed-overflow UB nor a hidden arithmetic trap. *Status:*
   ADOPTED + MEASURED (checked and proof-discharged foldings).
 - **Signature-complete provenance.** v0.17 slice origin sets and resolved-place
@@ -132,9 +192,12 @@ best-supported differentiator to date.
 - **Boolean i1 dataflow (P7).** Keeping scanner state in `Bool` vectorizes at
   width 16 instead of 2. *Delta:* closed a measured 1.6–1.8x loss to parity;
   drove the OWN-1 Bool-copy amendment. *Status:* MEASURED, taught.
-- **Traps to the boundary (P8).** Validation at edges keeps hot interiors
-  trap-free and vectorizable. *Delta:* 2x on wc -l from one counter-mode
-  change. *Status:* MEASURED, taught.
+- **Proof at the maintained boundary (current P8; historically “traps to the
+  boundary”).** Real external failure is handled at an edge; an internal
+  relation that is true on every execution is carried by a checked invariant,
+  not an impossible-case branch. This keeps hot interiors branch-free and
+  vectorizable. *Historical delta:* 2x on wc -l from one counter-mode change.
+  *Status:* MEASURED historically; current proof form is candidate guidance.
 - **Feature replacements selected for the AI writer** (round 2, all adopted):
   env-structs replace closures; sum types + exhaustive match replace dynamic
   dispatch (missing arms become a machine-executable edit list); `Result` +
@@ -210,8 +273,10 @@ best-supported differentiator to date.
   first-shot); the loop is load-bearing, not decorative. *Status:* ADOPTED;
   the "compiler as teacher" content ablation is an unrun experiment.
 - **Canonical elaborated artifact as the re-read target.** Acceptance decidable
-  from the artifact alone; drops, instantiations, and retained claims explicit.
-  *Status:* LAW.
+  from the source-bound checked program; drops, instantiations, and discharged
+  obligations explicit. The compiler does not export or replay a second proof
+  of compiler-generated data. *Status:* LAW in direction; exact artifact
+  reproducibility remains a roadmap item.
 - **Reproducible builds; semantic diff and merge.** By construction of
   canonical form. *Status:* ADOPTED (by construction; whole-toolchain
   reproducibility gates are roadmap items, not claims).
@@ -672,8 +737,9 @@ What the trade spends, with the honest numbers where they exist.
   permanent.
 - **Same-pass error correlation** undermines every redundancy-as-checksum
   mechanism; unresolved.
-- **Repair-loop economics under trap=abort** (process death per runtime
-  diagnostic) — unmeasured; explicitly allowed to reopen design if too slow.
+- **Historical repair-loop economics under trap=abort** was unmeasured. The
+  current candidate has no writer proof trap: missing proof is a compile-time
+  rejection, while intended dynamic failure is an ordinary typed outcome.
 - **Determinism's bill:** early-exit search pays (SISAL Loop 16: 60% behind
   Fortran under a determinacy guarantee).
 - **Trusted-surface size resists shrinking:** ~15–24k trusted LOC across ten
@@ -681,15 +747,18 @@ What the trade spends, with the honest numbers where they exist.
 - **Missing SIMD story** blocks the speed half of several artifact claims;
   scalar Whitefoot loses to hand-vectorized incumbents until vector types or
   reliable autovectorization land.
-- **Two premise arguments collide:** "verbosity is free" (maximal
-  proof-carrying annotation, the SPARK reprice) versus "spec mass is the
-  budget" (every annotation vocabulary costs teaching tokens). The collision
-  forced the retreat from mandatory proof-carrying source; it will recur.
+- **Two premise arguments collide:** “verbosity is free” versus “spec mass is
+  the budget.” The dated study rejected a broad SPARK-grade vocabulary. The
+  current candidate deliberately reopens only a small source-proof surface:
+  contracts, one `invariant` keyword, a specification-fixed AUTO boundary, and
+  finite `use` steps. The collision remains a cost to measure, not a reason to
+  misdescribe the selected design.
 - **Anti-human cuts can harm the writer too:** removing comments may remove
   the model's own reasoning scaffold at generation time — flagged, never
   measured.
-- **Eager boolean operators** are a live W1 trap: the natural translation of
-  `i < len && arr[i]` traps at runtime under eager `band`.
+- **Eager boolean operators** are a live W1 rejection pitfall: the natural
+  translation of `i < len && arr[i]` still evaluates the partial access under
+  eager `band`, so the source must use control flow that establishes the bound.
 - **"AI stability" is a named comparison axis with zero evidence anywhere** —
   ruled OPEN for every capability candidate; no AI-generation evidence was
   ever produced for any of them.
@@ -726,11 +795,11 @@ Do not re-propose without naming the reason that lapsed.
 
 - **Writer-stated performance hints** (`likely`/`cold`) — unverifiable
   data-habit assertions; measured beats asserted (R1).
-- **Mandatory SPARK-grade proof-carrying source** — non-canonicalizable proof
-  surface breaks one-spelling; economics falsified by the spec-mass budget.
-  What survives is narrowly scoped proof evidence for a named authority; D17
-  commits specifically to the long-term representation-invariant lane, not to
-  a mandatory general-purpose proof language.
+- **Broad SPARK-grade proof language** — the studied non-canonicalizable surface
+  broke one-spelling and exceeded the teaching budget. This does not reject the
+  current proof-carrying systems-language direction: its source proof surface is
+  deliberately closed to contracts, invariants, fixed AUTO, and finite `use`
+  certificates, with no SMT or general-purpose prover.
 - **Lazy/citation-database teaching** — removes the cost pressure that keeps
   the spec small; is itself uncounted spec mass.
 - **Rust-shaped grammar as default** — D3 guard; familiarity may live in the

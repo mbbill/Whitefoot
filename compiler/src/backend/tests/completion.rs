@@ -1,8 +1,9 @@
-use std::io::{Read, Write};
+use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+use super::deterministic_target::{HostScript, run_emitted_on_deterministic_host};
 use super::system::with_mutated_completion_ir;
 use super::{build_executable, emit, emit_lowered, emitted_function, test_directory};
 use crate::OverlapLowering;
@@ -66,7 +67,7 @@ const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(comma
 }
 "#;
 
-const HOSTILE_REUSED_OUTPUT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
+const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -354,6 +355,86 @@ command fn main(command.stdout as out: own Output, command.stderr as err: own Ou
 }
 "#;
 
+const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let opened = 0_u64;
+  let name = buffer_new(4_u64, 97_u8);
+  for @scan (index in 0_u64..12_u64) {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set opened = opened +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  match cvt<u64, u8>(opened) {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: overflowed) => {
+      return exit_status(code: 255_u8);
+    }
+  }
+}
+"#;
+
+const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(4_u64, 97_u8);
+  for @scan (index in 0_u64..1_u64) {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let opened = 0_u64;
+  let names = buffer_new(5_u64, 97_u8);
+  set names[1_u64] = 98_u8;
+  set names[2_u64] = 99_u8;
+  set names[3_u64] = 100_u8;
+  set names[4_u64] = 101_u8;
+  for @scan (index in 0_u64..5_u64) {
+    let end = index + 1_u64;
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n names, start: index, end: end) {
+          Ok(value: handle) => {
+            set opened = opened +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  match cvt<u64, u8>(opened) {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: overflowed) => {
+      return exit_status(code: 255_u8);
+    }
+  }
+}
+"#;
+
 fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     let mut source = String::from(
         "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region 'a {\n    match arg_get<'a>(args: &'a args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region 'p {\n                let permit = reserve_file<'c>(factory: &uniq 'c files);\n                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {\n                  Ok(value: file) => {\n",
@@ -496,6 +577,108 @@ fn windows_core_pressure_materializes_the_oldest_owned_result_and_retries() {
     );
 }
 
+/// The logical field pointers of the one target-planned frame in `body`.
+///
+/// The first GEP level must be derived from the exact struct type allocated at
+/// `%wf.frame`; this is the materialized connection between the target layout
+/// plan and each operation emitter's semantic slot.
+fn planned_function_frame_fields(body: &str) -> Vec<String> {
+    let allocations = body
+        .lines()
+        .filter(|line| line.contains(" = alloca "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        allocations.len(),
+        1,
+        "a function with completion storage must have one planned frame:\n{body}"
+    );
+    let declaration = allocations[0]
+        .trim()
+        .strip_prefix("%wf.frame = alloca ")
+        .unwrap_or_else(|| panic!("the allocation is not the planned function frame:\n{body}"));
+    let (frame_type, alignment) = declaration
+        .rsplit_once(", align ")
+        .unwrap_or_else(|| panic!("the planned frame has no selected-target alignment:\n{body}"));
+    assert!(
+        frame_type.starts_with("{ ") && frame_type.ends_with(" }"),
+        "the planned frame is not one complete struct: {frame_type}"
+    );
+    let alignment = alignment
+        .parse::<u64>()
+        .expect("the planned frame alignment is a decimal integer");
+    assert!(alignment.is_power_of_two());
+
+    let field_prefix = format!("getelementptr inbounds {frame_type}, ptr %wf.frame, i32 0, i32 ");
+    let fields = body
+        .lines()
+        .filter_map(|line| {
+            let (pointer, address) = line.trim().split_once(" = ")?;
+            pointer.starts_with("%wf.slot.").then(|| {
+                assert!(
+                    address.starts_with(&field_prefix),
+                    "planned slot {pointer} is not a field of the allocated frame:\n{line}"
+                );
+                pointer.to_owned()
+            })
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !fields.is_empty(),
+        "the planned frame exposes no logical field pointers:\n{body}"
+    );
+    let mut unique = fields.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        fields.len(),
+        "a planned field is defined twice"
+    );
+    fields
+}
+
+/// The second GEP level for completion storage with exactly `slots` elements:
+/// `(planned frame field pointer, chosen element index)`.
+fn completion_element_accesses(body: &str, slots: u64) -> Vec<(String, String)> {
+    let array_prefix = format!("[{slots} x ");
+    body.lines()
+        .filter_map(|line| {
+            let (_, address) = line.trim().split_once(" = getelementptr inbounds ")?;
+            if !address.starts_with(&array_prefix) {
+                return None;
+            }
+            let (_, addressed) = address.split_once(", ptr ")?;
+            let (field, index) = addressed.split_once(", i64 0, i64 ")?;
+            field
+                .starts_with("%wf.slot.")
+                .then(|| (field.to_owned(), index.to_owned()))
+        })
+        .collect()
+}
+
+fn assert_planned_completion_frame(body: &str, slots: u64) {
+    let fields = planned_function_frame_fields(body);
+    let accesses = completion_element_accesses(body, slots);
+    assert!(
+        !accesses.is_empty(),
+        "the planned frame has no K={slots} completion element GEP:\n{body}"
+    );
+    for (field, index) in &accesses {
+        assert!(
+            fields.contains(field),
+            "completion element address starts outside the planned frame: {field}"
+        );
+        if slots == 1 {
+            assert_eq!(index, "0", "a K=1 site must select its sole element");
+        } else {
+            assert!(
+                index.starts_with('%'),
+                "a K={slots} site must use the driver-provided dynamic index, got {index}"
+            );
+        }
+    }
+}
+
 #[test]
 fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     let sequential = emit_lowered(INDEPENDENT_WRITES, crate::OverlapLowering::Off);
@@ -541,6 +724,218 @@ fn compute_world_selection_does_not_disable_completion_io() {
     }
     std::fs::remove_file(executable).expect("remove mixed compute/completion probe");
     std::fs::remove_dir(directory).expect("remove mixed compute/completion directory");
+}
+
+#[test]
+fn one_slot_submission_crosses_its_edge_before_the_drain_joins_and_dispatches() {
+    let (module, feeder, drain) = with_mutated_completion_ir(ONE_SLOT_STAGED_OPEN, |program| {
+        let main = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "main")
+            .expect("the command entry must lower");
+        let driver = main
+            .completion_pipeline()
+            .and_then(crate::IrCompletionPipeline::planned_driver)
+            .expect("the one-iteration loop must materialize its one-slot driver");
+        let module = crate::emit_llvm(program)
+            .expect("the one-slot driver must emit")
+            .into_string();
+        (module, driver.feeder().ordinal(), driver.drain().ordinal())
+    });
+    let body = emitted_function(&module, "main");
+    assert_planned_completion_frame(body, 1);
+
+    let feeder_label = if feeder == 0 {
+        "entry".to_owned()
+    } else {
+        format!("bb{feeder}")
+    };
+    let drain_label = if drain == 0 {
+        "entry".to_owned()
+    } else {
+        format!("bb{drain}")
+    };
+    let feeder_start = body
+        .find(&format!("{feeder_label}:"))
+        .expect("the emitted function must contain the feeder block");
+    let drain_start = body
+        .find(&format!("\n{drain_label}:"))
+        .expect("the emitted function must contain the drain block");
+    assert!(feeder_start < drain_start);
+    let feeder_body = &body[feeder_start..drain_start];
+    let submit = feeder_body
+        .find("call i32 @wf__completion_file_open_at_submit")
+        .expect("the feeder must submit the open");
+    let branch = feeder_body
+        .find(&format!("br label %{drain_label}"))
+        .expect("the feeder must cross its mandatory edge");
+    assert!(submit < branch, "submission must precede the drain edge");
+    assert!(
+        !feeder_body.contains("call void @wf__completion_file_open_join"),
+        "the feeder must not join before crossing its mandatory edge:\n{feeder_body}"
+    );
+
+    let drain_tail = &body[drain_start..];
+    let drain_end = drain_tail[1..]
+        .find("\nbb")
+        .map_or(drain_tail.len(), |offset| offset + 1);
+    let drain_body = &drain_tail[..drain_end];
+    let join = drain_body
+        .find("call void @wf__completion_file_open_join")
+        .expect("the exact drain block must join the submitted open");
+    let dispatch = drain_body[join..]
+        .find("switch ")
+        .map(|offset| join + offset)
+        .expect("the drain must dispatch the joined result");
+    assert!(
+        join < dispatch,
+        "the join must define the result before dispatch"
+    );
+
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    let output = Command::new(&executable)
+        .env("WF_IO_HELPERS", "1")
+        .output()
+        .expect("run the linked one-slot driver");
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    std::fs::remove_file(executable).expect("remove one-slot executable");
+    std::fs::remove_dir(directory).expect("remove one-slot directory");
+}
+
+#[test]
+fn source_derived_two_slot_batch_links_and_preserves_every_iteration() {
+    let sequential = emit_lowered(BOUNDED_BATCH_OPENS, OverlapLowering::Off);
+    let batched = emit(BOUNDED_BATCH_OPENS);
+    assert!(!sequential.contains("@wf__completion_window("));
+    assert!(!sequential.contains("define weak i64 @wf__completion_window"));
+    assert!(
+        completion_element_accesses(emitted_function(&sequential, "main"), 2).is_empty(),
+        "the sequential reference must have no K=2 completion element"
+    );
+    assert_eq!(
+        emitted_function(&batched, "main")
+            .matches("call i64 @wf__completion_window(i64 12, i64 0, i64 2)")
+            .count(),
+        1,
+        "one nonempty source loop asks once for a window capped by its two static slots"
+    );
+    assert!(batched.contains(
+        "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) \
+         #0 {\nentry:\n  ret i64 1\n}"
+    ));
+    assert_planned_completion_frame(emitted_function(&batched, "main"), 2);
+
+    let directory = test_directory();
+    std::fs::write(directory.join("aaaa"), b"batch completion fixture")
+        .expect("create the regular file opened by every iteration");
+    let sequential_executable = build_executable(&sequential, &directory);
+    for helpers in ["0", "1", "4"] {
+        let sequential_status = Command::new(&sequential_executable)
+            .current_dir(&directory)
+            .env("WF_IO_HELPERS", helpers)
+            .status()
+            .expect("run the sequential reference");
+        assert_eq!(sequential_status.code(), Some(12), "helpers={helpers}");
+    }
+    std::fs::remove_file(sequential_executable).expect("remove sequential executable");
+    let batched_executable = build_executable(&batched, &directory);
+    for helpers in ["0", "1", "4"] {
+        let batched_status = Command::new(&batched_executable)
+            .current_dir(&directory)
+            .env("WF_IO_HELPERS", helpers)
+            .status()
+            .expect("run the two-slot completion batch");
+        assert_eq!(batched_status.code(), Some(12), "helpers={helpers}");
+    }
+    std::fs::remove_file(batched_executable).expect("remove batched executable");
+    std::fs::remove_file(directory.join("aaaa")).expect("remove fixture file");
+    std::fs::remove_dir(directory).expect("remove completion test directory");
+}
+
+/// Windows pressure recovery may inspect a ring element before that iteration
+/// takes its submit arm. Its submission-state array must therefore start false
+/// in the entry prelude, not on a path through the loop body.
+#[test]
+fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
+    let module = emit_windows_completion(BOUNDED_BATCH_OPENS);
+    let body = emitted_function(&module, "main");
+    let initialized = body
+        .find("store [2 x i1] zeroinitializer, ptr ")
+        .expect("the submission-state ring is initialized in the entry prelude");
+    let submit = body
+        .find("call i32 @wf__completion_file_open_at_submit")
+        .expect("the source-derived batch submits an open");
+    let pressure = body
+        .find("completion.capacity.v")
+        .expect("Windows emits a capacity-recovery path");
+    assert!(
+        initialized < submit && initialized < pressure,
+        "the state ring starts false before either an accepted submit or a pressure path"
+    );
+    assert!(
+        module.contains("declare void @abort() noreturn"),
+        "the invalid Windows submit verdict remains fail-closed"
+    );
+}
+
+#[test]
+fn an_odd_batch_keeps_each_iterations_path_and_result_in_its_own_slot() {
+    let sequential = emit_lowered(ODD_BATCH_WITH_DISTINCT_PATHS, OverlapLowering::Off);
+    let batched = emit(ODD_BATCH_WITH_DISTINCT_PATHS);
+    assert!(batched.contains("call i64 @wf__completion_window(i64 5, i64 0, i64 2)"));
+    assert!(batched.contains("getelementptr inbounds [2 x"));
+
+    let directory = test_directory();
+    for name in ["a", "b", "c", "d"] {
+        std::fs::write(directory.join(name), name.as_bytes()).expect("create one named fixture");
+    }
+    for (label, module) in [("sequential", sequential), ("batched", batched)] {
+        let executable = build_executable(&module, &directory);
+        for helpers in ["0", "1", "4"] {
+            let status = Command::new(&executable)
+                .current_dir(&directory)
+                .env("WF_IO_HELPERS", helpers)
+                .status()
+                .expect("run the distinct-path batch");
+            assert_eq!(status.code(), Some(4), "{label}, helpers={helpers}");
+        }
+        std::fs::remove_file(executable).expect("remove distinct-path executable");
+    }
+    for name in ["a", "b", "c", "d"] {
+        std::fs::remove_file(directory.join(name)).expect("remove one named fixture");
+    }
+    std::fs::remove_dir(directory).expect("remove distinct-path directory");
+}
+
+#[test]
+fn a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_time() {
+    let module = with_mutated_completion_ir(BOUNDED_BATCH_OPENS, |program| {
+        emit_llvm_for_target(program, SystemTarget::deterministic_test())
+            .expect("the deterministic target admits the source-derived batch")
+            .into_string()
+    });
+    assert!(!module.contains("call i64 @wf__completion_window("));
+    assert!(
+        completion_element_accesses(emitted_function(&module, "main"), 2).is_empty(),
+        "the direct target must not materialize a native K=2 completion ring"
+    );
+    assert!(module.contains("= add i64 0, 1"));
+    assert!(module.contains("call ") && module.contains("@wf_test_openat("));
+    assert!(!crate::module_requires_completion_runtime(&module));
+
+    let run =
+        run_emitted_on_deterministic_host(&module, &HostScript::new().file(b"batch fixture"), &[]);
+    assert_eq!(
+        run.output.status.code(),
+        Some(12),
+        "trace was {:?}",
+        run.trace()
+    );
+    assert_eq!(run.attempts("openat"), 12);
 }
 
 #[test]
@@ -788,6 +1183,32 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
 }
 
 #[test]
+fn completion_slots_and_writer_ready_cells_have_one_capacity_source() {
+    let header = crate::WRITER_SCHEDULER_HEADER;
+    let bridge = crate::COMPLETION_BRIDGE_SOURCE;
+    let scheduler = crate::WRITER_SCHEDULER_SOURCE;
+
+    assert_eq!(
+        header
+            .matches("#define WF_COMPLETION_SLOT_CAPACITY 64u")
+            .count(),
+        1,
+        "the bounded process runtime must name its capacity once"
+    );
+    assert!(header.contains("#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
+    assert!(bridge.contains("#define WF_BRIDGE_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
+    assert!(bridge.contains("WF_BRIDGE_SLOT_COUNT == WF_WRITER_READY_CAPACITY"));
+    assert!(!bridge.contains("#define WF_BRIDGE_OPERATION_CAPACITY 64u"));
+    assert!(!scheduler.contains("#define WF_WRITER_READY_COUNT"));
+    assert!(scheduler.contains("wf_writer_ready[WF_WRITER_READY_CAPACITY]"));
+    assert!(scheduler.contains("wf_writer_count == WF_WRITER_READY_CAPACITY"));
+    assert!(
+        include_str!("../completion/harness.c")
+            .contains("#define WF_HARNESS_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY")
+    );
+}
+
+#[test]
 fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     let adapter = crate::COMPLETION_LINUX_IO_URING_SOURCE;
     let contract = crate::COMPLETION_CONTRACT_HEADER;
@@ -959,7 +1380,7 @@ fn a_reused_unique_output_waits_only_for_its_own_prior_operation() {
 
 #[test]
 fn reused_output_progress_preserves_ac_around_an_independent_rejected_open() {
-    let module = emit(HOSTILE_REUSED_OUTPUT);
+    let module = emit(REUSED_OUTPUT_EDGE_CASE);
     let directory = test_directory();
     let fifo = directory.join("unrelated-open");
     let created = Command::new("mkfifo")
@@ -1864,1194 +2285,16 @@ fn a_scrutinee_call_before_an_independent_call_stays_sequential() {
     assert_publishes_marked_streams(&module);
 }
 
-/// Completion storage is reserved as an indexed element of a per-site array
-/// rather than as a bare shared slot.
+/// Completion storage is part of one selected-target function frame.
 ///
-/// That is the whole of what this observes, and it is worth stating exactly:
-/// every `alloca` in the handed-out probe is a one-element array reached
-/// through element zero, which is the count and the index the emitter reserves
-/// today. It does *not* observe that two hand-outs of one site would get two
-/// elements — one hand-out per site is all the current schedule can express,
-/// and the emitter refuses a second outstanding one outright, which
-/// `a_second_operation_of_one_completion_site_is_refused` is the evidence for.
-/// This case is the guard against regressing to the bare shared allocas that
-/// made the staged path bug possible, and against the reserved count silently
-/// ceasing to be the one the site's hand-outs need.
+/// The first GEP selects each logical completion field from `%wf.frame`; the
+/// second selects element zero from that field's one-element array. This
+/// ordinary non-loop schedule executes each static site once, so K=1 is its
+/// exact capacity. The source-derived bounded-batch test above checks the same
+/// two-level address path with K=2 and a driver-provided dynamic index.
 #[test]
-fn completion_storage_is_reserved_as_an_indexed_element_not_a_bare_slot() {
+fn completion_storage_uses_one_planned_frame_and_k1_elements() {
     let module = emit(POSITIONED_READS);
     let body = emitted_function(&module, "probe");
-    let storages = body
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("%"))
-        .filter_map(|line| line.split_once(" = alloca "))
-        .map(|(name, ty)| (name.to_owned(), ty.trim().to_owned()))
-        .collect::<Vec<_>>();
-    assert!(
-        !storages.is_empty(),
-        "the handed-out probe allocates completion storage"
-    );
-    for (name, ty) in &storages {
-        assert!(
-            ty.starts_with("[1 x "),
-            "completion storage %{name} is {ty}, not one element per outstanding operation"
-        );
-        assert!(
-            body.contains(&format!(
-                "getelementptr inbounds {ty}, ptr %{name}, i64 0, i64 0"
-            )),
-            "completion storage %{name} is not reached through its hand-out's index"
-        );
-    }
-}
-
-/// One element per site is sound only while a site holds one outstanding
-/// operation, and that precondition is enforced rather than assumed.
-///
-/// No schedule this lowering forms can hand a site a second operation while
-/// its first is in flight: `emit_terminator` joins everything outstanding
-/// before it writes any terminator, so a completion hand-out never leaves the
-/// block that made it and control cannot reach the site again while the
-/// operation is live. The shape therefore has to be injected — one submitted,
-/// unfinished completion call emitted twice in place — and what this pins is
-/// that the emitter refuses it. Sharing the element instead would let the
-/// second operation overwrite a result or a staged path the first is still
-/// being read from, with no compile error and no crash, which is exactly the
-/// class of defect fix 2 of this batch had to repair.
-#[test]
-fn a_second_operation_of_one_completion_site_is_refused() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    let accepted = with_mutated_completion_ir(INDEPENDENT_WRITES, |program| {
-        emit_llvm_for_target(program, target).is_ok()
-    });
-    assert!(
-        accepted,
-        "the unmutated program must emit, or the refusal below proves nothing"
-    );
-    with_mutated_completion_ir(INDEPENDENT_WRITES, |program| {
-        assert!(
-            program.duplicate_outstanding_completion_call_for_test(),
-            "the probe must have a submitted completion call that does not finish its schedule"
-        );
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::SecondOutstandingCompletionOperation),
-            "a second operation of one site must be refused, not given the first's storage"
-        );
-    });
-}
-
-/// Two positioned reads, a loop between the submission and the use, and one
-/// early typed exit out of that loop.
-///
-/// Lowering submits the first read and runs the second inline, which is what
-/// it already does for two independent transfers. What the loop adds is a back
-/// edge between the submission and the join, and what the early return adds is
-/// a second way out of the loop that has to retire the same operation. Those
-/// are the two edges a staged schedule has to get right, and neither exists in
-/// a body with no loop in it.
-const READS_ACROSS_A_LOOP: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
-  let left = buffer_new(1_u64, 0_u8);
-  let right = buffer_new(1_u64, 0_u8);
-  let total = 0_u64;
-  region 'file {
-    region 'left {
-      region 'right {
-        let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-        let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
-        let cursor = 0_u64;
-        loop @spin {
-          let done = ieq(cursor, rounds);
-          if done {
-            break @spin;
-          }
-          let bail = ieq(cursor, 7_u64);
-          if bail {
-            return 1_u64;
-          }
-          set total = total +wrap cursor;
-          set cursor = cursor +wrap 1_u64;
-        }
-        match move first {
-          ReadBytes(next: produced) => {
-            set total = total +wrap produced;
-          }
-          ReadEnd() => {
-          }
-          ReadFailed(error: problem) => {
-          }
-        }
-        match move second {
-          ReadBytes(next: produced) => {
-            set total = total +wrap produced;
-          }
-          ReadEnd() => {
-          }
-          ReadFailed(error: problem) => {
-          }
-        }
-      }
-    }
-  }
-  return total;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-
-/// Which IR block of an emitted function each occurrence of `needle` lands in.
-///
-/// The emitter opens further labels inside one IR block — a completion
-/// submission alone opens four — so the answer is the last *block* label seen
-/// and not the last label seen.
-fn ir_blocks_containing(function: &str, needle: &str) -> Vec<String> {
-    let is_block_label = |label: &str| {
-        label == "entry"
-            || label.strip_prefix("bb").is_some_and(|ordinal| {
-                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-            })
-    };
-    let mut current = String::new();
-    let mut found = Vec::new();
-    for line in function.lines() {
-        match line.strip_suffix(':') {
-            Some(label) if is_block_label(label) => current = label.to_owned(),
-            _ => {
-                if line.contains(needle) {
-                    found.push(current.clone());
-                }
-            }
-        }
-    }
-    found
-}
-
-/// The blocks of one function from which the loop's back edge is still ahead:
-/// the loop's own blocks and everything that reaches them.
-///
-/// This is the carrying set the staged judgment will supply, computed here by
-/// backward reachability from the block that closes the loop. Only the
-/// descriptor is a stand-in; everything the emitter does with it is the
-/// shipped path.
-fn blocks_that_reach_the_back_edge(function: &crate::IrFunction) -> Vec<crate::IrBlockId> {
-    let successors = |block: &crate::IrBlock| -> Vec<crate::IrBlockId> {
-        match block.terminator() {
-            crate::IrTerminator::Jump { target, .. } => vec![*target],
-            crate::IrTerminator::Match { targets, .. } => {
-                targets.iter().map(|target| target.block()).collect()
-            }
-            crate::IrTerminator::Return { .. } | crate::IrTerminator::Unreachable => Vec::new(),
-        }
-    };
-    let closes_the_loop = function
-        .blocks()
-        .iter()
-        .enumerate()
-        .position(|(index, block)| {
-            successors(block)
-                .iter()
-                .any(|target| target.index() < index)
-        })
-        .expect("the probe's loop must close");
-    let mut reaches = vec![false; function.blocks().len()];
-    reaches[closes_the_loop] = true;
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for (index, block) in function.blocks().iter().enumerate() {
-            if reaches[index] {
-                continue;
-            }
-            if successors(block)
-                .iter()
-                .any(|target| reaches[target.index()])
-            {
-                reaches[index] = true;
-                changed = true;
-            }
-        }
-    }
-    reaches
-        .iter()
-        .enumerate()
-        .filter(|(_, reached)| **reached)
-        .map(|(index, _)| crate::IrBlockId::from_index(index).expect("block ordinal"))
-        .collect()
-}
-
-/// A staged completion result cannot be consumed before the descriptor's
-/// drain.
-///
-/// This source observes `first` after its loop, while the descriptor would
-/// defer its completion until an exit from that loop. The current pipeline
-/// record carries target storage and mapper facts but deliberately does not
-/// rewrite arbitrary source continuations, so accepting this descriptor would
-/// either make an incomplete result observable or create a non-dominating LLVM
-/// definition.
-#[test]
-fn a_staged_loop_that_uses_a_result_before_its_drain_is_refused() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_reach_the_back_edge(probe);
-        assert!(
-            carrying.len() > 1,
-            "the probe's loop must span more than one block, or the back edge proves nothing"
-        );
-        assert!(
-            program.set_completion_pipeline_for_test(
-                "probe",
-                crate::IrCompletionPipeline::new(
-                    crate::IrBlockId::from_index(0).expect("the entry block"),
-                    carrying,
-                    crate::IrCompletionWindow::new(0, 65_536, 32),
-                ),
-            ),
-            "the probe function must take a pipeline"
-        );
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::StagedCompletionResultUse),
-            "a descriptor cannot defer a result the source consumes before its drain"
-        );
-    });
-}
-
-/// The weak window answer is emitted only where a module asks for one, and it
-/// is one.
-#[test]
-fn the_window_fallback_is_emitted_only_where_a_module_asks_for_one() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    let sequential = with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
-        emit_llvm_for_target(program, target)
-            .expect("the probe must emit")
-            .into_string()
-    });
-    assert!(
-        sequential.contains("define weak i32 @wf__completion_file_read_submit"),
-        "the probe must already carry the completion fallbacks"
-    );
-    assert!(
-        !sequential.contains("define weak i64 @wf__completion_window"),
-        "a module that asks for no window must define none"
-    );
-    let staged = with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_reach_the_back_edge(probe);
-        assert!(program.set_completion_pipeline_for_test(
-            "probe",
-            crate::IrCompletionPipeline::new(
-                crate::IrBlockId::from_index(0).expect("the entry block"),
-                carrying,
-                crate::IrCompletionWindow::new(8_192, 65_536, 0),
-            ),
-        ));
-        emit_llvm_for_target(program, target)
-            .expect("a staged probe must emit")
-            .into_string()
-    });
-    assert!(
-        staged.contains(
-            "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) \
-             #0 {\nentry:\n  ret i64 1\n}"
-        ),
-        "a link without the completion unit must answer one, which is the sequential program"
-    );
-}
-
-/// A carrying region no exit leaves is refused.
-///
-/// Naming every block leaves no drain: on every path an accepted operation
-/// would go unjoined and the target would write its result into storage the
-/// frame no longer exists to hold. It is a defect of whatever produced the
-/// descriptor, and it is refused before a line of the function is emitted
-/// rather than diagnosed by the absence of a join.
-#[test]
-fn a_carrying_region_with_no_exit_is_refused() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    with_mutated_completion_ir(READS_ACROSS_A_LOOP, |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let every_block = (0..probe.blocks().len())
-            .map(|index| crate::IrBlockId::from_index(index).expect("block ordinal"))
-            .collect();
-        assert!(program.set_completion_pipeline_for_test(
-            "probe",
-            crate::IrCompletionPipeline::new(
-                crate::IrBlockId::from_index(0).expect("the entry block"),
-                every_block,
-                crate::IrCompletionWindow::new(0, 0, 0),
-            ),
-        ));
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::UnretiredCompletionOperation),
-            "a region with no drain must be refused, not emitted with a missing join"
-        );
-    });
-}
-
-/// Two independent reads inside a loop that already has two ways out.
-///
-/// This differs from `READS_ACROSS_A_LOOP` in the one way that matters to the
-/// emitter's walk. There the reads are handed out before the loop, in the
-/// entry block, so every exit from the loop is numbered after the hand-out.
-/// Here they are handed out inside the loop body, and lowering numbers blocks
-/// in source order, so the block the loop leaves through on `break` — written
-/// first in the body — is numbered before the block that starts them.
-const READS_ON_TWO_BRANCHES: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
-  let outer_left = buffer_new(1_u64, 0_u8);
-  let outer_right = buffer_new(1_u64, 0_u8);
-  let inner_left = buffer_new(1_u64, 0_u8);
-  let inner_right = buffer_new(1_u64, 0_u8);
-  let total = 0_u64;
-  region 'file {
-    region 'a {
-      region 'b {
-        let outer_first = read_at<'file, 'a>(file: &'file file, destination: &uniq 'a outer_left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-        let outer_second = read_at<'file, 'b>(file: &'file file, destination: &uniq 'b outer_right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
-      }
-    }
-    let split = ieq(rounds, 7_u64);
-    if split {
-      region 'c {
-        region 'd {
-          let inner_first = read_at<'file, 'c>(file: &'file file, destination: &uniq 'c inner_left, file_offset: 2_u64, start: 0_u64, end: 1_u64);
-          let inner_second = read_at<'file, 'd>(file: &'file file, destination: &uniq 'd inner_right, file_offset: 3_u64, start: 0_u64, end: 1_u64);
-        }
-      }
-      let inner_branch = ieq(rounds, 8_u64);
-      if inner_branch {
-        set total = total +wrap 2_u64;
-      } else {
-        set total = total +wrap 3_u64;
-      }
-    } else {
-      set total = total +wrap 1_u64;
-    }
-  }
-  return total;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-
-const READS_BELOW_A_LOOP_EXIT: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
-  let left = buffer_new(1_u64, 0_u8);
-  let right = buffer_new(1_u64, 0_u8);
-  let total = 0_u64;
-  let cursor = 0_u64;
-  loop @spin {
-    let done = ieq(cursor, rounds);
-    if done {
-      break @spin;
-    }
-    let bail = ieq(cursor, 7_u64);
-    if bail {
-      return 1_u64;
-    }
-    region 'file {
-      region 'left {
-        region 'right {
-          let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-          let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
-          match move first {
-            ReadBytes(next: produced) => {
-              set total = total +wrap produced;
-            }
-            ReadEnd() => {
-            }
-            ReadFailed(error: problem) => {
-            }
-          }
-          match move second {
-            ReadBytes(next: produced) => {
-              set total = total +wrap produced;
-            }
-            ReadEnd() => {
-            }
-            ReadFailed(error: problem) => {
-            }
-          }
-        }
-      }
-    }
-    set cursor = cursor +wrap 1_u64;
-  }
-  return total;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-
-/// A drain the emission walk reaches before the hand-out it must retire is
-/// refused, rather than emitted with the join simply missing.
-///
-/// Blocks are emitted in index order and a drain can only retire hand-outs
-/// that already exist, so a carrying block that starts an operation and is
-/// numbered after one of the region's exits leaves that exit with no join at
-/// all. Above, the loop's `break` exit is numbered before the block that hands
-/// the read out, and walking straight through emits a bare `ret` there while
-/// the operation is still owned by a target — which would write its result
-/// into storage the frame no longer exists to hold.
-///
-/// Nothing downstream catches it: a function carrying a pipeline is exempt
-/// from the straight-line check at the end of emission, exactly because a
-/// carrying block is free to be the last block emitted. So the ordering is a
-/// precondition on the descriptor and it is checked, like the region's other
-/// precondition, before a line of the function is written.
-///
-/// It is the ordering and not the shape. `READS_ACROSS_A_LOOP` takes the same
-/// kind of carrying set and emits, and its latch is numbered after the typed
-/// exit its back edge reaches — which is admitted, because a block that starts
-/// no operation leaves that exit nothing to be missing.
-#[test]
-fn a_drain_emitted_before_the_hand_out_it_retires_is_refused() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    // The source itself is an ordinary accepted program; only the descriptor
-    // below is out of order.
-    let sequential = with_mutated_completion_ir(READS_BELOW_A_LOOP_EXIT, |program| {
-        emit_llvm_for_target(program, target)
-            .expect("the probe must emit")
-            .into_string()
-    });
-    let sequential = emitted_function(&sequential, "probe");
-    let submissions = ir_blocks_containing(sequential, "@wf__completion_file_pread_submit(");
-    assert_eq!(
-        submissions.len(),
-        1,
-        "the probe must hand one of its two independent reads to a target: {submissions:?}"
-    );
-    assert!(
-        submissions.iter().all(|block| block != "entry"),
-        "the hand-out must be inside the loop, or nothing is out of order: {submissions:?}"
-    );
-
-    with_mutated_completion_ir(READS_BELOW_A_LOOP_EXIT, |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_reach_the_back_edge(probe);
-        assert!(
-            carrying.len() > 1,
-            "the probe's loop must span more than one block"
-        );
-        assert!(program.set_completion_pipeline_for_test(
-            "probe",
-            crate::IrCompletionPipeline::new(
-                crate::IrBlockId::from_index(0).expect("the entry block"),
-                carrying,
-                crate::IrCompletionWindow::new(0, 65_536, 32),
-            ),
-        ));
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::UnretiredCompletionOperation),
-            "a drain numbered before the hand-out it retires must be refused"
-        );
-    });
-}
-
-/// The blocks of one function that hand an operation to a target.
-fn blocks_that_hand_out(function: &crate::IrFunction) -> Vec<crate::IrBlockId> {
-    function
-        .blocks()
-        .iter()
-        .enumerate()
-        .filter(|(_, block)| {
-            block.instructions().iter().any(|instruction| {
-                matches!(
-                    instruction,
-                    crate::IrInstruction::Define { result, .. }
-                        if function
-                            .completion_steps()
-                            .iter()
-                            .any(|step| step.call() == *result && step.submit())
-                )
-            })
-        })
-        .map(|(index, _)| crate::IrBlockId::from_index(index).expect("block ordinal"))
-        .collect()
-}
-
-/// The successors of one block, by index.
-fn block_targets(block: &crate::IrBlock) -> Vec<usize> {
-    match block.terminator() {
-        crate::IrTerminator::Jump { target, .. } => vec![target.index()],
-        crate::IrTerminator::Match { targets, .. } => targets
-            .iter()
-            .map(|target| target.block().index())
-            .collect(),
-        crate::IrTerminator::Return { .. } | crate::IrTerminator::Unreachable => Vec::new(),
-    }
-}
-
-/// A staged descriptor cannot carry a completion result through a source
-/// branch just to drop it later.
-///
-/// The source does not inspect either outcome, but lowering must still thread
-/// each result through branch edges until its owning scope ends. Those edge
-/// arguments are real SSA uses: a later drain would otherwise have to define
-/// the result on a path that already needed it. Refuse the descriptor instead
-/// of making an incomplete slot look like a completed result.
-#[test]
-fn a_branched_staged_descriptor_that_threads_results_is_refused() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    with_mutated_completion_ir(READS_ON_TWO_BRANCHES, |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_hand_out(probe);
-        assert_eq!(
-            carrying.len(),
-            2,
-            "the probe must start one operation on each of two branches"
-        );
-        assert!(program.set_completion_pipeline_for_test(
-            "probe",
-            crate::IrCompletionPipeline::new(
-                crate::IrBlockId::from_index(0).expect("the entry block"),
-                carrying,
-                crate::IrCompletionWindow::new(0, 65_536, 32),
-            ),
-        ));
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::StagedCompletionResultUse),
-            "a staged result cannot be threaded through a source branch"
-        );
-    });
-}
-
-/// A loop whose body both submits and joins, and whose [PAR-3] verdict is
-/// `permitted`.
-///
-/// Each iteration constructs the two buffers it reads into, and leaves the
-/// first result deliberately unused. That is the completion pipeline's
-/// current valid boundary: it can carry a target request and its mapper facts
-/// around the loop, but it does not yet rewrite a source continuation that
-/// consumes the result before a drain. The second read is independent work
-/// after the first, which is what makes the first a hand-out.
-const A_STAGED_LOOP_BODY: &[u8] = br#"fn probe(file: own ReadFile, rounds: own u64) -> result: own u64 reads(file), writes(file), allocates(heap) {
-  let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
-    let left = buffer_new(1_u64, 0_u8);
-    let right = buffer_new(1_u64, 0_u8);
-    region 'file {
-      region 'left {
-        region 'right {
-          let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-          let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
-        }
-      }
-    }
-  }
-  return total;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-
-/// A staged region cannot apply a source dependency while work remains
-/// carried on another path.  The current outstanding ledger is deliberately
-/// source ordered rather than per edge, so admitting that descriptor could
-/// erase an operation which a sibling path still owns.
-#[test]
-fn a_staged_region_with_an_early_completion_dependency_is_refused() {
-    let original = std::str::from_utf8(A_STAGED_LOOP_BODY).expect("the fixture is UTF-8");
-    let second = "          let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);";
-    let replacement = format!(
-        "{second}\n          let third = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 2_u64, start: 0_u64, end: 1_u64);"
-    );
-    let source = original.replace(second, &replacement);
-    assert_ne!(
-        source, original,
-        "the dependency fixture must add a third read"
-    );
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-
-    with_mutated_completion_ir(source.as_bytes(), |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_reach_the_back_edge(probe);
-        let has_carried_dependency = probe.blocks().iter().enumerate().any(|(index, block)| {
-            let id = crate::IrBlockId::from_index(index).expect("a block ordinal");
-            carrying.contains(&id)
-                && block.instructions().iter().any(|instruction| {
-                    matches!(instruction, crate::IrInstruction::Define { result, .. }
-                        if probe
-                            .completion_steps()
-                            .iter()
-                            .any(|step| step.call() == *result && !step.wait_for().is_empty()))
-                })
-        });
-        assert!(
-            has_carried_dependency,
-            "the third read must wait for an earlier carried read"
-        );
-        assert!(program.set_completion_pipeline_for_test(
-            "probe",
-            crate::IrCompletionPipeline::new(
-                crate::IrBlockId::from_index(0).expect("the entry block"),
-                carrying,
-                crate::IrCompletionWindow::new(0, 65_536, 32),
-            ),
-        ));
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::StagedCompletionDependency),
-            "a carrying dependency requires path-specific outstanding state"
-        );
-    });
-}
-
-/// The blocks that dominate `block`, computed from the successor relation the
-/// probe helpers already use.
-///
-/// A slot index is rendered straight into the `getelementptr` its block emits,
-/// so the value has to dominate that block; the emitter trusts that the same
-/// way it trusts every other operand, and these tests earn the trust rather
-/// than assuming it.
-fn blocks_dominating(function: &crate::IrFunction, block: crate::IrBlockId) -> Vec<usize> {
-    let count = function.blocks().len();
-    let all: Vec<usize> = (0..count).collect();
-    let mut dominators: Vec<Vec<usize>> = (0..count)
-        .map(|index| if index == 0 { vec![0] } else { all.clone() })
-        .collect();
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for index in 1..count {
-            let predecessors: Vec<usize> = function
-                .blocks()
-                .iter()
-                .enumerate()
-                .filter(|(_, candidate)| block_targets(candidate).contains(&index))
-                .map(|(ordinal, _)| ordinal)
-                .collect();
-            let mut next: Vec<usize> = match predecessors.split_first() {
-                None => vec![index],
-                Some((first, rest)) => {
-                    let mut shared = dominators[*first].clone();
-                    for predecessor in rest {
-                        shared.retain(|candidate| dominators[*predecessor].contains(candidate));
-                    }
-                    shared.push(index);
-                    shared.sort_unstable();
-                    shared.dedup();
-                    shared
-                }
-            };
-            next.sort_unstable();
-            if next != dominators[index] {
-                dominators[index] = next;
-                changed = true;
-            }
-        }
-    }
-    dominators[block.index()].clone()
-}
-
-/// The block the unstaged emission submits its first target operation in.
-fn the_block_that_submits(module: &str) -> crate::IrBlockId {
-    let labels = ir_blocks_containing(emitted_function(module, "probe"), "_submit(");
-    let label = labels.first().expect("the probe must submit somewhere");
-    let ordinal = match label.as_str() {
-        "entry" => 0,
-        other => other
-            .strip_prefix("bb")
-            .expect("a block label")
-            .parse::<usize>()
-            .expect("a block ordinal"),
-    };
-    crate::IrBlockId::from_index(ordinal).expect("a block ordinal")
-}
-
-/// A `u64` the submitting block may address a ring through: a parameter of a
-/// block that dominates it, which is where a driver's loop-carried slot would
-/// live.
-///
-/// Be exact about what that resolves to here. The probe's loop header is the
-/// first dominator that is not the entry, and it carries six parameters, five
-/// of them `u64`: the carried copy of the caller's `rounds` argument, the
-/// running total, and the loop's index and its bounds. This helper takes the
-/// first `u64` parameter of that header, which is the carried copy of
-/// `rounds`, threaded around the back edge unchanged. The slot these tests
-/// hand the emitter is therefore a caller-supplied, loop-invariant `u64`,
-/// not an index that advances with the iteration; it exercises the
-/// addressing such an index would take, and nothing more.
-fn a_slot_index_for(function: &crate::IrFunction, block: crate::IrBlockId) -> crate::IrValueId {
-    let u64_type = crate::IrType::Integer {
-        width: 64,
-        signed: false,
-    };
-    blocks_dominating(function, block)
-        .iter()
-        .filter(|dominator| **dominator != 0)
-        .find_map(|dominator| {
-            function.blocks()[*dominator]
-                .parameters()
-                .iter()
-                .find(|(_, ty)| *ty == u64_type)
-                .map(|(value, _)| *value)
-        })
-        .expect("the loop must carry a u64 the body can address a ring through")
-}
-
-/// Which slot the descriptor under test gives the block that submits.
-#[derive(Clone, Copy)]
-enum SlotChoice {
-    /// A `u64` a dominating block carries — what a driver threads in.
-    Carried,
-    /// A value of the wrong type.
-    NotAnIndex,
-    /// A `u64` from a block that cannot reach the addressed block on every
-    /// path.
-    NonDominating,
-    /// Nothing, which is the descriptor that would silently share one record.
-    None,
-}
-
-/// A non-`u64` the submitting block could name, to prove the type is checked.
-fn a_value_that_is_not_an_index(
-    function: &crate::IrFunction,
-    block: crate::IrBlockId,
-) -> crate::IrValueId {
-    let u64_type = crate::IrType::Integer {
-        width: 64,
-        signed: false,
-    };
-    blocks_dominating(function, block)
-        .iter()
-        .find_map(|dominator| {
-            function.blocks()[*dominator]
-                .parameters()
-                .iter()
-                .find(|(_, ty)| *ty != u64_type)
-                .map(|(value, _)| *value)
-        })
-        .expect("the probe's loop must carry something that is not an index")
-}
-
-/// A `u64` block parameter that cannot dominate `block`.
-///
-/// The ring address is emitted in `block`, so choosing a sibling's parameter
-/// would make an SSA use on a path where that parameter has no definition.
-/// This gives the descriptor validator a real dominance failure rather than
-/// merely an instruction-local value it already rejects conservatively.
-fn a_u64_that_does_not_dominate(
-    function: &crate::IrFunction,
-    block: crate::IrBlockId,
-) -> crate::IrValueId {
-    let u64_type = crate::IrType::Integer {
-        width: 64,
-        signed: false,
-    };
-    let dominators = blocks_dominating(function, block);
-    function
-        .blocks()
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| !dominators.contains(index))
-        .find_map(|(_, candidate)| {
-            candidate
-                .parameters()
-                .iter()
-                .find(|(_, ty)| *ty == u64_type)
-                .map(|(value, _)| *value)
-        })
-        .expect("the probe must have a non-dominating u64 block parameter")
-}
-
-fn the_unstaged_probe() -> String {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
-        emit_llvm_for_target(program, target)
-            .expect("the probe must emit")
-            .into_string()
-    })
-}
-
-/// Emits the probe with a ring of `slots` records per site, addressed as
-/// `choice` says.
-///
-/// The descriptor is one the emitter accepts, not one a driver has been shown
-/// to produce. Its slot is the loop-invariant `rounds` parameter
-/// `a_slot_index_for` resolves. The emitted checked-slot helper makes that
-/// otherwise unbounded input safe for every ring address.
-fn emit_a_ring_for_target(
-    slots: u64,
-    choice: SlotChoice,
-    target: SystemTarget,
-) -> Result<String, crate::BackendFailure> {
-    let submitting = the_block_that_submits(&the_unstaged_probe());
-    with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_reach_the_back_edge(probe);
-        assert!(
-            carrying.contains(&submitting),
-            "the probe's submission must be inside the carrying region, or the ring proves nothing"
-        );
-        // A driver threads the slot into every block of its region, because
-        // the block that retires an operation need not be the block that
-        // started it: here the loop's exit is what drains the window.
-        let addressed: Vec<(crate::IrBlockId, crate::IrValueId)> = (1..probe.blocks().len())
-            .map(|index| {
-                let id = crate::IrBlockId::from_index(index).expect("a block ordinal");
-                (id, a_slot_index_for(probe, id))
-            })
-            .collect();
-        let slot_index = match choice {
-            SlotChoice::Carried => addressed,
-            SlotChoice::NotAnIndex => addressed
-                .into_iter()
-                .map(|(block, slot)| {
-                    if block == submitting {
-                        (block, a_value_that_is_not_an_index(probe, block))
-                    } else {
-                        (block, slot)
-                    }
-                })
-                .collect(),
-            SlotChoice::NonDominating => addressed
-                .into_iter()
-                .map(|(block, slot)| {
-                    if block == submitting {
-                        (block, a_u64_that_does_not_dominate(probe, block))
-                    } else {
-                        (block, slot)
-                    }
-                })
-                .collect(),
-            SlotChoice::None => Vec::new(),
-        };
-        assert!(
-            program.set_completion_pipeline_for_test(
-                "probe",
-                crate::IrCompletionPipeline::with_slots(
-                    crate::IrBlockId::from_index(0).expect("the entry block"),
-                    carrying,
-                    crate::IrCompletionWindow::new(0, 65_536, 32),
-                    slots,
-                    slot_index,
-                ),
-            ),
-            "the probe function must take a pipeline"
-        );
-        emit_llvm_for_target(program, target).map(super::super::emitter::LlvmModule::into_string)
-    })
-}
-
-fn emit_a_ring(slots: u64, choice: SlotChoice) -> Result<String, crate::BackendFailure> {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    emit_a_ring_for_target(slots, choice, target)
-}
-
-/// The types this function reserves, in reservation order and without the
-/// temporary names, which shift when a module also asks for a window.
-fn reserved_types(function: &str) -> Vec<String> {
-    function
-        .lines()
-        .filter_map(|line| line.split_once("= alloca "))
-        .map(|(_, reserved)| reserved.trim().to_owned())
-        .collect()
-}
-
-/// Sends emitted IR through LLVM's parser and verifier.
-///
-/// `clang -emit-llvm -c` rejects malformed IR before it can produce bitcode,
-/// including non-dominating SSA uses. Keeping this as an external check makes
-/// the staged tests exercise the same parser/verifier a downstream LLVM tool
-/// sees rather than only checking strings the emitter happened to write.
-fn verify_llvm(module: &str) {
-    let sink = if cfg!(windows) { "NUL" } else { "/dev/null" };
-    let mut child = Command::new("clang")
-        .args(["-x", "ir", "-emit-llvm", "-c", "-o", sink, "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("the LLVM verifier must be available as clang");
-    let mut input = child.stdin.take().expect("clang must accept LLVM IR");
-    input
-        .write_all(module.as_bytes())
-        .expect("the complete LLVM module must reach clang");
-    drop(input);
-    let output = child
-        .wait_with_output()
-        .expect("the LLVM verifier must return a status");
-    assert!(
-        output.status.success(),
-        "LLVM rejected staged completion IR:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-}
-
-/// A staged region reserves one operation record per slot and addresses the
-/// one the block names.
-///
-/// This is what makes a back edge with work in flight correct rather than
-/// merely admitted. The carrying block is emitted once and reached once per
-/// iteration; with a single record the second iteration would hand the target
-/// a token and a result slot the first iteration's operation is still being
-/// written into. So the reservation becomes an array, and the element is
-/// chosen where the operation is started, from the index the driver carried
-/// into the block.
-#[test]
-fn a_staged_region_reserves_one_operation_record_per_slot() {
-    let unstaged = the_unstaged_probe();
-    assert!(
-        !unstaged.contains("alloca [4 x"),
-        "the unstaged probe must reserve one record per site, not a ring"
-    );
-    let module = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
-    assert!(
-        module.contains("call i64 @wf__completion_window(i64 0, i64 65536, i64 4)"),
-        "the runtime window is capped by the four allocated records"
-    );
-    let staged = emitted_function(&module, "probe");
-
-    // The body's first read is the hand-out — the second is independent work
-    // after it, and has none of its own — so one site reserves seven rings,
-    // each four elements wide. Besides the target-facing token/result/raw
-    // fields, the record retains submission state and both mapper facts for a
-    // join in another block.
-    let rings = reserved_types(staged)
-        .into_iter()
-        .filter(|reserved| reserved.starts_with("[4 x "))
-        .count();
-    assert_eq!(
-        rings, 7,
-        "the handed-out site reserves a ring for target state and mapper facts"
-    );
-
-    // And every element pointer is that ring indexed by the slot, in the block
-    // that names it — never a constant element the two iterations would share.
-    let indexed: Vec<&str> = staged
-        .lines()
-        .filter(|line| line.contains("getelementptr inbounds [4 x"))
-        .collect();
-    let checked = staged
-        .matches("call i64 @wf__completion_checked_slot(i64 ")
-        .count();
-    assert_eq!(
-        indexed.len(),
-        checked,
-        "every ring GEP must use the helper-checked slot: {indexed:?}"
-    );
-    assert_eq!(
-        indexed.len(),
-        12,
-        "submission addresses target state and mapper facts; retirement reloads \
-         all target state and facts: {indexed:?}"
-    );
-    for line in &indexed {
-        let (_, index) = line
-            .rsplit_once(", i64 0, i64 ")
-            .unwrap_or_else(|| panic!("an element pointer indexes its ring: {line}"));
-        assert!(
-            index.starts_with("%t"),
-            "an element pointer must be indexed by the helper-checked slot, never \
-             a constant element the two iterations would share: {line}"
-        );
-    }
-}
-
-/// One slot keeps every completion record fixed and needs no ring proof.
-///
-/// A window of one is always a legal answer — it is the schedule the
-/// sequential program already runs. A staged record still retains its
-/// submission state and mapper facts, but it addresses its only element with
-/// no run-time slot and emits no checked-slot helper.
-#[test]
-fn one_slot_needs_no_dynamic_ring_index() {
-    let one = emit_a_ring(1, SlotChoice::Carried).expect("a one-slot probe must emit");
-    assert!(
-        !one.contains("wf__completion_checked_slot"),
-        "a single fixed record has no ring GEP to guard"
-    );
-    assert!(
-        !one.contains(", i64 0, i64 %v"),
-        "a one-slot region indexes its records by no run-time value: the element \
-         is the reservation's only one"
-    );
-}
-
-/// The accepted staged ring is real LLVM, not merely emitter-shaped text.
-#[test]
-fn staged_completion_ring_passes_the_llvm_parser_and_verifier() {
-    let module = emit_a_ring(4, SlotChoice::Carried).expect("a staged probe must emit");
-    assert!(
-        module.contains("define private i64 @wf__completion_checked_slot"),
-        "a multi-slot ring must publish its range guard"
-    );
-    verify_llvm(&module);
-}
-
-/// Windows pressure recovery may inspect a ring element before that iteration
-/// takes its submit arm. Its submission-state array must therefore start false
-/// in the entry prelude, not on a path through the loop body.
-#[test]
-fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
-    let target = SystemTarget::for_triple("x86_64-pc-windows-msvc")
-        .expect("the native Windows completion target");
-    let module = emit_a_ring_for_target(4, SlotChoice::Carried, target)
-        .expect("the Windows staged probe must emit");
-    let body = emitted_function(&module, "probe");
-    let initialized = body
-        .find("store [4 x i1] zeroinitializer, ptr ")
-        .expect("the submission-state ring is initialized in the entry prelude");
-    let submit = body
-        .find("call i32 @wf__completion_file_pread_submit")
-        .expect("the staged probe submits a positioned read");
-    let pressure = body
-        .find("completion.capacity.v")
-        .expect("Windows emits a capacity-recovery path");
-    assert!(
-        initialized < submit && initialized < pressure,
-        "the state ring starts false before either an accepted submit or a pressure path"
-    );
-    assert!(
-        module.contains("declare void @abort() noreturn"),
-        "the checked ring helper has an abort declaration even without a local match"
-    );
-}
-
-/// A ring with no elements is refused.
-#[test]
-fn a_ring_with_no_elements_is_refused() {
-    assert_eq!(
-        emit_a_ring(0, SlotChoice::Carried).err(),
-        Some(crate::BackendFailure::MisaddressedCompletionSlot),
-        "a descriptor claiming no slots would reserve a zero-length array and index into it"
-    );
-}
-
-/// A slot that is not the `u64` the ring is indexed with is refused.
-#[test]
-fn a_slot_that_is_not_an_index_is_refused() {
-    assert_eq!(
-        emit_a_ring(4, SlotChoice::NotAnIndex).err(),
-        Some(crate::BackendFailure::MisaddressedCompletionSlot),
-        "an index of the wrong type emits a module that does not verify"
-    );
-}
-
-/// A `u64` alone is not enough: it must be defined on every route to the ring
-/// address.
-#[test]
-fn a_slot_that_does_not_dominate_its_ring_address_is_refused() {
-    assert_eq!(
-        emit_a_ring(4, SlotChoice::NonDominating).err(),
-        Some(crate::BackendFailure::MisaddressedCompletionSlot),
-        "a non-dominating slot would make an invalid LLVM use"
-    );
-}
-
-/// An unreachable loop must not acquire every block as a dominator merely
-/// because its SCC has no path from entry.  The old universe-initialized
-/// fixed point did exactly that and could admit an arbitrary block parameter
-/// as a ring index in every other unreachable block.
-#[test]
-fn an_unreachable_completion_scc_cannot_invent_slot_dominance() {
-    let target = SystemTarget::for_triple("aarch64-apple-darwin").expect("the probe target");
-    with_mutated_completion_ir(A_STAGED_LOOP_BODY, |program| {
-        assert!(
-            program.disconnect_function_body_for_test("probe"),
-            "the probe entry must be disconnected"
-        );
-        let probe = program
-            .functions()
-            .iter()
-            .find(|function| function.name() == "probe")
-            .expect("the probe function");
-        let carrying = blocks_that_reach_the_back_edge(probe);
-        assert!(
-            !carrying.contains(&crate::IrBlockId::from_index(0).expect("the entry block")),
-            "the retained loop must be structurally unreachable from entry"
-        );
-        let index_type = crate::IrType::Integer {
-            width: 64,
-            signed: false,
-        };
-        let slot = carrying
-            .iter()
-            .find_map(|block| {
-                probe.blocks()[block.index()]
-                    .parameters()
-                    .iter()
-                    .find(|(_, ty)| *ty == index_type)
-                    .map(|(value, _)| *value)
-            })
-            .expect("the unreachable loop carries a u64 parameter");
-        let addressed = (1..probe.blocks().len())
-            .map(|index| {
-                (
-                    crate::IrBlockId::from_index(index).expect("a block ordinal"),
-                    slot,
-                )
-            })
-            .collect();
-        assert!(program.set_completion_pipeline_for_test(
-            "probe",
-            crate::IrCompletionPipeline::with_slots(
-                crate::IrBlockId::from_index(0).expect("the entry block"),
-                carrying,
-                crate::IrCompletionWindow::new(0, 65_536, 32),
-                4,
-                addressed,
-            ),
-        ));
-        assert_eq!(
-            emit_llvm_for_target(program, target),
-            Err(crate::BackendFailure::MisaddressedCompletionSlot),
-            "an unreachable SCC cannot make an external block parameter dominate its peers"
-        );
-    });
-}
-
-/// A carrying block that submits with no slot is refused, not handed element
-/// zero.
-///
-/// This is the refusal that matters. Falling back to the first element there
-/// is exactly the sharing the ring exists to prevent, and it would show up
-/// only as two iterations reading one buffer — never as a diagnostic.
-#[test]
-fn a_carrying_block_with_no_slot_is_refused_rather_than_sharing_one_record() {
-    assert_eq!(
-        emit_a_ring(4, SlotChoice::None).err(),
-        Some(crate::BackendFailure::MisaddressedCompletionSlot),
-        "a submission inside a ring must address a slot"
-    );
+    assert_planned_completion_frame(body, 1);
 }

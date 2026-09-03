@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-mod hostile;
+mod edge_cases;
 mod lexical;
 mod resources;
 

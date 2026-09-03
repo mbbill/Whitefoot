@@ -11,7 +11,9 @@ use crate::syntax::parser::finalize::topology::{FinalizedExtent, FinalizedTopolo
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) enum GapStyle {
     Inline,
+    Spaced,
     Break,
+    HeaderBreak,
     Blank,
 }
 
@@ -35,10 +37,10 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::ExprStmt
             | Production::ReturnStmt
             | Production::BreakStmt
-            | Production::ClaimStmt
+            | Production::ProofUse
             | Production::GiveStmt
     );
-    if fixed {
+    if fixed || (record.production == Production::InvariantStmt && record.body_open.is_none()) {
         return Ok(true);
     }
     if record.production != Production::LetStmt {
@@ -59,9 +61,9 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
     }))
 }
 
-fn is_block_bearing(production: Production) -> bool {
+fn is_block_bearing(record: &crate::syntax::parser::finalize::topology::NodeRecord) -> bool {
     matches!(
-        production,
+        record.production,
         Production::StructDecl
             | Production::EnumDecl
             | Production::ContractDecl
@@ -76,7 +78,7 @@ fn is_block_bearing(production: Production) -> bool {
             | Production::Arm
             | Production::IfStmt
             | Production::ValueIf
-    )
+    ) || (record.production == Production::InvariantStmt && record.body_open.is_some())
 }
 
 fn same_source(topology: &FinalizedTopology, left: u64, right: u64) -> bool {
@@ -149,7 +151,7 @@ pub(super) fn build_gap_styles(
                 mark_before(&mut gaps, topology, next, GapStyle::Break)?;
             }
         }
-        if !is_block_bearing(record.production) {
+        if !is_block_bearing(record) {
             if record.body_open.is_some() || record.body_close.is_some() {
                 return Err(CanonicalCompilerFailure::InvalidFinalizedTree.into());
             }
@@ -187,6 +189,61 @@ pub(super) fn build_gap_styles(
                     .is_some_and(|value| value < gaps.len())
                 {
                     mark_before(&mut gaps, topology, after_close, GapStyle::Break)?;
+                }
+            }
+        }
+
+        // A loop header carrying at least one `header_invariant` breaks after
+        // `(`, placing each header item on its own line and `) {` back at the
+        // construct's depth. A counted `for` whose header is only its binding
+        // has no invariant to set apart, so its whole header stays on one line;
+        // an ordinary `loop` with no header has no parentheses at all.
+        if matches!(
+            record.production,
+            Production::ForStmt | Production::LoopStmt
+        ) {
+            let children = topology
+                .node_children(node)
+                .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+            let mut first_header = None;
+            let mut invariants = 0_u32;
+            for child in children {
+                let child = topology
+                    .node(*child)
+                    .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+                match child.production {
+                    Production::ForBinding => {}
+                    Production::HeaderInvariant => {
+                        invariants = invariants
+                            .checked_add(1)
+                            .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
+                    }
+                    _ => continue,
+                }
+                if first_header.is_none() {
+                    first_header = Some(child.first_terminal);
+                }
+                if invariants != 0 {
+                    mark_before(
+                        &mut gaps,
+                        topology,
+                        child.first_terminal,
+                        GapStyle::HeaderBreak,
+                    )?;
+                }
+            }
+            if let Some(first_header) = first_header {
+                let open = first_header
+                    .checked_sub(1)
+                    .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+                mark_before(&mut gaps, topology, open, GapStyle::Spaced)?;
+                if invariants != 0 {
+                    mark_before(&mut gaps, topology, first_header, GapStyle::HeaderBreak)?;
+                    let close = record
+                        .body_open
+                        .and_then(|open| open.checked_sub(1))
+                        .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+                    mark_before(&mut gaps, topology, close, GapStyle::Break)?;
                 }
             }
         }
@@ -317,12 +374,27 @@ pub(super) fn canonical_gap(
                 spaces: usize::from(space),
             }
         }
+        GapStyle::Spaced => CanonicalGap {
+            newlines: 0,
+            spaces: 1,
+        },
         GapStyle::Break => CanonicalGap {
             newlines: 1,
             spaces: usize::try_from(depth)
                 .ok()
                 .and_then(|value| value.checked_mul(2))
                 .ok_or(CanonicalCompilerFailure::CounterOverflow)?,
+        },
+        GapStyle::HeaderBreak => CanonicalGap {
+            newlines: 1,
+            spaces: usize::try_from(
+                depth
+                    .checked_add(1)
+                    .ok_or(CanonicalCompilerFailure::CounterOverflow)?,
+            )
+            .ok()
+            .and_then(|value| value.checked_mul(2))
+            .ok_or(CanonicalCompilerFailure::CounterOverflow)?,
         },
         GapStyle::Blank => CanonicalGap {
             newlines: 2,

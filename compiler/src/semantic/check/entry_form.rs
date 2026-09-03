@@ -58,7 +58,7 @@ const COMMAND_INPUTS: [StandardInput; 5] = [
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
 const COMMAND_EFFECTS: &str = "parameter-rooted reads/writes over selected command inputs, \
-     `allocates(heap)`, and `traps` in EFF-1 canonical order";
+     and `allocates(heap)` in EFF-1 canonical order";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// Admits the unit's [FN-7] entry and returns the form it admitted.
@@ -298,7 +298,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// That entry is invoked exactly once, by program start [PROG-3]: its
     /// standard inputs are supplied there and are neither constructible nor
-    /// forgeable by source.
+    /// nameable by source.
     fn reject_calls_to_entry(&self, entry: NodeId) -> Result<(), CheckStop> {
         let declaration = self.declaration_at(entry, DeclarationRole::Function)?;
         let entry_id = declaration.id();
@@ -378,10 +378,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Reports whether every category written in a `command` entry's row is
     /// admitted by that kind row.
     ///
-    /// The admitted set is parameter-rooted `reads`/`writes`,
-    /// `allocates(heap)`, and `traps`; `pure` is the empty subset. Arena
-    /// allocation still fails here. EFF-1 separately resolves and type-checks
-    /// every state path.
+    /// The admitted set is parameter-rooted `reads`/`writes` and
+    /// `allocates(heap)`; `pure` is the empty subset. Arena allocation still
+    /// fails here. EFF-1 separately resolves and type-checks every state path.
     fn command_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
         if self.has_fixed(effects, FixedTerminal::Pure)? {
             return Ok(true);
@@ -395,7 +394,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.has_fixed(effect, FixedTerminal::Heap)?
                     && !self.has_fixed(effect, FixedTerminal::Arena)?
             } else {
-                self.has_fixed(effect, FixedTerminal::Traps)?
+                false
             };
             if !admitted {
                 return Ok(false);

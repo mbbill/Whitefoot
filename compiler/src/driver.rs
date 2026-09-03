@@ -28,7 +28,7 @@ use crate::{
 /// emitted module, so no path can silently link an unoptimized binary while
 /// another links an optimized one. There is no writer-facing switch: the
 /// optimization level cannot change which programs are accepted, discharge a
-/// static source obligation, or make a potentially failing claim disappear,
+/// static source obligation, or insert a runtime proof fallback,
 /// so no writer decision exists and the default shape is the only shape. The
 /// level is provisional and may move once a measurement asks for it.
 pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = &["-O2"];
@@ -663,7 +663,7 @@ mod tests {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -697,7 +697,7 @@ mod tests {
     /// judgment grants.
     const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -824,6 +824,52 @@ mod tests {
             detail.contains(r#"at /absolute/path/wc.wf:5:26 in line "  let skip = bor(dotted, bnot(addressable));""#),
             "{detail}"
         );
+    }
+
+    #[test]
+    fn invariant_targets_and_certificate_steps_keep_distinct_rule_owners() {
+        for (name, source, stage, rule) in [
+            (
+                "local-target-formation.wf",
+                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ieq(0_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n"
+                    .as_slice(),
+                CompilationStage::Semantics,
+                "INV-1",
+            ),
+            (
+                "local-target-unproved.wf",
+                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ile(1_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Semantics,
+                "INV-1",
+            ),
+            (
+                "use-relation-formation.wf",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use ieq(value, limit);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Semantics,
+                "PRF-1",
+            ),
+            (
+                "use-relation-name.wf",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use ile(value, missing);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Resolution,
+                "PRF-1",
+            ),
+            (
+                "named-use-scope.wf",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                CompilationStage::Resolution,
+                "INV-1",
+            ),
+        ] {
+            let failure = compile(
+                &[SourceInput::new(name, source)],
+                CompilerLimits::default(),
+            )
+            .expect_err("the focused invalid proof form must reject");
+            assert_eq!(failure.stage(), stage, "{name}: {failure}");
+            assert_eq!(failure.kind(), CompilationFailureKind::Source);
+            assert_eq!(failure.rule_id(), Some(rule), "{name}: {failure}");
+        }
     }
 
     /// A canonical-form rejection prints the bytes it wanted and the bytes it
@@ -1022,7 +1068,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_ledger_names_the_host_path_the_source_was_read_from() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1074,10 +1120,10 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
 
 ";
 
-    /// The ledger states an eligible pair and the chain it composes into, and
-    /// says the same of a pair whose recursive closure carries a `claim` —
-    /// which is the redirect made visible on the developer channel: the claim
-    /// used to produce a `not-actualizable` line here and now produces none.
+    /// The ledger states an eligible pair and the chain it composes into, then
+    /// says the same of a pair whose recursive closure carries an erased
+    /// source proof. Proof syntax changes no runtime footprint and therefore
+    /// produces no separate `not-actualizable` class.
     #[test]
     fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
@@ -1121,22 +1167,18 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "PAR chain       fold.wf:22  run(fold, fold)  2 members through line 23"
         );
 
-        // The same tree fold with one claim in the recursive closure. It reads
-        // exactly like the fold above: the claim is the writer's lemma, not a
-        // reason to sequentialize a correct program. The claim sits in
-        // `scaled`, which the leaf arm calls, because v0.34 admits only a
-        // local non-derivable residual -- and depth is the point anyway, since
-        // the retired gate walked exactly this reachability.
-        let claiming = format!(
-            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 traps {{
+        // The same tree fold with one checked proof in the recursive closure.
+        // `scaled` makes the fact explicit, the semantic checker verifies it,
+        // and lowering erases it before the permission table is consumed.
+        let proved = format!(
+            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
   let size = len(values);
-  let bounded = imin(index, 7_u64);
-  let inside = ilt(bounded, size);
-  claim index_in_range: inside because \"premises: bounded is the minimum of the parameter index and seven, and values has length eight\\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\\nconclusion: ilt(bounded, size) is true\\nchecker gap: ENT does not publish the result range of imin\\nconsumers: the following length-eight array subscript uses bounded\";
+  let bounded = iand(index, 7_u64);
+  invariant index_in_range: ile(bounded, 7_u64);
   return values[bounded];
 }}
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {{
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
@@ -1154,7 +1196,7 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
   }}
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {{
+command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1169,14 +1211,14 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
 }}
 "
         );
-        let ledger = ledger_of("bubble.wf", claiming.as_bytes());
+        let ledger = ledger_of("bubble.wf", proved.as_bytes());
         assert_eq!(
             ledger[0],
-            "PAR permitted   bubble.wf:33  pair(bubble, bubble)  eligible"
+            "PAR permitted   bubble.wf:32  pair(bubble, bubble)  eligible"
         );
         assert_eq!(
             ledger[1],
-            "PAR chain       bubble.wf:33  run(bubble, bubble)  2 members through line 34"
+            "PAR chain       bubble.wf:32  run(bubble, bubble)  2 members through line 33"
         );
         assert!(
             !ledger.iter().any(|line| line.contains("not-actualizable")),
@@ -1191,15 +1233,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
         // reported.
         assert_eq!(
             ledger[2],
-            "PAR permitted   bubble.wf:43  pair(boxed_leaf, boxed_leaf)  eligible"
+            "PAR permitted   bubble.wf:42  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
             ledger[3],
-            "PAR chain       bubble.wf:43  run(boxed_leaf, boxed_leaf)  2 members through line 44"
+            "PAR chain       bubble.wf:42  run(boxed_leaf, boxed_leaf)  2 members through line 43"
         );
         assert_eq!(
             ledger[4],
-            "PAR denied      bubble.wf:44  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
+            "PAR denied      bubble.wf:43  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
         );
         assert_eq!(ledger.len(), 5);
     }
@@ -1300,7 +1342,7 @@ command fn main() -> status: own ExitStatus pure {
     /// This is the shape the pair judgment can never reach: two iterations of
     /// one statement are not a pair, so before the loop rule the compiler
     /// reported the most parallel loop in a program by saying nothing about
-    /// it. The callee is a real `pure`, claim-free function with a loop of its
+    /// it. The callee is a real `pure` function with a loop of its
     /// own, so the case is about the writer's loop rather than about a body
     /// small enough to be uninteresting.
     #[test]
@@ -1320,7 +1362,7 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   let hits = 0_u64;
-  for @scan i in 0_u64..4096_u64 {
+  for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
     if escaped {
       set hits = hits +wrap 1_u64;
@@ -1353,7 +1395,7 @@ command fn main() -> status: own ExitStatus pure {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
-  for @sum i in 0_u64..1024_u64 {
+  for @sum (i in 0_u64..1024_u64) {
     set total = fadd.strict(total, step);
   }
   return exit_status(code: 0_u8);
@@ -1374,7 +1416,7 @@ command fn main() -> status: own ExitStatus pure {
         let integral = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
-  for @sum i in 0_u64..1024_u64 {
+  for @sum (i in 0_u64..1024_u64) {
     set total = total +wrap step;
   }
   return exit_status(code: 0_u8);
@@ -1390,18 +1432,13 @@ command fn main() -> status: own ExitStatus pure {
         );
     }
 
-    /// A counted loop that writes into a buffer is refused by condition 2.
-    ///
-    /// Two iterations write two elements of one buffer, and a resolved place
-    /// carries no index segment [ENT-2], so the judgment reads them as one
-    /// place and fails closed. The parallel map is the deferred capability,
-    /// and the line says which write costs the overlap rather than leaving the
-    /// loop unreported.
+    /// A counted loop whose proved index is exactly its binder is reported as
+    /// an eligible map with no accumulator.
     #[test]
-    fn a_counted_loop_writing_into_a_buffer_is_denied_by_condition_two() {
+    fn a_proven_counted_binder_buffer_map_is_permitted() {
         let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
-  for @fill i in 0_u64..64_u64 {
+  for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
   return exit_status(code: 0_u8);
@@ -1410,9 +1447,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("mapping.wf", source),
             vec![
-                "PAR loop        mapping.wf:3  loop  denied      condition 2: the body writes \
-                 storage that is neither introduced by the iteration nor the accumulator, \
-                 at set out[i] = i *wrap i;"
+                "PAR loop        mapping.wf:3  loop  permitted   eligible; no accumulator"
                     .to_owned()
             ]
         );
@@ -1440,7 +1475,7 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
-  for @sum i in 0_u64..8_u64 {
+  for @sum (i in 0_u64..8_u64) {
     region 'acc {
       let one = accum<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
       set count = count +wrap one;
@@ -1469,7 +1504,7 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
-  for @sum i in 0_u64..8_u64 {
+  for @sum (i in 0_u64..8_u64) {
     let one = weigh(x: total);
     set count = count +wrap one;
   }
@@ -1502,7 +1537,7 @@ command fn main() -> status: own ExitStatus pure {
   let acc = 0_u64;
   let always = True();
   let answer = if always {
-    for @scan i in 0_u64..count {
+    for @scan (i in 0_u64..count) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
       let hit = ieq(v, needle);
@@ -1541,7 +1576,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let acc = 0_u64;
   let always = True();
   let answer = if always {
-    for @scan i in 0_u64..count {
+    for @scan (i in 0_u64..count) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
     }
@@ -1586,7 +1621,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let every = True();
   let any = False();
   let parity = False();
-  for @scan i in 0_u64..64_u64 {
+  for @scan (i in 0_u64..64_u64) {
     let low = iand(i, 1_u64);
     let bit = ieq(low, 0_u64);
     set every = band(every, bit);
@@ -1622,7 +1657,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     fn the_permission_ledger_reports_a_granted_stage_and_its_disposition_table() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1697,7 +1732,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(8_u64, 1_u8);
   let right = buffer_new(8_u64, 2_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1757,7 +1792,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1819,14 +1854,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     /// same hazard as the hoisted destination above — one buffer the body
     /// writes and a `may-suspend` call retains a borrow of — so both carry that
     /// denial's own advice, and the one whose write is a node of its own names
-    /// that node under a phrase that is not an overlap claim.
+    /// that node under a phrase that does not assert self-overlap.
     #[test]
     fn a_retained_borrow_denial_names_a_write_and_never_an_overlap_with_itself() {
         let read_first = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let byte = data[0_u64];
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1898,9 +1933,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     #[test]
     fn nested_loops_sharing_one_cut_print_at_their_own_heads() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  for @outer step in 0_u64..2_u64 {
+  for @outer (step in 0_u64..2_u64) {
     let shared = buffer_new(16_u64, 97_u8);
-    for @scan index in 0_u64..4_u64 {
+    for @scan (index in 0_u64..4_u64) {
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
         region 'n {
@@ -1941,7 +1976,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     fn a_loop_without_io_gets_a_counted_line_and_no_staged_line() {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
-  for @sum i in 0_u64..8_u64 {
+  for @sum (i in 0_u64..8_u64) {
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -2035,7 +2070,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "the default module must name no runtime symbol"
         );
         assert!(
-            requested.contains("wf__par_claim"),
+            requested.contains("wf__par_acquire_lane"),
             "the requested module must offer a lane"
         );
     }
@@ -2146,6 +2181,39 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
         assert_eq!(failure.rule_id(), None);
         assert!(failure.detail().contains("Unrepresentable"));
+    }
+
+    #[test]
+    fn u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure() {
+        let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+  ensures ile(result, 5000000000000000000_u64);
+} {
+  if ile(n, 5000000000000000000_u64) {
+    return n;
+  } else {
+    return 5000000000000000000_u64;
+  }
+}
+
+fn make(n: own u64) -> result: own buffer<u16> allocates(heap) {
+  let bounded = bounded_count(n: n);
+  return buffer_new(bounded, 0_u16);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let values = make(n: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+        let failure = compile(
+            &[SourceInput::new("value.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect_err("the proved u16 byte ceiling exceeds the selected target domain");
+        assert_eq!(failure.stage(), CompilationStage::TargetLayout);
+        assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
+        assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("RuntimeSizedAllocation"));
     }
 
     #[test]
@@ -2574,13 +2642,13 @@ command fn main() -> status: own ExitStatus pure {
         assert!(detail.contains("[EFF-1]"), "{detail}");
         assert!(
             detail.contains(
-                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps""#
+                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates""#
             ),
             "{detail}"
         );
         assert!(
             detail.contains(
-                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps""#
+                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates""#
             ),
             "{detail}"
         );
@@ -2766,7 +2834,7 @@ command fn main() -> status: own ExitStatus pure {
         let per_iteration = format!(
             "{EMIT}
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
-  for @scan index in 0_u64..4_u64 {{
+  for @scan (index in 0_u64..4_u64) {{
     region 'p {{
       let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
     }}
@@ -2795,7 +2863,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             "{EMIT}
 command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {{
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {{
+  for @scan (index in 0_u64..4_u64) {{
     let name = buffer_new(16_u64, 97_u8);
     region 'f {{
       let permit = reserve_file<'f>(factory: &uniq 'f files);

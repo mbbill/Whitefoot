@@ -13,8 +13,8 @@ use crate::backend::qualification::{
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
     OverlapLowering, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
-    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    finalize, lex, lower_checked, parse,
+    SystemIntegerResultBound, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    classify_terminals, finalize, lex, lower_checked, parse,
 };
 
 use super::{
@@ -205,6 +205,52 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 "#;
 
 #[test]
+fn host_bytes_len_qualification_bounds_the_exact_semantic_result() {
+    with_ir(ARGUMENT_CHECKSUM, |program| {
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        let qualification =
+            qualify_program(target, program).expect("the argument program must qualify");
+        let mut found = false;
+        for operation in program
+            .functions()
+            .iter()
+            .flat_map(|function| function.blocks())
+            .flat_map(|block| block.instructions())
+            .filter_map(|instruction| match instruction {
+                crate::IrInstruction::Define {
+                    operation: crate::IrOperation::SystemCall { operation, .. },
+                    ..
+                } => Some(*operation),
+                _ => None,
+            })
+        {
+            let implementation = qualification
+                .operation(operation)
+                .expect("the used semantic identity has one selected row");
+            let catalog_bound =
+                crate::SYSTEM_OPERATIONS[usize::from(operation.ordinal())].integer_result_bound;
+            assert_eq!(
+                implementation.integer_result_bound(),
+                catalog_bound,
+                "qualification must copy semantic ID {}'s fixed result contract",
+                operation.ordinal()
+            );
+            if operation.ordinal() == 2 {
+                found = true;
+                assert_eq!(
+                    implementation.integer_result_bound(),
+                    Some(SystemIntegerResultBound::AddressIndexMaximum)
+                );
+            } else {
+                assert_eq!(implementation.integer_result_bound(), None);
+            }
+        }
+        assert!(found, "the fixture must contain semantic ID 2");
+    });
+}
+
+#[test]
 fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
     // Only the lease operations: no buffer, no copy, no text route.
     let source =
@@ -278,6 +324,23 @@ fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
 #[test]
 fn a_non_utf8_argument_round_trips_its_exact_bytes() {
     let llvm = compile(ARGUMENT_CHECKSUM);
+    // The selected operation contract and the retained source allocation
+    // proof discharge target representability before this module is emitted.
+    assert!(!llvm.contains("wf_target_domain_abort"));
+    assert!(!llvm.contains("target-domain"));
+    // A zero-length buffer may legally carry a null allocation result.  The
+    // two host-copy wrappers therefore form their zero-byte destination with
+    // ordinary pointer arithmetic; an `inbounds` null-plus-zero expression
+    // would be poison even though the following memcpy touches no byte.
+    let target = "%target = getelementptr i8, ptr %base, i64 %start";
+    let inbounds = "%target = getelementptr inbounds i8, ptr %base, i64 %start";
+    assert_eq!(llvm.matches(target).count(), 1);
+    assert!(!llvm.contains(inbounds));
+    let utf8 = compile(include_bytes!(
+        "../../../../tests/conformance/cases/run-syshost-copyutf8-toosmall-unchanged.wf"
+    ));
+    assert_eq!(utf8.matches(target).count(), 1);
+    assert!(!utf8.contains(inbounds));
     // 0xff is not valid UTF-8 anywhere; the lossless route reports and copies
     // the target's own code units with no validation [HOST-2, SYS-9].
     let single = compile_and_run_with(&llvm, &[&[0xff]]);
@@ -288,6 +351,8 @@ fn a_non_utf8_argument_round_trips_its_exact_bytes() {
     // An ordinary text argument travels the same route: 'a' + 'b' = 195.
     let text = compile_and_run_with(&llvm, &[b"ab"]);
     assert_eq!(text.status.code(), Some(195));
+    let empty = compile_and_run_with(&llvm, &[b""]);
+    assert_eq!(empty.status.code(), Some(0));
     // A missing argument is `InvalidIndex()` and returns no value [SYS-6].
     let absent = compile_and_run_with(&llvm, &[]);
     assert_eq!(absent.status.code(), Some(252));
@@ -775,20 +840,12 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
     let llvm = compile(source);
     assert!(llvm.contains("%bounded = icmp ule i64 %accepted, %extent"));
     assert!(llvm.contains("br i1 %bounded, label %ok, label %tcb.defect"));
-    // This program states no claim, so it carries no [DIAG-3] record — which
-    // is what the transfer path having no language trap means. The module does
-    // define `@wf_trap`, because the record writer is shared with the
-    // allocation-refusal path and this program allocates a buffer; the writer
-    // existing is not a trap, and the record constants are what a trap would
-    // add. The needle is the record constants' own numbering rather than the
-    // `@.wf_trap.` prefix, which also matches the shared latch's fallback
-    // storage: a fixture that grew a thunk would fail this for a reason that
-    // has nothing to do with claims.
-    assert!(!llvm.contains("@.wf_trap.0"));
-    assert!(!llvm.contains("@.wf_trap.1"));
-    // The transfer's own defect path is a bare abort and stays one: it is a
-    // trusted-computing-base defect, not a resource condition and not a trap,
-    // so it is routed to neither record.
+    // Every writer-controlled partial operation in this source was proved
+    // before lowering, so the transfer path may not gain a source-originated
+    // runtime check. Heap availability remains a separate resource path, and
+    // the qualified host wrapper retains its internal consistency failure.
+    assert!(!llvm.contains("call void @wf_trap(ptr @.wf_trap."));
+    assert!(llvm.contains("call void @wf_resource_abort()"));
     assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
     assert!(llvm.contains("%next = add nuw i64 %start, %accepted"));
     let output = compile_and_run_with(&llvm, &[]);

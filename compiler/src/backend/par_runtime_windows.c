@@ -890,7 +890,7 @@ void wf__writer_scheduler_wake_lane(void) {
 
 /* -------------------------------------------------------- emitted-module ABI */
 
-void *wf__par_claim(uint64_t bytes) {
+void *wf__par_acquire_lane(uint64_t bytes) {
     struct wf__par_lane *lane = wf__par_self;
     struct wf__par_slot *slot;
     int index;

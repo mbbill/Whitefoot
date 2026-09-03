@@ -20,7 +20,7 @@ fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_l
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> traps {
+fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> pure {
   let bounded = index % 19_u64;
   let unchanged = ieq(bounded, index);
   if unchanged {
@@ -29,13 +29,17 @@ fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> 
     return Err<u64, InflateError>(error: error);
   }
   let order_ok = ilt(bounded, 19_u64);
-  claim code_index_in_order: order_ok because "premises: bounded is index remainder 19_u64 computed in this function and the unchanged branch rejects every clipped index\nderivation: unsigned remainder by nineteen is one of 0_u64 through 18_u64 and is therefore strictly less than nineteen\nconclusion: order_ok is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following code_length_order[bounded] subscript requires this exact bound";
+  if order_ok {
+  } else {
+    let error = InvalidHuffmanTree();
+    return Err<u64, InflateError>(error: error);
+  }
   let ordered_symbol_byte = code_length_order[bounded];
   let ordered_symbol = cvt<u8, u64>(ordered_symbol_byte);
   return Ok<u64, InflateError>(value: ordered_symbol);
 }
 
-fn read_dynamic_code_lengths['s, 'i, 'c](state: &uniq 's InflateState, input: &'i buffer<u8>, code_lengths: &uniq 'c buffer<u8>, code_count: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.hold, state.bits, input, code_lengths), writes(state.input_offset, state.hold, state.bits, code_lengths), traps contract {
+fn read_dynamic_code_lengths['s, 'i, 'c](state: &uniq 's InflateState, input: &'i buffer<u8>, code_lengths: &uniq 'c buffer<u8>, code_count: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.hold, state.bits, input, code_lengths), writes(state.input_offset, state.hold, state.bits, code_lengths) contract {
   define code_count_fits = ile(code_count, 19_u64);
   define code_room = len(deref(code_lengths));
   define order_fits = ile(19_u64, code_room);
@@ -90,7 +94,7 @@ fn read_dynamic_code_lengths['s, 'i, 'c](state: &uniq 's InflateState, input: &'
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out), allocates(heap), traps {
+fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out), allocates(heap) {
   let literal_count_bits = 0_u64;
   region 'literal_count_call {
     match read_bits<'literal_count_call, 'literal_count_call>(state: &uniq 'literal_count_call deref(state), input: &'literal_count_call deref(input), count: 5_u32, mask: 31_u64) {

@@ -21,8 +21,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         let array_type = llvm_type(self.program, ty)?;
         let llvm_element_type = llvm_type(self.program, element_type)?;
-        let array_slot = self.entry_slot(&array_type)?;
-        let index_slot = self.entry_slot("i64")?;
+        let array_slot = self.entry_slot(FunctionSlot::ArrayFillValue(result))?;
+        let index_slot = self.entry_slot(FunctionSlot::ArrayFillIndex(result))?;
         let index = self.next_temporary()?;
         let in_range = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
@@ -88,7 +88,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_type = llvm_type(self.program, ty)?;
         let root_pointer = match root {
             IrArrayRoot::Value(value) => {
-                let slot = self.entry_slot(&array_type)?;
+                let slot = self.entry_slot(FunctionSlot::ArrayRoot(result))?;
                 writeln!(
                     self.output,
                     "  store {array_type} {}, ptr {slot}",
@@ -135,7 +135,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let array_type = llvm_type(self.program, ty)?;
         let llvm_element_type = llvm_type(self.program, element_type)?;
-        let array_slot = self.entry_slot(&array_type)?;
+        let array_slot = self.entry_slot(FunctionSlot::InsertArray(result))?;
         let element_pointer = self.next_temporary()?;
         writeln!(
             self.output,

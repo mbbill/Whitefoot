@@ -35,10 +35,9 @@ const BUFFER_LENGTH: usize = 4096;
 
 /// One emitted module shared by every case in this module.
 ///
-/// Checking the search program costs minutes, not milliseconds — the
-/// entailment work over its nested walk and matcher dominates — so the module
-/// is produced once and every case reads it. Isolation lives in each run's own
-/// fixture directory, never in the artifact.
+/// Entailment over the nested walk and matcher is still the dominant compile
+/// cost, so the module is produced once and every case reads it. Isolation
+/// lives in each run's own fixture directory, never in the artifact.
 fn wfgrep_module() -> &'static str {
     static MODULE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     MODULE.get_or_init(|| compile_program("wfgrep.wf"))
@@ -149,7 +148,7 @@ fn assert_reference(program: &CompiledProgram, root: &Path, tree: &str, pattern:
 ///
 /// Both sides are sorted because `grep -r` visits the tree in the host's own
 /// enumeration order while wfgrep visits it in sorted order; the hit *set* is
-/// the claim under test, not the order the two tools chose.
+/// the property under test, not the order the two tools chose.
 fn grep_rn(root: &Path, tree: &str, pattern: &[u8]) -> Vec<String> {
     let output = Command::new("/usr/bin/grep")
         .arg("-rn")
@@ -236,10 +235,11 @@ fn wfgrep_agrees_with_grep_on_the_empty_and_the_total_hit_set() {
 /// root is not reproducible: for this fixture's four-byte root `tree`,
 /// `4 + 2n + len("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
 /// level that fails — measured, and measured again at 493 completing with a
-/// three-byte root. Neither bound is the stack: the
-/// stack ledger prices one `wf_walk` activation at 1744 bytes and the
-/// runtime's stack at 615,677 of them, so what bounds a directory search is
-/// still a buffer in the program and not the machine underneath it.
+/// three-byte root. Neither program bound is the stack: on this test target,
+/// the stack ledger prices one `wf_walk` activation at 1744 bytes and the
+/// current runtime's configured stack at 615,677 of them. This comparison
+/// establishes that the test reaches the program's display-buffer boundary;
+/// it makes no portable guarantee about external stack availability.
 #[test]
 fn a_tree_far_deeper_than_the_deleted_cap_is_searched_completely() {
     let fixture = fixture_directory();

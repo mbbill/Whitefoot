@@ -4,14 +4,18 @@ use std::fmt::Write;
 use crate::{IrFlatElement, IrVariant};
 
 use super::super::qualification::Qualification;
+use super::super::target::{
+    TargetFrameSlot, TargetLayout, TargetStorageType, validate_runtime_storage,
+};
 use super::{
-    BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol,
-    system, variant_field_base,
+    BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_storage_type, llvm_type,
+    nominal_symbol, render_named_target_frame, system, variant_field_base,
 };
 
 pub(super) fn emit_resource_drop_helpers(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
+    target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut plan = DropPlan::of(program)?;
     let mut output = String::new();
@@ -34,7 +38,15 @@ pub(super) fn emit_resource_drop_helpers(
             // changes is that it now drives the traversal rather than being
             // one level of it.
             let step = plan.step(ty)?;
-            emit_worklist_driver(&mut output, &symbol, &aggregate_ty, "%value", step)?;
+            emit_worklist_driver(
+                program,
+                qualification,
+                target,
+                &mut output,
+                &symbol,
+                &aggregate_ty,
+                step,
+            )?;
         } else {
             writeln!(
                 output,
@@ -82,7 +94,22 @@ pub(super) fn emit_resource_drop_helpers(
     if plan.is_empty() {
         return Ok(output);
     }
-    let mut support = String::from(DROP_WORKLIST_SUPPORT);
+    let entry_type = TargetStorageType::structure([
+        TargetStorageType::integer(32),
+        TargetStorageType::pointer(),
+    ]);
+    validate_runtime_storage(target, qualification, program, &entry_type)
+        .map_err(BackendFailure::TargetLayout)?;
+    let work_type = TargetStorageType::structure([
+        TargetStorageType::pointer(),
+        TargetStorageType::integer(64),
+        TargetStorageType::integer(64),
+    ]);
+    let mut support = drop_worklist_support(
+        target.runtime_allocation_max(),
+        &llvm_storage_type(program, &entry_type)?,
+        &llvm_storage_type(program, &work_type)?,
+    );
     emit_worklist_driver_loop(program, &mut support, &plan)?;
     support.push_str(&output);
     Ok(support)
@@ -639,15 +666,30 @@ impl DropPlan {
 /// One `define` that sets up a worklist, runs one traversal on it, and
 /// releases it.
 fn emit_worklist_driver(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    target: TargetLayout,
     output: &mut String,
     symbol: &str,
     aggregate_ty: &str,
-    operand: &str,
     step: usize,
 ) -> Result<(), BackendFailure> {
+    let prologue = render_named_target_frame(
+        program,
+        qualification,
+        target,
+        &[(
+            "%work",
+            TargetFrameSlot::natural(TargetStorageType::structure([
+                TargetStorageType::pointer(),
+                TargetStorageType::integer(64),
+                TargetStorageType::integer(64),
+            ])),
+        )],
+    )?;
     writeln!(
         output,
-        "define private void @{symbol}({aggregate_ty} {operand}) {{\nentry:\n  %work = alloca %wf.drop.work, align 8\n  store %wf.drop.work zeroinitializer, ptr %work\n  call void @{}({aggregate_ty} {operand}, ptr %work)\n  call void @wf.drop.run(ptr %work)\n  ret void\n}}\n",
+        "define private void @{symbol}({aggregate_ty} %value) {{\nentry:\n{prologue}  store %wf.drop.work zeroinitializer, ptr %work\n  call void @{}({aggregate_ty} %value, ptr %work)\n  call void @wf.drop.run(ptr %work)\n  ret void\n}}\n",
         worklist_step_symbol(step)
     )
     .map_err(|_| BackendFailure::TextEmission)
@@ -818,7 +860,21 @@ fn emit_worklist_driver_loop(
 /// eight-byte slot — rather than by the depth reached. A host that refuses the
 /// growth writes the heap record through the same latch every other refused
 /// allocation uses.
-const DROP_WORKLIST_SUPPORT: &str = "%wf.drop.entry = type { i32, ptr }\n%wf.drop.work = type { ptr, i64, i64 }\n\ndeclare ptr @realloc(ptr, i64)\n\ndefine private void @wf.drop.push(ptr %work, i32 %kind, ptr %node) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  %capacity.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 2\n  %count = load i64, ptr %count.slot\n  %capacity = load i64, ptr %capacity.slot\n  %full = icmp eq i64 %count, %capacity\n  br i1 %full, label %grow, label %store\ngrow:\n  %doubled = shl i64 %capacity, 1\n  %fresh = icmp eq i64 %capacity, 0\n  %wanted = select i1 %fresh, i64 64, i64 %doubled\n  %bytes = mul i64 %wanted, ptrtoint (ptr getelementptr (%wf.drop.entry, ptr null, i64 1) to i64)\n  %previous = load ptr, ptr %work\n  %grown = call ptr @realloc(ptr %previous, i64 %bytes)\n  %refused = icmp eq ptr %grown, null\n  br i1 %refused, label %exhausted, label %ready\nexhausted:\n  call void @wf_resource_abort()\n  unreachable\nready:\n  store ptr %grown, ptr %work\n  store i64 %wanted, ptr %capacity.slot\n  br label %store\nstore:\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %count\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  store i32 %kind, ptr %slot\n  store ptr %node, ptr %node.slot\n  %after = add i64 %count, 1\n  store i64 %after, ptr %count.slot\n  ret void\n}\n\n";
+const DROP_WORKLIST_ALLOCATION_MAX: &str = "__WF_DROP_WORKLIST_ALLOCATION_MAX__";
+const DROP_ENTRY_TYPE: &str = "__WF_DROP_ENTRY_TYPE__";
+const DROP_WORK_TYPE: &str = "__WF_DROP_WORK_TYPE__";
+
+fn drop_worklist_support(runtime_allocation_max: u64, entry_type: &str, work_type: &str) -> String {
+    DROP_WORKLIST_SUPPORT
+        .replace(
+            DROP_WORKLIST_ALLOCATION_MAX,
+            &runtime_allocation_max.to_string(),
+        )
+        .replace(DROP_ENTRY_TYPE, entry_type)
+        .replace(DROP_WORK_TYPE, work_type)
+}
+
+const DROP_WORKLIST_SUPPORT: &str = "%wf.drop.entry = type __WF_DROP_ENTRY_TYPE__\n%wf.drop.work = type __WF_DROP_WORK_TYPE__\n\ndeclare ptr @realloc(ptr, i64)\n\ndefine private void @wf.drop.push(ptr %work, i32 %kind, ptr %node) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  %capacity.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 2\n  %count = load i64, ptr %count.slot\n  %capacity = load i64, ptr %capacity.slot\n  %count.in.range = icmp ule i64 %count, %capacity\n  br i1 %count.in.range, label %capacity.check, label %exhausted\ncapacity.check:\n  %full = icmp eq i64 %count, %capacity\n  br i1 %full, label %grow.check, label %store\ngrow.check:\n  %entry.bytes = ptrtoint ptr getelementptr (%wf.drop.entry, ptr null, i64 1) to i64\n  %maximum.entries = udiv i64 __WF_DROP_WORKLIST_ALLOCATION_MAX__, %entry.bytes\n  %half.maximum = lshr i64 %maximum.entries, 1\n  %fresh = icmp eq i64 %capacity, 0\n  %fresh.fits = icmp uge i64 %maximum.entries, 64\n  %double.fits = icmp ule i64 %capacity, %half.maximum\n  %growth.fits = select i1 %fresh, i1 %fresh.fits, i1 %double.fits\n  br i1 %growth.fits, label %grow, label %exhausted\ngrow:\n  %doubled = shl nuw i64 %capacity, 1\n  %wanted = select i1 %fresh, i64 64, i64 %doubled\n  %bytes = mul nuw i64 %wanted, %entry.bytes\n  %previous = load ptr, ptr %work\n  %grown = call ptr @realloc(ptr %previous, i64 %bytes)\n  %refused = icmp eq ptr %grown, null\n  br i1 %refused, label %exhausted, label %ready\nexhausted:\n  call void @wf_resource_abort()\n  unreachable\nready:\n  store ptr %grown, ptr %work\n  store i64 %wanted, ptr %capacity.slot\n  br label %store\nstore:\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %count\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  store i32 %kind, ptr %slot\n  store ptr %node, ptr %node.slot\n  %after = add nuw i64 %count, 1\n  store i64 %after, ptr %count.slot\n  ret void\n}\n\n";
 
 const DROP_WORKLIST_LOOP_HEAD: &str = "define private void @wf.drop.run(ptr %work) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  br label %loop\nloop:\n  %count = load i64, ptr %count.slot\n  %empty = icmp eq i64 %count, 0\n  br i1 %empty, label %done, label %take\ntake:\n  %next = sub i64 %count, 1\n  store i64 %next, ptr %count.slot\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %next\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  %kind = load i32, ptr %slot\n  %node = load ptr, ptr %node.slot\n  switch i32 %kind, label %invalid [\n";
 

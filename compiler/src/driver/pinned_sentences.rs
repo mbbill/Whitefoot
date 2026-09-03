@@ -4,7 +4,7 @@
 //! A diagnostic sentence is the product: it is what a writer reads and acts
 //! on. A sentence no test compares is free to drift, and the gate verification
 //! of 2026-08-28 found fifty-four of them in exactly that state — landed,
-//! rendered, and unasserted. This module is the one home for the corpus that
+//! rendered, and not pinned by a test. This module is the one home for the corpus that
 //! closes that: one minimal source per form, the rule it must cite, and the
 //! exact fragments its rendered rejection must contain. Adding a sentence to
 //! the compiler means adding a row here.
@@ -16,7 +16,7 @@
 //! removed from the compiler fails here; a sentence reworded fails here.
 //!
 //! Seven sentences are not rows, because no source program reaches them. Each
-//! is a defensive arm behind an earlier rejection, and the claim is checkable
+//! is a defensive arm behind an earlier rejection, and the reason is checkable
 //! one by one:
 //!
 //! - `'region#{}` in `check::expressions::region_spelling` renders a region
@@ -624,7 +624,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            r#"InvalidEffectRow { reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps", mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps" }"#,
+            r#"InvalidEffectRow { reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates", mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates" }"#,
         ],
     },
     Probe {
@@ -1085,7 +1085,7 @@ command fn main() -> status: own ExitStatus pure {
         sentences: &[r#"instantiated_goal: "flt(v, Float { ty: F64, bits: 4607182418800017408 })""#],
     },
     Probe {
-        name: "goal-over-a-holder-and-an-ephemeral-actual.wf",
+        name: "goal-over-an-admitted-index-actual.wf",
         source: br#"fn need(x: own u8) -> out: own u8 pure contract {
   requires ilt(x, 10_u8);
 } {
@@ -1099,7 +1099,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ilt(<argument #0 pre-transfer value>, 10_u8)""#],
+        sentences: &[r#"instantiated_goal: "ilt(data[0_u64], 10_u8)""#],
     },
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",

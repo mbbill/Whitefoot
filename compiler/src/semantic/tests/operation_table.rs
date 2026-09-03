@@ -13,7 +13,7 @@
 //! moving the table inside its rule cannot silently empty the extraction. The
 //! variant-to-spelling maps are exhaustive matches with no wildcard arm, so a
 //! new compiler operation cannot be added without naming its row, and a row
-//! whose spelling no operation claims fails the coverage assertion.
+//! whose spelling matches no operation fails the coverage assertion.
 //!
 //! A green run establishes that every modelled row's effect classification,
 //! result type, operand count, argument types, and operand domain agree with

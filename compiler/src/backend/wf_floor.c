@@ -114,21 +114,19 @@ static volatile unsigned long wf__floor_guard_band;
  * thread, a depth, or an address.
  *
  * The absent fields are the point. It carries no `rule_id`, no function, and
- * no node path, which is what mechanically distinguishes it from a [DIAG-3]
- * trap record: exhaustion violates no contract the writer could have kept, so
- * nothing here attributes it to source. */
+ * no node path: exhaustion violates no source obligation, so the record names
+ * only the unavailable external resource. */
 static const char WF_FLOOR_STACK_RECORD[] = "{\"resource\":\"stack\"}\n";
 
-/* One latch for every record any thread of this process can write.
+/* One latch for every resource record any thread of this process can write.
  *
  * It has to be one rather than one per writer. The signal handler below writes
- * the stack record; the emitted module writes the [DIAG-3] trap record and the
- * heap and target-domain records. Those are different threads reaching
- * different classes, so a latch per writer leaves them unserialized against
- * each other and two records can interleave on the same channel — which is
- * exactly what "exactly one record" is supposed to rule out. The module asks
- * for the address rather than keeping its own, and a module linked without
- * this unit falls back to one of its own. */
+ * the stack record; an emitted module that allocates writes the heap record.
+ * Those are different threads reaching different resource limits, so a latch
+ * per writer leaves them unserialized against each other and two records can
+ * interleave on the same channel — which is exactly what "exactly one record"
+ * is supposed to rule out. The module asks for the address rather than keeping
+ * its own, and a module linked without this unit falls back to one of its own. */
 static volatile int wf__floor_latch;
 
 volatile int *wf__floor_record_latch(void) { return &wf__floor_latch; }

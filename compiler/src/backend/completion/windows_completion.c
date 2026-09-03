@@ -251,6 +251,7 @@ static enum wf_completion_claim_result wf_windows_claim_one_locked(
         slot->terminal_kind = 0;
         slot->adapter_tag = 0;
         slot->result_size = 0;
+        slot->dependent_registered = 0;
         slot->dependent_frame = NULL;
         slot->dependent_requirement = 0;
         token->slot = (uint32_t)index;
@@ -824,15 +825,16 @@ enum wf_completion_depend_result wf_completion_depend(
         ReleaseSRWLockExclusive(&slot->publication_lock);
         return WF_COMPLETION_DEPEND_STALE;
     }
-    if (slot->dependent_frame != NULL) {
-        ReleaseSRWLockExclusive(&slot->publication_lock);
-        return WF_COMPLETION_DEPEND_DUPLICATE;
-    }
     if (slot->phase == WF_COMPLETION_FREE
         || slot->phase == WF_COMPLETION_RETIRED) {
         ReleaseSRWLockExclusive(&slot->publication_lock);
         return WF_COMPLETION_DEPEND_STALE;
     }
+    if (slot->dependent_registered != 0) {
+        ReleaseSRWLockExclusive(&slot->publication_lock);
+        return WF_COMPLETION_DEPEND_DUPLICATE;
+    }
+    slot->dependent_registered = 1;
     if ((slot->milestones & requirement) == requirement
         && slot->event_drained != 0) {
         already_ready = 1;
@@ -888,6 +890,7 @@ enum wf_completion_consume_result wf_completion_consume(
     slot->terminal_kind = 0;
     slot->adapter_tag = 0;
     slot->result_size = 0;
+    slot->dependent_registered = 0;
     slot->dependent_frame = NULL;
     slot->dependent_requirement = 0;
     slot->consume_waiting = 0;

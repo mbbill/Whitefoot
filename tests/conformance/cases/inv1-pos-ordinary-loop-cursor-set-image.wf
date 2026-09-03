@@ -1,0 +1,26 @@
+fn count_to(limit: own u64) -> reached: own u64 pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let remaining = ilt(cursor, limit);
+    if remaining {
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let reached = count_to(limit: 4_u64);
+  let correct = ieq(reached, 4_u64);
+  if correct {
+  } else {
+    let failed = exit_status(code: 1_u8);
+    return move failed;
+  }
+  let success = exit_status(code: 0_u8);
+  return move success;
+}

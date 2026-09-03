@@ -4,13 +4,11 @@ enum Val {
   Bare();
 }
 
-fn classify(v: own Val) -> function_result: own i32 traps {
+fn classify(v: own Val) -> function_result: own i32 pure {
   doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
   match v {
     Small(a: n) => {
       let bounded = n % 2147483647_i32;
-      let bounded_below_max = ile(bounded, 2147483646_i32);
-      claim small_below_max: bounded_below_max because "premises: bounded is n remainder positive 2147483647_i32 computed in this function\nderivation: signed remainder by 2147483647_i32 is at most 2147483646_i32\nconclusion: ile(bounded, 2147483646_i32) is true for every n\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following exact increment needs its upper IntegerDomain component";
       return bounded + 1_i32;
     }
     Big(b: m) => {
@@ -26,7 +24,7 @@ fn classify(v: own Val) -> function_result: own i32 traps {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
   let small_atom_0001 = Small(a: 40_i32);
   let a = classify(v: move small_atom_0001);

@@ -59,7 +59,7 @@ fn assert_mutant(
 }
 
 #[test]
-fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
+fn inconsistent_postorder_root_shape_and_extent_are_rejected() {
     let source = b"command fn main() -> status: own ExitStatus pure {\n}\n";
     assert_mutant(
         source,
@@ -120,7 +120,7 @@ fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
 }
 
 #[test]
-fn hostile_token_identity_and_predicate_mutants_fail_closed() {
+fn inconsistent_token_identity_and_predicate_are_rejected() {
     let source = b"fn probe() -> result: own unit pure {\n  return unit;\n}\n";
     assert_mutant(
         source,

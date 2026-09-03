@@ -27,9 +27,13 @@ use std::fmt::Write;
 use super::qualification::{
     Qualification, QualificationFailure, SystemTarget, qualified_representation, qualify_program,
 };
-use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
+use super::target::{
+    TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
+    TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
+    validate_static_storage,
+};
 use crate::{
-    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite, IrConstant,
+    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrCompletionStep, IrConstant,
     IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
     IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
     IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
@@ -74,60 +78,19 @@ pub enum BackendFailure {
     /// target-layout failure this is not a source-language rejection and cites
     /// no language rule [DIAG-1].
     TargetQualification(QualificationFailure),
-    /// A lowering handed one call site a second operation while its first was
-    /// still outstanding. Completion storage is reserved per outstanding
-    /// operation and this emitter reserves one element per site, so a second
-    /// live operation of one site has nowhere of its own to write. It is
-    /// refused rather than given the first operation's element: sharing would
-    /// let the newer operation overwrite a result or a staged path the older
-    /// one is still being read from, with no compile error and no crash. Like
-    /// a target-layout stop this is an emitter capability limit and not a
-    /// source-language rejection; it cites no language rule [DIAG-1].
+    /// Lowering assigned the same static completion site twice without an
+    /// intervening drain. No source-derived driver has this form; reaching it
+    /// is an internal compiler defect, not a source-language rejection.
     SecondOutstandingCompletionOperation,
-    /// A function ended with a target operation still outstanding. A staged
-    /// loop pipeline may leave operations in flight across the blocks it
-    /// names, but every path out of its loop reaches a block it does not name,
-    /// and that block retires them. A pipeline that named a block on every
-    /// exit path would leave an accepted operation owned by nobody — the
-    /// target would still write its result into storage the frame no longer
-    /// exists to hold. Like the refusal above this is an emitter capability
-    /// limit rather than a source-language rejection; it cites no language
-    /// rule [DIAG-1].
+    /// Emission reached the end of a compiler-generated schedule before its
+    /// generated drain consumed every target operation. This is an internal
+    /// compiler defect, not a source-language rejection.
     UnretiredCompletionOperation,
-    /// A staged loop pipeline's ring cannot be addressed by the blocks that
-    /// reach it. Exactly three descriptors raise this: a ring with no slots at
-    /// all; a slot a block names that is not a `u64` *value of the function*;
-    /// and, with a ring in force — a descriptor of more than one slot — a
-    /// block that reaches completion storage while naming no slot: the
-    /// reservation refuses the *carrying* block that starts an operation, and
-    /// the element pointer refuses whichever block addresses that ring, rather
-    /// than handing back element zero, since that is the silent sharing the
-    /// ring exists to prevent. With a one-slot descriptor there is no ring
-    /// element at all and a missing slot is refused nowhere; a non-carrying
-    /// block under a multi-slot descriptor likewise takes its own one-element
-    /// reservation and is refused nowhere. The compiler also checks that a
-    /// named slot is a `u64` parameter which dominates its use; it rejects an
-    /// instruction-local or non-dominating name before it can make malformed
-    /// LLVM. The remaining dynamic range fact is established by the emitted
-    /// checked-slot helper before every `inbounds` element address. Like the
-    /// two refusals above this is an emitter capability limit rather than a
-    /// source-language rejection; it cites no language rule [DIAG-1].
+    /// A generated issue or drain block reached ring storage without the
+    /// `u64` slot value lowering assigned to it. The bounded-batch constructor
+    /// proves the range in its own CFG; reaching this state is an internal
+    /// compiler defect, not a second proof layer or source rejection.
     MisaddressedCompletionSlot,
-    /// A staged operation's source result is consumed before a drain can
-    /// materialize it.  The current pipeline descriptor carries only target
-    /// ownership and per-operation storage; it does not rewrite the source
-    /// continuation around a deferred result.  Admitting such a descriptor
-    /// would either use an undefined LLVM value or read a result before the
-    /// target completed it, so it is an emitter capability stop rather than a
-    /// source-language rejection.
-    StagedCompletionResultUse,
-    /// A carrying region tries to retire a prior completion before its drain.
-    /// The current staged schedule records one source-ordered outstanding set,
-    /// not a per-edge dataflow fact.  Applying an early wait while emitting one
-    /// branch could therefore erase work still live on a sibling branch.  Such
-    /// a descriptor is refused until the pipeline carries path-specific
-    /// ownership state.
-    StagedCompletionDependency,
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -181,9 +144,8 @@ fn emit_llvm_for(
         .functions()
         .get(program.main_ordinal() as usize)
         .ok_or(BackendFailure::InvalidIr)?;
-    let system = system::emit_system_interface(program, &qualification)?;
+    let system = system::emit_system_interface(program, &qualification, target)?;
 
-    let mut claim_records = Vec::new();
     let mut intrinsics = BTreeSet::new();
     let mut thunks = ParallelThunks::default();
     let mut completion_used = false;
@@ -193,16 +155,15 @@ fn emit_llvm_for(
         let emitter = FunctionEmitter::new(
             program,
             &qualification,
-            function,
             target,
+            function,
             ModuleState {
-                claim_records: &mut claim_records,
                 intrinsics: &mut intrinsics,
                 parallel: &mut thunks,
                 completion_used: &mut completion_used,
                 sequential_clones: None,
             },
-        );
+        )?;
         let emitted = if stackless
             .as_ref()
             .is_some_and(|plan| u32::try_from(ordinal).ok() == Some(plan.root_ordinal()))
@@ -240,16 +201,15 @@ fn emit_llvm_for(
                 &FunctionEmitter::new(
                     program,
                     &qualification,
-                    function,
                     target,
+                    function,
                     ModuleState {
-                        claim_records: &mut claim_records,
                         intrinsics: &mut intrinsics,
                         parallel: &mut thunks,
                         completion_used: &mut completion_used,
                         sequential_clones: Some(&clones),
                     },
-                )
+                )?
                 .emit()?,
             );
         }
@@ -261,7 +221,7 @@ fn emit_llvm_for(
             .iter()
             .any(|block| matches!(block.terminator(), IrTerminator::Match { .. }))
     });
-    let drop_helpers = emit_resource_drop_helpers(program, &qualification)?;
+    let drop_helpers = emit_resource_drop_helpers(program, &qualification, target)?;
     let has_arena_storage = program
         .nominals()
         .iter()
@@ -275,25 +235,13 @@ fn emit_llvm_for(
                 IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
             )
         });
-    // The dynamic target-domain guard is emitted by exactly these two
-    // operations, so its record and its abort helper follow the operations
-    // rather than the buffer type: a module that carries buffers it never
-    // allocates emits no guard and needs neither.
-    let has_target_domain_guard = program.functions().iter().any(|function| {
-        function.blocks().iter().any(|block| {
-            block.instructions().iter().any(|instruction| {
-                matches!(
-                    instruction,
-                    IrInstruction::Define {
-                        operation: IrOperation::BufferFill { .. }
-                            | IrOperation::BufferVacant { .. },
-                        ..
-                    }
-                )
-            })
-        })
-    });
-
+    let heap_record_type = TargetStorageType::bytes(
+        u64::try_from(HEAP_RECORD.len()).map_err(|_| BackendFailure::CounterOverflow)?,
+    );
+    if has_heap_storage {
+        validate_static_storage(target, &qualification, program, &heap_record_type)
+            .map_err(BackendFailure::TargetLayout)?;
+    }
     let mut text = format!(
         "; Whitefoot conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
         target.data_layout(),
@@ -302,55 +250,41 @@ fn emit_llvm_for(
     emit_nominal_declarations(&mut text, program)?;
     emit_global_constants(&mut text, program)?;
     text.push_str(&system.constants);
-    for (index, bytes) in claim_records.iter().enumerate() {
-        writeln!(
-            text,
-            "@.wf_trap.{index} = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
-            bytes.len(),
-            llvm_bytes(bytes)
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-    }
     // An allocation this host refuses is the heap twin of an exhausted stack,
     // and it gets the same treatment: one record naming the resource class,
     // written once, before a defined abort. The bytes carry no `rule_id`, no
-    // function, and no node path, which is what keeps them from being read as
-    // a [DIAG-3] trap record — running out of memory is not something the
-    // writer did.
+    // function, and no node path because resource availability is not a
+    // source-code failure.
     if has_heap_storage {
         writeln!(
             text,
-            "@.wf_resource.heap = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
-            HEAP_RECORD.len(),
+            "@.wf_resource.heap = private unnamed_addr constant {} c\"{}\", align 1",
+            llvm_storage_type(program, &heap_record_type)?,
             llvm_bytes(HEAP_RECORD.as_bytes())
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
-    if has_target_domain_guard {
-        writeln!(
-            text,
-            "@.wf_resource.target_domain = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
-            TARGET_DOMAIN_RECORD.len(),
-            llvm_bytes(TARGET_DOMAIN_RECORD.as_bytes())
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-    }
-    // One writer serves both records: it is already a general "write these
-    // bytes, then abort, exactly once in this process" primitive, and sharing
-    // it is what makes "no execution produces both records" a mechanism rather
-    // than an argument.
-    let writes_a_record = !claim_records.is_empty() || has_heap_storage || has_target_domain_guard;
+    // Heap availability is outside source proof. If this module can allocate,
+    // it carries one resource-record writer for allocator refusal.
+    let writes_a_record = has_heap_storage;
     // A latch decides between threads, so it belongs only to a module that has
     // more than one. `thunks.is_used()` is exactly "this module hands a call
     // out to a worker lane": false for every default build, and false for a
     // `--par` build that actualizes nothing. A lone thread races no one, so
-    // those modules emit the trap path they emitted before the latch existed.
-    let latched_trap = writes_a_record && thunks.is_used();
-    if latched_trap {
-        text.push_str(TRAP_LATCH);
+    // those modules emit the sequential resource path.
+    let latched_resource_record = writes_a_record && thunks.is_used();
+    if latched_resource_record {
+        validate_static_storage(
+            target,
+            &qualification,
+            program,
+            &TargetStorageType::integer(32),
+        )
+        .map_err(BackendFailure::TargetLayout)?;
+        text.push_str(RESOURCE_RECORD_LATCH);
     }
-    // The mandatory [DIAG-3] record and the qualified system interface can
-    // need the same host symbol; one module declares it once.
+    // The resource record and the qualified system interface can need the
+    // same host symbol; one module declares it once.
     let mut system_declarations = system.declarations;
     if writes_a_record {
         text.push('\n');
@@ -362,15 +296,9 @@ fn emit_llvm_for(
             system_declarations.remove("declare i64 @write(i32, ptr, i64)");
         }
     }
-    let has_completion_ring = program.functions().iter().any(|function| {
-        function
-            .completion_pipeline()
-            .is_some_and(|pipeline| pipeline.slots() > 1)
-    });
     if writes_a_record
         || has_matches
-        || has_completion_ring
-        || (stackless.is_some() && system_target.is_windows())
+        || (system_target.is_windows() && (completion_used || stackless.is_some()))
     {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
@@ -382,18 +310,18 @@ fn emit_llvm_for(
         text.push_str(declaration);
         text.push('\n');
     }
-    if latched_trap {
-        text.push_str(TRAP_LATCH_FALLBACK);
+    if latched_resource_record {
+        text.push_str(RESOURCE_RECORD_LATCH_FALLBACK);
         text.push_str(if system_target.is_windows() {
-            WINDOWS_LATCHED_TRAP_WRITER
+            WINDOWS_LATCHED_RESOURCE_RECORD_WRITER
         } else {
-            LATCHED_TRAP_WRITER
+            LATCHED_RESOURCE_RECORD_WRITER
         });
     } else if writes_a_record {
         text.push_str(if system_target.is_windows() {
-            WINDOWS_SEQUENTIAL_TRAP_WRITER
+            WINDOWS_SEQUENTIAL_RESOURCE_RECORD_WRITER
         } else {
-            SEQUENTIAL_TRAP_WRITER
+            SEQUENTIAL_RESOURCE_RECORD_WRITER
         });
     } else if has_matches {
         text.push('\n');
@@ -401,16 +329,8 @@ fn emit_llvm_for(
     if has_heap_storage {
         writeln!(
             text,
-            "define private void @wf_resource_abort() noreturn {{\nentry:\n  call void @wf_trap(ptr @.wf_resource.heap, i64 {})\n  unreachable\n}}\n",
+            "define private void @wf_resource_abort() noreturn {{\nentry:\n  call void @wf_resource_record_abort(ptr @.wf_resource.heap, i64 {})\n  unreachable\n}}\n",
             HEAP_RECORD.len()
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-    }
-    if has_target_domain_guard {
-        writeln!(
-            text,
-            "define private void @wf_target_domain_abort() noreturn {{\nentry:\n  call void @wf_trap(ptr @.wf_resource.target_domain, i64 {})\n  unreachable\n}}\n",
-            TARGET_DOMAIN_RECORD.len()
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
@@ -477,9 +397,6 @@ fn emit_llvm_for(
     }
     if completion_used {
         text.push('\n');
-        if has_completion_ring {
-            text.push_str(completion::COMPLETION_SLOT_CHECKER);
-        }
         text.push_str(if system_target.is_windows() {
             completion::COMPLETION_WINDOWS_RUNTIME_DECLARATIONS
         } else {
@@ -523,26 +440,10 @@ fn emit_llvm_for(
 ///
 /// The heap twin of the exhausted-stack record the floor's runtime writes, and
 /// fixed the same way and for the same reasons: it names the resource class
-/// and nothing else. What it leaves out is what distinguishes it from a
-/// [DIAG-3] record — no rule identifier, no function, no node path — because
-/// an allocation the host refused is the trusted computing base reaching its
-/// limit, not a contract the writer failed to keep.
+/// and nothing else. It carries no rule identifier, function, or node path
+/// because an allocation the host refused is the trusted computing base
+/// reaching its limit, not a source proof obligation.
 const HEAP_RECORD: &str = "{\"resource\":\"heap\"}\n";
-
-/// The bytes a refused dynamic target-domain guard writes before aborting.
-///
-/// A third class rather than a second spelling of `heap`, because the two
-/// conditions are different and the class is the only thing the record says.
-/// An allocation refusal is memory running out; this guard fires when the byte
-/// count a `buffer` asks for has no exact value in the target's allocator or
-/// address-index domain, which happens on a machine with memory to spare and
-/// would still happen if the machine had more. The specification keeps the two
-/// apart everywhere it names them: its compile-time classification lists
-/// "resource failure" and "target-layout failure" as separate members of the
-/// same non-rejection sum, and it routes this guard down the same
-/// non-continuing path without merging it into that class. Folding them here
-/// would make the record point a reader at the wrong resource.
-const TARGET_DOMAIN_RECORD: &str = "{\"resource\":\"target-domain\"}\n";
 
 /// The attribute group every generated definition carries.
 const STACK_PROBE_GROUP: &str = "#0";
@@ -764,14 +665,357 @@ enum IntrinsicDeclaration {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum FunctionSlot {
+    ArrayFillValue(IrValueId),
+    ArrayFillIndex(IrValueId),
+    ArrayRoot(IrValueId),
+    InsertArray(IrValueId),
+    SliceRoot(IrValueId),
+    Address(IrValueId),
+    ArenaList(IrValueId),
+    Completion(IrValueId, CompletionSlot),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum CompletionSlot {
+    Token,
+    Result,
+    RawValue,
+    RawError,
+    OpenOutcome,
+    Component,
+    Cursor,
+    Submitted,
+    Start,
+    Extent,
+    Destination,
+}
+
+struct PlannedFunctionSlot {
+    logical_index: usize,
+    pointer: String,
+}
+
+/// The one physical frame an ordinary generated function owns.
+///
+/// Planning walks the already-selected IR schedule before emission and gives
+/// every actual materialization a semantic key. Target layout then turns the
+/// logical slots into one explicitly padded struct. Emission can only obtain a
+/// pointer by that key; it has no string-shaped `alloca` escape hatch.
+struct FunctionFramePlan {
+    target: TargetFramePlan,
+    slots: HashMap<FunctionSlot, PlannedFunctionSlot>,
+    ordered: Vec<FunctionSlot>,
+}
+
+impl FunctionFramePlan {
+    fn build(
+        target: TargetLayout,
+        program: &IrProgram<'_, '_, '_>,
+        qualification: &Qualification,
+        function: &IrFunction,
+        completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+        pipeline: Option<&crate::IrCompletionPipeline>,
+    ) -> Result<Self, BackendFailure> {
+        let mut specifications = Vec::new();
+        let mut ordered = Vec::new();
+        for (block_index, block) in function.blocks().iter().enumerate() {
+            let block_id =
+                IrBlockId::from_index(block_index).map_err(|_| BackendFailure::CounterOverflow)?;
+            for instruction in block.instructions() {
+                let IrInstruction::Define {
+                    result,
+                    ty,
+                    operation,
+                } = instruction
+                else {
+                    continue;
+                };
+                match operation {
+                    IrOperation::ArrayFill { .. } => {
+                        push_function_slot(
+                            &mut specifications,
+                            &mut ordered,
+                            FunctionSlot::ArrayFillValue(*result),
+                            TargetStorageType::source(*ty),
+                        )?;
+                        push_function_slot(
+                            &mut specifications,
+                            &mut ordered,
+                            FunctionSlot::ArrayFillIndex(*result),
+                            TargetStorageType::integer(64),
+                        )?;
+                    }
+                    IrOperation::ArrayIndex {
+                        root: IrArrayRoot::Value(value),
+                        ..
+                    } => {
+                        let root_type = function
+                            .value_type(*value)
+                            .ok_or(BackendFailure::InvalidIr)?;
+                        push_function_slot(
+                            &mut specifications,
+                            &mut ordered,
+                            FunctionSlot::ArrayRoot(*result),
+                            TargetStorageType::source(root_type),
+                        )?;
+                    }
+                    IrOperation::InsertArray { .. } => push_function_slot(
+                        &mut specifications,
+                        &mut ordered,
+                        FunctionSlot::InsertArray(*result),
+                        TargetStorageType::source(*ty),
+                    )?,
+                    IrOperation::SliceFromArray {
+                        array: IrArrayRoot::Value(value),
+                    } => {
+                        let array_type = function
+                            .value_type(*value)
+                            .ok_or(BackendFailure::InvalidIr)?;
+                        push_function_slot(
+                            &mut specifications,
+                            &mut ordered,
+                            FunctionSlot::SliceRoot(*result),
+                            TargetStorageType::source(array_type),
+                        )?;
+                    }
+                    IrOperation::AddressOf { referent, .. } => push_function_slot(
+                        &mut specifications,
+                        &mut ordered,
+                        FunctionSlot::Address(*result),
+                        TargetStorageType::source(referent.ty()),
+                    )?,
+                    IrOperation::ArenaListNew => push_function_slot(
+                        &mut specifications,
+                        &mut ordered,
+                        FunctionSlot::ArenaList(*result),
+                        TargetStorageType::pointer(),
+                    )?,
+                    IrOperation::SystemCall {
+                        operation,
+                        arguments,
+                        ..
+                    } if completion_steps
+                        .get(result)
+                        .is_some_and(IrCompletionStep::submit) =>
+                    {
+                        plan_completion_slots(
+                            &mut specifications,
+                            &mut ordered,
+                            qualification,
+                            function,
+                            pipeline,
+                            block_id,
+                            *result,
+                            *ty,
+                            *operation,
+                            arguments,
+                        )?;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let target_plan = plan_target_frame(target, qualification, program, &specifications)
+            .map_err(BackendFailure::TargetLayout)?;
+        let mut slots = HashMap::with_capacity(ordered.len());
+        for (logical_index, key) in ordered.iter().copied().enumerate() {
+            let pointer = match key {
+                FunctionSlot::Address(result) | FunctionSlot::ArenaList(result) => {
+                    value_name(result)
+                }
+                _ => format!("%wf.slot.{logical_index}"),
+            };
+            if slots
+                .insert(
+                    key,
+                    PlannedFunctionSlot {
+                        logical_index,
+                        pointer,
+                    },
+                )
+                .is_some()
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+        }
+        Ok(Self {
+            target: target_plan,
+            slots,
+            ordered,
+        })
+    }
+
+    fn slot(&self, key: FunctionSlot) -> Result<String, BackendFailure> {
+        self.slots
+            .get(&key)
+            .map(|slot| slot.pointer.clone())
+            .ok_or(BackendFailure::InvalidIr)
+    }
+
+    fn render(&self, program: &IrProgram<'_, '_, '_>) -> Result<String, BackendFailure> {
+        if self.target.is_empty() {
+            return Ok(String::new());
+        }
+        let fields = self
+            .target
+            .physical_fields()
+            .iter()
+            .map(|field| llvm_storage_type(program, field))
+            .collect::<Result<Vec<_>, _>>()?;
+        let frame_type = format!("{{ {} }}", fields.join(", "));
+        let mut output = String::new();
+        writeln!(
+            output,
+            "  %wf.frame = alloca {frame_type}, align {}",
+            self.target.layout().align()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        for key in &self.ordered {
+            let slot = self.slots.get(key).ok_or(BackendFailure::InvalidIr)?;
+            let field = self
+                .target
+                .logical_field(slot.logical_index)
+                .ok_or(BackendFailure::InvalidIr)?;
+            writeln!(
+                output,
+                "  {} = getelementptr inbounds {frame_type}, ptr %wf.frame, i32 0, i32 {}",
+                slot.pointer,
+                field.physical_index()
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        Ok(output)
+    }
+}
+
+fn push_function_slot(
+    specifications: &mut Vec<TargetFrameSlot>,
+    ordered: &mut Vec<FunctionSlot>,
+    key: FunctionSlot,
+    ty: TargetStorageType,
+) -> Result<(), BackendFailure> {
+    if ordered.contains(&key) {
+        return Err(BackendFailure::InvalidIr);
+    }
+    specifications.push(TargetFrameSlot::natural(ty));
+    ordered.push(key);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_completion_slots(
+    specifications: &mut Vec<TargetFrameSlot>,
+    ordered: &mut Vec<FunctionSlot>,
+    qualification: &Qualification,
+    function: &IrFunction,
+    pipeline: Option<&crate::IrCompletionPipeline>,
+    block: IrBlockId,
+    result: IrValueId,
+    result_type: IrType,
+    operation: crate::IrSystemOperation,
+    arguments: &[IrValueId],
+) -> Result<(), BackendFailure> {
+    let operation =
+        system::completion_file_operation(operation).ok_or(BackendFailure::InvalidIr)?;
+    let uses_ring =
+        pipeline.is_some_and(|pipeline| pipeline.slots() > 1 && pipeline.carries(block));
+    let slot_count = if uses_ring {
+        pipeline.map_or(1, crate::IrCompletionPipeline::slots)
+    } else {
+        1
+    };
+    let mut add = |role, element| {
+        push_function_slot(
+            specifications,
+            ordered,
+            FunctionSlot::Completion(result, role),
+            TargetStorageType::array(element, slot_count),
+        )
+    };
+    add(
+        CompletionSlot::Token,
+        TargetStorageType::array(TargetStorageType::integer(64), 2),
+    )?;
+    add(
+        CompletionSlot::Result,
+        TargetStorageType::source(result_type),
+    )?;
+    add(CompletionSlot::RawValue, TargetStorageType::integer(64))?;
+    add(CompletionSlot::RawError, TargetStorageType::integer(32))?;
+
+    match operation {
+        system::CompletionFileOperation::OpenRead
+        | system::CompletionFileOperation::OpenDirectory
+        | system::CompletionFileOperation::OpenDirectorySource
+        | system::CompletionFileOperation::OpenFile => {
+            add(CompletionSlot::OpenOutcome, TargetStorageType::integer(32))?;
+        }
+        system::CompletionFileOperation::Read
+        | system::CompletionFileOperation::Write
+        | system::CompletionFileOperation::DirectoryNext => {}
+    }
+    if matches!(
+        operation,
+        system::CompletionFileOperation::OpenDirectory | system::CompletionFileOperation::OpenFile
+    ) {
+        let bytes = qualification
+            .target()
+            .component_limit()
+            .checked_add(if qualification.target().is_windows() {
+                2
+            } else {
+                1
+            })
+            .ok_or(BackendFailure::CounterOverflow)?;
+        add(CompletionSlot::Component, TargetStorageType::bytes(bytes))?;
+    }
+    if operation == system::CompletionFileOperation::DirectoryNext {
+        add(CompletionSlot::Cursor, TargetStorageType::integer(64))?;
+    }
+    if !uses_ring && !qualification.target().is_windows() {
+        return Ok(());
+    }
+
+    add(CompletionSlot::Submitted, TargetStorageType::integer(1))?;
+    if !uses_ring {
+        return Ok(());
+    }
+    match operation {
+        system::CompletionFileOperation::Read | system::CompletionFileOperation::Write => {
+            add(CompletionSlot::Start, TargetStorageType::integer(64))?;
+            add(CompletionSlot::Extent, TargetStorageType::integer(64))?;
+        }
+        system::CompletionFileOperation::DirectoryNext => {
+            let [_, destination, _, _] = arguments else {
+                return Err(BackendFailure::InvalidIr);
+            };
+            let destination_type = function
+                .value_type(*destination)
+                .ok_or(BackendFailure::InvalidIr)?;
+            add(
+                CompletionSlot::Destination,
+                TargetStorageType::source(destination_type),
+            )?;
+            add(CompletionSlot::Start, TargetStorageType::integer(64))?;
+            add(CompletionSlot::Extent, TargetStorageType::integer(64))?;
+        }
+        system::CompletionFileOperation::OpenRead
+        | system::CompletionFileOperation::OpenDirectory
+        | system::CompletionFileOperation::OpenDirectorySource
+        | system::CompletionFileOperation::OpenFile => {}
+    }
+    Ok(())
+}
+
 struct FunctionEmitter<'program, 'state> {
     program: &'program IrProgram<'program, 'program, 'program>,
     /// The [QUAL-1] table lookup this build already performed. Every emission
     /// site reads the resolved row; none consults the table again.
     qualification: &'program Qualification,
     function: &'program IrFunction,
-    target: TargetLayout,
-    claim_records: &'state mut Vec<Vec<u8>>,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
     output: String,
@@ -783,6 +1027,9 @@ struct FunctionEmitter<'program, 'state> {
     /// exactly once per call, keeps frame size a property of the function
     /// rather than of the iteration count. Stores stay at the use site.
     entry_prelude: String,
+    /// The validated physical frame which supplied `entry_prelude` and every
+    /// pointer returned to an operation emitter.
+    frame: FunctionFramePlan,
     temporary: u32,
     /// The module's outlined thunks, shared by every function that hands a
     /// call out.
@@ -800,6 +1047,13 @@ struct FunctionEmitter<'program, 'state> {
     /// complete them.
     overlap_handed_out: HashSet<IrValueId>,
     overlap_join_sites: HashSet<IrValueId>,
+    /// Selected-target layouts of the exact `{ arguments..., result }`
+    /// aggregates this world may place in runtime lane storage.
+    ///
+    /// This map is built before any function text is emitted. Its membership
+    /// is therefore also the proof that the aggregate fits the runtime's
+    /// 256-byte, 16-byte-aligned slot and the target's address-index domain.
+    ordinary_lane_frames: HashMap<IrValueId, TargetAggregateLayout>,
     /// Source-ordered direct completion steps, keyed by the call value each
     /// step reaches.  Their wait sets contain only ordinary prior result/loan
     /// dependencies retained by lowering.
@@ -808,42 +1062,17 @@ struct FunctionEmitter<'program, 'state> {
     ///
     /// Ordinarily this is empty at every terminator, because a block joins
     /// everything it handed out before it ends. A function carrying a staged
-    /// loop pipeline is the exception: a block the pipeline names leaves its
-    /// operations here, and every block it does not name drains them.
+    /// loop pipeline is the exception: its selected operation remains here
+    /// until the exact compiler-generated drain block retires it. Blocks that
+    /// merely occur between feeder and drain in emission order do not own it.
     handed_out: Vec<HandedOut>,
     /// The staged loop pipeline of the function being emitted, or `None`.
     ///
-    /// `None` is every function today: `lower_checked` grants no pipeline yet.
-    /// It is what keeps the emitted module byte-identical to one built before
-    /// this machinery existed.
+    /// Lowering supplies this only for a source loop whose staged permission
+    /// has a complete one-slot or bounded-batch driver. Native file targets
+    /// use typed completion; another qualified target executes a bounded
+    /// batch with a direct-call window of one.
     pipeline: Option<&'program crate::IrCompletionPipeline>,
-    /// The blocks on which the pipeline's carrying region ends: a block the
-    /// pipeline does not name that some block it does name can reach in one
-    /// edge. These are the drains — the loop's normal exit and every typed
-    /// exit out of its prologue — and there is generally more than one.
-    pipeline_drains: HashSet<IrBlockId>,
-    /// For each drain, the carrying blocks that reach it without leaving the
-    /// region first.
-    ///
-    /// This is what decides which operations one drain retires. It is a fact
-    /// about the control-flow graph, so a drain retires the same window
-    /// however the blocks around it happen to be numbered, and a carrying
-    /// block on a path that cannot reach this drain contributes nothing to it.
-    pipeline_feeders: HashMap<IrBlockId, HashSet<IrBlockId>>,
-    /// Every completion hand-out the carrying region made, with the carrying
-    /// block that made it.
-    ///
-    /// [`Self::handed_out`] is a straight-line simulation: it holds what one
-    /// walk through the blocks in index order has outstanding. That is exact
-    /// while every block joins what it handed out, which is every function
-    /// today. A carrying region breaks it, because the region has several
-    /// exits and each of them must retire the same operations — the walk
-    /// reaches the first exit, empties the simulation there, and would leave
-    /// the second exit emitting nothing. This is what each exit is seeded
-    /// from, and the block recorded beside each hand-out is what lets a drain
-    /// take the operations that actually reach it rather than everything the
-    /// walk has seen so far.
-    pipeline_outstanding: Vec<(IrBlockId, completion::CompletionHandedOut)>,
     /// The slot index the block being emitted addresses its ring through,
     /// where the pipeline gives it one.
     ///
@@ -862,6 +1091,9 @@ struct FunctionEmitter<'program, 'state> {
     /// anywhere else is reached with nothing of its own outstanding and owns
     /// one element, exactly as it did before rings existed.
     block_carries: bool,
+    /// Whether the block being emitted is the exact compiler-generated drain
+    /// for the driven pipeline.
+    block_drains: bool,
     /// Whether any function in this module emitted a typed completion handoff.
     completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
@@ -878,14 +1110,13 @@ struct FunctionEmitter<'program, 'state> {
 /// What one function's emission shares with the rest of its module, and the
 /// one choice that says which of the module's two worlds it is emitting into.
 ///
-/// These travel together because they are all module-scope: the trap records
-/// and the intrinsic declarations are collected across every function and
-/// rendered once at the top, the thunks likewise, and the clone set is the same
-/// set for every function of the module. Passing them as one named group keeps
-/// the emitter's own arguments — the program, the function, the target — the
-/// ones a reader has to think about.
+/// These travel together because they are all module-scope: intrinsic
+/// declarations and thunks are collected across every function and rendered
+/// once at the top, and the clone set is the same set for every function of the
+/// module. Passing them as one named group keeps the emitter's own arguments —
+/// the program, qualification, and the function — the ones a reader has to
+/// think about.
 struct ModuleState<'state> {
-    claim_records: &'state mut Vec<Vec<u8>>,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     parallel: &'state mut ParallelThunks,
     completion_used: &'state mut bool,
@@ -897,12 +1128,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     fn new(
         program: &'program IrProgram<'_, '_, '_>,
         qualification: &'program Qualification,
-        function: &'program IrFunction,
         target: TargetLayout,
+        function: &'program IrFunction,
         module: ModuleState<'state>,
-    ) -> Self {
+    ) -> Result<Self, BackendFailure> {
         let ModuleState {
-            claim_records,
             intrinsics,
             parallel,
             completion_used,
@@ -922,22 +1152,35 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } else {
                 HashMap::new()
             };
-        let overlaps: Vec<IrOverlap> = function
-            .overlaps()
-            .iter()
-            .filter_map(|overlap| {
+        let mut overlaps = Vec::new();
+        let mut ordinary_lane_frames = HashMap::new();
+        if sequential_clones.is_none() {
+            for overlap in function.overlaps() {
                 if overlap
                     .members()
                     .iter()
                     .any(|member| completion_steps.contains_key(member))
-                    || !overlap_is_actualizable(program, function, overlap)
-                    || sequential_clones.is_some()
                 {
-                    return None;
+                    continue;
                 }
-                Some(overlap.clone())
-            })
-            .collect();
+                let Some(frames) = ordinary_overlap_lane_frames(
+                    program,
+                    qualification,
+                    target,
+                    function,
+                    overlap,
+                )?
+                else {
+                    continue;
+                };
+                for (result, layout) in frames {
+                    if ordinary_lane_frames.insert(result, layout).is_some() {
+                        return Err(BackendFailure::InvalidIr);
+                    }
+                }
+                overlaps.push(overlap.clone());
+            }
+        }
         let overlap_handed_out = overlaps
             .iter()
             .flat_map(|overlap| overlap.handed_out().iter().copied())
@@ -946,424 +1189,68 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .iter()
             .filter_map(crate::IrOverlap::join_site)
             .collect();
-        Self {
+        let supports_completion = qualification.target().supports_posix_file_completion();
+        let pipeline = function.driven_completion_pipeline().filter(|pipeline| {
+            if !supports_completion {
+                return pipeline.planned_batch_driver().is_some_and(|driver| {
+                    function
+                        .completion_steps()
+                        .iter()
+                        .find(|step| step.call() == driver.result())
+                        .is_some_and(crate::IrCompletionStep::submit)
+                });
+            }
+            let planned_result = pipeline
+                .planned_driver()
+                .map(|driver| driver.result())
+                .or_else(|| {
+                    pipeline
+                        .planned_batch_driver()
+                        .map(|driver| driver.result())
+                });
+            planned_result.is_none_or(|result| {
+                completion_steps
+                    .get(&result)
+                    .is_some_and(crate::IrCompletionStep::submit)
+            })
+        });
+        let frame = FunctionFramePlan::build(
+            target,
             program,
             qualification,
             function,
-            target,
-            claim_records,
+            &completion_steps,
+            pipeline,
+        )?;
+        let entry_prelude = frame.render(program)?;
+        Ok(Self {
+            program,
+            qualification,
+            function,
             intrinsics,
             incoming: Vec::new(),
             output: String::new(),
-            entry_prelude: String::new(),
+            entry_prelude,
+            frame,
             temporary: 0,
             parallel,
             overlaps,
             overlap_handed_out,
             overlap_join_sites,
+            ordinary_lane_frames,
             completion_steps,
             handed_out: Vec::new(),
-            pipeline: function.completion_pipeline(),
-            pipeline_drains: pipeline_drain_blocks(function),
-            pipeline_feeders: pipeline_feeder_blocks(function),
-            pipeline_outstanding: Vec::new(),
+            pipeline,
             block_slot: None,
             block_carries: false,
+            block_drains: false,
             completion_used,
             sequential_clones,
-        }
+        })
     }
 
     fn is_overlap_join_site(&self, value: IrValueId) -> bool {
         self.overlap_join_sites.contains(&value)
-    }
-
-    /// Whether this block may end with the pipeline's operations still
-    /// outstanding.
-    ///
-    /// One rule decides both halves of the staged schedule: a block the
-    /// pipeline names never joins, and every other block joins everything
-    /// outstanding before it ends. The first gives the loop's back edge the
-    /// right to carry work across it. The second is the drain — at the loop's
-    /// normal exit and at every typed exit out of the prologue alike — and it
-    /// needs no separate machinery, because retiring every outstanding
-    /// operation in hand-out order is exactly what a block has always done.
-    fn block_carries_completion(&self, block: IrBlockId) -> bool {
-        self.pipeline
-            .is_some_and(|pipeline| pipeline.carries(block))
-    }
-
-    /// Refuses a carrying region no exit leaves.
-    ///
-    /// Every block the pipeline names must reach, in some number of edges, a
-    /// block it does not name. A region without that property has a path on
-    /// which an accepted operation is never joined: the target would still
-    /// write its result into storage the frame no longer exists to hold. It is
-    /// a defect of whatever produced the descriptor, so it is refused before a
-    /// line of the function is emitted rather than diagnosed by its absence.
-    fn validate_pipeline(&self) -> Result<(), BackendFailure> {
-        let Some(pipeline) = self.pipeline else {
-            return Ok(());
-        };
-        let blocks = self.function.blocks();
-        let mut escapes = vec![false; blocks.len()];
-        for (index, escaped) in escapes.iter_mut().enumerate() {
-            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
-            *escaped = !pipeline.carries(id);
-        }
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for (index, block) in blocks.iter().enumerate() {
-                if escapes[index] {
-                    continue;
-                }
-                if block_successors(block)
-                    .iter()
-                    .any(|successor| escapes.get(successor.index()).copied().unwrap_or(false))
-                {
-                    escapes[index] = true;
-                    changed = true;
-                }
-            }
-        }
-        if !escapes.iter().all(|escaped| *escaped) {
-            return Err(BackendFailure::UnretiredCompletionOperation);
-        }
-        // A drain retires what the carrying blocks that reach it handed out,
-        // and a hand-out exists to be retired only once its own block has been
-        // emitted. The walk is in block-index order, so a feeder that hands
-        // out an operation and is numbered at or after its own drain would
-        // leave that drain emitting nothing for it — silently, because a
-        // function with a pipeline is exempt from the straight-line check at
-        // the end of emission, a carrying block being free to be the last one
-        // emitted. That is the same defect as a region with no drain and it is
-        // refused in the same place.
-        //
-        // A feeder that hands nothing out is not that defect: a loop's latch
-        // is numbered after the typed exit its back edge reaches, and where it
-        // starts no operation there is nothing for that exit to be missing.
-        for (drain, feeders) in &self.pipeline_feeders {
-            for feeder in feeders {
-                if feeder.index() >= drain.index() && self.block_hands_out_completion(*feeder) {
-                    return Err(BackendFailure::UnretiredCompletionOperation);
-                }
-            }
-        }
-        self.validate_pipeline_slots(pipeline)?;
-        self.validate_pipeline_results(pipeline)
-    }
-
-    /// Refuses a ring whose slots cannot be addressed where they are used.
-    ///
-    /// A ring has at least one element. A descriptor claiming none would
-    /// reserve a zero-length array and index into it.
-    ///
-    /// And a slot a block names is a value of the function, of the `u64` the
-    /// array is indexed with. The index is rendered straight into a
-    /// `getelementptr` the block emits, so a name of the wrong width, or one
-    /// that does not dominate that block, is refused here rather than left to
-    /// LLVM's verifier. The only descriptor values this emitter can prove to
-    /// dominate are function parameters and block parameters in a dominating
-    /// block; instruction-local values are refused conservatively. A dynamic
-    /// check immediately before each ring `inbounds` GEP proves the remaining
-    /// fact, `slot < slots`, on every execution path.
-    ///
-    /// What is deliberately *not* checked here is which blocks must name a
-    /// slot. A carrying block that starts no operation and retires none needs
-    /// no index, and demanding one would refuse the ordinary shape where a
-    /// loop's comparison and increment blocks carry nothing. The block that
-    /// does reach storage is caught where it reaches it: with a ring in force,
-    /// both the reservation and the element pointer refuse a block that has no
-    /// slot rather than quietly handing back element zero, which is the one
-    /// failure that would let two iterations share one operation record.
-    fn validate_pipeline_slots(
-        &self,
-        pipeline: &crate::IrCompletionPipeline,
-    ) -> Result<(), BackendFailure> {
-        if pipeline.slots() == 0 {
-            return Err(BackendFailure::MisaddressedCompletionSlot);
-        }
-        if pipeline.slots() == 1 {
-            return Ok(());
-        }
-        let dominators = self.completion_block_dominators()?;
-        for index in 0..self.function.blocks().len() {
-            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
-            let Some(slot) = pipeline.slot_index(id) else {
-                continue;
-            };
-            if self.value_type(slot)
-                != Some(IrType::Integer {
-                    width: 64,
-                    signed: false,
-                })
-            {
-                return Err(BackendFailure::MisaddressedCompletionSlot);
-            }
-            if !self.completion_slot_dominates(slot, id, &dominators) {
-                return Err(BackendFailure::MisaddressedCompletionSlot);
-            }
-        }
-        Ok(())
-    }
-
-    /// Computes ordinary control-flow dominators for the descriptor checks.
-    ///
-    /// The emitter writes blocks in source order, but slot availability is a
-    /// control-flow property: a loop-carried block parameter in an earlier
-    /// header can dominate a later body block even when its value is not a
-    /// function parameter.  Unreachable blocks retain only themselves, which
-    /// permits their own parameter and nothing invented from another path.
-    fn completion_block_dominators(&self) -> Result<Vec<HashSet<IrBlockId>>, BackendFailure> {
-        let count = self.function.blocks().len();
-        if count == 0 {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let ids = (0..count)
-            .map(|index| IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow))
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut reachable = HashSet::new();
-        let mut worklist = vec![ids[0]];
-        while let Some(block) = worklist.pop() {
-            if !reachable.insert(block) {
-                continue;
-            }
-            let source = self
-                .function
-                .blocks()
-                .get(block.index())
-                .ok_or(BackendFailure::InvalidIr)?;
-            for successor in block_successors(source) {
-                if successor.index() >= count {
-                    return Err(BackendFailure::InvalidIr);
-                }
-                worklist.push(successor);
-            }
-        }
-        let universe = reachable.clone();
-        let mut dominators = ids
-            .iter()
-            .map(|id| {
-                if *id == ids[0] || !reachable.contains(id) {
-                    HashSet::from([*id])
-                } else {
-                    universe.clone()
-                }
-            })
-            .collect::<Vec<_>>();
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for index in 1..count {
-                if !reachable.contains(&ids[index]) {
-                    continue;
-                }
-                let predecessors = self
-                    .function
-                    .blocks()
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(candidate, block)| {
-                        (reachable.contains(&ids[candidate])
-                            && block_successors(block).contains(&ids[index]))
-                        .then_some(candidate)
-                    })
-                    .collect::<Vec<_>>();
-                let mut next = match predecessors.split_first() {
-                    Some((first, rest)) => {
-                        let mut shared = dominators[*first].clone();
-                        for predecessor in rest {
-                            shared.retain(|candidate| dominators[*predecessor].contains(candidate));
-                        }
-                        shared
-                    }
-                    None => HashSet::new(),
-                };
-                next.insert(ids[index]);
-                if next != dominators[index] {
-                    dominators[index] = next;
-                    changed = true;
-                }
-            }
-        }
-        Ok(dominators)
-    }
-
-    /// True only when the descriptor can prove `slot` is available wherever
-    /// the named block materializes a ring element.
-    fn completion_slot_dominates(
-        &self,
-        slot: IrValueId,
-        block: IrBlockId,
-        dominators: &[HashSet<IrBlockId>],
-    ) -> bool {
-        if self
-            .function
-            .parameters()
-            .iter()
-            .any(|(value, _)| *value == slot)
-        {
-            return true;
-        }
-        self.function
-            .blocks()
-            .iter()
-            .enumerate()
-            .find_map(|(index, candidate)| {
-                candidate
-                    .parameters()
-                    .iter()
-                    .any(|(value, _)| *value == slot)
-                    .then(|| IrBlockId::from_index(index).ok())
-                    .flatten()
-            })
-            .is_some_and(|definition| {
-                dominators
-                    .get(block.index())
-                    .is_some_and(|set| set.contains(&definition))
-            })
-    }
-
-    /// A carrying descriptor may defer only a completion result that the
-    /// source does not consume.  The current pipeline record transports the
-    /// target request and its mapper facts, but it deliberately does not
-    /// rewrite arbitrary source continuations around every possible drain.
-    ///
-    /// Refusing a result use is therefore the safe boundary: otherwise a
-    /// carrying block could read the result slot before the target has written
-    /// it, or distinct drains would try to define the same LLVM SSA value.
-    fn validate_pipeline_results(
-        &self,
-        pipeline: &crate::IrCompletionPipeline,
-    ) -> Result<(), BackendFailure> {
-        let mut carried_results = HashSet::new();
-        for (index, block) in self.function.blocks().iter().enumerate() {
-            let id = IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
-            if !pipeline.carries(id) {
-                continue;
-            }
-            for instruction in block.instructions() {
-                let IrInstruction::Define { result, .. } = instruction else {
-                    continue;
-                };
-                if self
-                    .completion_steps
-                    .get(result)
-                    .is_some_and(crate::IrCompletionStep::submit)
-                {
-                    carried_results.insert(*result);
-                }
-            }
-        }
-        for block in self.function.blocks() {
-            for instruction in block.instructions() {
-                let IrInstruction::Define { result, .. } = instruction else {
-                    continue;
-                };
-                let Some(step) = self.completion_steps.get(result) else {
-                    continue;
-                };
-                if step
-                    .wait_for()
-                    .iter()
-                    .any(|dependency| carried_results.contains(dependency))
-                {
-                    return Err(BackendFailure::StagedCompletionDependency);
-                }
-                if carried_results.contains(result)
-                    && function_uses_value(self.program, self.function, *result)?
-                {
-                    return Err(BackendFailure::StagedCompletionResultUse);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Whether this block starts an operation a drain would have to retire.
-    ///
-    /// It answers the same question `emit_instruction` answers when it decides
-    /// to hand a system call to a target, read from the same source-ordered
-    /// steps, so the ordering rule above is checked against what the walk will
-    /// actually emit.
-    fn block_hands_out_completion(&self, block: IrBlockId) -> bool {
-        self.function
-            .blocks()
-            .get(block.index())
-            .is_some_and(|block| {
-                block.instructions().iter().any(|instruction| {
-                    matches!(
-                        instruction,
-                        IrInstruction::Define { result, .. }
-                            if self
-                                .completion_steps
-                                .get(result)
-                                .is_some_and(crate::IrCompletionStep::submit)
-                    )
-                })
-            })
-    }
-
-    /// Gives a drain block exactly the operations the carrying region left in
-    /// flight on the paths that reach it.
-    ///
-    /// Which those are is decided by the graph — the carrying blocks that
-    /// reach this drain — and not by how much of the region the walk happens
-    /// to have passed. The walk arrives here with the straight-line
-    /// simulation, which on a branching region is both too little and too
-    /// much: an operation handed out on a branch the walk has not passed is
-    /// missing, and one handed out on a *sibling* branch that cannot reach
-    /// this drain is present. Adding the first without removing the second
-    /// would make this exit join an operation that was never started on any
-    /// path through it, which is a use of storage no target ever wrote.
-    ///
-    /// So both halves are done here, for every drain including the first one
-    /// the walk reaches. The order is the order they were handed out, so each
-    /// exit retires its whole window in that order.
-    fn seed_pipeline_drain(&mut self, block: IrBlockId) {
-        if !self.pipeline_drains.contains(&block) {
-            return;
-        }
-        let Some(feeders) = self.pipeline_feeders.get(&block).cloned() else {
-            return;
-        };
-        let elsewhere: HashSet<IrValueId> = self
-            .pipeline_outstanding
-            .iter()
-            .filter(|(carrying, _)| !feeders.contains(carrying))
-            .map(|(_, carried)| carried.result())
-            .collect();
-        self.handed_out.retain(|pending| match pending {
-            HandedOut::Completion(pending) => !elsewhere.contains(&pending.result()),
-            HandedOut::Compute(_) => true,
-        });
-        for (carrying, pending) in self.pipeline_outstanding.clone() {
-            if feeders.contains(&carrying)
-                && !self.completion_operation_is_outstanding(pending.result())
-            {
-                self.handed_out
-                    .push(HandedOut::Completion(Box::new(pending)));
-            }
-        }
-    }
-
-    /// Records what a carrying block handed out, so every exit the block
-    /// reaches can retire it.
-    fn record_pipeline_handouts(&mut self, block: IrBlockId) {
-        for pending in &self.handed_out {
-            let HandedOut::Completion(pending) = pending else {
-                continue;
-            };
-            if !self
-                .pipeline_outstanding
-                .iter()
-                .any(|(_, carried)| carried.result() == pending.result())
-            {
-                self.pipeline_outstanding
-                    .push((block, pending.as_ref().clone()));
-            }
-        }
     }
 
     /// The symbol one call names.
@@ -1380,7 +1267,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn emit(mut self) -> Result<String, BackendFailure> {
-        self.validate_pipeline()?;
         self.incoming = self.collect_incoming()?;
         let symbol = match self.sequential_clones {
             Some(_) => sequential_clone_symbol(self.function.name()),
@@ -1421,24 +1307,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.block_carries = self
                 .pipeline
                 .is_some_and(|pipeline| pipeline.carries(block_id));
+            self.block_drains = self
+                .pipeline
+                .is_some_and(|pipeline| pipeline.drains(block_id));
             self.emit_completion_window(block_id)?;
-            self.seed_pipeline_drain(block_id);
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
             self.emit_terminator(block_id, block.terminator())?;
         }
-        // Every operation this function handed to a target is joined by some
-        // block. Without a pipeline that is the straight-line fact this
-        // emitter has always kept: nothing survives its own block's
-        // terminator. With one it is the reachability fact checked before the
-        // first block was emitted, and the straight-line count says nothing
-        // because a carrying block may well be the last one emitted.
-        if self.pipeline.is_none()
-            && self
-                .handed_out
-                .iter()
-                .any(|pending| matches!(pending, HandedOut::Completion(_)))
+        // Every ordinary operation is joined at its block boundary. A driven
+        // operation remains protected across emission until the exact drain
+        // named by its lowering-owned pipeline consumes it.
+        if self
+            .handed_out
+            .iter()
+            .any(|pending| matches!(pending, HandedOut::Completion(_)))
         {
             return Err(BackendFailure::UnretiredCompletionOperation);
         }
@@ -1513,7 +1397,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.output,
                     "[ {}, %{} ]",
                     self.value_name(argument),
-                    self.block_exit_label(edge.predecessor, self.block(edge.predecessor)?)?
+                    block_exit_label(
+                        edge.predecessor,
+                        self.block(edge.predecessor)?,
+                        &self.overlaps,
+                        &self.completion_steps,
+                        self.pipeline,
+                    )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -1522,96 +1412,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(())
     }
 
-    /// Replays the pieces of one source block that can introduce a new LLVM
-    /// predecessor label.
-    ///
-    /// Block parameters are emitted before their incoming source blocks, so a
-    /// phi must predict the label where each predecessor's terminator will
-    /// actually appear. A staged drain is no longer local to the predecessor:
-    /// it first rehydrates every carried feeder's pending completion and joins
-    /// it, leaving the source terminator in that join's `par.done` block.
-    /// Keeping that graph fact here makes the source phi name the real CFG
-    /// predecessor rather than the nominal `bbN` header.
-    fn block_exit_label(
-        &self,
-        block_id: IrBlockId,
-        block: &IrBlock,
-    ) -> Result<String, BackendFailure> {
-        let carries = self.block_carries_completion(block_id);
-        let mut label = block_label(block_id);
-        let mut outstanding = self.pipeline_drain_handouts(block_id)?;
-        for (index, instruction) in block.instructions().iter().enumerate() {
-            // `emit_instruction` checks the completion step first and returns,
-            // so a step's call never reaches the compute-overlap join below.
-            if let IrInstruction::Define { result, .. } = instruction
-                && let Some(step) = self.completion_steps.get(result)
-            {
-                drain_completions(&mut outstanding, step.wait_for(), &mut label);
-                if step.submit() {
-                    outstanding.push(*result);
-                    label = completion_offered_label(*result);
-                } else {
-                    definition_exit_label(block_id, index, instruction, &mut label);
-                }
-                if !carries && step.finish() {
-                    drain_all_completions(&mut outstanding, &mut label);
-                }
-                continue;
-            }
-            definition_exit_label(block_id, index, instruction, &mut label);
-            // The overlap join rides its last member's own emission, so it
-            // settles the label after whatever that emission left.
-            if let IrInstruction::Define { result, .. } = instruction
-                && let Some(last) = overlap_join_tail(&self.overlaps, *result)
-            {
-                label = par_done_label(last);
-            }
-        }
-        // A carrying block leaves its target work live; every other block
-        // emits all its joins before its source terminator.
-        if !carries {
-            drain_all_completions(&mut outstanding, &mut label);
-        }
-        Ok(label)
-    }
-
-    /// The completion results a source block starts and a pipeline drain must
-    /// rehydrate. `pipeline_outstanding` records them in source emission order;
-    /// this predictive counterpart does the same before phis are written.
-    fn pipeline_drain_handouts(&self, drain: IrBlockId) -> Result<Vec<IrValueId>, BackendFailure> {
-        if !self.pipeline_drains.contains(&drain) {
-            return Ok(Vec::new());
-        }
-        let Some(feeders) = self.pipeline_feeders.get(&drain) else {
-            return Ok(Vec::new());
-        };
-        let mut pending = Vec::new();
-        for (index, block) in self.function.blocks().iter().enumerate() {
-            let feeder =
-                IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
-            if !feeders.contains(&feeder) {
-                continue;
-            }
-            for instruction in block.instructions() {
-                let IrInstruction::Define { result, .. } = instruction else {
-                    continue;
-                };
-                if self
-                    .completion_steps
-                    .get(result)
-                    .is_some_and(crate::IrCompletionStep::submit)
-                {
-                    pending.push(*result);
-                }
-            }
-        }
-        Ok(pending)
-    }
-
     fn emit_instruction(
         &mut self,
-        block: IrBlockId,
-        index: usize,
+        _block: IrBlockId,
+        _index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
         if let IrInstruction::Define {
@@ -1638,12 +1442,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } else {
                 self.emit_definition(*result, *ty, operation)?;
             }
-            // A carrying block never joins: the schedule's last member ends
-            // it with the operations still owned by the target, and every
-            // block the pipeline does not name retires them.
-            if self.block_carries_completion(block) {
-                self.record_pipeline_handouts(block);
-            } else if step.finish() {
+            // Ordinary completion steps still finish at their source-owned
+            // boundary. The dependency helper protects a driven result until
+            // the exact generated drain, even if this block is merely emitted
+            // between its feeder and drain.
+            if step.finish() {
                 self.emit_all_completion_joins()?;
             }
             return Ok(());
@@ -1662,23 +1465,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 ty,
                 operation,
             } => self.emit_definition(*result, *ty, operation),
-            IrInstruction::Claim { condition, site } => {
-                if self.value_type(*condition) != Some(IrType::Bool) {
-                    return Err(BackendFailure::InvalidIr);
-                }
-                let claim_id = self.register_claim(site)?;
-                writeln!(
-                    self.output,
-                    "  br i1 {}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{claim_id}, i64 {})\n  unreachable\n{}:",
-                    self.value_name(*condition),
-                    claim_continue_label(block, index),
-                    claim_trap_label(block, index),
-                    claim_trap_label(block, index),
-                    self.claim_records[claim_id].len(),
-                    claim_continue_label(block, index)
-                )
-                .map_err(|_| BackendFailure::TextEmission)
-            }
             IrInstruction::StoreBuffer {
                 buffer,
                 index,
@@ -1915,25 +1701,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Ok(());
         };
         let window = pipeline.window();
-        // Zero means no independent compiler ceiling, not an unbounded ring:
-        // this function has reserved exactly `slots` records per call site.
-        let ring_ceiling = match window.ceiling() {
-            0 => pipeline.slots(),
-            ceiling => ceiling.min(pipeline.slots()),
+        let name = match pipeline.window_value() {
+            Some(value) => self.value_name(value).trim_start_matches('%').to_owned(),
+            None => self.next_temporary()?,
         };
-        let requested = self.next_temporary()?;
-        let within_ring = self.next_temporary()?;
-        let name = self.next_temporary()?;
+        // A target without the native completion adapter keeps the same
+        // compiler-generated CFG but admits exactly one issue before every
+        // drain. The direct call's SSA result is therefore the result of that
+        // one iteration, and source order is preserved without target-owned
+        // storage or a runtime query.
+        if !self.qualification.target().supports_posix_file_completion()
+            && pipeline.planned_batch_driver().is_some()
+        {
+            writeln!(self.output, "  %{name} = add i64 0, 1")
+                .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        }
         writeln!(
             self.output,
-            "  %{requested} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})\n  \
-             %{within_ring} = icmp ule i64 %{requested}, {}\n  \
-             %{name} = select i1 %{within_ring}, i64 %{requested}, i64 {}",
+            "  %{name} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})",
             window.span(),
             window.slot_bytes(),
-            ring_ceiling,
-            pipeline.slots(),
-            pipeline.slots(),
+            window.ceiling()
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         *self.completion_used = true;
@@ -1945,9 +1734,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         block: IrBlockId,
         terminator: &IrTerminator,
     ) -> Result<(), BackendFailure> {
-        if !self.block_carries_completion(block) {
-            self.emit_all_completion_joins()?;
-        }
+        // Ordinary completion work is block-scoped. A driven result is the
+        // one exception: `emit_completion_dependencies` leaves it outstanding
+        // until `block_drains` names this exact generated drain.
+        self.emit_all_completion_joins()?;
         match terminator {
             IrTerminator::Unreachable => {
                 writeln!(self.output, "  unreachable").map_err(|_| BackendFailure::TextEmission)
@@ -2068,13 +1858,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .ok_or(BackendFailure::InvalidIr)
     }
 
-    fn register_claim(&mut self, site: &IrClaimSite) -> Result<usize, BackendFailure> {
-        let index = self.claim_records.len();
-        let _ = u32::try_from(index).map_err(|_| BackendFailure::CounterOverflow)?;
-        self.claim_records.push(trap_record(site));
-        Ok(index)
-    }
-
     fn emit_drop(&mut self, drop: IrDrop) -> Result<(), BackendFailure> {
         if self.value_type(drop.value()) != Some(drop.ty()) {
             return Err(BackendFailure::InvalidIr);
@@ -2153,49 +1936,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(())
     }
 
-    /// Declares a stack slot under a caller-chosen name in the entry block.
-    ///
-    /// The name must be an otherwise undefined value name, because the slot
-    /// declaration becomes that name's single definition.
-    fn declare_entry_slot(&mut self, name: &str, ty: &str) -> Result<(), BackendFailure> {
-        writeln!(self.entry_prelude, "  {name} = alloca {ty}")
-            .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    /// Reserves a fresh stack slot in the entry block and returns its name.
-    ///
-    /// Each call reserves a distinct slot, so two slots never alias even when
-    /// they hold values of the same type and live at the same time.
-    fn entry_slot(&mut self, ty: &str) -> Result<String, BackendFailure> {
-        let name = format!("%{}", self.next_temporary()?);
-        self.declare_entry_slot(&name, ty)?;
-        Ok(name)
-    }
-
-    /// Reserves `count` stack slots of one type in the entry block and returns
-    /// the name of element `index`.
-    ///
-    /// The storage and the element pointer are both entry-block definitions,
-    /// so the returned name dominates every block of the function exactly as a
-    /// plain [`Self::entry_slot`] name does and can be used wherever one was.
-    fn indexed_entry_slot(
-        &mut self,
-        ty: &str,
-        count: u64,
-        index: u64,
-    ) -> Result<String, BackendFailure> {
-        if index >= count {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let storage = self.entry_slot(&format!("[{count} x {ty}]"))?;
-        let element = format!("%{}", self.next_temporary()?);
-        writeln!(
-            self.entry_prelude,
-            "  {element} = getelementptr inbounds [{count} x {ty}], ptr {storage}, i64 0, \
-             i64 {index}"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(element)
+    /// Returns the address assigned by the already validated physical frame.
+    /// No operation emitter can create storage of its own.
+    fn entry_slot(&self, key: FunctionSlot) -> Result<String, BackendFailure> {
+        self.frame.slot(key)
     }
 
     fn next_temporary(&mut self) -> Result<String, BackendFailure> {
@@ -2216,15 +1960,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 }
 
-/// Whether every member which would leave the calling thread has an execution
-/// route that preserves its target-action contract.  A possibly-suspending
-/// Whitefoot wrapper is intentionally refused until selective stackless frames
-/// exist; only its direct compiler-owned file operation can enter completion.
-fn overlap_is_actualizable(
+/// Selected-target lane layouts for every member which would leave the
+/// calling thread, or `None` when the permission remains sequential.
+///
+/// A possibly-suspending Whitefoot wrapper is intentionally declined until
+/// selective stackless frames exist; only its direct compiler-owned file
+/// operation can enter completion. An ordinary call additionally has to fit
+/// the runtime lane slot as one complete `{ arguments..., result }` aggregate.
+fn ordinary_overlap_lane_frames(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    target: TargetLayout,
     function: &IrFunction,
     overlap: &IrOverlap,
-) -> bool {
+) -> Result<Option<Vec<(IrValueId, TargetAggregateLayout)>>, BackendFailure> {
     if overlap
         .members()
         .iter()
@@ -2239,18 +1988,31 @@ fn overlap_is_actualizable(
             _ => false,
         })
     {
-        return false;
+        return Ok(None);
     }
-    overlap
-        .handed_out()
-        .iter()
-        .all(|member| match definition_operation(function, *member) {
-            Some(IrOperation::Call { function, .. }) => program
-                .functions()
-                .get(*function as usize)
-                .is_some_and(|callee| !callee.target_action().may_suspend()),
-            _ => false,
-        })
+    let mut frames = Vec::with_capacity(overlap.handed_out().len());
+    for member in overlap.handed_out() {
+        let Some(IrOperation::Call {
+            function: callee, ..
+        }) = definition_operation(function, *member)
+        else {
+            return Ok(None);
+        };
+        let callee = program
+            .functions()
+            .get(*callee as usize)
+            .ok_or(BackendFailure::InvalidIr)?;
+        if callee.target_action().may_suspend() {
+            return Ok(None);
+        }
+        let Some(layout) = parallel_lane_frame_layout(target, qualification, program, callee)
+            .map_err(BackendFailure::TargetLayout)?
+        else {
+            return Ok(None);
+        };
+        frames.push((*member, layout));
+    }
+    Ok(Some(frames))
 }
 
 fn definition_operation(function: &IrFunction, value: IrValueId) -> Option<&IrOperation> {
@@ -2265,6 +2027,77 @@ fn definition_operation(function: &IrFunction, value: IrValueId) -> Option<&IrOp
                 _ => None,
             })
     })
+}
+
+fn llvm_storage_type(
+    program: &IrProgram<'_, '_, '_>,
+    ty: &TargetStorageType,
+) -> Result<String, BackendFailure> {
+    match ty {
+        TargetStorageType::Source(ty) => llvm_type(program, *ty),
+        TargetStorageType::Pointer => Ok("ptr".to_owned()),
+        TargetStorageType::Integer(width) if matches!(width, 1 | 8 | 16 | 32 | 64) => {
+            Ok(format!("i{width}"))
+        }
+        TargetStorageType::Integer(_) => Err(BackendFailure::InvalidIr),
+        TargetStorageType::Array { element, length } => Ok(format!(
+            "[{length} x {}]",
+            llvm_storage_type(program, element)?
+        )),
+        TargetStorageType::Struct(fields) => Ok(format!(
+            "{{ {} }}",
+            fields
+                .iter()
+                .map(|field| llvm_storage_type(program, field))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", ")
+        )),
+    }
+}
+
+/// Renders one compiler-generated helper frame from the same typed plan target
+/// layout validated. The returned text is inserted immediately after that
+/// helper's `entry:` label.
+fn render_named_target_frame(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    target: TargetLayout,
+    slots: &[(&str, TargetFrameSlot)],
+) -> Result<String, BackendFailure> {
+    let specifications = slots
+        .iter()
+        .map(|(_, slot)| slot.clone())
+        .collect::<Vec<_>>();
+    let plan = plan_target_frame(target, qualification, program, &specifications)
+        .map_err(BackendFailure::TargetLayout)?;
+    if plan.is_empty() {
+        return Ok(String::new());
+    }
+    let fields = plan
+        .physical_fields()
+        .iter()
+        .map(|field| llvm_storage_type(program, field))
+        .collect::<Result<Vec<_>, _>>()?;
+    let frame_type = format!("{{ {} }}", fields.join(", "));
+    let mut output = String::new();
+    writeln!(
+        output,
+        "  %wf.frame = alloca {frame_type}, align {}",
+        plan.layout().align()
+    )
+    .map_err(|_| BackendFailure::TextEmission)?;
+    for (logical_index, (name, _)) in slots.iter().enumerate() {
+        let field = plan
+            .logical_field(logical_index)
+            .ok_or(BackendFailure::InvalidIr)?;
+        writeln!(
+            output,
+            "  {name} = getelementptr inbounds {frame_type}, ptr %wf.frame, i32 0, i32 {}",
+            field.physical_index()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    Ok(output)
 }
 
 fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, BackendFailure> {
@@ -2405,6 +2238,78 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
         .and_then(|overlap| overlap.handed_out().last().copied())
 }
 
+/// Where a block's terminator is actually emitted.
+///
+/// Emission is one pass over the blocks in order, so a block's phis are written
+/// before the blocks that reach it. A phi therefore has to name the label an
+/// incoming block *will* end at, and every operation that opens a new LLVM
+/// block moves that label away from the plain `bbN` header. This function is
+/// the one model of that: it walks a block's instructions and reports the
+/// label the terminator lands in.
+///
+/// The two hand-out mechanisms both leave the block somewhere else. A compute
+/// overlap settles on its group's `par.done` when its join site runs. A direct
+/// completion step submits into `completion.offered` and is joined later, and
+/// its join settles on that operation's own `par.done`. Ordinary outstanding
+/// work is joined before the terminator; a driven result is preserved until
+/// the exact drain block, so this walk uses the same owner and queue order as
+/// `emit_completion_dependencies`.
+fn block_exit_label(
+    block_id: IrBlockId,
+    block: &IrBlock,
+    overlaps: &[IrOverlap],
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    pipeline: Option<&crate::IrCompletionPipeline>,
+) -> String {
+    let mut label = block_label(block_id);
+    let driven_result = pipeline
+        .and_then(crate::IrCompletionPipeline::driven_result)
+        .filter(|result| {
+            completion_steps
+                .get(result)
+                .is_some_and(IrCompletionStep::submit)
+        });
+    let drains_pipeline = pipeline.is_some_and(|pipeline| pipeline.drains(block_id));
+    let protected_result = driven_result.filter(|_| !drains_pipeline);
+    // The direct completion hand-outs this block has submitted and not yet
+    // joined, in `FunctionEmitter::handed_out` order. The exact drain starts
+    // with the pipeline result its feeder left outstanding on the incoming
+    // edge; unrelated blocks deliberately do not inherit that state.
+    let mut outstanding: Vec<IrValueId> = driven_result
+        .filter(|_| drains_pipeline)
+        .into_iter()
+        .collect();
+    for (index, instruction) in block.instructions().iter().enumerate() {
+        // `emit_instruction` checks the completion step first and returns, so
+        // a step's call never reaches the compute-overlap join below.
+        if let IrInstruction::Define { result, .. } = instruction
+            && let Some(step) = completion_steps.get(result)
+        {
+            drain_completions(&mut outstanding, step.wait_for(), &mut label);
+            if step.submit() {
+                outstanding.push(*result);
+                label = completion_offered_label(*result);
+            } else {
+                definition_exit_label(block_id, index, instruction, &mut label);
+            }
+            if step.finish() {
+                drain_all_completions_except(&mut outstanding, protected_result, &mut label);
+            }
+            continue;
+        }
+        definition_exit_label(block_id, index, instruction, &mut label);
+        // The overlap join rides its last member's own emission, so it settles
+        // the label after whatever that emission left.
+        if let IrInstruction::Define { result, .. } = instruction
+            && let Some(last) = overlap_join_tail(overlaps, *result)
+        {
+            label = par_done_label(last);
+        }
+    }
+    drain_all_completions_except(&mut outstanding, protected_result, &mut label);
+    label
+}
+
 /// Replays `emit_completion_dependencies`: each named operation still
 /// outstanding is joined, and each join leaves the block at its `par.done`.
 fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], label: &mut String) {
@@ -2416,25 +2321,36 @@ fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], lab
     }
 }
 
-/// Replays `emit_all_completion_joins`, which drains in hand-out order and so
-/// leaves the block at the last hand-out's `par.done`.
-fn drain_all_completions(outstanding: &mut Vec<IrValueId>, label: &mut String) {
-    if let Some(last) = outstanding.last() {
-        *label = par_done_label(*last);
+/// Replays a block boundary while preserving the one pipeline result whose
+/// generated drain occurs elsewhere in emission order.
+fn drain_all_completions_except(
+    outstanding: &mut Vec<IrValueId>,
+    protected: Option<IrValueId>,
+    label: &mut String,
+) {
+    let mut last = None;
+    outstanding.retain(|value| {
+        if Some(*value) == protected {
+            true
+        } else {
+            last = Some(*value);
+            false
+        }
+    });
+    if let Some(last) = last {
+        *label = par_done_label(last);
     }
-    outstanding.clear();
 }
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
 fn definition_exit_label(
-    block_id: IrBlockId,
-    index: usize,
+    _block_id: IrBlockId,
+    _index: usize,
     instruction: &IrInstruction,
     label: &mut String,
 ) {
     match instruction {
-        IrInstruction::Claim { .. } => *label = claim_continue_label(block_id, index),
         IrInstruction::Define {
             result,
             operation:
@@ -2479,238 +2395,6 @@ fn definition_exit_label(
     }
 }
 
-/// The blocks one block's terminator can transfer control to.
-fn block_successors(block: &IrBlock) -> Vec<IrBlockId> {
-    match block.terminator() {
-        IrTerminator::Jump { target, .. } => vec![*target],
-        IrTerminator::Match { targets, .. } => {
-            targets.iter().map(|target| target.block()).collect()
-        }
-        IrTerminator::Return { .. } | IrTerminator::Unreachable => Vec::new(),
-    }
-}
-
-/// Whether an IR value is consumed anywhere in one function.
-///
-/// This is intentionally structural rather than a source-shape exception: a
-/// staged completion result can be hidden in an ordinary call argument, a
-/// block-edge argument, or a drop just as easily as it can be the scrutinee of
-/// a match.  The pipeline validator needs the complete answer before it
-/// commits to replacing the normal SSA join with per-operation storage.
-fn function_uses_value(
-    program: &IrProgram<'_, '_, '_>,
-    function: &IrFunction,
-    needle: IrValueId,
-) -> Result<bool, BackendFailure> {
-    for block in function.blocks() {
-        for instruction in block.instructions() {
-            if instruction_uses_value(program, instruction, needle)? {
-                return Ok(true);
-            }
-        }
-        if terminator_uses_value(program, block.terminator(), needle)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn instruction_uses_value(
-    program: &IrProgram<'_, '_, '_>,
-    instruction: &IrInstruction,
-    needle: IrValueId,
-) -> Result<bool, BackendFailure> {
-    Ok(match instruction {
-        IrInstruction::Define { operation, .. } => operation_uses_value(operation, needle),
-        IrInstruction::Claim { condition, .. } => *condition == needle,
-        IrInstruction::StoreBuffer {
-            buffer,
-            index,
-            value,
-        } => *buffer == needle || *index == needle || *value == needle,
-        IrInstruction::Store { address, value, .. } => *address == needle || *value == needle,
-        IrInstruction::Drop(drop) => drop.value() == needle && drop_uses_value(program, *drop)?,
-    })
-}
-
-fn terminator_uses_value(
-    program: &IrProgram<'_, '_, '_>,
-    terminator: &IrTerminator,
-    needle: IrValueId,
-) -> Result<bool, BackendFailure> {
-    let (ordinary_use, drops) = match terminator {
-        IrTerminator::Unreachable => return Ok(false),
-        IrTerminator::Jump {
-            arguments, drops, ..
-        } => (arguments.contains(&needle), drops.as_slice()),
-        IrTerminator::Match { scrutinee, .. } => return Ok(*scrutinee == needle),
-        IrTerminator::Return { value, drops } => (*value == needle, drops.as_slice()),
-    };
-    if ordinary_use {
-        return Ok(true);
-    }
-    for drop in drops {
-        if drop.value() == needle && drop_uses_value(program, *drop)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// Whether the backend actually consumes a dropped value.
-///
-/// A lowered, non-owning outcome can have a bookkeeping `Drop` whose emitted
-/// form is only a comment. It is not a source continuation reading the staged
-/// result, so it does not make the deferred join unsafe. Any release action or
-/// recursively owned payload, however, is a real use and remains forbidden.
-fn drop_uses_value(program: &IrProgram<'_, '_, '_>, drop: IrDrop) -> Result<bool, BackendFailure> {
-    Ok(drop.release().action.is_some() || type_requires_cleanup(program, drop.ty())?)
-}
-
-fn operation_uses_value(operation: &IrOperation, needle: IrValueId) -> bool {
-    match operation {
-        IrOperation::Constant(_) | IrOperation::ArenaListNew => false,
-        IrOperation::Call { arguments, .. }
-        | IrOperation::SystemCall { arguments, .. }
-        | IrOperation::Integer { arguments, .. }
-        | IrOperation::Float { arguments, .. }
-        | IrOperation::Boolean { arguments, .. } => arguments.contains(&needle),
-        IrOperation::NumericConversion { value, .. }
-        | IrOperation::Reinterpret { value, .. }
-        | IrOperation::ArrayFill { value, .. }
-        | IrOperation::BufferLength { buffer: value }
-        | IrOperation::SliceFromBuffer { buffer: value }
-        | IrOperation::SliceLength { slice: value }
-        | IrOperation::BoxNew { value, .. }
-        | IrOperation::BoxDeref { value, .. }
-        | IrOperation::ArenaDeref { value, .. }
-        | IrOperation::AddressOf { value, .. } => *value == needle,
-        IrOperation::EnumEquality { arguments, .. } => arguments.contains(&needle),
-        IrOperation::ArrayIndex { root, offset, .. } => {
-            ir_array_root_uses_value(*root, needle) || *offset == needle
-        }
-        IrOperation::InsertArray {
-            aggregate,
-            index,
-            value,
-        } => *aggregate == needle || *index == needle || *value == needle,
-        IrOperation::BufferFill { length, value, .. } => *length == needle || *value == needle,
-        IrOperation::BufferVacant { length, .. } | IrOperation::BufferFits { length, .. } => {
-            *length == needle
-        }
-        IrOperation::BufferIndex { buffer, offset, .. }
-        | IrOperation::SliceIndex {
-            slice: buffer,
-            offset,
-            ..
-        } => *buffer == needle || *offset == needle,
-        IrOperation::BufferProbeSkip {
-            buffer,
-            index,
-            limit,
-            needles,
-        } => *buffer == needle || *index == needle || *limit == needle || needles.contains(&needle),
-        IrOperation::SliceFromArray { array } => ir_array_root_uses_value(*array, needle),
-        IrOperation::ArenaNew { list, value, .. } => *list == needle || *value == needle,
-        IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
-            fields.contains(&needle)
-        }
-        IrOperation::ProjectStruct { aggregate, .. }
-        | IrOperation::ProjectVariant { aggregate, .. } => *aggregate == needle,
-        IrOperation::InsertStruct {
-            aggregate, value, ..
-        } => *aggregate == needle || *value == needle,
-        IrOperation::Load { address, .. } => *address == needle,
-        IrOperation::LoopSplit {
-            seed,
-            lower,
-            upper,
-            captures,
-            ..
-        } => *seed == needle || *lower == needle || *upper == needle || captures.contains(&needle),
-    }
-}
-
-fn ir_array_root_uses_value(root: IrArrayRoot, needle: IrValueId) -> bool {
-    matches!(root, IrArrayRoot::Value(value) if value == needle)
-}
-
-/// Where a staged loop pipeline's carrying region ends.
-///
-/// A block the pipeline does not name, reached in one edge from a block it
-/// does, is an exit from the region and therefore a drain: it retires every
-/// operation the region left outstanding. The loop's normal exit is one of
-/// these and every typed exit out of the body is another, so this is a set and
-/// not a block.
-fn pipeline_drain_blocks(function: &IrFunction) -> HashSet<IrBlockId> {
-    let Some(pipeline) = function.completion_pipeline() else {
-        return HashSet::new();
-    };
-    function
-        .blocks()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, block)| {
-            let id = IrBlockId::from_index(index).ok()?;
-            pipeline.carries(id).then(|| block_successors(block))
-        })
-        .flatten()
-        .filter(|successor| !pipeline.carries(*successor))
-        .collect()
-}
-
-/// Which carrying blocks each drain retires the work of.
-///
-/// A drain must retire exactly the operations the region can still have in
-/// flight when control arrives there, and those are the ones handed out by the
-/// carrying blocks that reach it without leaving the region on the way — a
-/// fact about the edges, not about the order the blocks are numbered in.
-/// Reading it from the graph is what keeps a drain from retiring work that
-/// cannot reach it and, together with the ordering rule `validate_pipeline`
-/// applies, from missing work that can.
-fn pipeline_feeder_blocks(function: &IrFunction) -> HashMap<IrBlockId, HashSet<IrBlockId>> {
-    let Some(pipeline) = function.completion_pipeline() else {
-        return HashMap::new();
-    };
-    let blocks = function.blocks();
-    let mut predecessors: Vec<Vec<IrBlockId>> = vec![Vec::new(); blocks.len()];
-    for (index, block) in blocks.iter().enumerate() {
-        let Ok(id) = IrBlockId::from_index(index) else {
-            continue;
-        };
-        for successor in block_successors(block) {
-            if let Some(edges) = predecessors.get_mut(successor.index()) {
-                edges.push(id);
-            }
-        }
-    }
-    let carrying_predecessors = |block: IrBlockId| -> Vec<IrBlockId> {
-        predecessors
-            .get(block.index())
-            .map(|edges| {
-                edges
-                    .iter()
-                    .copied()
-                    .filter(|edge| pipeline.carries(*edge))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let mut feeders = HashMap::new();
-    for drain in pipeline_drain_blocks(function) {
-        let mut reached: HashSet<IrBlockId> = HashSet::new();
-        let mut frontier = carrying_predecessors(drain);
-        while let Some(block) = frontier.pop() {
-            if !reached.insert(block) {
-                continue;
-            }
-            frontier.extend(carrying_predecessors(block));
-        }
-        feeders.insert(drain, reached);
-    }
-    feeders
-}
-
 fn block_label(block: IrBlockId) -> String {
     if block.ordinal() == 0 {
         "entry".to_owned()
@@ -2729,14 +2413,6 @@ fn nominal_symbol(nominal: IrNominalId) -> String {
 
 fn constant_symbol(constant: crate::IrConstantId) -> String {
     format!("@.wf_const.{}", constant.ordinal())
-}
-
-fn claim_continue_label(block: IrBlockId, index: usize) -> String {
-    format!("claim.cont.b{}.i{index}", block.ordinal())
-}
-
-fn claim_trap_label(block: IrBlockId, index: usize) -> String {
-    format!("claim.trap.b{}.i{index}", block.ordinal())
 }
 
 fn integer_safe_label(value: IrValueId) -> String {
@@ -2790,23 +2466,21 @@ pub(crate) fn overlapped_clone_symbol(sequential: &str) -> Option<String> {
     sequential.strip_prefix("wf__par_seq_").map(source_symbol)
 }
 
-/// The mandatory [DIAG-3] record writer of a module with one thread, reached
-/// from every `claim` that evaluates false, and the sole writer-reachable
-/// runtime trap [SCOPE-4].
+/// The heap-resource record writer of a module with one thread.
 ///
 /// The thread that reaches it writes its complete record to standard error and
 /// aborts the process without unwinding. There is no one to arbitrate with, so
 /// there is no latch: these are the bytes every module emitted before the
 /// overlapped world existed, and they are what a default build still gets.
-const SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
+const SEQUENTIAL_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
 
-/// Windows twin of [`SEQUENTIAL_TRAP_WRITER`].  The private runtime call is
-/// the raw `WriteFile` channel; it neither reaches a source `Output` nor
-/// depends on the CRT's text mode.
-const WINDOWS_SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
+/// Windows twin of [`SEQUENTIAL_RESOURCE_RECORD_WRITER`]. The private runtime
+/// call writes the same bytes to the process diagnostic channel without
+/// importing the POSIX file-descriptor ABI into a COFF module.
+const WINDOWS_SEQUENTIAL_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
 
 /// The module's own answer for the shared record latch, and the only state the
-/// trap path carries.
+/// resource-record path carries.
 ///
 /// The latch a record writer takes is the floor runtime's, because the floor's
 /// signal handler writes the stack record and this module writes every other
@@ -2821,16 +2495,15 @@ const WINDOWS_SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr
 /// one whenever that unit is linked, which is every ordinary build. Zero until
 /// some thread writes a record, and no path outside the writer reads it, so a
 /// program that writes none pays nothing for it.
-const TRAP_LATCH: &str = "@.wf_trap.latch = private global i32 0, align 4\n";
+const RESOURCE_RECORD_LATCH: &str = "@.wf_resource_record.latch = private global i32 0, align 4\n";
 
 /// The module's standalone definition of the shared latch's accessor.
-const TRAP_LATCH_FALLBACK: &str =
-    "\ndefine weak ptr @wf__floor_record_latch() {\nentry:\n  ret ptr @.wf_trap.latch\n}\n";
+const RESOURCE_RECORD_LATCH_FALLBACK: &str = "\ndefine weak ptr @wf__floor_record_latch() {\nentry:\n  ret ptr @.wf_resource_record.latch\n}\n";
 
-/// [`SEQUENTIAL_TRAP_WRITER`]'s work under a first-writer-wins latch, emitted
+/// [`SEQUENTIAL_RESOURCE_RECORD_WRITER`]'s work under a first-writer-wins latch,
+/// emitted
 /// where the module can have more than one thread inside it — that is, where
-/// it writes any record at all and hands a call out, whether or not it
-/// contains a `claim`.
+/// it writes a heap-resource record and hands a call out.
 ///
 /// The first thread to arrive takes the shared latch and owns the record: it
 /// writes its complete bytes to standard error and aborts the process without
@@ -2840,67 +2513,21 @@ const TRAP_LATCH_FALLBACK: &str =
 /// writer and the floor's own — an execution that runs out of stack on one
 /// thread while another is refused an allocation still produces exactly one
 /// well-formed record rather than two interleaved ones. [PAR-1]'s
-/// erroneous-execution guarantee is met by construction instead of by refusing
-/// to overlap the claim-bearing calls of correct programs.
+/// erroneous-execution guarantee is met by construction.
 ///
 /// *Which* record wins may depend on the schedule, and that is the whole of
 /// what a permitted overlap can change about one. The bytes are fixed by the
-/// claim [DIAG-3] or the resource class that wins — no worker, thread, or
-/// dynamic stack appears in them — so a correct program that exhausts nothing
-/// observes nothing here.
+/// resource class that wins — no worker, thread, or dynamic stack appears in
+/// them — so a run that exhausts nothing observes nothing here.
 ///
 /// The park spins on a *volatile* load rather than an empty loop, so no
 /// optimizer may delete the loop and let a losing thread fall through into a
 /// second record.
-const LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %claimed = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
+const LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %acquired = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %acquired, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
 
-/// Windows twin of [`LATCHED_TRAP_WRITER`], sharing the same floor latch and
-/// differing only in the raw diagnostic facility selected at build time.
-const WINDOWS_LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %claimed = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
-
-pub(super) fn trap_record(site: &IrClaimSite) -> Vec<u8> {
-    let components = site
-        .node_path
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"rule_id\":{},\"message\":{},\"function\":{},\"node_path\":[{components}]}}\n",
-        json_string(site.rule_id),
-        json_string(&site.message),
-        json_string(&site.function)
-    )
-    .into_bytes()
-}
-
-/// Encodes one [DIAG-3] record field as a JSON string.
-///
-/// The input is always a Rust `str`, so it is already one well-formed UTF-8
-/// sequence; the record must carry those exact bytes. Iteration is therefore
-/// over scalar values, not bytes: pushing a `char` writes its complete UTF-8
-/// encoding, so a multi-byte scalar survives intact and no record can end
-/// inside an encoding. Byte iteration with `char::from` was wrong for exactly
-/// this case — it reinterpreted each continuation byte as the Latin-1 scalar
-/// of the same value and re-encoded it, doubling every non-ASCII byte. ASCII
-/// input is unaffected either way.
-///
-/// Only `"`, `\`, and newline need escaping here: [FORM-5] admits no other
-/// control in a STRING, so no other scalar in a record field requires a JSON
-/// escape.
-fn json_string(value: &str) -> String {
-    let mut encoded = String::from("\"");
-    for scalar in value.chars() {
-        match scalar {
-            '"' => encoded.push_str("\\\""),
-            '\\' => encoded.push_str("\\\\"),
-            '\n' => encoded.push_str("\\n"),
-            _ => encoded.push(scalar),
-        }
-    }
-    encoded.push('"');
-    encoded
-}
+/// Windows twin of [`LATCHED_RESOURCE_RECORD_WRITER`], sharing the floor
+/// runtime's first-writer latch while using the native diagnostic channel.
+const WINDOWS_LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %acquired = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %acquired, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf__windows_diagnostic_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
 
 fn llvm_bytes(bytes: &[u8]) -> String {
     let mut encoded = String::with_capacity(bytes.len() * 3);

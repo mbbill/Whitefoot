@@ -25,14 +25,14 @@ static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 /// exactly the condition the driver uses.
 ///
 /// One definition serves both program-corpus link paths, so a program that
-/// overlaps nothing links nothing extra and no path can forget the runtime a
+/// overlaps nothing links nothing extra and no path can omit the runtime a
 /// module actually calls.
 fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let mut command = Command::new("/usr/bin/clang");
     command.arg("-x").arg("ir").arg(module);
-    // The exhaustion floor joins every link the driver makes: every program can
-    // run out of stack, so every corpus program carries the unit that reports
-    // it and runs on the stack it sizes.
+    // Every integration executable links the current resource floor so the
+    // harness exercises the same runtime boundary as the driver. Stack
+    // availability remains outside the language verdict modeled by this test.
     let floor_unit = directory.join("wf_floor.c");
     std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
@@ -180,7 +180,7 @@ pub fn compile_programs_with_overlap(names: &[&str]) -> String {
 
 /// Every `.wf` file the program corpus holds, in one stable order.
 ///
-/// Read from the directory rather than listed, so a case that claims to cover
+/// Read from the directory rather than listed, so a case intended to cover
 /// the corpus cannot quietly stop covering it when a program is added.
 pub fn corpus_program_files() -> Vec<String> {
     let root = corpus_directory();
@@ -288,9 +288,9 @@ pub fn compile_and_run(llvm: &str) -> Output {
 /// runtime case's own harness; the corpus needs its own because the program
 /// under test is a corpus file rather than an inline fixture.
 ///
-/// The count reaches the destructor only for a program that exits normally: a
-/// trap aborts and runs no destructor. Every corpus program this is used on
-/// exits normally.
+/// The count reaches the destructor only for a program that exits normally;
+/// an abnormal process stop runs no destructor. Every corpus program this is
+/// used on exits normally.
 pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(

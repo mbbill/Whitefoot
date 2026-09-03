@@ -1,5 +1,0 @@
-command fn main() -> status: own ExitStatus traps {
-  doc "A direct false predicate is checker-refuted and therefore a hard CLM-2 source error. It cannot be admitted as a convenient runtime abort or assertion.";
-  claim boom: False() because "premises: False() is the Boolean false constructor\nderivation: evaluating the constructor yields false directly\nconclusion: False() is false\nchecker gap: there is no checker gap for a direct False() predicate\nconsumers: no accepted terminal consumer may depend on this rejected occurrence";
-  return exit_status(code: 0_u8);
-}

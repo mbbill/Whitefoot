@@ -6,7 +6,6 @@
 //! capability, never as a source-language rejection.
 
 mod check;
-mod claim_locality;
 mod entailment;
 mod goal;
 mod loop_permission;
@@ -15,7 +14,6 @@ pub(crate) mod permission;
 mod permission_ledger;
 mod places;
 mod postcondition;
-mod provenance;
 mod staged_permission;
 mod target_action;
 mod tree;
@@ -23,10 +21,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    BundleSourceExtent, DeclarationId, NodePath, ResolutionIssue, ResolvedSyntaxUnit,
-    SyntaxCoordinate,
-};
+use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
 #[cfg(test)]
@@ -53,7 +48,7 @@ pub(crate) use model::{
     CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
     CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
     CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, ClaimSite, NominalId, PropagationContext,
+    CheckedType, CheckedValue, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -165,18 +160,12 @@ pub enum SemanticRule {
     Sys2,
     /// Half-open system buffer-range discharge.
     Sys8,
-    /// Named runtime claim formation and per-function name uniqueness.
-    Clm1,
-    /// Claim lifecycle: refutation rejection under the entailment fragment.
-    Clm2,
-    /// Opt-in strict no-claim partition and its imported-claim boundary.
-    Clm3,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
-    /// External actual protecting one downstream constrained subject.
-    Prv2,
-    /// External local constrained subject authorized only by assertion state.
-    Prv3,
+    /// Proof-only loop invariant formation.
+    Inv1,
+    /// Finite source-written affine proof formation and checking.
+    Prf1,
 }
 
 impl SemanticRule {
@@ -230,12 +219,9 @@ impl SemanticRule {
             Self::Eff2 => "EFF-2",
             Self::Sys2 => "SYS-2",
             Self::Sys8 => "SYS-8",
-            Self::Clm1 => "CLM-1",
-            Self::Clm2 => "CLM-2",
-            Self::Clm3 => "CLM-3",
             Self::Ent2 => "ENT-2",
-            Self::Prv2 => "PRV-2",
-            Self::Prv3 => "PRV-3",
+            Self::Inv1 => "INV-1",
+            Self::Prf1 => "PRF-1",
         }
     }
 
@@ -302,13 +288,10 @@ impl SemanticRule {
             Self::Err2 => Self::Err3,
             Self::Err3 => Self::Sys2,
             Self::Sys2 => Self::Sys8,
-            Self::Sys8 => Self::Clm1,
-            Self::Clm1 => Self::Clm2,
-            Self::Clm2 => Self::Clm3,
-            Self::Clm3 => Self::Ent2,
-            Self::Ent2 => Self::Prv2,
-            Self::Prv2 => Self::Prv3,
-            Self::Prv3 => return None,
+            Self::Sys8 => Self::Ent2,
+            Self::Ent2 => Self::Inv1,
+            Self::Inv1 => Self::Prf1,
+            Self::Prf1 => return None,
         })
     }
 
@@ -369,12 +352,9 @@ impl SemanticRule {
             Self::Err3 => 43,
             Self::Sys2 => 44,
             Self::Sys8 => 45,
-            Self::Clm1 => 46,
-            Self::Clm2 => 47,
-            Self::Clm3 => 48,
-            Self::Ent2 => 49,
-            Self::Prv2 => 50,
-            Self::Prv3 => 51,
+            Self::Ent2 => 46,
+            Self::Inv1 => 47,
+            Self::Prf1 => 48,
         }
     }
 }
@@ -388,75 +368,6 @@ pub enum SemanticLocation {
     BundleRoot(Vec<BundleSourceExtent>),
 }
 
-/// The [CLM-2] refutation payload: the rejection carries the claim name, the
-/// predicate, and the derived negation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RefutedClaimDetail {
-    /// The claim's written name.
-    pub name: String,
-    /// The claim predicate as a normalized relation.
-    pub predicate: String,
-    /// The derived negation.
-    pub negation: String,
-    /// Stable concrete generic instance spelling, or `None` for a source
-    /// schema or nongeneric occurrence.
-    pub instance: Option<String>,
-}
-
-/// One CLM-1 canonical-formation or CLM-2 lifecycle/residual-canonicality
-/// rejection other than an exact refutation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InvalidClaimDetail {
-    pub name: String,
-    pub predicate: String,
-    pub classification: &'static str,
-    pub component: Option<u32>,
-    pub reason: &'static str,
-    /// Stable concrete generic instance spelling, or `None` for a source
-    /// schema or nongeneric occurrence.
-    pub instance: Option<String>,
-}
-
-/// The call boundary whose result reached a non-local claim component
-/// [CLM-1].  Every published identity is source-stable: a user call names its
-/// declaration, while a system call names its catalog spelling.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ClaimBoundaryResultDetail {
-    /// An ordinary user-call result.
-    UserCall {
-        /// Source declaration identity of the called function.
-        declaration: DeclarationId,
-        /// Source function spelling, never a concrete-instance symbol.
-        callee: String,
-    },
-    /// A system-call result.
-    SystemCall {
-        /// Zero-based [SYS-2] system declaration ordinal.
-        declaration_ordinal: u8,
-        /// Stable system-operation spelling.
-        operation: String,
-    },
-}
-
-/// A CLM-1 claim-locality rejection.  The component is the least canonical
-/// contribution component that reads a value descended from a call result.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NonLocalClaimDetail {
-    /// The claim's written name.
-    pub name: String,
-    /// Least non-local canonical contribution component ordinal.
-    pub component: u32,
-    /// Source rendering of the first canonical support that observes the
-    /// selected earliest boundary witness.
-    pub carrier: String,
-    /// Earliest source call occurrence that introduced the boundary result.
-    pub boundary_call: NodePath,
-    /// Stable kind and callee identity of that boundary.
-    pub boundary: ClaimBoundaryResultDetail,
-    /// Exact mechanical repair selected by CLM-1.
-    pub mechanical_fix: &'static str,
-}
-
 /// One non-discharged static source obligation disposition [ENT-6].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaticObligationDisposition {
@@ -464,6 +375,44 @@ pub enum StaticObligationDisposition {
     Refuted,
     /// The closed state derives neither a successful nor a refuting route.
     Unproved,
+}
+
+/// Which INV-1 induction obligation a source loop invariant failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LoopInvariantProofObligation {
+    /// The invariant did not follow from the loop preheader facts at the first
+    /// loop header.
+    Base,
+    /// Some reachable normal body fallthrough did not preserve the invariant
+    /// at the next loop header. A counted loop includes its hidden unit binder
+    /// update in this transition.
+    Backedge,
+}
+
+/// The first failed part of one erased local invariant certificate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceProofObligation {
+    /// Zero-based `use` occurrence in source order.
+    Premise(u32),
+    /// The written weighted sum plus the fixed direct residual rule did not
+    /// establish the invariant target.
+    Combination,
+    /// AUTO already established the target, so the entire written `use` block
+    /// is forbidden redundant proof text in this specification version.
+    RedundantUseBlock,
+    /// Two normalized `use` relations are identical; one explicitly scaled
+    /// use must express their combined contribution.
+    RepeatedUse { first: u32, repeated: u32 },
+    /// The source list exceeds the fixed structural use capacity.
+    UseCapacity { maximum: u32, actual: u32 },
+    /// A written proof-domain factor or source-order accumulated certificate
+    /// exceeded the admitted i128 arithmetic.
+    CertificateArithmeticOverflow,
+    /// The accumulated certificate exceeded a fixed affine shape capacity.
+    CertificateFormationCapacity,
+    /// A nonpositive factor reached the certificate core. Canonical source
+    /// checking normally rejects this before entailment.
+    InvalidUseFactor { use_index: u32 },
 }
 
 /// One non-discharged [FN-8] ordinary-call goal disposition.
@@ -490,64 +439,7 @@ pub struct UndischargedCallRequirementDetail {
     pub mechanical_fix: &'static str,
 }
 
-/// The fixed proof view used by every [CLM-3] non-claim query.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StrictProofView {
-    /// Existing S3-disabled U view, with independently proved S4 retained.
-    Unasserted,
-}
-
-/// Public lifecycle spelling retained in a direct [CLM-3] claim diagnostic.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StrictClaimLifecycleDisposition {
-    /// A CLM-1/CLM-2-validated proof residual retained as a runtime check.
-    Retained,
-}
-
-/// The least downstream direct-claim identity carried by an import event.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StrictClaimIdentityDetail {
-    pub concrete_function: String,
-    pub claim: NodePath,
-    pub name: String,
-}
-
-/// A direct claim in the marked root's own concrete SCC [CLM-3].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StrictDirectClaimDetail {
-    pub strict_root: String,
-    pub concrete_claim_owner: String,
-    pub claim: NodePath,
-    pub name: String,
-    pub predicate: String,
-    pub justification: String,
-    pub lifecycle: StrictClaimLifecycleDisposition,
-}
-
-/// A root-SCC call importing a nonempty downstream `MayClaims` set [CLM-3].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StrictImportedClaimDetail {
-    pub strict_root: String,
-    pub concrete_caller: String,
-    pub call: NodePath,
-    pub concrete_callee: String,
-    pub least_downstream_claim: StrictClaimIdentityDetail,
-}
-
-/// One demanded or marked-boundary U-view call-goal failure [FN-8].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StrictUndischargedCallRequirementDetail {
-    pub strict_root: String,
-    pub concrete_caller: String,
-    pub concrete_callee: String,
-    pub requires_clause: NodePath,
-    pub instantiated_goal: String,
-    pub disposition: CallRequirementDisposition,
-    pub view: StrictProofView,
-    pub mechanical_fix: &'static str,
-}
-
-/// One non-discharged complete-view [FN-9] relation disposition.
+/// One non-discharged [FN-9] relation disposition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostconditionProofDisposition {
     Refuted,
@@ -567,158 +459,8 @@ pub struct UndischargedPostconditionDetail {
     pub selector: NodePath,
     /// The instantiated normalized relation at the selected exit.
     pub relation: String,
-    /// The exact non-discharged complete-view disposition.
+    /// The exact non-discharged disposition.
     pub disposition: PostconditionProofDisposition,
-}
-
-/// Public finite spelling of one PRV-1 parameter component selector.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProvenanceDatumSelector {
-    /// A non-payload value's sole component.
-    Plain,
-    /// One direct enum payload projection, never a recursive payload path.
-    EnumPayload {
-        /// Zero-based variant declaration ordinal.
-        variant: u32,
-        /// Zero-based payload-field declaration ordinal.
-        field: u32,
-    },
-}
-
-/// One exact finite parameter datum rendered in a provenance diagnostic.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ProvenanceParameterDatumDetail {
-    /// Zero-based value-parameter ordinal.
-    pub ordinal: u32,
-    /// Exact plain or direct-payload selector.
-    pub selector: ProvenanceDatumSelector,
-}
-
-/// The identity class of one ordered provenance target.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProvenanceDemandKind {
-    /// The protected leaf is local to the rejected function [PRV-3].
-    LocalLeaf,
-    /// A direct caller-visible parameter demand [PRV-2].
-    Direct,
-    /// An exact S4 requirement occurrence bridges to the leaf [PRV-2].
-    RequirementBridge,
-}
-
-/// One complete direct or requirement-bridge demand state retained at a
-/// diagnostic call boundary.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProvenanceDemandStateDetail {
-    pub demand_kind: ProvenanceDemandKind,
-    /// Concrete function that owns this boundary state.
-    pub function: String,
-    pub parameter: ProvenanceParameterDatumDetail,
-    /// Exact source-ordered occurrence identity for a requirement-bridge
-    /// state. Empty for a direct state.
-    pub requirements: Vec<NodePath>,
-    pub protected_function: String,
-    pub protected_leaf: NodePath,
-    pub protected_conjunct: u32,
-}
-
-/// One ordered call boundary in a post-convergence provenance witness.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProvenanceBoundaryDetail {
-    pub call: NodePath,
-    pub argument_node: NodePath,
-    pub argument: u32,
-    pub callee: ProvenanceDemandStateDetail,
-    /// Absent only at the real true-bit terminal boundary.
-    pub caller_continuation: Option<ProvenanceDemandStateDetail>,
-}
-
-/// One exact PRV-1 predecessor edge and its complete checked source extent.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProvenanceWriteContextDetail {
-    /// Exact writable formal ordinal at the system/user call boundary.
-    pub parameter: u32,
-    /// Exact caller actual atom paired with the writable formal.
-    pub actual: NodePath,
-    pub actual_coordinate: SyntaxCoordinate,
-}
-
-/// The positive transfer represented by a call carrier.  A parameter-backed
-/// user result/write has a distinct receiving edge and substitution edge even
-/// though both use the same source call NodePath.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProvenanceCarrierCallRole {
-    SystemResult,
-    SystemWrite,
-    UserResult,
-    UserWrite,
-    UserSubstitution,
-}
-
-/// One exact PRV-1 predecessor edge and its complete checked source extent.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProvenanceCarrierStepDetail {
-    pub path: NodePath,
-    pub selector: ProvenanceDatumSelector,
-    pub call_role: Option<ProvenanceCarrierCallRole>,
-    /// Explanation-only write identity attached to this one call edge.
-    pub write_context: Option<ProvenanceWriteContextDetail>,
-    pub coordinate: SyntaxCoordinate,
-}
-
-/// The entry-local S4 bridge is rooted directly at the retained requirement;
-/// it has no source call boundary or caller continuation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProvenanceLocalBridgePredecessor {
-    Local,
-}
-
-/// One complete ordered target retained by a PRV-2/PRV-3 diagnostic.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProvenanceTargetDetail {
-    /// Local, direct, or exact requirement-bridge identity.
-    pub demand_kind: ProvenanceDemandKind,
-    /// Exact selected callee datum for PRV-2; absent only for a PRV-3 leaf.
-    pub callee_parameter: Option<ProvenanceParameterDatumDetail>,
-    /// Concrete function instance that owns the protected leaf.
-    pub protected_function: String,
-    /// Exact protected obligation occurrence.
-    pub protected_leaf: NodePath,
-    /// Normalized conjunct ordinal (zero for the current bounds family).
-    pub protected_conjunct: u32,
-    /// Concrete function owning an exact requirement occurrence, if bridged.
-    pub requirement_function: Option<String>,
-    /// Exact source-ordered clause set for a requirement bridge.
-    pub requirements: Vec<NodePath>,
-    /// Present only for an entry-local PRV-3 leaf whose U success came from
-    /// its own S4 requirement while B failed.
-    pub local_bridge_predecessor: Option<ProvenanceLocalBridgePredecessor>,
-    /// Exact ENT-6 residual at the downstream protected leaf.
-    pub residual: String,
-    /// Ordered parameter-only explanations beside a terminating true bit.
-    pub companion_parameter_datums: Vec<ProvenanceParameterDatumDetail>,
-    /// Complete ordered call boundaries; their full state identities are also
-    /// the deterministic cycle-cut and tie-break key.
-    pub boundaries: Vec<ProvenanceBoundaryDetail>,
-    /// Selector-preserving PRV-1 suffix used for deterministic tie-breaking
-    /// and source rendering.
-    pub carrier: Vec<ProvenanceCarrierStepDetail>,
-    /// Coordinate of the labelled-entry or system origin (the final carrier).
-    pub origin_coordinate: SyntaxCoordinate,
-    /// Deterministic carrier chain ending at a command-param or SYS-2 call.
-    pub witness: Vec<NodePath>,
-    /// Repair specific to this target's direct/bridge/local identity.
-    pub target_repair: &'static str,
-}
-
-/// Complete coalesced target set for one provenance rejection event.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProvenanceGateDetail {
-    /// Ordered nonempty target set. One call argument can carry both kinds.
-    pub targets: Vec<ProvenanceTargetDetail>,
-    /// Target whose deterministic witness and target-specific repair render.
-    pub selected_target: u32,
-    /// Alternative common to every target: remove the external subject route.
-    pub restructure_alternative: &'static str,
 }
 
 /// Structured reason for one semantic rejection.
@@ -733,7 +475,7 @@ pub enum SemanticIssueKind {
     /// A const-expression's compile-time evaluation has no u64 result: the
     /// mathematical result lies outside the domain or the divisor is zero.
     /// This is the const-eval overflow policy's rejection [CONST-1]; it is
-    /// never a runtime trap and never enters EFF-2's exhibits-traps relation.
+    /// never a runtime fallback and never enters EFF-2's effect relation.
     ConstEvalOverflow {
         /// Bare spelling of the rejected const operation.
         operation: &'static str,
@@ -844,28 +586,14 @@ pub enum SemanticIssueKind {
     },
     /// The selected operation family has no row for the written arguments.
     InvalidOperation,
-    /// A contract or claim predicate is not exactly `own Bool`.
+    /// A contract predicate is not exactly `own Bool`.
     InvalidPredicateCondition,
-    /// A claim predicate contains computation outside CLM-1's total,
-    /// observational, non-consuming proof-expression subset.
-    InvalidClaimProofPredicate { reason: &'static str },
-    /// A decoded claim justification is not the exact five-field CLM-1
-    /// review record.
-    InvalidClaimJustification { expected: &'static str },
-    /// A canonical claim component reads a user-call or system-call result,
-    /// or a value transitively derived from one [CLM-1].
-    NonLocalClaim(Box<NonLocalClaimDetail>),
     /// A conditional was written in a form GRAM-6 does not admit for its
     /// class: a Bool-scrutinee `match`, an empty `else`, or an `else` block
     /// holding exactly one `if`.
     InvalidConditionalForm {
         /// Exact mechanical repair selected by GRAM-6.
         mechanical_fix: &'static str,
-    },
-    /// A later claim in the same function repeats a claim-name spelling.
-    DuplicateClaimName {
-        /// Repeated claim name.
-        name: String,
     },
     /// A subscript's bounds obligation is not derivable from the closed fact
     /// state at its node [OP-4, ENT-6].
@@ -881,7 +609,7 @@ pub enum SemanticIssueKind {
     UndischargedIntegerDomainObligation {
         /// The exact canonical `.defined` predicate for this occurrence.
         residual: String,
-        /// The exact non-discharged complete-view disposition.
+        /// The exact non-discharged disposition.
         disposition: StaticObligationDisposition,
         /// The mechanical fix OP-2 names.
         mechanical_fix: &'static str,
@@ -899,31 +627,59 @@ pub enum SemanticIssueKind {
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
-    /// A demanded call or outside caller-to-marked-root boundary fails the
-    /// existing unasserted U goal judgment [FN-8, CLM-3].
-    StrictUndischargedCallRequirement(Box<StrictUndischargedCallRequirementDetail>),
-    /// A full-state-accepted call passes an unconditionally external actual
-    /// into one or more protected downstream subjects [PRV-2].
-    ExternalProtectedCallArgument(Box<ProvenanceGateDetail>),
-    /// A full-state-discharged local leaf relies on assertion state for an
-    /// unconditionally external constrained subject [PRV-3].
-    ExternalProtectedSubject(Box<ProvenanceGateDetail>),
     /// A counted endpoint produced `own u64` but was not itself one preceding
     /// ENT-2 term or constant.
     InvalidCountedEndpoint {
         /// The exact restructuring required by ENT-2.
         mechanical_fix: &'static str,
     },
-    /// The fact state at a claim derives the exact negation of its predicate
-    /// [CLM-2].
-    RefutedClaim(Box<RefutedClaimDetail>),
-    /// A claim is vacuous, redundant, overlapping, inconsistent,
-    /// unreconstructable, unsupported, or not individually load-bearing.
-    InvalidClaim(Box<InvalidClaimDetail>),
-    /// A direct claim belongs to the marked root's own SCC [CLM-3].
-    StrictDirectClaim(Box<StrictDirectClaimDetail>),
-    /// A root-SCC call imports a nonempty downstream `MayClaims` set [CLM-3].
-    StrictImportedClaim(Box<StrictImportedClaimDetail>),
+    /// An unlabeled break has no enclosing structural loop target [GRAM-4,
+    /// FN-1].
+    BreakOutsideLoop {
+        /// The exact source-level restructuring required by GRAM-4.
+        mechanical_fix: &'static str,
+    },
+    /// A header or local invariant violates INV-1 name or target formation.
+    InvalidInvariant {
+        reason: &'static str,
+        mechanical_fix: &'static str,
+    },
+    /// A well-formed source loop invariant failed one of INV-1's two mandatory
+    /// induction judgments in the source fact context.
+    UndischargedLoopInvariant {
+        /// Source spelling of the invariant name.
+        name: String,
+        /// The failed induction obligation, selected in proof order.
+        obligation: LoopInvariantProofObligation,
+        /// The exact source-language relation the failed incoming edge had to
+        /// establish. A counted-loop backedge renders the hidden next binder
+        /// as `i + 1_u64`; no checker-private term identity is exposed.
+        required_relation: String,
+        /// Exact source-level repair selected by INV-1.
+        mechanical_fix: &'static str,
+    },
+    /// A well-formed blockless local invariant target is not established by
+    /// the specification-defined AUTO family in its entering context.
+    UndischargedLocalInvariant {
+        /// Source spelling of the invariant name.
+        name: String,
+        /// Exact source-level repair selected by INV-1.
+        mechanical_fix: &'static str,
+    },
+    /// A `proof_use` relation or certificate factor violates the closed
+    /// PRF-1 source form.
+    InvalidSourceProof {
+        reason: &'static str,
+        mechanical_fix: &'static str,
+    },
+    /// A well-formed local invariant failed in the source fact context.
+    /// Written uses are independent entering-context premises; their explicit
+    /// weighted sum may establish a target weakened by the fixed direct rule.
+    UndischargedSourceProof {
+        name: String,
+        obligation: SourceProofObligation,
+        mechanical_fix: &'static str,
+    },
     /// A return expression disagrees with the written function result.
     ReturnMismatch,
     /// A returned direct slice may originate outside its signature ceiling.
@@ -1243,8 +999,6 @@ pub enum UnsupportedSemanticFeature {
     RegionsAndBorrows,
     /// Composite types or values outside the implemented nominal-data family.
     CompositeValues,
-    /// A loop with no structurally reachable break exit for current SSA lowering.
-    StructuredControlFlow,
     /// A recursive nominal layout whose finite representation is not selected.
     RecursiveNominalLayout,
     /// Moving an affine referent out of owning indirection has no selected cleanup semantics.

@@ -22,6 +22,95 @@ pub(crate) enum CheckedMode {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct CheckedLoopId(pub(crate) u32);
 
+/// One proof-only mathematical integer expression. Each leaf retains
+/// its exact source integer type while denoting its value in the mathematical
+/// integers; this metadata does not request a runtime conversion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedAffineExpression {
+    pub(crate) node_path: NodePath,
+    pub(crate) kind: CheckedAffineExpressionKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedAffineExpressionKind {
+    Constant {
+        value: i128,
+        ty: IntegerType,
+    },
+    Local {
+        binding: BindingId,
+        ty: IntegerType,
+    },
+    Add(Box<CheckedAffineExpression>, Box<CheckedAffineExpression>),
+    Subtract(Box<CheckedAffineExpression>, Box<CheckedAffineExpression>),
+    MultiplyByConstant {
+        constant: i128,
+        constant_ty: IntegerType,
+        value: Box<CheckedAffineExpression>,
+    },
+}
+
+/// One normalized source-written affine ordered relation. `left - right <=
+/// bound` has `bound == 0` for non-strict order and `bound == -1` for strict
+/// integer order. The checker has already admitted the expression vocabulary,
+/// but this record alone grants no fact: INV-1 or PRF-1 must still prove its
+/// owning judgment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedAffineRelation {
+    pub(crate) node_path: NodePath,
+    pub(crate) left: CheckedAffineExpression,
+    pub(crate) right: CheckedAffineExpression,
+    pub(crate) bound: i128,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedLoopInvariant {
+    pub(crate) loop_id: CheckedLoopId,
+    pub(crate) declaration: DeclarationId,
+    pub(crate) name: String,
+    pub(crate) relation: CheckedAffineRelation,
+}
+
+/// One source-written `use` in a local invariant certificate.
+///
+/// `factor` is a positive proof-domain integer. The omitted source spelling is
+/// represented as one. This record deliberately contains no accumulating
+/// state: every use is checked against the invariant statement's same entering
+/// proof context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedProofUse {
+    pub(crate) node_path: NodePath,
+    pub(crate) factor: i128,
+    pub(crate) source: CheckedProofUseSource,
+}
+
+/// The source selected by one written `use`.
+///
+/// A named source is the immutable theorem image published by the resolved
+/// invariant declaration. A relation source is independently proved by AUTO
+/// in the local invariant's entering context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedProofUseSource {
+    Named(DeclarationId),
+    Relation(CheckedAffineRelation),
+}
+
+/// One erased source-written local invariant. Every `use` and the target are
+/// written in the `.wf` source; later analysis proves each use independently,
+/// follows the written multipliers, and publishes only the checked target.
+///
+/// The historical type name remains internal while the parser surface moves
+/// from `prove` to `invariant`; it does not grant a separate proof language or
+/// runtime operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedSourceProof {
+    pub(crate) node_path: NodePath,
+    pub(crate) declaration: DeclarationId,
+    pub(crate) name: String,
+    pub(crate) target: CheckedAffineRelation,
+    pub(crate) uses: Vec<CheckedProofUse>,
+}
+
 /// The checked source production that owns a value initializer. These forms
 /// share GIVE-1 typing and lowering, but only `value_if` is an ENT-5 relation
 /// carrier.
@@ -46,7 +135,7 @@ pub(crate) struct DerivedConstId(pub(crate) u32);
 /// 64-bit domain under the const-eval overflow policy: a result outside that
 /// domain or a zero divisor is a compile-time rejection citing CONST-1, never
 /// a runtime trap, so this family is disjoint from the runtime arithmetic
-/// modes and excluded from EFF-2's exhibits-traps relation.
+/// modes and excluded from EFF-2's state/allocation effect relation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ConstOperation {
     Add,
@@ -827,26 +916,6 @@ impl CheckedIntegerOperation {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClaimSite {
-    pub(crate) rule_id: &'static str,
-    pub(crate) message: String,
-    pub(crate) function: String,
-    pub(crate) node_path: NodePath,
-}
-
-/// The structurally checked CLM-1 review record. The checker validates these
-/// five fields and retains them verbatim, but their prose establishes no fact.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClaimJustification {
-    pub(crate) raw: String,
-    pub(crate) premises: String,
-    pub(crate) derivation: String,
-    pub(crate) conclusion: String,
-    pub(crate) checker_gap: String,
-    pub(crate) consumers: String,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedTargetDomainObligation {
     RuntimeSizedAllocation,
@@ -857,6 +926,10 @@ pub(crate) enum CheckedTargetDomainObligation {
 pub(crate) struct CheckedRuntimeTargetObligations {
     allocation: CheckedTargetDomainObligation,
     element_address: CheckedTargetDomainObligation,
+    /// Tightest target-independent length ceiling retained at this source
+    /// allocation site. Entailment installs it after proving OP-9; lowering
+    /// must not proceed while it is absent.
+    source_length_upper_bound: Option<u64>,
 }
 
 /// Target-independent upper bounds for one stored value's representation.
@@ -895,6 +968,7 @@ impl CheckedRuntimeTargetObligations {
         Self {
             allocation: CheckedTargetDomainObligation::RuntimeSizedAllocation,
             element_address: CheckedTargetDomainObligation::ElementAddress,
+            source_length_upper_bound: None,
         }
     }
 
@@ -904,6 +978,17 @@ impl CheckedRuntimeTargetObligations {
 
     pub(crate) const fn element_address(self) -> CheckedTargetDomainObligation {
         self.element_address
+    }
+
+    pub(crate) const fn source_length_upper_bound(self) -> Option<u64> {
+        self.source_length_upper_bound
+    }
+
+    /// Installs the conclusion of the source allocation proof on the checked
+    /// allocation node. This copies an already-derived fact; it performs no
+    /// second proof or replay.
+    pub(crate) fn install_source_length_upper_bound(&mut self, upper_bound: u64) {
+        self.source_length_upper_bound = Some(upper_bound);
     }
 }
 
@@ -1126,7 +1211,7 @@ pub(crate) struct CheckedIntegerArgument {
 
 /// The caller-side root a bound borrow-mode call result reads and writes
 /// through: the resolved place of the single provenance-candidate actual
-/// [OWN-6, ENT-5]. The claim deliberately keeps the complete actual place
+/// [OWN-6, ENT-5]. The record deliberately keeps the complete actual place
 /// even when the callee returned a narrower suffix of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedResultBorrow {
@@ -1274,7 +1359,7 @@ pub(crate) enum CheckedExpression {
     },
     /// The canonical total OP-9 allocation-domain predicate. Its Boolean
     /// value is `n <= floor(u64::MAX / stride_ceiling(T))`; it never
-    /// allocates and never traps.
+    /// allocates and has no partial runtime outcome.
     BufferFits {
         carrier: NodePath,
         element: CheckedType,
@@ -1649,17 +1734,10 @@ pub(crate) enum CheckedStatement {
         state_origins: Option<CheckedStateOrigins>,
         release: crate::SystemRelease,
     },
-    /// A named executed proof residual [CLM-1]. The claim name is the DIAG-3
-    /// message; the justification is compile-time review data retained by the
-    /// checked program [DIAG-2] and never reaches runtime behavior.
-    Claim {
-        name: String,
-        /// Exact canonical spelling of the checked predicate expression.
-        predicate: String,
-        justification: ClaimJustification,
-        condition: CheckedExpression,
-        site: ClaimSite,
-    },
+    /// A finite source-written local invariant checked before it is published
+    /// and erased before lowering. It has no runtime expression, effect,
+    /// branch, or trap.
+    Proof(CheckedSourceProof),
     Return {
         node_path: NodePath,
         value: CheckedExpression,
@@ -1688,6 +1766,9 @@ pub(crate) enum CheckedStatement {
     },
     Loop {
         id: CheckedLoopId,
+        /// Formed source invariants awaiting the normal semantic proof
+        /// checker. Their presence alone grants no authority.
+        invariants: Vec<CheckedLoopInvariant>,
         body: Vec<CheckedStatement>,
         backedge_drops: Vec<CheckedDrop>,
     },
@@ -1697,6 +1778,9 @@ pub(crate) enum CheckedStatement {
         binder: BindingId,
         lower: CheckedExpression,
         upper: CheckedExpression,
+        /// Formed source invariants awaiting the normal semantic proof
+        /// checker. Their presence alone grants no authority.
+        invariants: Vec<CheckedLoopInvariant>,
         body: Vec<CheckedStatement>,
         backedge_drops: Vec<CheckedDrop>,
     },
@@ -1720,7 +1804,7 @@ pub(crate) enum CheckedStatement {
 pub(crate) struct CheckedParameter {
     pub(crate) name: String,
     pub(crate) declaration: DeclarationId,
-    /// The complete source `param` node used by PRV-1 origin witnesses.
+    /// The complete source `param` node used by checked diagnostics.
     pub(crate) node_path: NodePath,
     pub(crate) binding: BindingId,
     pub(crate) mode: CheckedMode,
@@ -1744,16 +1828,12 @@ pub(crate) struct CheckedFunction {
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) symbol: String,
-    /// The marker-bearing `fn_decl` path, present for every concrete instance
-    /// of a source declaration carrying `deny_claims` [CLM-3].
-    pub(crate) deny_claims_marker: Option<NodePath>,
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
     /// Closed-world state origin of this function's result.
     pub(crate) result_state_origin: CheckedResultStateOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    pub(crate) declared_traps: bool,
     pub(crate) declared_allocates_heap: bool,
     /// Formal state paths named by `writes(...)`.
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
@@ -1802,7 +1882,6 @@ pub(crate) struct CheckedEffects {
     pub(crate) writes: Vec<CheckedStatePath>,
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-    pub(crate) traps: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1889,79 +1968,6 @@ pub(crate) struct CheckedEntryForm {
     pub(crate) inputs: Vec<u8>,
 }
 
-/// Stable checked identity of one direct claim in the CLM-3 SCC summary.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct StrictClaimIdentity {
-    /// Owning concrete function instance.
-    pub(crate) function: FunctionId,
-    /// Exact `claim_stmt` occurrence.
-    pub(crate) node_path: NodePath,
-    /// Written claim name.
-    pub(crate) name: String,
-}
-
-/// Successful disposition of one demanded strict component.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StrictComponentDisposition {
-    /// Every applicable CLM-3 query succeeded.
-    Succeeded,
-}
-
-/// Successful disposition of one marked strict root.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StrictRootDisposition {
-    /// The complete outgoing closure passed atomically.
-    Succeeded,
-}
-
-/// One component of the shared FN-9/CLM-3 concrete-call condensation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct StrictComponentMetadata {
-    /// Callee-before-caller component ordinal.
-    pub(crate) ordinal: u32,
-    /// Stable concrete function members.
-    pub(crate) functions: Vec<FunctionId>,
-    /// Strictly outgoing callee component ordinals.
-    pub(crate) outgoing: Vec<u32>,
-    /// Claims declared by members of this component.
-    pub(crate) direct_claims: Vec<StrictClaimIdentity>,
-    /// Direct claims plus every outgoing component's `MayClaims` set.
-    pub(crate) may_claims: Vec<StrictClaimIdentity>,
-    /// True exactly when at least one strict-root closure demands this component.
-    pub(crate) demanded: bool,
-    /// Present exactly for a demanded component after total strict success.
-    pub(crate) disposition: Option<StrictComponentDisposition>,
-}
-
-/// One successful concrete strict root and its finite outgoing closure.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct StrictRootMetadata {
-    /// Marked concrete function instance.
-    pub(crate) function: FunctionId,
-    /// Exact declaration marker path inherited by this instance.
-    pub(crate) marker: NodePath,
-    /// Root component ordinal.
-    pub(crate) component: u32,
-    /// Root plus every reachable outgoing component, in component order.
-    pub(crate) closure: Vec<u32>,
-    /// Successful atomic root disposition.
-    pub(crate) disposition: StrictRootDisposition,
-}
-
-/// Read-only CLM-3 checked-program metadata. Lowering never consumes it.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct StrictPartitionMetadata {
-    /// Every source declaration carrying the fixed marker, including an
-    /// uninstantiated generic declaration with no concrete strict root.
-    pub(crate) markers: Vec<NodePath>,
-    /// Shared concrete SCC summaries, including undemanded components.
-    pub(crate) components: Vec<StrictComponentMetadata>,
-    /// Successful strict roots in stable concrete-instance order.
-    pub(crate) roots: Vec<StrictRootMetadata>,
-    /// Shared source-ordered concrete ordinary calls used by the summary.
-    pub(crate) calls: Vec<super::entailment::ConcreteCallOccurrence>,
-}
-
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
@@ -1979,25 +1985,11 @@ pub(crate) struct CheckedProgramData {
     /// order, with component-atomic verified FN-9 summary publication.
     #[allow(dead_code)]
     pub(crate) postcondition_schedule: super::entailment::PostconditionSchedule,
-    /// Successful opt-in strict-partition summary. It is constructed from
-    /// semantic scratch before the observational claim ledger, but retained
-    /// only after the sole derivation finish/remap boundary.
-    #[allow(dead_code)]
-    pub(crate) strict_partition: StrictPartitionMetadata,
-    /// Frozen PRV component/demand metadata and explicit successful
-    /// dispositions [PRV-1/2/3, DIAG-2]. Rejection witnesses are consumed
-    /// before this value is built; lowering and optimization do not read it.
-    #[allow(dead_code)]
-    pub(crate) provenance: super::provenance::ProvenanceMetadata,
     /// One symbolic requirement per source generic that declares one. These
     /// entries survive symbolic validation without entering the concrete
     /// function inventory or executable lowering path.
     #[allow(dead_code)]
     pub(crate) generic_requirements: Vec<CheckedGenericRequirement>,
-    /// Source-schema claim admission reports for every generic declaration,
-    /// including declarations with no executable concrete instance.
-    #[allow(dead_code)]
-    pub(crate) generic_claim_schemas: Vec<super::entailment::CheckedGenericClaimSchema>,
     // Deliberately unread by ordinary lowering: FN-3/FN-4 metadata is
     // source-acceptance evidence and grants no executable authority.
     #[allow(dead_code)]
@@ -2008,10 +2000,6 @@ pub(crate) struct CheckedProgramData {
     pub(crate) law_derivations: Vec<CheckedLawDerivation>,
     pub(crate) main: FunctionId,
     pub(crate) entry: CheckedEntryForm,
-    /// Read-only checked-program claim report. Lowering and optimization do
-    /// not consume this observational metadata.
-    #[allow(dead_code)]
-    pub(crate) claim_ledger: super::entailment::ClaimLedger,
     /// Read-only [PAR-1 candidate] permission table: which sibling call pairs
     /// may be overlapped, and which of those are actualizable. Acceptance
     /// never reads it, and it is identical facts-on and facts-off. The

@@ -7,18 +7,19 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedLoopId, CheckedMode, CheckedStatement, CheckedType, IntegerType,
+    CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType, IntegerType,
 };
 use super::super::borrows::RequiredReferent;
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
+use super::proofs::AffineProofOwner;
 use super::{ControlCounters, ControlScope, StatementResult};
 
 #[derive(Clone)]
 pub(in crate::semantic::check) struct LoopContext {
     pub(super) id: CheckedLoopId,
-    declaration: DeclarationId,
+    label_declaration: Option<DeclarationId>,
     preserved: HashSet<DeclarationId>,
 }
 
@@ -28,6 +29,27 @@ pub(in crate::semantic::check) struct BreakState {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn form_loop_invariants(
+        &self,
+        nodes: Vec<NodeId>,
+        loop_id: CheckedLoopId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+    ) -> Result<Vec<CheckedLoopInvariant>, CheckStop> {
+        let mut names = HashSet::new();
+        let mut invariants = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            invariants.push(self.check_loop_invariant(
+                node,
+                loop_id,
+                bindings,
+                allowed_values,
+                &mut names,
+            )?);
+        }
+        Ok(invariants)
+    }
+
     pub(super) fn check_counted_range(
         &self,
         function: &FunctionSignature,
@@ -36,7 +58,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let endpoints = self.tree.children_with(node, Production::Atom)?;
+        let binding_node = self
+            .tree
+            .first_child_with(node, Production::ForBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let endpoints = self.tree.children_with(binding_node, Production::Atom)?;
         let [lower_node, upper_node] = endpoints.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
@@ -50,8 +76,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.check_counted_endpoint(function, *upper_node, bindings, scope.loops.len())?;
         let effects = lower.effects.union(upper.effects);
 
-        let label = self.declaration_at(node, DeclarationRole::LoopLabel)?.id();
-        let binder_declaration = self.declaration_at(node, DeclarationRole::CountedBinder)?;
+        let label = self
+            .optional_declaration_at(node, DeclarationRole::LoopLabel)?
+            .map(crate::DeclarationRecord::id);
+        let binder_declaration =
+            self.declaration_at(binding_node, DeclarationRole::CountedBinder)?;
         let binder_declaration_id = binder_declaration.id();
         let id = Self::allocate_loop(counters.next_loop)?;
         let binder = Self::allocate_binding(counters.next_binding)?;
@@ -94,14 +123,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut nested_loops = scope.loops.to_vec();
         nested_loops.push(LoopContext {
             id,
-            declaration: label,
+            label_declaration: label,
             preserved: preserved.clone(),
         });
 
-        let statements = self.tree.children_with(node, Production::Stmt)?;
+        let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
+        let executable_statements = self.tree.children_with(node, Production::Stmt)?;
+        let allowed_invariant_values = header_keys.iter().copied().collect::<HashSet<_>>();
+        let invariants = self.form_loop_invariants(
+            invariant_nodes,
+            id,
+            &body_bindings,
+            &allowed_invariant_values,
+        )?;
         let checked = self.check_block(
             function,
-            &statements,
+            &executable_statements,
             &mut body_bindings,
             counters,
             ControlScope {
@@ -144,6 +181,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binder,
                 lower: lower.expression,
                 upper: upper.expression,
+                invariants,
                 body: checked.statements,
                 backedge_drops,
             },
@@ -154,6 +192,61 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             give_states: checked.give_states,
             break_states: escaping_break_states,
         })
+    }
+
+    fn check_loop_invariant(
+        &self,
+        node: NodeId,
+        loop_id: CheckedLoopId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+        names: &mut HashSet<String>,
+    ) -> Result<CheckedLoopInvariant, CheckStop> {
+        let declaration = self.declaration_at(node, DeclarationRole::Invariant)?;
+        let identifiers = self.tree.direct_identifiers(node)?;
+        let [name_token, relation_token] = identifiers.as_slice() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let name = std::str::from_utf8(self.tree.token_bytes(*name_token)?)
+            .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
+            .to_owned();
+        if !names.insert(name.clone()) {
+            return self.invalid_invariant(
+                node,
+                "a loop contains two invariants with the same name",
+                "give every invariant in this loop a distinct name",
+            );
+        }
+        let relation = self.check_ordered_affine_relation(
+            node,
+            *relation_token,
+            bindings,
+            allowed_values,
+            AffineProofOwner::InvariantTarget,
+        )?;
+
+        Ok(CheckedLoopInvariant {
+            loop_id,
+            declaration: declaration.id(),
+            name,
+            relation,
+        })
+    }
+
+    pub(super) fn invalid_invariant<ResultValue>(
+        &self,
+        node: NodeId,
+        reason: &'static str,
+        mechanical_fix: &'static str,
+    ) -> Result<ResultValue, CheckStop> {
+        self.issue_node(
+            SemanticRule::Inv1,
+            node,
+            SemanticIssueKind::InvalidInvariant {
+                reason,
+                mechanical_fix,
+            },
+        )
     }
 
     fn check_counted_endpoint(
@@ -294,7 +387,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let declaration = self.declaration_at(node, DeclarationRole::LoopLabel)?.id();
+        let declaration = self
+            .optional_declaration_at(node, DeclarationRole::LoopLabel)?
+            .map(crate::DeclarationRecord::id);
         let id = Self::allocate_loop(counters.next_loop)?;
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
@@ -302,15 +397,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut nested_loops = scope.loops.to_vec();
         nested_loops.push(LoopContext {
             id,
-            declaration,
+            label_declaration: declaration,
             preserved: preserved.clone(),
         });
 
         let mut body_bindings = base_bindings.clone();
-        let statements = self.tree.children_with(node, Production::Stmt)?;
+        let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
+        let executable_statements = self.tree.children_with(node, Production::Stmt)?;
+        let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
+        let invariants = self.form_loop_invariants(
+            invariant_nodes,
+            id,
+            &body_bindings,
+            &allowed_invariant_values,
+        )?;
         let checked = self.check_block(
             function,
-            &statements,
+            &executable_statements,
             &mut body_bindings,
             counters,
             ControlScope {
@@ -335,9 +438,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 escaping_break_states.push(state);
             }
         }
-        if own_break_states.is_empty() {
-            return self.unsupported(UnsupportedSemanticFeature::StructuredControlFlow, node);
-        }
+        // An ordinary loop with no break resolved to itself has no executable
+        // continuation input. `join_states` deliberately leaves the
+        // structurally retained continuation bindings unchanged for that
+        // empty join; ENT-5's proof flow marks the same continuation
+        // contradictory, and lowering emits an unreachable exit block.
         self.join_states(&base_keys, &own_break_states, node, bindings)?;
         let backedge_drops = if checked.can_continue {
             self.live_affine_drops(&body_bindings, &preserved)?
@@ -348,6 +453,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::Loop {
                 id,
+                invariants,
                 body: checked.statements,
                 backedge_drops,
             },
@@ -368,20 +474,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let usage = self.use_at(node, LexicalUseRole::BreakLabel)?;
-        let ResolvedTarget::Source {
-            declaration,
-            class: DeclarationClass::Label,
-        } = usage.target()
-        else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        let uses = self.uses_at_ordered(node, LexicalUseRole::BreakLabel)?;
+        let target = match uses.as_slice() {
+            [] => scope.loops.last().ok_or_else(|| {
+                self.issue_value(
+                    SemanticRule::Fn1,
+                    node,
+                    SemanticIssueKind::BreakOutsideLoop {
+                        mechanical_fix: "move `break;` inside a loop or remove it",
+                    },
+                )
+            })?,
+            [usage] => {
+                let ResolvedTarget::Source {
+                    declaration,
+                    class: DeclarationClass::Label,
+                } = usage.target()
+                else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                scope
+                    .loops
+                    .iter()
+                    .rev()
+                    .find(|context| context.label_declaration == Some(declaration))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            }
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
-        let target = scope
-            .loops
-            .iter()
-            .rev()
-            .find(|context| context.declaration == declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let all_paths_deliver = scope
             .give_context
             .is_some_and(|context| context.enclosing_loops.contains(&target.id));

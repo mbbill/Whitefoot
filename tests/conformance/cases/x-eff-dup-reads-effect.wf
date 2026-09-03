@@ -3,7 +3,7 @@ fn f(x: own i32) -> function_result: own i32 reads(x), reads(x) {
   return x;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Driver.";
   let a = f(x: 7_i32);
   return exit_status(code: 0_u8);

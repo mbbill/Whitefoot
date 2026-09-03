@@ -33,7 +33,7 @@
 
 /* The bridge's whole process-wide operation capacity. A test which means to
  * reach the capacity boundary must name the same number the bridge does. */
-#define WF_HARNESS_OPERATION_CAPACITY 64u
+#define WF_HARNESS_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY
 /* The private storage the window query affords one loop before the compiler's
  * ceiling and the loop's own slot size apply.  A test which means to reach
  * that boundary must name the same number the bridge does. */
@@ -427,7 +427,7 @@ static int test_generation_and_duplicate_terminal(void) {
     wf_completion_event event;
     wf_completion_publication publication;
     int first = 111;
-    int malicious = 999;
+    int unexpected = 999;
     int second = 222;
 
     CHECK(wf_completion_runtime_init(&runtime, &slot, 1) == 0);
@@ -438,7 +438,7 @@ static int test_generation_and_duplicate_terminal(void) {
         wf_completion_publish_terminal(&runtime, old_token, &publication)
         == WF_COMPLETION_PUBLISHED
     );
-    publication = integer_publication(&malicious);
+    publication = integer_publication(&unexpected);
     CHECK(
         wf_completion_publish_terminal(&runtime, old_token, &publication)
         == WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL
@@ -452,8 +452,8 @@ static int test_generation_and_duplicate_terminal(void) {
     CHECK(accept_operation(&runtime, new_token) == 0);
 
     /* The stale token is rejected while holding the slot lock and before the
-     * malicious result can touch the new logical operation's result cell. */
-    publication = integer_publication(&malicious);
+     * unexpected late result can touch the new operation's result cell. */
+    publication = integer_publication(&unexpected);
     CHECK(
         wf_completion_publish_terminal(&runtime, old_token, &publication)
         == WF_COMPLETION_PUBLISH_STALE
@@ -4391,7 +4391,7 @@ static int test_a_promised_descriptor_is_not_promised_again(void) {
  * No ledger can see a descriptor a thread of the program's own gave back, so an
  * open the host satisfies from one looks exactly like an open that took a
  * return of this runtime's, and the charge falls on it either way.  That can
- * deprive a waiter of an award it was owed, which is the adversarial schedule
+ * deprive a waiter of an award it was owed, which is the forced schedule
  * this stands for — and what it costs that waiter is nothing it is entitled to:
  * being deprived is not being refused.  Raced rather than scripted, on a probe
  * that arranges exactly this against a raw `close` the runtime never made, the

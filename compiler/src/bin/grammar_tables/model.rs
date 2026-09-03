@@ -76,7 +76,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("(", "LeftParen"),
         (")", "RightParen"),
         (",", "Comma"),
-        ("deny_claims", "DenyClaims"),
         ("command", "Command"),
         ("fn", "Fn"),
         ("->", "ThinArrow"),
@@ -133,10 +132,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("writes", "Writes"),
         ("allocates", "Allocates"),
         ("heap", "Heap"),
-        ("traps", "Traps"),
         ("as", "As"),
-        ("claim", "Claim"),
-        ("because", "Because"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
         // `else` already exists for statement and value conditionals. Verified
         // against the fixed delta's [GRAM-5] block, not guessed.
@@ -166,6 +162,8 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("%defined", "PercentDefined"),
         ("%checked", "PercentChecked"),
         ("for", "For"),
+        ("invariant", "Invariant"),
+        ("use", "Use"),
         ("in", "In"),
         ("..", "DotDot"),
     ];

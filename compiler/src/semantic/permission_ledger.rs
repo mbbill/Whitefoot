@@ -413,7 +413,6 @@ fn denied_detail<Source: LedgerSource>(
         Denial::SkippingExit { side, kind } => {
             let edge = match kind {
                 ExitKind::PropagateError => "Err edge",
-                ExitKind::ClaimTrap => "trap edge",
                 ExitKind::BlockExit => "exit edge",
             };
             format!("the {edge} of {} skips s2", statement_name(*side))

@@ -1,0 +1,28 @@
+fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, marker: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+  requires ile(first_limit, 80_u8);
+  requires ile(second_limit, 80_u8);
+  requires ile(third_limit, 93_u8);
+  ensures ile(result, 254_u8);
+} {
+  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {
+    use ile(first, first_limit);
+    use ile(second, second_limit);
+    use ile(third, third_limit);
+  }
+  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
+  invariant total_bound: ile(first + second + third, 254_u8);
+  set marker = replacement;
+  let first_two = first + second;
+  let result = first_two + third;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = bounded_sum(first: 1_u8, first_limit: 8_u8, second: 2_u8, second_limit: 8_u8, third: 3_u8, third_limit: 8_u8, marker: 9_u8, replacement: 10_u8);
+  let incremented = result + 1_u8;
+  let code = incremented -wrap 7_u8;
+  return exit_status(code: code);
+}

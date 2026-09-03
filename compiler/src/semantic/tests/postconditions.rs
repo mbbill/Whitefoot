@@ -5,7 +5,8 @@ use crate::{
 
 use super::{assert_rule, assert_rule_at, with_resolution, with_semantics, with_semantics_dark};
 use crate::semantic::entailment::{
-    DerivationNode, FlowEventKind, FunctionPostconditionProof, PostconditionDisposition, ProofView,
+    CallGoalDisposition, DerivationNode, FlowEventKind, FunctionPostconditionProof,
+    PostconditionDisposition,
 };
 use crate::semantic::model::{CheckedBodyDisposition, CheckedExpression, CheckedStatement};
 
@@ -53,21 +54,8 @@ fn postcondition_proof(source: &[u8], function: &str) -> FunctionPostconditionPr
     })
 }
 
-fn dispositions(proof: &FunctionPostconditionProof) -> Vec<[PostconditionDisposition; 3]> {
-    proof
-        .exits
-        .iter()
-        .map(|exit| {
-            assert_eq!(exit.complete.view, ProofView::Complete);
-            assert_eq!(exit.unasserted.view, ProofView::Unasserted);
-            assert_eq!(exit.s4_blinded.view, ProofView::S4Blinded);
-            [
-                exit.complete.disposition,
-                exit.unasserted.disposition,
-                exit.s4_blinded.disposition,
-            ]
-        })
-        .collect()
+fn dispositions(proof: &FunctionPostconditionProof) -> Vec<PostconditionDisposition> {
+    proof.exits.iter().map(|exit| exit.disposition).collect()
 }
 
 const COMMAND_MAIN: &str =
@@ -92,6 +80,144 @@ fn ensures_smoke() {
         "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
     );
     assert_complete(source.as_bytes());
+}
+
+#[test]
+fn a_computed_constant_offset_is_not_an_fn9_relation_operand() {
+    let source = br#"fn shifted(value: own u8) -> result: own u8 pure contract {
+  define next = value +wrap 1_u8;
+  ensures ieq(result, next);
+} {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Fn9,
+        SemanticIssueKind::InvalidPostconditionRelation,
+    );
+}
+
+#[test]
+fn a_true_computed_constant_offset_is_still_outside_the_fn9_relation_form() {
+    let source = br#"fn shifted(value: own u8) -> result: own u8 pure contract {
+  define next = value -wrap 1_u8;
+  ensures ieq(result, next);
+} {
+  let next = value -wrap 1_u8;
+  return next;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Fn9,
+        SemanticIssueKind::InvalidPostconditionRelation,
+    );
+}
+
+#[test]
+fn an_uncomputed_fn9_relation_still_publishes_to_its_caller() {
+    let source = br#"fn identity(value: own u64) -> result: own u64 pure contract {
+  ensures ieq(result, value);
+} {
+  return value;
+}
+
+fn select(values: own array<u8, 8>, index: own u64) -> result: own u8 pure contract {
+  requires ilt(index, 8_u64);
+} {
+  let selected = identity(value: index);
+  return values[selected];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+/// Contract clauses remain static proof input: `requires` admits the first
+/// protected read, and the proved `ensures` relation admits the caller's
+/// second protected read.
+#[test]
+fn contract_clauses_remain_available_to_the_originating_proof_context() {
+    let source =
+        br#"fn pick(table: own array<u8, 8>, index: own u64) -> value: own u64 pure contract {
+  requires ilt(index, 8_u64);
+  ensures ile(value, 7_u64);
+} {
+  let selected = table[index];
+  let widened = cvt<u8, u64>(selected);
+  if ile(widened, 7_u64) {
+    return widened;
+  } else {
+    return 7_u64;
+  }
+}
+
+fn caller(table: own array<u8, 8>, lookup: own array<u8, 8>) -> result: own u8 pure {
+  let value = pick(table: move table, index: 0_u64);
+  return lookup[value];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+/// FN-9 publishes exactly the relations a callee proves.  The caller can use
+/// both equality and a weaker ordering relation without restating either as a
+/// body assertion.
+#[test]
+fn verified_exact_and_weak_ensures_are_consumed_by_the_caller() {
+    let source = br#"fn exact(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
+} {
+  return value;
+}
+
+fn weak(value: own i32) -> result: own i32 pure contract {
+  ensures ile(result, value);
+} {
+  return value;
+}
+
+fn need_same(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
+} {
+  return unit;
+}
+
+fn need_ordered(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ile(left, right);
+} {
+  return unit;
+}
+
+fn caller(value: own i32) -> result: own unit pure {
+  let exact_result = exact(value: value);
+  need_same(left: exact_result, right: value);
+  let weak_result = weak(value: value);
+  need_ordered(left: weak_result, right: value);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
 }
 
 #[test]
@@ -125,7 +251,7 @@ fn plural_ensures_are_proved_and_published_as_independent_relations() {
         assert_eq!(identity.entailment.postconditions.len(), 2);
         for (ordinal, proof) in identity.entailment.postconditions.iter().enumerate() {
             assert_eq!(proof.relation_ordinal as usize, ordinal);
-            assert!(proof.complete.discharged);
+            assert!(proof.aggregate.discharged);
             assert!(proof.summary.is_some());
         }
         let component = checked
@@ -159,8 +285,8 @@ fn one_failed_ensure_withholds_every_summary_in_its_component() {
         let [first, second] = identity.entailment.postconditions.as_slice() else {
             panic!("both relation proofs must be retained");
         };
-        assert!(first.complete.discharged);
-        assert!(!second.complete.discharged);
+        assert!(first.aggregate.discharged);
+        assert!(!second.aggregate.discharged);
         assert!(first.summary.is_none());
         assert!(second.summary.is_none());
         let component = checked
@@ -211,13 +337,13 @@ fn one_failed_relation_withholds_every_summary_in_a_mutual_scc() {
             .iter()
             .find(|function| function.name == "left")
             .expect("left function");
-        assert!(left.entailment.postconditions[0].complete.discharged);
+        assert!(left.entailment.postconditions[0].aggregate.discharged);
         let right = members
             .iter()
             .find(|function| function.name == "right")
             .expect("right function");
-        assert!(right.entailment.postconditions[0].complete.discharged);
-        assert!(!right.entailment.postconditions[1].complete.discharged);
+        assert!(right.entailment.postconditions[0].aggregate.discharged);
+        assert!(!right.entailment.postconditions[1].aggregate.discharged);
     });
     assert_fn9_unproved(source.as_bytes());
 }
@@ -289,55 +415,13 @@ command fn main() -> status: own ExitStatus pure {
     let proof = postcondition_proof(source, "identity");
     assert_eq!(
         dispositions(&proof),
-        vec![[PostconditionDisposition::Discharged; 3]]
+        vec![PostconditionDisposition::Discharged]
     );
-    assert!(proof.complete.discharged);
-    assert!(proof.unasserted.discharged);
-    assert!(proof.s4_blinded.discharged);
+    assert!(proof.aggregate.discharged);
 }
-
 #[test]
-fn body_claims_and_s4_are_routed_to_the_fixed_postcondition_views() {
-    let body_claim = br#"fn reviewed_one() -> result: own i32 pure {
-  return 1_i32;
-}
-
-fn guarded(value: own i32) -> result: own i32 traps contract {
-  ensures ieq(result, 1_i32);
-} {
-  let reviewed = 1_i32;
-  let cursor = 0_u8;
-  loop @retain_one {
-    if ieq(cursor, 3_u8) {
-      break @retain_one;
-    } else {
-      set reviewed = 1_i32;
-      set cursor = cursor +wrap 1_u8;
-    }
-  }
-  claim body: ieq(reviewed, 1_i32) because "premises: reviewed starts at one and every completed local loop iteration writes one again before advancing the cursor\nderivation: induction over reached loop bodies preserves reviewed equal to one until the cursor reaches three\nconclusion: ieq(reviewed, 1_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: guarded's FN-9 postcondition requires this equality at the following return reviewed";
-  return reviewed;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_complete(body_claim);
-    let proof = postcondition_proof(body_claim, "guarded");
-    assert_eq!(
-        dispositions(&proof),
-        vec![[
-            PostconditionDisposition::Discharged,
-            PostconditionDisposition::Unproved,
-            PostconditionDisposition::Unproved,
-        ]]
-    );
-    assert!(proof.complete.discharged);
-    assert!(!proof.unasserted.discharged);
-    assert!(!proof.s4_blinded.discharged);
-
-    let s4 = br#"fn constrained(value: own i32) -> result: own i32 pure contract {
+fn entry_requirements_prove_postconditions_in_the_originating_context() {
+    let source = br#"fn constrained(value: own i32) -> result: own i32 pure contract {
   requires ieq(value, 1_i32);
   ensures ieq(result, 1_i32);
 } {
@@ -348,19 +432,13 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_complete(s4);
-    let proof = postcondition_proof(s4, "constrained");
+    assert_complete(source);
+    let proof = postcondition_proof(source, "constrained");
     assert_eq!(
         dispositions(&proof),
-        vec![[
-            PostconditionDisposition::Discharged,
-            PostconditionDisposition::Discharged,
-            PostconditionDisposition::Unproved,
-        ]]
+        vec![PostconditionDisposition::Discharged]
     );
-    assert!(proof.complete.discharged);
-    assert!(proof.unasserted.discharged);
-    assert!(!proof.s4_blinded.discharged);
+    assert!(proof.aggregate.discharged);
 }
 
 #[test]
@@ -379,11 +457,11 @@ command fn main() -> status: own ExitStatus pure {
     let proof = postcondition_proof(source, "changed");
     assert_eq!(
         dispositions(&proof),
-        vec![[PostconditionDisposition::Unproved; 3]]
+        vec![PostconditionDisposition::Unproved]
     );
     let image = &proof.exits[0].entry_images[0];
     assert!(image.invalidation.is_some());
-    assert!(!proof.complete.discharged);
+    assert!(!proof.aggregate.discharged);
     assert_rule_at(source, SemanticRule::Fn9, "return value;");
 }
 
@@ -564,7 +642,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   let admitted = ile(filled, capacity);
   let length = len(text);
   if admitted {
-    for @append at in filled..capacity {
+    for @append (at in filled..capacity) {
       let taken = at -wrap filled;
       let done = ige(taken, length);
       if done {
@@ -588,13 +666,9 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         dispositions(&proof),
         vec![
-            [PostconditionDisposition::Discharged; 3],
-            [PostconditionDisposition::Discharged; 3],
-            [
-                PostconditionDisposition::Discharged,
-                PostconditionDisposition::Discharged,
-                PostconditionDisposition::Refuted,
-            ],
+            PostconditionDisposition::Discharged,
+            PostconditionDisposition::Discharged,
+            PostconditionDisposition::Discharged,
         ]
     );
 }
@@ -617,7 +691,7 @@ command fn main() -> status: own ExitStatus pure {
     let proof = postcondition_proof(element, "kept");
     assert_eq!(
         dispositions(&proof),
-        vec![[PostconditionDisposition::Discharged; 3]]
+        vec![PostconditionDisposition::Discharged]
     );
     assert!(
         proof.exits[0]
@@ -646,7 +720,7 @@ command fn main() -> status: own ExitStatus pure {
     let proof = postcondition_proof(replacement, "replaced");
     assert_eq!(
         dispositions(&proof),
-        vec![[PostconditionDisposition::Unproved; 3]]
+        vec![PostconditionDisposition::Unproved]
     );
     assert!(
         proof.exits[0]
@@ -681,9 +755,7 @@ command fn main() -> status: own ExitStatus pure {
             .windows(2)
             .all(|pair| pair[0].statement.components() < pair[1].statement.components())
     );
-    assert!(proof.complete.discharged);
-    assert!(proof.unasserted.discharged);
-    assert!(proof.s4_blinded.discharged);
+    assert!(proof.aggregate.discharged);
 }
 
 #[test]
@@ -837,7 +909,7 @@ command fn main() -> status: own ExitStatus pure {
                 .entailment
                 .postconditions
                 .first()
-                .is_some_and(|proof| proof.complete.discharged),
+                .is_some_and(|proof| proof.aggregate.discharged),
             "the callee summary premise is independently available"
         );
         let caller = checked
@@ -899,8 +971,12 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// P0 closes the two pre-move equalities while their common box referent is
+/// still live. The resulting `observed == expected` theorem names only the two
+/// copied scalar bindings, so consuming the original owner cannot invalidate
+/// it.
 #[test]
-fn a_later_owner_move_kills_an_already_published_s12_relation() {
+fn an_owner_move_preserves_a_materialized_holder_free_s12_consequence() {
     let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
   ensures ieq(result, value);
 } {
@@ -930,10 +1006,83 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a holder-free pre-move consequence must survive: {outcome:?}");
+        };
+        let caller = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "caller")
+            .expect("caller function exists");
+        super::entailment::validate_derivations(&caller.entailment);
+        let [goal] = caller.entailment.call_goals.as_slice() else {
+            panic!("caller retains exactly the guard requirement");
+        };
+        assert_eq!(goal.disposition, CallGoalDisposition::Discharged);
+        let root = goal
+            .derivation
+            .expect("the discharged guard retains its derivation");
+        let mut seen = vec![false; caller.entailment.derivations.nodes.len()];
+        let mut stack = vec![root];
+        let mut materialized = false;
+        let mut postcondition = false;
+        while let Some(node) = stack.pop() {
+            let index = node.0 as usize;
+            if seen[index] {
+                continue;
+            }
+            seen[index] = true;
+            let retained = &caller.entailment.derivations.nodes[index];
+            materialized |= matches!(retained, DerivationNode::MaterializedBound { .. });
+            postcondition |= matches!(retained, DerivationNode::PostconditionCall { .. });
+            stack.extend(retained.parent_ids());
+        }
+        assert!(
+            materialized,
+            "the surviving scalar equality is pre-kill materialized"
+        );
+        assert!(
+            postcondition,
+            "the equality retains the verified callee result as a parent"
+        );
+    });
+}
+
+#[test]
+fn a_referent_write_kills_an_s12_relation_that_still_reads_that_referent() {
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
+} {
+  return value;
+}
+
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
+} {
+  return unit;
+}
+
+fn caller() -> result: own unit pure {
+  let source = 1_i32;
+  let observed = observe(value: source);
+  region 'write {
+    let writer = &uniq 'write source;
+    set deref(writer) = 2_i32;
+  }
+  guard(left: observed, right: source);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
     assert_rule_at(
         source,
         SemanticRule::Fn8,
-        "guard(left: observed, right: expected)",
+        "guard(left: observed, right: source)",
     );
 }
 
@@ -949,35 +1098,23 @@ fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn opaque_identity(value: own i32) -> result: own i32 pure {
-  return value;
-}
-
 fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   requires ieq(left, right);
 } {
   return unit;
 }
 
-fn caller() -> result: own unit allocates(heap), traps {
+fn caller() -> result: own unit allocates(heap) {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
-  let fallback = expected;
-  let mirror = expected;
-  let cursor = 0_u8;
-  loop @advance_pair {
-    if ieq(cursor, 3_u8) {
-      break @advance_pair;
-    } else {
-      set fallback = fallback +wrap 1_i32;
-      set mirror = mirror +wrap 1_i32;
-      set cursor = cursor +wrap 1_u8;
-    }
+  if ieq(observed, expected) {
+    sink(owner: move owner);
+    guard(left: observed, right: expected);
+  } else {
+    sink(owner: move owner);
+    return unit;
   }
-  claim ordinary_fallback: ieq(fallback, mirror) because "premises: fallback and mirror start equal and every completed local loop iteration applies the same wrapping increment to both\nderivation: induction over reached loop bodies preserves their equality until the cursor reaches three\nconclusion: ieq(fallback, mirror) is true\nchecker gap: ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: the following guard call's FN-8 requirement needs this equality after the neighboring S12 owner-supported candidate is killed";
-  sink(owner: move owner);
-  guard(left: fallback, right: mirror);
   return unit;
 }
 
@@ -1070,8 +1207,8 @@ command fn main() -> status: own ExitStatus pure {
                 .iter()
                 .filter(|node| matches!(node, DerivationNode::PostconditionDirectReceiver { .. }))
                 .count(),
-            3,
-            "the exact receiver route is retained once per proof view"
+            1,
+            "the exact receiver route is retained once in the source context"
         );
     });
 }
@@ -1191,8 +1328,8 @@ command fn main() -> status: own ExitStatus pure {
                 .iter()
                 .filter(|node| matches!(node, DerivationNode::PostconditionSelectedReceiver { .. }))
                 .count(),
-            3,
-            "the selected receiver route is retained once per proof view"
+            1,
+            "the selected receiver route is retained once in the source context"
         );
     });
 }
@@ -1460,7 +1597,7 @@ command fn main() -> status: own ExitStatus pure {
     let proof = postcondition_proof(source, "from_shared_alias");
     assert_eq!(
         dispositions(&proof),
-        vec![[PostconditionDisposition::Unproved; 3]]
+        vec![PostconditionDisposition::Unproved]
     );
     assert_rule_at(source, SemanticRule::Fn9, "return deref(alias).value;");
 }
@@ -2180,7 +2317,7 @@ command fn main() -> status: own ExitStatus pure {
                 .first()
                 .expect("mutual proof");
             assert_eq!(proof.summary.as_ref(), Some(summary));
-            assert!(proof.complete.discharged);
+            assert!(proof.aggregate.discharged);
         }
     });
     assert_complete(source);
@@ -2284,7 +2421,7 @@ command fn main() -> status: own ExitStatus pure {
                 .postconditions
                 .first()
                 .unwrap()
-                .complete
+                .aggregate
                 .discharged
         );
         assert!(
@@ -2296,7 +2433,7 @@ command fn main() -> status: own ExitStatus pure {
                 .postconditions
                 .first()
                 .unwrap()
-                .complete
+                .aggregate
                 .discharged
         );
     });
@@ -2341,7 +2478,7 @@ command fn main() -> status: own ExitStatus pure {
             .map(|id| &checked.data.functions[id.0 as usize])
         {
             let proof = function.entailment.postconditions.first().unwrap();
-            assert!(!proof.complete.discharged);
+            assert!(!proof.aggregate.discharged);
             assert!(proof.summary.is_none());
         }
     });
@@ -2420,104 +2557,6 @@ command fn main() -> status: own ExitStatus pure {
             crate::PostconditionProofDisposition::Refuted
         );
         assert!(detail.concrete_function.contains("bad"));
-    });
-}
-
-#[test]
-fn accepted_provenance_views_use_the_finalized_function_derivation_ids() {
-    let source = br#"fn normalized(value: own i32) -> result: own i32 pure contract {
-  requires ieq(value, 1_i32);
-  ensures ieq(result, value);
-} {
-  return 1_i32;
-}
-
-fn caller() -> result: own i32 pure contract {
-  ensures ieq(result, 1_i32);
-} {
-  let called = normalized(value: 1_i32);
-  return called;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("finalized-view fixture must be accepted: {outcome:?}");
-        };
-        let caller = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "caller")
-            .expect("caller function");
-        let index = caller.id.0 as usize;
-        assert_eq!(
-            checked.data.provenance.unasserted[index],
-            caller.entailment.unasserted
-        );
-        assert_eq!(
-            checked.data.provenance.s4_blinded[index],
-            caller.entailment.s4_blinded
-        );
-        assert!(
-            caller
-                .entailment
-                .unasserted
-                .call_goals
-                .iter()
-                .chain(&caller.entailment.s4_blinded.call_goals)
-                .any(|outcome| outcome.derivation.is_some()),
-            "the equality must cover at least one remapped derivation ID"
-        );
-    });
-}
-
-#[test]
-fn a_provenance_event_rejects_the_whole_optimistic_postcondition_batch() {
-    let source = br#"fn identity(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
-} {
-  return value;
-}
-
-fn relay(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
-} {
-  let observed = identity(value: value);
-  return observed;
-}
-
-fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
-  let bounded_position = imin(position, 3_u64);
-  let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its external actual";
-  return values[bounded_position];
-}
-
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
-  let values = array_new<u8, 4>(0_u8);
-  region 'a {
-    let position = args_count<'a>(args: &'a args);
-    let selected = read(values: move values, position: position);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("PRV event must discard the checked-program batch: {outcome:?}");
-        };
-        assert_eq!(issue.rule_id(), "PRV-2");
-    });
-    with_semantics_dark(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("the dark entailment hook cannot publish a failed PRV batch: {outcome:?}");
-        };
-        assert_eq!(issue.rule_id(), "PRV-2");
     });
 }
 

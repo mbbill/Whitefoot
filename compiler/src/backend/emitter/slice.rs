@@ -35,7 +35,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let pointer = match array {
             IrArrayRoot::Value(value) => {
                 let llvm_array_type = llvm_type(self.program, array_type)?;
-                let slot = self.entry_slot(&llvm_array_type)?;
+                let slot = self.entry_slot(FunctionSlot::SliceRoot(result))?;
                 writeln!(
                     self.output,
                     "  store {llvm_array_type} {}, ptr {slot}",

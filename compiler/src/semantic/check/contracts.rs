@@ -51,7 +51,6 @@ struct NormalizedEffects {
     writes: Vec<NormalizedStatePath>,
     allocates_heap: bool,
     allocates_arenas: Vec<usize>,
-    traps: bool,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -540,7 +539,6 @@ fn checked_effects(effects: &EffectSet) -> CheckedEffects {
         writes: effects.writes.clone(),
         allocates_heap: effects.allocates_heap,
         allocates_arenas: effects.allocates_arenas.clone(),
-        traps: effects.traps,
     }
 }
 
@@ -658,7 +656,6 @@ fn normalize_effects(
         writes: normalize_state_paths(&effects.writes, parameters)?,
         allocates_heap: effects.allocates_heap,
         allocates_arenas: normalize_regions(&effects.allocates_arenas, regions)?,
-        traps: effects.traps,
     })
 }
 
@@ -733,7 +730,6 @@ fn discharge_domain(
         || second_parameter.ty != subject
         || function.result_mode != CheckedMode::Own
         || function.result != subject
-        || function.declared_traps
         || function.declared_allocates_heap
         || !function.requirements.is_empty()
     {

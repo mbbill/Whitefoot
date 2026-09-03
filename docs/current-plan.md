@@ -1,242 +1,347 @@
-# Current Plan: unified-state completion I/O
+# Current Plan: finish source-carried proof in the compiler
 
-Status: IMPLEMENTED, VALIDATED, AND ACTIVATED on
-`codex/io-first-principles`.
+Status: IMPLEMENTED AND ACTIVATED as v0.40 on
+`codex/source-proof`.
 
-Active language authority: v0.39,
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.38 is
-archived at `spec/kernel-spec-v0.38.md` and the merge-time record is in
+Active language authority: v0.40,
+`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.39 is
+archived at `spec/kernel-spec-v0.39.md` and the merge-time record is in
 `governance/APPROVALS.md`. Activation is branch content: nothing merges to
 `main` until the owner approves the exact revision and canonical `make check`
-passes on that revision. The batch record is
-`docs/done/0082-unified-state-completion-io.md`.
+passes on that revision. This document records technical direction and
+sequencing; it grants no permission and adds no workflow gate.
 
-v0.39 rides on `batch/0102-clm1-narrow` and adds no rule. It narrows one
-paragraph of [CLM-1]'s claim authority: a boundary selector's witness now joins
-a matching binder its arm introduces, a value `value_if` or `value_match`
-delivers, and, at a reconvergence, loop head, or loop exit, exactly those
-components whose incoming reaching definitions are different definition
-occurrences. Standing on a boundary-selected edge is no longer itself a
-selection, so a definition built from literals, named consts, parameters, and
-other local values is local in post-join state and inside the selected arm
-alike. The ground is batch 0097's differential-fuzz campaign, all 63 of whose
-rejections over 2004 programs were that one shape. Its record is
-`docs/done/0102-clm1-narrow.md`.
+## Outcome
 
-v0.38 rode on `batch/0091-par3-judgment` and added one rule, [PAR-3], the
-staged loop permission: it cuts the body of any `for_stmt` or `loop_stmt` at
-its first `may-suspend` submission and admits executing the remainder of one
-iteration against the prologue of a later one. It also amends [SYS-2] in one
-sentence, to name the release milestone of the name an open borrows: batch
-0089's adapters publish that loan release at submission, and the contract now
-says so. That batch lands the judgment and its ledger only — no lowering and no
-runtime change — so it grants a verdict a later batch actualizes and moves no
-published byte today. Its record is `docs/done/0091-par3-judgment.md`.
+Whitefoot is a proof-carrying systems language for AI-written, human-approved
+code. “Proof-carrying” means the `.wf` source carries the contracts,
+invariants, and finite proof steps needed to justify the program. The compiler
+checks that source as part of ordinary semantic compilation and erases the
+proof-only syntax before lowering.
 
-The remaining hole in the two-host gate is closed. Batch 0090 put canonical
-`make check` on a GitHub Linux runner and ended it red on one thing: the
-compiler had no approved [SYS-14] directory-enumeration row for Linux, because
-its record model required a per-entry name length and `struct linux_dirent64`
-states none. Batch 0094 replaced that model with one that asks the target where
-a name's length comes from — a field on Darwin, a scan bounded by `d_reclen` on
-Linux — and landed the row. The two directory-walking corpus programs now
-compile, run, and publish the same bytes on both hosts for the same tree; the
-Linux conformance adapter reports the macOS number, `Pass=509 Skip=1`; and the
-host limits 0090 had to declare are removed rather than narrowed. Its record is
-`docs/done/0094-linux-directory-row.md`.
+The target bargain is unusually strong:
 
-## Objective
+- an accepted program may contain a logic error, but no supported operation may
+  execute memory corruption, a data race, an uninitialized read, silent
+  overflow, an out-of-bounds access, or another unproved partial operation;
+- the same checked ownership, effect, bounds, layout, address, and algebraic
+  facts may remove checks, authorize optimizations, and establish `par`
+  permissions without adding runtime proof machinery; and
+- a supported partial operation is proved before emission or the source is
+  rejected. The compiler never substitutes a writer trap, hidden check,
+  impossible-case return, or other executable fallback for missing proof.
 
-Whitefoot exposes I/O as ordinary calls over ordinary values:
+The cost is harder source. Relations that a human-oriented language leaves
+implicit sometimes need an invariant or short proof script. Whitefoot accepts
+that cost because the intended writer is AI: AI may search, construct
+intermediate relations, and repair diagnostics, while the compiler remains the
+small trusted checker and the human approves the requirements and result.
 
-```whitefoot
-fn write_once['o, 's](
-  output: &uniq 'o Output,
-  source: &'s buffer<u8>,
-  start: own u64,
-  end: own u64
-) -> result: own Result<u64, IoError>
-reads(output, source), writes(output);
+## Determinism boundary
+
+Acceptance is a function of the complete source and the exact language/compiler
+version. The official compiler uses no SMT solver, solver seed, randomized
+ordering, heuristic proof search, timeout, or cumulative proof-work budget.
+Machine speed and load cannot change accepted into rejected or the reverse.
+
+This does not mean every accepted proof is one local table lookup. It means
+that each automatic rule family has a specification-fixed finite domain and is
+run to its specified completion. Fixed structural source ceilings are language
+rules. Once an input is within them, the compiler finishes the required work;
+it does not turn elapsed time into a language verdict. A successful query may
+stop at its first witness in the fixed order because no later candidate can
+revoke that success. An unproved result is returned only after the specified
+family is exhausted.
+
+External parser/finalizer resource exhaustion may stop compilation as a
+non-language resource failure. It never means that a proposition was unproved,
+that invalid source was valid, or that valid source was invalid.
+
+## The author-visible automatic boundary
+
+For every affine goal, AUTO is complete for exactly these routes, in this
+specification order:
+
+1. the zero-premise direct route;
+2. every available published affine premise once, with coefficient one;
+3. every unordered pair of available published affine premises, coefficient
+   one for each, including one premise paired with itself; and
+4. the final fixed L0-image route over the current difference-bound state.
+
+The compiler does not select an undocumented “best” subset. If none succeeds,
+AUTO is finished. The author can therefore decide from the language rules,
+without probing compiler behavior, whether an explicit proof is needed.
+
+The intended cut is:
+
+- direct consequences and common consequences using one or two published
+  affine premises are automatic;
+- combinations requiring three or more published affine premises outside the
+  final fixed L0-image route, special elimination routes, or future named
+  nonlinear rules are directed by explicit `use` steps.
+
+A later specification may deliberately strengthen AUTO. Within one exact
+version, however, its boundary is fixed. A nonempty `use` block is a source
+error when that version's AUTO already proves the target; redundant proof
+scripts do not become a second canonical spelling.
+
+## Source forms
+
+`requires` is proved by every caller before argument transfer. `ensures` is
+proved at every selected normal return and publishes the verified callable
+summary to later callers. A recursive component cannot bootstrap itself from a
+summary that has not been proved.
+
+The word `invariant` always means “this relation holds at this source point.”
+Placement supplies the extra control-flow meaning:
+
+- a loop-header invariant is an induction contract;
+- a body or ordinary-block invariant is a one-time program-point fact.
+
+The complete `weigh` shape shows how a function postcondition, a loop contract,
+and ordinary operation goals connect. A counted header carrying an invariant is
+multiline and has no trailing comma:
+
+```wf
+fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32
+    reads(weights) contract {
+  define room = len(deref(weights));
+  requires ile(count, room);
+  requires ile(count, 1000_u64);
+  ensures ile(total, 255000_u32);
+} {
+  let sum = 0_u32;
+  for (
+    i in 0_u64..count,
+    invariant per_byte: ile(sum, 255_u32 * i)
+  ) {
+    let w = deref(weights)[i];
+    let wide = cvt<u8, u32>(w);
+    set sum = sum + wide;
+  }
+  return sum;
+}
 ```
 
-The writer supplies values, `own`, `move`, borrows, exact effects, and typed
-outcomes. The compiler keeps independent operations in flight. The target
-publishes completion. The scheduler runs writer code only after the required
-ordinary ownership returns.
+At each body entry the counted guard gives `i < count`, and the first
+requirement gives `count <= len(weights)`, so the subscript is in range. The
+header relation, the exact value image for `sum + wide`, and `wide <= 255`
+prove the exact addition and the next header relation. At normal exhaustion the
+checker substitutes `i := count`; the resulting `sum <= 255*count` plus
+`count <= 1000` discharges the selected return's `ensures`. None of those
+relations becomes a runtime check.
 
-Completion is the only writer-visible I/O model. Direct, inline, readiness,
-helper, io_uring, and IOCP paths are target lowerings of that model.
+The first `for` header item must be the binding; every later item must be an
+`invariant`. A zero-invariant counted loop still uses the closed header, which
+renders on one line because it has no invariant to set apart:
 
-## Settled language boundary
+```wf
+for (i in 0_u64..count) {
+  consume(i);
+}
+```
 
-1. `reads` and `writes` name formal parameters or static fields rooted in a
-   formal parameter. They no longer accept a lifetime.
-2. A lifetime states only loan duration and outlives relations.
-3. `own`, `move`, `&`, and `&uniq` provide all authority. Files, sockets,
-   Outputs, clocks, factories, permits, and Sources are ordinary opaque affine
-   values rather than a capability language category.
-4. The language has one state/effect system. It has no `memory` or `world`
-   effect tag and no `external` or `blocks` atom.
-5. A fine effect path describes checked behavior. It never narrows the loan
-   written in the parameter or actual argument.
-6. Changing state machines use `own` or `&uniq`. Independent work is exposed
-   through distinct ordinary owned values, fields, borrows, or permits.
-7. No logical-root registry, family/fragment table, Free/Ordered/Exclusive
-   relation, or Output-specific ordering edge participates in permission.
-8. A factory or reserve call exhibits its own effect. Later operations on its
-   local result frame locally; they are not relabelled through child-to-parent
-   ancestry.
-9. Existing move semantics transfers identity. The compiler may retain
-   internal summaries needed to check calls and release, but the language gains
-   no lineage or generative-identity feature.
-10. A false claim is impossible in a correctly reviewed program and adds no
-    cost, metadata, gate, wake, or serialization to a correct operation path.
-11. File opens consume ordinary one-shot `FilePermit` owners produced by a
-    total inline `reserve_file(&uniq FileFactory)`. `DirectoryRead` remains a
-    shared stable selector, so two permits allow two opens through one
-    directory without a long directory or factory loan.
-12. The first permit is proof-only and burns on every open outcome. It reserves
-    no host quota; `ResourceExhausted` remains a typed open result, and backend
-    lowering erases the permit before the native open ABI.
+An ordinary loop without induction contracts remains `loop { ... }`. With
+contracts it uses the same closed header, containing invariants only:
 
-The complete derivation is in
-`research/investigations/io-model/FIRST-PRINCIPLES.md`; the concise selected
-design is in `research/investigations/io-model/DESIGN.md`.
+```wf
+loop (
+  invariant cursor_in_range: ile(cursor, limit)
+) {
+  advance(cursor);
+}
+```
 
-## Retained implementation substrate
+Labels occur after `for` or `loop` and before `(`. Header invariants cannot
+carry `use` blocks. Their names do not exist before the loop, identify the
+current arbitrary-iteration assumptions inside the body, and expire at body
+exit. A counted loop may export the canonical relation produced by exact normal
+exhaustion, with the binder replaced by the captured upper endpoint; `break`
+does not receive that export. An ordinary loop has no exhaustion substitution.
 
-The former completion candidate established useful target/runtime work. The
-rebuild retained and requalified:
+## Induction semantics
 
-- finite generation-checked operation records;
-- one terminal publisher and monotonic result-ready, per-path loan-release,
-  and terminal milestones;
-- release/acquire result publication and drain-before-resume;
-- announce, recheck, then park with one compute/completion sleeping decision;
-- target callbacks and helpers which receive typed operation bundles and never
-  execute writer code;
-- pure-compute link isolation;
-- selective stackless lowering and direct/inline depth-one specialization;
-- real Linux io_uring operations, bounded macOS helper fallback, and the
-  native-qualified x86-64 MSVC Windows direct runtime and IOCP/OVERLAPPED
-  bridge for the current file-operation slice; and
-- deterministic hostile-race, sanitizer, target, and performance probes.
+A loop header is one simultaneous invariant batch:
 
-The historical measurements in the I/O investigation remain evidence only for
-the components they actually measured.
+1. on entry, every base goal is checked without assuming any member of that
+   same batch;
+2. only after the entire base batch succeeds are all members activated as the
+   current iteration's body assumptions;
+3. at every arbitrary reachable backedge, the checker constructs the whole
+   next-header batch and checks it while the current batch remains available;
+   no target may assume its own unproved next value; and
+4. counted next-header goals substitute `i := i + 1`; ordinary-loop goals use
+   the current backedge values.
 
-## Replaced or deleted
+If no backedge reaches the header, preservation is vacuous. `break`, `return`,
+and propagation exits are not backedges. This is mathematical induction over
+every reachable iteration, not a simulation of “the second iteration.”
 
-- REGIONID/capability mixed effect operands;
-- separate memory and capability effect sets;
-- `CapabilityResultOrigin` and any I/O-specific root propagation;
-- family-fragment and Ordered permission;
-- shared writer-visible mutation of Output or DirectorySource;
-- ordered Output batches, fixed 2-16 or 2-64 group concepts, and whole-group
-  waits;
-- legacy bridge APIs which expose roots, families, or batch ordering; and
-- compiler/runtime branches which treat a direct system call as a different
-  source-language call class.
+A one-published-premise step such as `weigh` is automatic: after the exact
+`set` image is substituted, AUTO subtracts `per_byte`, then DIRECT proves the
+residual from the `u8` type interval of `wide`. A written use block there would
+be redundant and invalid.
 
-## Completed implementation sequence
+When a next-header relation really needs at least three published affine
+premises outside the final fixed L0-image route, state it at the program point
+where all ingredients exist:
 
-1. Rewrite the first-principles, design, current-plan, roadmap, specification,
-   and compiler-facing documentation so they state one model without a
-   superseded sibling.
-2. Replace effect syntax and semantic storage with parameter-rooted static
-   paths. Normalize contracts by parameter and field ordinal.
-3. Project user and system call effects directly onto actual resolved places,
-   including slices and reborrows. Preserve ordinary owner identity across
-   moves, results, aggregates, and compiler-derived release only where the
-   existing value flow requires it.
-4. Remove I/O capability origins, family relations, and Ordered IR edges.
-   Permission continues to check data, control, operand reads, effects, actual
-   loans, consumed owners, and exits.
-5. Change advancing system APIs to `own` or `&uniq`. Keep shared positioned
-   reads and shared directory selectors where the mapped value itself has no
-   consumed cursor or observation state; carry each file-open occurrence in an
-   owned one-shot permit.
-6. Replace batch actualization with dependency-driven submission. A successor
-   becomes eligible when its exact value and loan requirements return, without
-   waiting for unrelated operations.
-7. Remove the legacy bridge and group admission surfaces while retaining the
-   qualified single-operation completion core and target-private channels.
-8. Migrate all compiler tests, conformance cases, maintained programs, and
-   documentation to the same specification bytes.
-9. Run the complete verification matrix and measure the cleaned runtime again.
-10. Archive the outgoing v0.36 bytes, activate v0.37, record the activation and
-    conformance boundary, and bring every digest anchor to the new identity.
+```wf
+invariant combined_limit: ile(first + second + third, first_limit + second_limit + third_limit) {
+  use ile(first, first_limit);
+  use ile(second, second_limit);
+  use ile(third, third_limit);
+}
+```
 
-## Evidence obtained
+That local invariant is checked once. If it has the shape required at a
+backedge, its published conclusion lets ordinary AUTO establish the header's
+next relation. Diagnostics print that required source relation directly, so an
+author can see what needs to be established before the edge.
 
-The activated revision proves:
+## Explicit `use` certificates
 
-- two parameters sharing one lifetime remain separate effect subjects;
-- an owned resource parameter is directly nameable in an effect;
-- a field effect preserves sibling facts without narrowing a whole-object loan;
-- two distinct outputs overlap and two unique loans of one output do not;
-- a later same-output call starts after the earlier loan returns without
-  waiting for unrelated I/O;
-- a moved incoming owner is attributed correctly at call and release;
-- no local fresh child requires a factory ancestry or hidden authority table;
-- two short factory loans can mint two affine permits, and those permits admit
-  two opens through one shared `DirectoryRead` without a retained factory loan;
-- permit move is single-use, host exhaustion stays a typed open result, and no
-  permit argument reaches the native open ABI;
-- completion-before-wait, stale generation, duplicate terminal, capacity,
-  cancellation, and multi-waiter races preserve every owner and loan;
-- pure compute links and executes no completion machinery;
-- API success, empty, partial, EOF, failure, untouched-tail, and defined
-  release outcomes are correct; finish/recycle APIs remain outside this first
-  slice;
-- macOS executes its qualified fallback path; the retained Linux io_uring path
-  has its existing native evidence but was not re-executed on this Mac; and the
-  x86-64 MSVC Windows row executes its completion, adapter, namespace,
-  64-operation capacity, wider-code-unit HostString raw-byte route, production
-  `.wf`/driver, and emitted sequential `--par` boundaries in native run
-  [33305475906](https://github.com/mbbill/Whitefoot/actions/runs/33305475906)
-  on `f04e15c9`;
-- focused tests, maintained programs, conformance, sanitizers, stress, and
-  every independently runnable component behind the specification archive
-  gate pass; and
-- cleaned fast paths are measured against the best matched native shape.
+A local invariant may have no block:
 
-## Program-level performance, measured 2026-08-27
+```wf
+invariant ordered: ile(lo, hi);
+```
 
-The evidence above is component evidence. Whole programs were first measured
-on branch `batch/0084-io-perf` and re-measured on `batch/0086-open-handout`
-with the base commit and the branch interleaved in one plan on a quiet host;
-both tables are in `research/investigations/io-model/RESULTS.md` and the
-bundle that produces them is `research/experiments/io-completion-bench/`.
+or a finite explicit certificate:
 
-On a many-independent-files workload the shipped build is about two times
-faster than its own sequential build on macOS and about 2.8 times on Linux, so
-the overlap is real. Against the native ceiling it is within 6 percent of a
-hand-written io_uring pipeline running at the same queue depth the four-wide
-source asks for; at eight-wide the same comparison opens to 26 percent, and
-against a thread pool that also folds each file on the worker that read it —
-compute parallelism the source cannot express — it is 1.5x on macOS and 3.0x
-on Linux.
+```wf
+invariant pair_bound: ile(first + second, first_limit + second_limit);
+invariant scaled_bound: ile(3_u64 * first + 3_u64 * second, 3_u64 * first_limit + 3_u64 * second_limit) {
+  use 3 * pair_bound;
+}
+```
 
-Batch 0086 moved the Linux open onto the ring, which removes the last blocking
-`openat` from a scheduler thread at no measured cost, and established what the
-remaining distance is not. It is not the opens: on Linux the entire
-open-plus-close budget is 9 percent of the program, and moving it changed the
-total by about one percent. It is not the completion protocol's per-operation
-cost either: the four-wide program still matches a hand-written ring at the
-same depth.
+Each `use` is either a named live invariant theorem or a relation that AUTO
+proves under the current bindings. Every premise is checked against the same
+snapshot entering the outer invariant. Earlier uses do not help later uses and
+none of them publishes a fact. After the weighted combination is checked, only
+the outer target is published.
 
-What remains is the width a source can express and the barrier that comes with
-it. Overlap groups are runs of consecutive calls in one basic block, so a loop
-with one I/O call per iteration overlaps nothing and measures like the
-sequential build, and a hand-widened one joins its whole group before starting
-the next — paying the maximum of N latencies per round where a native pipeline
-keeps N continuously in flight. Deciding whether the language, the lowering, or
-neither should widen and pipeline that is the next I/O question, and it is a
-design decision rather than a defect.
+A written factor is a proof integer, not a machine arithmetic operation. Factor
+one must be omitted; factors begin at two. Repeating the same normalized
+premise is invalid, regardless of spelling or factor. The checker derives and
+checks the written combination in source order, and the target may be a direct
+weakening of that result. After each premise's ordinary AUTO check, certificate
+combination is linear in the written steps. The compiler does not search for a
+different premise list, coefficient, case split, intermediate lemma, or
+rewrite.
 
-No test, verdict, check, or failure path was weakened to make this revision
-green. Canonical `make check` now runs to completion on the activated identity
-rather than stopping at the candidate archive gate. No merge into `main`
-occurs without owner approval of the exact revision.
+Names live in a proof-only lexical domain. A local name becomes available only
+after its whole statement succeeds and remains available through its dominance
+region. Live names cannot be shadowed. A named use resolves to the exact
+declaration identity and immutable theorem, never merely to matching text.
+Control-flow joins retain canonical equal facts, not source ordinals or proof
+names. Writes change the current binding-to-value image; they do not make an
+already proved theorem about an earlier immutable value false.
+
+## One compiler proof context
+
+This is a compiler, not a general proof service. The source AST, resolved
+program, fact state, and checked program are ordinary internal compiler data.
+An inconsistency among them is a compiler defect to fix in code and tests, not
+an invitation to export a certificate, replay compiler-generated data, or add
+a runtime self-check.
+
+This cycle creates no `.wfproof` format, compiled-certificate cache,
+incremental-proof protocol, or cross-module proof artifact. Such mechanisms may
+matter to a future build system, but they cannot substitute for getting the
+source checker and its semantics right, and they are not completion work here.
+
+Every consumer submits its goal through the current semantic `ProofContext`:
+
+```text
+requires / branches / invariant / ensures
+                  |
+                  v
+         current ProofContext
+                  |
+partial operation +-----> prove(context, exact goal)
+                  |
+                  +-- fixed equality and difference bounds
+                  +-- fixed affine AUTO and written use steps
+                  +-- interval / known-bit / congruence domains as specified
+                  +-- ownership / initialization / typestate / effects
+                  +-- layout / address / target-domain qualification
+```
+
+Here `prove(context, goal)` is the compiler's internal goal interface, not a
+source keyword. The domains remain multiple small deterministic checkers behind
+that interface, not one universal solver. An operation such as addition,
+indexing, allocation, or a function call does not need to know whether its
+evidence came from a guard, contract, loop invariant, or local certificate.
+
+## Partial operations, target proof, and `par`
+
+Every supported exact arithmetic operation, division/remainder, shift,
+subscript, allocation fit, hidden counted-loop update, call requirement,
+selected return, and system buffer range is proved before execution. Failure
+to prove is a compile-time rejection; no hidden runtime branch is inserted.
+Expected dynamic failure is represented as an ordinary typed result and handled
+by real source control flow.
+
+Source-domain proof does not replace target proof. Before emission the compiler
+must still prove concrete layout, stride and byte ceilings, frame
+materialization, address representability, target qualification, and every
+selected operation's target-domain condition.
+
+`par` consumes the same checked facts together with ownership, effects,
+iteration identity, indexed-map or reduction relations, layout, target-domain,
+and bounded queue/completion facts. It has no second proof language. Lack of an
+optional `par` permission leaves the already accepted program sequential; it is
+not a source rejection. If overlapping lowering is selected, every required
+independence, index-disjointness, mapping, reduction, target, and bounded
+completion premise is proved before emission. Proof syntax creates no runtime
+branch, lock, dependency, scheduling marker, or task edge.
+
+## Deferred boundary
+
+Only external resource availability is deliberately outside this implementation
+cycle: heap exhaustion, stack exhaustion, operating-system quota, and runtime
+startup resources do not yet have a final Whitefoot source-level model. That is
+a scoped temporary gap, not a change in the language's safety direction.
+
+This deferral does not include allocation layout, address proof, frame layout,
+target qualification, target-domain proof, parallel independence, or bounded
+queue/completion protocols. A resource failure never creates a proof fact or
+licenses an unproved operation.
+
+## Completion evidence
+
+This work is complete only when one exact revision has all of the following:
+
+1. grammar, parser, resolver, checked model, semantics, diagnostics, erasure,
+   and lowering agree on the source forms above;
+2. compiler and compiler-independent conformance tests cover header induction,
+   local certificates, contracts, control-flow joins, writes, partial-operation
+   safety, target proof, and proof-driven `par` permission;
+3. real programs exercise cross-function proof, loop proof, explicit guidance
+   beyond AUTO's two-published-premise family, proof erasure,
+   and sequential fallback when parallel permission is absent;
+4. compile-cost and runtime measurements record the actual boundary without
+   turning time into an acceptance rule;
+5. all live documentation and derived syntax data match v0.40; and
+6. canonical `make check` passes for the exact revision.
+
+### Candidate measurement
+
+Compile cost for this candidate is measured on the GitHub-hosted gate runners,
+not locally: canonical `make check` ends with the wall time of each of its
+stages, so the candidate's per-stage breakdown is compared there against the
+same stages on the base branch. No local measurement is recorded, because only
+runner timings are comparable across branches.
+
+Proof erasure stays structural evidence rather than a timing inference: the
+`source_proof_is_erased_before_typed_ir` test compares the full typed IR with
+and without proof-only source, and separate compiler tests prove that a denied
+optional `par` permission emits the sequential call sequence.
+
+The activation those conditions gate is now recorded on this branch: v0.40 is
+the ACTIVE identity, the outgoing v0.39 bytes are archived, and the derived
+documentation and syntax data name v0.40. What remains is rules 2 and 3 — the
+owner's approval of the exact revision and canonical `make check` on it.

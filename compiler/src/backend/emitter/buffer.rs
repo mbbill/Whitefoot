@@ -31,7 +31,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_type = llvm_type(self.program, element.ty())?;
         let element_size = self.buffer_element_size(element)?;
         let bytes = self.next_temporary()?;
-        let target_in_range = self.next_temporary()?;
         let pointer = self.next_temporary()?;
         let zero_size = self.next_temporary()?;
         let nonnull = self.next_temporary()?;
@@ -44,12 +43,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         writeln!(
             self.output,
-            "  %{bytes} = mul nuw i64 {}, {element_size}\n  %{target_in_range} = icmp ule i64 %{bytes}, {}\n  br i1 %{target_in_range}, label %{}, label %{}\n{}:\n  call void @wf_target_domain_abort()\n  unreachable\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @wf_resource_abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
+            "  %{bytes} = mul nuw i64 {}, {element_size}\n  br label %{}\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @wf_resource_abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
             self.value_name(length),
-            self.target.runtime_allocation_max(),
             buffer_fill_allocate_label(result),
-            buffer_fill_target_failure_label(result),
-            buffer_fill_target_failure_label(result),
             buffer_fill_allocate_label(result),
             buffer_fill_head_label(result),
             buffer_fill_oom_label(result),
@@ -111,7 +107,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_size =
             format!("ptrtoint (ptr getelementptr ({element_type}, ptr null, i64 1) to i64)");
         let bytes = self.next_temporary()?;
-        let target_in_range = self.next_temporary()?;
         let pointer = self.next_temporary()?;
         let zero_size = self.next_temporary()?;
         let nonnull = self.next_temporary()?;
@@ -124,12 +119,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         writeln!(
             self.output,
-            "  %{bytes} = mul nuw i64 {}, {element_size}\n  %{target_in_range} = icmp ule i64 %{bytes}, {}\n  br i1 %{target_in_range}, label %{}, label %{}\n{}:\n  call void @wf_target_domain_abort()\n  unreachable\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @wf_resource_abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} zeroinitializer, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
+            "  %{bytes} = mul nuw i64 {}, {element_size}\n  br label %{}\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @wf_resource_abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} zeroinitializer, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
             self.value_name(length),
-            self.target.runtime_allocation_max(),
             buffer_vacant_allocate_label(result),
-            buffer_vacant_target_failure_label(result),
-            buffer_vacant_target_failure_label(result),
             buffer_vacant_allocate_label(result),
             buffer_vacant_head_label(result),
             buffer_vacant_oom_label(result),
@@ -276,14 +268,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// Emits the claim-aware wide probe: how many upcoming byte-walk
+    /// Emits the proof-preserving wide probe: how many upcoming byte-walk
     /// iterations are provably no-ops.
     ///
     /// The window guard `index + 16 <= min(limit, length)` is internal, so
     /// the probe reads only bytes it proves in bounds and below the walk's
-    /// exit bound, and it carries no trap: every observable byte — a needle
-    /// hit, the exit bound, or any claim — stays with the unchanged scalar
-    /// body. The lane-to-bit `bitcast` places lane 0 at the least
+    /// exit bound. Every observable byte — a needle hit or the exit bound —
+    /// stays with the unchanged scalar body. The lane-to-bit `bitcast` places
+    /// lane 0 at the least
     /// significant bit on every supported (little-endian) target, so
     /// `cttz` yields the count of leading clean bytes.
     pub(super) fn emit_buffer_probe_skip(
@@ -429,10 +421,6 @@ pub(super) fn buffer_fill_allocate_label(value: IrValueId) -> String {
     format!("buffer.fill.allocate.v{}", value.ordinal())
 }
 
-pub(super) fn buffer_fill_target_failure_label(value: IrValueId) -> String {
-    format!("buffer.fill.target.failure.v{}", value.ordinal())
-}
-
 pub(super) fn buffer_fill_oom_label(value: IrValueId) -> String {
     format!("buffer.fill.oom.v{}", value.ordinal())
 }
@@ -447,10 +435,6 @@ pub(super) fn buffer_fill_body_label(value: IrValueId) -> String {
 
 pub(super) fn buffer_fill_done_label(value: IrValueId) -> String {
     format!("buffer.fill.done.v{}", value.ordinal())
-}
-
-pub(super) fn buffer_vacant_target_failure_label(value: IrValueId) -> String {
-    format!("buffer.vacant.target.failure.v{}", value.ordinal())
 }
 
 pub(super) fn buffer_vacant_allocate_label(value: IrValueId) -> String {

@@ -1,6 +1,9 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
+use crate::{
+    SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature, lower_checked,
+    lowering::OverlapLowering,
+};
 
-use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType};
+use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType, IntegerType};
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
@@ -775,4 +778,205 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Fn2,
         expected,
     );
+}
+
+/// A concrete nominal written inside an otherwise symbolic function remains a
+/// concrete descendant of that source schema.  Rebuilding the concrete
+/// inventory must therefore retain both the nominal and the callee instance.
+#[test]
+fn schema_written_concrete_nominal_arguments_are_rebuilt_after_the_symbolic_checkpoint() {
+    let source = br#"struct Pair<T: Int> {
+  value: T;
+}
+
+fn consume<T>(value: own T) -> result: own unit pure {
+  return unit;
+}
+
+fn wrapper<U>() -> result: own unit pure {
+  let pair = Pair<u8>(value: 1_u8);
+  consume<Pair<u8>>(value: move pair);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the concrete nominal substitution must be rebuilt: {outcome:?}");
+        };
+        assert!(
+            program
+                .data
+                .functions
+                .iter()
+                .any(|function| function.name == "consume")
+        );
+        assert!(
+            program
+                .data
+                .nominals
+                .iter()
+                .any(|nominal| nominal.name.starts_with("Pair<"))
+        );
+    });
+}
+
+/// A partially concrete call chain contributes only the nominal arguments
+/// whose complete type is known at the symbolic checkpoint.
+#[test]
+fn partial_schema_rebuild_keeps_only_the_truly_concrete_nominal_instance() {
+    let source = br#"struct Pair<T: Int> {
+  left: T;
+  right: T;
+}
+
+fn sink<T>() -> result: own unit pure {
+  return unit;
+}
+
+fn middle<A: Int, B>() -> result: own unit pure {
+  sink<Pair<A>>();
+  return unit;
+}
+
+fn wrapper<U>() -> result: own unit pure {
+  middle<u8, U>();
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("partial rebuilding must retain concrete descendants: {outcome:?}");
+        };
+        let pairs = program
+            .data
+            .nominals
+            .iter()
+            .take(program.data.executable_nominal_count)
+            .filter(|nominal| nominal.name.starts_with("Pair<"))
+            .collect::<Vec<_>>();
+        let [pair] = pairs.as_slice() else {
+            panic!("exactly one concrete Pair<u8> must survive: {pairs:?}");
+        };
+        let CheckedNominalKind::Struct { fields } = &pair.kind else {
+            panic!("Pair is a struct nominal")
+        };
+        assert_eq!(fields.len(), 2);
+        assert!(
+            fields
+                .iter()
+                .all(|field| field.ty == CheckedType::Integer(IntegerType::U8))
+        );
+        assert_eq!(
+            program
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.name == "sink")
+                .count(),
+            1
+        );
+        lower_checked(*program, OverlapLowering::Off)
+            .expect("the concrete-only rebuilt inventory must lower");
+    });
+}
+
+/// A symbolic argument in one position must not hide an independent concrete
+/// descendant in another position of the same call.
+#[test]
+fn partial_schema_rebuild_still_discovers_an_independent_concrete_descendant() {
+    let source = br#"struct Pair<T: Int> {
+  left: T;
+  right: T;
+}
+
+fn sink<T>() -> result: own unit pure {
+  return unit;
+}
+
+fn next<X, Y>() -> result: own unit pure {
+  sink<Y>();
+  return unit;
+}
+
+fn middle<A: Int>() -> result: own unit pure {
+  next<Pair<A>, u8>();
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("partial rebuilding must project its concrete descendant: {outcome:?}");
+        };
+        assert!(
+            program
+                .data
+                .nominals
+                .iter()
+                .take(program.data.executable_nominal_count)
+                .all(|nominal| !nominal.name.starts_with("Pair<"))
+        );
+        assert_eq!(
+            program
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.name == "sink")
+                .count(),
+            1
+        );
+        assert!(
+            program
+                .data
+                .functions
+                .iter()
+                .all(|function| function.name != "next")
+        );
+        lower_checked(*program, OverlapLowering::Off)
+            .expect("the concrete descendant inventory must lower");
+    });
+}
+
+/// Source-order diagnostics stay source-stable even when an earlier generic
+/// body receives a dense concrete instance identity during inventory build.
+#[test]
+fn ordinary_admission_diagnostics_prefer_source_order_over_instance_identity() {
+    let source =
+        br#"fn earlier<T>(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
+  return values[index];
+}
+
+fn later(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
+  return values[index];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first_values = array_new<u8, 4>(0_u8);
+  let second_values = array_new<u8, 4>(0_u8);
+  earlier<u8>(values: move first_values, index: 5_u64);
+  later(values: move second_values, index: 5_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("both bodies contain an OP-4 rejection: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+        let crate::SemanticLocation::SourceNode(path, _) = issue.location() else {
+            panic!("OP-4 must cite the source operation");
+        };
+        assert_eq!(path.components().first(), Some(&0));
+    });
 }

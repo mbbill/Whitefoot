@@ -315,7 +315,7 @@ fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_sc
 
 #[test]
 fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles() {
-    for field in ["value", "hostile"] {
+    for field in ["value", "alternate"] {
         let source = format!(
             "fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): ieq(result, value);\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
         );
@@ -1120,6 +1120,57 @@ fn every_comparison_name_is_reserved_from_source_declarations() {
 }
 
 #[test]
+fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for (
+    index in 0_u64..limit,
+    invariant ile: ile(index, limit)
+  ) {
+    break;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a reserved header invariant name must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::ReservedName {
+                spelling,
+                declaration_role: ReservedDeclarationRole::Invariant,
+                ..
+            } if spelling == "ile"
+        ));
+    });
+}
+
+#[test]
+fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
+    let source = br#"fn probe(value: own u64) -> result: own unit pure {
+  invariant ile: ile(value, value);
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a reserved body invariant name must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::ReservedName {
+                spelling,
+                declaration_role: ReservedDeclarationRole::Invariant,
+                ..
+            } if spelling == "ile"
+        ));
+    });
+}
+
+#[test]
 fn region_names_are_unique_across_the_complete_function() {
     let source = br#"fn nested() -> result: own unit pure {
   region 'r {
@@ -1166,7 +1217,7 @@ fn a_break_label_must_lexically_enclose_the_break() {
 #[test]
 fn counted_range_binder_and_label_are_visible_only_in_the_body() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range index in 0_u64..limit {
+  for @range (index in 0_u64..limit) {
     let copied = index;
     break @range;
   }
@@ -1221,10 +1272,152 @@ fn counted_range_binder_and_label_are_visible_only_in_the_body() {
 }
 
 #[test]
+fn unlabeled_loops_keep_the_counted_binder_without_creating_label_records() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  loop {
+    break;
+  }
+  for (
+    index in 0_u64..limit,
+    invariant ceiling: ile(index, limit)
+  ) {
+    break;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("unlabeled loop forms must resolve structurally: {outcome:?}");
+        };
+        assert!(
+            resolved
+                .declarations()
+                .iter()
+                .all(|declaration| declaration.role() != DeclarationRole::LoopLabel)
+        );
+        assert!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .all(|usage| usage.role() != LexicalUseRole::BreakLabel)
+        );
+
+        let binder = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.role() == DeclarationRole::CountedBinder)
+            .expect("an unlabeled counted loop still declares its binder");
+        assert_eq!(binder.spelling(), "index");
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.role() == LexicalUseRole::InvariantValue
+                && usage.spelling() == "index"
+                && usage.target()
+                    == ResolvedTarget::Source {
+                        declaration: binder.id(),
+                        class: DeclarationClass::Value,
+                    }
+        }));
+    });
+}
+
+#[test]
+fn invariant_names_declare_facts_and_affine_locals_resolve_as_invariant_values() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for @range (
+    index in 0_u64..limit,
+    invariant ceiling: ile(index, limit)
+  ) {
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("invariant value uses must resolve in the counted body: {outcome:?}");
+        };
+        let binder = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.role() == DeclarationRole::CountedBinder)
+            .expect("counted binder declaration exists");
+        let parameter = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Parameter
+                    && declaration.spelling() == "limit"
+            })
+            .expect("limit parameter declaration exists");
+        let invariant_uses = resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| usage.role() == LexicalUseRole::InvariantValue)
+            .collect::<Vec<_>>();
+        assert_eq!(invariant_uses.len(), 2);
+        assert_eq!(invariant_uses[0].spelling(), "index");
+        assert_eq!(
+            invariant_uses[0].target(),
+            ResolvedTarget::Source {
+                declaration: binder.id(),
+                class: DeclarationClass::Value,
+            }
+        );
+        assert_eq!(invariant_uses[1].spelling(), "limit");
+        assert_eq!(
+            invariant_uses[1].target(),
+            ResolvedTarget::Source {
+                declaration: parameter.id(),
+                class: DeclarationClass::Value,
+            }
+        );
+        assert!(resolved.declarations().iter().any(|declaration| {
+            declaration.role() == DeclarationRole::Invariant && declaration.spelling() == "ceiling"
+        }));
+        assert!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .all(|usage| usage.spelling() != "ile"),
+            "the invariant relation carrier must not create a lexical use"
+        );
+    });
+}
+
+#[test]
+fn an_unresolved_affine_local_is_reported_as_an_invariant_value() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for @range (
+    index in 0_u64..limit,
+    invariant ceiling: ile(index, missing)
+  ) {
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unresolved invariant value must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Inv1);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::InvariantValue,
+                ..
+            } if spelling == "missing"
+        ));
+    });
+}
+
+#[test]
 fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
     for source in [
         br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range index in index..limit {
+  for @range (index in index..limit) {
     break @range;
   }
   return unit;
@@ -1232,7 +1425,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 "#
         .as_slice(),
         br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range index in 0_u64..index {
+  for @range (index in 0_u64..index) {
     break @range;
   }
   return unit;
@@ -1240,7 +1433,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 "#
         .as_slice(),
         br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range index in 0_u64..limit {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   let after = index;
@@ -1263,9 +1456,248 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 }
 
 #[test]
+fn counted_range_endpoints_with_an_outer_same_name_still_enforce_no_shadowing() {
+    for source in [
+        br#"fn probe(limit: own u64) -> result: own unit pure {
+  let index = 0_u64;
+  for @range (index in index..limit) {
+    break @range;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn probe(limit: own u64) -> result: own unit pure {
+  let index = 0_u64;
+  for @range (index in 0_u64..index) {
+    break @range;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("the live outer declaration must still enforce no-shadowing: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Type6);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::DeclarationCollision { spelling, .. }
+                    if spelling == "index"
+            ));
+        });
+    }
+}
+
+#[test]
+fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+  for (
+    index in 0_u64..limit,
+    invariant ceiling: ile(index, limit)
+  ) {
+    invariant repeated: ile(index, limit) {
+      use ceiling;
+      use ile(index, limit);
+    }
+    invariant chained: ile(index, limit) {
+      use repeated;
+    }
+    break;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("published invariant names must resolve in their dominance region: {outcome:?}");
+        };
+        let named = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Invariant
+                    && declaration.spelling() == "ceiling"
+            })
+            .expect("header invariant declaration exists");
+        let local = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Invariant
+                    && declaration.spelling() == "repeated"
+            })
+            .expect("local invariant declaration exists");
+        for (spelling, declaration) in [("ceiling", named.id()), ("repeated", local.id())] {
+            let usage = resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage| {
+                    usage.role() == LexicalUseRole::InvariantFact && usage.spelling() == spelling
+                })
+                .expect("named use must become an invariant-fact use");
+            assert_eq!(
+                usage.target(),
+                ResolvedTarget::Source {
+                    declaration,
+                    class: DeclarationClass::Invariant,
+                }
+            );
+        }
+        assert_eq!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .filter(|usage| usage.role() == LexicalUseRole::InvariantValue)
+                .count(),
+            6
+        );
+        assert_eq!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .filter(|usage| usage.role() == LexicalUseRole::ProofValue)
+                .count(),
+            2
+        );
+    });
+
+    let self_reference = br#"fn probe(value: own i32) -> result: own unit pure {
+  invariant same: ile(value, value) {
+    use same;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(self_reference, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an invariant name must not resolve inside its own certificate: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Inv1);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::InvisibleUse {
+                spelling,
+                role: LexicalUseRole::InvariantFact,
+                ..
+            } if spelling == "same"
+        ));
+    });
+}
+
+#[test]
+fn an_unresolved_relation_use_value_is_reported_by_prf1() {
+    let source = br#"fn probe(value: own u64, limit: own u64) -> result: own unit pure {
+  invariant scaled: ile(3_u64 * value, 3_u64 * limit) {
+    use ile(value, missing);
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unresolved use relation value must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Prf1);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::ProofValue,
+                ..
+            } if spelling == "missing"
+        ));
+    });
+}
+
+#[test]
+fn repeated_header_and_local_invariant_names_are_reported_by_inv1() {
+    for source in [
+        br#"fn probe(value: own u64) -> result: own unit pure {
+  invariant same: ile(value, value);
+  invariant same: ile(value, value);
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn probe(value: own u64) -> result: own unit pure {
+  loop (
+    invariant same: ile(value, value),
+    invariant same: ile(value, value)
+  ) {
+    break;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a repeated invariant name must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Inv1);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::DeclarationCollision { spelling, .. }
+                    if spelling == "same"
+            ));
+        });
+    }
+}
+
+#[test]
+fn header_invariant_names_are_invisible_after_their_loop() {
+    for source in [
+        br#"fn probe(limit: own u64) -> result: own unit pure {
+  for (
+    index in 0_u64..limit,
+    invariant ceiling: ile(index, limit)
+  ) {
+  }
+  invariant after: ile(0_u64, limit) {
+    use ceiling;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn probe(value: own u64) -> result: own unit pure {
+  loop (
+    invariant stable: ile(value, value)
+  ) {
+    break;
+  }
+  invariant after: ile(value, value) {
+    use stable;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a header invariant name must end with its loop: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Inv1);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::InvisibleUse {
+                    role: LexicalUseRole::InvariantFact,
+                    ..
+                }
+            ));
+        });
+    }
+}
+
+#[test]
 fn counted_range_label_is_non_enclosing_after_the_loop() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range index in 0_u64..limit {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   break @range;
@@ -1286,7 +1718,7 @@ fn counted_range_label_is_non_enclosing_after_the_loop() {
 #[test]
 fn counted_range_binder_uses_the_for_binder_reservation_role() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range ilt in 0_u64..limit {
+  for @range (ilt in 0_u64..limit) {
     break @range;
   }
   return unit;
@@ -1312,7 +1744,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
 fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     let live_outer = br#"fn probe(limit: own u64) -> result: own unit pure {
   let index = 0_u64;
-  for @range index in 0_u64..limit {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   return unit;
@@ -1330,8 +1762,8 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     });
 
     let nested = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @outer index in 0_u64..limit {
-    for @inner index in 0_u64..limit {
+  for @outer (index in 0_u64..limit) {
+    for @inner (index in 0_u64..limit) {
       break @inner;
     }
     break @outer;
@@ -1351,8 +1783,8 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     });
 
     let nested_distinct = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @outer outer_index in 0_u64..limit {
-    for @inner inner_index in outer_index..limit {
+  for @outer (outer_index in 0_u64..limit) {
+    for @inner (inner_index in outer_index..limit) {
       let copied = inner_index;
       break @inner;
     }
@@ -1369,10 +1801,10 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     });
 
     let reused = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range index in 0_u64..limit {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
-  for @range index in 0_u64..limit {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   let index = 7_u64;
@@ -1564,7 +1996,7 @@ fn numeric<T: Int>() -> result: own T pure {
   return 0_T;
 }
 
-fn probe() -> result: own unit traps {
+fn probe() -> result: own unit pure {
   let ordinary = 1_i32 +wrap two;
   let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);
@@ -1578,7 +2010,7 @@ fn probe() -> result: own unit traps {
   loop @done {
     break @done;
   }
-  for @counted index in 0_u64..2_u64 {
+  for @counted (index in 0_u64..2_u64) {
     let observed = index;
     break @counted;
   }

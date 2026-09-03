@@ -60,9 +60,9 @@ Per node, one combined pass modeled on `tests/programs/par_layout.wf`:
 2. `measure_words(words, font)` — a loop over one shared `buffer<f64>` metric
    table, scaling every entry by the font size, tracking the widest and the
    running total. The loop is bounded by `len(deref(words))`, the table's own
-   length. That is what discharges its index obligation without a `claim`,
-   which is what keeps the whole call closure claim-free, which is what makes
-   the fold's child pair actualizable.
+   length. That statically discharges its index obligation; every partial
+   operation in the complete call closure is therefore discharged before
+   lowering, which is what makes the fold's child pair actualizable.
 3. The bottom-up fold `layout(node, words, inh)` recurses into both children
    with the same `child_inh`, sums the two results, adds its own contribution,
    and writes the sum into the node's own `out` slot through `&uniq`.
@@ -127,14 +127,16 @@ fn tile(lo: own u32, hi: own u32, phase: own f64) -> result: own u32 pure {
 ```
 
 Two adjacent `let`-bound calls of a declared function; `pure`, so there is no
-shared writable place at all; claim-free, so the closure is actualizable; no
-dataflow from the first to the second; no exit edge between them. The ledger
-reports `pair(tile, tile)  eligible`.
+shared writable place at all; every partial operation in the closure is
+statically discharged, so the closure is actualizable; no dataflow from the
+first to the second; no exit edge between them. The ledger reports
+`pair(tile, tile)  eligible`.
 
 The leaf work is one Mandelbrot orbit to a fixed iteration cap over a
 1024-column grid. The grid width is a power of two on purpose: the row and
 column of a linear index come out with a mask and a shift, so the decode needs
-no division and therefore no `claim`, and the whole closure stays claim-free.
+no division-domain discharge and every partial operation in the closure stays
+statically discharged.
 The complex plane is fixed at x in `[-2, 1.2)` and y in `[-1.2, 1.2)`, and the
 repetition loop steps a `phase` into `cy` so that no repetition is a copy of
 the last.

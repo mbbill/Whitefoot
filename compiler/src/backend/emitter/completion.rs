@@ -1,4 +1,4 @@
-//! Finite one-shot completion actualization for direct system operations.
+//! Finite completion actualization for direct system operations.
 //!
 //! This is deliberately narrower than the compute hand-out path. Only a
 //! compiler-owned direct file operation reaches the typed adapter; a
@@ -84,12 +84,6 @@ pub(crate) const COMPLETION_WINDOWS_RUNTIME_DECLARATIONS: &str = concat!(
 pub(crate) const COMPLETION_WINDOWS_WINDOW_DECLARATION: &str =
     "declare i64 @wf__completion_window(i64, i64, i64)\n";
 
-/// Validates a dynamically chosen ring element before a caller makes LLVM's
-/// `inbounds` promise about it.  Keeping the branch in this helper leaves the
-/// caller's predecessor labels intact: completion joins and source block phis
-/// can continue to name their real submission blocks.
-pub(crate) const COMPLETION_SLOT_CHECKER: &str = "define private i64 @wf__completion_checked_slot(i64 %slot, i64 %slots) {\nentry:\n  %in.range = icmp ult i64 %slot, %slots\n  br i1 %in.range, label %valid, label %invalid\nvalid:\n  ret i64 %slot\ninvalid:\n  call void @abort()\n  unreachable\n}\n\n";
-
 const COMPLETION_WINDOWS_MARKER: &str =
     "declare i32 @wf__completion_file_read_submit(i32, ptr, i64, ptr)";
 
@@ -146,29 +140,12 @@ pub(crate) struct CompletionHandedOut {
     result: IrValueId,
     result_type: IrType,
     operation: CompletionFileOperation,
-    /// A carrying region defers the source result to one of its drains.  It
-    /// must therefore retain every non-SSA fact the drain needs in the
-    /// operation's own record.
-    staged: bool,
     token: CompletionStorage,
     result_slot: CompletionStorage,
     raw_value: CompletionStorage,
     raw_error: CompletionStorage,
-    submission: CompletionSubmission,
+    submitted: CompletionCaptured,
     mapping: CompletionMapping,
-}
-
-/// How a later source join learns whether the target still owns the request.
-///
-/// Optional non-Windows completion keeps the original SSA bit.  Windows uses
-/// an addressable bit because core-pressure progress may consume the request
-/// before its source join: that path stores the typed result in `result_slot`
-/// and clears this bit, turning the eventual join into a plain load.
-#[derive(Clone, Debug)]
-enum CompletionSubmission {
-    Ssa(String),
-    WindowsState(CompletionStorage),
-    PipelineState(CompletionStorage),
 }
 
 /// Where one kind of completion storage belonging to one call site lives.
@@ -184,39 +161,10 @@ enum CompletionSubmission {
 /// does.
 #[derive(Clone, Debug)]
 struct CompletionStorage {
-    /// The entry-block reservation: the record itself where the site owns one,
-    /// the whole ring where it owns several.
+    /// The entry-block field containing the complete fixed-size array.
     reservation: String,
-    /// The element type, and with it the fact that the reservation is a ring
-    /// to be indexed rather than the record itself. How many elements it holds
-    /// is the pipeline's `slots` and is not repeated here.
-    ring_element: Option<String>,
-}
-
-/// One fact the mapper needs after a target operation has completed.
-///
-/// An ordinary completion joins in the block that computed its arguments, so
-/// its facts can stay in SSA.  A staged one can be retired through another
-/// block and another iteration's ring element, so it writes each fact beside
-/// its token before the adapter owns the request and reloads it only on the
-/// completion path.
-#[derive(Clone, Debug)]
-enum CompletionFact {
-    Ssa {
-        llvm_type: String,
-        value: String,
-    },
-    Stored {
-        llvm_type: String,
-        storage: CompletionStorage,
-    },
-}
-
-impl CompletionHandedOut {
-    /// The call site this operation belongs to.
-    pub(super) const fn result(&self) -> IrValueId {
-        self.result
-    }
+    element_type: String,
+    slots: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -225,13 +173,29 @@ enum CompletionMapping {
         outcome: CompletionStorage,
     },
     Transfer {
-        start: CompletionFact,
-        extent: CompletionFact,
+        start: CompletionCaptured,
+        extent: CompletionCaptured,
     },
     DirectoryNext {
-        destination: CompletionFact,
-        start: CompletionFact,
-        extent: CompletionFact,
+        destination_type: String,
+        destination: CompletionCaptured,
+        start: CompletionCaptured,
+        extent: CompletionCaptured,
+    },
+}
+
+/// A value needed when one submitted operation is retired.
+///
+/// A one-slot schedule may keep the defining SSA name. A multi-slot issue
+/// loop executes that definition several times before the drain starts, so it
+/// stores the value in the operation's ring element and the drain reloads the
+/// element selected by its own proved slot index.
+#[derive(Clone, Debug)]
+enum CompletionCaptured {
+    Immediate(String),
+    PerSlot {
+        ty: String,
+        storage: CompletionStorage,
     },
 }
 
@@ -257,13 +221,26 @@ impl FunctionEmitter<'_, '_> {
         Ok(rendered)
     }
 
-    /// Joins exactly the named prior operations, leaving every unrelated
-    /// target operation in flight.
+    /// Joins the named prior operations owned by this block, leaving every
+    /// unrelated operation and a pipeline result protected for another exact
+    /// drain in flight.
     pub(super) fn emit_completion_dependencies(
         &mut self,
         dependencies: &[IrValueId],
     ) -> Result<(), BackendFailure> {
         for dependency in dependencies {
+            // A driven pipeline owns one result across its feeder edge. Only
+            // the exact generated drain may retire that result; another block
+            // can appear between the two in linear emission order without
+            // lying on that runtime path.
+            if !self.block_drains
+                && self
+                    .pipeline
+                    .and_then(crate::IrCompletionPipeline::driven_result)
+                    == Some(*dependency)
+            {
+                continue;
+            }
             let Some(position) = self.handed_out.iter().position(|pending| {
                 matches!(pending, HandedOut::Completion(pending) if pending.result == *dependency)
             }) else {
@@ -273,26 +250,15 @@ impl FunctionEmitter<'_, '_> {
                 return Err(BackendFailure::InvalidIr);
             };
             self.emit_completion_join(*pending)?;
-            // A wait set retires an operation inside the carrying region, so
-            // the region's exits must stop expecting it. A drain reaches this
-            // with the record already taken, and the retain is nothing there.
-            self.pipeline_outstanding
-                .retain(|(_, carried)| carried.result() != *dependency);
         }
         Ok(())
     }
 
-    /// Consumes every outstanding direct target operation before leaving a
-    /// schedule or a control-flow block. Compute-lane hand-outs remain owned
-    /// by their existing overlap join.
+    /// Consumes ordinary outstanding direct target operations before leaving
+    /// a block. A driven pipeline result remains protected until its exact
+    /// drain; compute-lane hand-outs remain owned by their overlap join.
     pub(super) fn emit_all_completion_joins(&mut self) -> Result<(), BackendFailure> {
-        // The drain retires the window on *this* path. What the carrying
-        // region handed out stays recorded, because the region's other exits
-        // must retire the same operations on theirs.
-        let carried = std::mem::take(&mut self.pipeline_outstanding);
-        let joined = self.emit_outstanding_completion_joins();
-        self.pipeline_outstanding = carried;
-        joined
+        self.emit_outstanding_completion_joins()
     }
 
     fn emit_outstanding_completion_joins(&mut self) -> Result<(), BackendFailure> {
@@ -339,38 +305,32 @@ impl FunctionEmitter<'_, '_> {
     /// reached once per iteration with the previous iteration's operation
     /// still owned by the target, so its site needs the whole ring.
     ///
-    /// A carrying block whose descriptor gives it no slot is refused rather
-    /// than handed element zero. That refusal is the one that matters: falling
-    /// back to a single element there is exactly the silent sharing this whole
-    /// reservation exists to prevent, and it would show up only as two
-    /// iterations reading one buffer.
-    ///
-    /// The straight-line refusal below stays either way, and it is not the
-    /// ring's business: it catches a *walk* that reaches one site twice with a
-    /// hand-out live, which no descriptor makes legal, because the second
-    /// hand-out would be emitted with the same slot index in hand as the
-    /// first and would take the element the first is using.
+    /// The source-derived batch constructor assigns a proved slot to both the
+    /// issue and drain blocks. If that compiler invariant is absent, emission
+    /// stops instead of silently selecting element zero. The separate
+    /// outstanding-site check likewise catches an internal schedule defect
+    /// before two operations could share one element.
     fn completion_entry_slot(
         &mut self,
         site: IrValueId,
+        role: CompletionSlot,
         ty: &str,
     ) -> Result<CompletionStorage, BackendFailure> {
         if self.completion_operation_is_outstanding(site) {
             return Err(BackendFailure::SecondOutstandingCompletionOperation);
         }
-        let slots = self.pipeline.map_or(1, crate::IrCompletionPipeline::slots);
-        if slots > 1 && self.block_carries {
-            if self.block_slot.is_none() {
-                return Err(BackendFailure::MisaddressedCompletionSlot);
-            }
-            return Ok(CompletionStorage {
-                reservation: self.entry_slot(&format!("[{slots} x {ty}]"))?,
-                ring_element: Some(ty.to_owned()),
-            });
+        let slots = if self.block_carries {
+            self.pipeline.map_or(1, crate::IrCompletionPipeline::slots)
+        } else {
+            1
+        };
+        if slots > 1 && self.block_slot.is_none() {
+            return Err(BackendFailure::MisaddressedCompletionSlot);
         }
         Ok(CompletionStorage {
-            reservation: self.indexed_entry_slot(ty, 1, 0)?,
-            ring_element: None,
+            reservation: self.entry_slot(FunctionSlot::Completion(site, role))?,
+            element_type: ty.to_owned(),
+            slots,
         })
     }
 
@@ -383,108 +343,85 @@ impl FunctionEmitter<'_, '_> {
     /// element is computed here, in the block asking for it, from that block's
     /// own slot index — so a submission addresses the slot its iteration
     /// took and a retirement addresses the slot it is retiring, and neither
-    /// has to be the other. The descriptor validation proves the slot name
-    /// dominates this point; the compiler-owned helper proves its dynamic
-    /// range before LLVM's `inbounds` promise is made without adding a branch
-    /// to the caller's control-flow graph.
+    /// has to be the other.
     fn completion_storage_pointer(
         &mut self,
         storage: &CompletionStorage,
     ) -> Result<String, BackendFailure> {
-        let Some(element_type) = storage.ring_element.as_deref() else {
-            return Ok(storage.reservation.clone());
+        let slot = if storage.slots == 1 {
+            "0".to_owned()
+        } else {
+            let slot = self
+                .block_slot
+                .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
+            self.value_name(slot)
         };
-        let slots = self.pipeline.map_or(1, crate::IrCompletionPipeline::slots);
-        let slot = self
-            .block_slot
-            .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
-        let checked = format!("%{}", self.next_temporary()?);
         let element = format!("%{}", self.next_temporary()?);
         let array = &storage.reservation;
+        let slots = storage.slots;
+        let element_type = &storage.element_type;
         writeln!(
             self.output,
-            "  {checked} = call i64 @wf__completion_checked_slot(i64 {}, i64 {slots})\n  \
-             {element} = getelementptr inbounds [{slots} x {element_type}], ptr {array}, \
-             i64 0, i64 {checked}",
-            self.value_name(slot),
+            "  {element} = getelementptr inbounds [{slots} x {element_type}], ptr {array}, \
+             i64 0, i64 {slot}"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         Ok(element)
     }
 
-    /// Reserves and initializes the state that tells a later join whether its
-    /// operation reached the target.  The initialization is deliberately in
-    /// the entry prelude, not on the submission path: a Windows pressure scan
-    /// can reach any ring element before that element's first submission, and
-    /// a branch may never enter its submit arm at all.
-    fn completion_submission_state(
+    fn capture_completion_value(
         &mut self,
         site: IrValueId,
-    ) -> Result<CompletionStorage, BackendFailure> {
-        let state = self.completion_entry_slot(site, "i1")?;
-        let slots = self.pipeline.map_or(1, crate::IrCompletionPipeline::slots);
-        if state.ring_element.is_some() {
-            writeln!(
-                self.entry_prelude,
-                "  store [{slots} x i1] zeroinitializer, ptr {}",
-                state.reservation
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        } else {
-            writeln!(
-                self.entry_prelude,
-                "  store i1 false, ptr {}",
-                state.reservation
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        Ok(state)
-    }
-
-    /// Captures a mapper argument in the operation record only when its join
-    /// can run in a different block from its submission.
-    fn completion_fact(
-        &mut self,
-        site: IrValueId,
-        llvm_type: &str,
+        role: CompletionSlot,
+        ty: &str,
         value: String,
-    ) -> Result<CompletionFact, BackendFailure> {
-        if !self.block_carries {
-            return Ok(CompletionFact::Ssa {
-                llvm_type: llvm_type.to_owned(),
-                value,
-            });
+    ) -> Result<CompletionCaptured, BackendFailure> {
+        let uses_ring =
+            self.pipeline.is_some_and(|pipeline| pipeline.slots() > 1) && self.block_carries;
+        let windows_submission =
+            self.qualification.target().is_windows() && role == CompletionSlot::Submitted;
+        if !uses_ring && !windows_submission {
+            return Ok(CompletionCaptured::Immediate(value));
         }
-        let storage = self.completion_entry_slot(site, llvm_type)?;
+        let storage = self.completion_entry_slot(site, role, ty)?;
+        if windows_submission {
+            if storage.slots == 1 {
+                writeln!(
+                    self.entry_prelude,
+                    "  store i1 false, ptr {}",
+                    storage.reservation
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            } else {
+                writeln!(
+                    self.entry_prelude,
+                    "  store [{} x i1] zeroinitializer, ptr {}",
+                    storage.slots, storage.reservation
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+        }
         let pointer = self.completion_storage_pointer(&storage)?;
-        writeln!(self.output, "  store {llvm_type} {value}, ptr {pointer}")
+        writeln!(self.output, "  store {ty} {value}, ptr {pointer}")
             .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(CompletionFact::Stored {
-            llvm_type: llvm_type.to_owned(),
+        Ok(CompletionCaptured::PerSlot {
+            ty: ty.to_owned(),
             storage,
         })
     }
 
-    /// Reads one mapper argument on the completion path.  A stored fact is
-    /// never loaded on a declined submission path, so an unvisited submit arm
-    /// cannot manufacture an uninitialized source value.
-    fn completion_fact_value(&mut self, fact: &CompletionFact) -> Result<String, BackendFailure> {
-        match fact {
-            CompletionFact::Ssa { value, .. } => Ok(value.clone()),
-            CompletionFact::Stored { llvm_type, storage } => {
-                let pointer = self.completion_storage_pointer(storage)?;
+    fn load_completion_value(
+        &mut self,
+        captured: CompletionCaptured,
+    ) -> Result<String, BackendFailure> {
+        match captured {
+            CompletionCaptured::Immediate(value) => Ok(value),
+            CompletionCaptured::PerSlot { ty, storage } => {
+                let pointer = self.completion_storage_pointer(&storage)?;
                 let value = format!("%{}", self.next_temporary()?);
-                writeln!(self.output, "  {value} = load {llvm_type}, ptr {pointer}")
+                writeln!(self.output, "  {value} = load {ty}, ptr {pointer}")
                     .map_err(|_| BackendFailure::TextEmission)?;
                 Ok(value)
-            }
-        }
-    }
-
-    fn completion_fact_type<'fact>(&self, fact: &'fact CompletionFact) -> &'fact str {
-        match fact {
-            CompletionFact::Ssa { llvm_type, .. } | CompletionFact::Stored { llvm_type, .. } => {
-                llvm_type
             }
         }
     }
@@ -550,10 +487,19 @@ impl FunctionEmitter<'_, '_> {
             })
             .collect::<Vec<_>>();
         for owner in owners {
-            let CompletionSubmission::WindowsState(state) = &owner.submission else {
+            let CompletionCaptured::PerSlot { ty, storage } = &owner.submitted else {
                 return Err(BackendFailure::InvalidIr);
             };
-            let state = self.completion_storage_pointer(state)?;
+            if ty != "i1" {
+                return Err(BackendFailure::InvalidIr);
+            }
+            // A ring owner is retired by a distinct drain slot. The current
+            // submit block does not name that older slot, so global pressure
+            // waits for the normal drain instead of guessing an element.
+            if storage.slots > 1 {
+                continue;
+            }
+            let state = self.completion_storage_pointer(storage)?;
             let target_owned = format!("%{}", self.next_temporary()?);
             let consume_label = completion_capacity_consume_label(result, owner.result);
             let next_label = completion_capacity_next_label(result, owner.result);
@@ -611,8 +557,8 @@ impl FunctionEmitter<'_, '_> {
                 )
             }
             CompletionMapping::Transfer { start, extent } => {
-                let start = self.completion_fact_value(start)?;
-                let extent = self.completion_fact_value(extent)?;
+                let start = self.load_completion_value(start.clone())?;
+                let extent = self.load_completion_value(extent.clone())?;
                 (
                     format!(
                         "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
@@ -625,14 +571,14 @@ impl FunctionEmitter<'_, '_> {
                 )
             }
             CompletionMapping::DirectoryNext {
+                destination_type,
                 destination,
                 start,
                 extent,
             } => {
-                let destination_type = self.completion_fact_type(destination).to_owned();
-                let destination = self.completion_fact_value(destination)?;
-                let start = self.completion_fact_value(start)?;
-                let extent = self.completion_fact_value(extent)?;
+                let destination = self.load_completion_value(destination.clone())?;
+                let start = self.load_completion_value(start.clone())?;
+                let extent = self.load_completion_value(extent.clone())?;
                 (
                     format!(
                         "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
@@ -659,7 +605,6 @@ impl FunctionEmitter<'_, '_> {
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
-
     /// Starts one direct file operation before the remaining independent
     /// members run.  All operation storage is allocated in the function entry
     /// block before the adapter can own the request.
@@ -717,20 +662,16 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
 
-        let staged = self.block_carries;
-        let token = self.completion_entry_slot(result, "[2 x i64]")?;
-        let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
-        let raw_value = self.completion_entry_slot(result, "i64")?;
-        let raw_error = self.completion_entry_slot(result, "i32")?;
-        let submission_state = (self.qualification.target().is_windows() || self.block_carries)
-            .then(|| self.completion_submission_state(result))
-            .transpose()?;
+        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
+        let result_slot = self.completion_entry_slot(
+            result,
+            CompletionSlot::Result,
+            &llvm_type(self.program, ty)?,
+        )?;
+        let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
+        let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
         let token_pointer = self.completion_storage_pointer(&token)?;
         let result_pointer = self.completion_storage_pointer(&result_slot)?;
-        let submission_state_pointer = submission_state
-            .as_ref()
-            .map(|state| self.completion_storage_pointer(state))
-            .transpose()?;
         let extent = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
         let offset_too_large = file_offset
@@ -815,10 +756,6 @@ impl FunctionEmitter<'_, '_> {
             self.value_name(*start),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        let mapping = CompletionMapping::Transfer {
-            start: self.completion_fact(result, "i64", self.value_name(*start))?,
-            extent: self.completion_fact(result, "i64", extent.clone())?,
-        };
         writeln!(
             self.output,
             "  {status} = call i32 @{submit_symbol}({submit_arguments})"
@@ -844,17 +781,16 @@ impl FunctionEmitter<'_, '_> {
             rendered_arguments.join(", "),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        if let Some(state) = &submission_state_pointer {
-            writeln!(self.output, "  store i1 {submitted}, ptr {state}")
-                .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        let submission = match submission_state {
-            None => CompletionSubmission::Ssa(submitted),
-            Some(state) if self.qualification.target().is_windows() => {
-                CompletionSubmission::WindowsState(state)
-            }
-            Some(state) => CompletionSubmission::PipelineState(state),
-        };
+        let submitted =
+            self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
+        let captured_start = self.capture_completion_value(
+            result,
+            CompletionSlot::Start,
+            "i64",
+            self.value_name(*start),
+        )?;
+        let captured_extent =
+            self.capture_completion_value(result, CompletionSlot::Extent, "i64", extent)?;
 
         *self.completion_used = true;
         self.handed_out
@@ -862,13 +798,15 @@ impl FunctionEmitter<'_, '_> {
                 result,
                 result_type: ty,
                 operation: completion,
-                staged,
                 token,
                 result_slot,
                 raw_value,
                 raw_error,
-                submission,
-                mapping,
+                submitted,
+                mapping: CompletionMapping::Transfer {
+                    start: captured_start,
+                    extent: captured_extent,
+                },
             })));
         Ok(())
     }
@@ -884,6 +822,19 @@ impl FunctionEmitter<'_, '_> {
         let request_label = completion_submit_label(result);
         let inline_label = completion_inline_label(result);
         let offered_label = completion_offered_label(result);
+        let rendered_type = llvm_type(self.program, ty)?;
+        // A component path may branch directly to the inline fallback before
+        // reaching `request_label`. Ring element pointers used by both paths
+        // must therefore be defined before path preparation opens that branch.
+        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
+        let result_slot =
+            self.completion_entry_slot(result, CompletionSlot::Result, &rendered_type)?;
+        let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
+        let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
+        let open_outcome =
+            self.completion_entry_slot(result, CompletionSlot::OpenOutcome, "i32")?;
+        let token_pointer = self.completion_storage_pointer(&token)?;
+        let result_pointer = self.completion_storage_pointer(&result_slot)?;
         let (directory, path, flags) = match completion {
             CompletionFileOperation::OpenRead => {
                 let [.., directory, path] = arguments else {
@@ -936,27 +887,11 @@ impl FunctionEmitter<'_, '_> {
         if llvm_type(self.program, directory_ty)? != "i32" {
             return Err(BackendFailure::InvalidIr);
         }
-        let staged = self.block_carries;
-        let token = self.completion_entry_slot(result, "[2 x i64]")?;
-        let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
-        let raw_value = self.completion_entry_slot(result, "i64")?;
-        let raw_error = self.completion_entry_slot(result, "i32")?;
-        let open_outcome = self.completion_entry_slot(result, "i32")?;
-        let submission_state = (self.qualification.target().is_windows() || self.block_carries)
-            .then(|| self.completion_submission_state(result))
-            .transpose()?;
-        let token_pointer = self.completion_storage_pointer(&token)?;
-        let result_pointer = self.completion_storage_pointer(&result_slot)?;
-        let submission_state_pointer = submission_state
-            .as_ref()
-            .map(|state| self.completion_storage_pointer(state))
-            .transpose()?;
         let status = format!("%{}", self.next_temporary()?);
         let accepted = format!("%{}", self.next_temporary()?);
         let inline_result = format!("%{}", self.next_temporary()?);
         let submitted = format!("%{}", self.next_temporary()?);
         let implementation = self.qualification.operation(operation)?;
-        let rendered_type = llvm_type(self.program, ty)?;
         let rendered_arguments = self.rendered_system_arguments(arguments)?;
         let (expected_kind, descriptor_class) = match completion {
             CompletionFileOperation::OpenRead | CompletionFileOperation::OpenFile => (
@@ -1006,29 +941,19 @@ impl FunctionEmitter<'_, '_> {
             rendered_arguments.join(", "),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        if let Some(state) = &submission_state_pointer {
-            writeln!(self.output, "  store i1 {submitted}, ptr {state}")
-                .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        let submission = match submission_state {
-            None => CompletionSubmission::Ssa(submitted),
-            Some(state) if self.qualification.target().is_windows() => {
-                CompletionSubmission::WindowsState(state)
-            }
-            Some(state) => CompletionSubmission::PipelineState(state),
-        };
+        let submitted =
+            self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
         *self.completion_used = true;
         self.handed_out
             .push(HandedOut::Completion(Box::new(CompletionHandedOut {
                 result,
                 result_type: ty,
                 operation: completion,
-                staged,
                 token,
                 result_slot,
                 raw_value,
                 raw_error,
-                submission,
+                submitted,
                 mapping: CompletionMapping::Open {
                     outcome: open_outcome,
                 },
@@ -1056,7 +981,11 @@ impl FunctionEmitter<'_, '_> {
         let slot = limit
             .checked_add(terminator_bytes)
             .ok_or(BackendFailure::CounterOverflow)?;
-        let staged = self.completion_entry_slot(result, &format!("[{slot} x i8]"))?;
+        let staged = self.completion_entry_slot(
+            result,
+            CompletionSlot::Component,
+            &format!("[{slot} x i8]"),
+        )?;
         let component = self.completion_storage_pointer(&staged)?;
         let extent = format!("%{}", self.next_temporary()?);
         let oversize = format!("%{}", self.next_temporary()?);
@@ -1203,22 +1132,18 @@ impl FunctionEmitter<'_, '_> {
             .value_type(*destination)
             .ok_or(BackendFailure::InvalidIr)?;
         let destination_llvm = llvm_type(self.program, destination_ty)?;
-        let staged = self.block_carries;
-        let token = self.completion_entry_slot(result, "[2 x i64]")?;
-        let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
-        let raw_value = self.completion_entry_slot(result, "i64")?;
-        let raw_error = self.completion_entry_slot(result, "i32")?;
-        let cursor = self.completion_entry_slot(result, "i64")?;
-        let submission_state = (self.qualification.target().is_windows() || self.block_carries)
-            .then(|| self.completion_submission_state(result))
-            .transpose()?;
+        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
+        let result_slot = self.completion_entry_slot(
+            result,
+            CompletionSlot::Result,
+            &llvm_type(self.program, ty)?,
+        )?;
+        let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
+        let raw_error = self.completion_entry_slot(result, CompletionSlot::RawError, "i32")?;
+        let cursor = self.completion_entry_slot(result, CompletionSlot::Cursor, "i64")?;
         let token_pointer = self.completion_storage_pointer(&token)?;
         let result_pointer = self.completion_storage_pointer(&result_slot)?;
         let position = self.completion_storage_pointer(&cursor)?;
-        let submission_state_pointer = submission_state
-            .as_ref()
-            .map(|state| self.completion_storage_pointer(state))
-            .transpose()?;
         let extent = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
         let base = format!("%{}", self.next_temporary()?);
@@ -1248,15 +1173,6 @@ impl FunctionEmitter<'_, '_> {
             self.value_name(*start),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        let mapping = CompletionMapping::DirectoryNext {
-            destination: self.completion_fact(
-                result,
-                &destination_llvm,
-                self.value_name(*destination),
-            )?,
-            start: self.completion_fact(result, "i64", self.value_name(*start))?,
-            extent: self.completion_fact(result, "i64", extent.clone())?,
-        };
         writeln!(
             self.output,
             "  {status} = call i32 @wf__completion_directory_next_submit(i32 {}, ptr {target}, \
@@ -1284,30 +1200,39 @@ impl FunctionEmitter<'_, '_> {
             rendered_arguments.join(", "),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        if let Some(state) = &submission_state_pointer {
-            writeln!(self.output, "  store i1 {submitted}, ptr {state}")
-                .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        let submission = match submission_state {
-            None => CompletionSubmission::Ssa(submitted),
-            Some(state) if self.qualification.target().is_windows() => {
-                CompletionSubmission::WindowsState(state)
-            }
-            Some(state) => CompletionSubmission::PipelineState(state),
-        };
+        let submitted =
+            self.capture_completion_value(result, CompletionSlot::Submitted, "i1", submitted)?;
+        let captured_destination = self.capture_completion_value(
+            result,
+            CompletionSlot::Destination,
+            &destination_llvm,
+            self.value_name(*destination),
+        )?;
+        let captured_start = self.capture_completion_value(
+            result,
+            CompletionSlot::Start,
+            "i64",
+            self.value_name(*start),
+        )?;
+        let captured_extent =
+            self.capture_completion_value(result, CompletionSlot::Extent, "i64", extent)?;
         *self.completion_used = true;
         self.handed_out
             .push(HandedOut::Completion(Box::new(CompletionHandedOut {
                 result,
                 result_type: ty,
                 operation: completion,
-                staged,
                 token,
                 result_slot,
                 raw_value,
                 raw_error,
-                submission,
-                mapping,
+                submitted,
+                mapping: CompletionMapping::DirectoryNext {
+                    destination_type: destination_llvm,
+                    destination: captured_destination,
+                    start: captured_start,
+                    extent: captured_extent,
+                },
             })));
         Ok(())
     }
@@ -1320,12 +1245,11 @@ impl FunctionEmitter<'_, '_> {
             result,
             result_type,
             operation,
-            staged,
             token,
             result_slot,
             raw_value,
             raw_error,
-            submission,
+            submitted,
             mapping,
         } = pending;
         // The element pointers are materialized here rather than carried from
@@ -1336,17 +1260,7 @@ impl FunctionEmitter<'_, '_> {
         let result_slot = self.completion_storage_pointer(&result_slot)?;
         let raw_value = self.completion_storage_pointer(&raw_value)?;
         let raw_error = self.completion_storage_pointer(&raw_error)?;
-        let submitted = match submission {
-            CompletionSubmission::Ssa(submitted) => submitted,
-            CompletionSubmission::WindowsState(state)
-            | CompletionSubmission::PipelineState(state) => {
-                let state = self.completion_storage_pointer(&state)?;
-                let submitted = format!("%{}", self.next_temporary()?);
-                writeln!(self.output, "  {submitted} = load i1, ptr {state}")
-                    .map_err(|_| BackendFailure::TextEmission)?;
-                submitted
-            }
-        };
+        let submitted = self.load_completion_value(submitted)?;
         let direct = format!("%{}", self.next_temporary()?);
         let completed_value = format!("%{}", self.next_temporary()?);
         let completed_error = format!("%{}", self.next_temporary()?);
@@ -1355,27 +1269,9 @@ impl FunctionEmitter<'_, '_> {
         let wait_label = completion_wait_label(result);
         let done_label = par_done_label(result);
         let result_llvm = llvm_type(self.program, result_type)?;
-        writeln!(
-            self.output,
-            "  br i1 {submitted}, label %{wait_label}, label %{inline_label}\n\
-             {inline_label}:"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        if staged {
-            writeln!(self.output, "  br label %{done_label}")
-                .map_err(|_| BackendFailure::TextEmission)?;
-        } else {
-            writeln!(
-                self.output,
-                "  {direct} = load {result_llvm}, ptr {result_slot}\n  \
-                 br label %{done_label}"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        writeln!(self.output, "{wait_label}:").map_err(|_| BackendFailure::TextEmission)?;
-        let (join_call, extra_load, mapper_arguments) = match &mapping {
+        let (join_call, extra_load, mapper_arguments) = match mapping {
             CompletionMapping::Open { outcome } => {
-                let outcome = self.completion_storage_pointer(outcome)?;
+                let outcome = self.completion_storage_pointer(&outcome)?;
                 let completed_outcome = format!("%{}", self.next_temporary()?);
                 (
                     format!(
@@ -1389,8 +1285,8 @@ impl FunctionEmitter<'_, '_> {
                 )
             }
             CompletionMapping::Transfer { start, extent } => {
-                let start = self.completion_fact_value(start)?;
-                let extent = self.completion_fact_value(extent)?;
+                let start = self.load_completion_value(start)?;
+                let extent = self.load_completion_value(extent)?;
                 (
                     format!(
                         "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
@@ -1403,18 +1299,18 @@ impl FunctionEmitter<'_, '_> {
                 )
             }
             CompletionMapping::DirectoryNext {
+                destination_type,
                 destination,
                 start,
                 extent,
             } => {
-                let destination_type = self.completion_fact_type(destination).to_owned();
-                let destination = self.completion_fact_value(destination)?;
-                let start = self.completion_fact_value(start)?;
-                let extent = self.completion_fact_value(extent)?;
+                let destination = self.load_completion_value(destination)?;
+                let start = self.load_completion_value(start)?;
+                let extent = self.load_completion_value(extent)?;
                 (
                     format!(
                         "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error})"
+                     ptr {raw_error})"
                     ),
                     String::new(),
                     format!(
@@ -1426,32 +1322,23 @@ impl FunctionEmitter<'_, '_> {
         };
         writeln!(
             self.output,
-            "  {join_call}\n  \
+            "  br i1 {submitted}, label %{wait_label}, label %{inline_label}\n\
+             {inline_label}:\n  \
+             {direct} = load {result_llvm}, ptr {result_slot}\n  \
+             br label %{done_label}\n\
+             {wait_label}:\n  \
+             {join_call}\n  \
              {completed_value} = load i64, ptr {raw_value}\n  \
              {completed_error} = load i32, ptr {raw_error}\n  \
              {extra_load}\
-             {completed} = call {result_llvm} @{}({mapper_arguments})",
+             {completed} = call {result_llvm} @{}({mapper_arguments})\n  \
+             br label %{done_label}\n\
+             {done_label}:\n  \
+             {} = phi {result_llvm} [ {direct}, %{inline_label} ], [ {completed}, %{wait_label} ]",
             completion_mapper_symbol(operation),
+            value_name(result),
         )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        if staged {
-            writeln!(
-                self.output,
-                "  store {result_llvm} {completed}, ptr {result_slot}\n  \
-                 br label %{done_label}\n\
-                 {done_label}:"
-            )
-            .map_err(|_| BackendFailure::TextEmission)
-        } else {
-            writeln!(
-                self.output,
-                "  br label %{done_label}\n\
-                 {done_label}:\n  \
-                 {} = phi {result_llvm} [ {direct}, %{inline_label} ], [ {completed}, %{wait_label} ]",
-                value_name(result),
-            )
-            .map_err(|_| BackendFailure::TextEmission)
-        }
+        .map_err(|_| BackendFailure::TextEmission)
     }
 }
 

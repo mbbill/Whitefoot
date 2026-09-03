@@ -150,9 +150,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         });
                     }
                 }
-                CheckedStatement::Claim { condition, .. } => {
-                    self.collect_expression_release_sites(condition, sites)?;
-                }
+                CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
                     self.collect_drop_release_sites(drops, sites)?;

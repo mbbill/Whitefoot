@@ -19,12 +19,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let referent_type = llvm_type(self.program, referent.ty())?;
-        self.declare_entry_slot(&self.value_name(result), &referent_type)?;
+        let address = self.entry_slot(FunctionSlot::Address(result))?;
         writeln!(
             self.output,
             "  store {referent_type} {}, ptr {}",
             self.value_name(value),
-            self.value_name(result)
+            address
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

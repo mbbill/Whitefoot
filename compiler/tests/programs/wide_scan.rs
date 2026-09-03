@@ -1,4 +1,4 @@
-//! Typed-outcome oracle for the claim-aware wide-probe lowering.
+//! Typed-outcome oracle for proof-gated wide-probe lowering.
 //!
 //! The program below carries five recognized byte-walk loops. The
 //! equivalence walks pin the exact per-byte results (needle positions at
@@ -14,7 +14,10 @@
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
-const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure {
+const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure contract {
+  requires ile(n, 0_u64);
+  ensures ile(result, 0_u64);
+} {
   return n;
 }
 
@@ -44,7 +47,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap), traps {
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected boundary walk with a typed exhaustion status.";
   let selector = 111_u8;
   let choice = buffer_new(8_u64, 0_u8);
@@ -93,9 +96,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       match cvt<u64, u8>(cursor) {
         Ok(value: narrow) => {
           let first_newline_ok = ilt(count, 64_u64);
-          claim first_newline_in_found: first_newline_ok because "premises: first_walk starts with count equal to zero, scans the 37-byte data buffer once, increments count only after recording a newline or mark hit, and the byte values 10_u8 and 88_u8 are disjoint\nderivation: at most one hit was recorded for each earlier cursor value, so count is at most cursor, while this iteration has cursor below 37_u64 and therefore count below 64_u64\nconclusion: first_newline_ok is True\nchecker gap: ENT does not derive the cross-iteration coupling between count and cursor through the two conditional hit arms\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-          set found[count] = narrow;
-          set count = count +wrap 1_u64;
+          if first_newline_ok {
+            set found[count] = narrow;
+            set count = count +wrap 1_u64;
+          } else {
+            return exit_status(code: 6_u8);
+          }
         }
         Err(error: wide_position) => {
         }
@@ -106,9 +112,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       match cvt<u64, u8>(cursor) {
         Ok(value: narrow_lead) => {
           let first_lead_ok = ilt(count, 64_u64);
-          claim first_lead_in_found: first_lead_ok because "premises: first_walk starts with count equal to zero, scans the 37-byte data buffer once, increments count only after recording a newline or mark hit, and the byte values 10_u8 and 88_u8 are disjoint\nderivation: the mark arm excludes a newline increment in this iteration and at most one hit was recorded for each earlier cursor value, so count is at most cursor, which is below 37_u64 and therefore below 64_u64\nconclusion: first_lead_ok is True\nchecker gap: ENT does not derive the cross-iteration coupling between count and cursor through the two conditional hit arms\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-          set found[count] = narrow_lead;
-          set count = count +wrap 1_u64;
+          if first_lead_ok {
+            set found[count] = narrow_lead;
+            set count = count +wrap 1_u64;
+          } else {
+            return exit_status(code: 6_u8);
+          }
         }
         Err(error: wide_lead) => {
         }
@@ -117,9 +126,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     set cursor = cursor +wrap 1_u64;
   }
   let first_sentinel_ok = ilt(count, 64_u64);
-  claim first_sentinel_in_found: first_sentinel_ok because "premises: first_walk scans exactly 37 bytes, count starts at zero, count changes only after a newline or mark hit, and those two byte values are disjoint\nderivation: each of the 37 iterations contributes at most one hit, so count is at most 37_u64 and therefore below the 64-byte found capacity\nconclusion: first_sentinel_ok is True\nchecker gap: ENT does not synthesize the loop-wide upper bound for a counter conditionally incremented in two arms\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-  set found[count] = 200_u8;
-  set count = count +wrap 1_u64;
+  if first_sentinel_ok {
+    set found[count] = 200_u8;
+    set count = count +wrap 1_u64;
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let blank = buffer_new(40_u64, 97_u8);
   let blank_stop = len(blank);
   let blank_cursor = 0_u64;
@@ -140,9 +152,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     set blank_cursor = blank_cursor +wrap 1_u64;
   }
   let second_sentinel_ok = ilt(count, 64_u64);
-  claim second_sentinel_in_found: second_sentinel_ok because "premises: first_walk records at most 37 hits and its sentinel adds one, while second_walk never mutates count and returns immediately on either unexpected hit\nderivation: every path reaching this point preserves count at most 38_u64 through second_walk, which is below the 64-byte found capacity\nconclusion: second_sentinel_ok is True\nchecker gap: ENT does not carry the preceding loop induction through the later loop and its early-return arms\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-  set found[count] = 201_u8;
-  set count = count +wrap 1_u64;
+  if second_sentinel_ok {
+    set found[count] = 201_u8;
+    set count = count +wrap 1_u64;
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let short_stop = 20_u64;
   let short_cursor = 0_u64;
   loop @third_walk {
@@ -156,9 +171,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       match cvt<u64, u8>(short_cursor) {
         Ok(value: short_narrow) => {
           let short_newline_ok = ilt(count, 64_u64);
-          claim short_newline_in_found: short_newline_ok because "premises: count is at most 39_u64 after the first two sentinels, third_walk scans 20 positions, increments count only after a newline or mark hit, and the byte values 10_u8 and 88_u8 are disjoint\nderivation: before the current append at most one hit was recorded for each earlier short_cursor value, so count is at most 39_u64 plus 19_u64 and is therefore below 64_u64\nconclusion: short_newline_ok is True\nchecker gap: ENT does not derive the cross-loop counter bound or its conditional per-iteration increment limit\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-          set found[count] = short_narrow;
-          set count = count +wrap 1_u64;
+          if short_newline_ok {
+            set found[count] = short_narrow;
+            set count = count +wrap 1_u64;
+          } else {
+            return exit_status(code: 6_u8);
+          }
         }
         Err(error: short_wide) => {
         }
@@ -169,9 +187,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       match cvt<u64, u8>(short_cursor) {
         Ok(value: short_narrow_lead) => {
           let short_lead_ok = ilt(count, 64_u64);
-          claim short_lead_in_found: short_lead_ok because "premises: count is at most 39_u64 after the first two sentinels, third_walk scans 20 positions, increments count only after a newline or mark hit, and the byte values 10_u8 and 88_u8 are disjoint\nderivation: the mark arm excludes a newline increment in this iteration and at most one hit was recorded for each earlier short_cursor value, so count is at most 39_u64 plus 19_u64 and is therefore below 64_u64\nconclusion: short_lead_ok is True\nchecker gap: ENT does not derive the cross-loop counter bound or its conditional per-iteration increment limit\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-          set found[count] = short_narrow_lead;
-          set count = count +wrap 1_u64;
+          if short_lead_ok {
+            set found[count] = short_narrow_lead;
+            set count = count +wrap 1_u64;
+          } else {
+            return exit_status(code: 6_u8);
+          }
         }
         Err(error: short_wide_lead) => {
         }
@@ -180,9 +201,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     set short_cursor = short_cursor +wrap 1_u64;
   }
   let third_sentinel_ok = ilt(count, 64_u64);
-  claim third_sentinel_in_found: third_sentinel_ok because "premises: count is at most 39_u64 before third_walk, that loop scans 20 positions, count changes only after a newline or mark hit, and those byte values are disjoint\nderivation: the loop contributes at most 20 hits, so count is at most 59_u64 and therefore below the 64-byte found capacity\nconclusion: third_sentinel_ok is True\nchecker gap: ENT does not synthesize the bound spanning the earlier walks and the conditionally incremented third_walk counter\nconsumers: the immediately following set found[count] requires this exact capacity bound";
-  set found[count] = 202_u8;
-  set count = count +wrap 1_u64;
+  if third_sentinel_ok {
+    set found[count] = 202_u8;
+    set count = count +wrap 1_u64;
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let phase_room = len(found);
   let phase_fits = ile(count, phase_room);
   if phase_fits {
@@ -226,16 +250,16 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     let field_room = len(field);
     let wall = 64_u64;
     let probe = 0_u64;
-    loop @hostile_walk {
-      let hostile_done = ige(probe, wall);
-      if hostile_done {
-        break @hostile_walk;
+    loop @bounded_walk {
+      let walk_done = ige(probe, wall);
+      if walk_done {
+        break @bounded_walk;
       }
-      let hostile_walk_ok = ilt(probe, field_room);
-      if hostile_walk_ok {
-        let hostile_byte = field[probe];
-        let hostile_lead = ieq(hostile_byte, mark);
-        if hostile_lead {
+      let walk_in_range = ilt(probe, field_room);
+      if walk_in_range {
+        let selected_byte = field[probe];
+        let selected_lead = ieq(selected_byte, mark);
+        if selected_lead {
           set scratch[0_u64] = 88_u8;
           region 'lead_write {
             match publish_all<'lead_write, 'lead_write>(output: &uniq 'lead_write out, source: &'lead_write scratch, length: 1_u64) {
@@ -246,8 +270,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
             }
           }
         }
-        let hostile_tail = ieq(hostile_byte, 89_u8);
-        if hostile_tail {
+        let selected_tail = ieq(selected_byte, 89_u8);
+        if selected_tail {
           set scratch[0_u64] = 89_u8;
           region 'tail_write {
             match publish_all<'tail_write, 'tail_write>(output: &uniq 'tail_write out, source: &'tail_write scratch, length: 1_u64) {
@@ -277,10 +301,11 @@ const PHASE_ONE: &[u8] = &[0, 1, 15, 16, 17, 31, 36, 200, 201, 0, 1, 15, 16, 17,
 #[test]
 fn wide_probe_walks_keep_exact_results_and_typed_boundary_failures() {
     let llvm = compile_sources(&[("wide_scan.wf", ORACLE)]);
-    // The three equivalence walks keep the wide probe: their true capacity
-    // claims sit inside hit arms, off the skip path. The two boundary walks
-    // branch on the exact subscript domain and return typed exhaustion
-    // statuses, so the probe correctly leaves them scalar [OP-4].
+    // The three equivalence walks keep the wide probe: their explicit
+    // capacity checks sit inside hit arms, off the skip path. Every guarded
+    // subscript is statically discharged from its true-edge fact. The two
+    // boundary walks return typed exhaustion statuses, so the probe correctly
+    // leaves them scalar [OP-4].
     assert_eq!(
         llvm.matches("load <16 x i8>").count(),
         3,

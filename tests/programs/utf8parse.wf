@@ -1,23 +1,20 @@
-fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 reads(src), writes(out), traps contract {
+fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
   define source_length = len(src);
   define output_length = len(deref(out));
   define enough_output = ige(output_length, source_length);
   requires enough_output;
 } {
   let source_length = len(src);
-  let i = 0_u64;
+  let output_length = len(deref(out));
   let count = 0_u64;
   let state = 0_u8;
   let value = 0_u32;
-  loop @bytes {
-    let finished = ieq(i, source_length);
-    if finished {
-      break @bytes;
+  for (i in 0_u64..source_length) {
+    let output_in_range = ilt(count, output_length);
+    if output_in_range {
+    } else {
+      return count;
     }
-    let scan_in_range = ilt(i, source_length);
-    claim byte_in_source: scan_in_range because "premises: source_length is len(src), i starts at zero, every completed iteration increments i once, and the equality branch exits before the body at source_length\nderivation: induction gives i at most source_length at each header; a reached body has i unequal to source_length, so i is strictly below source_length\nconclusion: scan_in_range is true\nchecker gap: ENT carries no induction fact across the bytes-loop backedge\nconsumers: src[i] requires this exact bound";
-    let events_behind = ile(count, i);
-    claim events_behind_scan: events_behind because "premises: count and i start at zero; every completed iteration consumes one byte, while every state-machine path emits at most one event\nderivation: a non-emitting step preserves count while i grows and an emitting step grows both once, so induction preserves count at most i\nconclusion: events_behind is true\nchecker gap: ENT carries no relational induction fact across the state-machine loop backedge\nconsumers: every following output subscript at count uses this relation with scan_in_range and the output-length requirement";
     let byte = src[i];
     let in_ground = ieq(state, 0_u8);
     if in_ground {
@@ -207,12 +204,11 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 
         }
       }
     }
-    set i = i +wrap 1_u64;
   }
   return count;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let input = buffer_new(15_u64, 0_u8);
   set input[0_u64] = 65_u8;
   set input[1_u64] = 194_u8;

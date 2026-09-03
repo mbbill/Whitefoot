@@ -9,12 +9,13 @@ use crate::{
 };
 
 use super::super::entailment::{
-    ObligationFamily, OverflowConjuncts, overflow_conjuncts_for_values,
+    DerivationNode, ObligationFamily, OverflowConjuncts, overflow_conjuncts_for_values,
 };
+use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation, IntegerType};
 use super::with_semantics;
 
-const OVERFLOW_FIX: &str = "establish the fixed `.defined` normalization with a dominating branch, use an available total non-exact row, or, only when the predicate is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record";
+const OVERFLOW_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -26,28 +27,14 @@ fn named<'functions>(
         .expect("named function is checked")
 }
 
-/// A reviewed residual theorem about this function's own loop state
-/// discharges the literal-operand site: the program is accepted and both
-/// overflow conjuncts are proved.
+/// A verified callable-boundary requirement enters the body as an ordinary S4
+/// fact and discharges both conjuncts of the exact addition.
 #[test]
-fn a_stronger_claim_discharges_the_literal_site() {
-    let source = br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure {
-  return imin(value, 999_u64);
-}
-
-fn bump(x: own u64) -> result: own u64 traps {
-  let bounded = 0_u64;
-  loop @select_bound {
-    if ieq(bounded, x) {
-      break @select_bound;
-    } else if ieq(bounded, 999_u64) {
-      break @select_bound;
-    } else {
-      set bounded = bounded +wrap 1_u64;
-    }
-  }
-  claim bounded_input: ilt(bounded, 1000_u64) because "premises: bounded starts at zero; each continuing iteration increments it once; the loop exits no later than the equality branch at 999\nderivation: induction over reached loop bodies keeps bounded between zero and 999 inclusive\nconclusion: ilt(bounded, 1000_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
-  let y = bounded + 1_u64;
+fn a_verified_requirement_discharges_the_literal_site() {
+    let source = br#"fn bump(x: own u64) -> result: own u64 pure contract {
+  requires ilt(x, 1000_u64);
+} {
+  let y = x + 1_u64;
   return y;
 }
 
@@ -57,7 +44,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("a claim-dominated literal site must be accepted: {outcome:?}");
+            panic!("a requirement-dominated literal site must be accepted: {outcome:?}");
         };
         let bump = named(&checked.data.functions, "bump");
         let overflow: Vec<_> = bump
@@ -70,9 +57,87 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(overflow[0].components.len(), 2);
         assert!(
             overflow.iter().all(|outcome| outcome.discharged),
-            "both conjuncts discharge: the claim bounds the operand and the \
+            "both conjuncts discharge: the requirement bounds the operand and the \
              implicit type bound closes the trivial side",
         );
+        super::entailment::validate_derivations(&bump.entailment);
+        let root = overflow[0]
+            .derivation
+            .expect("the accepted OP-2 site retains one proof root");
+        let DerivationNode::IntegerDomain {
+            goal: Some(_),
+            parents,
+        } = &bump.entailment.derivations.nodes[root.0 as usize]
+        else {
+            panic!("the finite OP-2 route concludes the canonical integer-domain goal");
+        };
+        let [parent] = parents.as_slice() else {
+            panic!("the finite OP-2 route retains one normalized-goal proof");
+        };
+        assert!(matches!(
+            bump.entailment.derivations.nodes[parent.0 as usize],
+            DerivationNode::GoalNormalization { .. }
+        ));
+    });
+}
+
+/// R1 bridges the ordinary true-edge difference fact `right <= left` into
+/// the affine domain goal for two nonconstant subtraction operands.
+#[test]
+fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
+    let source = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
+  let ordered = ile(right, left);
+  if ordered {
+    let difference = left - right;
+    return difference;
+  } else {
+    return 0_u64;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the guarded subtraction must use its true-edge fact: {outcome:?}");
+        };
+        let distance = named(&checked.data.functions, "distance");
+        let subtractions = distance
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        let [subtraction] = subtractions.as_slice() else {
+            panic!("the exact subtraction retains one integer-domain obligation");
+        };
+        assert!(subtraction.discharged);
+        super::entailment::validate_derivations(&distance.entailment);
+    });
+
+    let unguarded = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
+  let difference = left - right;
+  return difference;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(unguarded, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the unguarded subtraction must remain unproved: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                ..
+            }
+        ));
     });
 }
 
@@ -84,7 +149,7 @@ command fn main() -> status: own ExitStatus pure {
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let n = 10_u64;
-  for @steps i in 0_u64..n {
+  for @steps (i in 0_u64..n) {
     let next = i + 1_u64;
   }
   return exit_status(code: 0_u8);
@@ -147,29 +212,17 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A reviewed residual theorem about this function's own loop state
-/// discharges the exact-site obligation. The claim itself remains the
-/// function's `traps` effect source.
+/// The taken edge of a written comparison is an ordinary S1 fact, so the
+/// exact operation is accepted only in the branch where its domain holds.
 #[test]
-fn a_dominating_claim_discharges_the_site() {
-    let source = br#"fn clamp_hundred(value: own u64) -> result: own u64 pure {
-  return imin(value, 100_u64);
-}
-
-fn bump(x: own u64) -> result: own u64 traps {
-  let bounded = 0_u64;
-  loop @select_bound {
-    if ieq(bounded, x) {
-      break @select_bound;
-    } else if ieq(bounded, 100_u64) {
-      break @select_bound;
-    } else {
-      set bounded = bounded +wrap 1_u64;
-    }
+fn a_dominating_branch_discharges_the_site() {
+    let source = br#"fn bump(x: own u64) -> result: own u64 pure {
+  if ile(x, 100_u64) {
+    let y = x + 1_u64;
+    return y;
+  } else {
+    return 0_u64;
   }
-  claim small: ile(bounded, 100_u64) because "premises: bounded starts at zero; each continuing iteration increments it once; the loop exits no later than the equality branch at 100\nderivation: induction over reached loop bodies keeps bounded between zero and 100 inclusive\nconclusion: ile(bounded, 100_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
-  let y = bounded + 1_u64;
-  return y;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -178,7 +231,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("a claim-backed literal site must be accepted: {outcome:?}");
+            panic!("a branch-dominated literal site must be accepted: {outcome:?}");
         };
         let bump = named(&checked.data.functions, "bump");
         assert!(
@@ -187,7 +240,7 @@ command fn main() -> status: own ExitStatus pure {
                 .iter()
                 .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
                 .all(|outcome| outcome.discharged),
-            "the claim's established fact discharges the obligation",
+            "the taken branch's established fact discharges the obligation",
         );
     });
 }
@@ -217,35 +270,46 @@ fn a_wrap_site_attaches_no_obligation() {
     });
 }
 
-/// A bare site with two non-constant operands has no L0 normalization. Its
-/// canonical `.defined` goal is still required, independent of effects.
+/// Two local operands retain their exact affine values, so a fixed in-range
+/// sum discharges without a written goal. Unbounded parameters retain no such
+/// upper interval and still require proof at the exact site.
 #[test]
-fn a_two_variable_site_requires_its_canonical_goal() {
-    let pure_row = br#"command fn main() -> status: own ExitStatus pure {
+fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded() {
+    let exact_locals = br#"command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(pure_row, |outcome| {
+    with_semantics(exact_locals, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the retained exact values prove the local sum: {outcome:?}");
+        };
+        let main = named(&checked.data.functions, "main");
+        let addition = main
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition still owns one OP-2 obligation");
+        assert!(addition.discharged);
+    });
+
+    let unbounded_parameters = br#"fn add(a: own u64, b: own u64) -> result: own u64 pure {
+  let result = a + b;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(unbounded_parameters, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a two-variable exact site must require proof: {outcome:?}");
+            panic!("unbounded parameter intervals cannot prove the sum: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-    });
-    let traps_row = br#"command fn main() -> status: own ExitStatus traps {
-  let a = 6_u64;
-  let b = 7_u64;
-  let c = a + b;
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(traps_row, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("declaring traps cannot bypass the proof obligation: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
 
@@ -321,13 +385,12 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
     });
 }
 
-/// Rule precedence is stable on the default semantic path: a declared
-/// `traps` row with no effect source rejects under EFF-2 before an unproved
-/// exact-site obligation, while the matching `pure` row reaches OP-2. A
-/// ground-false exact obligation also rejects under OP-2.
+/// Rule precedence is stable on the default semantic path: an unexhibited
+/// allocation effect rejects under EFF-2 before an unproved exact-site
+/// obligation, while the matching `pure` row reaches OP-2.
 #[test]
 fn effect_mismatch_precedes_static_integer_domain_rejection() {
-    let traps_row = br#"fn bump(x: own u64) -> result: own u64 traps {
+    let extra_effect_row = br#"fn bump(x: own u64) -> result: own u64 allocates(heap) {
   let y = x + 1_u64;
   return y;
 }
@@ -336,9 +399,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(traps_row, |outcome| {
+    with_semantics(extra_effect_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an exact site does not justify a traps row: {outcome:?}");
+            panic!("an exact site does not exhibit allocation: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
         assert!(
@@ -384,6 +447,60 @@ command fn main() -> status: own ExitStatus pure {
             SemanticRule::Op2,
             "there is no accepted always-trapping bare spelling",
         );
+    });
+}
+
+#[test]
+fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
+    let source = br#"fn combine(start: own u64, parent: own u64) -> result: own u64 pure contract {
+  requires ile(parent, 9223372036854775807_u64);
+} {
+  let doubled = parent * 2_u64;
+  let addition_defined = start +defined doubled;
+  if addition_defined {
+    let result = start + doubled;
+    return result;
+  } else {
+    return 0_u64;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the matching defined guard must admit the later exact addition: {outcome:?}");
+        };
+        let combine = named(&checked.data.functions, "combine");
+        let domains = combine
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        let [multiply, addition] = domains.as_slice() else {
+            panic!("the exact multiply and addition retain two OP-2 obligations");
+        };
+        assert!(multiply.discharged);
+        assert!(addition.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &addition.canonical_goal else {
+            panic!("the addition retains its canonical domain goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Datum(_),
+                GoalExpression::Operation {
+                    row: GoalOperation::Integer {
+                        operation: CheckedIntegerOperation::MultiplyExact,
+                        ..
+                    },
+                    ..
+                }
+            ]
+        ));
     });
 }
 

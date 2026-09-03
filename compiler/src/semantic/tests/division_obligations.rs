@@ -8,11 +8,13 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
 };
 
-use super::super::entailment::ObligationFamily;
-use super::super::model::CheckedFunction;
+use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind};
+use super::super::goal::{GoalExpression, GoalOperation};
+use super::super::model::{CheckedFunction, CheckedIntegerOperation};
+use super::entailment::validate_derivations;
 use super::with_semantics;
 
-const DIVISION_FIX: &str = "establish the fixed `.defined` normalization with a dominating branch, use an available total non-exact row, or, only when the predicate is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record";
+const DIVISION_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -31,31 +33,30 @@ fn division_outcomes(
         .entailment
         .obligations
         .iter()
-        .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+        .filter(|outcome| {
+            outcome.family == ObligationFamily::IntegerDomain
+                && matches!(
+                    &outcome.canonical_goal,
+                    Some(GoalExpression::Operation {
+                        row: GoalOperation::Integer {
+                            operation: CheckedIntegerOperation::DivideDefined
+                                | CheckedIntegerOperation::RemainderDefined,
+                            ..
+                        },
+                        ..
+                    })
+                )
+        })
         .collect()
 }
 
-/// A reviewed residual theorem about this function's own loop state
-/// discharges the zero-divisor conjunct of an unsigned site: the program is
-/// accepted and both conjuncts are proved.
+/// A positive-divisor requirement enters the body through S4 and discharges
+/// the zero-divisor conjunct of an unsigned exact site.
 #[test]
-fn a_stronger_claim_discharges_an_unsigned_site() {
-    let source = br#"fn reviewed_positive(value: own u64) -> result: own u64 pure {
-  return imax(value, 1_u64);
-}
-
-fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  let divisor = 1_u64;
-  loop @select_divisor {
-    if ieq(divisor, d) {
-      break @select_divisor;
-    } else if ieq(divisor, 2_u64) {
-      break @select_divisor;
-    } else {
-      set divisor = divisor +wrap 1_u64;
-    }
-  }
-  claim positive_divisor: igt(divisor, 0_u64) because "premises: divisor starts at one, advances by one only on the ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor in the closed interval from one through two\nconclusion: igt(divisor, 0_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following n / divisor exact division requires a nonzero divisor for its OP-2 domain obligation";
+fn a_positive_requirement_discharges_an_unsigned_site() {
+    let source = br#"fn ratio(n: own u64, divisor: own u64) -> result: own u64 pure contract {
+  requires igt(divisor, 0_u64);
+} {
   let q = n / divisor;
   return q;
 }
@@ -66,7 +67,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("a claim-dominated unsigned site must be accepted: {outcome:?}");
+            panic!("a requirement-dominated unsigned site must be accepted: {outcome:?}");
         };
         let ratio = named(&checked.data.functions, "ratio");
         let division = division_outcomes(ratio);
@@ -74,34 +75,22 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(division[0].components.len(), 2);
         assert!(
             division.iter().all(|outcome| outcome.discharged),
-            "the claim derives `divisor != 0` and the unsigned overflow conjunct is ground true",
+            "the positive requirement derives `divisor != 0` and the unsigned overflow conjunct is ground true",
         );
     });
 }
 
-/// A reviewed residual theorem spells the selected local divisor's canonical
-/// disequality and discharges the obligation. The claim itself remains the
-/// function's `traps` effect source.
+/// A dominating branch spells the divisor's canonical disequality and
+/// discharges the exact operation only on the taken edge.
 #[test]
-fn a_canonical_claim_discharges_the_site() {
-    let source = br#"fn reviewed_nonzero(value: own u64) -> result: own u64 pure {
-  return imax(value, 1_u64);
-}
-
-fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  let divisor = 1_u64;
-  loop @select_divisor {
-    if ieq(divisor, d) {
-      break @select_divisor;
-    } else if ieq(divisor, 2_u64) {
-      break @select_divisor;
-    } else {
-      set divisor = divisor +wrap 1_u64;
-    }
+fn a_canonical_branch_discharges_the_site() {
+    let source = br#"fn ratio(n: own u64, divisor: own u64) -> result: own u64 pure {
+  if ine(divisor, 0_u64) {
+    let q = n / divisor;
+    return q;
+  } else {
+    return 0_u64;
   }
-  claim nonzero: ine(divisor, 0_u64) because "premises: divisor starts at one, advances by one only on the ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor in the closed interval from one through two\nconclusion: ine(divisor, 0_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following n / divisor exact division requires this disequality for its OP-2 domain obligation";
-  let q = n / divisor;
-  return q;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -110,14 +99,14 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("a claim-backed site must be accepted: {outcome:?}");
+            panic!("a branch-backed site must be accepted: {outcome:?}");
         };
         let ratio = named(&checked.data.functions, "ratio");
         assert!(
             division_outcomes(ratio)
                 .iter()
                 .all(|outcome| outcome.discharged),
-            "the claim's established disequality discharges the obligation",
+            "the branch's established disequality discharges the obligation",
         );
     });
 }
@@ -277,27 +266,14 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The same site with a reviewed local loop invariant that bounds the
-/// dividend away from the type minimum discharges both conjuncts.
+/// The same site with a verified entry requirement that bounds the dividend
+/// away from the type minimum discharges both conjuncts.
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
-    let source = br#"fn clamp_above_minus_hundred(value: own i32) -> result: own i32 pure {
-  return imax(value, -99_i32);
-}
-
-fn negate(n: own i32) -> result: own i32 traps {
-  let bounded = -99_i32;
-  loop @select_bound {
-    if ieq(bounded, n) {
-      break @select_bound;
-    } else if ieq(bounded, 0_i32) {
-      break @select_bound;
-    } else {
-      set bounded = bounded +wrap 1_i32;
-    }
-  }
-  claim bounded_input: igt(bounded, -100_i32) because "premises: bounded starts at -99, advances by one only on the ordinary-loop backedge, and exits no later than zero\nderivation: induction over reached loop bodies keeps bounded in the closed interval from -99 through zero\nconclusion: igt(bounded, -100_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following bounded / -1_i32 exact division requires exclusion of i32::MIN for its OP-2 domain obligation";
-  let q = bounded / -1_i32;
+    let source = br#"fn negate(n: own i32) -> result: own i32 pure contract {
+  requires igt(n, -100_i32);
+} {
+  let q = n / -1_i32;
   return q;
 }
 
@@ -319,8 +295,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// A signed site with two non-constant operands still requires its complete
-/// typed domain predicate. A `traps` declaration cannot replace that proof;
-/// EFF-2 retains precedence when the declared row already disagrees.
+/// typed domain predicate. An unrelated effect declaration cannot replace
+/// that proof; EFF-2 retains precedence when the row already disagrees.
 #[test]
 fn a_signed_two_variable_site_requires_static_domain_proof() {
     let pure_row = br#"fn ratio(n: own i32, d: own i32) -> result: own i32 pure {
@@ -338,7 +314,8 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
-    let traps_row = br#"fn ratio(n: own i32, d: own i32) -> result: own i32 traps {
+    let extra_effect_row =
+        br#"fn ratio(n: own i32, d: own i32) -> result: own i32 allocates(heap) {
   let q = n / d;
   return q;
 }
@@ -347,9 +324,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(traps_row, |outcome| {
+    with_semantics(extra_effect_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a traps row cannot restore a runtime fallback: {outcome:?}");
+            panic!("an unrelated effect cannot replace a static proof: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
@@ -385,11 +362,11 @@ fn a_checked_division_attaches_no_obligation() {
     });
 }
 
-/// On the default checker, an unjustified `traps` declaration is judged under
+/// On the default checker, an unexhibited allocation effect is judged under
 /// EFF-2 before the undischarged exact-division obligation is reported.
 #[test]
 fn effect_mismatch_precedes_static_division_rejection() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
+    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 allocates(heap) {
   let q = n / d;
   let r = n % d;
   return q;
@@ -401,7 +378,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("exact division does not justify a traps row: {outcome:?}");
+            panic!("exact division does not exhibit allocation: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
@@ -454,6 +431,277 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+#[test]
+fn unsigned_literal_division_publishes_the_quotient_bound() {
+    let source = br#"fn half_floor(count: own u64) -> result: own u64 pure contract {
+  ensures ile(result, count);
+} {
+  let quotient = count / 2_u64;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the unsigned quotient bound must discharge the postcondition: {outcome:?}");
+        };
+        let function = named(&checked.data.functions, "half_floor");
+        validate_derivations(&function.entailment);
+        assert!(function.entailment.postconditions[0].aggregate.discharged);
+        assert!(
+            function
+                .entailment
+                .s7_derivations
+                .iter()
+                .any(|source| matches!(
+                    source.kind,
+                    S7DerivationKind::UnsignedDivisionBound { divisor: 2, .. }
+                ))
+        );
+    });
+}
+
+#[test]
+fn unsigned_literal_division_publishes_the_scaled_quotient_image() {
+    let source = br#"fn doubled_floor(count: own u64) -> result: own u64 pure contract {
+  ensures ile(result, count);
+} {
+  let quotient = count / 2_u64;
+  let doubled = quotient * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!(
+                "the scaled quotient image must prove both multiplication and return: {outcome:?}"
+            );
+        };
+        let function = named(&checked.data.functions, "doubled_floor");
+        let domains = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            domains.len(),
+            2,
+            "division and multiplication each own one domain"
+        );
+        assert!(domains.iter().all(|outcome| outcome.discharged));
+        assert!(function.entailment.postconditions[0].aggregate.discharged);
+    });
+}
+
+/// The scaled quotient image proves the doubled midpoint relation
+/// `2*mid + 1 <= 2*hi` automatically, and AUTO then halves that published fact
+/// over the integers, so the midpoint subscript needs no written certificate.
+#[test]
+fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
+    let source = br#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define room = len(deref(table));
+  requires ilt(lo, hi);
+  requires ile(hi, room);
+} {
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: ile(2_u64 * mid + 1_u64, 2_u64 * hi);
+  let byte = deref(table)[mid];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the halved midpoint fact must discharge the subscript: {outcome:?}");
+        };
+        let function = named(&checked.data.functions, "probe");
+        validate_derivations(&function.entailment);
+        assert!(
+            function.entailment.source_proofs.is_empty()
+                || function
+                    .entailment
+                    .source_proofs
+                    .iter()
+                    .all(|proof| proof.check.premises.is_empty()),
+            "the automatic route uses no written premise"
+        );
+        let bounds = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::Bounds)
+            .collect::<Vec<_>>();
+        assert_eq!(bounds.len(), 1, "the one subscript owns one bounds goal");
+        assert!(bounds[0].discharged);
+    });
+}
+
+#[test]
+fn signed_literal_division_does_not_publish_unsigned_ordering_images() {
+    let source = br#"fn signed_half(value: own i32) -> result: own i32 pure contract {
+  ensures ile(result, value);
+} {
+  let quotient = value / 2_i32;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("signed truncation does not imply quotient <= dividend: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedPostcondition(_)
+        ));
+    });
+}
+
+#[test]
+fn unsigned_zero_literal_still_fails_the_division_domain() {
+    let source = br#"fn invalid_divisor(value: own u64) -> result: own u64 pure {
+  let quotient = value / 0_u64;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("zero remains outside the exact unsigned division domain: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Refuted,
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn replacing_the_quotient_does_not_transfer_its_old_division_image() {
+    let source =
+        br#"fn replace_quotient(count: own u64, replacement: own u64) -> result: own u64 pure {
+  let quotient = count / 2_u64;
+  set quotient = replacement;
+  let doubled = quotient * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a new quotient value must not inherit the old division image: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+    });
+}
+
+#[test]
+fn replacing_the_dividend_does_not_retarget_the_old_division_image() {
+    let source =
+        br#"fn replace_dividend(count: own u64, replacement: own u64) -> result: own u64 pure {
+  let quotient = count / 2_u64;
+  set count = replacement;
+  let doubled = quotient * 2_u64;
+  let difference = count - doubled;
+  return difference;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the old dividend value must not constrain its replacement: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("the rejection must cite the exact arithmetic site");
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        assert_eq!(&source[start..end], b"count - doubled");
+    });
+}
+
+#[test]
+fn a_live_alias_keeps_the_old_quotient_value_image_after_set() {
+    let source = br#"fn alias_before_set(count: own u64, replacement: own u64) -> result: own u64 pure contract {
+  ensures ile(result, count);
+} {
+  let quotient = count / 2_u64;
+  let saved = quotient;
+  set quotient = replacement;
+  let doubled = saved * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the image belongs to the saved runtime value, not the overwritten name: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn independent_branch_images_are_not_merged_without_a_value_transfer_rule() {
+    let source =
+        br#"fn branch_half(count: own u64, choose_left: own Bool) -> result: own u64 pure {
+  let quotient = if choose_left {
+    let left = count / 2_u64;
+    give left;
+  } else {
+    let right = count / 2_u64;
+    give right;
+  }
+  let doubled = quotient * 2_u64;
+  return doubled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("branch-local value atoms require an explicit delivery transfer: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+    });
+}
+
 /// A generic exact division is pure only when its complete typed domain
 /// predicate is a static requirement. The one `/defined` goal covers both
 /// zero divisors and the signed `MIN / -1` case; concrete callers discharge
@@ -485,32 +733,14 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// [OP-2]'s own mechanical fix must be writable at a signed type. The claim
-/// route first obtains a genuinely nonzero divisor from a local loop, then
-/// states the selected operand's residual disequality; the
-/// branch route establishes the original divisor's disequality directly.
-/// Both routes compare the selected divisor against a written `0_i32`, which
-/// is the same mathematical value as the zero term the conjunct is stated
-/// against and therefore the same [ENT-2] term; the unsigned routes, which
-/// reach the same conjunct through the type's own lower bound, are unchanged.
+/// [OP-2]'s mechanical fixes are writable at a signed type. A verified
+/// requirement establishes the complete body fact through S4, while a branch
+/// establishes the original divisor's disequality on its taken edge.
 #[test]
 fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
-    let claimed = br#"fn reviewed_nonzero(value: own i32) -> result: own i32 pure {
-  return imax(value, 1_i32);
-}
-
-fn ratio(d: own i32) -> result: own i32 traps {
-  let divisor = 1_i32;
-  loop @select_divisor {
-    if ieq(divisor, d) {
-      break @select_divisor;
-    } else if ieq(divisor, 2_i32) {
-      break @select_divisor;
-    } else {
-      set divisor = divisor +wrap 1_i32;
-    }
-  }
-  claim nonzero: ine(divisor, 0_i32) because "premises: divisor starts at one, advances by one only on the ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor in the closed interval from one through two\nconclusion: ine(divisor, 0_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following 100_i32 / divisor exact division requires this disequality for its OP-2 domain obligation";
+    let required = br#"fn ratio(divisor: own i32) -> result: own i32 pure contract {
+  requires ine(divisor, 0_i32);
+} {
   let q = 100_i32 / divisor;
   return q;
 }
@@ -519,9 +749,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(claimed, |outcome| {
+    with_semantics(required, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the claimed disequality must discharge the conjunct: {outcome:?}");
+            panic!("the required disequality must discharge the conjunct: {outcome:?}");
         };
         let ratio = named(&checked.data.functions, "ratio");
         assert!(
@@ -554,7 +784,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(discharged.len(), 1, "one source occurrence, one obligation");
         assert!(discharged.iter().all(|outcome| outcome.discharged));
     });
-    let unclaimed = br#"fn ratio(d: own i32) -> result: own i32 pure {
+    let unproved = br#"fn ratio(d: own i32) -> result: own i32 pure {
   let q = 100_i32 / d;
   return q;
 }
@@ -563,7 +793,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(unclaimed, |outcome| {
+    with_semantics(unproved, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("without either route the conjunct must stay undischarged: {outcome:?}");
         };
@@ -576,5 +806,340 @@ command fn main() -> status: own ExitStatus pure {
                 mechanical_fix: DIVISION_FIX,
             },
         );
+    });
+}
+
+#[test]
+fn active_invariants_prove_signed_division_and_remainder_domains() {
+    let source = br#"fn exact_pairs(dividend_start: own i32, divisor_start: own i32, limit: own u64) -> result: own unit pure contract {
+  requires ile(-10_i32, dividend_start);
+  requires ile(dividend_start, 100_i32);
+  requires ile(1_i32, divisor_start);
+  requires ile(divisor_start, 100_i32);
+  requires ile(limit, 10_u64);
+} {
+  let dividend = dividend_start;
+  let divisor = divisor_start;
+  for @items (
+    i in 0_u64..limit,
+    invariant dividend_lower: ile(-10_i32, dividend),
+    invariant dividend_progress: ile(dividend, dividend_start + i),
+    invariant divisor_positive: ile(1_i32, divisor),
+    invariant divisor_progress: ile(divisor, divisor_start + i)
+  ) {
+    let quotient_positive = -2147483648_i32 / divisor;
+    let remainder_positive = -2147483648_i32 % divisor;
+    let quotient_negative_one = dividend / -1_i32;
+    let remainder_negative_one = dividend % -1_i32;
+    set dividend = dividend + 1_i32;
+    set divisor = divisor + 1_i32;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the active invariants must prove all signed domains: {outcome:?}");
+        };
+        let function = named(&checked.data.functions, "exact_pairs");
+        let domains = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| {
+                outcome.family == ObligationFamily::IntegerDomain
+                    && matches!(
+                        &outcome.canonical_goal,
+                        Some(GoalExpression::Operation {
+                            row: GoalOperation::Integer {
+                                operation: CheckedIntegerOperation::DivideDefined
+                                    | CheckedIntegerOperation::RemainderDefined,
+                                ..
+                            },
+                            ..
+                        })
+                    )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            domains.len(),
+            4,
+            "two division and two remainder sites remain distinct"
+        );
+        for domain in domains {
+            assert_eq!(domain.components.len(), 3);
+            assert!(domain.discharged);
+            assert!(domain.residual.is_none());
+
+            let root = domain
+                .derivation
+                .expect("the accepted signed operation retains a derivation root");
+            let mut seen = vec![false; function.entailment.derivations.nodes.len()];
+            let mut stack = vec![root];
+            let mut used_invariant = false;
+            while let Some(node) = stack.pop() {
+                let index = node.0 as usize;
+                if seen[index] {
+                    continue;
+                }
+                seen[index] = true;
+                let retained = &function.entailment.derivations.nodes[index];
+                used_invariant |= matches!(
+                    retained,
+                    DerivationNode::AffineConsequence {
+                        premises,
+                        ..
+                    } if !premises.is_empty()
+                );
+                stack.extend(retained.parent_ids());
+            }
+            assert!(
+                used_invariant,
+                "each signed domain proof must consume a source invariant"
+            );
+        }
+    });
+}
+
+#[test]
+fn an_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    let source = br#"fn increment(values: own array<u8, 1>) -> result: own u8 pure {
+  if values[0_u64] +defined 1_u8 {
+    let result = values[0_u64] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 1>(0_u8);
+  let result = increment(values: move values);
+  return exit_status(code: result);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the identical indexed value must retain one structural goal: {outcome:?}");
+        };
+        let increment = named(&checked.data.functions, "increment");
+        let exact = increment
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition retains its OP-2 obligation");
+        assert!(exact.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &exact.canonical_goal else {
+            panic!("every OP-2 occurrence must retain its canonical goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::ArrayIndex { .. },
+                    ..
+                },
+                GoalExpression::Datum(_)
+            ]
+        ));
+    });
+}
+
+#[test]
+fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
+    let source = br#"fn increment_after_write(values: own array<u8, 1>) -> result: own u8 pure {
+  if values[0_u64] +defined 1_u8 {
+    set values[0_u64] = 255_u8;
+    let result = values[0_u64] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 1>(0_u8);
+  let result = increment_after_write(values: move values);
+  return exit_status(code: result);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a collection write must kill the old indexed goal: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn a_buffer_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    let source = br#"fn increment['v](values: &'v buffer<u8>) -> result: own u8 reads(values) {
+  let room = len(deref(values));
+  if ilt(0_u64, room) {
+    if deref(values)[0_u64] +defined 1_u8 {
+      let result = deref(values)[0_u64] + 1_u8;
+      return result;
+    } else {
+      return 0_u8;
+    }
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the identical buffer element must retain one structural goal: {outcome:?}");
+        };
+        let increment = named(&checked.data.functions, "increment");
+        let exact = increment
+            .entailment
+            .obligations
+            .iter()
+            .rfind(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition retains its OP-2 obligation");
+        assert!(exact.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &exact.canonical_goal else {
+            panic!("every OP-2 occurrence must retain its canonical goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::BufferIndex { .. },
+                    ..
+                },
+                GoalExpression::Datum(_)
+            ]
+        ));
+    });
+}
+
+#[test]
+fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    let source = br#"fn increment['v](values: own slice<'v, u8>) -> result: own u8 reads(values) {
+  let room = len(values);
+  if ilt(0_u64, room) {
+    if values[0_u64] +defined 1_u8 {
+      let result = values[0_u64] + 1_u8;
+      return result;
+    } else {
+      return 0_u8;
+    }
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the identical slice element must retain one structural goal: {outcome:?}");
+        };
+        let increment = named(&checked.data.functions, "increment");
+        let exact = increment
+            .entailment
+            .obligations
+            .iter()
+            .rfind(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .expect("the exact addition retains its OP-2 obligation");
+        assert!(exact.discharged);
+        let Some(GoalExpression::Operation { arguments, .. }) = &exact.canonical_goal else {
+            panic!("every OP-2 occurrence must retain its canonical goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::SliceIndex { .. },
+                    ..
+                },
+                GoalExpression::Datum(_)
+            ]
+        ));
+    });
+}
+
+#[test]
+fn different_index_offsets_do_not_share_a_defined_fact() {
+    let source = br#"fn increment_other(values: own array<u8, 2>) -> result: own u8 pure {
+  if values[0_u64] +defined 1_u8 {
+    let result = values[1_u64] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("different index identities must not share a defined fact: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                residual,
+                ..
+            } if residual == "values[1_u64] +defined 1_u8"
+        ));
+    });
+}
+
+#[test]
+fn writing_the_index_binding_invalidates_its_old_indexed_defined_fact() {
+    let source =
+        br#"fn increment_after_index_write(values: own array<u8, 2>) -> result: own u8 pure {
+  let offset = 1_u64;
+  if values[offset] +defined 1_u8 {
+    set offset = 0_u64;
+    let result = values[offset] + 1_u8;
+    return result;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an index write must kill the old indexed goal: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation {
+                disposition: StaticObligationDisposition::Unproved,
+                residual,
+                ..
+            } if residual == "values[offset] +defined 1_u8"
+        ));
     });
 }

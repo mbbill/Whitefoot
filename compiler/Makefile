@@ -14,15 +14,12 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 # Every gate target that executes a compiled program runs it with the core
 # file limit at zero.
 #
-# Cases here are deliberately about programs that die: a false claim aborts
-# [DIAG-3], an exhausted stack faults [PROG-3], a lowering with its joins
-# removed is expected to crash. One gate run therefore kills a few hundred
-# processes on purpose, and on a host that writes or analyses a core for each
-# one the gate pays for evidence nothing reads. Measured in batch 0093, that is
-# where the Linux gate's time went: the same library suite took 1016 seconds on
-# the four-core `ubuntu-24.04` runner and 55 on the three-core `macos-14`
-# runner beside it, and the whole difference sat in the five cases that spawn
-# dying programs.
+# A few runtime-boundary and deliberately damaged-lowering tests end a child
+# process while checking resource reporting and test-oracle sensitivity. On a
+# host that writes or analyses a core for each one, the gate pays for evidence
+# nothing reads. Measured in batch 0093, that is where the Linux gate's time
+# went: the same library suite took 1016 seconds on the four-core
+# `ubuntu-24.04` runner and 55 on the three-core `macos-14` runner beside it.
 #
 # This limit is the portable half of declining that, and it is deliberately not
 # the whole of it. A Linux `kernel.core_pattern` that begins with a pipe —
@@ -50,8 +47,7 @@ SAMPLING_MODULES := \
 	backend::tests::exhaustion:: \
 	backend::tests::loop_split:: \
 	backend::tests::parallel:: \
-	backend::tests::stackless:: \
-	backend::tests::trap_latch::
+	backend::tests::stackless::
 SAMPLING_SKIPS := $(patsubst %,--skip %,$(SAMPLING_MODULES))
 
 # The integration targets cargo discovers in `tests/`. `test-corpus` names them

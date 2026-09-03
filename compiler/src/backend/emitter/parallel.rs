@@ -1,7 +1,7 @@
 //! Actualization of the permission judgment's overlap groups.
 //!
 //! For a group of sibling calls the checker permitted to overlap, every member
-//! but the last is *handed out*: a lane is claimed, the call's arguments are
+//! but the last is *handed out*: a lane is acquired, the call's arguments are
 //! stored into that lane's frame, and the call — outlined into an internal
 //! thunk over the frame — is published to the lane. The remaining member then
 //! runs inline on the calling thread, and each handed-out member is joined
@@ -12,10 +12,10 @@
 //! arguments, so there is still exactly one lowering of the source call: the
 //! thunk and the fallback are the same code reached two ways, and a lane that
 //! is never granted computes the sequential result on the sequential schedule.
-//! Nothing here consults a fact, a claim disposition, or a row; it consumes
-//! the group the checker already judged.
+//! Nothing here consults a fact, a source proof statement, or a row; it
+//! consumes the group the checker already judged.
 //!
-//! **The claim comes before the frame.** The frame belongs to the lane, not to
+//! **Lane acquisition comes before the frame.** The frame belongs to the lane, not to
 //! the calling function, and nothing about it is built until a lane has been
 //! granted. An activation that is refused a lane executes a null test and its
 //! own call: no stack slot, no argument spills, nothing the sequential
@@ -111,7 +111,7 @@ pub const PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE: &str = concat!(
 /// Windows module that hands out work therefore cannot link unless the native
 /// runtime supplies the strong protocol; this is the compile-time half of the
 /// fail-closed backend contract.
-pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_claim(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
+pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
 
 /// The fail-closed Windows declaration of the once-per-process backend query.
 pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_pool_active()\n";
@@ -120,12 +120,12 @@ pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_p
 pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
     "declare i64 @wf__par_split_budget(i64, i64)\n";
 
-/// A non-Windows module's own definition of the lane protocol: claim no lane,
+/// A non-Windows module's own definition of the lane protocol: acquire no lane,
 /// ever.
 ///
 /// A non-Windows module that hands work out carries a *weak* sequential answer
 /// to every runtime entry point, so it is a complete program on its own: with
-/// no runtime linked, every claim is refused, so no frame is ever built, no
+/// no runtime linked, every acquisition is refused, so no frame is ever built, no
 /// task is ever published, and every handed-out call runs on its own thread at
 /// its own fallback edge — exactly today's schedule. Linking the runtime
 /// replaces all four with its strong definitions, and only then can a lane be
@@ -136,15 +136,17 @@ pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
 /// would make the runtime a link obligation of every path that ever builds a
 /// Whitefoot program rather than an option of the paths that want lanes. The
 /// Windows production contract deliberately chooses that obligation.
-pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_claim(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
+pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_acquire_lane(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
 /// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a
 /// non-Windows link path reads.
-pub(crate) const PARALLEL_CLAIM_SYMBOL: &str = "define weak ptr @wf__par_claim(i64 %bytes)";
+pub(crate) const PARALLEL_LANE_ACQUISITION_SYMBOL: &str =
+    "define weak ptr @wf__par_acquire_lane(i64 %bytes)";
 
 /// The first Windows declaration of the same ABI, used as that target's link
 /// marker.
-pub(crate) const PARALLEL_CLAIM_DECLARATION: &str = "declare ptr @wf__par_claim(i64)";
+pub(crate) const PARALLEL_LANE_ACQUISITION_DECLARATION: &str =
+    "declare ptr @wf__par_acquire_lane(i64)";
 
 /// True when this emitted module hands work out, so linking the parallel
 /// runtime would let it take lanes.
@@ -156,7 +158,8 @@ pub(crate) const PARALLEL_CLAIM_DECLARATION: &str = "declare ptr @wf__par_claim(
 /// the runtime. On Windows, the same predicate recognizes external
 /// declarations and is a hard link obligation.
 pub fn module_requires_parallel_runtime(module: &str) -> bool {
-    module.contains(PARALLEL_CLAIM_SYMBOL) || module.contains(PARALLEL_CLAIM_DECLARATION)
+    module.contains(PARALLEL_LANE_ACQUISITION_SYMBOL)
+        || module.contains(PARALLEL_LANE_ACQUISITION_DECLARATION)
 }
 
 /// The runtime's answer to "was this run asked for a pool", put once per
@@ -209,11 +212,11 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// absence. So the module carries both lowerings and selects between them.
 ///
 /// **Why the selection is safe.** It is made once per process, from whether the
-/// run asked for a pool, and never again. Without one every claim is refused for
+/// run asked for a pool, and never again. Without one every acquisition is refused for
 /// the whole process, so the two worlds compute on exactly the same schedule and
 /// the choice between them is a choice of machine code, not of semantics. On
 /// the optional-runtime path, a run that asks for a pool and cannot start one
-/// has every claim refused; Windows instead terminates when the native pool is
+/// has every acquisition refused; Windows instead terminates when the native pool is
 /// first required. A *per-task* demand signal would be a different thing
 /// entirely, and was measured killing the scheduler it was meant to help: the
 /// shared word it needs costs two contended read-modify-writes per task, which
@@ -396,7 +399,7 @@ pub(crate) struct ComputeHandedOut {
     result_type: IrType,
     /// The frame's LLVM struct type, `{ arguments..., result }`.
     frame_type: String,
-    /// The claimed lane's frame, or null when no lane was granted. It is both
+    /// The acquired lane's frame, or null when no lane was granted. It is both
     /// the storage the thunk reads and the handle the join names.
     frame: String,
     /// The frame field the result occupies: the argument count.
@@ -419,7 +422,7 @@ pub(crate) enum HandedOut {
 impl FunctionEmitter<'_, '_> {
     /// Hands one member of an overlap group to a worker lane.
     ///
-    /// Claims a lane first and builds the frame only inside the granted edge,
+    /// Acquires a lane first and builds the frame only inside the granted edge,
     /// so a refused hand-out leaves nothing behind but a null pointer. Defines
     /// nothing: the call's value comes into existence at the join, which is
     /// the only place it is known to have been computed.
@@ -452,22 +455,28 @@ impl FunctionEmitter<'_, '_> {
         let result_field = field_types.len();
         field_types.push(result_type.clone());
         let frame_type = format!("{{ {} }}", field_types.join(", "));
+        let frame_layout = self
+            .ordinary_lane_frames
+            .get(&result)
+            .copied()
+            .ok_or(BackendFailure::InvalidIr)?;
 
         let callee = source_symbol(target.name());
         let thunk = self.parallel.register(|symbol| {
             thunk_definition(symbol, &frame_type, &field_types, &callee, &result_type)
         })?;
 
-        // The frame's size is LLVM's own answer for the frame's type, so the
-        // bound the lane checks is the layout the thunk reads, not a number
-        // this backend computed beside it.
+        // Target layout already computed the exact complete aggregate before
+        // this function emitted any text. Passing that proved constant avoids
+        // forming an address from `null` merely to ask LLVM for the same size.
         let frame = format!("%{}", self.next_temporary()?);
         let granted = format!("%{}", self.next_temporary()?);
         let offer = par_offer_label(result);
         let offered = par_offered_label(result);
         writeln!(
             self.output,
-            "  {frame} = call ptr @wf__par_claim(i64 ptrtoint (ptr getelementptr ({frame_type}, ptr null, i32 1) to i64))\n  {granted} = icmp ne ptr {frame}, null\n  br i1 {granted}, label %{offer}, label %{offered}\n{offer}:"
+            "  {frame} = call ptr @wf__par_acquire_lane(i64 {})\n  {granted} = icmp ne ptr {frame}, null\n  br i1 {granted}, label %{offer}, label %{offered}\n{offer}:",
+            frame_layout.size()
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         for (index, operand) in operands.iter().enumerate() {
@@ -693,7 +702,7 @@ fn par_offer_label(value: IrValueId) -> String {
     format!("par.offer.v{}", value.ordinal())
 }
 
-/// The label both edges of the claim continue in, and so the block the inline
+/// The label both edges of lane acquisition continue in, and so the block the inline
 /// member of the group runs in.
 fn par_offered_label(value: IrValueId) -> String {
     format!("par.offered.v{}", value.ordinal())

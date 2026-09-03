@@ -176,6 +176,7 @@ pub(super) struct SystemEmission {
 pub(super) fn emit_system_interface(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
+    target_layout: TargetLayout,
 ) -> Result<SystemEmission, BackendFailure> {
     let mut constants = String::new();
     let mut declarations: BTreeSet<String> = BTreeSet::new();
@@ -253,18 +254,22 @@ pub(super) fn emit_system_interface(
                 needs_validator = !target.is_windows();
                 definitions.push_str(&emit_host_utf8_len(
                     program,
+                    qualification,
                     implementation,
                     result,
                     target,
+                    target_layout,
                 )?);
             }
             HOST_COPY_UTF8 => {
                 needs_validator = !target.is_windows();
                 definitions.push_str(&emit_host_copy_utf8(
                     program,
+                    qualification,
                     implementation,
                     result,
                     target,
+                    target_layout,
                 )?);
             }
             RELATIVE_PATH => definitions.push_str(&emit_relative_path(
@@ -276,7 +281,14 @@ pub(super) fn emit_system_interface(
             OPEN_READ => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
-                definitions.push_str(&emit_open_read(program, implementation, &shape, target)?);
+                definitions.push_str(&emit_open_read(
+                    program,
+                    qualification,
+                    implementation,
+                    &shape,
+                    target,
+                    target_layout,
+                )?);
             }
             READ_ONCE => {
                 let shape = read_outcome_shape(program, result)?;
@@ -294,9 +306,11 @@ pub(super) fn emit_system_interface(
                 record_io_error(&mut io_error, shape.err_type)?;
                 definitions.push_str(&emit_open_directory(
                     program,
+                    qualification,
                     implementation,
                     &shape,
                     target,
+                    target_layout,
                 )?);
             }
             OPEN_LIST => {
@@ -305,9 +319,11 @@ pub(super) fn emit_system_interface(
                 needs_working_directory = true;
                 definitions.push_str(&emit_open_directory_source(
                     program,
+                    qualification,
                     implementation,
                     &shape,
                     target,
+                    target_layout,
                 )?);
             }
             LIST_ONCE => {
@@ -315,15 +331,24 @@ pub(super) fn emit_system_interface(
                 record_io_error(&mut io_error, shape.failed_type)?;
                 definitions.push_str(&emit_directory_next(
                     program,
+                    qualification,
                     implementation,
                     &shape,
                     target,
+                    target_layout,
                 )?);
             }
             OPEN_FILE => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
-                definitions.push_str(&emit_open_file(program, implementation, &shape, target)?);
+                definitions.push_str(&emit_open_file(
+                    program,
+                    qualification,
+                    implementation,
+                    &shape,
+                    target,
+                    target_layout,
+                )?);
             }
             RESERVE_FILE => definitions.push_str(&emit_reserve_file(implementation)),
             _ => return Err(BackendFailure::InvalidIr),
@@ -360,15 +385,23 @@ pub(super) fn emit_system_interface(
         needs_working_directory = true;
     }
     if needs_working_directory {
+        let storage = if target.is_windows() {
+            TargetStorageType::array(TargetStorageType::integer(16), 2)
+        } else {
+            TargetStorageType::bytes(2)
+        };
+        validate_static_storage(target_layout, qualification, program, &storage)
+            .map_err(BackendFailure::TargetLayout)?;
         if target.is_windows() {
             constants.push_str(&format!(
-                "{WORKING_DIRECTORY} = private unnamed_addr constant [2 x i16] \
-                 [i16 46, i16 0], align 2\n"
+                "{WORKING_DIRECTORY} = private unnamed_addr constant {} \
+                 [i16 46, i16 0], align 2\n",
+                llvm_storage_type(program, &storage)?
             ));
         } else {
             constants.push_str(&format!(
-                "{WORKING_DIRECTORY} = private unnamed_addr constant [2 x i8] c\".\\00\", \
-                 align 1\n"
+                "{WORKING_DIRECTORY} = private unnamed_addr constant {} c\".\\00\", align 1\n",
+                llvm_storage_type(program, &storage)?
             ));
         }
     }
@@ -908,9 +941,11 @@ fn emit_host_bytes_len(implementation: ApprovedImplementation, target: SystemTar
 
 fn emit_host_utf8_len(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     result: IrType,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let shape = outcome_shape(program, result)?;
     let lease = representation(SystemResourceType::HostString);
@@ -925,10 +960,19 @@ fn emit_host_utf8_len(
         ..
     } = shape;
     if target.is_windows() {
+        let prologue = render_named_target_frame(
+            program,
+            qualification,
+            target_layout,
+            &[(
+                "%encoded.length",
+                TargetFrameSlot::natural(TargetStorageType::integer(64)),
+            )],
+        )?;
         return Ok(format!(
             "define private {llvm} @{symbol}({lease} %value) alwaysinline {{\n\
-             entry:\n  \
-             %encoded.length = alloca i64, align 8\n  \
+             entry:\n\
+             {prologue}  \
              %text = extractvalue {lease} %value, 0\n  \
              %units = extractvalue {lease} %value, 1\n  \
              %valid.native = call i32 @wf__windows_utf8_measure(ptr %text, i64 %units, \
@@ -975,7 +1019,7 @@ fn emit_host_utf8_len(
 /// Starts one statically discharged half-open range operation. `sub nuw` is
 /// justified by SYS-8's exact `start <= end` call-site obligation; the other
 /// obligation proves `end <= len(buffer)`, so this wrapper has no check or
-/// trap fallback.
+/// runtime-failure fallback.
 fn range_entry(prologue: &str) -> String {
     format!(
         "entry:\n\
@@ -1036,7 +1080,7 @@ fn emit_host_copy_bytes(
          transfer:\n  \
          %source = extractvalue {lease} %value, 0\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %target = getelementptr i8, ptr %base, i64 %start\n  \
          call void @llvm.memcpy.p0.p0.i64(ptr %target, ptr %source, i64 %required, i1 false)\n  \
          %next = add nuw i64 %start, %required\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
@@ -1055,9 +1099,11 @@ fn emit_host_copy_bytes(
 
 fn emit_host_copy_utf8(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     result: IrType,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let shape = outcome_shape(program, result)?;
     let lease = representation(SystemResourceType::HostString);
@@ -1081,11 +1127,20 @@ fn emit_host_copy_utf8(
         err_llvm,
         ..
     } = shape;
-    let entry = if target.is_windows() {
-        range_entry("  %required.slot = alloca i64, align 8\n")
+    let prologue = if target.is_windows() {
+        render_named_target_frame(
+            program,
+            qualification,
+            target_layout,
+            &[(
+                "%required.slot",
+                TargetFrameSlot::natural(TargetStorageType::integer(64)),
+            )],
+        )?
     } else {
-        range_entry("")
+        String::new()
     };
+    let entry = range_entry(&prologue);
     if target.is_windows() {
         return Ok(format!(
             "define private {llvm} @{symbol}({lease} %value, {buffer} %destination, i64 %start, \
@@ -1151,7 +1206,7 @@ fn emit_host_copy_utf8(
          br i1 %room, label %transfer, label %small\n\
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %target = getelementptr i8, ptr %base, i64 %start\n  \
          call void @llvm.memcpy.p0.p0.i64(ptr %target, ptr %text, i64 %required, i1 false)\n  \
          %next = add nuw i64 %start, %required\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
@@ -1404,9 +1459,11 @@ fn native_error(target: SystemTarget, prefix: &str) -> (String, String) {
 
 fn emit_open_read(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
     let path = representation(SystemResourceType::RelativePath);
@@ -1444,11 +1501,25 @@ fn emit_open_read(
     let descriptor_class_argument =
         windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_READ_FILE);
     let wrapper = if target.uses_typed_completion_file_adapter() {
+        let prologue = render_named_target_frame(
+            program,
+            qualification,
+            target_layout,
+            &[
+                (
+                    "%open.error.slot",
+                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
+                ),
+                (
+                    "%open.outcome.slot",
+                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
+                ),
+            ],
+        )?;
         format!(
             "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
-             entry:\n  \
-             %open.error.slot = alloca i32, align 4\n  \
-             %open.outcome.slot = alloca i32, align 4\n  \
+             entry:\n\
+             {prologue}  \
              %text = extractvalue {path} %path, 0\n  \
              %descriptor = call {file} @{open}({directory} %root, ptr %text, i32 {flags}, \
              i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}{descriptor_class_argument}, \
@@ -1984,9 +2055,11 @@ fn component_validation(buffer: &str, target: SystemTarget) -> String {
 /// Emits the approved implementation of `open_directory` [SYS-14].
 fn emit_open_directory(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mapper = emit_open_completion_mapper(
         program,
@@ -1996,12 +2069,12 @@ fn emit_open_directory(
     )?;
     let wrapper = emit_open_by_name(
         program,
+        qualification,
         implementation,
         shape,
         target,
+        target_layout,
         SystemResourceType::DirectoryRead,
-        target.component_directory_open_flags(),
-        false,
     )?;
     Ok(format!("{mapper}{wrapper}"))
 }
@@ -2015,9 +2088,11 @@ fn emit_open_directory(
 /// and the selected inspection or classification error is returned unchanged.
 fn emit_open_file(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mapper = emit_open_completion_mapper(
         program,
@@ -2027,117 +2102,14 @@ fn emit_open_file(
     )?;
     let wrapper = emit_open_by_name(
         program,
+        qualification,
         implementation,
         shape,
         target,
+        target_layout,
         SystemResourceType::ReadFile,
-        target.component_file_open_flags(),
-        true,
     )?;
     Ok(format!("{mapper}{wrapper}"))
-}
-
-#[allow(dead_code)]
-fn emit_open_file_completion_mapper(
-    program: &IrProgram<'_, '_, '_>,
-    shape: &OutcomeShape,
-    target: SystemTarget,
-) -> Result<String, BackendFailure> {
-    let file = representation(SystemResourceType::ReadFile);
-    if shape.ok_llvm != file {
-        return Err(BackendFailure::InvalidIr);
-    }
-    let OutcomeShape {
-        llvm,
-        ok_tag,
-        ok_index,
-        err_tag,
-        err_index,
-        err_llvm,
-        err_type,
-        ..
-    } = shape;
-    let classes = io_error_classes(program, *err_type)?;
-    let directory_class = classes
-        .iter()
-        .find(|class| class.spelling == "IsDirectory")
-        .ok_or(BackendFailure::InvalidIr)?;
-    let other_class = classes
-        .iter()
-        .find(|class| class.spelling == "Other")
-        .ok_or(BackendFailure::InvalidIr)?;
-    let (directory_value, directory_error) =
-        io_error_value(err_llvm, directory_class, "kind.directory", "0", "0");
-    let (other_value, other_error) = io_error_value(err_llvm, other_class, "kind.other", "0", "0");
-    let (inspection_read_error, inspection_error) = native_error(target, "inspection");
-    let status = target.file_status_symbol();
-    let status_call = if target.uses_typed_completion_file_adapter() {
-        format!(
-            "call i32 @{status}(i32 %descriptor, ptr %file.status, i64 {})",
-            target.file_status_size()
-        )
-    } else {
-        format!("call i32 @{status}(i32 %descriptor, ptr %file.status)")
-    };
-    Ok(format!(
-        "define private {llvm} @{OPEN_FILE_COMPLETION_MAPPER}(i64 %raw.descriptor, \
-         i32 %open.error) alwaysinline {{\n\
-         entry:\n  \
-         %file.status = alloca [{status_size} x i8], align 8\n  \
-         %opened = icmp sge i64 %raw.descriptor, 0\n  \
-         br i1 %opened, label %inspect, label %open.failure\n\
-         inspect:\n  \
-         %descriptor = trunc i64 %raw.descriptor to {file}\n  \
-         %inspection.result = {status_call}\n  \
-         %inspection.ok = icmp eq i32 %inspection.result, 0\n  \
-         br i1 %inspection.ok, label %classify, label %inspection.failure\n\
-         classify:\n  \
-         %mode.at = getelementptr inbounds i8, ptr %file.status, i64 {mode_offset}\n  \
-         %mode.native = load i16, ptr %mode.at, align 2\n  \
-         %mode = zext i16 %mode.native to i32\n  \
-         %file.kind = and i32 %mode, 61440\n  \
-         %regular = icmp eq i32 %file.kind, 32768\n  \
-         br i1 %regular, label %live, label %kind.failure\n\
-         live:\n  \
-         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, {file} %descriptor, {ok_index}\n  \
-         ret {llvm} %ok\n\
-         open.failure:\n  \
-         %open.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %open.error, i8 \
-         {ORIGIN_DIRECTORY_OPEN})\n  \
-         %open.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %open.outcome = insertvalue {llvm} %open.tag, {err_llvm} %open.mapped, {err_index}\n  \
-         ret {llvm} %open.outcome\n\
-         inspection.failure:\n\
-         {inspection_read_error}  \
-         %inspection.close = call i32 @{close}(i32 %descriptor)\n  \
-         %inspection.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {inspection_error}, \
-         i8 {ORIGIN_DESCRIPTOR_STATUS})\n  \
-         %inspection.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %inspection.outcome = insertvalue {llvm} %inspection.tag, {err_llvm} \
-         %inspection.mapped, {err_index}\n  \
-         ret {llvm} %inspection.outcome\n\
-         kind.failure:\n  \
-         %kind.directory = icmp eq i32 %file.kind, 16384\n  \
-         %kind.close = call i32 @{close}(i32 %descriptor)\n  \
-         br i1 %kind.directory, label %kind.directory.return, label %kind.other.return\n\
-         kind.directory.return:\n\
-         {directory_value}  \
-         %kind.directory.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %kind.directory.outcome = insertvalue {llvm} %kind.directory.result.tag, {err_llvm} \
-         {directory_error}, {err_index}\n  \
-         ret {llvm} %kind.directory.outcome\n\
-         kind.other.return:\n\
-         {other_value}  \
-         %kind.other.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %kind.other.outcome = insertvalue {llvm} %kind.other.result.tag, {err_llvm} \
-         {other_error}, {err_index}\n  \
-         ret {llvm} %kind.other.outcome\n\
-         }}\n\n",
-        status_size = target.file_status_size(),
-        mode_offset = target.file_status_mode_offset(),
-        close = target.close_symbol(),
-    ))
 }
 
 /// Emits one open-by-name implementation [SYS-11, SYS-14].
@@ -2150,13 +2122,18 @@ fn emit_open_file_completion_mapper(
 /// as `open_read` does [PATH-2].
 fn emit_open_by_name(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
+    target_layout: TargetLayout,
     opened: SystemResourceType,
-    flags: i32,
-    require_regular: bool,
 ) -> Result<String, BackendFailure> {
+    let (flags, require_regular) = match opened {
+        SystemResourceType::DirectoryRead => (target.component_directory_open_flags(), false),
+        SystemResourceType::ReadFile => (target.component_file_open_flags(), true),
+        _ => return Err(BackendFailure::InvalidIr),
+    };
     let directory = representation(SystemResourceType::DirectoryRead);
     let opened = representation(opened);
     let buffer = llvm_type(
@@ -2191,20 +2168,30 @@ fn emit_open_by_name(
     // submitting path stages its own copy in the operation record besides. A
     // wrapper that ever submits instead would have to index this the way
     // `FunctionEmitter::completion_entry_slot` indexes a hand-out's storage.
-    let mut prologue = format!("  %component = alloca [{slot} x i8], align {component_align}\n");
-    if require_regular {
-        writeln!(
-            prologue,
-            "  %file.status = alloca [{} x i8], align 8",
-            target.file_status_size()
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
+    let mut frame_slots = vec![(
+        "%component",
+        TargetFrameSlot::aligned(TargetStorageType::bytes(slot), component_align),
+    )];
+    // The typed adapter performs the descriptor-kind inspection before it
+    // publishes the outcome, so only the direct qualified wrapper owns a
+    // status record of its own.
+    if require_regular && !target.uses_typed_completion_file_adapter() {
+        frame_slots.push((
+            "%file.status",
+            TargetFrameSlot::aligned(TargetStorageType::bytes(target.file_status_size()), 8),
+        ));
     }
     if target.uses_typed_completion_file_adapter() {
-        prologue.push_str(
-            "  %open.error.slot = alloca i32, align 4\n  %open.outcome.slot = alloca i32, align 4\n",
-        );
+        frame_slots.push((
+            "%open.error.slot",
+            TargetFrameSlot::natural(TargetStorageType::integer(32)),
+        ));
+        frame_slots.push((
+            "%open.outcome.slot",
+            TargetFrameSlot::natural(TargetStorageType::integer(32)),
+        ));
     }
+    let prologue = render_named_target_frame(program, qualification, target_layout, &frame_slots)?;
     let entry = range_entry(&prologue);
     let component = component_validation(&buffer, target);
     let (read_error, error) = native_error(target, "failure");
@@ -2378,9 +2365,11 @@ fn emit_open_by_name(
 /// `ReadFile` does [SYS-10].
 fn emit_open_directory_source(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
     let list = representation(SystemResourceType::DirectorySource);
@@ -2406,11 +2395,25 @@ fn emit_open_directory_source(
     let descriptor_class_argument =
         windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE);
     let wrapper = if target.uses_typed_completion_file_adapter() {
+        let prologue = render_named_target_frame(
+            program,
+            qualification,
+            target_layout,
+            &[
+                (
+                    "%open.error.slot",
+                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
+                ),
+                (
+                    "%open.outcome.slot",
+                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
+                ),
+            ],
+        )?;
         format!(
             "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
-             entry:\n  \
-             %open.error.slot = alloca i32, align 4\n  \
-             %open.outcome.slot = alloca i32, align 4\n  \
+             entry:\n\
+             {prologue}  \
              %descriptor = call {list} @{open}({directory} %directory, \
              ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0, \
              i32 {OPEN_EXPECT_DIRECTORY}{descriptor_class_argument}, ptr %open.error.slot, \
@@ -2670,9 +2673,11 @@ fn emit_directory_record_normalizer(
 /// normalization, which is [`emit_directory_record_normalizer`]'s one text.
 fn emit_directory_next(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &ListOutcomeShape,
     target: SystemTarget,
+    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let list = representation(SystemResourceType::DirectorySource);
     let buffer = llvm_type(
@@ -2698,7 +2703,16 @@ fn emit_directory_next(
         ..
     } = shape;
     let entries_index = bytes_index + 1;
-    let entry = range_entry("  %position = alloca i64, align 8\n");
+    let prologue = render_named_target_frame(
+        program,
+        qualification,
+        target_layout,
+        &[(
+            "%position",
+            TargetFrameSlot::natural(TargetStorageType::integer(64)),
+        )],
+    )?;
+    let entry = range_entry(&prologue);
     let (read_error, error) = native_error(target, "failure");
     let normalizer = emit_directory_record_normalizer(shape, target, enumeration);
     let mapper = emit_directory_next_completion_mapper(program, shape, target)?;

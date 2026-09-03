@@ -21,8 +21,6 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#define WF_WRITER_READY_COUNT 64u
-
 enum wf_writer_phase {
     WF_WRITER_RUNNING = 1,
     WF_WRITER_SUSPENDING = 2,
@@ -48,7 +46,7 @@ _Static_assert(
 );
 
 static SRWLOCK wf_writer_lock = SRWLOCK_INIT;
-static void *wf_writer_ready[WF_WRITER_READY_COUNT];
+static void *wf_writer_ready[WF_WRITER_READY_CAPACITY];
 static size_t wf_writer_head;
 static size_t wf_writer_tail;
 static size_t wf_writer_count;
@@ -112,11 +110,11 @@ static int wf_writer_phase_compare_exchange(
 
 static void wf_writer_enqueue(void *frame) {
     AcquireSRWLockExclusive(&wf_writer_lock);
-    if (wf_writer_count == WF_WRITER_READY_COUNT) {
+    if (wf_writer_count == WF_WRITER_READY_CAPACITY) {
         abort();
     }
     wf_writer_ready[wf_writer_tail] = frame;
-    wf_writer_tail = (wf_writer_tail + 1u) % WF_WRITER_READY_COUNT;
+    wf_writer_tail = (wf_writer_tail + 1u) % WF_WRITER_READY_CAPACITY;
     wf_writer_count += 1u;
     ReleaseSRWLockExclusive(&wf_writer_lock);
     wf__writer_scheduler_wake_lane();
@@ -128,7 +126,7 @@ static void *wf_writer_dequeue(void) {
     AcquireSRWLockExclusive(&wf_writer_lock);
     if (wf_writer_count != 0) {
         frame = wf_writer_ready[wf_writer_head];
-        wf_writer_head = (wf_writer_head + 1u) % WF_WRITER_READY_COUNT;
+        wf_writer_head = (wf_writer_head + 1u) % WF_WRITER_READY_CAPACITY;
         wf_writer_count -= 1u;
     }
     ReleaseSRWLockExclusive(&wf_writer_lock);

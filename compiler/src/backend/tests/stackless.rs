@@ -141,6 +141,33 @@ fn windows_stackless_submit_waits_for_capacity_and_retries_its_single_registrati
 }
 
 #[test]
+fn selected_target_validated_root_frame_passes_llvm_verification() {
+    let llvm = compile(STACKLESS_WRAPPER);
+    assert!(llvm.contains("%frame = alloca { [64 x i8], [2 x i64]"));
+    assert!(llvm.contains("}, align 8\n  call void @wf__writer_frame_init"));
+    assert!(llvm.contains("call void @wf__completion_file_join"));
+    assert!(!llvm.contains("invalid_take:"));
+
+    let directory = test_directory();
+    let module = directory.join("root_frame.ll");
+    let object = directory.join("root_frame.o");
+    std::fs::write(&module, llvm).expect("write validated root-frame module");
+    let output = Command::new("/usr/bin/clang")
+        .args(["-Wno-override-module", "-x", "ir", "-c"])
+        .arg(&module)
+        .arg("-o")
+        .arg(&object)
+        .output()
+        .expect("run the LLVM verifier through clang");
+    std::fs::remove_dir_all(&directory).expect("remove root-frame verifier directory");
+    assert!(
+        output.status.success(),
+        "validated root-frame module did not verify:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn may_suspend_tail_wrappers_release_the_writer_stack_and_resume_on_a_scheduler_lane() {
     let llvm = compile(STACKLESS_WRAPPER);
     assert!(llvm.contains("@wf__stackless_root_start_"));
@@ -271,6 +298,45 @@ fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
     assert!(!llvm.contains("wf__stackless"));
     assert!(!llvm.contains("wf__writer_frame_init"));
     assert!(!crate::module_requires_writer_scheduler(&llvm));
+    assert!(llvm.contains("@wf_main("));
+}
+
+#[test]
+fn a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi() {
+    let llvm = compile(
+        br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+  define ordered = ile(start, end);
+  define capacity = len(deref(source));
+  requires ordered;
+  requires ile(end, capacity);
+} {
+  return write_once<'o, 's>(output: move output, source: source, start: start, end: end);
+}
+
+fn observe['r](values: own slice<'r, u8>) -> result: own unit reads(values) contract {
+  define capacity = len(values);
+  requires ilt(0_u64, capacity);
+} {
+  let value = values[0_u64];
+  return unit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let local = array_new<u8, 1>(65_u8);
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'view {
+    let view = slice_of(&'view local);
+    region 'io {
+      let outcome = publish<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+    }
+    let ignored = observe<'view>(values: move view);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    assert!(!llvm.contains("wf__stackless"));
+    assert!(!llvm.contains("wf__writer_frame_init"));
     assert!(llvm.contains("@wf_main("));
 }
 

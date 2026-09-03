@@ -24,6 +24,13 @@ use whitefoot::Inventory;
 #[test]
 fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
     let llvm = compile_program("dir_walk.wf");
+    // Compilation itself establishes every source-level array and buffer
+    // domain. The emitted module may still carry the separately deferred heap
+    // resource-abort path, but no source proof failure may survive lowering.
+    assert!(
+        !llvm.contains("call void @wf_trap(ptr @.wf_trap."),
+        "the traversal must execute only operations admitted by static proof"
+    );
     // The three approved implementations and the compiler-owned target
     // progress wrapper, by symbol rather than by any source name [QUAL-1].
     assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
@@ -68,7 +75,7 @@ fn an_empty_tree_publishes_nothing_after_the_self_and_parent_entries_are_skipped
 
 /// A name the program cannot open still ends the walk cleanly: the entry is
 /// recorded from its enumeration record and the failed descent is an ordinary
-/// recoverable outcome, not a trap.
+/// recoverable outcome rather than a failed source proof.
 #[test]
 fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     let llvm = compile_program("dir_walk.wf");

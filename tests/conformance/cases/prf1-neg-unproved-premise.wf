@@ -1,0 +1,13 @@
+fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
+  requires ile(middle, 254_u8);
+} {
+  invariant upper_bound: ile(x, 254_u8) {
+    use ile(x, middle);
+    use ile(middle, 254_u8);
+  }
+  return x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

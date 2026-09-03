@@ -24,8 +24,8 @@ OUT="$5"
 if [ "$SHAPE" = "grid" ]; then
   # The complex plane is fixed at x in [-2, 1.2) and y in [-1.2, 1.2), and the
   # grid is 1024 columns wide, so a linear index splits into row and column
-  # with a mask and a shift and needs no division and therefore no claim. DEPTH
-  # sets the row count, and with it the vertical scale.
+  # with a mask and a shift and needs no division-domain discharge. DEPTH sets
+  # the row count, and with it the vertical scale.
   if [ "$DEPTH" -lt 11 ]; then
     echo "gen_wf.sh: grid DEPTH must be at least 11 (1024 columns, 2+ rows)" >&2
     exit 2
@@ -59,7 +59,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one 64-bit value as sixteen lowercase hexadecimal digits, most significant first.";
   let cursor = at;
   let rest = value;
@@ -83,7 +83,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
 }
 
 fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
-  doc "One orbit of the quadratic map, to a fixed iteration cap. Claim-free and loop-bearing, so it is the leaf work of the split rather than a bounded closure.";
+  doc "One orbit of the quadratic map, to a fixed iteration cap. Its operation domains are total or statically discharged, and its loop makes it the leaf work of the split rather than a bounded closure.";
   let real = 0.0_f64;
   let imaginary = 0.0_f64;
   let iteration = 0_u32;
@@ -116,7 +116,7 @@ fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
 }
 
 fn point_escapes(index: own u32, phase: own f64) -> result: own u32 pure {
-  doc "Decodes one linear grid index into a complex coordinate. The grid is 1024 wide, so the row and column split with a mask and a shift and need no division and therefore no claim.";
+  doc "Decodes one linear grid index into a complex coordinate. The grid is 1024 wide, so the row and column split with a mask and a shift and need no division-domain discharge.";
   let column = iand(index, 1023_u32);
   let row = ishr.wrap(index, 10_u32);
   let column_float = cvt<u32, f64>(column);
@@ -134,7 +134,7 @@ fn point_escapes(index: own u32, phase: own f64) -> result: own u32 pure {
 }
 
 fn tile(lo: own u32, hi: own u32, phase: own f64) -> result: own u32 pure {
-  doc "Counts escaping points over the half-open index range. The two recursive halves are the eligible pair: pure, claim-free, no shared writable place at all, and no dataflow between them. The combine is +wrap, which is exactly associative, so no schedule can move a bit.";
+  doc "Counts escaping points over the half-open index range. The two recursive halves are the eligible pair: pure, every operation domain statically satisfied, no shared writable place at all, and no dataflow between them. The combine is +wrap, which is exactly associative, so no schedule can move a bit.";
   let width = hi -wrap lo;
   let single = ieq(width, 1_u32);
   if single {
@@ -151,7 +151,7 @@ fn tile(lo: own u32, hi: own u32, phase: own f64) -> result: own u32 pure {
   return a +wrap b;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Counts the escaping points of a ${POINTS}-point grid by recursive index split, once per repetition, and publishes the running total as hexadecimal.";
   let total = 0_u32;
   let phase = 0.0_f64;
@@ -282,8 +282,8 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 reads('w) {
-  doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged and the whole function is claim-free.";
+fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 reads(words) {
+  doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation and every other partial operation are discharged statically.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
   let room = len(deref(words));
@@ -305,7 +305,7 @@ fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 r
   return fadd.strict(total, widest);
 }
 
-fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f64) -> result: own f64 reads('b 'w), writes('b) {
+fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
   doc "Folds the box tree, writing each node's resolved height into its own slot. The two child calls are the permitted and actualizable pair.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
@@ -346,7 +346,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one 64-bit value as sixteen lowercase hexadecimal digits, most significant first.";
   let cursor = at;
   let rest = value;
@@ -369,7 +369,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Lays out one box tree many times and publishes the exact bits of the fold as hexadecimal.";
   ${BUILD_CALL}
   let words = buffer_new(${WORDS}_u64, 0.25_f64);

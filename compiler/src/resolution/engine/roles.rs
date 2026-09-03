@@ -271,14 +271,77 @@ fn classify_node(
                 complete_counts,
             )?;
         }
-        Production::ClaimStmt => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::ClaimName,
-            roles,
-            complete_counts,
-        )?,
+        Production::InvariantStmt | Production::HeaderInvariant => {
+            let [name, relation] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            if name_predicate(classified, *name) != Some(TerminalPredicate::Identifier)
+                || name_predicate(classified, *relation) != Some(TerminalPredicate::Identifier)
+            {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            }
+            add_complete(
+                classified,
+                owner,
+                *name,
+                RawRoleKind::Declaration(DeclarationRole::Invariant),
+                roles,
+                complete_counts,
+            )?;
+            add_complete(
+                classified,
+                owner,
+                *relation,
+                RawRoleKind::InvariantCarrier,
+                roles,
+                complete_counts,
+            )?;
+        }
+        Production::ProofUse => {
+            let [carrier] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            if name_predicate(classified, *carrier) != Some(TerminalPredicate::Identifier) {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            }
+            let relation_form = topology
+                .node_children(owner)
+                .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
+                .iter()
+                .any(|child| {
+                    topology
+                        .node(*child)
+                        .is_some_and(|record| record.production == Production::AffineExpr)
+                });
+            add_complete(
+                classified,
+                owner,
+                *carrier,
+                if relation_form {
+                    RawRoleKind::InvariantCarrier
+                } else {
+                    RawRoleKind::LexicalUse(LexicalUseRole::InvariantFact)
+                },
+                roles,
+                complete_counts,
+            )?;
+        }
+        Production::AffineFactor if !names.is_empty() => {
+            let role = if ancestor_with_production(topology, owner, Production::ProofUse).is_some()
+            {
+                LexicalUseRole::ProofValue
+            } else {
+                LexicalUseRole::InvariantValue
+            };
+            add_all(
+                classified,
+                owner,
+                &names,
+                RawRoleKind::LexicalUse(role),
+                roles,
+                complete_counts,
+            )?;
+        }
         Production::LetStmt | Production::ContractDefine => add_single(
             classified,
             owner,
@@ -287,40 +350,42 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::LoopStmt => add_single(
+        Production::ForBinding => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::LoopLabel),
+            RawRoleKind::Declaration(DeclarationRole::CountedBinder),
             roles,
             complete_counts,
         )?,
-        Production::ForStmt => {
-            let [label, binder] = names.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            if name_predicate(classified, *label) != Some(TerminalPredicate::Label)
-                || name_predicate(classified, *binder) != Some(TerminalPredicate::Identifier)
-            {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+        Production::LoopStmt => match names.as_slice() {
+            [] => {}
+            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
+                add_complete(
+                    classified,
+                    owner,
+                    *label,
+                    RawRoleKind::Declaration(DeclarationRole::LoopLabel),
+                    roles,
+                    complete_counts,
+                )?;
             }
-            add_complete(
-                classified,
-                owner,
-                *label,
-                RawRoleKind::Declaration(DeclarationRole::LoopLabel),
-                roles,
-                complete_counts,
-            )?;
-            add_complete(
-                classified,
-                owner,
-                *binder,
-                RawRoleKind::Declaration(DeclarationRole::CountedBinder),
-                roles,
-                complete_counts,
-            )?;
-        }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
+        Production::ForStmt => match names.as_slice() {
+            [] => {}
+            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
+                add_complete(
+                    classified,
+                    owner,
+                    *label,
+                    RawRoleKind::Declaration(DeclarationRole::LoopLabel),
+                    roles,
+                    complete_counts,
+                )?;
+            }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
         Production::RegionStmt => add_single(
             classified,
             owner,
@@ -494,14 +559,20 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::BreakStmt => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::BreakLabel),
-            roles,
-            complete_counts,
-        )?,
+        Production::BreakStmt => match names.as_slice() {
+            [] => {}
+            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
+                add_complete(
+                    classified,
+                    owner,
+                    *label,
+                    RawRoleKind::LexicalUse(LexicalUseRole::BreakLabel),
+                    roles,
+                    complete_counts,
+                )?;
+            }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
         // Every IDENT term of a `const` expression is one Const use; the
         // candidate CONST-1 grammar admits two terms in one operation, and
         // source order is retained through the per-name role ordinal.

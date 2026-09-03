@@ -20,7 +20,7 @@
  * define this probe marker and retain the fixed 64-slot runtime. */
 #define WF_WINDOWS_BRIDGE_CAPACITY 2u
 #else
-#define WF_WINDOWS_BRIDGE_CAPACITY 64u
+#define WF_WINDOWS_BRIDGE_CAPACITY WF_COMPLETION_SLOT_CAPACITY
 #endif
 #define WF_WINDOWS_BRIDGE_DRAIN_BUDGET 16u
 #define WF_WINDOWS_BRIDGE_WINDOW_BUDGET (4u * 1024u * 1024u)
@@ -29,6 +29,10 @@
 _Static_assert(
     WF_WINDOWS_BRIDGE_CAPACITY == WF_WINDOWS_BLOCKING_CAPACITY,
     "a claimed production core token must imply a free blocking job"
+);
+_Static_assert(
+    WF_WINDOWS_BRIDGE_CAPACITY == WF_WRITER_READY_CAPACITY,
+    "one writer-ready cell is required for each completion slot"
 );
 #endif
 

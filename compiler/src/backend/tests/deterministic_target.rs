@@ -1039,24 +1039,13 @@ fn an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release() {
 }
 
 #[test]
-fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
-    // The mandatory [DIAG-3] record and `write_once` both reach a write
-    // facility, but only the operation row has a target column: the record
-    // writer is the compiler's own and must never be scriptable, or a forced
-    // short write could truncate a trap record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap), traps {
+fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
+    // Allocator refusal and `write_once` both reach a write facility, but only
+    // the operation row has a target column: the resource-record writer is the
+    // compiler's own and must never be scriptable, or a forced short write
+    // could truncate the record. One module declares both.
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
-  let bounded = 0_u64;
-  let step = 0_u64;
-  loop @preserve_zero {
-    if ige(step, 4_u64) {
-      break @preserve_zero;
-    }
-    set bounded = bounded +wrap 0_u64;
-    set step = step +wrap 1_u64;
-  }
-  claim record_writer_probe: ilt(bounded, 1_u64) because "premises: bounded starts at 0_u64 and every completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: ilt(bounded, 1_u64) is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
-  let successor = bounded + 1_u64;
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
@@ -1074,6 +1063,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     assert!(module.contains("declare i64 @wf_test_write(i32, ptr, i64)"));
     assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
     assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
+    assert!(module.contains("call void @wf_resource_record_abort("));
     assert!(module.contains("%accepted = call i64 @wf_test_write(i32 %output"));
 
     // And the native target still declares exactly one `@write` for both.

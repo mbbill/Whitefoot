@@ -1,41 +1,25 @@
-fn crc32(bytes: own buffer<u8>) -> function_result: own u32 reads(bytes), traps {
+fn crc32(bytes: own buffer<u8>) -> function_result: own u32 reads(bytes) {
   let crc = 4294967295_u32;
-  let offset = 0_u64;
   let length = len(bytes);
-  loop @bytes {
-    let bytes_done = ieq(offset, length);
-    if bytes_done {
-      break @bytes;
-    } else {
-      let in_range = ilt(offset, length);
-      claim offset_in_range: in_range because "premises: the byte loop starts offset at zero, increments once, and exits when offset equals the input length\nderivation: every reached body therefore has offset strictly below length\nconclusion: in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and recurrence\nconsumers: the following byte-buffer read needs this upper Range component";
-      let byte = bytes[offset];
-      let word = cvt<u8, u32>(byte);
-      set crc = ixor(crc, word);
-      let bit = 0_u32;
-      loop @bits {
-        let bits_done = ieq(bit, 8_u32);
-        if bits_done {
-          break @bits;
-        } else {
-          let low_bit = iand(crc, 1_u32);
-          let shifted = ishr.wrap(crc, 1_u32);
-          let low_bit_set = ieq(low_bit, 1_u32);
-          if low_bit_set {
-            set crc = ixor(shifted, 3988292384_u32);
-          } else {
-            set crc = shifted;
-          }
-          set bit = bit +wrap 1_u32;
-        }
+  for (offset in 0_u64..length) {
+    let byte = bytes[offset];
+    let word = cvt<u8, u32>(byte);
+    set crc = ixor(crc, word);
+    for (bit in 0_u64..8_u64) {
+      let low_bit = iand(crc, 1_u32);
+      let shifted = ishr.wrap(crc, 1_u32);
+      let low_bit_set = ieq(low_bit, 1_u32);
+      if low_bit_set {
+        set crc = ixor(shifted, 3988292384_u32);
+      } else {
+        set crc = shifted;
       }
-      set offset = offset +wrap 1_u64;
     }
   }
   return ixor(crc, 4294967295_u32);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let bytes = buffer_new(9_u64, 0_u8);
   set bytes[0_u64] = 49_u8;
   set bytes[1_u64] = 50_u8;

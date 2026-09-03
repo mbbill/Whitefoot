@@ -258,6 +258,10 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
         LexicalUseRole::FunctionBinding => vec![DeclarationClass::Function],
         LexicalUseRole::GenericNumericSuffix => vec![DeclarationClass::GenericType],
+        LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
+            vec![DeclarationClass::Value]
+        }
+        LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
 }
 
@@ -299,6 +303,10 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
             DeclarationClass::OperationFamily,
         ],
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
+        LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
+            vec![DeclarationClass::Value]
+        }
+        LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
 }
 
@@ -321,5 +329,8 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,
         LexicalUseRole::FunctionBinding => ResolutionRule::Fn4,
         LexicalUseRole::GenericNumericSuffix => ResolutionRule::Form5,
+        LexicalUseRole::InvariantValue => ResolutionRule::Inv1,
+        LexicalUseRole::ProofValue => ResolutionRule::Prf1,
+        LexicalUseRole::InvariantFact => ResolutionRule::Inv1,
     }
 }

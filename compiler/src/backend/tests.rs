@@ -34,7 +34,10 @@ mod stack_ledger;
 mod stackless;
 mod system;
 mod system_io;
-mod trap_latch;
+mod target_frame;
+// Runtime source-claim tests were retired with the source-claim instruction:
+// proofs are checked before lowering, so no backend latch or IR-mutation
+// path exists for them. Resource-record latch coverage remains in `exhaustion`.
 
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
@@ -142,37 +145,6 @@ fn compile_permission_ledger(source: &[u8]) -> Vec<String> {
 /// The shared front half: check `source`, then lower and emit it under one
 /// named overlap-lowering choice.
 fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
-    emit_lowered_with(source, overlap, |_| {})
-}
-
-/// [`emit_with_overlap`] with named claims forced false between acceptance and
-/// emission.
-///
-/// The latch cases are about what a *defective* program does under a schedule,
-/// and v0.34 admits no source that states a false claim: the fixture carries
-/// true local residuals and the falsehood is injected into the checked IR.
-/// That is the same hook the single-threaded record-shape case uses, and it is
-/// what keeps the defect a property of the run rather than of the source. Each
-/// entry is a function name and a claim name, so two racing sites are two
-/// entries.
-fn emit_with_overlap_and_false_claims(source: &[u8], claims: &[(&str, &str)]) -> String {
-    emit_lowered_with(source, OverlapLowering::On, |program| {
-        for (function, claim) in claims {
-            assert!(
-                program.force_claim_false_for_test(function, claim),
-                "the fixture must carry claim {claim} in {function}"
-            );
-        }
-    })
-}
-
-fn emit_lowered_with(
-    source: &[u8],
-    overlap: OverlapLowering,
-    mutate: impl for<'classified, 'lexed, 'source> FnOnce(
-        &mut crate::lowering::IrProgram<'classified, 'lexed, 'source>,
-    ),
-) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -202,8 +174,7 @@ fn emit_lowered_with(
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("backend test source must check");
     };
-    let mut ir = lower_checked(*checked, overlap).expect("checked program must lower");
-    mutate(&mut ir);
+    let ir = lower_checked(*checked, overlap).expect("checked program must lower");
     emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()
@@ -675,40 +646,6 @@ fn emitted_drop_ids(function: &str) -> Vec<u32> {
 }
 
 #[test]
-fn emitted_module_retains_claims_without_an_integer_runtime_guard() {
-    let source = br#"fn need_answer(value: own i32) -> result: own unit pure contract {
-  requires ieq(value, 42_i32);
-} {
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus traps {
-  let answer = 42_i32;
-  let step = 0_u64;
-  loop @preserve_answer {
-    if ige(step, 4_u64) {
-      break @preserve_answer;
-    }
-    set answer = answer +wrap 0_i32;
-    set step = step +wrap 1_u64;
-  }
-  let expected = ieq(answer, 42_i32);
-  claim reviewed_answer: expected because "premises: answer starts at 42_i32 and every completed preserve_answer iteration adds wrapping zero\nderivation: adding wrapping zero preserves answer at 42_i32 through every completed iteration\nconclusion: expected is true\nchecker gap: ENT does not synthesize the loop invariant that answer remains 42_i32\nconsumers: need_answer requires this exact equality";
-  need_answer(value: answer);
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = emit(source);
-    assert!(!llvm.contains("@llvm.sadd.with.overflow.i32"));
-    assert!(llvm.contains("br i1"));
-    assert_eq!(llvm.matches("call void @wf_trap").count(), 1);
-    assert!(!llvm.contains("\"rule_id\":\"OP-2\""));
-    assert!(!llvm.contains(" nsw "));
-    assert!(!llvm.contains(" nuw "));
-    assert!(!llvm.contains("llvm.assume"));
-}
-
-#[test]
 fn nominal_lowering_keeps_selected_tag_widths_and_initialized_payloads() {
     let source = br#"enum Flag {
   Off();
@@ -965,9 +902,9 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
 }
 
 /// [OP-1] (ii) the infix spelling executes the row its operator names, and
-/// the modes stay distinguishable: bare `+` traps, `+wrap` wraps, `+sat`
-/// saturates. Every result is checked, so a mis-selected row returns a
-/// distinct nonzero status here.
+/// the modes stay distinguishable: bare `+` requires a representability proof,
+/// `+wrap` wraps, and `+sat` saturates. Every result is checked, so a
+/// mis-selected row returns a distinct nonzero status here.
 #[test]
 fn infix_operators_execute_the_rows_they_name() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -1253,7 +1190,7 @@ command fn main() -> status: own ExitStatus pure {
             "../../../tests/conformance/cases/x-arith-iadd-checked-overflow-err-arm-runs.wf"
         )
         .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/run-ex2-loop-exact-claims.wf").as_slice(),
+        include_bytes!("../../../tests/conformance/cases/run-invariant-exact-sum.wf").as_slice(),
     ] {
         let output = compile_and_run(&compile(independent));
         assert!(output.status.success());
@@ -1425,87 +1362,6 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(failure.rule_id(), Some("FN-8"));
 }
 
-/// The [CLM-1] record a failing claim emits: mandatory [DIAG-3] field order
-/// and framing, `rule_id` `CLM-1`, and `message` from the claim's IDENT rather
-/// than its `because` justification.
-#[test]
-fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let values = array_new<u8, 4>(0_u8);
-  let bounded = 0_u64;
-  let step = 0_u64;
-  loop @preserve_zero {
-    if ige(step, 4_u64) {
-      break @preserve_zero;
-    }
-    set bounded = bounded +wrap 0_u64;
-    set step = step +wrap 1_u64;
-  }
-  let in_range = ilt(bounded, 4_u64);
-  let injected_false = False();
-  claim bad_quote_line: in_range because "premises: bounded starts at 0_u64 and each completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: in_range is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: values[bounded] requires this exact bound";
-  let ignored = values[bounded];
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = system::with_mutated_ir(source, |program| {
-        assert!(program.force_claim_false_for_test("main", "bad_quote_line"));
-        emit_llvm(program)
-            .expect("fault-injected checked IR must emit")
-            .into_string()
-    });
-    let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(
-        stderr.starts_with(
-            "{\"rule_id\":\"CLM-1\",\"message\":\"bad_quote_line\",\"function\":\"main\",\"node_path\":["
-        ),
-        "unexpected record: {stderr}"
-    );
-    assert!(stderr.ends_with("]}\n"));
-    assert_eq!(stderr.lines().count(), 1);
-}
-
-/// [DIAG-3] record fields carry their exact bytes for every scalar, not only
-/// for ASCII.
-///
-/// This exercises the record encoder directly because [FORM-5] still admits no
-/// non-ASCII byte in a STRING, so no source program can reach the case through
-/// a claim name yet. The encoder is nonetheless the real emission path for
-/// every record, and it was silently lossy: byte iteration re-encoded each
-/// continuation byte as its Latin-1 scalar, so `"é"` (2 bytes) left as 4 and
-/// `"日"` (3 bytes) as 6. The assertion is exact bytes rather than a length,
-/// because a length check passes on mojibake of the right size.
-///
-/// A green run establishes that the encoder preserves and escapes correctly;
-/// it does not establish that any source program can produce such a message.
-#[test]
-fn a_diag3_record_preserves_the_exact_utf8_bytes_of_its_message() {
-    let record = crate::backend::emitter::trap_record(&crate::IrClaimSite {
-        rule_id: "CLM-1",
-        // One two-byte scalar, one three-byte scalar, one four-byte scalar,
-        // and both characters that still need a JSON escape.
-        message: "é 日 \u{1F600} \"q\"\nl".to_owned(),
-        function: "main".to_owned(),
-        node_path: vec![0, 1],
-    });
-    assert_eq!(
-        record,
-        "{\"rule_id\":\"CLM-1\",\"message\":\"é 日 \u{1F600} \\\"q\\\"\\nl\",\
-         \"function\":\"main\",\"node_path\":[0,1]}\n"
-            .as_bytes()
-    );
-    // The record is exactly the bytes the message was written with: no
-    // expansion, no replacement scalar, and no encoding split across the
-    // escape boundary.
-    assert!(String::from_utf8(record.clone()).is_ok());
-    assert_eq!(
-        record.iter().filter(|byte| !byte.is_ascii()).count(),
-        "é日\u{1F600}".len()
-    );
-}
-
 #[test]
 fn integer_overflow_has_no_op2_runtime_record_path() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -1518,64 +1374,4 @@ fn integer_overflow_has_no_op2_runtime_record_path() {
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-2"));
     assert!(failure.detail().contains("hi +defined one"));
-}
-
-#[test]
-fn residual_check_survives_host_optimization_of_an_unfoldable_loop() {
-    // Each iteration adds one arbitrary wrapping delta to `left` and subtracts
-    // the same delta from `right`, so their wrapping sum remains 42. The
-    // nonlinear delta and long loop prevent the host optimizer from folding
-    // the calculation, while the proof is a simple human induction. ENT does
-    // not synthesize that loop invariant, and the exact FN-8 consumer makes
-    // the residual claim load-bearing.
-    let source = br#"fn need_total(value: own u64) -> result: own unit pure contract {
-  requires ieq(value, 42_u64);
-} {
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus traps {
-  doc "A conserved wrapping sum through an unfoldable mixing loop feeds one residual check.";
-  let step = 0_u64;
-  let left = 1_u64;
-  let right = 41_u64;
-  loop @mix {
-    if ige(step, 4096_u64) {
-      break @mix;
-    }
-    let mixed = ixor(left, step);
-    let delta = mixed *wrap 1099511628211_u64;
-    set left = left +wrap delta;
-    set right = right -wrap delta;
-    set step = step +wrap 1_u64;
-  }
-  let total = left +wrap right;
-  claim conserved_total: ieq(total, 42_u64) because "premises: left starts at 1_u64, right starts at 41_u64, and each completed iteration adds delta to left and subtracts the same delta from right with wrapping u64 arithmetic\nderivation: the wrapping sum starts at 42_u64 and one iteration transforms (left +wrap right) into (left +wrap delta) +wrap (right -wrap delta), whose delta terms cancel modulo 2^64; induction preserves the sum through all completed iterations\nconclusion: ieq(total, 42_u64) is true\nchecker gap: ENT does not synthesize the conserved two-variable invariant across an ordinary-loop backedge\nconsumers: need_total requires this exact equality at its FN-8 call boundary";
-  need_total(value: total);
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = compile(source);
-    let optimized = host_optimized_module(&llvm);
-    // Unoptimized `main` is a bare wrapper around `wf_main`, so finding the
-    // loop and its trap edge inside `main` also witnesses that the shared
-    // optimization arguments really reached the host compiler.
-    let main = optimized_main(&optimized);
-    assert!(
-        main.contains("1099511628211"),
-        "the host optimizer folded the mixing chain, so the check is decidable:\n{main}"
-    );
-    assert!(
-        main.contains("br i1"),
-        "the check became unconditional under host optimization:\n{main}"
-    );
-    assert!(
-        main.contains("@wf_trap"),
-        "host optimization dropped the trap edge of a required check:\n{main}"
-    );
-
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    assert!(output.stdout.is_empty());
 }

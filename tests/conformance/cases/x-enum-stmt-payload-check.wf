@@ -3,16 +3,12 @@ enum Tagged {
   Nil();
 }
 
-command fn main() -> status: own ExitStatus traps {
-  doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local, normalized in that arm, and its genuine remainder bounds admit exact multiplication [TYPE-2, GRAM-10, OWN-13, OP-1].";
+command fn main() -> status: own ExitStatus pure {
+  doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local, and the signed-remainder range proves the exact multiplication [TYPE-2, GRAM-10, OWN-13, OP-1].";
   let t = Num(n: 21_i32);
   match t {
     Num(n: v) => {
       let bounded = v % 1073741824_i32;
-      let bounded_below = ile(bounded, 1073741823_i32);
-      claim payload_below_half_max: bounded_below because "premises: bounded is the current arm's payload remainder 1073741824_i32\nderivation: signed remainder by positive 1073741824_i32 is at most 1073741823_i32\nconclusion: bounded_below is true for every Num payload\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following exact multiplication needs this upper IntegerDomain component";
-      let bounded_above = ige(bounded, -1073741823_i32);
-      claim payload_above_half_min: bounded_above because "premises: bounded is the current arm's payload remainder 1073741824_i32\nderivation: signed remainder by positive 1073741824_i32 is at least -1073741823_i32\nconclusion: bounded_above is true for every Num payload\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following exact multiplication needs this lower IntegerDomain component";
       let d = bounded * 2_i32;
       let expected = ieq(d, 42_i32);
       if expected {

@@ -5,13 +5,13 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     let llvm = compile_program("ipv4_checksum.wf");
     let checksum = emitted_function(&llvm, "ipv4_checksum");
     let main = emitted_function(&llvm, "main");
-    // The discharged slice reads emit no bounds branch; the loop claims are
-    // the retained runtime backstops and the element addresses form directly.
+    // The discharged slice reads emit no bounds branch; the loop invariants
+    // establish the address domains before the element addresses form.
     assert!(checksum.contains("getelementptr inbounds i8"));
     assert!(!checksum.contains("call void @free"));
     assert_eq!(main.matches("call i16 @wf_ipv4_checksum").count(), 2);
     // Each explicit validation-failure return owns its ordinary cleanup path;
-    // no caller-side copy claim can bypass that cleanup anymore.
+    // no caller-side copied fact can bypass that cleanup.
     assert!(main.matches("call void @free").count() >= 1);
 
     let output = compile_and_run(&llvm);

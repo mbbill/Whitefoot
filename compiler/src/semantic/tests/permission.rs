@@ -13,7 +13,7 @@
 //! *not* carry, so making the rule symmetric would fail a test rather than
 //! pass silently.
 
-use crate::SemanticOutcome;
+use crate::{SemanticOutcome, SemanticRule};
 
 use super::super::permission::{
     ConflictKind, Denial, ExitKind, FootprintHalf, FunctionPermissions, PairSide,
@@ -738,23 +738,14 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Claims in the call closure
+// Proof-complete call closures
 // ----------------------------------------------------------------------
 
-/// The same two-child fold with one `claim` in the recursive closure. This is
-/// the case an earlier judgment permitted but refused to actualize, so that no
-/// schedule could choose which claim traps first. It is eligible now: a false
-/// executed claim is a contract violation [SCOPE-4], an execution reaching one
-/// is erroneous, and a correct program — this one — traps under no schedule at
-/// all. The four conditions are the whole judgment.
-///
-/// The claim sits in `scaled`, one call deeper, because v0.34 admits only a
-/// local non-derivable residual and the fold's own `a + b` overflow guard was
-/// a statement about the callers rather than a lemma. Depth is what this case
-/// needs anyway: the claim is reached through the ordinary call graph from
-/// both judged callees, which is exactly the closure the retired gate walked.
+/// The first recursive closure contains an unproved helper subscript and is
+/// rejected before permission. The second source keeps the same recursive
+/// sibling pair and makes only that helper total with a dominating branch.
 #[test]
-fn a_claim_bearing_closure_is_eligible() {
+fn a_recursive_closure_requires_source_proof_and_then_is_eligible() {
     let source = br#"enum BoxNode {
   Leaf(w: u64);
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
@@ -770,24 +761,11 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
-fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
-  let size = len(values);
-  let bounded = 0_u64;
-  loop @select_bound {
-    if ieq(bounded, index) {
-      break @select_bound;
-    } else if ieq(bounded, 7_u64) {
-      break @select_bound;
-    } else {
-      set bounded = bounded +wrap 1_u64;
-    }
-  }
-  let inside = ilt(bounded, size);
-  claim index_in_range: inside because "premises: bounded starts at zero, advances by one only on this function's ordinary-loop backedge, and exits no later than seven; values has length eight\nderivation: induction over reached loop bodies keeps bounded between zero and seven inclusive\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following length-eight array subscript uses bounded";
-  return values[bounded];
+fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
+  return values[index];
 }
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       let w = deref(leaf_w);
@@ -805,7 +783,7 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -819,12 +797,74 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the unproved closure must reject before permission: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+    });
+
+    let proved_source = br#"enum BoxNode {
+  Leaf(w: u64);
+  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
+}
+
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+  let leaf = Leaf(w: w);
+  return box_new(move leaf);
+}
+
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+  let branch = Branch(left: move left, right: move right, w: 0_u64);
+  return box_new(move branch);
+}
+
+fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
+  let size = len(values);
+  if ilt(index, size) {
+    return values[index];
+  }
+  return 0_u8;
+}
+
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {
+  match deref(deref(node)) {
+    Leaf(w: leaf_w) => {
+      let w = deref(leaf_w);
+      let values = array_new<u8, 8>(0_u8);
+      let touched = scaled(values: move values, index: w);
+      return w;
+    }
+    Branch(left: l, right: r, w: slot) => {
+      let a = bubble<'b>(node: move l);
+      let b = bubble<'b>(node: move r);
+      let total = a +wrap b;
+      set deref(slot) = total;
+      return total;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let leaf0 = boxed_leaf(w: 3_u64);
+  let leaf1 = boxed_leaf(w: 4_u64);
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  region 'tree {
+    let total = bubble<'tree>(node: &uniq 'tree branch0);
+    if ieq(total, 7_u64) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(proved_source);
     let pair = only_pair(&table, "bubble");
     assert_eq!(
         pair.verdict,
         PermissionVerdict::PermittedEligible,
-        "a claim reachable from the callees is not a reason to refuse"
+        "the proof-complete recursive closure must remain eligible"
     );
     let runs = &function_table(&table, "bubble").runs;
     assert_eq!(
@@ -833,17 +873,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
         "an eligible pair forms its chain like any other: {runs:?}"
     );
 
-    // The claim really is in the closure of the judged pair, so what the case
-    // above pins is the redirect and not an accident of this fixture: `bubble`
-    // calls itself, and its leaf arm calls `scaled`, which carries
-    // `index_in_range`.
+    // The branch-proved helper really is in the closure of the judged pair:
+    // `bubble` calls itself and its leaf arm calls `scaled`.
     assert_eq!(pair.first.callee_name, "bubble");
     assert_eq!(pair.second.callee_name, "bubble");
     assert!(
-        std::str::from_utf8(source)
+        std::str::from_utf8(proved_source)
             .expect("the fixture is UTF-8")
-            .contains("claim index_in_range:"),
-        "the fixture must keep the claim whose closure this case is about"
+            .contains("if ilt(index, size)"),
+        "the fixture must keep the dominating source proof in its closure"
     );
 
     // main's next pair feeds both leaves into one branch and is still denied
@@ -903,6 +941,33 @@ command fn main() -> status: own ExitStatus pure {
         "the two calls form one chain across the builtin"
     );
     assert_eq!(runs[0].sites.len(), 2);
+}
+
+/// A local invariant between two calls is a compile-time statement, not a
+/// runtime window member. It neither splits the pair nor contributes a
+/// footprint or exit edge.
+#[test]
+fn a_local_invariant_between_two_calls_keeps_the_pair() {
+    let source = br#"fn peek['r](value: &'r u64) -> result: own u64 reads(value) {
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let left = 1_u64;
+  let right = 2_u64;
+  region 'r {
+    let a = peek<'r>(value: &'r left);
+    invariant two_steps: ile(0_u64, 2_u64);
+    let b = peek<'r>(value: &'r right);
+    let total = a +wrap b;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    assert_eq!(function_table(&table, "main").runs.len(), 1);
 }
 
 /// Condition 2, clause 2c. The interposed `set` writes the storage s2's callee
@@ -1200,46 +1265,23 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*side, PairSide::Between(0));
 }
 
-/// Condition 4, and the one place a `claim` still refuses a window. A claim
-/// inside a callee is no longer a reason to refuse anything; this one is in
-/// the caller's own block, *between* the two calls, and carries a trap edge to
-/// the [DIAG-3] sink. It is an exit out of the window like a `return` or a
-/// `propagate` `Err` edge, and an exit taken there abandons an unjoined lane
-/// still reading the caller's frame. Nothing in the redirect touches it.
-///
-/// The window sits in `probe` rather than in `main` because the claim has to
-/// be one v0.34 admits: a local, non-derivable, load-bearing residual. The
-/// clamp bound is a parameter and the length is the parameter array's, so
-/// neither endpoint is a constant the checker can fold, and the subscript that
-/// follows is what consumes it. The ordinary subscript between the calls is
-/// the control: it interposes too, and only the claim's trap edge denies.
+/// An unproved interposed subscript is rejected before the window judgment.
+/// Condition 4 remains covered by the interposed propagate case above; the
+/// accepted replacement below checks that a safe subscript creates no exit.
 #[test]
-fn an_interposed_claim_is_denied_by_condition_four() {
+fn an_unproved_interposed_subscript_is_rejected_before_permission() {
     let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
   return deref(v);
 }
 
-fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other), traps {
-  let size = len(values);
-  let bounded = 0_u64;
-  loop @select_bound {
-    if ieq(bounded, index) {
-      break @select_bound;
-    } else if ieq(bounded, 7_u64) {
-      break @select_bound;
-    } else {
-      set bounded = bounded +wrap 1_u64;
-    }
-  }
-  let inside = ilt(bounded, size);
+fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other) {
   let a = peek<'r>(v: other);
-  claim index_in_range: inside because "premises: bounded starts at zero, advances by one only on this function's ordinary-loop backedge, and exits no later than seven; values has length eight\nderivation: induction over reached loop bodies keeps bounded between zero and seven inclusive\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following length-eight array subscript uses bounded";
-  let picked = values[bounded];
+  let picked = values[index];
   let b = peek<'r>(v: cell);
   return imax(a, b);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
   let table = array_new<u8, 8>(0_u8);
@@ -1249,16 +1291,45 @@ command fn main() -> status: own ExitStatus traps {
   return exit_status(code: 0_u8);
 }
 "#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the unproved interposed subscript must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+    });
+}
+
+#[test]
+fn a_proved_interposed_subscript_creates_no_exit() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads(v) {
+  return deref(v);
+}
+
+fn probe['r](values: own array<u8, 8>, cell: &'r u64, other: &'r u64) -> result: own u64 reads(cell, other) {
+  let a = peek<'r>(v: other);
+  let picked = values[3_u64];
+  let b = peek<'r>(v: cell);
+  return imax(a, b);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  let other = 2_u64;
+  let table = array_new<u8, 8>(0_u8);
+  region 'r {
+    let total = probe<'r>(values: move table, cell: &'r cell, other: &'r other);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
     let table = permission_of(source);
     let pair = only_pair(&table, "probe");
-    let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
-        panic!(
-            "a claim between the calls must deny, not fall through to eligibility: {:?}",
-            pair.verdict
-        );
-    };
-    assert_eq!(*kind, ExitKind::ClaimTrap);
-    assert_eq!(*side, PairSide::Between(0));
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    assert_eq!(
+        function_table(&table, "probe").runs.len(),
+        1,
+        "the proof-complete interposed operation must retain the eligible run"
+    );
 }
 
 /// A form the window rule does not account for is refused **with a report**.

@@ -8,28 +8,28 @@
 //! source's stated form contributes nothing, which only under-derives, the
 //! version-monotone direction [ENT-1].
 //!
-//! Implemented here: S1 (through the parent's arm entry), S3 (a passed claim
-//! condition), S4, S5, S6, S7, S9, and S10. Retired labels are not reused
-//! [ENT-3].
+//! Implemented here: S1 (through the parent's arm entry), S4, S5, S6, S7,
+//! S9, and S10. Retired labels are not reused [ENT-3].
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
-    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedType,
-    CheckedValue, IntegerType,
+    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSetTarget,
+    CheckedSliceSource, CheckedType, CheckedValue, IntegerType,
 };
 use super::super::fragment_type;
 use super::super::state::{
-    DerivationLedger, DerivationRootKind, FactState, FlowEventId, FlowEventKind, OutcomeFact,
+    DerivationId, DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact,
     OutcomeRelation, Relation, close,
 };
 use super::super::term::{
-    CountedCaptureSide, PlaceRoot, PlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
+    CountedCaptureSide, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId,
+    TermKind, ZERO, integer_value, type_range,
 };
 use super::super::{
-    ClaimComponentEvidence, ClaimImageEvidence, ClaimProofEvidence, ClaimReconstructionEvidence,
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
-    CountedEqualityDerivation, CountedProofPoint, S7Derivation, S7DerivationKind, ShiftOneIdentity,
+    CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
+    S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
@@ -45,6 +45,18 @@ const BOUNDARY_ENDPOINTS: [(&str, &str); 5] = [
     ("directory_next", "ListBytes"),
 ];
 
+/// Which term one evaluated value's [ENT-3] image is established on: the
+/// place a `let` binder introduces, or the compiler-owned commit value of one
+/// `set` occurrence, named by that statement's NodePath [ENT-2].
+/// The sources below are written once against this destination so that a
+/// commit's right-hand side receives exactly the image the same initializer
+/// receives at a `let`.
+#[derive(Clone, Copy)]
+pub(super) enum ValueImage<'a> {
+    Binding(BindingId),
+    Commit(&'a crate::NodePath),
+}
+
 /// The three S11 terms installed for one counted range.
 pub(super) struct CountedTerms {
     pub(super) lower_source: TermId,
@@ -52,6 +64,14 @@ pub(super) struct CountedTerms {
     pub(super) binder: TermId,
     pub(super) upper: TermId,
     pub(super) upper_source: TermId,
+}
+
+/// The affine half of one admitted unsigned literal-division transfer.
+/// The ordinary S7 relation supplies the retained source proof; the parent
+/// flow binds the scaled quotient image to the exact current operand values.
+pub(super) struct EstablishedUnsignedDivision {
+    pub(super) divisor: i128,
+    pub(super) parent: DerivationId,
 }
 
 /// The three preheader relations after their complete S11 snapshot has been
@@ -236,146 +256,6 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // S3 claim facts
-    // ------------------------------------------------------------------
-
-    /// [ENT-3] S3 establishes the canonical contribution components, never
-    /// the parent first. The direct ordinary-let image is materialized only
-    /// after ordinary ENT-4 reconstruction proves the expanded predicate.
-    pub(super) fn establish_claim_contribution(
-        &mut self,
-        node_path: &crate::NodePath,
-        contribution: &super::ClaimContribution,
-        renderings: &[String],
-        occurrence: u32,
-        state: &mut FactState,
-    ) -> Option<ClaimProofEvidence> {
-        if contribution.components.len() != renderings.len()
-            || contribution.exact_goals.is_empty()
-            || contribution.exact_goals.len() > 2
-        {
-            return None;
-        }
-        let active_mask = self
-            .claim_mask
-            .filter(|mask| mask.function == self.function.id && mask.node_path == *node_path);
-        let mut component_evidence = Vec::with_capacity(contribution.components.len());
-        for (index, component) in contribution.components.iter().enumerate() {
-            let ordinal = u32::try_from(index)
-                .expect("claim contribution component count exceeds the u32 identity space");
-            if active_mask
-                .is_some_and(|mask| mask.component.is_none() || mask.component == Some(ordinal))
-            {
-                continue;
-            }
-            let event = self.derivations.claim_event(node_path.clone(), ordinal);
-            let source = match component {
-                super::ClaimComponentFact::Goal { goal, sign } => {
-                    state.establish_goal_with_proof(*goal, *sign, &mut self.derivations, event)
-                }
-                super::ClaimComponentFact::Relation(Relation::Bound { left, right, bound }) => {
-                    state.establish_bound_with_proof(
-                        *left,
-                        *right,
-                        *bound,
-                        &mut self.derivations,
-                        event,
-                    )
-                }
-                super::ClaimComponentFact::Relation(Relation::Distinct { left, right }) => {
-                    state.establish_distinct_with_proof(*left, *right, &mut self.derivations, event)
-                }
-                super::ClaimComponentFact::Relation(Relation::Equal { .. }) => return None,
-            };
-            self.derivations.add_root(
-                DerivationRootKind::ClaimComponent {
-                    occurrence,
-                    component: ordinal,
-                },
-                source,
-            );
-            component_evidence.push(ClaimComponentEvidence {
-                ordinal,
-                fact: component.clone(),
-                rendering: renderings[index].clone(),
-                source,
-            });
-        }
-        if active_mask.is_some_and(|mask| mask.component.is_none()) {
-            return None;
-        }
-        let canonical = contribution.exact_goals.last().copied()?;
-        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-        if closed.contradictory()
-            || !closed.derives_goal(
-                canonical,
-                super::super::state::GoalSign::Positive,
-                &self.goals,
-            )
-            || closed.derives_goal(
-                canonical,
-                super::super::state::GoalSign::Negative,
-                &self.goals,
-            )
-        {
-            return None;
-        }
-        let parent = closed.goal_proof(
-            canonical,
-            super::super::state::GoalSign::Positive,
-            &self.goals,
-            &mut self.derivations,
-        )?;
-        self.derivations.add_root(
-            DerivationRootKind::ClaimReconstruction {
-                occurrence,
-                direct: false,
-            },
-            parent,
-        );
-        let direct_goal = contribution.exact_goals[0];
-        let mut direct_proof = (direct_goal == canonical).then_some(parent);
-        for direct in contribution
-            .exact_goals
-            .iter()
-            .copied()
-            .filter(|goal| *goal != canonical)
-        {
-            let event = self.proof_event(FlowEventKind::ClaimReconstruction, Some(node_path));
-            let proof = state.establish_goal_from_proof(
-                direct,
-                super::super::state::GoalSign::Positive,
-                parent,
-                &mut self.derivations,
-                event,
-            )?;
-            if direct == direct_goal {
-                direct_proof = Some(proof);
-            }
-        }
-        let direct_proof = direct_proof?;
-        self.derivations.add_root(
-            DerivationRootKind::ClaimReconstruction {
-                occurrence,
-                direct: true,
-            },
-            direct_proof,
-        );
-        Some(ClaimProofEvidence {
-            images: ClaimImageEvidence {
-                direct: direct_goal,
-                expanded: canonical,
-                complete: contribution.lifecycle_complete,
-            },
-            components: component_evidence,
-            reconstructions: ClaimReconstructionEvidence {
-                expanded: parent,
-                direct: direct_proof,
-            },
-        })
-    }
-
-    // ------------------------------------------------------------------
     // S4 requires facts
     // ------------------------------------------------------------------
 
@@ -401,46 +281,53 @@ impl Analyzer<'_, '_> {
             state.establish(&relation, &mut self.derivations, event);
         }
         // [ENT-3] Signed Boolean decomposition of the established body goal.
-        let view = state.proof_view();
         self.establish_boolean_decomposition(
             goal,
             super::super::state::GoalSign::Positive,
             state,
             event,
         );
-        self.record_boolean_decomposition(
-            goal,
-            super::super::state::GoalSign::Positive,
-            view,
-            state,
-        );
+        self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, state);
     }
 
     // ------------------------------------------------------------------
-    // Establishment at a `let` binding: S5, S6, S7, S9
+    // Establishment of one evaluated value's image: S5, S6, S7, S9
     // ------------------------------------------------------------------
 
     /// Every source that establishes at an `ordinary_let_rhs` binding, in one
     /// place because they are mutually exclusive on the initializer's shape.
-    pub(super) fn establish_binding_facts(
+    /// A [SET-1] commit evaluates its right-hand side under exactly these
+    /// rules before its target kill, naming the value by the occurrence's own
+    /// commit-value term instead of a binder [ENT-2, ENT-3.S5].
+    pub(super) fn establish_value_image(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) {
-        if self.establish_length_facts(node_path, binding, value, state, event) {
-            return;
+    ) -> Option<EstablishedUnsignedDivision> {
+        if self.establish_length_facts(node_path, destination, value, state, event) {
+            return None;
         }
-        if self.establish_element_range(node_path, binding, value, state, event) {
-            return;
+        if self.establish_element_range(node_path, destination, value, state, event) {
+            return None;
         }
-        if self.establish_offset_fact(node_path, binding, value, state, event) {
-            return;
+        if let Some(image) =
+            self.establish_unsigned_division_bound(node_path, destination, value, state, event)
+        {
+            return Some(image);
         }
-        self.record_outcome_origin(binding, value, state);
-        self.establish_copy_fact(node_path, binding, value, state, event);
+        if self.establish_offset_fact(node_path, destination, value, state, event) {
+            return None;
+        }
+        if let ValueImage::Binding(binding) = destination {
+            // Outcome origins are keyed by the binding a `match` can name;
+            // a commit value is unnameable and carries none.
+            self.record_outcome_origin(binding, value, state);
+        }
+        self.establish_copy_fact(node_path, destination, value, state, event);
+        None
     }
 
     fn binding_event(
@@ -458,16 +345,132 @@ impl Analyzer<'_, '_> {
         id
     }
 
-    /// The term of a freshly bound integer place, when its type is one
-    /// fragment type.
-    fn bound_term(&mut self, binding: BindingId, value: &CheckedExpression) -> Option<TermId> {
-        let fragment = fragment_type(value.ty())?;
-        let place = PlaceTerm {
-            root: PlaceRoot::Binding(binding),
-            deref: false,
-            fields: Vec::new(),
+    /// The exact term named by one writable fragment place. A borrow holder
+    /// keeps its canonical deref projection so the post-write destination is
+    /// identical to a later read of that same place [ENT-2].
+    fn writable_place_term(
+        &mut self,
+        binding: BindingId,
+        fields: &[u32],
+        ty: CheckedType,
+    ) -> Option<TermId> {
+        let fragment = fragment_type(ty)?;
+        let kind = if self.needs_implicit_deref(binding) {
+            TermKind::ProjectedPlace(
+                ProjectedPlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    projections: std::iter::once(PlaceProjection::Deref)
+                        .chain(fields.iter().copied().map(PlaceProjection::Field))
+                        .collect(),
+                },
+                fragment,
+            )
+        } else {
+            TermKind::Place(
+                PlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    deref: false,
+                    fields: fields.to_vec(),
+                },
+                fragment,
+            )
         };
-        Some(self.terms.intern(TermKind::Place(place, fragment)))
+        Some(self.terms.intern(kind))
+    }
+
+    /// The term one evaluated value's image is established on, when its type
+    /// is one fragment type: a freshly bound integer place, or the commit
+    /// value of one `set` occurrence.
+    fn bound_term(
+        &mut self,
+        destination: ValueImage<'_>,
+        value: &CheckedExpression,
+    ) -> Option<TermId> {
+        match destination {
+            ValueImage::Binding(binding) => self.writable_place_term(binding, &[], value.ty()),
+            ValueImage::Commit(node_path) => self.commit_value_term(node_path, value),
+        }
+    }
+
+    /// The retained identity of the value one S7 image was established on.
+    fn s7_subject(destination: ValueImage<'_>) -> S7Subject {
+        match destination {
+            ValueImage::Binding(binding) => S7Subject::Binding(binding),
+            ValueImage::Commit(node_path) => S7Subject::Commit(node_path.clone()),
+        }
+    }
+
+    /// The commit-value term of one `set` occurrence, interned on first use.
+    /// Its identity is the statement's NodePath and the value's fragment
+    /// type, so every source establishing at that one occurrence names one
+    /// term [ENT-2].
+    fn commit_value_term(
+        &mut self,
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+    ) -> Option<TermId> {
+        let kind = Self::commit_value_kind(node_path, value)?;
+        Some(self.terms.intern(kind))
+    }
+
+    /// The same term when a source above already formed it, and nothing when
+    /// the right-hand side matched no source: an image-free value needs no
+    /// term and no post-write equality [ENT-3.S5].
+    pub(super) fn interned_commit_value_term(
+        &self,
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+    ) -> Option<TermId> {
+        self.terms
+            .interned(&Self::commit_value_kind(node_path, value)?)
+    }
+
+    fn commit_value_kind(
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+    ) -> Option<TermKind> {
+        let ty = fragment_type(value.ty())?;
+        Some(TermKind::CommitValue {
+            commit_path: node_path.components().to_vec(),
+            ty,
+        })
+    }
+
+    /// The value image shared by an ordinary let and a direct-place SET-1
+    /// commit. A narrowing conversion and every computed expression outside
+    /// this finite S5 table have no image.
+    fn copy_source(&mut self, value: &CheckedExpression) -> Option<TermId> {
+        match value {
+            CheckedExpression::NumericConversion {
+                source,
+                destination,
+                value: operand,
+                ..
+            } => source
+                .converts_totally_to(*destination)
+                .then(|| self.read_operand(operand))
+                .flatten(),
+            _ => self.read_operand(value),
+        }
+    }
+
+    fn establish_copy_equality(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: TermId,
+        source: TermId,
+        state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) {
+        let event = self.binding_event(event, FlowEventKind::S5, node_path);
+        state.establish(
+            &Relation::Equal {
+                left: destination,
+                right: source,
+            },
+            &mut self.derivations,
+            event,
+        );
     }
 
     /// The place term a binding names directly, for length facts over an
@@ -487,40 +490,43 @@ impl Analyzer<'_, '_> {
     fn establish_copy_fact(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
-        let source = match value {
-            CheckedExpression::NumericConversion {
-                source,
-                destination,
-                value: operand,
-                ..
-            } => {
-                if !source.converts_totally_to(*destination) {
-                    return;
-                }
-                self.read_operand(operand)
-            }
-            _ => self.read_operand(value),
-        };
-        let Some(source) = source else {
+        let Some(source) = self.copy_source(value) else {
             return;
         };
-        let Some(bound) = self.bound_term(binding, value) else {
+        let Some(bound) = self.bound_term(destination, value) else {
             return;
         };
-        let event = self.binding_event(event, FlowEventKind::S5, node_path);
-        state.establish(
-            &Relation::Equal {
-                left: bound,
-                right: source,
-            },
-            &mut self.derivations,
-            event,
-        );
+        self.establish_copy_equality(node_path, bound, source, state, event);
+    }
+
+    /// [ENT-3] S5 at a SET-1 value commit. The caller has already evaluated
+    /// the right-hand side to the `commit` term above and killed every fact
+    /// about the old target value; this equality names that evaluated value,
+    /// so an arithmetic or other computed right-hand side carries its own
+    /// image across the write exactly as an intervening `let` would. Only a
+    /// direct fragment place receives it; indexed storage establishes
+    /// nothing, since one element write is no image of the whole collection.
+    pub(super) fn establish_commit_copy_fact(
+        &mut self,
+        node_path: &crate::NodePath,
+        target: &CheckedSetTarget,
+        commit: TermId,
+        state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) {
+        let CheckedSetTarget::Place(target) = target else {
+            return;
+        };
+        let Some(destination) = self.writable_place_term(target.binding, &target.fields, target.ty)
+        else {
+            return;
+        };
+        self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
     /// [ENT-3] S6: `buffer_new<T>(n, v)` establishes len(b) = n;
@@ -533,14 +539,21 @@ impl Analyzer<'_, '_> {
     fn establish_length_facts(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
+        // A length equality is stated over the destination place. One commit
+        // value is no place, so an allocation or slice-formation right-hand
+        // side has no commit image; the length operand row below is an
+        // ordinary fragment value and applies to both destinations.
         match value {
             CheckedExpression::BufferFill { length, .. }
             | CheckedExpression::BufferVacant { length, .. } => {
+                let ValueImage::Binding(binding) = destination else {
+                    return true;
+                };
                 let Some(allocated) = self.read_operand(length) else {
                     return true;
                 };
@@ -558,6 +571,9 @@ impl Analyzer<'_, '_> {
                 true
             }
             CheckedExpression::SliceOf { source, .. } => {
+                let ValueImage::Binding(binding) = destination else {
+                    return true;
+                };
                 let (place, array_length) = match source {
                     CheckedSliceSource::Array { root, length } => {
                         (self.array_root_place(root), Some(*length))
@@ -602,7 +618,7 @@ impl Analyzer<'_, '_> {
             }
             _ => match self.length_operand(value) {
                 Some(source_length) => {
-                    if let Some(bound) = self.bound_term(binding, value) {
+                    if let Some(bound) = self.bound_term(destination, value) {
                         let event = self.binding_event(event, FlowEventKind::S6, node_path);
                         state.establish(
                             &Relation::Equal {
@@ -659,20 +675,21 @@ impl Analyzer<'_, '_> {
     fn establish_offset_fact(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        if self.establish_bit_and_bounds(node_path, binding, value, state, event)
-            || self.establish_shift_one_nonzero(node_path, binding, value, state, event)
+        if self.establish_remainder_bounds(node_path, destination, value, state, event)
+            || self.establish_bit_and_bounds(node_path, destination, value, state, event)
+            || self.establish_shift_one_nonzero(node_path, destination, value, state, event)
         {
             return true;
         }
         let Some((base, delta, exact)) = self.constant_offset(value) else {
             return false;
         };
-        let Some(bound) = self.bound_term(binding, value) else {
+        let Some(bound) = self.bound_term(destination, value) else {
             return true;
         };
         if !exact {
@@ -694,10 +711,161 @@ impl Analyzer<'_, '_> {
         true
     }
 
+    /// [ENT-3] S7: an admitted unsigned exact division by a positive written
+    /// integer literal publishes `quotient <= dividend`. The returned source
+    /// proof lets the parent flow also retain the exact affine image
+    /// `literal * quotient <= dividend` over the same runtime value atoms.
+    /// Signed division deliberately has no member of this rule.
+    fn establish_unsigned_division_bound(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: ValueImage<'_>,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> Option<EstablishedUnsignedDivision> {
+        let CheckedExpression::IntegerOperation {
+            operation: CheckedIntegerOperation::DivideExact,
+            operand_type: CheckedType::Integer(row),
+            arguments,
+            ..
+        } = value
+        else {
+            return None;
+        };
+        if row.signed() {
+            return None;
+        }
+        let [dividend, divisor] = arguments.as_slice() else {
+            return None;
+        };
+        let CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) = divisor else {
+            return None;
+        };
+        if ty != row {
+            return None;
+        }
+        let divisor = integer_value(*ty, *bits);
+        if divisor <= 0 {
+            return None;
+        }
+        let result = self.bound_term(destination, value)?;
+        let dividend = self.read_operand(dividend)?;
+        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let relation = Relation::Bound {
+            left: result,
+            right: dividend,
+            bound: 0,
+        };
+        let parent =
+            state.establish_bound_with_proof(result, dividend, 0, &mut self.derivations, event);
+        self.retain_s7_derivation(S7Derivation {
+            source: node_path.clone(),
+            row: *row,
+            subject: Self::s7_subject(destination),
+            kind: S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
+            relation,
+            event,
+            parent,
+        });
+        Some(EstablishedUnsignedDivision { divisor, parent })
+    }
+
+    /// [ENT-3] S7: an admitted unsigned exact remainder publishes
+    /// `result < divisor`. A signed remainder by a written constant `d`
+    /// publishes the closed interval `-(|d| - 1) <= result <= |d| - 1`.
+    /// The operation's ordinary IntegerDomain judgment has already proved its
+    /// domain before acceptance; this transfer performs no proof search.
+    fn establish_remainder_bounds(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: ValueImage<'_>,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> bool {
+        let CheckedExpression::IntegerOperation {
+            operation: CheckedIntegerOperation::RemainderExact,
+            operand_type: CheckedType::Integer(row),
+            arguments,
+            ..
+        } = value
+        else {
+            return false;
+        };
+        let [_dividend, divisor] = arguments.as_slice() else {
+            return true;
+        };
+        let Some(result) = self.bound_term(destination, value) else {
+            return true;
+        };
+        let Some(divisor) = self.read_operand(divisor) else {
+            return true;
+        };
+        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        if !row.signed() {
+            let relation = Relation::Bound {
+                left: result,
+                right: divisor,
+                bound: -1,
+            };
+            let parent =
+                state.establish_bound_with_proof(result, divisor, -1, &mut self.derivations, event);
+            self.retain_s7_derivation(S7Derivation {
+                source: node_path.clone(),
+                row: *row,
+                subject: Self::s7_subject(destination),
+                kind: S7DerivationKind::UnsignedRemainderBound { divisor },
+                relation,
+                event,
+                parent,
+            });
+            return true;
+        }
+
+        let Some(divisor_value) = self
+            .constant_term_value(divisor)
+            .filter(|value| *value != 0)
+        else {
+            return true;
+        };
+        let Some(limit) = divisor_value
+            .checked_abs()
+            .and_then(|value| value.checked_sub(1))
+        else {
+            return true;
+        };
+        for (endpoint, left, right) in [
+            (RemainderEndpoint::Minimum, ZERO, result),
+            (RemainderEndpoint::Maximum, result, ZERO),
+        ] {
+            let relation = Relation::Bound {
+                left,
+                right,
+                bound: limit,
+            };
+            let parent =
+                state.establish_bound_with_proof(left, right, limit, &mut self.derivations, event);
+            self.retain_s7_derivation(S7Derivation {
+                source: node_path.clone(),
+                row: *row,
+                subject: Self::s7_subject(destination),
+                kind: S7DerivationKind::SignedRemainderBound {
+                    divisor: divisor_value,
+                    endpoint,
+                },
+                relation,
+                event,
+                parent,
+            });
+        }
+        true
+    }
+
     fn establish_bit_and_bounds(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -714,7 +882,7 @@ impl Analyzer<'_, '_> {
         if row.signed() {
             return true;
         }
-        let Some(result) = self.bound_term(binding, value) else {
+        let Some(result) = self.bound_term(destination, value) else {
             return true;
         };
         for (operand, argument) in arguments.iter().enumerate() {
@@ -731,9 +899,8 @@ impl Analyzer<'_, '_> {
                 state.establish_bound_with_proof(result, admitted, 0, &mut self.derivations, event);
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
-                view: state.proof_view(),
                 row: *row,
-                binding,
+                subject: Self::s7_subject(destination),
                 kind: S7DerivationKind::BitAndBound {
                     operand: u8::try_from(operand)
                         .expect("integer-operation operand ordinal exceeds u8"),
@@ -750,7 +917,7 @@ impl Analyzer<'_, '_> {
     fn establish_shift_one_nonzero(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -797,7 +964,7 @@ impl Analyzer<'_, '_> {
             CheckedIntegerArgumentSource::GenericNumericIdentity
             | CheckedIntegerArgumentSource::Other => return true,
         };
-        let Some(result) = self.bound_term(binding, value) else {
+        let Some(result) = self.bound_term(destination, value) else {
             return true;
         };
         let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
@@ -811,9 +978,8 @@ impl Analyzer<'_, '_> {
             state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
-            view: state.proof_view(),
             row: *row,
-            binding,
+            subject: Self::s7_subject(destination),
             kind: S7DerivationKind::ShiftOneNonzero {
                 count_atom: count_metadata.node_path.clone(),
                 one,
@@ -886,7 +1052,7 @@ impl Analyzer<'_, '_> {
     fn establish_element_range(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -915,7 +1081,7 @@ impl Analyzer<'_, '_> {
                 None => (element, element),
             });
         }
-        let (Some((low, high)), Some(bound)) = (range, self.bound_term(binding, value)) else {
+        let (Some((low, high)), Some(bound)) = (range, self.bound_term(destination, value)) else {
             return true;
         };
         let event = self.binding_event(event, FlowEventKind::S9, node_path);

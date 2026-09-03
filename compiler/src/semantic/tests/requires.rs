@@ -974,7 +974,7 @@ fn below(value: own u64) -> result: own u64 pure contract {
 }
 
 #[test]
-fn direct_subscript_actual_uses_one_occurrence_local_ephemeral_image() {
+fn call_front_end_captures_a_subscript_until_entailment_admits_its_identity() {
     let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
   requires ilt(value, 10_u8);
 } {
@@ -1017,16 +1017,16 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert!(matches!(arguments[0], CheckedExpression::ArrayIndex { .. }));
         assert_eq!(argument_nodes.len(), 1);
-        let GoalExpression::Datum(GoalDatum::EphemeralActual {
-            caller,
-            call,
-            argument,
+        let GoalExpression::Datum(GoalDatum::EvaluatedValue {
+            function: caller,
+            occurrence:
+                super::super::goal::EvaluatedValueOccurrence::CallArgument { call, argument },
             captured_type,
             projections,
             ty,
         }) = &goal_arguments[0]
         else {
-            panic!("subscript actual must be captured as ephemeral");
+            panic!("the front end must retain an occurrence-local pre-admission capture");
         };
         assert_eq!(*caller, main.id);
         assert_eq!(call, call_path);
@@ -1043,7 +1043,61 @@ command fn main() -> status: own ExitStatus pure {
             main.entailment.call_goals[0].disposition,
             CallGoalDisposition::Unproved
         );
+        let GoalExpression::Operation { arguments, .. } = &main.entailment.call_goals[0].goal.root
+        else {
+            panic!("the entailment goal must retain its comparison root");
+        };
+        assert!(matches!(
+            &arguments[0],
+            GoalExpression::Operation {
+                row: GoalOperation::ArrayIndex { .. },
+                ..
+            }
+        ));
         assert!(main.entailment.call_goals[0].evidence.is_empty());
+    });
+}
+
+#[test]
+fn proved_subscript_actual_reuses_its_stable_goal_identity_at_fn8() {
+    let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
+  requires ilt(value, 10_u8);
+} {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new<u8, 2>(3_u8);
+  if ilt(values[0_u64], 10_u8) {
+    positive(value: values[0_u64]);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the admitted indexed value must satisfy the matching requirement: {outcome:?}");
+        };
+        let main = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+        let [call] = main.entailment.call_goals.as_slice() else {
+            panic!("the true branch must retain one call requirement");
+        };
+        assert_eq!(call.disposition, CallGoalDisposition::Discharged);
+        let GoalExpression::Operation { arguments, .. } = &call.goal.root else {
+            panic!("the requirement must retain its comparison root");
+        };
+        assert!(matches!(
+            &arguments[0],
+            GoalExpression::Operation {
+                row: GoalOperation::ArrayIndex { .. },
+                ..
+            }
+        ));
     });
 }
 

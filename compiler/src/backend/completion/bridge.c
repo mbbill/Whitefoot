@@ -25,6 +25,7 @@
 #include "contract.h"
 #include "bridge.h"
 #include "file_adapter.h"
+#include "writer_scheduler.h"
 #if defined(__linux__)
 #include "linux_io_uring.h"
 #endif
@@ -38,7 +39,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define WF_BRIDGE_OPERATION_CAPACITY 64u
+#define WF_BRIDGE_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY
 #define WF_BRIDGE_SLOT_COUNT WF_BRIDGE_OPERATION_CAPACITY
 #define WF_BRIDGE_QUEUE_COUNT WF_BRIDGE_OPERATION_CAPACITY
 #define WF_BRIDGE_MAX_HELPERS 8u
@@ -50,6 +51,11 @@
  * budget affords 64 of them, and at 16 MiB it affords none, which the K >= 1
  * floor turns into the sequential program. */
 #define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
+
+_Static_assert(
+    WF_BRIDGE_SLOT_COUNT == WF_WRITER_READY_CAPACITY,
+    "one writer-ready cell is required for each completion slot"
+);
 
 static wf_completion_runtime wf_bridge_runtime;
 static wf_completion_slot wf_bridge_slots[WF_BRIDGE_SLOT_COUNT];

@@ -1,0 +1,17 @@
+fn opaque(value: own i32) -> result: own i32 pure {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Representability failure is an expected typed value [ERR-4]. The checked operation returns Err on i32 max plus one and ordinary control reports successful handling.";
+  let peak = opaque(value: 2147483647_i32);
+  let step = opaque(value: 1_i32);
+  match peak +checked step {
+    Ok(value: sum) => {
+      return exit_status(code: 1_u8);
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 0_u8);
+    }
+  }
+}

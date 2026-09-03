@@ -40,16 +40,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if !matches!(self.nominal(nominal)?.kind(), IrNominalKind::ArenaStorage) {
             return Err(BackendFailure::InvalidIr);
         }
-        let name = self.value_name(result);
-        self.declare_entry_slot(&name, "ptr")?;
+        let name = self.entry_slot(FunctionSlot::ArenaList(result))?;
         writeln!(self.output, "  store ptr null, ptr {name}")
             .map_err(|_| BackendFailure::TextEmission)
     }
 
     /// One `arena_new` allocation [STOR-2]: one heap node `{ next, content }`
     /// pushed onto the owning region's list, so the region's exit release
-    /// frees it [STOR-3, STOR-4]. The operation's value is the content
-    /// address; a hosted allocation failure aborts like a box allocation.
+    /// frees it [STOR-3, STOR-4]. Target validation proves the size,
+    /// alignment, padding, allocator parameter, and addressability of this
+    /// exact two-field node before emission. The operation's value is the
+    /// content address; a hosted allocation failure aborts like a box
+    /// allocation.
     pub(super) fn emit_arena_new(
         &mut self,
         result: IrValueId,

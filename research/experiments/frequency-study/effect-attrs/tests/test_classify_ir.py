@@ -109,7 +109,7 @@ class ParseTests(FixtureMixin, unittest.TestCase):
             },
         )
 
-    def test_quoted_attributes_cannot_forge_facts_or_close_groups(self) -> None:
+    def test_quoted_attributes_do_not_contribute_facts_or_close_groups(self) -> None:
         declaration = self.record("fake_quoted_attrs")
         self.assertEqual(
             declaration["declaration_facts"]["memory"]["state"], "absent"
@@ -120,7 +120,7 @@ class ParseTests(FixtureMixin, unittest.TestCase):
             declaration["definition_facts"]["memory"]["summary"], "none"
         )
 
-    def test_invoke_labels_bundles_and_metadata_cannot_forge_call_facts(self) -> None:
+    def test_invoke_labels_bundles_and_metadata_do_not_contribute_call_facts(self) -> None:
         invoke, invoke_bundle = classify_ir._call_attribute_prefix(
             " nounwind memory(read, argmem: none) "
             "to label %willreturn unwind label %speculatable"
@@ -280,7 +280,7 @@ class BlockerRegressionTests(unittest.TestCase):
     def test_multiline_probe_is_valid_llvm(self) -> None:
         # Parse and re-emit (-S -emit-llvm) rather than compile (-c): validity
         # of a fixture is a parse/verify property, and full code generation
-        # drags in the host backend's capabilities. The adversarial fixture
+        # drags in the host backend's capabilities. The unsupported-form fixture
         # carries a deliberate "deopt" operand bundle, and the wasi-sdk clang
         # a PATH may select crashes in WebAssembly instruction selection when
         # lowering it as a statepoint (LLVM 22.1.0-wasi-sdk); that is a
@@ -290,8 +290,8 @@ class BlockerRegressionTests(unittest.TestCase):
             for name in (
                 "multiline-caller.ll",
                 "multiline-definitions.ll",
-                "adversarial-caller.ll",
-                "adversarial-definitions.ll",
+                "unsupported-forms-caller.ll",
+                "unsupported-forms-definitions.ll",
             ):
                 clang = shutil.which("clang")
                 completed = subprocess.run(
@@ -322,8 +322,8 @@ class BlockerRegressionTests(unittest.TestCase):
 
     def test_metadata_operand_bundle_and_inline_asm_fail_closed(self) -> None:
         paths = [
-            FIXTURES / "adversarial-caller.ll",
-            FIXTURES / "adversarial-definitions.ll",
+            FIXTURES / "unsupported-forms-caller.ll",
+            FIXTURES / "unsupported-forms-definitions.ll",
         ]
         report = classify_ir.run(paths, root=FIXTURES)
         records = {record["symbol"]: record for record in report["records"]}
@@ -338,7 +338,8 @@ class BlockerRegressionTests(unittest.TestCase):
         self.assertEqual(metadata["callsite_facts"]["memory"]["state"], "absent")
 
         module = classify_ir.parse_module(
-            FIXTURES / "adversarial-caller.ll", label="adversarial-caller.ll"
+            FIXTURES / "unsupported-forms-caller.ll",
+            label="unsupported-forms-caller.ll",
         )
         inline_asm = next(
             call
@@ -348,7 +349,7 @@ class BlockerRegressionTests(unittest.TestCase):
         self.assertIsNone(inline_asm.symbol)
         self.assertEqual(report["summary"]["unsupported_ir_call_instructions"], 2)
 
-    def test_sigiled_function_metadata_cannot_forge_attributes(self) -> None:
+    def test_sigiled_function_metadata_do_not_contribute_attributes(self) -> None:
         facts = classify_ir._effect_facts("!readnone !nounwind !willreturn")
         self.assertEqual(facts.memory.state, "absent")
         self.assertFalse(facts.nounwind)

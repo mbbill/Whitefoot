@@ -87,6 +87,7 @@ typedef struct wf_completion_slot {
     uint32_t terminal_kind;
     uint32_t adapter_tag;
     size_t result_size;
+    unsigned dependent_registered;
     void *dependent_frame;
     uint32_t dependent_requirement;
     union {

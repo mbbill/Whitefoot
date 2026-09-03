@@ -1,0 +1,22 @@
+fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define room = len(table);
+  requires ilt(lo, hi);
+  requires ile(hi, room);
+} {
+  doc "The written certificate sums lo < hi and the published division image 2*half <= span into 2*(mid - hi) <= -1. Over the integers that halves to mid < hi, which with hi <= room discharges the subscript below [PRF-1, ENT-6, OP-4].";
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: ilt(mid, hi) {
+    use ilt(lo, hi);
+    use ile(2_u64 * half, span);
+  }
+  let byte = table[mid];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(4_u64, 0_u8);
+  let found = probe(table: move table, lo: 0_u64, hi: 4_u64);
+  return exit_status(code: found);
+}

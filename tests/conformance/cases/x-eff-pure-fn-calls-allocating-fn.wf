@@ -1,0 +1,17 @@
+fn allocate_then_return(x: own i32) -> function_result: own i32 allocates(heap) {
+  doc "The allocation effect is part of the callee's checked row.";
+  let scratch = buffer_new(1_u64, 0_u8);
+  return x;
+}
+
+fn f(x: own i32) -> function_result: own i32 pure {
+  doc "Declares pure but calls an allocating function [EFF-2].";
+  let a = allocate_then_return(x: x);
+  return a;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Driver.";
+  let a = f(x: 7_i32);
+  return exit_status(code: 0_u8);
+}

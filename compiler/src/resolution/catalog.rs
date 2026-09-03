@@ -184,6 +184,10 @@ pub struct SystemField {
 }
 
 /// One [SYS-2] operation signature in normative table order.
+///
+/// Target-stage result bounds are attached here because they are contracts of
+/// the semantic identity, not properties an approved implementation version
+/// may add or remove.
 #[derive(Clone, Copy, Debug)]
 pub struct SystemOperation {
     /// Exact IDENT spelling.
@@ -198,12 +202,24 @@ pub struct SystemOperation {
     pub state_reads: &'static [u8],
     /// Extra value-parameter state transitions not implied by borrow mode.
     pub state_writes: &'static [u8],
+    /// Fixed selected-target upper bound for a plain integer result, when the
+    /// semantic identity supplies one.
+    pub integer_result_bound: Option<SystemIntegerResultBound>,
     /// Compiler-owned execution contract for this operation. This is target
     /// metadata, never a source effect or a source-visible ordering token.
     pub target_action: TargetAction,
     /// Whether the operation's result contains fresh opaque state. Fresh
     /// state has no incoming-formal origin and carries no parent relation.
     pub result_state_origin: SystemResultStateOrigin,
+}
+
+/// One selected-target upper-bound contract fixed by a system operation's
+/// semantic identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SystemIntegerResultBound {
+    /// The integer result is no greater than the selected target's
+    /// address-index maximum.
+    AddressIndexMaximum,
 }
 
 /// Whether a system operation's result contains fresh opaque state.
@@ -673,6 +689,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: SystemTypeRef::U64,
         state_reads: &[0],
         state_writes: &[],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -690,6 +707,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_nominal(HOST_STRING, ARG_ERROR),
         state_reads: &[0],
         state_writes: &[],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -704,6 +722,9 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: SystemTypeRef::U64,
         state_reads: &[0],
         state_writes: &[],
+        // Every qualified HostString producer installs an inline-lease byte
+        // length representable by the selected target's address-index domain.
+        integer_result_bound: Some(SystemIntegerResultBound::AddressIndexMaximum),
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -727,6 +748,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_u64(COPY_ERROR),
         state_reads: &[0, 1],
         state_writes: &[1],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -741,6 +763,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_u64(UTF8_ERROR),
         state_reads: &[0],
         state_writes: &[],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -764,6 +787,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_u64(UTF8_COPY_ERROR),
         state_reads: &[0, 1],
         state_writes: &[1],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -778,6 +802,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_nominal(RELATIVE_PATH, PATH_ERROR),
         state_reads: &[],
         state_writes: &[],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -804,6 +829,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_nominal(READ_FILE, IO_ERROR),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
@@ -828,6 +854,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: SystemTypeRef::Nominal(READ_OUTCOME),
         state_reads: &[0, 1],
         state_writes: &[1],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -851,6 +878,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_u64(IO_ERROR),
         state_reads: &[0, 1],
         state_writes: &[0],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -865,6 +893,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: SystemTypeRef::Nominal(EXIT_STATUS),
         state_reads: &[],
         state_writes: &[],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -894,6 +923,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_nominal(DIRECTORY_READ, IO_ERROR),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
@@ -915,6 +945,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_nominal(DIRECTORY_SOURCE, IO_ERROR),
         state_reads: &[0, 1],
         state_writes: &[0],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
@@ -938,6 +969,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: SystemTypeRef::Nominal(LIST_OUTCOME),
         state_reads: &[0, 1],
         state_writes: &[0, 1],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::None,
     },
@@ -969,6 +1001,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: ok_nominal(READ_FILE, IO_ERROR),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
+        integer_result_bound: None,
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
@@ -983,6 +1016,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result: SystemTypeRef::Nominal(FILE_PERMIT),
         state_reads: &[0],
         state_writes: &[0],
+        integer_result_bound: None,
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
@@ -1532,6 +1566,9 @@ mod tests {
         for operation in &SYSTEM_OPERATIONS {
             assert_eq!(reserved_name(operation.spelling), None);
             assert!(!operation.spelling.contains('.'));
+            if operation.integer_result_bound.is_some() {
+                assert_eq!(operation.result, SystemTypeRef::U64);
+            }
             assert!(
                 operation
                     .spelling

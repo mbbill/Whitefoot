@@ -12,6 +12,15 @@ typedef void (*wf__writer_resume_fn)(void *frame);
 #define WF_WRITER_HEADER_STORAGE_BYTES 64u
 #define WF_WRITER_HEADER_STORAGE_ALIGNMENT 8u
 
+/* One compiler-owned process runtime links this scheduler to one bounded
+ * completion bridge. A completion slot remains occupied until its dependent
+ * writer consumes the terminal result, so that operation can own at most one
+ * queued writer frame. Both units derive their storage from this sole
+ * capacity: changing the completion-slot bound therefore changes the ready
+ * queue bound in the same compilation. */
+#define WF_COMPLETION_SLOT_CAPACITY 64u
+#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY
+
 void wf__writer_frame_init(void *frame);
 void wf__writer_begin_suspend(void *frame, wf__writer_resume_fn resume);
 int wf__writer_commit_suspend(void *frame);

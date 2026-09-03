@@ -52,7 +52,7 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
 }
 
 fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 reads(words) {
-  doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged and the whole function is claim-free.";
+  doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged directly.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
   let room = len(deref(words));
@@ -74,20 +74,17 @@ fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 r
   return fadd.strict(total, widest);
 }
 
-fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads(words), traps {
-  doc "The same walk over a caller-supplied prefix, clamped to the table it reads. The index obligation still needs a claim, which is what makes this the claim-bearing half of the pair with measure_words.";
+fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads(words) {
+  doc "The same walk over a caller-supplied prefix, clamped to the table it reads.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
   let room = len(deref(words));
-  let bounded_count = imin(count, room);
-  let k = 0_u64;
-  loop @scan {
-    let done = ige(k, bounded_count);
-    if done {
-      break @scan;
-    }
-    let in_range = ilt(k, room);
-    claim band_index_in_range: in_range because "premises: bounded_count is the minimum of the requested count and room, room is the metric table's length, k starts at zero, and the loop breaks before the body whenever k has reached bounded_count\nderivation: a minimum is at most either operand, so bounded_count is at most room; induction over reached iterations keeps k below bounded_count, and therefore below room\nconclusion: ilt(k, room) is true\nchecker gap: ENT does not publish the result range of imin and carries no induction over k across this ordinary-loop backedge\nconsumers: the following deref(words)[k] read requires this exact bound";
+  let bounded_count = room;
+  let count_fits = ile(count, room);
+  if count_fits {
+    set bounded_count = count;
+  }
+  for (k in 0_u64..bounded_count) {
     let raw = deref(words)[k];
     let scaled = fmul.strict(raw, font);
     let above = fgt(scaled, widest);
@@ -95,7 +92,6 @@ fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> re
       set widest = scaled;
     }
     set total = fadd.strict(total, scaled);
-    set k = k +wrap 1_u64;
   }
   return fadd.strict(total, widest);
 }
@@ -125,8 +121,8 @@ fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f6
   }
 }
 
-fn layout_banded['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words), writes(node), traps {
-  doc "The same fold whose per-node measure takes a caller-supplied band. Its child pair satisfies every permission condition too, but a claim site is reachable from both callees, so the pair is permitted and not actualizable.";
+fn layout_banded['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words), writes(node) {
+  doc "The same fold whose per-node measure takes a caller-supplied band.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
@@ -189,7 +185,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap), traps {
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
   let batches = 1_u64;
   region 'arguments {

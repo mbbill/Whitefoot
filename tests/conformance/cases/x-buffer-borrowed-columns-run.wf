@@ -3,61 +3,65 @@ struct Columns {
   right: buffer<u64>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right), writes(left, right), traps {
-  let left_room = len(deref(left));
-  let right_room = len(deref(right));
-  let index_value = 0_u64;
-  loop @fill {
-    let done = ieq(index_value, length);
-    if done {
-      break @fill;
-    } else {
-      let in_left = ilt(index_value, left_room);
-      claim left_in_range: in_left because "premises: both borrowed columns have length four and the loop exits when index_value equals left_room\nderivation: each reached loop body has index_value below four, so it is below the left column length\nconclusion: in_left is true\nchecker gap: ENT does not derive the strict loop range and correlate the two borrowed column lengths\nconsumers: the adjacent left-column indexed access needs this upper Range component";
-      set deref(left)[index_value] = index_value;
-      let shifted = index_value +wrap 10_u64;
-      let in_right = ilt(index_value, right_room);
-      claim right_in_range: in_right because "premises: both borrowed columns have length four and the loop exits when index_value equals left_room\nderivation: each reached loop body has index_value below four, so it is below the right column length\nconclusion: in_right is true\nchecker gap: ENT does not derive the strict loop range and correlate the two borrowed column lengths\nconsumers: the adjacent right-column indexed access needs this upper Range component";
-      set deref(right)[index_value] = shifted;
-      set index_value = index_value +wrap 1_u64;
-    }
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit writes(left, right) contract {
+  define left_length = len(deref(left));
+  define right_length = len(deref(right));
+  requires ile(length, left_length);
+  requires ile(length, right_length);
+} {
+  for (index_value in 0_u64..length) {
+    set deref(left)[index_value] = index_value;
+    let shifted = index_value +wrap 10_u64;
+    set deref(right)[index_value] = shifted;
   }
   return unit;
 }
 
-fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right), traps {
-  let left_room = len(deref(left));
-  let right_room = len(deref(right));
-  let index_value = 0_u64;
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) contract {
+  define left_length = len(deref(left));
+  define right_length = len(deref(right));
+  requires ile(length, left_length);
+  requires ile(length, right_length);
+} {
   let total = 0_u64;
-  loop @fold {
-    let done = ieq(index_value, length);
-    if done {
-      break @fold;
-    } else {
-      let in_left = ilt(index_value, left_room);
-      claim left_in_range: in_left because "premises: both borrowed columns have length four and the loop exits when index_value equals left_room\nderivation: each reached loop body has index_value below four, so it is below the left column length\nconclusion: in_left is true\nchecker gap: ENT does not derive the strict loop range and correlate the two borrowed column lengths\nconsumers: the adjacent left-column indexed access needs this upper Range component";
-      let left_value = deref(left)[index_value];
-      let in_right = ilt(index_value, right_room);
-      claim right_in_range: in_right because "premises: both borrowed columns have length four and the loop exits when index_value equals left_room\nderivation: each reached loop body has index_value below four, so it is below the right column length\nconclusion: in_right is true\nchecker gap: ENT does not derive the strict loop range and correlate the two borrowed column lengths\nconsumers: the adjacent right-column indexed access needs this upper Range component";
-      let right_value = deref(right)[index_value];
-      set total = total +wrap left_value;
-      set total = total +wrap right_value;
-      set index_value = index_value +wrap 1_u64;
-    }
+  for (index_value in 0_u64..length) {
+    let left_value = deref(left)[index_value];
+    let right_value = deref(right)[index_value];
+    set total = total +wrap left_value;
+    set total = total +wrap right_value;
   }
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let length = 4_u64;
   let left = buffer_new(length, 0_u64);
   let right = buffer_new(length, 0_u64);
   let columns = Columns(left: move left, right: move right);
+  let fill_left_length = len(columns.left);
+  if ile(length, fill_left_length) {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  let fill_right_length = len(columns.right);
+  if ile(length, fill_right_length) {
+  } else {
+    return exit_status(code: 203_u8);
+  }
   region 'fill_region {
     let left_out = &uniq 'fill_region columns.left;
     let right_out = &uniq 'fill_region columns.right;
     fill<'fill_region>(left: move left_out, right: move right_out, length: length);
+  }
+  let fold_left_length = len(columns.left);
+  if ile(length, fold_left_length) {
+  } else {
+    return exit_status(code: 204_u8);
+  }
+  let fold_right_length = len(columns.right);
+  if ile(length, fold_right_length) {
+  } else {
+    return exit_status(code: 205_u8);
   }
   region 'fold_region {
     let left_in = &'fold_region columns.left;
