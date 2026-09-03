@@ -436,8 +436,8 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
                         initialization; bind a new slice or arena under a new let";
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let left = array_new<u8, 2>(11_u8);
-  let right = array_new<u8, 2>(29_u8);
+  let left = array_new::<u8, 2>(11_u8);
+  let right = array_new::<u8, 2>(29_u8);
   region 'view {
     let view = slice_of(&'view left);
     let previous = replace view = slice_of(&'view right);
@@ -454,8 +454,8 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let first = arena_new<'r, u64>(1_u64);
-    let second = arena_new<'r, u64>(2_u64);
+    let first = arena_new::<'r, u64>(1_u64);
+    let second = arena_new::<'r, u64>(2_u64);
     let previous = replace first = move second;
   }
   return exit_status(code: 0_u8);
