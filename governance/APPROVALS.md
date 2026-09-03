@@ -2425,20 +2425,22 @@ ACTIVE-SPEC: v0.40 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0
   `tests/conformance/test_runner.py` are byte-identical to `main`.
 ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168
 
-## 2026-09-03 — merge-time approval content: v0.42 candidate, one canonical region spelling ([FORM-8])
+## 2026-09-03 — merge-time approval content: v0.42 one canonical region spelling ([FORM-8]) (1 rule added; 132 remain)
 - EFFECT: this record becomes effective only when the owner approves the exact
   revision containing it for merge into `main`. That merge approval is rule
   2's approval and rule 4's approval of the content recorded here; this record
   creates no separate approval step, and nothing in it asserts that the
   approval has been given.
-- SPECIFICATION CANDIDATE, NOT AN ACTIVATION: `spec/kernel-spec.md` carries
-  `Status: CANDIDATE v0.42 supersedes v0.41
-  899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761` and hashes
-  to `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`. This
-  record adds no `ACTIVE-SPEC:` line, archives no outgoing bytes, and changes
-  no chain tail: v0.41 remains the active authority, canonical `make check`
-  rejects the candidate at `spec-archive-integrity`, and activation is a
-  separate exact-byte entry the owner writes. Per the candidate's own META-5
+- SPECIFICATION: activate Whitefoot v0.42 at exact SHA-256
+  `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`.
+  It supersedes active v0.41 at SHA-256
+  `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.41.md`. The candidate that preceded activation declared
+  `CANDIDATE v0.42 supersedes v0.41` and hashed to
+  `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`;
+  activation flipped that status line to `ACTIVE v0.42` and changed no other
+  byte. Per the specification's own META-5
   delta declaration: numbered rules are +1/-0 and 132 remain, the added rule
   being [FORM-8] and no id retired; grammar productions are +0/-0 and 83
   remain, with `mode`, `borrow_expr`, `region_stmt`, and the `slice` and
@@ -2463,9 +2465,9 @@ ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5
   type, effect, or count moves. No liveness, outlives, exclusivity,
   storage-duration, provenance, effect, or confinement judgment changes, and
   the accepted-program set is unchanged up to respelling. The selection ground
-  the candidate states is minimality under [FORM-1] and the owner ruling of
-  record that one semantics has one spelling, with the rule decidable from the
-  owning declaration's own text at every position.
+  the specification states is minimality under [FORM-1] and the owner ruling
+  of record that one semantics has one spelling, with the rule decidable from
+  the owning declaration's own text at every position.
 - CONFORMANCE BOUNDARY: relative to `main` tip
   `30602914`, `tests/conformance` content changes as follows. Under
   `tests/conformance/cases/`, 8 files are added, 123 are modified, and 3 are
@@ -2513,3 +2515,4 @@ ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5
 
   No other case changes its expectation kind, cited rule, or runnable status,
   and coverage remains complete at 132/132 rules with [FORM-8] covered by case.
+ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761

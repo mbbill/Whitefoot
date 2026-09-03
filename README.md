@@ -57,13 +57,13 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.41 is the active language authority, SHA-256
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, carried by
-the stable [specification path](spec/kernel-spec.md). It respells the six
-integer comparisons as `== != < <= > >=`, delimits call-site type application
-with `::`, and parenthesizes a multiplied `use` relation; it supersedes v0.40,
-whose outgoing bytes are preserved byte-for-byte at
-[`spec/kernel-spec-v0.40.md`](spec/kernel-spec-v0.40.md). The merge-time record
+Kernel specification v0.42 is the active language authority, SHA-256
+`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`, carried by
+the stable [specification path](spec/kernel-spec.md). It adds [FORM-8], one
+canonical region spelling: a REGIONID is written exactly where the document
+does not otherwise fix the region denoted, and is absent everywhere else; it
+supersedes v0.41, whose outgoing bytes are preserved byte-for-byte at
+[`spec/kernel-spec-v0.41.md`](spec/kernel-spec-v0.41.md). The merge-time record
 for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.

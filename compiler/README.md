@@ -6,12 +6,13 @@ private implementation choices; the active language is defined by
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), not by the compiler source or
 this README.
 
-The frontend targets the exact v0.41 bytes at `../spec/kernel-spec.md`,
-SHA-256 `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
-v0.41 respells the six integer comparisons as symbols, delimits call-site type
-application with `::`, and supersedes v0.40 at
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.40.md`.
+The frontend targets the exact v0.42 bytes at `../spec/kernel-spec.md`,
+SHA-256 `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`.
+v0.42 adds [FORM-8]'s one canonical region spelling, so a REGIONID is written
+only where the surrounding text does not already fix the region, and
+supersedes v0.41 at
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.41.md`.
 `whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 
