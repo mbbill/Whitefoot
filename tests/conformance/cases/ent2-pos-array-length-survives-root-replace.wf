@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "[ENT-2] the implicit `len(P) = N` of an `array<T, N>` place holds at every program point. An element read feeding a branch condition puts a join on the path, and the SET-2 replace of the array's root binding then kills every relation supported by that place [ENT-5]. The length equality is a function of the place's type rather than a fact that had to survive, so closure still discharges the later subscript [ENT-4, OP-4]; the program observes the exchanged values and exits 0.";
+  let samples = array_new<u32, 4>(1_u32);
+  let before = samples[0_u64];
+  if ieq(before, 1_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let fresh = array_new<u32, 4>(9_u32);
+  let previous = replace samples = move fresh;
+  let after = samples[0_u64];
+  if ieq(after, 9_u32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let restored = previous[0_u64];
+  if ieq(restored, 1_u32) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

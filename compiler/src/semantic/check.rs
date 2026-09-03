@@ -2656,7 +2656,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// The enclosing `loop_stmt` or `for_stmt` of one loop-header invariant.
+    ///
+    /// A header invariant is always written inside its loop statement, so the
+    /// ancestor exists for every well-formed tree. The absent case keeps the
+    /// caller total and simply leaves the invariant at its own position.
+    fn enclosing_loop_node(&self, node: NodeId) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        let mut current = node;
+        loop {
+            let production = self.tree.production(current)?;
+            if production == Production::LoopStmt || production == Production::ForStmt {
+                return Ok(Some(current));
+            }
+            match self.tree.parent(current)? {
+                Some(parent) => current = parent,
+                None => return Ok(None),
+            }
+        }
+    }
+
     fn entailment_rejection(&self, function: &CheckedFunction) -> Result<(), CheckStop> {
+        /// One position in the causal order in which obligations are decided.
+        ///
+        /// `Child` is a syntax child ordinal, so a plain node path orders a
+        /// failure exactly where the walk reaches it. `AfterSubtree` is the
+        /// position immediately after everything one node encloses: it is
+        /// greater than every child ordinal under that node and still less
+        /// than the node's following siblings.
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        enum ProofPosition {
+            Child(u32),
+            AfterSubtree,
+        }
+
         enum Rejection<'outcome> {
             LoopInvariant(&'outcome super::entailment::LoopInvariantOutcome),
             SourceProof(&'outcome super::entailment::SourceProofOutcome),
@@ -2719,20 +2751,66 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .filter(|outcome| outcome.disposition != CallGoalDisposition::Discharged)
             .map(Rejection::Call);
-        let rejection = loop_invariant
+        // [DIAG-1] admits exactly one rule and one location, so the single
+        // reported failure is selected by the order in which the checker
+        // decides obligations, not by where they are written. Every judgment
+        // but one is decided where it stands. INV-1's backedge judgment is the
+        // exception: it is proved only after the whole loop body has been
+        // walked, and a body failure that demotes a value to a fresh full-range
+        // atom is exactly what breaks it. Positioning the backedge after the
+        // body it consumes therefore reports the cause rather than the effect,
+        // while INV-1's base judgment stays at the header where it is decided.
+        let position = |rejection: &Rejection<'_>| -> Result<Vec<ProofPosition>, CheckStop> {
+            let path = rejection.node_path();
+            if let Rejection::LoopInvariant(outcome) = rejection
+                && outcome.proof.base
+                && outcome.proof.step == Some(false)
+            {
+                let node = self
+                    .tree
+                    .node_with_path(path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if let Some(loop_node) = self.enclosing_loop_node(node)? {
+                    let mut components = self
+                        .tree
+                        .path(loop_node)?
+                        .components()
+                        .iter()
+                        .copied()
+                        .map(ProofPosition::Child)
+                        .collect::<Vec<_>>();
+                    components.push(ProofPosition::AfterSubtree);
+                    return Ok(components);
+                }
+            }
+            Ok(path
+                .components()
+                .iter()
+                .copied()
+                .map(ProofPosition::Child)
+                .collect())
+        };
+        let mut candidates = Vec::new();
+        for rejection in loop_invariant
             .chain(source_proof)
             .chain(obligation)
             .chain(call)
+        {
+            candidates.push((position(&rejection)?, rejection));
+        }
+        // `min_by` keeps the first of several equal minima, so the selection
+        // depends only on this order and on collection order, never on a hash.
+        let rejection = candidates
+            .into_iter()
             .min_by(|left, right| {
-                left.node_path()
-                    .components()
-                    .cmp(right.node_path().components())
-                    .then_with(|| {
-                        left.rule()
-                            .definition_rank()
-                            .cmp(&right.rule().definition_rank())
-                    })
-            });
+                left.0.cmp(&right.0).then_with(|| {
+                    left.1
+                        .rule()
+                        .definition_rank()
+                        .cmp(&right.1.rule().definition_rank())
+                })
+            })
+            .map(|(_, rejection)| rejection);
         if let Some(rejection) = rejection {
             return match rejection {
                 Rejection::LoopInvariant(outcome) => {

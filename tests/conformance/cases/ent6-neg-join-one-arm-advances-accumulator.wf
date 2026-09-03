@@ -1,0 +1,20 @@
+const values: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "One arm of the body join advances the accumulator and the other leaves it, so the two incoming value images are sum_h + wide and sum_h and share no nonconstant coefficient vector. [ENT-6] therefore gives sum one fresh full-type atom at the join, [ENT-5]'s all-predecessor intersection keeps no bound the guarded arm alone established, and [INV-1] cannot re-establish the header target over that atom. The rejection is mandatory even though the relation is true on every execution.";
+  let sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant sum_bound: ile(sum, 255_u32 * i)
+  ) {
+    let byte = values[i];
+    let wide = cvt<u8, u32>(byte);
+    let parity = iand(wide, 1_u32);
+    let is_odd = ieq(parity, 1_u32);
+    if is_odd {
+    } else {
+      set sum = sum + wide;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
