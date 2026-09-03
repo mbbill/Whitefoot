@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
@@ -421,6 +421,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// [STOR-5]'s region-bearing relation over a checked type: a type is
+    /// region-bearing when its complete type after generic substitution
+    /// contains `slice<'r, T>` or `arena<'r, T>` at any depth.
+    ///
+    /// The judgment is structural, so it holds for every region-bearing type
+    /// constructor rather than an enumerated list of spellings: a slice, an
+    /// arena instance, and any array, buffer, box, struct field, or enum
+    /// payload that reaches one. The `visited` set keeps the walk finite
+    /// because box content may close a nominal cycle [STOR-2].
+    pub(in crate::semantic::check) fn checked_type_is_region_bearing(
+        &self,
+        ty: CheckedType,
+    ) -> Result<bool, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited: HashSet<CheckedType> = HashSet::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match ty {
+                CheckedType::Slice { .. } => return Ok(true),
+                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                    pending.push(element.ty());
+                }
+                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Arena { .. } => return Ok(true),
+                    CheckedNominalKind::Box { referent } => pending.push(*referent),
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => {
+                        pending.extend(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields.iter())
+                                .map(|field| field.ty),
+                        );
+                    }
+                    CheckedNominalKind::ArenaStorage
+                    | CheckedNominalKind::SystemResource { .. } => {}
+                },
+                CheckedType::Unit
+                | CheckedType::Bool
+                | CheckedType::Integer(_)
+                | CheckedType::Float(_)
+                | CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_) => {}
+            }
+        }
+        Ok(false)
+    }
+
     fn type_node_is_region_bearing_with(
         &self,
         node: NodeId,
@@ -442,7 +495,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 class: DeclarationClass::GenericType,
             } = usage.target()
                 && let Some(ty) = substitution.type_argument(declaration)
-                && (matches!(ty, CheckedType::Slice { .. }) || self.arena_instance(ty)?.is_some())
+                && self.checked_type_is_region_bearing(ty)?
             {
                 return Ok(true);
             }

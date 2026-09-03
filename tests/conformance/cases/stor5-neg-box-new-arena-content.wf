@@ -1,0 +1,9 @@
+fn invalid['r](value: own arena<'r, u64>) -> function_result: own unit allocates(heap) {
+  doc "STOR-5 forbids region-bearing box content, and an arena descriptor bears a region exactly as a slice does. box_new derives its content type from its operand [STOR-2], so moving an arena<'r, u64> into it places a region-bearing type in box content and is rejected at that operand.";
+  box_new(move value);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

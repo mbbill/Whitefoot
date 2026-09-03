@@ -230,6 +230,23 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Stor5,
+        expected.clone(),
+    );
+    // `box_new` derives its content type from the operand [STOR-2], and an
+    // arena descriptor operand bears a region exactly as a slice operand
+    // does, so the derived judgment is STOR-5's relation over that type
+    // rather than a slice-shaped operand test.
+    assert_rule(
+        br#"fn invalid['r](value: own arena<'r, u64>) -> result: own unit allocates(heap) {
+  box_new(move value);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Stor5,
         expected,
     );
 }
