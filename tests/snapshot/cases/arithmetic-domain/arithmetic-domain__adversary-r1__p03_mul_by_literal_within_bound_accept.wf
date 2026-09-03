@@ -1,0 +1,17 @@
+fn scale(x: own u8) -> result: own u8 pure contract {
+  requires ile(x, 25_u8);
+} {
+  doc "Exact multiplication by a literal is discharged from the requires bound [OP-1].";
+  let y = x * 10_u8;
+  return y;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: requires ile(x,25) bounds x*10 within u8 (max 250).";
+  let v = scale(x: 25_u8);
+  if ieq(v, 250_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

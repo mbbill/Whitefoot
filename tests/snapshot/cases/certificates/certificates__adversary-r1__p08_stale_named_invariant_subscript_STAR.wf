@@ -1,0 +1,18 @@
+fn probe(table: own buffer<u8>, idx: own u64, limit: own u64) -> found: own u8 reads(table) contract {
+  define room = len(table);
+  requires ilt(idx, limit);
+  requires ile(limit, room);
+} {
+  doc "expect REJECT fact killed by write: idx is overwritten to 255 after in_range is proved for the old idx; if a later implicit reuse of in_range still discharges table[idx], idx=255 against a 4-byte table is an out-of-bounds read at runtime.";
+  let room = len(table);
+  invariant in_range: ilt(idx, room);
+  set idx = 255_u64;
+  let byte = table[idx];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(4_u64, 0_u8);
+  let found = probe(table: move table, idx: 1_u64, limit: 4_u64);
+  return exit_status(code: found);
+}

@@ -1,0 +1,23 @@
+fn find_first_zero(count: own u64) -> found: own u64 pure {
+  let result = count;
+  for @scan (i in 0_u64..count) {
+    let is_target = ieq(i, 0_u64);
+    if is_target {
+      set result = i;
+      break @scan;
+    }
+  }
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: labeled counted for with zero header invariants, label before the one-space paren [GRAM-4, FORM-2].";
+  let found = find_first_zero(count: 5_u64);
+  if ieq(found, 0_u64) {
+  } else {
+    let failed = exit_status(code: 1_u8);
+    return move failed;
+  }
+  let success = exit_status(code: 0_u8);
+  return move success;
+}

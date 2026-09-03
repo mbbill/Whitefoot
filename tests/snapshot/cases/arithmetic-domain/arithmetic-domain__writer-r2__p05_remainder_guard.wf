@@ -1,0 +1,24 @@
+fn safe_remainder(value: own i32, divisor: own i32) -> result: own i32 pure {
+  doc "expect ACCEPT: signed remainder by a runtime divisor is guarded by a branch on the exact .defined predicate [OP-2], which covers both the zero-divisor and MIN/-1 overflow cases.";
+  let is_defined = value %defined divisor;
+  if is_defined {
+    let remainder = value % divisor;
+    return remainder;
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = safe_remainder(value: 17_i32, divisor: 5_i32);
+  let second = safe_remainder(value: 17_i32, divisor: 0_i32);
+  if ieq(first, 2_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(second, 0_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

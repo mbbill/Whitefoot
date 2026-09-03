@@ -1,0 +1,18 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: an ordinary loop counts a cursor down from a fixed bound to zero and breaks once the guard detects the cursor has reached zero.";
+  let cursor = 6_u64;
+  let steps = 0_u32;
+  loop @countdown {
+    let done = ieq(cursor, 0_u64);
+    if done {
+      break @countdown;
+    }
+    set cursor = cursor -wrap 1_u64;
+    set steps = steps +wrap 1_u32;
+  }
+  if ieq(steps, 6_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

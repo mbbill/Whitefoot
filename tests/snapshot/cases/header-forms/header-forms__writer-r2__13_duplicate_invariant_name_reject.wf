@@ -1,0 +1,17 @@
+fn count_to(limit: own u64) -> reached: own u64 pure {
+  let cursor = 0_u64;
+  for (
+    i in 0_u64..limit,
+    invariant bound: ile(i, limit),
+    invariant bound: ile(cursor, limit)
+  ) {
+    set cursor = cursor + 1_u64;
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "REJECT: two header_invariant clauses in the same header reuse the name bound, violating header name distinctness [INV-1].";
+  let reached = count_to(limit: 4_u64);
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,17 @@
+fn magnitude(value: own i32) -> result: own i32 pure {
+  doc "ACCEPT: bounding value above i32::MIN discharges the sole iabs domain obligation, the is-int-min-poison edge.";
+  if igt(value, -2147483648_i32) {
+    let m = iabs(value);
+    return m;
+  }
+  return 2147483647_i32;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let m = magnitude(value: -17_i32);
+  if ieq(m, 17_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

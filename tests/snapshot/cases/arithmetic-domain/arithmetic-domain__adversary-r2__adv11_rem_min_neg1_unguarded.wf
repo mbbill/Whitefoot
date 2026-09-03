@@ -1,0 +1,20 @@
+fn remainder_neg1(n: own i32) -> result: own i32 pure {
+  doc "Expected REJECT [OP-2]: constant -1 divisor puts remainder in the same signed-overflow-obligation class as division [ENT-6]; an unbounded dividend leaves the residual conjunct unproved. Violating value n=-2147483648_i32 (i32::MIN) pairs with divisor -1 to hit the architectural overflow case.";
+  let r = n % -1_i32;
+  return r;
+}
+
+fn remainder_neg1_guarded(n: own i32) -> result: own i32 pure {
+  doc "Contrast: bounding n above i32::MIN, as in the existing op2-pos-division-minus-one-divisor-bounded.wf conformance case, discharges the same obligation for remainder.";
+  if igt(n, -2147483648_i32) {
+    let r = n % -1_i32;
+    return r;
+  }
+  return 0_i32;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = remainder_neg1(n: -2147483648_i32);
+  let safe_result = remainder_neg1_guarded(n: -100_i32);
+  return exit_status(code: 0_u8);
+}

@@ -54,7 +54,7 @@ SAMPLING_SKIPS := $(patsubst %,--skip %,$(SAMPLING_MODULES))
 # one by one so a job runs exactly the ones it means to; `test-partition`
 # checks this list against the directory, so a new `tests/*.rs` cannot fall out
 # of the gate by being no one's business.
-INTEGRATION_TARGETS := canonical_corpus conformance programs
+INTEGRATION_TARGETS := canonical_corpus conformance programs snapshot
 
 # The stages `check` runs, in order, and the same targets the CI jobs run.
 COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpus \

@@ -1,0 +1,64 @@
+fn sum_all['r](data: &'r buffer<u8>, chunk_size: own u64) -> total: own u32 reads(data) contract {
+  requires igt(chunk_size, 0_u64);
+} {
+  let length = len(deref(data));
+  let sum = 0_u32;
+  let cursor = 0_u64;
+  loop (
+    invariant walked: ile(cursor, length)
+  ) {
+    let has_more = ilt(cursor, length);
+    if has_more {
+      let byte = deref(data)[cursor];
+      let wide = cvt<u8, u32>(byte);
+      set sum = sum +wrap wide;
+      set cursor = cursor +wrap 1_u64;
+    } else {
+      break;
+    }
+  }
+  return sum;
+}
+
+fn chunk_count(length: own u64, chunk_size: own u64) -> count: own u64 pure contract {
+  requires igt(chunk_size, 0_u64);
+} {
+  if ieq(length, 0_u64) {
+    return 0_u64;
+  }
+  let whole = length / chunk_size;
+  let remainder = length % chunk_size;
+  if ieq(remainder, 0_u64) {
+    return whole;
+  }
+  if whole +defined 1_u64 {
+    let with_tail = whole + 1_u64;
+    return with_tail;
+  }
+  return whole;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: sum_all walks cursor with an ordinary loop invariant (cursor <= length), so each subscript is discharged by the has_more branch; chunk_count is a pure division/remainder computation with no subscript at all.";
+  let data = buffer_new(7_u64, 0_u8);
+  set data[0_u64] = 1_u8;
+  set data[1_u64] = 2_u8;
+  set data[2_u64] = 3_u8;
+  set data[3_u64] = 4_u8;
+  set data[4_u64] = 5_u8;
+  set data[5_u64] = 6_u8;
+  set data[6_u64] = 7_u8;
+  region 'r {
+    let total = sum_all<'r>(data: &'r data, chunk_size: 3_u64);
+    if ieq(total, 28_u32) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let chunks = chunk_count(length: 7_u64, chunk_size: 3_u64);
+  if ieq(chunks, 3_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

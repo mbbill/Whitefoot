@@ -1,0 +1,27 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT for nested labeled loops, but nothing bounds inner_count, so the checked increment leaves the domain obligation inner_count +defined 1_u64 unproved.";
+  let outer_count = 0_u64;
+  let inner_count = 0_u64;
+  loop @outer {
+    if ige(outer_count, 3_u64) {
+      break @outer;
+    }
+    set outer_count = outer_count + 1_u64;
+    loop @inner {
+      set inner_count = inner_count + 1_u64;
+      if ieq(outer_count, 2_u64) {
+        break @outer;
+      }
+      break @inner;
+    }
+  }
+  if ieq(outer_count, 2_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(inner_count, 2_u64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

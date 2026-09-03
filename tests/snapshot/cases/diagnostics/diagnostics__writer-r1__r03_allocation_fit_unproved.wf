@@ -1,0 +1,15 @@
+fn make_bounded(n: own u64) -> value: own buffer<i32> allocates(heap) contract {
+  requires ile(n, 1024_u64);
+} {
+  doc "1024 is far below the buffer_fits<i32> ceiling, so AUTO derives the obligation directly.";
+  return buffer_new(n, 0_i32);
+}
+
+fn make(n: own u64) -> value: own buffer<i32> allocates(heap) {
+  doc "expect REJECT: [OP-9] n is fully unconstrained, so buffer_fits<i32>(n) is never established";
+  return buffer_new(n, 0_i32);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

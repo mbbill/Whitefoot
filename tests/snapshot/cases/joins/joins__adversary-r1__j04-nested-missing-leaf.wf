@@ -1,0 +1,41 @@
+enum Combo {
+  BothTrue();
+  FirstTrue();
+  SecondTrue();
+  BothFalse();
+}
+
+fn get(b: own buffer<u8>, i: own u64, combo: own Combo) -> result: own u8 reads(b) {
+  doc "expect REJECT: three of the four match leaves check ilt(i, room), but BothFalse() falls through unchecked, so b[i] must not discharge for i = room = len(b) taking BothFalse().";
+  let room = len(b);
+  match combo {
+    BothTrue() => {
+      let inside_a = ilt(i, room);
+      if inside_a {
+      } else {
+        return 0_u8;
+      }
+    }
+    FirstTrue() => {
+      let inside_b = ilt(i, room);
+      if inside_b {
+      } else {
+        return 0_u8;
+      }
+    }
+    SecondTrue() => {
+      let inside_c = ilt(i, room);
+      if inside_c {
+      } else {
+        return 0_u8;
+      }
+    }
+    BothFalse() => {
+    }
+  }
+  return b[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

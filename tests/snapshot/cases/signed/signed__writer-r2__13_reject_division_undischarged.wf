@@ -1,0 +1,9 @@
+fn quotient_of(n: own i32, d: own i32) -> q: own i32 pure {
+  doc "REJECT: exact division on i32 with no dominating fact excludes MIN(i32)/-1 or zero divisor; /defined obligation is unproved.";
+  return n / d;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = quotient_of(n: -2147483648_i32, d: -1_i32);
+  return exit_status(code: 0_u8);
+}

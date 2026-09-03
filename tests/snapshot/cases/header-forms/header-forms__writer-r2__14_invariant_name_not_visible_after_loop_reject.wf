@@ -1,0 +1,19 @@
+fn touch_count(count: own u64) -> total: own u64 pure {
+  let total = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant bound: ile(total, i)
+  ) {
+    set total = total + 1_u64;
+  }
+  invariant escaped: ile(total, count) {
+    use bound;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "REJECT: the header invariant name never escapes the loop body, so a proof_use after the loop cannot resolve bound [INV-1].";
+  let total = touch_count(count: 6_u64);
+  return exit_status(code: 0_u8);
+}

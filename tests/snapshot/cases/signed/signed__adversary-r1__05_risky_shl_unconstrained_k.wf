@@ -1,0 +1,8 @@
+fn risky_shl(x: own i32, k: own u32) -> result: own i32 pure {
+  doc "EXPECT REJECT [OP-2]: k is unconstrained u32, so k=32 violates ishl.defined(x,k) iff k<32 for i32.";
+  return ishl(x, k);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

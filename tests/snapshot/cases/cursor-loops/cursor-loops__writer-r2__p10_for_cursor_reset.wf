@@ -1,0 +1,25 @@
+fn last_slot(capacity: own u64, attempts: own u64) -> slot: own u64 pure {
+  doc "ACCEPT: a counted for cursor walks the write count while a separate ring slot resets to zero inside the body.";
+  let slot = 0_u64;
+  for (i in 0_u64..attempts) {
+    let at_end = ige(slot, capacity);
+    if at_end {
+      set slot = 0_u64;
+    }
+    let room = ilt(slot, capacity);
+    if room {
+      set slot = slot + 1_u64;
+    }
+  }
+  return slot;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let slot = last_slot(capacity: 3_u64, attempts: 7_u64);
+  let correct = ieq(slot, 1_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,56 @@
+fn bsearch(table: own buffer<u32>, room: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
+  define length = len(table);
+  requires ieq(room, length);
+  requires ile(lo, hi);
+  requires ile(hi, room);
+} {
+  doc "ACCEPT: recursive binary search; the midpoint is proved strictly inside lo..hi from the division image, so the subscript needs no local certificate and each recursive step re-establishes the contract.";
+  let has_more = ilt(lo, hi);
+  if has_more {
+  } else {
+    return None<u64>();
+  }
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: ile(mid + 1_u64, hi) {
+    use ilt(lo, hi);
+    use ile(2_u64 * half, span);
+  }
+  let candidate = table[mid];
+  if ieq(candidate, target) {
+    return Some<u64>(value: mid);
+  }
+  if ilt(candidate, target) {
+    let next_lo = mid + 1_u64;
+    return bsearch(table: move table, room: room, target: target, lo: next_lo, hi: hi);
+  } else {
+    return bsearch(table: move table, room: room, target: target, lo: lo, hi: mid);
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(8_u64, 0_u32);
+  set table[0_u64] = 2_u32;
+  set table[1_u64] = 4_u32;
+  set table[2_u64] = 6_u32;
+  set table[3_u64] = 8_u32;
+  set table[4_u64] = 10_u32;
+  set table[5_u64] = 12_u32;
+  set table[6_u64] = 14_u32;
+  set table[7_u64] = 16_u32;
+  let room = len(table);
+  let found = bsearch(table: move table, room: room, target: 10_u32, lo: 0_u64, hi: room);
+  match found {
+    Some(value: index) => {
+      if ieq(index, 4_u64) {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+}

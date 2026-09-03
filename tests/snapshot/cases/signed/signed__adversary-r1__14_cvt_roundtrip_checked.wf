@@ -1,0 +1,16 @@
+fn roundtrip(x: own i8) -> result: own i32 pure {
+  doc "EXPECT ACCEPT: i8->i32 is TOTAL (widen, same signedness), and the i32->i8 narrow uses the Result form via cvt.checked pattern (match), so both directions are well typed.";
+  let widened = cvt<i8, i32>(x);
+  match cvt<i32, i8>(widened) {
+    Ok(value: v) => {
+      return cvt<i8, i32>(v);
+    }
+    Err(error: e) => {
+      return 0_i32;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

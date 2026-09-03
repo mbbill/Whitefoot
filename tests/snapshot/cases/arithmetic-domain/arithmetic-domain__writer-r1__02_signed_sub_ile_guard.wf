@@ -1,0 +1,20 @@
+fn signed_gap(high: own i32, low: own i32) -> result: own i32 pure contract {
+  requires ile(high, 1000_i32);
+  requires ige(low, -1000_i32);
+} {
+  doc "ACCEPT: requires bounds both operands to a narrow range, so an ile-guarded subtraction cannot overflow i32.";
+  if ile(low, high) {
+    let gap = high - low;
+    return gap;
+  }
+  return 0_i32;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let gap = signed_gap(high: 5_i32, low: -3_i32);
+  if ieq(gap, 8_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

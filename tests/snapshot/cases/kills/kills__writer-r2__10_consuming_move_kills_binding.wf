@@ -1,0 +1,26 @@
+struct Counts {
+  lines: u64;
+  bytes: u64;
+}
+
+fn totals_report(c: own Counts) -> result: own u64 reads(c.lines, c.bytes) {
+  return c.lines +wrap c.bytes;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: ACCEPT -- a consuming move kills every fact rooted at the old binding [ENT-5](c); the program never reuses the moved-from place.";
+  let running = Counts(lines: 3_u64, bytes: 7_u64);
+  let before_lines = running.lines;
+  let before_ok = ieq(before_lines, 3_u64);
+  if before_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let report = totals_report(c: move running);
+  let correct = ieq(report, 10_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

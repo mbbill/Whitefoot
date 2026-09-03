@@ -1,0 +1,16 @@
+fn clamp_hint_ok(x: own u8, cap: own u8) -> value: own u8 pure contract {
+  requires ile(x, cap);
+} {
+  invariant within_cap: ile(x, cap);
+  return x;
+}
+
+fn clamp_hint(x: own u8, cap: own u8) -> value: own u8 pure {
+  doc "expect REJECT: [PRF-1] the local invariant target is not established by anything in scope and carries no use block";
+  invariant within_cap: ile(x, cap);
+  return x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,19 @@
+fn window_one_past(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
+  define room = len(buf);
+  requires ilt(start, end);
+  requires ile(end, room);
+} {
+  doc "expect REJECT (OP-4): only end <= room is proven, but the code reads buf[end], one past the proven window's last valid index end - 1";
+  let value = buf[end];
+  return value;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(8_u64, 5_u8);
+  let value = window_one_past(buf: move buf, start: 2_u64, end: 8_u64);
+  if ieq(value, 5_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

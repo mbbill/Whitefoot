@@ -1,0 +1,32 @@
+fn shift_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64) -> moved: own u64 reads(input), writes(input) {
+  doc "expect ACCEPT: moved <= source_index throughout, so the compaction write index never runs ahead of the read index it copies from";
+  let room = len(deref(input));
+  let available_fits = ile(available, room);
+  let scan_fits = ile(scan, available);
+  let moved = 0_u64;
+  if available_fits {
+    if scan_fits {
+      for (
+        source_index in scan..available,
+        invariant destination_precedes_source: ile(moved, source_index)
+      ) {
+        let byte = deref(input)[source_index];
+        set deref(input)[moved] = byte;
+        set moved = moved + 1_u64;
+      }
+    }
+  }
+  return moved;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(16_u64, 5_u8);
+  region 'r {
+    let moved = shift_tail<'r>(input: &uniq 'r buf, available: 16_u64, scan: 6_u64);
+    if ieq(moved, 10_u64) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

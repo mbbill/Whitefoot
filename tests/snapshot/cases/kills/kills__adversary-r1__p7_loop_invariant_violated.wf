@@ -1,0 +1,25 @@
+fn count_by_two(limit: own u64) -> reached: own u64 pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let remaining = ilt(cursor, limit);
+    if remaining {
+      set cursor = cursor +wrap 2_u64;
+    } else {
+      break;
+    }
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expect: REJECT (INV/loop invariant rule) - stated invariant ile(cursor,limit) is false after the step 4 -> 6 with limit=5_u64";
+  let reached = count_by_two(limit: 5_u64);
+  let correct = ieq(reached, 6_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

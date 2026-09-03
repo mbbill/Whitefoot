@@ -1,0 +1,17 @@
+fn read_slot(values: own array<u8, 8>, index: own u64) -> output: own u8 pure contract {
+  define capacity = len(values);
+  requires ilt(index, capacity);
+} {
+  return values[index];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: define capacity = len(values) is a fixed-size array<u8, 8> constant length; the literal index 7 satisfies requires ilt(7, 8) statically with no runtime dependence on the array contents.";
+  let values = array_new<u8, 8>(5_u8);
+  let output = read_slot(values: move values, index: 7_u64);
+  if ieq(output, 5_u8) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

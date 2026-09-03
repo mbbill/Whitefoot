@@ -1,0 +1,24 @@
+const packet: array<u8, 6> =[200_u8, 101_u8, 50_u8, 221_u8, 30_u8, 11_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: conditional accumulation with the explicit .wrap spelling needs no bound proof, since modular checksum semantics are the intended meaning here.";
+  let sum = 0_u32;
+  for (i in 0_u64..6_u64) {
+    let byte = packet[i];
+    let wide = cvt<u8, u32>(byte);
+    let parity = iand(wide, 1_u32);
+    let is_odd = ieq(parity, 1_u32);
+    if is_odd {
+      let doubled = ishl.wrap(wide, 1_u32);
+      set sum = sum +wrap doubled;
+    } else {
+      set sum = sum +wrap wide;
+    }
+  }
+  let folded = iand(sum, 65535_u32);
+  if ieq(folded, 946_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,25 @@
+fn wrap_lookup(table: own array<u16, 10>, pos: own u64) -> result: own u16 pure contract {
+  requires ilt(pos, 10_u64);
+} {
+  doc "expect ACCEPT: set pos = pos +wrap 1 kills the requires-proved bound, so a fresh branch must re-establish the wrapped index's own bound before the second index.";
+  let first = table[pos];
+  let advanced = pos +wrap 1_u64;
+  set pos = advanced;
+  let in_range = ilt(pos, 10_u64);
+  let second = if in_range {
+    give table[pos];
+  } else {
+    give 0_u16;
+  }
+  return first +wrap second;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let table = array_new<u16, 10>(3_u16);
+  let value = wrap_lookup(table: move table, pos: 9_u64);
+  if ieq(value, 3_u16) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

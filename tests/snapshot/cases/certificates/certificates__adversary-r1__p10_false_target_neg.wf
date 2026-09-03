@@ -1,0 +1,16 @@
+fn tight(x: own u8, middle: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  doc "expect REJECT PRF-1: target ile(x, 253) is actually false when x == middle == 254; only x <= 254 holds.";
+  invariant upper_bound: ile(x, 253_u8) {
+    use ile(x, middle);
+    use ile(middle, 254_u8);
+  }
+  return x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = tight(x: 254_u8, middle: 254_u8);
+  return exit_status(code: result);
+}

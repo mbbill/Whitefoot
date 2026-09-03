@@ -1,0 +1,18 @@
+fn chained_index_reproved(table: own buffer<u8>, a: own u64, b: own u64, c: own u64) -> value: own u8 reads(table) contract {
+  define room = len(table);
+  requires ile(a, b);
+  requires ile(b, c);
+  requires ilt(c, room);
+} {
+  doc "expect ACCEPT: set b = 900_u64 kills the old chain, but a fresh invariant reproves ilt(a, len(table)) directly from a's own requires, so the index is sound regardless of b.";
+  let room2 = len(table);
+  invariant a_bound: ilt(a, room2);
+  set b = 900_u64;
+  return table[a];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(100_u64, 1_u8);
+  let value = chained_index_reproved(table: move table, a: 50_u64, b: 60_u64, c: 99_u64);
+  return exit_status(code: value);
+}

@@ -1,0 +1,43 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: cursor resets to 0 once when a marker is seen, then continues within bounds";
+  let data = array_new<u8, 5>(0_u8);
+  set data[0_u64] = 1_u8;
+  set data[1_u64] = 9_u8;
+  set data[2_u64] = 3_u8;
+  set data[3_u64] = 4_u8;
+  set data[4_u64] = 5_u8;
+  let cursor = 0_u64;
+  let resets_left = 1_u64;
+  let steps = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, 5_u64),
+    invariant steps_bounded: ile(steps, 20_u64)
+  ) {
+    let steps_ok = ilt(steps, 20_u64);
+    let in_range = ilt(cursor, 5_u64);
+    let go = band(steps_ok, in_range);
+    if go {
+      let byte = data[cursor];
+      let is_marker = ieq(byte, 9_u8);
+      let can_reset = igt(resets_left, 0_u64);
+      let should_reset = band(is_marker, can_reset);
+      if should_reset {
+        set resets_left = 0_u64;
+        set cursor = 0_u64;
+      } else {
+        invariant advancing: ilt(cursor, 5_u64);
+        set cursor = cursor + 1_u64;
+      }
+      invariant steps_adv: ilt(steps, 20_u64);
+      set steps = steps + 1_u64;
+    } else {
+      break;
+    }
+  }
+  let correct = ieq(steps, 6_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

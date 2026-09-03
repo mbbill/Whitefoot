@@ -1,0 +1,13 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: ACCEPT -- len(arr) = 4 is an implicit fact of arr's array type and holds at every program point; 0_u64 < len(arr) must discharge after the replace.";
+  let arr = array_new<u32, 4>(1_u32);
+  let before = arr[0_u64];
+  let ok = ieq(before, 1_u32);
+  if ok {
+    return exit_status(code: 1_u8);
+  }
+  let fresh = array_new<u32, 4>(9_u32);
+  let old = replace arr = move fresh;
+  let after = arr[0_u64];
+  return exit_status(code: 0_u8);
+}

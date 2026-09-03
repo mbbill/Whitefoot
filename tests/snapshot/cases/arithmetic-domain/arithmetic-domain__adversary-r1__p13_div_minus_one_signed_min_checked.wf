@@ -1,0 +1,23 @@
+fn probe() -> result: own u8 pure {
+  doc "Division by -1 at the signed minimum overflows and is excluded from the exact/defined domains but caught by /checked [OP-2].";
+  let n = -2147483648_i32;
+  let d = -1_i32;
+  match n /checked d {
+    Ok(value: v) => {
+      return 1_u8;
+    }
+    Err(error: e) => {
+      return 0_u8;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: /checked on i32::MIN/-1 must yield Err(DivOverflow).";
+  let v = probe();
+  if ieq(v, 0_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

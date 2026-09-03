@@ -1,0 +1,33 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- count_a and count_b are produced by two independent scan loops over two different buffers, each individually bounded by its own trip count; the checked sum after both loops is provably at most 7.";
+  let first = buffer_new(4_u64, 1_u8);
+  let second = buffer_new(3_u64, 1_u8);
+  let count_a = 0_u64;
+  for (
+    i in 0_u64..4_u64,
+    invariant bound_a: ile(count_a, i)
+  ) {
+    let byte = first[i];
+    let matches = ieq(byte, 1_u8);
+    if matches {
+      set count_a = count_a + 1_u64;
+    }
+  }
+  let count_b = 0_u64;
+  for (
+    j in 0_u64..3_u64,
+    invariant bound_b: ile(count_b, j)
+  ) {
+    let byte = second[j];
+    let matches = ieq(byte, 1_u8);
+    if matches {
+      set count_b = count_b + 1_u64;
+    }
+  }
+  let total = count_a + count_b;
+  if ieq(total, 7_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

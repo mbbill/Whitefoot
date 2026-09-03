@@ -1,0 +1,18 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected ACCEPT: per-byte bound sum over a small buffer, proved by header invariant sum <= 255*i.";
+  let data = buffer_new(8_u64, 3_u8);
+  let sum = 0_u64;
+  for (
+    i in 0_u64..8_u64,
+    invariant per_byte: ile(sum, 255_u64 * i)
+  ) {
+    let byte = data[i];
+    let wide = cvt<u8, u64>(byte);
+    set sum = sum + wide;
+  }
+  if ieq(sum, 24_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

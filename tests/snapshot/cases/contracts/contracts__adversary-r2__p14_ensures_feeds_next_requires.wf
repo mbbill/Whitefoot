@@ -1,0 +1,41 @@
+fn clamp_index(raw: own u64, limit: own u64) -> safe: own u64 pure contract {
+  requires igt(limit, 0_u64);
+  ensures ilt(safe, limit);
+} {
+  let inside = ilt(raw, limit);
+  if inside {
+    return raw;
+  } else {
+    return 0_u64;
+  }
+}
+
+fn get_bounded(b: own buffer<u8>, i: own u64) -> value: own u8 reads(b) contract {
+  define room = len(b);
+  requires ilt(i, room);
+} {
+  return b[i];
+}
+
+fn safe_read(b: own buffer<u8>, raw: own u64) -> value: own u8 reads(b) {
+  let room = len(b);
+  let nonempty = igt(room, 0_u64);
+  if nonempty {
+    let safe = clamp_index(raw: raw, limit: room);
+    let value = get_bounded(b: move b, i: safe);
+    return value;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "EXPECT ACCEPT: after the nonempty branch guards limit > 0, clamp_index's ensures ilt(safe, limit) with limit bound to room is consumed directly as the callee requires ilt(i, room) of get_bounded, so raw = 99 against a 4-byte buffer clamps to 0 and reads in-bounds.";
+  let buf = buffer_new(4_u64, 6_u8);
+  let value = safe_read(b: move buf, raw: 99_u64);
+  if ieq(value, 6_u8) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

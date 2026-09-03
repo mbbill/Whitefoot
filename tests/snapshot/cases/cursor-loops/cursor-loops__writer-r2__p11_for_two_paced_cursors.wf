@@ -1,0 +1,34 @@
+fn double_step_sum(source: own buffer<u64>) -> total: own u64 reads(source) {
+  doc "ACCEPT: inside a counted for, a second read cursor advances at twice the loop's pace, guarded by its own length before each use.";
+  let length = len(source);
+  let fast = 0_u64;
+  let total = 0_u64;
+  for (i in 0_u64..length) {
+    let room = ilt(fast, length);
+    if room {
+      let value = source[fast];
+      set total = total +wrap value;
+      set fast = fast +wrap 2_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let source = buffer_new(6_u64, 0_u64);
+  set source[0_u64] = 1_u64;
+  set source[1_u64] = 2_u64;
+  set source[2_u64] = 3_u64;
+  set source[3_u64] = 4_u64;
+  set source[4_u64] = 5_u64;
+  set source[5_u64] = 6_u64;
+  let total = double_step_sum(source: move source);
+  let correct = ieq(total, 9_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

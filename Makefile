@@ -1,7 +1,8 @@
 # Whitefoot's canonical all-tests entry point: compiler checks and tests, the
-# complete native conformance adapter, conformance structure and coverage, and
-# specification/archive identity. The adapter prints its current tally rather
-# than baking a count into this file.
+# complete native conformance adapter, conformance structure and coverage,
+# specification/archive identity, and the recorded-verdict snapshot corpus.
+# The adapter prints its current tally rather than baking a count into this
+# file.
 
 PY := python3 -B
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
@@ -13,7 +14,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # beside them: what a job checks is what this list says it checks.
 CHECK_STAGES := repository-invariants approval-history-integrity spec-append-only \
 	spec-archive-integrity spec-digest-sync conformance compiler research-tests \
-	conformance-run
+	conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -310,9 +311,18 @@ research-tests:
 conformance-run:
 	$(NO_CORE_DUMPS) cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
 
+# Recompile every program in `tests/snapshot` and compare the accept/reject
+# verdict each row records. Compile only: no link, no execution. The corpus is
+# a snapshot of this compiler and carries no specification authority, which is
+# why it is a stage of its own rather than part of `conformance-run`; see
+# `tests/snapshot/README.md`. `--profile gate` for the same reason that target
+# gives: this is compute-bound front-end analysis over hundreds of programs.
+snapshot-run:
+	cd compiler && cargo test --profile gate --test snapshot --locked --offline -- --ignored --nocapture
+
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check repository-invariants approval-history-integrity spec-append-only spec-append-only-staged spec-archive-integrity spec-candidate-integrity spec-digest-sync conformance compiler research-tests conformance-run install-hooks
+.PHONY: check repository-invariants approval-history-integrity spec-append-only spec-append-only-staged spec-archive-integrity spec-candidate-integrity spec-digest-sync conformance compiler research-tests conformance-run snapshot-run install-hooks

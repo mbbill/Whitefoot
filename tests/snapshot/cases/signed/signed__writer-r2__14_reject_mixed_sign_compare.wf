@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "REJECT: ilt requires a common exact type (OP-1); comparing i32 against u32 with no cvt is a TYPE-5 mismatch.";
+  let signed_value = -1_i32;
+  let unsigned_value = 1_u32;
+  let below = ilt(signed_value, unsigned_value);
+  if below {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

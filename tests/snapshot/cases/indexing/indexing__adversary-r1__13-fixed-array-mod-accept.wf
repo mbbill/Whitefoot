@@ -1,0 +1,17 @@
+fn table_lookup(table: own array<u8, 6>, key: own u64) -> value: own u8 pure {
+  doc "expect ACCEPT: indexing a fixed-size array<u8, 6> with a runtime key % 6 is always in [0, 6), regardless of key's value";
+  let slot = key % 6_u64;
+  invariant slot_in_range: ilt(slot, 6_u64);
+  let value = table[slot];
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let table = array_new<u8, 6>(11_u8);
+  let value = table_lookup(table: move table, key: 4000000000_u64);
+  if ieq(value, 11_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

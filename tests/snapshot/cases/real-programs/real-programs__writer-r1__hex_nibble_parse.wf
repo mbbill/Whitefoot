@@ -1,0 +1,59 @@
+fn nibble_value(digit: own u8) -> result: own u8 pure {
+  let is_decimal = ile(digit, 57_u8);
+  let value = if is_decimal {
+    give digit -wrap 48_u8;
+  } else {
+    let is_lower = ige(digit, 97_u8);
+    let offset = if is_lower {
+      give digit -wrap 97_u8;
+    } else {
+      give digit -wrap 65_u8;
+    }
+    give offset +wrap 10_u8;
+  }
+  return value;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- parses hex ASCII digit pairs back into bytes using an executed decimal/letter dominating branch";
+  let input = buffer_new(4_u64, 0_u8);
+  set input[0_u64] = 48_u8;
+  set input[1_u64] = 97_u8;
+  set input[2_u64] = 102_u8;
+  set input[3_u64] = 102_u8;
+  let input_length = len(input);
+  let output = buffer_new(2_u64, 0_u8);
+  let output_room = len(output);
+  let pair = 0_u64;
+  let out_index = 0_u64;
+  loop @pairs {
+    if ige(pair, input_length) {
+      break @pairs;
+    }
+    let low_index = pair +wrap 1_u64;
+    let high_ok = ilt(pair, input_length);
+    let low_ok = ilt(low_index, input_length);
+    let out_ok = ilt(out_index, output_room);
+    let indices_ok = band(high_ok, low_ok);
+    if band(indices_ok, out_ok) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let high_digit = input[pair];
+    let low_digit = input[low_index];
+    let high_value = nibble_value(digit: high_digit);
+    let low_value = nibble_value(digit: low_digit);
+    let shifted = high_value *wrap 16_u8;
+    let byte = shifted +wrap low_value;
+    set output[out_index] = byte;
+    set pair = pair +wrap 2_u64;
+    set out_index = out_index +wrap 1_u64;
+  }
+  let first_ok = ieq(output[0_u64], 10_u8);
+  let second_ok = ieq(output[1_u64], 255_u8);
+  if band(first_ok, second_ok) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

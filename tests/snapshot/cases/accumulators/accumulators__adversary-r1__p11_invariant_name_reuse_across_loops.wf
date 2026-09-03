@@ -1,0 +1,23 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: ACCEPT -- the same invariant name 'bound' is reused in two sequential, lexically disjoint for-loops over different accumulators; TYPE-6/scope rules permit reuse once the first loop's invariant scope has expired, and both bounds are independently coefficient-one provable.";
+  let count_a = 0_u64;
+  for (
+    i in 0_u64..5_u64,
+    invariant bound: ile(count_a, i)
+  ) {
+    set count_a = count_a + 1_u64;
+  }
+  let count_b = 0_u64;
+  for (
+    j in 0_u64..5_u64,
+    invariant bound: ile(count_b, j)
+  ) {
+    set count_b = count_b + 1_u64;
+  }
+  let total = count_a + count_b;
+  if ieq(total, 10_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

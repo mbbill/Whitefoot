@@ -1,0 +1,14 @@
+fn forward(x: own u64, limit: own u64) -> result: own unit pure contract {
+  requires ile(x, limit);
+} {
+  doc "expect REJECT: invariant early_use names step_later before it is declared; the name is not yet in scope.";
+  invariant early_use: ile(x, limit) {
+    use step_later;
+  }
+  invariant step_later: ile(x, limit);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

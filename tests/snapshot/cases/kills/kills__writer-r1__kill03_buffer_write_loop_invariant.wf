@@ -1,0 +1,30 @@
+fn fill_running_sum['a](out: &uniq 'a buffer<u64>, count: own u64) -> result: own unit reads(out), writes(out) {
+  doc "expect ACCEPT: every iteration writes deref(out)[i], killing that element's prior fact, but the header invariant is proved fresh against the current header batch each time, per P8.";
+  let capacity = len(deref(out));
+  let room = ilt(count, capacity);
+  if room {
+  } else {
+    return unit;
+  }
+  let running = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant in_bounds: ilt(i, capacity)
+  ) {
+    set running = running +wrap i;
+    set deref(out)[i] = running;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let scratch = buffer_new(6_u64, 0_u64);
+  region 'w {
+    let done = fill_running_sum<'w>(out: &uniq 'w scratch, count: 5_u64);
+  }
+  if ieq(scratch[4_u64], 10_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

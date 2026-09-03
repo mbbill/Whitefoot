@@ -1,0 +1,37 @@
+enum Mode {
+  Zero();
+  Plus1();
+  Plus2();
+}
+
+fn fetch(b: own buffer<u8>, i: own u64, mode: own Mode) -> result: own u8 reads(b) {
+  doc "expected ACCEPT: match used as a plain statement (not a value_match) has three arms each proving ilt(i, room) from a different derivation; the ordinary ENT-5 fact-state join at the match_stmt continuation, not a value delivery, carries the bound to the shared trailing subscript.";
+  let room = len(b);
+  match mode {
+    Zero() => {
+      let inside = ilt(i, room);
+      if inside {
+      } else {
+        return 0_u8;
+      }
+    }
+    Plus1() => {
+      let far1 = ige(i, room);
+      if far1 {
+        return 0_u8;
+      }
+    }
+    Plus2() => {
+      let below = ilt(i, room);
+      if below {
+      } else {
+        return 0_u8;
+      }
+    }
+  }
+  return b[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,29 @@
+fn get_bounded['r](b: &'r buffer<u8>, i: own u64) -> value: own u8 reads(b) contract {
+  define room = len(deref(b));
+  requires ilt(i, room);
+} {
+  return deref(b)[i];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "EXPECT ACCEPT: inside the for loop the header invariant ile(i, n) with the loop guard i < n proves each call's requires ilt(i, room) where room == n, so get_bounded never needs a per-call written certificate.";
+  let buf = buffer_new(5_u64, 3_u8);
+  let n = len(buf);
+  let acc = 0_u64;
+  region 'r {
+    let p = &'r buf;
+    for (
+      i in 0_u64..n,
+      invariant bounded: ile(i, n)
+    ) {
+      let byte = get_bounded<'r>(b: p, i: i);
+      let widened = cvt<u8, u64>(byte);
+      set acc = acc +wrap widened;
+    }
+  }
+  if ieq(acc, 15_u64) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

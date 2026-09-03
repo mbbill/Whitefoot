@@ -1,0 +1,16 @@
+fn overwrite_then_add(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8) -> result: own u8 pure contract {
+  requires ile(a, a_limit);
+  requires ile(b, b_limit);
+  requires ile(a_limit, 100_u8);
+  requires ile(b_limit, 100_u8);
+} {
+  doc "expect REJECT OP-2: set overwrites a, so the pre-write invariant no longer covers the arithmetic after it.";
+  invariant sum_bound: ile(a + b, a_limit + b_limit);
+  set a = 250_u8;
+  let result = a + b;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

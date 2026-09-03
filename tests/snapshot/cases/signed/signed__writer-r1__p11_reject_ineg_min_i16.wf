@@ -1,0 +1,19 @@
+fn negate_min(x: own i16) -> result: own i16 pure {
+  doc "REJECT: exact ineg excludes MIN(T) [OP-1]; x is an unconstrained i16 parameter with no dominating branch above i16::MIN, so ineg.defined(x) cannot be discharged.";
+  return ineg(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let sample = -32768_i16;
+  let is_extreme = ieq(sample, -32768_i16);
+  if is_extreme {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let a = negate_min(x: sample);
+  if ieq(a, -32768_i16) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

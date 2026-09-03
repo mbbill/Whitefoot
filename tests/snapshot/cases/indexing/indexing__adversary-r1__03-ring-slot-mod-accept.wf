@@ -1,0 +1,21 @@
+fn ring_slot(buf: own buffer<u8>, head: own u64, used: own u64) -> value: own u8 reads(buf) contract {
+  define capacity = len(buf);
+  requires igt(capacity, 0_u64);
+} {
+  doc "expect ACCEPT: ring-buffer slot = (head + used) % capacity is always < capacity by the definition of % for a positive divisor";
+  let capacity = len(buf);
+  let raw = head +wrap used;
+  let slot = raw % capacity;
+  let value = buf[slot];
+  return value;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(4_u64, 9_u8);
+  let value = ring_slot(buf: move buf, head: 3_u64, used: 5_u64);
+  if ieq(value, 9_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

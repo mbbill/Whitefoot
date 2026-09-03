@@ -1,0 +1,8 @@
+fn widen_ok(x: own u16) -> result: own i32 pure {
+  doc "EXPECT ACCEPT: u16->i32 is uN->iM with N=16<M=32, one of the 29 TOTAL pairs, so a bare own i32 return is well typed.";
+  return cvt<u16, i32>(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

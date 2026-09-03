@@ -1,0 +1,17 @@
+fn indexed_byte(b: own buffer<u8>, flag: own Bool) -> result: own u8 reads(b) contract {
+  define room = len(b);
+  requires ieq(room, 5_u64);
+} {
+  doc "REJECT: the else arm can bump idx to 7 while room is fixed at 5, and no bound check follows the join, so the trailing subscript's OP-4 is undischarged for idx = 7.";
+  let idx = 0_u64;
+  if flag {
+    set idx = idx +wrap 3_u64;
+  } else {
+    set idx = idx +wrap 7_u64;
+  }
+  return b[idx];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

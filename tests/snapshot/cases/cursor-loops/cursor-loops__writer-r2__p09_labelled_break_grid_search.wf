@@ -1,0 +1,35 @@
+fn find_in_grid(target: own u64, width: own u64, height: own u64) -> found: own u64 pure {
+  doc "ACCEPT: a labelled break from an inner ordinary loop leaves the outer counted for as soon as a nested scan hits its target.";
+  let found = 999_u64;
+  for @row (r in 0_u64..height) {
+    let base = r *wrap width;
+    let c = 0_u64;
+    loop @col (
+      invariant bounded: ile(c, width)
+    ) {
+      let more = ilt(c, width);
+      if more {
+      } else {
+        break @col;
+      }
+      let value = base +wrap c;
+      let hit = ieq(value, target);
+      if hit {
+        set found = value;
+        break @row;
+      }
+      set c = c + 1_u64;
+    }
+  }
+  return found;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let found = find_in_grid(target: 23_u64, width: 10_u64, height: 4_u64);
+  let correct = ieq(found, 23_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

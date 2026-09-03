@@ -1,0 +1,9 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT REJECT [OP-2]: -128_i8 is MIN(i8), so ineg.defined(-128_i8) is ground false; exact ineg on this literal must be refused.";
+  let bad = ineg(-128_i8);
+  if ieq(bad, -128_i8) {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

@@ -1,0 +1,28 @@
+fn shifted_read(buf: own buffer<u8>, base: own u64, delta: own u64) -> value: own u8 reads(buf) contract {
+  define room = len(buf);
+  requires ile(room, 4294967296_u64);
+  requires ilt(base, room);
+  requires ilt(delta, room);
+} {
+  doc "expect ACCEPT: base < room and delta < room, plus a ceiling on room, let AUTO prove base +defined delta and combine both bounds to show base + delta stays inside 2 * room; the caller further picks base, delta so the exact sum lands inside room itself";
+  let room = len(buf);
+  let offset = base + delta;
+  invariant offset_double_bounded: ilt(offset, 2_u64 * room);
+  let too_far = ige(offset, room);
+  if too_far {
+    return buf[0_u64];
+  } else {
+    let value = buf[offset];
+    return value;
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(8_u64, 5_u8);
+  let value = shifted_read(buf: move buf, base: 2_u64, delta: 3_u64);
+  if ieq(value, 5_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,17 @@
+fn offset_from_floor(value: own i32) -> result: own i32 pure contract {
+  requires ige(value, -1000_i32);
+  requires ile(value, 1000_i32);
+} {
+  doc "ACCEPT: requires bounds value within a narrow range, so exact `-` against the same negative floor cannot overflow.";
+  let offset = value - -1000_i32;
+  return offset;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let offset = offset_from_floor(value: -400_i32);
+  if ieq(offset, 600_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

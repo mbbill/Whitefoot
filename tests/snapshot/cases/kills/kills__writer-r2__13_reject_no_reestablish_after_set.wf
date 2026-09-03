@@ -1,0 +1,23 @@
+fn read_shifted(b: own buffer<u8>, shift: own u64) -> result: own u8 reads(b) {
+  let room = len(b);
+  let cursor = 0_u64;
+  let in_range = ilt(cursor, room);
+  if in_range {
+  } else {
+    return 0_u8;
+  }
+  set cursor = shift;
+  return b[cursor];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: REJECT [OP-4] -- the bound check guards `cursor` before the set retargets it to the unbounded param `shift`; the later subscript has no surviving bound [ENT-5](a).";
+  let data = buffer_new(8_u64, 5_u8);
+  let value = read_shifted(b: move data, shift: 2_u64);
+  let correct = ieq(value, 5_u8);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

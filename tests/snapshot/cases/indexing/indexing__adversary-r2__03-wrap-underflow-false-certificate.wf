@@ -1,0 +1,19 @@
+fn probe(table: own buffer<u8>, a: own u64) -> found: own u8 reads(table) contract {
+  define room = len(table);
+  requires ile(a, room);
+} {
+  doc "expect REJECT: idx=a-wrap 1 is falsely certified ilt(idx,room) from ile(a,room); at a=0, idx wraps to u64::MAX, far outside table";
+  let idx = a -wrap 1_u64;
+  let bound_room = len(table);
+  invariant bound: ilt(idx, bound_room) {
+    use ile(a, bound_room);
+  }
+  let byte = table[idx];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(4_u64, 0_u8);
+  let found = probe(table: move table, a: 0_u64);
+  return exit_status(code: found);
+}

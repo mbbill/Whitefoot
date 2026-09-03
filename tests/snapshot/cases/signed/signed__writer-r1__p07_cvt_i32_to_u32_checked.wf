@@ -1,0 +1,25 @@
+fn to_unsigned(x: own i32) -> result: own u32 pure {
+  doc "ACCEPT: cvt<i32, u32> is not value-preserving in general (negative i32 has no u32 image), so it returns Result<u32, NarrowError> [OP-6]; matching both arms is total.";
+  match cvt<i32, u32>(x) {
+    Ok(value: v) => {
+      return v;
+    }
+    Err(error: e) => {
+      return 0_u32;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = to_unsigned(x: 300_i32);
+  if ieq(a, 300_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let b = to_unsigned(x: -5_i32);
+  if ieq(b, 0_u32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

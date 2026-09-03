@@ -1,0 +1,30 @@
+enum Pick {
+  Narrow();
+  Wide();
+}
+
+fn get(b: own buffer<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
+  doc "expect REJECT: Narrow() proves ilt(i, room) (strict) but Wide() only proves ile(i, room) (non-strict); the match join must keep the weakest common bound, so b[i] stays undischarged for i = room = len(b) taking the Wide() arm.";
+  let room = len(b);
+  match choice {
+    Narrow() => {
+      let inside = ilt(i, room);
+      if inside {
+      } else {
+        return 0_u8;
+      }
+    }
+    Wide() => {
+      let within = ile(i, room);
+      if within {
+      } else {
+        return 0_u8;
+      }
+    }
+  }
+  return b[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
