@@ -462,12 +462,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let referent = value.expression.ty();
         // [STOR-5] box content may not bear a region. The written referent
-        // type used to carry this judgment; the derived one carries it here.
-        // A directly slice-typed operand is the only way a region reaches
-        // box content: struct fields and enum payloads are held to STOR-5 at
-        // their own declarations, `CheckedFlatElement` cannot be a slice, so
-        // no array, buffer, or nominal referent can smuggle one in.
-        if matches!(referent, CheckedType::Slice { .. }) {
+        // type used to carry this judgment; the derived one carries it here,
+        // as STOR-5's region-bearing relation over the derived type: a
+        // directly slice-typed operand and an arena descriptor operand both
+        // place a region in box content, and the relation is structural, so
+        // any future region-bearing constructor is covered without listing
+        // it here.
+        if self.checked_type_is_region_bearing(referent)? {
             return self.issue_node(
                 SemanticRule::Stor5,
                 atoms[0],

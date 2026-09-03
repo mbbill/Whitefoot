@@ -313,14 +313,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
-            if matches!(ty, CheckedType::Slice { .. }) {
+            // [SET-2] rejects a region-bearing target type at any depth of
+            // T, which is [STOR-5]'s relation over the selected type rather
+            // than an enumerated set of spellings: a slice, an arena, and
+            // anything reaching one.
+            if self.checked_type_is_region_bearing(ty)? {
                 return self.issue_node(
                     SemanticRule::Set2,
                     node,
                     SemanticIssueKind::InvalidReplaceTarget {
                         target_type: self.checked_type_name(ty)?,
-                        mechanical_fix: "a slice's static origin set is fixed at initialization; \
-                                         bind a new slice under a new let",
+                        mechanical_fix: "a slice's static origin set and an arena's confinement \
+                                         are fixed at initialization; bind a new slice or arena \
+                                         under a new let",
                     },
                 );
             }

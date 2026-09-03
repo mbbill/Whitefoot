@@ -426,3 +426,67 @@ fn replace_rhs_type_mismatch_rejects_citing_type5() {
         assert_eq!(issue.rule(), SemanticRule::Type5);
     });
 }
+
+/// [SET-2] rejects a region-bearing target type under [STOR-5]'s relation,
+/// and that relation names `slice<'r, T>` and `arena<'r, T>` alike. The two
+/// programs differ only in which region-bearing constructor the target has.
+#[test]
+fn replace_of_a_region_bearing_place_rejects_citing_set2() {
+    let expected_fix = "a slice's static origin set and an arena's confinement are fixed at \
+                        initialization; bind a new slice or arena under a new let";
+    assert_rule(
+        br#"command fn main() -> status: own ExitStatus pure {
+  let left = array_new<u8, 2>(11_u8);
+  let right = array_new<u8, 2>(29_u8);
+  region 'view {
+    let view = slice_of(&'view left);
+    let previous = replace view = slice_of(&'view right);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Set2,
+        SemanticIssueKind::InvalidReplaceTarget {
+            target_type: "slice<'view, u8>".to_owned(),
+            mechanical_fix: expected_fix,
+        },
+    );
+    assert_rule(
+        br#"command fn main() -> status: own ExitStatus pure {
+  region 'r {
+    let first = arena_new<'r, u64>(1_u64);
+    let second = arena_new<'r, u64>(2_u64);
+    let previous = replace first = move second;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Set2,
+        SemanticIssueKind::InvalidReplaceTarget {
+            target_type: "arena<'r, u64>".to_owned(),
+            mechanical_fix: expected_fix,
+        },
+    );
+}
+
+/// The positive control for the judgment above: an owning descriptor whose
+/// type bears no region is an ordinary affine target, so the exchange is
+/// accepted and the fresh binding owns the previous box.
+#[test]
+fn replace_of_a_box_descriptor_accepts() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let first = box_new(1_u64);
+  let second = box_new(2_u64);
+  let previous = replace first = move second;
+  let old = deref(previous);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a region-free affine descriptor replace must check: {outcome:?}");
+        };
+        let main = &checked.data.functions[0];
+        assert!(matches!(main.body[2], CheckedStatement::Replace { .. }));
+    });
+}
