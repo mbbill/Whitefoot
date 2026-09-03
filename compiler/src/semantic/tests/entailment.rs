@@ -9937,3 +9937,113 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
 }
+
+/// [ENT-2] The implicit `len(P) = N` of an `array<T, N>` place holds at every
+/// program point. The element read feeding a branch condition puts a join on
+/// the path, and the join records the state as its own closure; the write to
+/// the array's root binding then projects away every relation with a killed
+/// endpoint, including the materialized copy of the length equality. Because
+/// the equality is a function of the term table and the place's type, the
+/// later subscript must still discharge.
+#[test]
+fn an_array_length_equality_survives_a_root_replace_after_a_join() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let arr = array_new<u32, 4>(1_u32);
+  let before = arr[0_u64];
+  let ok = ieq(before, 1_u32);
+  if ok {
+    return exit_status(code: 1_u8);
+  }
+  let fresh = array_new<u32, 4>(9_u32);
+  let old = replace arr = move fresh;
+  let after = arr[0_u64];
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "len(arr) = 4 holds after the root replace: {outcome:?}"
+        );
+    });
+}
+
+/// The verdict of the shape above is a property of the program, not of how
+/// many terms the flow happened to intern along the way. One unrelated `let`
+/// moves the term count the closure memo is keyed on, and the two placements
+/// straddle the write, so a stale memo would accept one and reject the other.
+#[test]
+fn an_array_length_verdict_is_invariant_under_an_unrelated_binding() {
+    let after_the_replace = br#"command fn main() -> status: own ExitStatus pure {
+  let arr = array_new<u32, 4>(1_u32);
+  let before = arr[0_u64];
+  let ok = ieq(before, 1_u32);
+  if ok {
+    return exit_status(code: 1_u8);
+  }
+  let fresh = array_new<u32, 4>(9_u32);
+  let old = replace arr = move fresh;
+  let novel = 123456_u64;
+  let after = arr[0_u64];
+  return exit_status(code: 0_u8);
+}
+"#;
+    let before_the_read = br#"command fn main() -> status: own ExitStatus pure {
+  let arr = array_new<u32, 4>(1_u32);
+  let novel = 123456_u64;
+  let before = arr[0_u64];
+  let ok = ieq(before, 1_u32);
+  if ok {
+    return exit_status(code: 1_u8);
+  }
+  let fresh = array_new<u32, 4>(9_u32);
+  let old = replace arr = move fresh;
+  let after = arr[0_u64];
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (placement, source) in [
+        ("after the replace", after_the_replace.as_slice()),
+        ("before the read", before_the_read.as_slice()),
+    ] {
+        with_semantics(source, |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "an unrelated binding {placement} must not change the verdict: {outcome:?}"
+            );
+        });
+    }
+}
+
+/// The companion boundary: re-closing a state that lost facts must not
+/// resurrect an *established* one. A `buffer` length carries no [ENT-2]
+/// constant, so once the commit kills the checked-branch bound on `offset`
+/// the only surviving relation is `offset = start` over an unbounded
+/// argument, and [OP-4] still rejects the subscript.
+#[test]
+fn a_write_still_kills_an_established_bound_on_its_target() {
+    let source = br#"fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
+  let room = len(b);
+  let offset = 0_u64;
+  let inside = ilt(offset, room);
+  if inside {
+  } else {
+    return 0_u8;
+  }
+  set offset = start;
+  return b[offset];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Op4,
+        SemanticIssueKind::UndischargedBoundsObligation {
+            residual: "offset < len(b)".to_owned(),
+            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
+        },
+    );
+}
