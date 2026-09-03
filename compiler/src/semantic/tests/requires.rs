@@ -30,8 +30,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn plural_requires_keep_every_source_occurrence_at_the_call() {
     let source = br#"fn exact(value: own i32) -> out: own i32 pure contract {
-  requires ieq(value, 1_i32);
-  requires ieq(value, 1_i32);
+  requires value == 1_i32;
+  requires value == 1_i32;
 } {
   return value;
 }
@@ -78,8 +78,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_later_requires_clause_is_not_dropped_after_an_earlier_success() {
     let source = br#"fn exact(value: own i32) -> out: own i32 pure contract {
-  requires ieq(value, 1_i32);
-  requires ieq(value, 2_i32);
+  requires value == 1_i32;
+  requires value == 2_i32;
 } {
   return value;
 }
@@ -132,7 +132,7 @@ fn contains_array_fill(expression: &GoalExpression) -> bool {
 #[test]
 fn requires_retains_one_static_goal_without_a_second_expression_tree() {
     let source = br#"fn bounded(x: own i32) -> result: own i32 pure contract {
-  define permitted = ige(x, 0_i32);
+  define permitted = x >= 0_i32;
   requires permitted;
 } {
   return x;
@@ -175,7 +175,7 @@ fn requires_rejects_user_calls_and_partial_operations() {
 fn requires_is_static_and_keeps_op5_typing() {
     with_semantics(
         br#"fn admitted(value: own i32) -> result: own i32 pure contract {
-  requires ige(value, 0_i32);
+  requires value >= 0_i32;
 } {
   return value;
 }
@@ -210,7 +210,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     with_semantics(
         b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
           define doubled = a *wrap 2_u64;\n  \
-          requires ile(doubled, 16_u64);\n} {\n  \
+          requires doubled <= 16_u64;\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -224,7 +224,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     assert_rule(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define raised = x + 1_i32;\n  \
-          requires igt(raised, x);\n} {\n  \
+          requires raised > x;\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -235,7 +235,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     assert_rule(
         b"fn f(xs: own array<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
           define sum = a +wrap xs[1_u64];\n  \
-          requires ile(sum, 8_u64);\n} {\n  \
+          requires sum <= 8_u64;\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -246,7 +246,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     assert_rule(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define candidate = x;\n  \
-          requires igt(candidate, 0_i32);\n} {\n  \
+          requires candidate > 0_i32;\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -267,8 +267,8 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
     // `slice_of` needs a borrow operand the clause subset already rejects.
     assert_rule(
         b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
-          define xs = array_new<i32, 4>(0_i32);\n  \
-          requires ilt(a, 8_u64);\n} {\n  \
+          define xs = array_new::<i32, 4>(0_i32);\n  \
+          requires a < 8_u64;\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -281,7 +281,7 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
     assert_rule(
         br#"fn invalid<T: Int>(x: own T) -> result: own T pure contract {
   define raised = x +checked 1_T;
-  requires igt(x, 0_T);
+  requires x > 0_T;
 } {
   return x;
 }
@@ -298,7 +298,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define raised = x +checked 1_i32;\n  \
-          requires igt(x, 0_i32);\n} {\n  \
+          requires x > 0_i32;\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -309,7 +309,7 @@ command fn main() -> status: own ExitStatus pure {
     // the gate above has over-rejected into every clause `let`.
     with_semantics(
         b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
-          define ok = ilt(a, 8_u64);\n  \
+          define ok = a < 8_u64;\n  \
           requires ok;\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
@@ -335,7 +335,7 @@ fn resolved_system_calls_in_requires_are_fn8_source_rejections() {
     assert_rule(
         br#"fn invalid() -> result: own ExitStatus pure contract {
   define status = exit_status(code: 0_u8);
-  requires ieq(0_u8, 0_u8);
+  requires 0_u8 == 0_u8;
 } {
   return exit_status(code: 0_u8);
 }
@@ -352,7 +352,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn requires_locals_are_distinct_from_same_named_body_locals() {
     let source = br#"fn increment(x: own i32) -> result: own i32 pure contract {
-  define value = ige(x, 0_i32);
+  define value = x >= 0_i32;
   requires value;
 } {
   let value = x +wrap 1_i32;
@@ -379,8 +379,8 @@ command fn main() -> status: own ExitStatus pure {
 fn goal_templates_ignore_clause_spelling_and_local_sharing() {
     let source = br#"fn shared(a: own u64, b: own u64) -> result: own u64 pure contract {
   define sum = a +wrap b;
-  define below = ilt(sum, 100_u64);
-  define above = igt(sum, 0_u64);
+  define below = sum < 100_u64;
+  define above = sum > 0_u64;
   define bounded = band(below, above);
   requires bounded;
 } {
@@ -389,9 +389,9 @@ fn goal_templates_ignore_clause_spelling_and_local_sharing() {
 
 fn duplicated(left: own u64, right: own u64) -> result: own u64 pure contract {
   define first_sum = left +wrap right;
-  define low_half = ilt(first_sum, 100_u64);
+  define low_half = first_sum < 100_u64;
   define second_sum = left +wrap right;
-  define high_half = igt(second_sum, 0_u64);
+  define high_half = second_sum > 0_u64;
   define complete = band(low_half, high_half);
   requires complete;
 } {
@@ -429,25 +429,25 @@ fn goal_templates_retain_order_row_and_named_const_identity() {
 const second_limit: u64 = 8_u64;
 
 fn baseline(value: own u64) -> result: own u64 pure contract {
-  requires ilt(value, first_limit);
+  requires value < first_limit;
 } {
   return value;
 }
 
 fn swapped(value: own u64) -> result: own u64 pure contract {
-  requires ilt(first_limit, value);
+  requires first_limit < value;
 } {
   return value;
 }
 
 fn different_row(value: own u64) -> result: own u64 pure contract {
-  requires ile(value, first_limit);
+  requires value <= first_limit;
 } {
   return value;
 }
 
 fn different_const(value: own u64) -> result: own u64 pure contract {
-  requires ilt(value, second_limit);
+  requires value < second_limit;
 } {
   return value;
 }
@@ -480,7 +480,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn goal_box_deref_projection_retains_the_selected_referent_type() {
     let source = br#"fn positive(owner: own box<i32>) -> result: own box<i32> pure contract {
-  requires igt(deref(owner), 0_i32);
+  requires deref(owner) > 0_i32;
 } {
   return move owner;
 }
@@ -521,7 +521,7 @@ fn goal_field_projection_retains_the_selected_array_type() {
 
 fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
   define size = len(envelope.values);
-  requires ieq(size, size);
+  requires size == size;
 } {
   return move envelope;
 }
@@ -572,32 +572,32 @@ fn concrete_equal_const_arguments_produce_equal_goal_templates() {
     let source =
         br#"fn left<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure contract {
   define size = len(value);
-  requires ieq(size, size);
+  requires size == size;
 } {
   return move value;
 }
 
 fn right<const count: u64>(input: own array<u8, count>) -> result: own array<u8, count> pure contract {
   define extent = len(input);
-  requires ieq(extent, extent);
+  requires extent == extent;
 } {
   return move input;
 }
 
 fn different<const width: u64>(items: own array<u8, width>) -> result: own array<u8, width> pure contract {
   define amount = len(items);
-  requires ieq(amount, amount);
+  requires amount == amount;
 } {
   return move items;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left_input = array_new<u8, 2>(1_u8);
-  let left_output = left<2>(value: move left_input);
-  let right_input = array_new<u8, 2>(1_u8);
-  let right_output = right<2>(input: move right_input);
-  let different_input = array_new<u8, 3>(1_u8);
-  let different_output = different<3>(items: move different_input);
+  let left_input = array_new::<u8, 2>(1_u8);
+  let left_output = left::<2>(value: move left_input);
+  let right_input = array_new::<u8, 2>(1_u8);
+  let right_output = right::<2>(input: move right_input);
+  let different_input = array_new::<u8, 3>(1_u8);
+  let different_output = different::<3>(items: move different_input);
   let left_size = len(left_output);
   let right_size = len(right_output);
   let different_size = len(different_output);
@@ -626,7 +626,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn unused_generic_requirement_is_retained_symbolically_without_a_concrete_function() {
     let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
-  requires igt(value, 0_T);
+  requires value > 0_T;
 } {
   return value;
 }
@@ -665,7 +665,7 @@ fn a_nominal_bearing_generic_requirement_survives_the_symbolic_checkpoint_as_met
 }
 
 fn need<T: Int>(length: own u64) -> result: own unit pure contract {
-  requires buffer_fits<Pair<T>>(length);
+  requires buffer_fits::<Pair<T>>(length);
 } {
   return unit;
 }
@@ -713,7 +713,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() {
     let source = br#"fn need<const n: u64>(value: own array<u8, n + 1>) -> result: own array<u8, n + 1> pure contract {
   define size = len(value);
-  requires ieq(size, size);
+  requires size == size;
 } {
   return move value;
 }
@@ -750,16 +750,16 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
     let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
-  requires igt(value, 0_T);
+  requires value > 0_T;
 } {
   return value;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let narrow = 1_i32;
-  let narrow_result = positive<i32>(value: narrow);
+  let narrow_result = positive::<i32>(value: narrow);
   let wide = 1_i64;
-  let wide_result = positive<i64>(value: wide);
+  let wide_result = positive::<i64>(value: wide);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -791,15 +791,15 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_to_generic_discovery_does_not_duplicate_symbolic_requirements() {
     let source = br#"fn inner<T: Int>(value: own T) -> result: own T pure contract {
-  requires igt(value, 0_T);
+  requires value > 0_T;
 } {
   return value;
 }
 
 fn outer<T: Int>(value: own T) -> result: own T pure contract {
-  requires igt(value, 0_T);
+  requires value > 0_T;
 } {
-  return inner<T>(value: value);
+  return inner::<T>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -835,7 +835,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn below(value: own u64) -> result: own u64 pure contract {
-  requires ilt(value, requirement_limit);
+  requires value < requirement_limit;
 } {
   return value;
 }
@@ -976,13 +976,13 @@ fn below(value: own u64) -> result: own u64 pure contract {
 #[test]
 fn call_front_end_captures_a_subscript_until_entailment_admits_its_identity() {
     let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
-  requires ilt(value, 10_u8);
+  requires value < 10_u8;
 } {
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(3_u8);
+  let values = array_new::<u8, 2>(3_u8);
   positive(value: values[0_u64]);
   return exit_status(code: 0_u8);
 }
@@ -1061,14 +1061,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn proved_subscript_actual_reuses_its_stable_goal_identity_at_fn8() {
     let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
-  requires ilt(value, 10_u8);
+  requires value < 10_u8;
 } {
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(3_u8);
-  if ilt(values[0_u64], 10_u8) {
+  let values = array_new::<u8, 2>(3_u8);
+  if values[0_u64] < 10_u8 {
     positive(value: values[0_u64]);
   }
   return exit_status(code: 0_u8);
@@ -1104,7 +1104,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
     let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
-  requires igt(deref(value), 0_u64);
+  requires deref(value) > 0_u64;
 } {
   let copied = deref(value);
   return unit;
@@ -1112,7 +1112,7 @@ fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
 
 fn proxy['r](value: &'r u64) -> result: own unit reads(value) {
   region 'child {
-    observe<'child>(value: &'child deref(value));
+    observe::<'child>(value: &'child deref(value));
   }
   return unit;
 }
@@ -1120,7 +1120,7 @@ fn proxy['r](value: &'r u64) -> result: own unit reads(value) {
 command fn main() -> status: own ExitStatus pure {
   let local = 1_u64;
   region 'direct {
-    observe<'direct>(value: &'direct local);
+    observe::<'direct>(value: &'direct local);
   }
   return exit_status(code: 0_u8);
 }
@@ -1205,15 +1205,15 @@ fn call_goal_substitutes_type_const_and_slice_region_arguments() {
 
 fn inspect['r](values: own slice<'r, u8>) -> result: own unit pure contract {
   define size = len(values);
-  requires ieq(size, size);
+  requires size == size;
 } {
   return unit;
 }
 
 fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> result: own T pure contract {
-  define positive = igt(value, 0_T);
+  define positive = value > 0_T;
   define size = len(values);
-  define exact = ieq(size, size);
+  define exact = size == size;
   define complete = band(positive, exact);
   requires complete;
 } {
@@ -1223,10 +1223,10 @@ fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> resu
 command fn main() -> status: own ExitStatus pure {
   region 'view {
     let view = slice_of(&'view bytes);
-    inspect<'view>(values: move view);
+    inspect::<'view>(values: move view);
   }
-  let values = array_new<u8, 3>(1_u8);
-  let result = guarded<i32, 3>(value: 4_i32, values: move values);
+  let values = array_new::<u8, 3>(1_u8);
+  let result = guarded::<i32, 3>(value: 4_i32, values: move values);
   return exit_status(code: 0_u8);
 }
 "#;

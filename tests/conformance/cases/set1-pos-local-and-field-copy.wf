@@ -20,12 +20,12 @@ command fn main() -> status: own ExitStatus pure {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  if ieq(observed, 42_i32) {
+  if observed == 42_i32 {
   } else {
     return exit_status(code: 1_u8);
   }
   let preserved = outer.other;
-  if ieq(preserved, 7_i32) {
+  if preserved == 7_i32 {
   } else {
     return exit_status(code: 2_u8);
   }
@@ -36,11 +36,11 @@ command fn main() -> status: own ExitStatus pure {
     set number = 10_i32;
     give number;
   }
-  if ieq(selected, 43_i32) {
+  if selected == 43_i32 {
   } else {
     return exit_status(code: 3_u8);
   }
-  if ieq(number, 43_i32) {
+  if number == 43_i32 {
   } else {
     return exit_status(code: 4_u8);
   }

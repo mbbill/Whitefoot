@@ -6,12 +6,12 @@ private implementation choices; the active language is defined by
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), not by the compiler source or
 this README.
 
-The frontend targets the exact v0.40 bytes at `../spec/kernel-spec.md`,
-SHA-256 `15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`.
-v0.40 replaces the runtime claim path with one source-carried proof surface and
-supersedes v0.39 at
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.39.md`.
+The frontend targets the exact v0.41 bytes at `../spec/kernel-spec.md`,
+SHA-256 `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
+v0.41 respells the six integer comparisons as symbols, delimits call-site type
+application with `::`, and supersedes v0.40 at
+`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.40.md`.
 `whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 
@@ -71,10 +71,10 @@ The canonical counted shape has no trailing comma:
 ```wf
 for (
   i in 0_u64..count,
-  invariant per_byte: ile(sum, 255_u32 * i)
+  invariant per_byte: sum <= 255_u32 * i
 ) {
   let w = deref(weights)[i];
-  let wide = cvt<u8, u32>(w);
+  let wide = cvt::<u8, u32>(w);
   set sum = sum + wide;
 }
 ```

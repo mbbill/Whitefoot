@@ -1,0 +1,19 @@
+fn saturating_step(level: own u8, delta: own u8) -> result: own u8 pure {
+  doc "expect ACCEPT: +sat is total by [OP-1] and clamps to the type's maximum instead of trapping or wrapping.";
+  let saturated = level +sat delta;
+  return saturated;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let below_max = saturating_step(level: 100_u8, delta: 20_u8);
+  let at_ceiling = saturating_step(level: 250_u8, delta: 20_u8);
+  if below_max == 120_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if at_ceiling == 255_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

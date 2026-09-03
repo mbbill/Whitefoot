@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT [OP-2] -- count_a and count_b are each proved to reach at most 3_000_000_000 (1e9 per iteration for 3 iterations, within u32 range), but their sum after both loops (6e9) exceeds u32::MAX (4294967295); the checked `count_a + count_b` domain obligation is genuinely false for the concrete trace count_a=3000000000, count_b=3000000000.";
+  let count_a = 0_u32;
+  for (
+    i in 0_u64..3_u64,
+    invariant bound_a: count_a <= 1000000000_u32 * i
+  ) {
+    set count_a = count_a + 1000000000_u32;
+  }
+  let count_b = 0_u32;
+  for (
+    j in 0_u64..3_u64,
+    invariant bound_b: count_b <= 1000000000_u32 * j
+  ) {
+    set count_b = count_b + 1000000000_u32;
+  }
+  let total = count_a + count_b;
+  return exit_status(code: 0_u8);
+}

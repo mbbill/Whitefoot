@@ -1,0 +1,22 @@
+fn wrap_and_back(value: own i32) -> result: own i32 pure {
+  doc "expect ACCEPT: -wrap and +wrap are total by [OP-1], so a signed wrap-subtraction round trip past i32::MIN needs no domain proof.";
+  let wrapped = value -wrap 1_i32;
+  let back = wrapped +wrap 1_i32;
+  return back;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let lo = -2147483648_i32;
+  let hi = 2147483647_i32;
+  let lo_back = wrap_and_back(value: lo);
+  let hi_back = wrap_and_back(value: hi);
+  if lo_back == lo {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if hi_back == hi {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

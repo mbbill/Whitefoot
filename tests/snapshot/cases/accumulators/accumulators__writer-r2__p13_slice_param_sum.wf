@@ -1,0 +1,28 @@
+const buffer_bytes: array<u8, 5> =[3_u8, 3_u8, 3_u8, 3_u8, 3_u8];
+
+fn slice_sum['r](data: own slice<'r, u8>) -> total: own u32 reads(data) {
+  doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT across a function boundary, but no caller fact crosses into the callee, so len(data) is unbounded here and the checked sum + wide has no proved domain [ENT-2].";
+  let length = len(data);
+  let sum = 0_u32;
+  for (
+    i in 0_u64..length,
+    invariant per_byte: sum <= 255_u32 * i
+  ) {
+    let byte = data[i];
+    let wide = cvt::<u8, u32>(byte);
+    set sum = sum + wide;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  region 'view {
+    let view = slice_of(&'view buffer_bytes);
+    let total = slice_sum::<'view>(data: move view);
+    if total == 15_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

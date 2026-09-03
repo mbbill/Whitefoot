@@ -16,13 +16,13 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
   let start = deref(pool).count;
   let index_value = 0_u64;
   loop @leaves {
-    let done = ige(index_value, leaves);
+    let done = index_value >= leaves;
     if done {
       break @leaves;
     } else {
       let slot = deref(pool).count;
       let left_room = len(deref(pool).left);
-      let left_ok = ilt(slot, left_room);
+      let left_ok = slot < left_room;
       if left_ok {
       } else {
         let error = LeftOutOfBounds();
@@ -30,7 +30,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
       }
       set deref(pool).left[slot] = 0_u64;
       let right_room = len(deref(pool).right);
-      let right_ok = ilt(slot, right_room);
+      let right_ok = slot < right_room;
       if right_ok {
       } else {
         let error = RightOutOfBounds();
@@ -43,7 +43,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
   }
   let width = leaves;
   loop @levels {
-    let complete = ile(width, 1_u64);
+    let complete = width <= 1_u64;
     if complete {
       break @levels;
     } else {
@@ -51,11 +51,11 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
       let next_start = deref(pool).count;
       let parent = 0_u64;
       loop @parents {
-        let parents_done = ige(parent, half);
+        let parents_done = parent >= half;
         if parents_done {
           break @parents;
         } else {
-          let parent_halvable = ile(parent, 9223372036854775807_u64);
+          let parent_halvable = parent <= 9223372036854775807_u64;
           if parent_halvable {
           } else {
             let error = ArithmeticOverflow();
@@ -69,7 +69,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
             let error = ArithmeticOverflow();
             return Err<u64, PoolError>(error: error);
           }
-          let left_child_incrementable = ile(left_child, 18446744073709551614_u64);
+          let left_child_incrementable = left_child <= 18446744073709551614_u64;
           if left_child_incrementable {
           } else {
             let error = ArithmeticOverflow();
@@ -78,7 +78,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
           let right_child = left_child + 1_u64;
           let slot = deref(pool).count;
           let left_room = len(deref(pool).left);
-          let left_ok = ilt(slot, left_room);
+          let left_ok = slot < left_room;
           if left_ok {
           } else {
             let error = LeftOutOfBounds();
@@ -86,7 +86,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
           }
           set deref(pool).left[slot] = left_child;
           let right_room = len(deref(pool).right);
-          let right_ok = ilt(slot, right_room);
+          let right_ok = slot < right_room;
           if right_ok {
           } else {
             let error = RightOutOfBounds();
@@ -106,27 +106,27 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
 
 fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right) {
   let left_room = len(deref(pool).left);
-  let left_ok = ilt(root, left_room);
+  let left_ok = root < left_room;
   if left_ok {
   } else {
     let error = LeftOutOfBounds();
     return Err<u64, PoolError>(error: error);
   }
   let left_child = deref(pool).left[root];
-  let leaf = ieq(left_child, 0_u64);
+  let leaf = left_child == 0_u64;
   if leaf {
     return Ok<u64, PoolError>(value: 1_u64);
   }
   let right_room = len(deref(pool).right);
-  let right_ok = ilt(root, right_room);
+  let right_ok = root < right_room;
   if right_ok {
   } else {
     let error = RightOutOfBounds();
     return Err<u64, PoolError>(error: error);
   }
   let right_child = deref(pool).right[root];
-  let left_count = propagate checksum<'r>(pool: pool, root: left_child);
-  let right_count = propagate checksum<'r>(pool: pool, root: right_child);
+  let left_count = propagate checksum::<'r>(pool: pool, root: left_child);
+  let right_count = propagate checksum::<'r>(pool: pool, root: right_child);
   let child_sum_defined = left_count +defined right_count;
   let children = if child_sum_defined {
     give left_count + right_count;
@@ -134,7 +134,7 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own Result<u6
     let error = ArithmeticOverflow();
     return Err<u64, PoolError>(error: error);
   }
-  let children_countable = ile(children, 18446744073709551614_u64);
+  let children_countable = children <= 18446744073709551614_u64;
   let total = if children_countable {
     give children + 1_u64;
   } else {
@@ -151,13 +151,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let pool = Pool(left: move left, right: move right, count: 1_u64);
   let depth = 5_u32;
   region 'tree {
-    let built = build<'tree>(pool: &uniq 'tree pool, depth: depth);
+    let built = build::<'tree>(pool: &uniq 'tree pool, depth: depth);
     match move built {
       Ok(value: root) => {
-        let checksum_result = checksum<'tree>(pool: &'tree pool, root: root);
+        let checksum_result = checksum::<'tree>(pool: &'tree pool, root: root);
         match move checksum_result {
           Ok(value: nodes) => {
-            if ieq(nodes, 63_u64) {
+            if nodes == 63_u64 {
             } else {
               return exit_status(code: 201_u8);
             }
@@ -173,7 +173,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let used = pool.count;
-  if ieq(used, 64_u64) {
+  if used == 64_u64 {
   } else {
     return exit_status(code: 202_u8);
   }

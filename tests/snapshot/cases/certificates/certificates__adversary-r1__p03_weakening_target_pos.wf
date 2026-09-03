@@ -1,0 +1,16 @@
+fn weaken(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
+  requires first <= first_limit;
+  requires second <= second_limit;
+} {
+  doc "expect ACCEPT: the exact scaled combination proves 3*(first+second) <= 3*(first_limit+second_limit); the written target adds a true positive slack of 50, so it is a weaker implied bound, not the tight one.";
+  invariant pair_bound: first + second <= first_limit + second_limit;
+  invariant loose_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit + 50_u64 {
+    use 3 * pair_bound;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let finished = weaken(first: 2_u64, first_limit: 3_u64, second: 4_u64, second_limit: 5_u64);
+  return exit_status(code: 0_u8);
+}

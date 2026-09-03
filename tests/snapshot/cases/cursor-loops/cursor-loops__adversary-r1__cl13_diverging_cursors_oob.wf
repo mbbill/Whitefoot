@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: i is bounded 0..5 by the counted for but j = i +wrap i runs up to 8 while buf only holds 5 elements, so buf[j] is out of bounds once i>=3 (i==3 gives j==6)";
+  let buf = array_new::<u64, 5>(0_u64);
+  let total = 0_u64;
+  for (i in 0_u64..5_u64) {
+    let j = i +wrap i;
+    let value = buf[j];
+    set total = total +wrap value;
+  }
+  return exit_status(code: 0_u8);
+}

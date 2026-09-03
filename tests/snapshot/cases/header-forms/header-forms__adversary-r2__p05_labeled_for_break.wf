@@ -1,0 +1,16 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: labeled for-loop with break naming that exact label from a nested inner loop.";
+  let total = 0_u64;
+  for @outer (i in 0_u64..4_u64) {
+    for (j in 0_u64..4_u64) {
+      set total = total + 1_u64;
+      break @outer;
+    }
+  }
+  let correct = total == 1_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

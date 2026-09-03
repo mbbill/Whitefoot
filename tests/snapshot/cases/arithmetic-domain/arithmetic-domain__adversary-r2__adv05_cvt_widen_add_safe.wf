@@ -1,0 +1,16 @@
+fn widen_add(x: own i8, y: own i8) -> result: own i32 pure {
+  doc "Expected ACCEPT: i8 -> i32 is total widening [TYPE-4]; both operands land in [-128,127] so their i32 sum is in [-256,254], well within i32 range, making the addition exact-total.";
+  let wx = cvt::<i8, i32>(x);
+  let wy = cvt::<i8, i32>(y);
+  let sum = wx + wy;
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = widen_add(x: 120_i8, y: 120_i8);
+  if result == 240_i32 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -3,7 +3,7 @@ contract CheckedMember {
 }
 
 fn checked_apply(x: own i32) -> result: own i32 pure contract {
-  define valid = ige(x, 0_i32);
+  define valid = x >= 0_i32;
   requires valid;
 } {
   return x;

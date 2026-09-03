@@ -166,6 +166,13 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("use", "Use"),
         ("in", "In"),
         ("..", "DotDot"),
+        // v0.41: the six `compare_op` spellings (`<` and `>` already exist)
+        // and the call-site type-application delimiter.
+        ("==", "EqualEqual"),
+        ("!=", "BangEqual"),
+        ("<=", "LessEqual"),
+        (">=", "GreaterEqual"),
+        ("::", "ColonColon"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

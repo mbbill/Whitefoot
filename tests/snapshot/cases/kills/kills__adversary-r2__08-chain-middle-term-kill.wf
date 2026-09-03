@@ -1,0 +1,15 @@
+fn chain(a: own u8, b: own u8, c: own u8, w: own u8) -> result: own u8 pure contract {
+  requires a <= b;
+  requires b <= c;
+  requires c <= 5_u8;
+} {
+  set b = w;
+  let z = b + 250_u8;
+  return z;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT (OP-2): requires chain a<=b<=c<=5 established, then set b=w kills the middle term; b=0,w=255 -> b+250_u8 overflows u8";
+  let r = chain(a: 0_u8, b: 0_u8, c: 0_u8, w: 255_u8);
+  return exit_status(code: 0_u8);
+}

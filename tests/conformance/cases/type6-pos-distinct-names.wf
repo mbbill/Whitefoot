@@ -3,13 +3,13 @@ command fn main() -> status: own ExitStatus pure {
   let i = 0_i32;
   let total = 0_i32;
   loop @l {
-    if ige(i, 3_i32) {
+    if i >= 3_i32 {
       break @l;
     }
     set total = total +wrap i;
     set i = i +wrap 1_i32;
   }
-  if ieq(total, 3_i32) {
+  if total == 3_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

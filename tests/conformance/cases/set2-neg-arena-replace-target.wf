@@ -1,0 +1,9 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SET-2 requires the target's final selected type to be region-free under STOR-5, and an arena<'r, U> descriptor is region-bearing exactly as a slice is. Replacing one arena descriptor with another is therefore a hard error citing SET-2 at the complete target place: an arena's confinement is fixed at initialization and a new arena is bound under a new let.";
+  region 'r {
+    let first = arena_new::<'r, u64>(1_u64);
+    let second = arena_new::<'r, u64>(2_u64);
+    let previous = replace first = move second;
+  }
+  return exit_status(code: 0_u8);
+}

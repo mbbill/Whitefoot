@@ -1,0 +1,41 @@
+struct Staged {
+  active: buffer<u8>;
+  pending: buffer<u8>;
+}
+
+fn swap_in['a](s: &uniq 'a Staged, fresh: own buffer<u8>) -> result: own buffer<u8> reads(s.active), writes(s.active) {
+  doc "expect ACCEPT: replace kills deref(s).active's prior image and hands back the old buffer as an owned value in one step, so the caller can still use the retired content after the field has moved on.";
+  let old = replace deref(s).active = move fresh;
+  return move old;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let first_active = buffer_new(3_u64, 1_u8);
+  let idle = buffer_new(3_u64, 0_u8);
+  let staged = Staged(active: move first_active, pending: move idle);
+  let second_active = buffer_new(3_u64, 9_u8);
+  region 'swap {
+    let old_active = swap_in::<'swap>(s: &uniq 'swap staged, fresh: move second_active);
+    let old_room = len(old_active);
+    let old_ok = 0_u64 < old_room;
+    if old_ok {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    if old_active[0_u64] == 1_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let active_room = len(staged.active);
+  let active_ok = 0_u64 < active_room;
+  if active_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if staged.active[0_u64] == 9_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

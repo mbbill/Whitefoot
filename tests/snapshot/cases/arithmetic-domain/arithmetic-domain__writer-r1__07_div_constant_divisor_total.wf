@@ -1,0 +1,19 @@
+fn halve(n: own i32) -> result: own i32 pure {
+  doc "ACCEPT: a nonzero constant divisor other than -1 discharges both division conjuncts with no fact source [OP-2].";
+  let h = n / 3_i32;
+  return h;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let h = halve(n: 90_i32);
+  if h == 30_i32 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  let g = halve(n: -9_i32);
+  if g == -3_i32 {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  return exit_status(code: 0_u8);
+}

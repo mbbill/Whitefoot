@@ -5,7 +5,7 @@ enum TagEq {
 }
 
 fn compare(left: own TagEq, right: own TagEq) -> return_value: own Bool pure {
-  return ilt(left, right);
+  return left < right;
 }
 
 command fn main() -> return_value: own ExitStatus pure {

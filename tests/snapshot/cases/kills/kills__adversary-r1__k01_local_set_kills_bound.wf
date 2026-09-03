@@ -1,0 +1,14 @@
+fn read_after_kill(buf: own buffer<u8>, i: own u64) -> value: own u8 reads(buf) contract {
+  define room = len(buf);
+  requires i < room;
+} {
+  doc "expect REJECT [OP-4]: set i = 9_u64 kills the i < len(buf) fact, so buf[i] is unproven; if wrongly accepted, i=9 reads past a 5-element buffer (OOB read).";
+  set i = 9_u64;
+  return buf[i];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(5_u64, 1_u8);
+  let value = read_after_kill(buf: move buf, i: 0_u64);
+  return exit_status(code: value);
+}

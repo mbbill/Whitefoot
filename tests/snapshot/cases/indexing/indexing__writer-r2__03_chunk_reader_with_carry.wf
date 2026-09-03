@@ -1,0 +1,35 @@
+fn fold_chunks['r](data: &'r buffer<u8>, chunk_size: own u64) -> result: own u32 reads(data) contract {
+  requires chunk_size > 0_u64;
+} {
+  let length = len(deref(data));
+  let total = 0_u32;
+  let carry = 0_u32;
+  let pos_in_chunk = 0_u64;
+  for (i in 0_u64..length) {
+    let byte = deref(data)[i];
+    let wide = cvt::<u8, u32>(byte);
+    set carry = carry +wrap wide;
+    set pos_in_chunk = pos_in_chunk +wrap 1_u64;
+    let boundary = pos_in_chunk == chunk_size;
+    if boundary {
+      set total = total +wrap carry;
+      set carry = 0_u32;
+      set pos_in_chunk = 0_u64;
+    }
+  }
+  let final_total = total +wrap carry;
+  return final_total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: the buffer subscript is discharged by the for-loop's automatic i < length fact (length is the same len(deref(data)) expression), and every accumulator step uses +wrap so no arithmetic domain obligation remains open.";
+  let data = buffer_new(6_u64, 3_u8);
+  region 'r {
+    let folded = fold_chunks::<'r>(data: &'r data, chunk_size: 3_u64);
+    if folded == 18_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

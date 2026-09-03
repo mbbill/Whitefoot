@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: for-loop with two header invariants, each an ordered relation, comma-separated, no trailing comma.";
+  let cursor = 0_u64;
+  let doubled = 0_u64;
+  for (
+    i in 0_u64..4_u64,
+    invariant bounded: cursor <= i,
+    invariant twice_bounded: doubled <= i + i
+  ) {
+    set cursor = cursor + 1_u64;
+    set doubled = doubled + 2_u64;
+  }
+  let correct = doubled == 8_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

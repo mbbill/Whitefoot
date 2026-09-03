@@ -2043,3 +2043,384 @@ ACTIVE-SPEC: v0.39 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69
   or gate-wiring file changes; `compiler/tests/conformance.rs` and
   `compiler/tests/conformance/json.rs` are byte-identical to `main`.
 ACTIVE-SPEC: v0.40 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168 b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516
+
+## 2026-09-03 — merge-time approval content: v0.41 integer comparison symbols and the call-site `::` delimiter (21 rules respelled; none added or retired)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.41 at exact SHA-256
+  `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
+  It supersedes active v0.40 at SHA-256
+  `15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.40.md`. The candidate that preceded activation declared
+  `CANDIDATE v0.41 supersedes v0.40` and hashed to
+  `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06`;
+  activation flipped that status line to `ACTIVE v0.41` and changed no other
+  byte. Per the specification's own META-5 delta declaration: numbered rules
+  are +0/-0 and 131 remain; grammar productions are +1/-0 and 83 remain, the
+  added production being `compare_op`; unique fixed lowercase grammar atoms
+  are +0/-0 and 54 remain; compound punctuation tokens are +5/-0 and 8
+  remain, the added tokens being `==`, `!=`, `<=`, `>=`, and `::`; token
+  bytes are +1/-0, `!` entering the alphabet inside `!=` only; writer
+  operation spellings are +6/-6, the six integer comparisons `ieq` `ine`
+  `ilt` `ile` `igt` `ige` becoming `==` `!=` `<` `<=` `>` `>=` and thereby
+  leaving `DotlessOperationNames` and `ReservedLowerNames`; and opaque system
+  nominal spellings, runtime-trap families (0 remain), entry forms (1
+  remains), contract block forms, the 203 system operations and declaration
+  records, and exception clauses are unchanged. The changed content carries
+  the second FLOOR-5 spelling batch under the owner rulings of 2026-09-03.
+  Integer comparison joins integer arithmetic as an `infix` expression: one
+  `compare_op` over two atoms, integer-only exactly as the arithmetic symbols
+  are, while float and tag-only enum comparison, the bit family, the shifts,
+  and every unary operation keep their prefixed names. A call writes its type
+  and region arguments after the `::` delimiter, `cvt::<u8, u32>(w)` and
+  `open_file::<'f, 'n>(...)`, so that `IDENT "<"` begins only a comparison and
+  every grammar decision keeps its two-token bound; constructors and type
+  position are unchanged, and DIAG-1's row-1 and row-2 attributions are keyed
+  on `(IDENT, "::")`. In proof position the four ordered symbols replace
+  `ile`, `ilt`, `ige`, and `igt` as the relation of a header invariant, a
+  local invariant, and a relation-form use step; a multiplied relation-form
+  use step is parenthesized, `use 3 * (a <= b);`, and a bare one is not;
+  equality and disequality are not invariant relations. FORM-2 gives `::`
+  both attachments, a `compare_op` `<` or `>` neither, and the stated space
+  between a use multiplier and its `(`. Twenty-one rules and the header move
+  at forty-one verbatim-anchored sites recorded in
+  `governance/spec-evolution/comparison-symbols-v041-candidate.md`. No rule's
+  semantics changes: every comparison origin, contract-clause root, invariant
+  relation, and diagnostic attribution is keyed on the same operation
+  identities under their new spellings, and the accepted-program set is
+  unchanged up to respelling. The selection ground the specification states
+  is evidence selection under the FLOOR-5 spelling rule (T1–T4 and its
+  measured tiebreaks): the six integer comparisons are the most frequent
+  operation class in the corpus, the positional comparison call was the last
+  direction-sensitive positional form, v0.40's proof surface had already made
+  the ordered comparisons relations over infix affine operands, and the `<`
+  collision that cancelled the v0.23 comparison row is dissolved by the `::`
+  delimiter without widening any parser decision beyond two tokens.
+- CONFORMANCE BOUNDARY: relative to `main` tip
+  `a97edf9ae0f3cbd01813c115db9041f997b0aa2b`, `tests/conformance` content
+  changes as follows. Under `tests/conformance/cases/`, 5 files are added,
+  275 are modified, none are deleted, and none are renamed. Added:
+  - `tests/conformance/cases/gram4-neg-multiplied-use-relation-bare.wf`
+  - `tests/conformance/cases/gram5-neg-type-application-without-delimiter.wf`
+  - `tests/conformance/cases/gram5-pos-comparison-operators.wf`
+  - `tests/conformance/cases/inv1-neg-equality-relation.wf`
+  - `tests/conformance/cases/prf1-pos-multiplied-relation-use.wf`
+  Modified:
+  - `tests/conformance/cases/accept-par3-staged-denied-carried-scratch-byte.wf`
+  - `tests/conformance/cases/accept-par3-staged-denied-exit-in-remainder.wf`
+  - `tests/conformance/cases/accept-par3-staged-denied-hoisted-scratch.wf`
+  - `tests/conformance/cases/accept-par3-staged-denied-opaque-cursor.wf`
+  - `tests/conformance/cases/accept-par3-staged-denied-read-before-write.wf`
+  - `tests/conformance/cases/accept-par3-staged-iteration-own-scratch.wf`
+  - `tests/conformance/cases/accept-par3-staged-loop-with-prologue-break.wf`
+  - `tests/conformance/cases/accept-syseff-pure-immutable-only.wf`
+  - `tests/conformance/cases/accept-sysfile-two-permits-shared-directory.wf`
+  - `tests/conformance/cases/accept-sysname-near-lookalike.wf`
+  - `tests/conformance/cases/const1-neg-eval-overflow.wf`
+  - `tests/conformance/cases/const1-neg-noninteger.wf`
+  - `tests/conformance/cases/const1-neg-runtime-arithmetic-mode.wf`
+  - `tests/conformance/cases/const1-pos-array-size.wf`
+  - `tests/conformance/cases/const1-pos-forwarded-arithmetic.wf`
+  - `tests/conformance/cases/const2-pos-array-lookup.wf`
+  - `tests/conformance/cases/const2-pos-struct-const.wf`
+  - `tests/conformance/cases/eff2-pos-discharged-division-site-pure-row.wf`
+  - `tests/conformance/cases/eff3-pos-pure-fn.wf`
+  - `tests/conformance/cases/ent1-neg-instantiation-judged-at-value.wf`
+  - `tests/conformance/cases/ent1-pos-instantiation-judged-at-value.wf`
+  - `tests/conformance/cases/ent2-neg-expired-spelling-inherits-nothing.wf`
+  - `tests/conformance/cases/ent2-neg-no-fact-across-call.wf`
+  - `tests/conformance/cases/ent2-pos-array-length-survives-root-replace.wf`
+  - `tests/conformance/cases/ent3-neg-stage8b-local-one.wf`
+  - `tests/conformance/cases/ent3-pos-band-check-decomposition.wf`
+  - `tests/conformance/cases/ent3-pos-bor-guard-decomposition.wf`
+  - `tests/conformance/cases/ent3-pos-s1-branch-fact.wf`
+  - `tests/conformance/cases/ent3-pos-s11-counted-range-run.wf`
+  - `tests/conformance/cases/ent3-pos-s4-requires-fact.wf`
+  - `tests/conformance/cases/ent3-pos-s5-set-commit-image.wf`
+  - `tests/conformance/cases/ent3-pos-stage8b-bit-sources.wf`
+  - `tests/conformance/cases/ent4-neg-nonstrict-bound-underivable.wf`
+  - `tests/conformance/cases/ent4-pos-contradictory-state-discharges.wf`
+  - `tests/conformance/cases/ent4-pos-disequality-strengthens.wf`
+  - `tests/conformance/cases/ent4-pos-transitivity-discharges.wf`
+  - `tests/conformance/cases/ent5-neg-callee-uniq-buffer-replace-kills-length.wf`
+  - `tests/conformance/cases/ent5-neg-join-takes-weakest-bound.wf`
+  - `tests/conformance/cases/ent5-neg-kill-on-write.wf`
+  - `tests/conformance/cases/ent5-neg-loop-rule-drops-preloop-fact.wf`
+  - `tests/conformance/cases/ent5-neg-value-match-no-delivery.wf`
+  - `tests/conformance/cases/ent5-pos-close-before-scope-kill.wf`
+  - `tests/conformance/cases/ent5-pos-close-before-set-strengthening.wf`
+  - `tests/conformance/cases/ent5-pos-join-keeps-common-bound.wf`
+  - `tests/conformance/cases/ent5-pos-project-middle-before-set.wf`
+  - `tests/conformance/cases/ent5-pos-return-does-not-kill-loop-head-fact.wf`
+  - `tests/conformance/cases/ent5-pos-value-if-delivery-join.wf`
+  - `tests/conformance/cases/ent6-neg-join-one-arm-advances-accumulator.wf`
+  - `tests/conformance/cases/ent6-pos-join-value-if-lifted-addend.wf`
+  - `tests/conformance/cases/err1-pos-result-value-match.wf`
+  - `tests/conformance/cases/err2-pos-exhaustive-match.wf`
+  - `tests/conformance/cases/err3-pos-propagate.wf`
+  - `tests/conformance/cases/err3-pos-propagation.wf`
+  - `tests/conformance/cases/err4-pos-recoverable-value.wf`
+  - `tests/conformance/cases/ex1-pos-worked-example.wf`
+  - `tests/conformance/cases/fn1-neg-result-provenance-two-same-kind-called.wf`
+  - `tests/conformance/cases/fn1-pos-result-provenance-distinct-regions.wf`
+  - `tests/conformance/cases/fn1-pos-returned-slice-const-run.wf`
+  - `tests/conformance/cases/fn1-pos-returned-slice-inputs-run.wf`
+  - `tests/conformance/cases/fn1-pos-signature-driven-call.wf`
+  - `tests/conformance/cases/fn2-neg-function-region-bearing-targ.wf`
+  - `tests/conformance/cases/fn2-neg-wrong-kind-instantiation-argument.wf`
+  - `tests/conformance/cases/fn3-neg-requires-member.wf`
+  - `tests/conformance/cases/fn5-pos-match-dispatch.wf`
+  - `tests/conformance/cases/fn6-neg-polymorphic-recursion.wf`
+  - `tests/conformance/cases/fn6-pos-recursion.wf`
+  - `tests/conformance/cases/fn7-pos-single-main.wf`
+  - `tests/conformance/cases/fn8-neg-entry-contract.wf`
+  - `tests/conformance/cases/fn8-neg-external-actual-without-fact.wf`
+  - `tests/conformance/cases/fn8-neg-requires-control.wf`
+  - `tests/conformance/cases/fn8-neg-requires-local-in-body.wf`
+  - `tests/conformance/cases/fn8-neg-requires-move-operand.wf`
+  - `tests/conformance/cases/fn8-neg-requires-no-check.wf`
+  - `tests/conformance/cases/fn8-neg-requires-noncopy-cvt-local.wf`
+  - `tests/conformance/cases/fn8-neg-requires-noncopy-local.wf`
+  - `tests/conformance/cases/fn8-neg-requires-partial-op.wf`
+  - `tests/conformance/cases/fn8-neg-requires-set.wf`
+  - `tests/conformance/cases/fn8-neg-requires-user-call.wf`
+  - `tests/conformance/cases/fn8-pos-external-actual-after-branch.wf`
+  - `tests/conformance/cases/fn8-pos-requires-name-reuse.wf`
+  - `tests/conformance/cases/fn8-pos-requires-run.wf`
+  - `tests/conformance/cases/fn9-neg-entry-image-kill.wf`
+  - `tests/conformance/cases/fn9-neg-named-outcome-no-publication.wf`
+  - `tests/conformance/cases/fn9-neg-no-selected-normal-exit.wf`
+  - `tests/conformance/cases/fn9-neg-same-scc-summary.wf`
+  - `tests/conformance/cases/fn9-neg-unproved-selected-return.wf`
+  - `tests/conformance/cases/fn9-pos-direct-set-receiver.wf`
+  - `tests/conformance/cases/fn9-pos-ok-selected-receiver.wf`
+  - `tests/conformance/cases/fn9-pos-plain-direct-result.wf`
+  - `tests/conformance/cases/form3-pos-lexical-classes.wf`
+  - `tests/conformance/cases/gram1-pos-lookahead.wf`
+  - `tests/conformance/cases/gram10-pos-named-binders.wf`
+  - `tests/conformance/cases/gram11-pos-named-args.wf`
+  - `tests/conformance/cases/gram4-pos-stmts.wf`
+  - `tests/conformance/cases/gram5-pos-exprs-places.wf`
+  - `tests/conformance/cases/gram5-pos-recursive-place-projection.wf`
+  - `tests/conformance/cases/gram6-pos-no-operators.wf`
+  - `tests/conformance/cases/gram7-pos-two-productions.wf`
+  - `tests/conformance/cases/gram9-neg-nested-call.wf`
+  - `tests/conformance/cases/gram9-pos-three-address.wf`
+  - `tests/conformance/cases/inv1-neg-backedge-unproved.wf`
+  - `tests/conformance/cases/inv1-neg-base-unproved.wf`
+  - `tests/conformance/cases/inv1-neg-repeated-name.wf`
+  - `tests/conformance/cases/inv1-pos-automatic-two-premise-backedge.wf`
+  - `tests/conformance/cases/inv1-pos-ordinary-loop-cursor-set-image.wf`
+  - `tests/conformance/cases/inv1-pos-ordinary-loop-guarded-cursor.wf`
+  - `tests/conformance/cases/op1-neg-enum-ordering.wf`
+  - `tests/conformance/cases/op1-neg-ieq-bool.wf`
+  - `tests/conformance/cases/op1-neg-ieq-tag-enum.wf`
+  - `tests/conformance/cases/op1-neg-ine-bool.wf`
+  - `tests/conformance/cases/op1-neg-ine-tag-enum.wf`
+  - `tests/conformance/cases/op1-neg-written-argument-on-deargumented-row.wf`
+  - `tests/conformance/cases/op1-pos-table-op.wf`
+  - `tests/conformance/cases/op2-neg-div-wrap.wf`
+  - `tests/conformance/cases/op2-pos-division-constant-divisor-total.wf`
+  - `tests/conformance/cases/op2-pos-division-minus-one-divisor-bounded.wf`
+  - `tests/conformance/cases/op2-pos-division-obligation-discharged.wf`
+  - `tests/conformance/cases/op2-pos-division-remainder-same-obligation.wf`
+  - `tests/conformance/cases/op2-pos-division-requires-nonzero.wf`
+  - `tests/conformance/cases/op2-pos-guarded-subtraction-l0-bridge.wf`
+  - `tests/conformance/cases/op2-pos-ineg-modes.wf`
+  - `tests/conformance/cases/op2-pos-overflow-obligation-discharged.wf`
+  - `tests/conformance/cases/op2-pos-sat-mode.wf`
+  - `tests/conformance/cases/op2-pos-unsigned-literal-division-images.wf`
+  - `tests/conformance/cases/op2-pos-wrap-untouched-by-dissolution.wf`
+  - `tests/conformance/cases/op3-neg-exact-dotted.wf`
+  - `tests/conformance/cases/op4-neg-external-index-without-fact.wf`
+  - `tests/conformance/cases/op4-pos-external-index-after-branch.wf`
+  - `tests/conformance/cases/op4-pos-midpoint-automatic.wf`
+  - `tests/conformance/cases/op6-neg-cvt-identity.wf`
+  - `tests/conformance/cases/op6-pos-cvt-checked.wf`
+  - `tests/conformance/cases/op6-pos-cvt-total.wf`
+  - `tests/conformance/cases/op7-neg-missing-prefix.wf`
+  - `tests/conformance/cases/op7-pos-name-convention.wf`
+  - `tests/conformance/cases/op8-pos-integer-family.wf`
+  - `tests/conformance/cases/op8-pos-u64-shift-u32.wf`
+  - `tests/conformance/cases/op9-pos-buffer-new.wf`
+  - `tests/conformance/cases/own1-neg-bare-uniq-copy.wf`
+  - `tests/conformance/cases/own1-neg-move-of-copy.wf`
+  - `tests/conformance/cases/own1-pos-match-projected-copy.wf`
+  - `tests/conformance/cases/own1-pos-tagonly-copy.wf`
+  - `tests/conformance/cases/own10-pos-local-region.wf`
+  - `tests/conformance/cases/own11-pos-loop-inner-region.wf`
+  - `tests/conformance/cases/own12-neg-alias-uniq-args.wf`
+  - `tests/conformance/cases/own12-pos-distinct-uniq-args.wf`
+  - `tests/conformance/cases/own13-pos-let-match-give.wf`
+  - `tests/conformance/cases/own2-pos-three-modes.wf`
+  - `tests/conformance/cases/own3-pos-outlives-store.wf`
+  - `tests/conformance/cases/own5-pos-read-through-holder.wf`
+  - `tests/conformance/cases/own6-pos-callresult-borrow-chain.wf`
+  - `tests/conformance/cases/own6-pos-callscoped-temp.wf`
+  - `tests/conformance/cases/own7-pos-distinct-noverlap.wf`
+  - `tests/conformance/cases/pre1-pos-prelude-enums.wf`
+  - `tests/conformance/cases/prf1-neg-duplicate-use.wf`
+  - `tests/conformance/cases/prf1-neg-explicit-factor-one.wf`
+  - `tests/conformance/cases/prf1-neg-fact-killed-by-write.wf`
+  - `tests/conformance/cases/prf1-neg-inexact-combination.wf`
+  - `tests/conformance/cases/prf1-neg-redundant-use-block.wf`
+  - `tests/conformance/cases/prf1-neg-unproved-premise.wf`
+  - `tests/conformance/cases/prf1-pos-explicit-affine-proof.wf`
+  - `tests/conformance/cases/prf1-pos-explicit-factor.wf`
+  - `tests/conformance/cases/prf1-pos-integer-tightening-midpoint.wf`
+  - `tests/conformance/cases/prog1-pos-closed-unit.wf`
+  - `tests/conformance/cases/reject-sys14-list-end-beyond-buffer.wf`
+  - `tests/conformance/cases/reject-syseff-declared-unexhibited.wf`
+  - `tests/conformance/cases/reject-sysfile-permit-used-twice.wf`
+  - `tests/conformance/cases/reject-syshost-copybytes-end-beyond-buffer.wf`
+  - `tests/conformance/cases/reject-syshost-copybytes-start-after-end.wf`
+  - `tests/conformance/cases/reject-syshost-copybytes-start-beyond-buffer.wf`
+  - `tests/conformance/cases/run-ex1-value-match.wf`
+  - `tests/conformance/cases/run-invariant-exact-sum.wf`
+  - `tests/conformance/cases/run-sysarg-count-and-get.wf`
+  - `tests/conformance/cases/run-sysdir-open-notfound.wf`
+  - `tests/conformance/cases/run-sysfile-empty.wf`
+  - `tests/conformance/cases/run-sysfile-exact.wf`
+  - `tests/conformance/cases/run-sysfile-multichunk.wf`
+  - `tests/conformance/cases/run-sysfile-short.wf`
+  - `tests/conformance/cases/run-syshost-copybytes-toosmall-unchanged.wf`
+  - `tests/conformance/cases/run-syshost-copyutf8-invalid-unchanged.wf`
+  - `tests/conformance/cases/run-syshost-copyutf8-toosmall-unchanged.wf`
+  - `tests/conformance/cases/run-syshost-nontext-argv-bytes-roundtrip.wf`
+  - `tests/conformance/cases/run-syshost-nontext-argv-utf8-invalid.wf`
+  - `tests/conformance/cases/run-sysout-basic-write.wf`
+  - `tests/conformance/cases/run-sysout-redirect-same-sink-order.wf`
+  - `tests/conformance/cases/run-syspath-absolute-rejected.wf`
+  - `tests/conformance/cases/run-syspath-dotdot-preserved.wf`
+  - `tests/conformance/cases/run-syspath-relative-basic.wf`
+  - `tests/conformance/cases/s7-pos-signed-remainder-ranges-run.wf`
+  - `tests/conformance/cases/s7-pos-unsigned-remainder-bound-run.wf`
+  - `tests/conformance/cases/scope3-pos-defined-run.wf`
+  - `tests/conformance/cases/set1-pos-local-and-field-copy.wf`
+  - `tests/conformance/cases/set2-neg-arena-replace-target.wf`
+  - `tests/conformance/cases/set2-neg-region-bearing-target.wf`
+  - `tests/conformance/cases/set2-pos-affine-field-replace.wf`
+  - `tests/conformance/cases/set2-pos-box-descriptor-replace.wf`
+  - `tests/conformance/cases/stor1-pos-frame-resident.wf`
+  - `tests/conformance/cases/stor2-pos-box-new.wf`
+  - `tests/conformance/cases/stor3-pos-box-drop-region.wf`
+  - `tests/conformance/cases/stor4-neg-arena-escape.wf`
+  - `tests/conformance/cases/stor4-pos-arena-confined.wf`
+  - `tests/conformance/cases/stor5-neg-arena-new-region-bearing.wf`
+  - `tests/conformance/cases/sys14-directory-release.wf`
+  - `tests/conformance/cases/sys14-entry-kind-closed.wf`
+  - `tests/conformance/cases/sys14-list-handle-affine.wf`
+  - `tests/conformance/cases/sys14-list-handle-unique.wf`
+  - `tests/conformance/cases/sys14-list-outcome-exhaustive.wf`
+  - `tests/conformance/cases/sys14-list-zero-range.wf`
+  - `tests/conformance/cases/sys14-open-directory-component.wf`
+  - `tests/conformance/cases/sys14-open-directory-empty-name.wf`
+  - `tests/conformance/cases/sys14-open-directory-success.wf`
+  - `tests/conformance/cases/sys2-neg-wrong-region-arg-count.wf`
+  - `tests/conformance/cases/type1-pos-i32-unit.wf`
+  - `tests/conformance/cases/type2-pos-enum.wf`
+  - `tests/conformance/cases/type2-pos-twostate-enum-i1.wf`
+  - `tests/conformance/cases/type4-pos-cvt.wf`
+  - `tests/conformance/cases/type5-neg-shared-for-uniq-arg.wf`
+  - `tests/conformance/cases/type5-neg-wrong-region-arg-count.wf`
+  - `tests/conformance/cases/type6-pos-distinct-names.wf`
+  - `tests/conformance/cases/type7-neg-match-reference-call.wf`
+  - `tests/conformance/cases/type7-pos-deref.wf`
+  - `tests/conformance/cases/v033-pos-shared-contract-define.wf`
+  - `tests/conformance/cases/v033-pos-uninhabited-contract.wf`
+  - `tests/conformance/cases/v033-run-open-file-directory.wf`
+  - `tests/conformance/cases/v033-run-open-file-regular.wf`
+  - `tests/conformance/cases/v033-run-system-nonzero-next.wf`
+  - `tests/conformance/cases/x-arith-iadd-wrap-overflow-to-negative.wf`
+  - `tests/conformance/cases/x-arith-isub-wrap-min-roundtrip-runs.wf`
+  - `tests/conformance/cases/x-arith-loop-checked-multiply-overflow.wf`
+  - `tests/conformance/cases/x-arith-wrapping-overflow-observed.wf`
+  - `tests/conformance/cases/x-array-const-checksum-run.wf`
+  - `tests/conformance/cases/x-array-mutable-checksum-run.wf`
+  - `tests/conformance/cases/x-base64-rfc-vectors-run.wf`
+  - `tests/conformance/cases/x-borrow-two-shared-reads-run.wf`
+  - `tests/conformance/cases/x-borrow-uniq-shared-call-args-overlap.wf`
+  - `tests/conformance/cases/x-borrowed-pool-tree-run.wf`
+  - `tests/conformance/cases/x-buffer-borrowed-columns-run.wf`
+  - `tests/conformance/cases/x-buffer-mutable-checksum-run.wf`
+  - `tests/conformance/cases/x-child-reborrow-run.wf`
+  - `tests/conformance/cases/x-const-scalar-u64-width.wf`
+  - `tests/conformance/cases/x-crc32-standard-vector-run.wf`
+  - `tests/conformance/cases/x-enum-borrow-payload-live.wf`
+  - `tests/conformance/cases/x-enum-multiwidth-dispatch.wf`
+  - `tests/conformance/cases/x-enum-payload-give.wf`
+  - `tests/conformance/cases/x-enum-stmt-payload-check.wf`
+  - `tests/conformance/cases/x-enum-twostate-result-payload.wf`
+  - `tests/conformance/cases/x-fn-cross-fn-call-chain.wf`
+  - `tests/conformance/cases/x-fn-mutual-recursion-runs.wf`
+  - `tests/conformance/cases/x-fn-own-arg-for-ref-param.wf`
+  - `tests/conformance/cases/x-form-form5-op-arg-missing-suffix.wf`
+  - `tests/conformance/cases/x-give-result-aggregate.wf`
+  - `tests/conformance/cases/x-gram-combo-flat-call-construct-match.wf`
+  - `tests/conformance/cases/x-gram-nested-op-in-construct-field.wf`
+  - `tests/conformance/cases/x-gram-nested-ucall-in-call-arg.wf`
+  - `tests/conformance/cases/x-integ-checked-overflow-diverts-to-err.wf`
+  - `tests/conformance/cases/x-integ-coin-borrow-match-score-twice.wf`
+  - `tests/conformance/cases/x-integ-loop-product-checked-overflow.wf`
+  - `tests/conformance/cases/x-integ-sign-weight-accumulate.wf`
+  - `tests/conformance/cases/x-integ-traffic-light-state-machine.wf`
+  - `tests/conformance/cases/x-match-give1-give-in-stmt-match.wf`
+  - `tests/conformance/cases/x-match-give1-nested-value-match.wf`
+  - `tests/conformance/cases/x-nominal-multifield-payload-run.wf`
+  - `tests/conformance/cases/x-option-byte-scanner-run.wf`
+  - `tests/conformance/cases/x-ownmove-copy-reused-affine-consumed-once.wf`
+  - `tests/conformance/cases/x-requires-output-capacity-run.wf`
+  - `tests/conformance/cases/x-result-buffer-transform-run.wf`
+  - `tests/conformance/cases/x-struct-construct-read-field.wf`
+  - `tests/conformance/cases/x-struct-cross-fn.wf`
+  - `tests/conformance/cases/x-struct-mixed-width.wf`
+  - `tests/conformance/cases/x-struct-nested-field.wf`
+  - `tests/conformance/cases/x-struct-of-buffers-checksum-run.wf`
+  - `tests/conformance/cases/x-struct-set-field.wf`
+  - `tests/conformance/cases/x-typ-bool-cmp-result-as-int.wf`
+  - `tests/conformance/cases/x-typ-uniq-deref-write-roundtrip.wf`
+  - `tests/conformance/cases/x-typ-value-where-borrow-param.wf`
+  - `tests/conformance/cases/x-wc-chunk-summary-run.wf`
+  Deleted: none.
+  Renamed: none.
+  No retained case id changes its declared verdict:
+  `python3 tests/conformance/runner.py verdicts origin/main` reports 0 moved,
+  0 removed, 5 added, 503 total. Within `tests/conformance/manifest.jsonl`,
+  case records move from 498 to 503 and rule-annotation records remain 32.
+  Declared verdict totals move from 69 accept, 248 reject, and 181 run to 69
+  accept, 251 reject, and 183 run. Coverage remains 131/131 rules: the corpus
+  covers 113 rules by case and 32 rules by annotation, against 112 by case and
+  32 by annotation on `main`. The 5 added ids pin the respelled rules:
+  `gram5-pos-comparison-operators` (all six operators and a delimited call
+  run to exit 0), `gram5-neg-type-application-without-delimiter` (a bare
+  `cvt<u8, u32>(...)` parses as a comparison and fails at `u8`, which DIAG-1
+  row 3 attributes to FORM-3), `gram4-neg-multiplied-use-relation-bare` (a
+  multiplied relation-form use step without parentheses does not derive),
+  `prf1-pos-multiplied-relation-use` (`use 3 * (a + b <= c + d)` closes a
+  factor-three target), and `inv1-neg-equality-relation` (`==` as an
+  invariant relation is rejected citing INV-1). The 275 modified cases keep
+  their ids and their declared verdicts; their sources are respelled to the
+  v0.41 surface by a one-shot token rewriter that is not shipped, and the two
+  cases that reached `main` after the branch was cut,
+  `set2-neg-arena-replace-target` and `set2-pos-box-descriptor-replace`, are
+  respelled on the merge of `main` into the branch.
+  Outside the case directory, the exact conformance runner, adapter,
+  collection, and gate-wiring boundary is:
+  - `tests/conformance/manifest.jsonl`:
+    `7fcc8df2b350459e1524eb75a5d3d44c502eb9f00a98ad51c10c74439b4ae0a9`
+    -> `85adc40a7c7250ee46dff76bd9354b61075f774fa77ba3d485ddc513b5d88e2c`
+    (five case records added; the `doc` prose of records that named a retired
+    operation spelling respelled; no verdict, rule, status, or coverage field
+    of a retained record changes).
+  No other conformance adapter, runner, collection, manifest, gate-integrity,
+  or gate-wiring file changes; `Makefile`, `compiler/Makefile`,
+  `compiler/tests/canonical_corpus.rs`, `compiler/tests/conformance.rs`,
+  `compiler/tests/conformance/adapter.rs`,
+  `compiler/tests/conformance/corpus.rs`,
+  `compiler/tests/conformance/json.rs`, `tests/conformance/runner.py`, and
+  `tests/conformance/test_runner.py` are byte-identical to `main`.
+ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168

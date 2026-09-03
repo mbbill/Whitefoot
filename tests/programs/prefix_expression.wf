@@ -15,7 +15,7 @@ struct ParseOutput {
 
 fn parse_expression['r](input: &'r buffer<u8>, offset: own u64) -> result: own Result<ParseOutput, ParseError> reads(input), allocates(heap) {
   let size = len(deref(input));
-  let available = ilt(offset, size);
+  let available = offset < size;
   if available {
   } else {
     let truncated_error = Truncated();
@@ -23,11 +23,11 @@ fn parse_expression['r](input: &'r buffer<u8>, offset: own u64) -> result: own R
   }
   let token = deref(input)[offset];
   let next = offset + 1_u64;
-  let is_add = ieq(token, 43_u8);
+  let is_add = token == 43_u8;
   if is_add {
-    let left_output = propagate parse_expression<'r>(input: input, offset: next);
+    let left_output = propagate parse_expression::<'r>(input: input, offset: next);
     let right_offset = left_output.next;
-    let right_output = propagate parse_expression<'r>(input: input, offset: right_offset);
+    let right_output = propagate parse_expression::<'r>(input: input, offset: right_offset);
     let final_offset = right_output.next;
     let left_node = move left_output.node;
     let right_node = move right_output.node;
@@ -36,18 +36,18 @@ fn parse_expression['r](input: &'r buffer<u8>, offset: own u64) -> result: own R
     let output = ParseOutput(node: move node, next: final_offset);
     return Ok<ParseOutput, ParseError>(value: move output);
   } else {
-    let below_digit = ilt(token, 48_u8);
+    let below_digit = token < 48_u8;
     if below_digit {
       let low_error = InvalidToken();
       return Err<ParseOutput, ParseError>(error: low_error);
     }
-    let above_digit = igt(token, 57_u8);
+    let above_digit = token > 57_u8;
     if above_digit {
       let high_error = InvalidToken();
       return Err<ParseOutput, ParseError>(error: high_error);
     }
     let digit_byte = token -wrap 48_u8;
-    let digit = cvt<u8, u64>(digit_byte);
+    let digit = cvt::<u8, u64>(digit_byte);
     let expression = Literal(value: digit);
     let node = box_new(move expression);
     let output = ParseOutput(node: move node, next: next);
@@ -61,8 +61,8 @@ fn evaluate['r](expression: &'r box<Expression>) -> result: own Result<u64, Over
       return Ok<u64, Overflow>(value: deref(literal_value));
     }
     Add(left: node_left, right: node_right) => {
-      let left_value = propagate evaluate<'r>(expression: node_left);
-      let right_value = propagate evaluate<'r>(expression: node_right);
+      let left_value = propagate evaluate::<'r>(expression: node_left);
+      let right_value = propagate evaluate::<'r>(expression: node_right);
       return left_value +checked right_value;
     }
   }
@@ -76,19 +76,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set input[3_u64] = 51_u8;
   set input[4_u64] = 52_u8;
   region 'input {
-    let parsed = parse_expression<'input>(input: &'input input, offset: 0_u64);
+    let parsed = parse_expression::<'input>(input: &'input input, offset: 0_u64);
     match parsed {
       Ok(value: output) => {
         let consumed = output.next;
-        if ieq(consumed, 5_u64) {
+        if consumed == 5_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
         let root = move output.node;
         region 'tree {
-          match evaluate<'tree>(expression: &'tree root) {
+          match evaluate::<'tree>(expression: &'tree root) {
             Ok(value: evaluated) => {
-              if ieq(evaluated, 9_u64) {
+              if evaluated == 9_u64 {
               } else {
                 return exit_status(code: 1_u8);
               }
@@ -108,7 +108,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set incomplete[0_u64] = 43_u8;
   set incomplete[1_u64] = 50_u8;
   region 'incomplete {
-    let incomplete_result = parse_expression<'incomplete>(input: &'incomplete incomplete, offset: 0_u64);
+    let incomplete_result = parse_expression::<'incomplete>(input: &'incomplete incomplete, offset: 0_u64);
     match incomplete_result {
       Ok(value: unexpected_output) => {
         return exit_status(code: 1_u8);

@@ -126,6 +126,11 @@ fn membership(token: Token<'_>) -> Option<TerminalSet> {
         TokenKind::Equal => fixed(&mut set, FixedTerminal::Equal, spelling),
         TokenKind::ThinArrow => fixed(&mut set, FixedTerminal::ThinArrow, spelling),
         TokenKind::FatArrow => fixed(&mut set, FixedTerminal::FatArrow, spelling),
+        TokenKind::EqualEqual => fixed(&mut set, FixedTerminal::EqualEqual, spelling),
+        TokenKind::BangEqual => fixed(&mut set, FixedTerminal::BangEqual, spelling),
+        TokenKind::LessEqual => fixed(&mut set, FixedTerminal::LessEqual, spelling),
+        TokenKind::GreaterEqual => fixed(&mut set, FixedTerminal::GreaterEqual, spelling),
+        TokenKind::ColonColon => fixed(&mut set, FixedTerminal::ColonColon, spelling),
         TokenKind::Ampersand => fixed(&mut set, FixedTerminal::Ampersand, spelling),
     };
     (valid_shape && !set.is_empty()).then_some(set)

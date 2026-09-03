@@ -101,7 +101,7 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
             let value = total_value(source_type);
             writeln!(
                 source,
-                "  let total{total_count} = cvt<{source_type}, {destination}>({value}_{source_type});\n  if ieq(total{total_count}, {value}_{destination}) {{\n  }} else {{\n    return exit_status(code: 1_u8);\n  }}",
+                "  let total{total_count} = cvt::<{source_type}, {destination}>({value}_{source_type});\n  if total{total_count} == {value}_{destination} {{\n  }} else {{\n    return exit_status(code: 1_u8);\n  }}",
                 destination = destination_type.spelling,
                 source_type = source_type.spelling,
             )
@@ -113,7 +113,7 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
         let failure = failing_value(source_type, destination_type);
         writeln!(
             source,
-            "  let success{checked_count} = cvt<{source_type}, {destination}>(1_{source_type});\n  match move success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      if ieq(success_value{checked_count}, 1_{destination}) {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}\n  let failure{checked_count} = cvt<{source_type}, {destination}>({failure}_{source_type});\n  match move failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
+            "  let success{checked_count} = cvt::<{source_type}, {destination}>(1_{source_type});\n  match move success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      if success_value{checked_count} == 1_{destination} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}\n  let failure{checked_count} = cvt::<{source_type}, {destination}>({failure}_{source_type});\n  match move failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
             destination = destination_type.spelling,
             source_type = source_type.spelling,
         )

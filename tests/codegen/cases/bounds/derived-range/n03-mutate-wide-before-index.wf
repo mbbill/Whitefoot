@@ -2,7 +2,7 @@ const table: array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
 
 fn probe(x: own u32) -> result: own u8 pure {
   let masked = iand(x, 7_u32);
-  let slot = cvt<u32, u64>(masked);
+  let slot = cvt::<u32, u64>(masked);
   set slot = slot +wrap 1_u64;
   return table[slot];
 }

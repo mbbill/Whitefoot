@@ -70,7 +70,7 @@ fn const_evaluation_rejects_every_out_of_domain_result() {
 /// syntax rejection v0.30 gave it.
 #[test]
 fn const_position_arithmetic_parses_and_evaluates() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  let filled = array_new<u64, 2 * 3>(0_u64);\n  let count = len(filled);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n  let filled = array_new::<u64, 2 * 3>(0_u64);\n  let count = len(filled);\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),

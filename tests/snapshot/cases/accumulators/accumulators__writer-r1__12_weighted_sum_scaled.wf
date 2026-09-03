@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected ACCEPT: each byte is scaled by a fixed factor before accumulation, bound tightened to 510 per step.";
+  let data = buffer_new(5_u64, 3_u8);
+  let sum = 0_u64;
+  for (
+    i in 0_u64..5_u64,
+    invariant scaled_bound: sum <= 510_u64 * i
+  ) {
+    let byte = data[i];
+    let wide = cvt::<u8, u64>(byte);
+    let scaled = wide * 2_u64;
+    set sum = sum + scaled;
+  }
+  if sum == 30_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

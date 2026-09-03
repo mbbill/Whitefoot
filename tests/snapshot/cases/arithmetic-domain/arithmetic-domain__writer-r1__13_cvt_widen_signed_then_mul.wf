@@ -1,0 +1,18 @@
+fn widen_and_scale(a: own i16, factor: own i32) -> result: own i32 pure contract {
+  requires factor <= 100_i32;
+  requires factor >= 0_i32;
+} {
+  doc "ACCEPT: cvt<i16, i32> is value-preserving, and the bounded factor keeps the constant-shaped product in range.";
+  let wide_a = cvt::<i16, i32>(a);
+  let scaled = wide_a * factor;
+  return scaled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let scaled = widen_and_scale(a: 300_i16, factor: 10_i32);
+  if scaled == 3000_i32 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

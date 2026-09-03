@@ -11,7 +11,7 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 1_u8);
     }
     On() => {
-      if ieq(1_i32, 1_i32) {
+      if 1_i32 == 1_i32 {
       } else {
         return exit_status(code: 2_u8);
       }

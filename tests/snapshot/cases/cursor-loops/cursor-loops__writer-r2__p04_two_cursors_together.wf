@@ -1,0 +1,62 @@
+fn count_equal_prefix['a, 'b](left: own slice<'a, u64>, right: own slice<'b, u64>) -> matched: own u64 reads(left, right) {
+  doc "ACCEPT: two cursors advance together in lockstep inside one ordinary loop, each guarded by its own bound.";
+  let left_len = len(left);
+  let right_len = len(right);
+  let shorter = left_len < right_len;
+  let bound = if shorter {
+    give left_len;
+  } else {
+    give right_len;
+  }
+  let i = 0_u64;
+  let j = 0_u64;
+  let matched = 0_u64;
+  loop (
+    invariant tied_lo: i <= j,
+    invariant tied_hi: j <= i,
+    invariant bounded: i <= bound
+  ) {
+    let remaining = i < bound;
+    if remaining {
+      let left_value = left[i];
+      let right_value = right[j];
+      let same = left_value == right_value;
+      if same {
+        set matched = matched +wrap 1_u64;
+        set i = i + 1_u64;
+        set j = j + 1_u64;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return matched;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let a = buffer_new(5_u64, 0_u64);
+  set a[0_u64] = 1_u64;
+  set a[1_u64] = 2_u64;
+  set a[2_u64] = 3_u64;
+  set a[3_u64] = 9_u64;
+  set a[4_u64] = 5_u64;
+  let b = buffer_new(5_u64, 0_u64);
+  set b[0_u64] = 1_u64;
+  set b[1_u64] = 2_u64;
+  set b[2_u64] = 3_u64;
+  set b[3_u64] = 4_u64;
+  set b[4_u64] = 5_u64;
+  region 'compare {
+    let left_view = slice_of(&'compare a);
+    let right_view = slice_of(&'compare b);
+    let matched = count_equal_prefix::<'compare, 'compare>(left: move left_view, right: move right_view);
+    let correct = matched == 3_u64;
+    if correct {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

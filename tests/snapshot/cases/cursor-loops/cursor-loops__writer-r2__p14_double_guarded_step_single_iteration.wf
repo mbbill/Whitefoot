@@ -1,0 +1,37 @@
+fn sum_paced(limit: own u64) -> total: own u64 pure {
+  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for two guarded single steps per iteration, but the guarded step joins the path that does not take it, so the backedge target fast <= limit is unprovable [ENT-6].";
+  let fast = 0_u64;
+  let n = 0_u64;
+  let total = 0_u64;
+  loop (
+    invariant paced: fast <= limit
+  ) {
+    let room = fast < limit;
+    if room {
+      set total = total +wrap fast;
+      set fast = fast + 1_u64;
+    }
+    let room_again = fast < limit;
+    if room_again {
+      set total = total +wrap fast;
+      set fast = fast + 1_u64;
+    }
+    let more = n < 4_u64;
+    if more {
+      set n = n + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = sum_paced(limit: 5_u64);
+  let correct = total == 10_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

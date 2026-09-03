@@ -140,9 +140,9 @@ command fn main() -> status: own ExitStatus pure {
 fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(7_u8);
+  let values = array_new::<u8, 2>(7_u8);
   region 'r {
-    let a = arena_new<'r, array<u8, 2>>(move values);
+    let a = arena_new::<'r, array<u8, 2>>(move values);
     let view = slice_of(&'r deref(a));
   }
   return exit_status(code: 0_u8);
@@ -171,8 +171,8 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
 
 command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
-    bump<'r>(n: &uniq 'r deref(a));
+    let a = arena_new::<'r, i32>(4_i32);
+    bump::<'r>(n: &uniq 'r deref(a));
   }
   return exit_status(code: 0_u8);
 }
@@ -187,9 +187,9 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
+    let a = arena_new::<'r, i32>(4_i32);
     region 'c {
-      bump<'c>(n: &uniq 'c deref(a));
+      bump::<'c>(n: &uniq 'c deref(a));
     }
   }
   return exit_status(code: 0_u8);
@@ -206,8 +206,8 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
-    let v = peek<'r>(n: &'r deref(a));
+    let a = arena_new::<'r, i32>(4_i32);
+    let v = peek::<'r>(n: &'r deref(a));
   }
   return exit_status(code: 0_u8);
 }
@@ -217,7 +217,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
+    let a = arena_new::<'r, i32>(4_i32);
     let h = &uniq 'r deref(a);
   }
   return exit_status(code: 0_u8);
@@ -238,7 +238,7 @@ fn arena_content_borrows_keep_their_region_rejections() {
         br#"command fn main() -> status: own ExitStatus pure {
   region 'o {
     region 'r {
-      let a = arena_new<'r, i32>(4_i32);
+      let a = arena_new::<'r, i32>(4_i32);
       let h = &uniq 'o deref(a);
     }
   }
@@ -257,8 +257,8 @@ fn arena_content_borrows_keep_their_region_rejections() {
 
 fn outer['s]() -> result: own unit pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
-    hold<'s>(n: &uniq 's deref(a));
+    let a = arena_new::<'r, i32>(4_i32);
+    hold::<'s>(n: &uniq 's deref(a));
   }
   return unit;
 }
@@ -273,7 +273,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
+    let a = arena_new::<'r, i32>(4_i32);
     loop @once {
       let h = &uniq 'r deref(a);
       break @once;
@@ -302,7 +302,7 @@ fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
+    let a = arena_new::<'r, i32>(4_i32);
     set deref(a) = 7_i32;
   }
   return exit_status(code: 0_u8);
@@ -321,7 +321,7 @@ fn arena_deliveries_may_not_leave_their_region_block() {
   let flag = True();
   let escaped = if flag {
     region 'r {
-      let a = arena_new<'r, i32>(1_i32);
+      let a = arena_new::<'r, i32>(1_i32);
       give move a;
     }
   } else {
@@ -338,13 +338,13 @@ fn arena_deliveries_may_not_leave_their_region_block() {
     );
 }
 
-/// [STOR-2, TYPE-5] `arena_new<'r, T>(v)` requires `v` to produce exactly T.
+/// [STOR-2, TYPE-5] `arena_new::<'r, T>(v)` requires `v` to produce exactly T.
 #[test]
 fn arena_new_operands_must_match_the_written_content_type() {
     assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
-    let a = arena_new<'r, i32>(4_u64);
+    let a = arena_new::<'r, i32>(4_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -361,7 +361,7 @@ fn arena_new_operands_must_match_the_written_content_type() {
 fn caller_region_allocation_and_owning_content_stop_at_the_runtime_gate() {
     assert_unsupported(
         br#"fn fill['r]() -> result: own unit allocates(arena 'r) {
-  let a = arena_new<'r, i32>(1_i32);
+  let a = arena_new::<'r, i32>(1_i32);
   return unit;
 }
 
@@ -375,7 +375,7 @@ command fn main() -> status: own ExitStatus pure {
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let boxed = box_new(9_i32);
   region 'r {
-    let a = arena_new<'r, box<i32>>(move boxed);
+    let a = arena_new::<'r, box<i32>>(move boxed);
   }
   return exit_status(code: 0_u8);
 }

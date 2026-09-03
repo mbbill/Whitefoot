@@ -1,0 +1,19 @@
+fn half_budget(total: own u8, used: own u8) -> remaining: own u8 pure contract {
+  requires used < total;
+} {
+  doc "ACCEPT: half's published even bound is exactly two times the target's coefficient vector, so the floor-division weakening admits the target.";
+  let span = total - used;
+  let half = span / 2_u8;
+  let extended = used + half;
+  invariant bounded: extended < total {
+    use used < total;
+    use 2_u8 * half <= span;
+  }
+  return extended;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let remaining = half_budget(total: 40_u8, used: 10_u8);
+  let code = remaining -wrap 25_u8;
+  return exit_status(code: code);
+}

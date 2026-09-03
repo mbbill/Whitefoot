@@ -1,5 +1,5 @@
 fn changed(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   set value = 1_i32;
   return value;

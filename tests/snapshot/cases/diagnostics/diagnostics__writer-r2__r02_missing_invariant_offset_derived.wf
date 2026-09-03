@@ -1,0 +1,20 @@
+fn last_written(xs: own buffer<u8>) -> value: own u8 reads(xs) contract {
+  define n0 = len(xs);
+  requires n0 >= 1_u64;
+} {
+  doc "EXPECT REJECT under Op4: idx tracks the last touched index across the whole counted for, but no header invariant states idx < n, so nothing survives the loop to prove xs[idx] afterward even though idx is always a value i once carried; the right repair is to write the invariant, not add another branch.";
+  let n = len(xs);
+  let idx = 0_u64;
+  for (i in 0_u64..n) {
+    let cur = xs[i];
+    let nonzero = cur != 0_u8;
+    if nonzero {
+      set idx = i;
+    }
+  }
+  return xs[idx];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

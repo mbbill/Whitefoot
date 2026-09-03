@@ -1,0 +1,19 @@
+fn triple(x: own u8) -> result: own u8 pure {
+  doc "Expected REJECT [OP-2]: exact multiplication by literal 3 on an unguarded u8 has no overflow proof. Violating value x=100_u8 gives 300, exceeding u8::MAX (255).";
+  let tripled = x * 3_u8;
+  return tripled;
+}
+
+fn triple_guarded(x: own u8) -> result: own u8 pure contract {
+  requires x <= 85_u8;
+} {
+  doc "Contrast: this sibling correctly bounds x to 85_u8 so 3 * 85 = 255 stays within u8::MAX; included only to show the guard style that adv04 gets wrong.";
+  let tripled = x * 3_u8;
+  return tripled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = triple(x: 100_u8);
+  let safe_result = triple_guarded(x: 80_u8);
+  return exit_status(code: 0_u8);
+}

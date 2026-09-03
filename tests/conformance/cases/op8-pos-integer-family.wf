@@ -11,7 +11,7 @@ command fn main() -> return_value: own ExitStatus pure {
   let mixed = mix(word: 305419896_u32);
   let bits = ipopcount(mixed);
   let bounded = imin(bits, 32_u32);
-  if ile(bounded, 32_u32) {
+  if bounded <= 32_u32 {
   } else {
     return exit_status(code: 201_u8);
   }

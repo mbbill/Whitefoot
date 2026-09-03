@@ -1,0 +1,21 @@
+fn safe_abs(n: own i32) -> result: own i32 pure {
+  doc "A dominating guard against MIN(i32) makes iabs's OP-2 obligation discharge normally.";
+  if n > -2147483648_i32 {
+    return iabs(n);
+  }
+  return 0_i32;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: exact iabs(-2147483648_i32) violates iabs.defined (x != MIN(T)) [OP-2].";
+  let guarded = safe_abs(n: -5_i32);
+  if guarded == 5_i32 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let bad = iabs(-2147483648_i32);
+  if bad == 0_i32 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

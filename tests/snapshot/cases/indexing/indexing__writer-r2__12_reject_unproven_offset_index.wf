@@ -1,0 +1,17 @@
+fn read_at_offset['r](data: &'r buffer<u8>, base: own u64, delta: own u64) -> value: own u8 reads(data) {
+  let position = base + delta;
+  return deref(data)[position];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "REJECT (expected): base + delta is an unproven offset with no dominating branch, contract requirement, or invariant bounding it against len(data), so the subscript is an [OP-4] compile-time rejection even though the call below passes base=1, delta=2 into a 4-element buffer (position 3, in bounds at runtime) -- OP-4 rejects at the definition, independent of any caller's actual values.";
+  let data = buffer_new(4_u64, 9_u8);
+  region 'r {
+    let value = read_at_offset::<'r>(data: &'r data, base: 1_u64, delta: 2_u64);
+    if value == 9_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,23 @@
+fn guard(value: own i32) -> result: own unit pure contract {
+  requires value < 128_i32;
+} {
+  return unit;
+}
+
+fn choose(value: own i32, narrow: own Bool) -> result: own i32 pure {
+  doc "expect REJECT: the narrow arm bounds its value with % 8, but the wide arm gives the raw input value unrestricted, so the join cannot prove picked < 128; value = 1000 with narrow = False violates guard's requirement.";
+  let picked = if narrow {
+    let narrow_value = value % 8_i32;
+    give narrow_value;
+  } else {
+    give value;
+  }
+  guard(value: picked);
+  return picked;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let take_narrow = True();
+  let narrow = choose(value: 7_i32, narrow: take_narrow);
+  return exit_status(code: 0_u8);
+}

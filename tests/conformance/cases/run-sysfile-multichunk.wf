@@ -5,20 +5,20 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let chunks = 0_u64;
   let file_offset = 0_u64;
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file<'c>(factory: &uniq 'c files);
-                match open_read<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                let permit = reserve_file::<'c>(factory: &uniq 'c files);
+                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     loop @scan {
                       let failed = False();
                       region 'f {
                         region 'd {
-                          match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: file_offset, start: 0_u64, end: 8_u64) {
+                          match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: file_offset, start: 0_u64, end: 8_u64) {
                             ReadBytes(next: n) => {
                               set total = total +wrap n;
                               set chunks = chunks +wrap 1_u64;
@@ -37,36 +37,36 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         break @scan;
                       }
                     }
-                    let counted = ieq(total, 20_u64);
+                    let counted = total == 20_u64;
                     if counted {
                     } else {
                       return exit_status(code: 11_u8);
                     }
-                    let repeated = ieq(chunks, 3_u64);
+                    let repeated = chunks == 3_u64;
                     if repeated {
                     } else {
                       return exit_status(code: 12_u8);
                     }
                     let last_first = page[0_u64];
-                    let wrote_prefix = ieq(last_first, 103_u8);
+                    let wrote_prefix = last_first == 103_u8;
                     if wrote_prefix {
                     } else {
                       return exit_status(code: 13_u8);
                     }
                     let last_fourth = page[3_u64];
-                    let wrote_end = ieq(last_fourth, 106_u8);
+                    let wrote_end = last_fourth == 106_u8;
                     if wrote_end {
                     } else {
                       return exit_status(code: 14_u8);
                     }
                     let carried = page[4_u64];
-                    let untouched = ieq(carried, 99_u8);
+                    let untouched = carried == 99_u8;
                     if untouched {
                     } else {
                       return exit_status(code: 15_u8);
                     }
                     let carried_last = page[7_u64];
-                    let untouched_last = ieq(carried_last, 102_u8);
+                    let untouched_last = carried_last == 102_u8;
                     if untouched_last {
                       return exit_status(code: 0_u8);
                     } else {

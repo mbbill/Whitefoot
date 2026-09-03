@@ -1,0 +1,21 @@
+fn stays_zero(limit: own u64) -> value: own u64 pure {
+  let total = 0_u64;
+  for (
+    i in 0_u64..limit,
+    invariant bounded: total <= i
+  ) {
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: [INV-1] the header invariant holds at entry but a body write breaks it on the backedge";
+  let total = 0_u64;
+  for (
+    i in 0_u64..1_u64,
+    invariant bounded: total <= i
+  ) {
+    set total = 2_u64;
+  }
+  return exit_status(code: 0_u8);
+}

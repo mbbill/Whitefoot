@@ -16,16 +16,16 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   let right_room = len(deref(right));
   let index_value = 0_u64;
   loop @fill {
-    let done = ieq(index_value, length);
+    let done = index_value == length;
     if done {
       break @fill;
     } else {
-      let in_left = ilt(index_value, left_room);
+      let in_left = index_value < left_room;
       if in_left {
         set deref(left)[index_value] = index_value;
       }
       let shifted = index_value +wrap 10_u64;
-      let in_right = ilt(index_value, right_room);
+      let in_right = index_value < right_room;
       if in_right {
         set deref(right)[index_value] = shifted;
       }
@@ -41,17 +41,17 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> f
   let index_value = 0_u64;
   let total = 0_u64;
   loop @fold {
-    let done = ieq(index_value, length);
+    let done = index_value == length;
     if done {
       break @fold;
     } else {
-      let in_left = ilt(index_value, left_room);
+      let in_left = index_value < left_room;
       let left_value = if in_left {
         give deref(left)[index_value];
       } else {
         give 0_u64;
       }
-      let in_right = ilt(index_value, right_room);
+      let in_right = index_value < right_room;
       let right_value = if in_right {
         give deref(right)[index_value];
       } else {
@@ -73,12 +73,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   region 'fill_region {
     let left_out = &uniq 'fill_region columns.left;
     let right_out = &uniq 'fill_region columns.right;
-    fill<'fill_region>(left: move left_out, right: move right_out, length: length);
+    fill::<'fill_region>(left: move left_out, right: move right_out, length: length);
   }
   region 'fold_region {
     let left_in = &'fold_region columns.left;
     let right_in = &'fold_region columns.right;
-    let total = fold<'fold_region>(left: left_in, right: right_in, length: length);
+    let total = fold::<'fold_region>(left: left_in, right: right_in, length: length);
   }
   return exit_status(code: 0_u8);
 }
@@ -213,7 +213,7 @@ fn user_calls_reject_overlapping_unique_arguments() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(1_u64, 0_u8);
   region 'r {
-    two<'r>(first: &uniq 'r values, second: &uniq 'r values);
+    two::<'r>(first: &uniq 'r values, second: &uniq 'r values);
   }
   return exit_status(code: 0_u8);
 }
@@ -245,7 +245,7 @@ fn call_effects_preserve_the_incoming_storage_origin() {
     let source =
         br#"fn write['r](out: &uniq 'r buffer<u8>) -> result: own unit reads(out), writes(out) {
   let room = len(deref(out));
-  let ok = ilt(0_u64, room);
+  let ok = 0_u64 < room;
   if ok {
     set deref(out)[0_u64] = 1_u8;
   }
@@ -253,7 +253,7 @@ fn call_effects_preserve_the_incoming_storage_origin() {
 }
 
 fn proxy['r](out: &uniq 'r buffer<u8>) -> result: own unit reads(out), writes(out) {
-  write<'r>(out: move out);
+  write::<'r>(out: move out);
   return unit;
 }
 
@@ -285,7 +285,7 @@ fn bump_left['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writ
 }
 
 fn forward['r](pair: &uniq 'r Pair) -> result: own unit reads(pair.left), writes(pair.left) {
-  bump_left<'r>(pair: move pair);
+  bump_left::<'r>(pair: move pair);
   return unit;
 }
 
@@ -327,7 +327,7 @@ fn count['r](pool: &'r Pool) -> result: own u64 reads(pool.count) {
 
 fn first['r](pool: &'r Pool) -> result: own u64 reads(pool.left) {
   let room = len(deref(pool).left);
-  let ok = ilt(0_u64, room);
+  let ok = 0_u64 < room;
   if ok {
     return deref(pool).left[0_u64];
   } else {
@@ -337,7 +337,7 @@ fn first['r](pool: &'r Pool) -> result: own u64 reads(pool.left) {
 
 fn update['r](pool: &uniq 'r Pool) -> result: own unit reads(pool.right), writes(pool.right, pool.count) {
   let room = len(deref(pool).right);
-  let ok = ilt(0_u64, room);
+  let ok = 0_u64 < room;
   if ok {
     set deref(pool).right[0_u64] = 9_u64;
   }
@@ -488,7 +488,7 @@ fn consume['r](counter: &uniq 'r Counter, value: own u64) -> result: own unit pu
 command fn main() -> status: own ExitStatus pure {
   let counter = Counter(value: 1_u64);
   region 'r {
-    consume<'r>(counter: &uniq 'r counter, value: counter.value);
+    consume::<'r>(counter: &uniq 'r counter, value: counter.value);
   }
   return exit_status(code: 0_u8);
 }
@@ -509,7 +509,7 @@ fn observe['r](counter: &'r Counter, value: own u64) -> result: own unit pure {
 command fn main() -> status: own ExitStatus pure {
   let counter = Counter(value: 1_u64);
   region 'r {
-    observe<'r>(counter: &'r counter, value: counter.value);
+    observe::<'r>(counter: &'r counter, value: counter.value);
   }
   return exit_status(code: 0_u8);
 }
@@ -536,7 +536,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
   region 'r {
-    consume<'r>(source: &'r owner.source, sibling: move owner.sibling);
+    consume::<'r>(source: &'r owner.source, sibling: move owner.sibling);
   }
   return exit_status(code: 0_u8);
 }
@@ -554,7 +554,7 @@ fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
 
 fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(out), writes(out) {
   let room = len(deref(out));
-  let first_ok = ilt(0_u64, room);
+  let first_ok = 0_u64 < room;
   if first_ok {
     set deref(out)[0_u64] = 7_u8;
   }
@@ -563,10 +563,10 @@ fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(o
 
 fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads(out), writes(out) {
   region 'byte_child {
-    write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
+    write_byte::<'byte_child>(out: &uniq 'byte_child deref(out));
   }
   let room = len(deref(out));
-  let second_ok = ilt(1_u64, room);
+  let second_ok = 1_u64 < room;
   if second_ok {
     set deref(out)[1_u64] = 9_u8;
   }
@@ -581,7 +581,7 @@ fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit read
 
 fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
   region 'counter_child {
-    bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
+    bump_counter::<'counter_child>(counter: &uniq 'counter_child deref(counter));
   }
   set deref(counter).value = deref(counter).value +wrap 1_u64;
   return unit;
@@ -591,8 +591,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region 'owners {
-    proxy_byte<'owners>(out: &uniq 'owners output);
-    proxy_counter<'owners>(counter: &uniq 'owners counter);
+    proxy_byte::<'owners>(out: &uniq 'owners output);
+    proxy_counter::<'owners>(counter: &uniq 'owners counter);
   }
   return exit_status(code: 0_u8);
 }
@@ -610,7 +610,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 fn proxy['r](out: &'r buffer<u8>) -> result: own unit pure {
   region 'child {
-    observe<'child>(out: &'child deref(out));
+    observe::<'child>(out: &'child deref(out));
   }
   return unit;
 }
@@ -633,7 +633,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn invalid['r](out: &'r buffer<u8>) -> result: own unit pure {
   region 'child {
-    take<'child>(out: &uniq 'child deref(out));
+    take::<'child>(out: &uniq 'child deref(out));
   }
   return unit;
 }
@@ -655,8 +655,8 @@ command fn main() -> status: own ExitStatus pure {
 
 fn invalid['r](out: &uniq 'r buffer<u8>) -> result: own unit pure {
   region 'child {
-    take<'child>(out: &uniq 'child deref(out));
-    take<'child>(out: &uniq 'child deref(out));
+    take::<'child>(out: &uniq 'child deref(out));
+    take::<'child>(out: &uniq 'child deref(out));
   }
   return unit;
 }
@@ -678,7 +678,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn invalid['r](out: &uniq 'r buffer<u8>) -> result: own unit pure {
   region 'child {
-    take_two<'child>(first: &uniq 'child deref(out), second: &uniq 'child deref(out));
+    take_two::<'child>(first: &uniq 'child deref(out), second: &uniq 'child deref(out));
   }
   return unit;
 }
@@ -700,7 +700,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(1_u64, 0_u8);
   loop @once {
     region 'inside {
-      observe<'inside>(out: &'inside out);
+      observe::<'inside>(out: &'inside out);
     }
     break @once;
   }
@@ -723,7 +723,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(1_u64, 0_u8);
   region 'outside {
     loop @once {
-      observe<'outside>(out: &'outside out);
+      observe::<'outside>(out: &'outside out);
       break @once;
     }
   }
@@ -748,10 +748,10 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // borrow is the value itself.
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
-  requires ile(count, capacity);
+  requires count <= capacity;
 } {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
+    match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -764,7 +764,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
-    publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
+    publish::<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -932,7 +932,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [TYPE-7]: nor a reference-returning call's result.
     assert_rule(
-        b"enum State {\n  Ready();\n}\n\nfn view['r](state: &'r State) -> result: &'r State pure {\n  return state;\n}\n\nfn inspect['r](state: &'r State) -> result: own unit pure {\n  match view<'r>(state: state) {\n    Ready() => {\n    }\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum State {\n  Ready();\n}\n\nfn view['r](state: &'r State) -> result: &'r State pure {\n  return state;\n}\n\nfn inspect['r](state: &'r State) -> result: own unit pure {\n  match view::<'r>(state: state) {\n    Ready() => {\n    }\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type7,
         SemanticIssueKind::MissingDereference {
             mechanical_fix: "write `deref(holder)`",
@@ -952,7 +952,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [OWN-12]: two uniq arguments over one place alias at the call.
     assert_rule(
-        b"fn two['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 0_i32;\n  region 'r {\n    two<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn two['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 0_i32;\n  region 'r {\n    two::<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own12,
         SemanticIssueKind::BorrowConflict,
     );
@@ -1096,7 +1096,7 @@ fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let b = box_new(4_i32);
   region 'c {
-    bump<'c>(n: &uniq 'c deref(b));
+    bump::<'c>(n: &uniq 'c deref(b));
   }
   return exit_status(code: 0_u8);
 }
@@ -1111,7 +1111,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 fn outer['s]() -> result: own unit allocates(heap) {
   let b = box_new(4_i32);
-  hold<'s>(n: &uniq 's deref(b));
+  hold::<'s>(n: &uniq 's deref(b));
   return unit;
 }
 
@@ -1240,7 +1240,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     // Bind from a candidate-position child reborrow, then write through it.
     let mut chain = PASSTHRU.to_vec();
     chain.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru::<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&chain, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
@@ -1251,7 +1251,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     // own-returning callee under the unchanged v0.7 child rule.
     let mut grandchild = PASSTHRU.to_vec();
     grandchild.extend_from_slice(
-        b"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    region 'c {\n      bump<'c>(n: &uniq 'c deref(r));\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru::<'a>(x: &uniq 'a deref(h));\n    region 'c {\n      bump::<'c>(n: &uniq 'c deref(r));\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&grandchild, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
@@ -1260,7 +1260,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     });
     // A shared bare-holder actual sources a shared result the same way.
     with_semantics_extension(
-        b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source<'a>(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source::<'a>(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("a shared bare-holder-sourced result must check: {outcome:?}");
@@ -1272,7 +1272,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     // result — the chain a recursive traversal threads through its frames.
     let mut recursive = PASSTHRU.to_vec();
     recursive.extend_from_slice(
-        b"fn twice['q0](x: &uniq 'q0 i32) -> result: &uniq 'q0 i32 pure {\n  let r = passthru<'q0>(x: &uniq 'q0 deref(x));\n  return &uniq 'q0 deref(r);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn twice['q0](x: &uniq 'q0 i32) -> result: &uniq 'q0 i32 pure {\n  let r = passthru::<'q0>(x: &uniq 'q0 deref(x));\n  return &uniq 'q0 deref(r);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&recursive, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
@@ -1289,7 +1289,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
 fn extension_chains_suspend_the_candidate_parent_permanently() {
     let mut later_use = PASSTHRU.to_vec();
     later_use.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    let w = deref(h);\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru::<'a>(x: &uniq 'a deref(h));\n    let w = deref(h);\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_rule_extension(
         &later_use,
@@ -1298,7 +1298,7 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
     );
     let mut second_chain = PASSTHRU.to_vec();
     second_chain.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    let s = passthru<'a>(x: &uniq 'a deref(h));\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru::<'a>(x: &uniq 'a deref(h));\n    let s = passthru::<'a>(x: &uniq 'a deref(h));\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_rule_extension(
         &second_chain,
@@ -1314,7 +1314,7 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
 #[test]
 fn extension_rejects_ambiguous_result_provenance() {
     assert_rule_extension(
-        b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick::<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::AmbiguousResultProvenance {
             mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
@@ -1328,7 +1328,7 @@ fn extension_rejects_ambiguous_result_provenance() {
 #[test]
 fn extension_keeps_non_candidate_children_rejected() {
     assert_rule_extension(
-        b"fn mix['p2, 'q2](p: &uniq 'p2 i32, q: &'q2 i32) -> result: &'q2 i32 pure {\n  return &'q2 deref(q);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let hx = &uniq 'a x;\n    region 'b {\n      let r = mix<'a, 'b>(p: &uniq 'a deref(hx), q: &'b y);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn mix['p2, 'q2](p: &uniq 'p2 i32, q: &'q2 i32) -> result: &'q2 i32 pure {\n  return &'q2 deref(q);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let hx = &uniq 'a x;\n    region 'b {\n      let r = mix::<'a, 'b>(p: &uniq 'a deref(hx), q: &'b y);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own6,
         SemanticIssueKind::InvalidChildReborrow {
             mechanical_fix: OWN6_ARGUMENT_POSITION,
@@ -1344,7 +1344,7 @@ fn extension_keeps_non_candidate_children_rejected() {
 fn the_shipped_checker_admits_the_extension_shapes() {
     let mut chain = PASSTHRU.to_vec();
     chain.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru::<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics(&chain, |outcome| {
         assert!(
@@ -1353,7 +1353,7 @@ fn the_shipped_checker_admits_the_extension_shapes() {
         );
     });
     with_semantics(
-        b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source<'a>(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source::<'a>(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -1372,7 +1372,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     const HELPER: &[u8] = b"fn passthru['r0](x: &uniq 'r0 u64) -> result: &uniq 'r0 u64 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
     let mut killed = HELPER.to_vec();
     killed.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region 'a {\n    let r = passthru<'a>(x: &uniq 'a i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region 'a {\n    let r = passthru::<'a>(x: &uniq 'a i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&killed, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -1386,7 +1386,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     });
     let mut control = HELPER.to_vec();
     control.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region 'a {\n    let r = passthru<'a>(x: &uniq 'a i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region 'a {\n    let r = passthru::<'a>(x: &uniq 'a i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&control, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
@@ -1407,7 +1407,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
 ///
 /// Spelled out here rather than imported, like the [FN-1] fix above, so a
 /// change to the text a writer reads has to be made twice on purpose.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
 
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
      value or unit, or in the one argument position a borrow-returning call takes its result \
@@ -1464,7 +1464,7 @@ fn declaration_provenance_rejects_every_undetermined_source_shape() {
 #[test]
 fn declaration_provenance_admits_distinct_region_sources_and_keeps_them_usable() {
     with_semantics(
-        b"fn pick['r, 's](a: &uniq 'r i32, b: &uniq 's i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    region 'b {\n      let r = pick<'a, 'b>(a: &uniq 'a x, b: &uniq 'b y);\n      set deref(r) = 9_i32;\n      let w = deref(r);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn pick['r, 's](a: &uniq 'r i32, b: &uniq 's i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    region 'b {\n      let r = pick::<'a, 'b>(a: &uniq 'a x, b: &uniq 'b y);\n      set deref(r) = 9_i32;\n      let w = deref(r);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("one candidate per region must check and stay usable: {outcome:?}");
@@ -1546,7 +1546,7 @@ fn declaration_provenance_keeps_the_established_boundary_judgment_order() {
 /// OWN-6 binding diagnostic never runs. Bindable iff usable.
 #[test]
 fn declaration_provenance_makes_the_binding_side_ambiguity_unreachable() {
-    const AMBIGUOUS_CALL: &[u8] = b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return exit_status(code: 0_u8);\n}\n";
+    const AMBIGUOUS_CALL: &[u8] = b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick::<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return exit_status(code: 0_u8);\n}\n";
     assert_rule(
         AMBIGUOUS_CALL,
         SemanticRule::Fn1,

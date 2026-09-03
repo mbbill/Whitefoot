@@ -19,8 +19,8 @@ fn count['r](tree: &'r box<Tree>) -> result: own Result<u64, Overflow> reads(tre
       return Ok<u64, Overflow>(value: 1_u64);
     }
     Branch(left: l, right: r) => {
-      let left_count = propagate count<'r>(tree: l);
-      let right_count = propagate count<'r>(tree: r);
+      let left_count = propagate count::<'r>(tree: l);
+      let right_count = propagate count::<'r>(tree: r);
       let children = propagate left_count +checked right_count;
       return children +checked 1_u64;
     }
@@ -36,9 +36,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let branch1 = boxed_branch(left: move leaf2, right: move leaf3);
   let root = boxed_branch(left: move branch0, right: move branch1);
   region 'tree {
-    match count<'tree>(tree: &'tree root) {
+    match count::<'tree>(tree: &'tree root) {
       Ok(value: nodes) => {
-        if ieq(nodes, 7_u64) {
+        if nodes == 7_u64 {
         } else {
           return exit_status(code: 1_u8);
         }

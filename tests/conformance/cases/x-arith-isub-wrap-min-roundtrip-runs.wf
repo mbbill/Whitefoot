@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus pure {
   let hi = 2147483647_i32;
   let lo = hi +wrap 1_i32;
   let back = lo -wrap 1_i32;
-  if ieq(back, hi) {
+  if back == hi {
   } else {
     return exit_status(code: 1_u8);
   }

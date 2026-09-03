@@ -1,5 +1,5 @@
 fn hidden_local(x: own i32) -> result: own Bool pure contract {
-  define permitted = ige(x, 0_i32);
+  define permitted = x >= 0_i32;
   requires permitted;
 } {
   doc "Requirement locals do not enter the function-body scope [FN-8/TYPE-5].";

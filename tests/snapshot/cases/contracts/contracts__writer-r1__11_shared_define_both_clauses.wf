@@ -1,0 +1,19 @@
+fn clamp_input(value: own u32, floor: own u32, ceiling: own u32) -> result: own u32 pure contract {
+  requires floor <= ceiling;
+  requires value >= floor;
+  requires value <= ceiling;
+  ensures result >= floor;
+  ensures result <= ceiling;
+} {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: two independent ensures clauses, a lower and an upper bound, both proved from the same requires range.";
+  let result = clamp_input(value: 42_u32, floor: 10_u32, ceiling: 90_u32);
+  if result == 42_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

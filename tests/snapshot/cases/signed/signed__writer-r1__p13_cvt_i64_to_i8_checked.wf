@@ -1,0 +1,25 @@
+fn narrow(x: own i64) -> result: own i8 pure {
+  doc "ACCEPT: cvt<i64, i8> is not value-preserving (i64 has values outside i8's range), so it returns Result<i8, NarrowError> and matching both arms is total [OP-6].";
+  match cvt::<i64, i8>(x) {
+    Ok(value: v) => {
+      return v;
+    }
+    Err(error: e) => {
+      return 0_i8;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = narrow(x: -100_i64);
+  if a == -100_i8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let b = narrow(x: -9223372036854775808_i64);
+  if b == 0_i8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

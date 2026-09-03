@@ -1,0 +1,34 @@
+fn count_nonzero(values: own buffer<u64>) -> kept: own u64 reads(values) {
+  doc "ACCEPT: a counted for cursor walks the source while a second write cursor advances only when the source is nonzero.";
+  let length = len(values);
+  let write_at = 0_u64;
+  for (
+    i in 0_u64..length,
+    invariant bounded: write_at <= i
+  ) {
+    let value = values[i];
+    let nonzero = value == 0_u64;
+    if nonzero {
+    } else {
+      set write_at = write_at + 1_u64;
+    }
+  }
+  return write_at;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let source = buffer_new(6_u64, 0_u64);
+  set source[0_u64] = 4_u64;
+  set source[1_u64] = 0_u64;
+  set source[2_u64] = 9_u64;
+  set source[3_u64] = 0_u64;
+  set source[4_u64] = 1_u64;
+  set source[5_u64] = 2_u64;
+  let kept = count_nonzero(values: move source);
+  let correct = kept == 4_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

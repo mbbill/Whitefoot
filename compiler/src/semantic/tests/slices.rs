@@ -11,7 +11,7 @@ fn slices_retain_type_source_and_access_operations() {
 
 fn first['r](values: own slice<'r, u8>) -> result: own u8 reads(values) {
   let length = len(values);
-  let nonempty = ilt(0_u64, length);
+  let nonempty = 0_u64 < length;
   if nonempty {
     return values[0_u64];
   } else {
@@ -22,7 +22,7 @@ fn first['r](values: own slice<'r, u8>) -> result: own u8 reads(values) {
 command fn main() -> status: own ExitStatus pure {
   region 'view {
     let values = slice_of(&'view bytes);
-    let value = first<'view>(values: move values);
+    let value = first::<'view>(values: move values);
   }
   return exit_status(code: 0_u8);
 }
@@ -93,7 +93,7 @@ fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
   region 'access {
     let holder = &uniq 'access moved;
     let room = len(deref(holder));
-    let nonempty = ilt(0_u64, room);
+    let nonempty = 0_u64 < room;
     if nonempty {
       let byte = deref(holder)[0_u64];
       set deref(holder)[0_u64] = byte;
@@ -109,7 +109,7 @@ fn slice_after_move(value: own buffer<u8>) -> result: own u8 reads(value) {
   region 'view {
     let view = slice_of(&'view moved);
     let room = len(view);
-    let nonempty = ilt(0_u64, room);
+    let nonempty = 0_u64 < room;
     if nonempty {
       return view[0_u64];
     } else {
@@ -134,7 +134,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
     set values[0_u64] = 1_u8;
@@ -147,7 +147,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     );
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
     let taken = move values;
@@ -164,7 +164,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
 fn slice_loans_live_until_their_named_data_region_ends() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'outer {
     region 'inner {
       let view = slice_of(&'outer values);
@@ -180,7 +180,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
 
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   let take_view = True();
   region 'outer {
     if take_view {
@@ -196,7 +196,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     );
 
     let ended_region = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'view {
     let view = slice_of(&'view values);
   }
@@ -216,7 +216,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
 fn slice_loans_follow_structured_break_region_exits() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'view {
     let view = slice_of(&'view values);
     loop @once {
@@ -232,7 +232,7 @@ fn slice_loans_follow_structured_break_region_exits() {
     );
 
     let ended_on_break = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   loop @once {
     region 'view {
       let view = slice_of(&'view values);
@@ -252,7 +252,7 @@ fn slice_loans_follow_structured_break_region_exits() {
 
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'outside {
     loop @once {
       let view = slice_of(&'outside values);
@@ -425,7 +425,7 @@ command fn main() -> status: own ExitStatus pure {
 fn slice_views_are_not_set_targets() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
     set window[0_u64] = 1_u8;
@@ -445,7 +445,7 @@ fn slice_views_are_not_set_targets() {
 fn slice_formation_enforces_storage_duration_and_explicit_boundaries() {
     assert_rule_kind(
         br#"fn invalid['caller]() -> result: own unit pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   let window = slice_of(&'caller values);
   return unit;
 }
@@ -551,7 +551,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 0_u8);
   region 'view {
-    slice_of<'view, u8>(&'view data);
+    slice_of::<'view, u8>(&'view data);
   }
   return exit_status(code: 0_u8);
 }
@@ -576,13 +576,13 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = array_new<u8, 2>(11_u8);
-  let right = array_new<u8, 2>(29_u8);
+  let left = array_new::<u8, 2>(11_u8);
+  let right = array_new::<u8, 2>(29_u8);
   region 'view {
     let pass_source = slice_of(&'view left);
-    let passed = pass<'view>(value: move pass_source);
+    let passed = pass::<'view>(value: move pass_source);
     let passed_room = len(passed);
-    let passed_ok = ilt(0_u64, passed_room);
+    let passed_ok = 0_u64 < passed_room;
     if passed_ok {
     } else {
       return exit_status(code: 1_u8);
@@ -591,9 +591,9 @@ command fn main() -> status: own ExitStatus pure {
     let left_source = slice_of(&'view left);
     let right_source = slice_of(&'view right);
     let take_left = False();
-    let selected = choose<'view>(take_left: take_left, left: move left_source, right: move right_source);
+    let selected = choose::<'view>(take_left: take_left, left: move left_source, right: move right_source);
     let selected_room = len(selected);
-    let selected_ok = ilt(0_u64, selected_room);
+    let selected_ok = 0_u64 < selected_room;
     if selected_ok {
     } else {
       return exit_status(code: 2_u8);
@@ -666,9 +666,9 @@ fn returned_slice_origins_drive_effects_and_alias_conflicts() {
 }
 
 fn first['r](value: own slice<'r, u8>) -> result: own u8 reads(value) {
-  let returned = pass<'r>(value: move value);
+  let returned = pass::<'r>(value: move value);
   let room = len(returned);
-  let ok = ilt(0_u64, room);
+  let ok = 0_u64 < room;
   if ok {
     return returned[0_u64];
   } else {
@@ -697,13 +697,13 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = array_new<u8, 2>(0_u8);
-  let right = array_new<u8, 2>(0_u8);
+  let left = array_new::<u8, 2>(0_u8);
+  let right = array_new::<u8, 2>(0_u8);
   region 'view {
     let left_view = slice_of(&'view left);
     let right_view = slice_of(&'view right);
     let take_left = True();
-    let selected = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
+    let selected = choose::<'view>(take_left: take_left, left: move left_view, right: move right_view);
     set right[0_u64] = 1_u8;
   }
   return exit_status(code: 0_u8);
@@ -719,7 +719,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn wrapper['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> result: own unit pure {
-  return consume<'data, 'write>(view: move view, output: move output);
+  return consume::<'data, 'write>(view: move view, output: move output);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -774,7 +774,7 @@ command fn main() -> status: own ExitStatus pure {
 
     let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) {
   let room = len(deref(value));
-  let ok = ilt(0_u64, room);
+  let ok = 0_u64 < room;
   if ok {
     return deref(value)[0_u64];
   } else {
@@ -783,7 +783,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) {
-  return first<'descriptor, 'data>(value: value);
+  return first::<'descriptor, 'data>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {

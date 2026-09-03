@@ -1,0 +1,31 @@
+const front_half: array<u8, 4> =[5_u8, 6_u8, 7_u8, 8_u8];
+
+const back_half: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: two separate loops each fill an independent accumulator, then a plain add combines them once both bounds are known.";
+  let front_sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant front_bound: front_sum <= 255_u32 * i
+  ) {
+    let byte = front_half[i];
+    let wide = cvt::<u8, u32>(byte);
+    set front_sum = front_sum + wide;
+  }
+  let back_sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant back_bound: back_sum <= 255_u32 * i
+  ) {
+    let byte = back_half[i];
+    let wide = cvt::<u8, u32>(byte);
+    set back_sum = back_sum + wide;
+  }
+  let total = front_sum + back_sum;
+  if total == 36_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

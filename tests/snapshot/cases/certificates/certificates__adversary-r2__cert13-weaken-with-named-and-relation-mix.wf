@@ -1,0 +1,20 @@
+fn mixed_forms(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own unit pure contract {
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 40_u8;
+  requires second_limit <= 40_u8;
+  requires third_limit <= 40_u8;
+} {
+  doc "SNAPSHOT REJECT [PRF-1]: the finder expected ACCEPT for a mixed named-and-relation use block, but AUTO already proves the weakened target from the same entering context, so the block is redundant and PRF-1 rejects it.";
+  invariant pair_bound: first + second <= first_limit + second_limit;
+  invariant combined: 2_u8 * first + 2_u8 * second + third <= 2_u8 * first_limit + 2_u8 * second_limit + third_limit + 3_u8 {
+    use 2 * pair_bound;
+    use third <= third_limit;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

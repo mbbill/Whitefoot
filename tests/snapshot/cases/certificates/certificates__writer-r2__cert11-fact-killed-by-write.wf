@@ -1,0 +1,17 @@
+fn refresh_then_bound(x: own u8, limit: own u8, replacement: own u8, y: own u8, y_limit: own u8) -> result: own u8 pure contract {
+  requires x <= limit;
+  requires y <= y_limit;
+} {
+  doc "REJECT: original_bound denotes the pre-write value image of x; after the write, still_bound's target names the new binding (replacement) and the certificate cannot combine the stale term.";
+  invariant original_bound: x <= limit;
+  set x = replacement;
+  invariant still_bound: x + y <= limit + y_limit {
+    use original_bound;
+    use y <= y_limit;
+  }
+  return x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,14 @@
+fn redundant_single(value: own u64, limit: own u64) -> result: own unit pure contract {
+  requires value <= limit;
+} {
+  doc "Expect REJECT [PRF-1 redundant use block]: AUTO already discharges the target directly from the single coefficient-one premise `bound` without any certificate, so the nonempty use block citing it is redundant.";
+  invariant bound: value <= limit;
+  invariant restated: value <= limit {
+    use bound;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

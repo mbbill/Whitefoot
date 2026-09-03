@@ -1,0 +1,29 @@
+fn bucket_of['r](counts: &uniq 'r buffer<u32>, hash: own u64) -> result: own unit reads(counts), writes(counts) contract {
+  define buckets = len(deref(counts));
+  requires buckets > 0_u64;
+} {
+  let buckets = len(deref(counts));
+  let slot = hash % buckets;
+  let current = deref(counts)[slot];
+  if current +defined 1_u32 {
+  } else {
+    return unit;
+  }
+  set deref(counts)[slot] = current + 1_u32;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: a nonzero constant-length bucket table plus a runtime-value modulus keeps the remainder inside [0, buckets) automatically under [OP-2, OP-4]; a plain buffer literal always has that fact, no invariant needed.";
+  let counts = buffer_new(8_u64, 0_u32);
+  region 'r {
+    bucket_of::<'r>(counts: &uniq 'r counts, hash: 19_u64);
+    bucket_of::<'r>(counts: &uniq 'r counts, hash: 27_u64);
+  }
+  let landed = counts[3_u64];
+  if landed == 2_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,17 @@
+fn duplicate_mixed(alpha: own u16, alpha_cap: own u16, beta: own u16, beta_cap: own u16) -> result: own unit pure contract {
+  requires alpha <= alpha_cap;
+  requires beta <= beta_cap;
+} {
+  doc "REJECT [PRF-1]: pair_bound (named) and the written relation alpha + beta <= alpha_cap + beta_cap normalize to the same premise, a duplicate use.";
+  invariant pair_bound: alpha + beta <= alpha_cap + beta_cap;
+  invariant tripled_bound: 3_u16 * alpha + 3_u16 * beta <= 3_u16 * alpha_cap + 3_u16 * beta_cap {
+    use pair_bound;
+    use alpha + beta <= alpha_cap + beta_cap;
+    use pair_bound;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

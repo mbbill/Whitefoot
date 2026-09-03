@@ -4,7 +4,7 @@ enum Choice {
 }
 
 fn guard(value: own i32) -> result: own unit pure contract {
-  requires ilt(value, 128_i32);
+  requires value < 128_i32;
 } {
   return unit;
 }
@@ -12,7 +12,7 @@ fn guard(value: own i32) -> result: own unit pure contract {
 fn matched(value: own i32, choice: own Choice) -> result: own i32 pure {
   let picked = match choice {
     Narrow() => {
-      let narrow_bound = ilt(value, 8_i32);
+      let narrow_bound = value < 8_i32;
       if narrow_bound {
       } else {
         return value;
@@ -20,7 +20,7 @@ fn matched(value: own i32, choice: own Choice) -> result: own i32 pure {
       give value;
     }
     Wide() => {
-      let wide_bound = ilt(value, 128_i32);
+      let wide_bound = value < 128_i32;
       if wide_bound {
       } else {
         return value;

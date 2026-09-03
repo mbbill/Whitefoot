@@ -1,17 +1,17 @@
 fn doubled<const n: u64>(fill: own u64) -> result: own array<u64, n * 2> pure {
   doc "CONST-1 one-operation const arithmetic: a const-expression is at most one operation over two terms, exactly the shape GRAM-6 fixes for expressions. `n * 2` is usable as an array<T, N> size and forwardable as a const targ, and each concrete instantiation evaluates it to one u64 value at monomorphization.";
-  return array_new<u64, n * 2>(fill);
+  return array_new::<u64, n * 2>(fill);
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let cells = doubled<3>(fill: 7_u64);
+  let cells = doubled::<3>(fill: 7_u64);
   let count = len(cells);
-  if ieq(count, 6_u64) {
+  if count == 6_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let last = cells[5_u64];
-  if ieq(last, 7_u64) {
+  if last == 7_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

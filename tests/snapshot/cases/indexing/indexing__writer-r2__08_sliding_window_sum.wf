@@ -1,0 +1,41 @@
+fn window_sum['r](data: &'r buffer<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
+  define room = len(deref(data));
+  requires start <= room;
+  requires width <= room;
+} {
+  if start +defined width {
+  } else {
+    return 0_u32;
+  }
+  let end = start + width;
+  let room = len(deref(data));
+  if end <= room {
+  } else {
+    return 0_u32;
+  }
+  let sum = 0_u32;
+  for (i in start..end) {
+    let value = deref(data)[i];
+    set sum = sum +wrap value;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: the dominating branch establishes end <= room, then the for-loop's automatic i < end fact composes with it under [OP-4]'s two-premise automatic rule, so the window subscript needs no written invariant.";
+  let data = buffer_new(6_u64, 0_u32);
+  set data[0_u64] = 1_u32;
+  set data[1_u64] = 2_u32;
+  set data[2_u64] = 3_u32;
+  set data[3_u64] = 4_u32;
+  set data[4_u64] = 5_u32;
+  set data[5_u64] = 6_u32;
+  region 'r {
+    let total = window_sum::<'r>(data: &'r data, start: 2_u64, width: 3_u64);
+    if total == 12_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

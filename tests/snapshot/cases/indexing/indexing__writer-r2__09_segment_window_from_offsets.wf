@@ -1,0 +1,58 @@
+fn segment_sum['o, 'd](offsets: &'o buffer<u64>, data: &'d buffer<u32>, segment: own u64) -> total: own u32 reads(offsets, data) {
+  let segment_count_plus_one = len(deref(offsets));
+  if segment_count_plus_one > 0_u64 {
+  } else {
+    return 0_u32;
+  }
+  let last = segment_count_plus_one - 1_u64;
+  if segment < last {
+  } else {
+    return 0_u32;
+  }
+  let start = deref(offsets)[segment];
+  let next_segment = segment + 1_u64;
+  if next_segment < segment_count_plus_one {
+  } else {
+    return 0_u32;
+  }
+  let end = deref(offsets)[next_segment];
+  let room = len(deref(data));
+  if start <= end {
+  } else {
+    return 0_u32;
+  }
+  if end <= room {
+  } else {
+    return 0_u32;
+  }
+  let sum = 0_u32;
+  for (i in start..end) {
+    let value = deref(data)[i];
+    set sum = sum +wrap value;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: each offsets[i] read is guarded by its own dominating index check, and the data window subscript is then discharged by the runtime-checked end <= room fact composing with the for-loop's automatic i < end fact.";
+  let offsets = buffer_new(4_u64, 0_u64);
+  set offsets[0_u64] = 0_u64;
+  set offsets[1_u64] = 2_u64;
+  set offsets[2_u64] = 5_u64;
+  set offsets[3_u64] = 6_u64;
+  let data = buffer_new(6_u64, 0_u32);
+  set data[0_u64] = 10_u32;
+  set data[1_u64] = 20_u32;
+  set data[2_u64] = 1_u32;
+  set data[3_u64] = 1_u32;
+  set data[4_u64] = 1_u32;
+  set data[5_u64] = 9_u32;
+  region 'r {
+    let middle = segment_sum::<'r, 'r>(offsets: &'r offsets, data: &'r data, segment: 1_u64);
+    if middle == 3_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

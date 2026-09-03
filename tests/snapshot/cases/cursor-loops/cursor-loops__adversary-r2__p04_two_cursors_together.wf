@@ -1,0 +1,28 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: for loop advances two arrays with the same cursor, both indexable in bounds";
+  let a = array_new::<u64, 5>(0_u64);
+  let b = array_new::<u64, 5>(0_u64);
+  set a[0_u64] = 1_u64;
+  set a[1_u64] = 2_u64;
+  set a[2_u64] = 3_u64;
+  set a[3_u64] = 4_u64;
+  set a[4_u64] = 5_u64;
+  set b[0_u64] = 10_u64;
+  set b[1_u64] = 20_u64;
+  set b[2_u64] = 30_u64;
+  set b[3_u64] = 40_u64;
+  set b[4_u64] = 50_u64;
+  let total = 0_u64;
+  for (i in 0_u64..5_u64) {
+    let av = a[i];
+    let bv = b[i];
+    let sum = av +wrap bv;
+    set total = total +wrap sum;
+  }
+  let correct = total == 165_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,16 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: signed +sat and -sat clamp to the type's bounds instead of wrapping or trapping.";
+  let near_max = 2147483640_i32;
+  let saturated_high = near_max +sat 100_i32;
+  if saturated_high == 2147483647_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let near_min = -2147483640_i32;
+  let saturated_low = near_min -sat 100_i32;
+  if saturated_low == -2147483648_i32 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 2_u8);
+  }
+}

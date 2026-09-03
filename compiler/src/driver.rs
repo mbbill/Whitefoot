@@ -665,13 +665,13 @@ mod tests {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -700,9 +700,9 @@ mod tests {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -816,7 +816,7 @@ mod tests {
         let detail = failure.detail();
         // The set as spellings, in the grammar's own order.
         assert!(
-            detail.contains(r#"expected: ["{", ";", ")", ",", "["#),
+            detail.contains(r#"expected: ["{", ";", ")", ",", "<", ">", "["#),
             "{detail}"
         );
         // The line the writer wrote, and where in it the parser stopped.
@@ -831,32 +831,32 @@ mod tests {
         for (name, source, stage, rule) in [
             (
                 "local-target-formation.wf",
-                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ieq(0_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n"
+                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 == 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
                     .as_slice(),
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "local-target-unproved.wf",
-                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ile(1_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n",
+                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "use-relation-formation.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use ieq(value, limit);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use value == limit;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "PRF-1",
             ),
             (
                 "use-relation-name.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use ile(value, missing);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use value <= missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "PRF-1",
             ),
             (
                 "named-use-scope.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {\n    use missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "INV-1",
             ),
@@ -910,8 +910,8 @@ mod tests {
     fn a_child_reborrow_rejection_states_the_scope_rule_and_the_whole_idiom() {
         let source = br#"fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
   region 'source {
-    let permit = reserve_file<'source>(factory: &uniq 'source deref(factory));
-    match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
+    let permit = reserve_file::<'source>(factory: &uniq 'source deref(factory));
+    match open_file::<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
       Ok(value: handle) => {
       }
       Err(error: problem) => {
@@ -925,7 +925,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let name = buffer_new(16_u64, 0_u8);
   let code = 0_u8;
   region 'call {
-    set code = walk<'call, 'call>(factory: &uniq 'call files, root: &'call cwd, name: &'call name);
+    set code = walk::<'call, 'call>(factory: &uniq 'call files, root: &'call cwd, name: &'call name);
   }
   return exit_status(code: code);
 }
@@ -1071,9 +1071,9 @@ command fn main() -> status: own ExitStatus pure {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -1133,8 +1133,8 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold<'b>(node: move l);
-      let b = fold<'b>(node: move r);
+      let a = fold::<'b>(node: move l);
+      let b = fold::<'b>(node: move r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -1147,7 +1147,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {{
-    let total = fold<'tree>(node: &uniq 'tree branch0);
+    let total = fold::<'tree>(node: &uniq 'tree branch0);
   }}
   return exit_status(code: 0_u8);
 }}
@@ -1174,7 +1174,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
   let size = len(values);
   let bounded = iand(index, 7_u64);
-  invariant index_in_range: ile(bounded, 7_u64);
+  invariant index_in_range: bounded <= 7_u64;
   return values[bounded];
 }}
 
@@ -1182,13 +1182,13 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
-      let values = array_new<u64, 8>(1_u64);
+      let values = array_new::<u64, 8>(1_u64);
       let touched = scaled(values: move values, index: w);
       return w;
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = bubble<'b>(node: move l);
-      let b = bubble<'b>(node: move r);
+      let a = bubble::<'b>(node: move l);
+      let b = bubble::<'b>(node: move r);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
@@ -1201,8 +1201,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {{
-    let total = bubble<'tree>(node: &uniq 'tree branch0);
-    if ieq(total, 7_u64) {{
+    let total = bubble::<'tree>(node: &uniq 'tree branch0);
+    if total == 7_u64 {{
     }} else {{
       return exit_status(code: 1_u8);
     }}
@@ -1263,8 +1263,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region 'r {
-    let lo = bump<'r>(slot: &uniq 'r cell);
-    let hi = bump<'r>(slot: &uniq 'r cell);
+    let lo = bump::<'r>(slot: &uniq 'r cell);
+    let hi = bump::<'r>(slot: &uniq 'r cell);
     let total = imax(lo, hi);
   }
   return exit_status(code: 0_u8);
@@ -1308,7 +1308,7 @@ command fn main() -> status: own ExitStatus pure {
         // function, so the second statement's write must not run under an
         // overlap the sequential execution skips.
         let propagating = b"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
-  return cvt<u32, u8>(v);
+  return cvt::<u32, u8>(v);
 }
 
 fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
@@ -1318,7 +1318,7 @@ fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
 
 fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes(slot) {
   let narrowed = propagate narrow(v: v);
-  let stamped = stamp<'o>(slot: move slot);
+  let stamped = stamp::<'o>(slot: move slot);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -1351,13 +1351,13 @@ command fn main() -> status: own ExitStatus pure {
   let low = iand(index, 7_u64);
   let seen = 0_u64;
   loop @spin {
-    let done = ieq(seen, 4_u64);
+    let done = seen == 4_u64;
     if done {
       break @spin;
     }
     set seen = seen +wrap 1_u64;
   }
-  return ieq(low, 3_u64);
+  return low == 3_u64;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -1468,7 +1468,7 @@ command fn main() -> status: own ExitStatus pure {
         let source =
             b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
-  let bits = reinterpret<f64, u64>(deref(slot));
+  let bits = reinterpret::<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
 }
 
@@ -1477,7 +1477,7 @@ command fn main() -> status: own ExitStatus pure {
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     region 'acc {
-      let one = accum<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
+      let one = accum::<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
       set count = count +wrap one;
     }
   }
@@ -1497,7 +1497,7 @@ command fn main() -> status: own ExitStatus pure {
         // The same loop over a callee that writes nothing is permitted, so the
         // refusal above is about the projected row and not about the shape.
         let reading = b"fn weigh(x: own f64) -> result: own u64 pure {
-  let bits = reinterpret<f64, u64>(x);
+  let bits = reinterpret::<f64, u64>(x);
   return iand(bits, 1_u64);
 }
 
@@ -1540,7 +1540,7 @@ command fn main() -> status: own ExitStatus pure {
     for @scan (i in 0_u64..count) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
-      let hit = ieq(v, needle);
+      let hit = v == needle;
       if hit {
         give i;
       }
@@ -1556,7 +1556,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region 's {
-    let t = scan_until<'s>(src: &'s data, needle: 7_u64);
+    let t = scan_until::<'s>(src: &'s data, needle: 7_u64);
     return exit_status(code: 0_u8);
   }
 }
@@ -1591,7 +1591,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region 's {
-    let t = scan_until<'s>(src: &'s data, needle: 7_u64);
+    let t = scan_until::<'s>(src: &'s data, needle: 7_u64);
     return exit_status(code: 0_u8);
   }
 }
@@ -1623,7 +1623,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let parity = False();
   for @scan (i in 0_u64..64_u64) {
     let low = iand(i, 1_u64);
-    let bit = ieq(low, 0_u64);
+    let bit = low == 0_u64;
     set every = band(every, bit);
     set any = bor(any, bit);
     set parity = bxor(parity, bit);
@@ -1660,9 +1660,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -1691,7 +1691,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                  &uniq 'f files"
                     .to_owned(),
                 "PAR stage       staged.wf:3  for   permitted   staged at \
-                 open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, \
+                 open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, \
                  start: 0_u64, end: 4_u64); 4 places classified"
                     .to_owned(),
                 "PAR place       staged.wf:3  serialized-P  &uniq 'f files  every footprint \
@@ -1734,12 +1734,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             let sum = left[0_u64] +wrap right[0_u64];
-            let wide = cvt<u8, u64>(sum);
+            let wide = cvt::<u8, u64>(sum);
             set total = total +wrap wide;
           }
           Err(error: problem) => {
@@ -1794,13 +1794,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -1864,13 +1864,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   for @scan (index in 0_u64..4_u64) {
     let byte = data[0_u64];
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -1937,9 +1937,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let shared = buffer_new(16_u64, 97_u8);
     for @scan (index in 0_u64..4_u64) {
       region 'f {
-        let permit = reserve_file<'f>(factory: &uniq 'f files);
+        let permit = reserve_file::<'f>(factory: &uniq 'f files);
         region 'n {
-          match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n shared, start: 0_u64, end: 4_u64) {
+          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n shared, start: 0_u64, end: 4_u64) {
             Ok(value: handle) => {
             }
             Err(error: problem) => {
@@ -2029,8 +2029,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold<'b>(node: move l);
-      let b = fold<'b>(node: move r);
+      let a = fold::<'b>(node: move l);
+      let b = fold::<'b>(node: move r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -2043,7 +2043,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {{
-    let total = fold<'tree>(node: &uniq 'tree branch0);
+    let total = fold::<'tree>(node: &uniq 'tree branch0);
   }}
   return exit_status(code: 0_u8);
 }}
@@ -2171,7 +2171,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 18446744073709551615>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 18446744073709551615>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2186,9 +2186,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
     #[test]
     fn u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure() {
         let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
-  ensures ile(result, 5000000000000000000_u64);
+  ensures result <= 5000000000000000000_u64;
 } {
-  if ile(n, 5000000000000000000_u64) {
+  if n <= 5000000000000000000_u64 {
     return n;
   } else {
     return 5000000000000000000_u64;
@@ -2218,7 +2218,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  let left = array_new<u8, 4611686018427387904>(0_u8);\n  let right = array_new<u8, 4611686018427387904>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  let left = array_new::<u8, 4611686018427387904>(0_u8);\n  let right = array_new::<u8, 4611686018427387904>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2263,7 +2263,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -2580,7 +2580,7 @@ command fn main() -> status: own ExitStatus pure {
         let contract = rejection(
             "contract.wf",
             br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires ile(end, len(deref(data)));
+  requires end <= len(deref(data));
 } {
   return 0_u64;
 }
@@ -2611,7 +2611,7 @@ command fn main() -> status: own ExitStatus pure {
                 "repaired.wf",
                 br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
   define room = len(deref(data));
-  requires ile(end, room);
+  requires end <= room;
 } {
   return 0_u64;
 }
@@ -2692,7 +2692,7 @@ command fn main() -> status: own ExitStatus pure {
             br#"command fn main() -> status: own ExitStatus pure {
   let a = 1_u64;
   let b = 2_u32;
-  let c = ile(a, b);
+  let c = a <= b;
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2760,7 +2760,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn caller['r](anchor: &'r buffer<u8>) -> out: own u64 allocates(heap) {
   let local = buffer_new(4_u64, 0_u8);
-  return sum<'r>(data: &'r local);
+  return sum::<'r>(data: &'r local);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -2820,7 +2820,7 @@ command fn main() -> status: own ExitStatus pure {
   let one = buffer_new(1_u64, value);
   let sent = 0_u64;
   region 'w {
-    match write_once<'w, 'w>(output: &uniq 'w deref(out), source: &'w one, start: 0_u64, end: 1_u64) {
+    match write_once::<'w, 'w>(output: &uniq 'w deref(out), source: &'w one, start: 0_u64, end: 1_u64) {
       Ok(value: n) => {
         set sent = n;
       }
@@ -2836,7 +2836,7 @@ command fn main() -> status: own ExitStatus pure {
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   for @scan (index in 0_u64..4_u64) {{
     region 'p {{
-      let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
+      let wrote = emit::<'p>(out: &uniq 'p out, value: 65_u8);
     }}
   }}
   return exit_status(code: 0_u8);
@@ -2866,9 +2866,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   for @scan (index in 0_u64..4_u64) {{
     let name = buffer_new(16_u64, 97_u8);
     region 'f {{
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {{
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {{
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {{
           Ok(value: handle) => {{
             set total = total +wrap 1_u64;
           }}
@@ -2879,7 +2879,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     }}
   }}
   region 'p {{
-    let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
+    let wrote = emit::<'p>(out: &uniq 'p out, value: 65_u8);
   }}
   return exit_status(code: 0_u8);
 }}

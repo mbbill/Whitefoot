@@ -6,9 +6,9 @@ enum Sign {
 
 fn sign_of(x: own i32) -> function_result: own Sign pure {
   doc "Conditional value produced by returning from arms (return-position match).";
-  if ilt(x, 0_i32) {
+  if x < 0_i32 {
     return Neg();
-  } else if ieq(x, 0_i32) {
+  } else if x == 0_i32 {
     return Zero();
   } else {
     return Pos();
@@ -28,7 +28,7 @@ command fn main() -> status: own ExitStatus pure {
         return exit_status(code: 1_u8);
       }
     }
-    if ieq(v, 42_i32) {
+    if v == 42_i32 {
     } else {
       return exit_status(code: 2_u8);
     }
@@ -41,7 +41,7 @@ command fn main() -> status: own ExitStatus pure {
         return exit_status(code: 4_u8);
       }
       Pos() => {
-        if ieq(v, 42_i32) {
+        if v == 42_i32 {
         } else {
           return exit_status(code: 5_u8);
         }

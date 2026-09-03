@@ -1,11 +1,11 @@
 fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
 
 fn relay(slot: own i32, replacement: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, replacement);
+  ensures result == replacement;
 } {
   set slot = choose(ignored: slot, value: replacement);
   return slot;

@@ -1,0 +1,17 @@
+fn safe_divide(n: own u64, d: own u64) -> result: own u64 pure {
+  doc "ACCEPT: a `>` branch establishes a nonzero divisor, so the division obligation discharges [OP-2, ENT-6].";
+  if d > 0_u64 {
+    let q = n / d;
+    return q;
+  }
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let q = safe_divide(n: 20_u64, d: 4_u64);
+  if q == 5_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

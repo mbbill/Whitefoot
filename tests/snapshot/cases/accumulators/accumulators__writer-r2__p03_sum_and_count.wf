@@ -1,0 +1,29 @@
+const readings: array<u8, 6> =[0_u8, 12_u8, 0_u8, 30_u8, 8_u8, 0_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: two accumulators (sum and nonzero-count) update together over one loop, each bounded by its own header invariant.";
+  let sum = 0_u32;
+  let nonzero_count = 0_u64;
+  for (
+    i in 0_u64..6_u64,
+    invariant sum_bound: sum <= 255_u32 * i,
+    invariant count_bound: nonzero_count <= i
+  ) {
+    let byte = readings[i];
+    let wide = cvt::<u8, u32>(byte);
+    set sum = sum + wide;
+    let is_nonzero = byte > 0_u8;
+    if is_nonzero {
+      set nonzero_count = nonzero_count + 1_u64;
+    }
+  }
+  if sum == 50_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if nonzero_count == 3_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

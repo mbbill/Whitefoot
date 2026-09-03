@@ -1,0 +1,21 @@
+fn magnitude(n: own i16) -> result: own i16 pure {
+  doc "ACCEPT: exact iabs excludes only MIN(T) [OP-1]; a dominating branch above i16::MIN discharges the obligation.";
+  if n > -32768_i16 {
+    return iabs(n);
+  }
+  return 0_i16;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = magnitude(n: -30000_i16);
+  let b = magnitude(n: 12345_i16);
+  if a == 30000_i16 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if b == 12345_i16 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,19 @@
+fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define room = len(table);
+  requires lo < hi;
+  requires hi <= room;
+} {
+  doc "expect ACCEPT: mid is the midpoint of [lo,hi), the OP-4 automatic division-image proof discharges table[mid]";
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: 2_u64 * mid + 1_u64 <= 2_u64 * hi;
+  let byte = table[mid];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(10_u64, 7_u8);
+  let found = probe(table: move table, lo: 0_u64, hi: 10_u64);
+  return exit_status(code: found);
+}

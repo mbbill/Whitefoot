@@ -1,0 +1,19 @@
+fn chain(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
+  requires first <= first_limit;
+  requires second <= second_limit;
+} {
+  doc "expect ACCEPT: step_b names step_a with an explicit factor, step_c names step_b with another explicit factor; each combination step is exact and true.";
+  invariant step_a: first + second <= first_limit + second_limit;
+  invariant step_b: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
+    use 3 * step_a;
+  }
+  invariant step_c: 15_u64 * first + 15_u64 * second <= 15_u64 * first_limit + 15_u64 * second_limit {
+    use 5 * step_b;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let finished = chain(first: 2_u64, first_limit: 3_u64, second: 4_u64, second_limit: 5_u64);
+  return exit_status(code: 0_u8);
+}

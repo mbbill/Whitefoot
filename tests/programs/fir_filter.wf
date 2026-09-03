@@ -9,20 +9,20 @@ struct FirFilter {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let taps = array_new<f64, 8>(0.125_f64);
-  let samples = array_new<f64, 8>(0.0_f64);
+  let taps = array_new::<f64, 8>(0.125_f64);
+  let samples = array_new::<f64, 8>(0.0_f64);
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len(filter.taps);
   let output_sum = 0.0_f64;
   for (frame in 0_u64..64_u64) {
-    let first_frame = ieq(frame, 0_u64);
+    let first_frame = frame == 0_u64;
     let sample = if first_frame {
       give 8.0_f64;
     } else {
       give 0.0_f64;
     }
-    let write_ok = ilt(filter.delay.cursor, 8_u64);
+    let write_ok = filter.delay.cursor < 8_u64;
     if write_ok {
     } else {
       return exit_status(code: 1_u8);
@@ -32,7 +32,7 @@ command fn main() -> status: own ExitStatus pure {
     let output = 0.0_f64;
     for (tap in 0_u64..tap_count) {
       let coefficient = filter.taps[tap];
-      let read_ok = ilt(read_cursor, 8_u64);
+      let read_ok = read_cursor < 8_u64;
       if read_ok {
       } else {
         return exit_status(code: 1_u8);
@@ -40,7 +40,7 @@ command fn main() -> status: own ExitStatus pure {
       let delayed = filter.delay.samples[read_cursor];
       let contribution = fmul.strict(coefficient, delayed);
       set output = fadd.strict(output, contribution);
-      let at_start = ieq(read_cursor, 0_u64);
+      let at_start = read_cursor == 0_u64;
       let previous_cursor = if at_start {
         give 7_u64;
       } else {
@@ -49,7 +49,7 @@ command fn main() -> status: own ExitStatus pure {
       set read_cursor = previous_cursor;
     }
     set output_sum = fadd.strict(output_sum, output);
-    let at_end = ieq(filter.delay.cursor, 7_u64);
+    let at_end = filter.delay.cursor == 7_u64;
     let next_cursor = if at_end {
       give 0_u64;
     } else {

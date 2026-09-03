@@ -1,0 +1,51 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- walks a tag-length-value frame stream and sums the declared value lengths with bounds checks";
+  let frame = buffer_new(10_u64, 0_u8);
+  set frame[0_u64] = 1_u8;
+  set frame[1_u64] = 2_u8;
+  set frame[2_u64] = 170_u8;
+  set frame[3_u64] = 171_u8;
+  set frame[4_u64] = 2_u8;
+  set frame[5_u64] = 3_u8;
+  set frame[6_u64] = 1_u8;
+  set frame[7_u64] = 2_u8;
+  set frame[8_u64] = 3_u8;
+  set frame[9_u64] = 0_u8;
+  let frame_length = len(frame);
+  let cursor = 0_u64;
+  let entries = 0_u64;
+  let value_total = 0_u64;
+  loop @walk {
+    if cursor >= frame_length {
+      break @walk;
+    }
+    let tag = frame[cursor];
+    let is_end = tag == 0_u8;
+    if is_end {
+      break @walk;
+    }
+    let length_index = cursor +wrap 1_u64;
+    if length_index < frame_length {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    let value_length = frame[length_index];
+    let value_length_wide = cvt::<u8, u64>(value_length);
+    let value_start = length_index +wrap 1_u64;
+    let value_end = value_start +wrap value_length_wide;
+    if value_end <= frame_length {
+    } else {
+      return exit_status(code: 3_u8);
+    }
+    set value_total = value_total +wrap value_length_wide;
+    set entries = entries +wrap 1_u64;
+    set cursor = value_end;
+  }
+  let entries_ok = entries == 2_u64;
+  let total_ok = value_total == 5_u64;
+  if band(entries_ok, total_ok) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,22 @@
+fn value_at_max(scores: own buffer<u32>) -> value: own u32 reads(scores) contract {
+  define count = len(scores);
+  requires count >= 1_u64;
+} {
+  doc "EXPECT REJECT under Op4: best_idx tracks the running maximum's position across the whole counted for, but no header invariant states best_idx < len(scores), so nothing survives the loop to prove scores[best_idx] afterward; the right repair is to write the invariant, not add another branch.";
+  let n = len(scores);
+  let best_idx = 0_u64;
+  let best_val = scores[0_u64];
+  for (i in 0_u64..n) {
+    let candidate = scores[i];
+    let bigger = candidate > best_val;
+    if bigger {
+      set best_val = candidate;
+      set best_idx = i;
+    }
+  }
+  return scores[best_idx];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -40,7 +40,7 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
             };
             writeln!(
                 source,
-                "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> result: own {result} pure {{\n  return cvt<{source_name}, {destination_name}>(value);\n}}\n"
+                "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> result: own {result} pure {{\n  return cvt::<{source_name}, {destination_name}>(value);\n}}\n"
             )
             .expect("write conversion function");
             expected.push((source_type, destination_type, total, destination_name));
@@ -94,7 +94,7 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
 #[test]
 fn partial_float_conversion_result_is_available_without_an_annotation() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  match cvt<f32, u8>(1.0_f32) {
+  match cvt::<f32, u8>(1.0_f32) {
     Ok(value: byte) => {
     }
     Err(error: narrow_error) => {
@@ -114,12 +114,12 @@ fn partial_float_conversion_result_is_available_without_an_annotation() {
 #[test]
 fn float_conversion_operand_failures_keep_their_rule_owners() {
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt::<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt<u32, f64>(1_u16);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt::<u32, f64>(1_u16);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );

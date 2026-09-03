@@ -107,7 +107,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  let allocated_length = ieq(size, 4_u64);
+  let allocated_length = size == 4_u64;
   if allocated_length {
     let second = buffer_new(2_u64, 9_u8);
     let old = replace holder.payload = move second;
@@ -134,7 +134,7 @@ fn the_same_subscript_discharges_without_the_replace() {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  let allocated_length = ieq(size, 4_u64);
+  let allocated_length = size == 4_u64;
   if allocated_length {
     set holder.payload[3_u64] = 5_u8;
   }
@@ -230,7 +230,7 @@ fn replace_through_a_shared_borrow_rejects() {
 #[test]
 fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_obligations() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
   let taken = replace slots[2_u64] = None<u32>();
@@ -280,7 +280,7 @@ fn element_position_replace_through_a_unique_holder_accepts() {
 fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
-  let has_room = ilt(count, cap);
+  let has_room = count < cap;
   if has_room {
     let filled = Some<u32>(value: x);
     let vacant = replace deref(v).buf[count] = move filled;
@@ -289,10 +289,10 @@ fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.f
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  let empty = buffer_vacant<u32>(2_u64);
+  let empty = buffer_vacant::<u32>(2_u64);
   let v = OptVec(buf: move empty, fill: 0_u64);
   region 'p {
-    push<'p>(v: &uniq 'p v, x: 5_u32);
+    push::<'p>(v: &uniq 'p v, x: 5_u32);
   }
   return exit_status(code: 0_u8);
 }
@@ -307,9 +307,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn element_position_replace_keeps_the_bounds_obligation() {
     let source = br#"fn hollow(n: own u64) -> result: own unit allocates(heap) contract {
-  requires buffer_fits<Option<u32>>(n);
+  requires buffer_fits::<Option<u32>>(n);
 } {
-  let slots = buffer_vacant<u32>(n);
+  let slots = buffer_vacant::<u32>(n);
   let taken = replace slots[0_u64] = None<u32>();
   return unit;
 }
@@ -330,7 +330,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn element_replacement_rhs_must_be_the_exact_element_type() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   let taken = replace slots[0_u64] = 3_u32;
   return exit_status(code: 0_u8);
 }
@@ -348,7 +348,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     // SET-1 on an affine element names replace [STOR-1].
     assert_rule(
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   set slots[0_u64] = None<u32>();
   return exit_status(code: 0_u8);
 }
@@ -362,7 +362,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     // A bare element read would mint a second owner [OWN-1].
     assert_rule(
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   let observed = slots[0_u64];
   return exit_status(code: 0_u8);
 }
@@ -375,7 +375,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     // `move` out of a slot is not an admitted element exit [TYPE-2].
     assert_rule(
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   let observed = move slots[0_u64];
   return exit_status(code: 0_u8);
 }
@@ -424,5 +424,69 @@ fn replace_rhs_type_mismatch_rejects_citing_type5() {
             panic!("a wrong-typed replacement must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Type5);
+    });
+}
+
+/// [SET-2] rejects a region-bearing target type under [STOR-5]'s relation,
+/// and that relation names `slice<'r, T>` and `arena<'r, T>` alike. The two
+/// programs differ only in which region-bearing constructor the target has.
+#[test]
+fn replace_of_a_region_bearing_place_rejects_citing_set2() {
+    let expected_fix = "a slice's static origin set and an arena's confinement are fixed at \
+                        initialization; bind a new slice or arena under a new let";
+    assert_rule(
+        br#"command fn main() -> status: own ExitStatus pure {
+  let left = array_new::<u8, 2>(11_u8);
+  let right = array_new::<u8, 2>(29_u8);
+  region 'view {
+    let view = slice_of(&'view left);
+    let previous = replace view = slice_of(&'view right);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Set2,
+        SemanticIssueKind::InvalidReplaceTarget {
+            target_type: "slice<'view, u8>".to_owned(),
+            mechanical_fix: expected_fix,
+        },
+    );
+    assert_rule(
+        br#"command fn main() -> status: own ExitStatus pure {
+  region 'r {
+    let first = arena_new::<'r, u64>(1_u64);
+    let second = arena_new::<'r, u64>(2_u64);
+    let previous = replace first = move second;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Set2,
+        SemanticIssueKind::InvalidReplaceTarget {
+            target_type: "arena<'r, u64>".to_owned(),
+            mechanical_fix: expected_fix,
+        },
+    );
+}
+
+/// The positive control for the judgment above: an owning descriptor whose
+/// type bears no region is an ordinary affine target, so the exchange is
+/// accepted and the fresh binding owns the previous box.
+#[test]
+fn replace_of_a_box_descriptor_accepts() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let first = box_new(1_u64);
+  let second = box_new(2_u64);
+  let previous = replace first = move second;
+  let old = deref(previous);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a region-free affine descriptor replace must check: {outcome:?}");
+        };
+        let main = &checked.data.functions[0];
+        assert!(matches!(main.body[2], CheckedStatement::Replace { .. }));
     });
 }

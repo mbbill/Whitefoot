@@ -222,7 +222,7 @@ fn a_written_type_argument_on_a_derived_operation_rejects() {
         // The written argument is the violation, so deleting it — which is
         // what A1 does to a legal call — leaves nothing to cite.
         br#"fn smaller(x: own i32, y: own i32) -> result: own i32 pure {
-  return imin<i32>(x, y);
+  return imin::<i32>(x, y);
 }
 
 command fn main() -> status: own ExitStatus pure {

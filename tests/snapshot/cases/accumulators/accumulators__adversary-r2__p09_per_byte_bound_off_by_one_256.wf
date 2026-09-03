@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT [OP-2 or INV-1] -- count is u8 (max 255) and the loop runs 256 times unconditionally adding 1 each time; the checked `+` at count=255 (the 256th iteration, i=255) would produce 256, which is outside u8's domain, so the obligation is genuinely false for that concrete trace.";
+  let count = 0_u8;
+  for (
+    i in 0_u64..256_u64,
+    invariant bound: count <= i
+  ) {
+    set count = count + 1_u8;
+  }
+  return exit_status(code: 0_u8);
+}

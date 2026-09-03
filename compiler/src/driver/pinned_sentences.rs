@@ -127,7 +127,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "define-written-after-requires.wf",
         source: br#"fn count(end: own u64) -> lines: own u64 pure contract {
-  requires ile(end, 8_u64);
+  requires end <= 8_u64;
   define room = 8_u64;
 } {
   return 0_u64;
@@ -165,7 +165,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
         source: br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires ile(end, len(deref(data)));
+  requires end <= len(deref(data));
 } {
   return 0_u64;
 }
@@ -261,7 +261,7 @@ command fn main() -> status: own ExitStatus pure {
   let payload = buffer_new(9_u64, 66_u8);
   let wide = len(payload);
   region 'w {
-    let sent = write_once<'w, 'w>(output: &uniq 'w out, source: &'w header, start: 0_u64, end: wide);
+    let sent = write_once::<'w, 'w>(output: &uniq 'w out, source: &'w header, start: 0_u64, end: wide);
   }
   return exit_status(code: 0_u8);
 }
@@ -290,7 +290,7 @@ command fn main() -> status: own ExitStatus pure {
         source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let payload = buffer_new(4_u64, 65_u8);
   region 'w {
-    let sent = write_once<'w>(output: &uniq 'w out, source: &'w payload, start: 0_u64, end: 4_u64);
+    let sent = write_once::<'w>(output: &uniq 'w out, source: &'w payload, start: 0_u64, end: 4_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -305,7 +305,7 @@ command fn main() -> status: own ExitStatus pure {
         source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let payload = buffer_new(4_u64, 65_u8);
   region 'w {
-    let sent = write_once<'w, ExitStatus>(output: &uniq 'w out, source: &'w payload, start: 0_u64, end: 4_u64);
+    let sent = write_once::<'w, ExitStatus>(output: &uniq 'w out, source: &'w payload, start: 0_u64, end: 4_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -343,7 +343,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let store = buffer_new(4_u64, 0_u8);
   region 'r {
-    let size = measure<'r, 'r>(data: &'r store);
+    let size = measure::<'r, 'r>(data: &'r store);
   }
   return exit_status(code: 0_u8);
 }
@@ -461,7 +461,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let a = widen<f64>(value: 1.0_f64);
+  let a = widen::<f64>(value: 1.0_f64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -477,7 +477,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let a = scale<u64>(value: 1_u64);
+  let a = scale::<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -683,7 +683,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "buffer-length-is-not-a-u64.wf",
         source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let flag = igt(1_u64, 0_u64);
+  let flag = 1_u64 > 0_u64;
   let store = buffer_new(flag, 0_u8);
   return exit_status(code: 0_u8);
 }
@@ -798,7 +798,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn caller['r](anchor: &'r buffer<u8>) -> out: own u64 allocates(heap) {
   let local = buffer_new(4_u64, 0_u8);
-  return sum<'r>(data: &'r local);
+  return sum::<'r>(data: &'r local);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -850,8 +850,8 @@ command fn main() -> return_value: own ExitStatus pure {
 
 fn invalid['r](out: &uniq 'r buffer<u8>) -> result: own unit pure {
   region 'child {
-    take<'child>(out: &uniq 'child deref(out));
-    take<'child>(out: &uniq 'child deref(out));
+    take::<'child>(out: &uniq 'child deref(out));
+    take::<'child>(out: &uniq 'child deref(out));
   }
   return unit;
 }
@@ -862,7 +862,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "OWN-6",
         sentences: &[
-            "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.",
+            "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.",
         ],
     },
     Probe {
@@ -874,7 +874,7 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let store = buffer_new(4_u64, 0_u8);
   region 'r {
-    let n = measure<'r>(data: &uniq 'r store);
+    let n = measure::<'r>(data: &uniq 'r store);
   }
   return exit_status(code: 0_u8);
 }
@@ -887,7 +887,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let payload = buffer_new(4_u64, 65_u8);
   region 'w {
-    let sent = write_once<'w, 'w>(output: &'w out, source: &'w payload, start: 0_u64, end: 4_u64);
+    let sent = write_once::<'w, 'w>(output: &'w out, source: &'w payload, start: 0_u64, end: 4_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -1000,8 +1000,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let flag = igt(1_u64, 0_u64);
-  let a = zeroed<Bool>(sample: flag);
+  let flag = 1_u64 > 0_u64;
+  let a = zeroed::<Bool>(sample: flag);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1017,7 +1017,7 @@ command fn main() -> status: own ExitStatus pure {
         name: "goal-with-an-infix-operation.wf",
         source: br#"fn need(x: own u64) -> out: own u64 pure contract {
   define bumped = x +wrap 1_u64;
-  requires ilt(bumped, 10_u64);
+  requires bumped < 10_u64;
 } {
   return x;
 }
@@ -1029,13 +1029,13 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ilt(s +wrap 1_u64, 10_u64)""#],
+        sentences: &[r#"instantiated_goal: "s +wrap 1_u64 < 10_u64""#],
     },
     Probe {
         name: "goal-with-a-numeric-conversion.wf",
         source: br#"fn need(x: own u32) -> out: own u32 pure contract {
-  define wide = cvt<u32, u64>(x);
-  requires ilt(wide, 10_u64);
+  define wide = cvt::<u32, u64>(x);
+  requires wide < 10_u64;
 } {
   return x;
 }
@@ -1047,13 +1047,13 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ilt(cvt<u32, u64>(s), 10_u64)""#],
+        sentences: &[r#"instantiated_goal: "cvt::<u32, u64>(s) < 10_u64""#],
     },
     Probe {
         name: "goal-with-a-reinterpretation.wf",
         source: br#"fn need(x: own i64) -> out: own i64 pure contract {
-  define raw = reinterpret<i64, u64>(x);
-  requires ilt(raw, 10_u64);
+  define raw = reinterpret::<i64, u64>(x);
+  requires raw < 10_u64;
 } {
   return x;
 }
@@ -1065,7 +1065,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ilt(reinterpret<i64, u64>(s), 10_u64)""#],
+        sentences: &[r#"instantiated_goal: "reinterpret::<i64, u64>(s) < 10_u64""#],
     },
     Probe {
         name: "goal-with-a-float-literal.wf",
@@ -1087,7 +1087,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "goal-over-an-admitted-index-actual.wf",
         source: br#"fn need(x: own u8) -> out: own u8 pure contract {
-  requires ilt(x, 10_u8);
+  requires x < 10_u8;
 } {
   return x;
 }
@@ -1099,19 +1099,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ilt(data[0_u64], 10_u8)""#],
+        sentences: &[r#"instantiated_goal: "data[0_u64] < 10_u8""#],
     },
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
         source: br#"fn need['a](names: &'a buffer<u8>, pos: own u64) -> out: own u64 pure contract {
   define room = len(deref(names));
-  requires ile(pos, room);
+  requires pos <= room;
 } {
   return pos;
 }
 
 fn outer['a](names: &'a buffer<u8>) -> out: own u64 pure {
-  let r = need<'a>(names: names, pos: 9_u64);
+  let r = need::<'a>(names: names, pos: 9_u64);
   return r;
 }
 
@@ -1120,7 +1120,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "ile(9_u64, len(deref(names)))""#],
+        sentences: &[r#"instantiated_goal: "9_u64 <= len(deref(names))""#],
     },
 ];
 

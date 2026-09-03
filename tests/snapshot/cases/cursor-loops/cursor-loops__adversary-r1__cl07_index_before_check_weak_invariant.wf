@@ -1,0 +1,16 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: cursor invariant only proves cursor <= 8 so indexing values[cursor] before the sentinel check is unproven at cursor==8 (out of bounds on the size-8 array)";
+  let values = array_new::<u64, 8>(0_u64);
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: cursor <= 8_u64
+  ) {
+    let value = values[cursor];
+    let done = cursor >= 8_u64;
+    if done {
+      break;
+    }
+    set cursor = cursor + 1_u64;
+  }
+  return exit_status(code: 0_u8);
+}

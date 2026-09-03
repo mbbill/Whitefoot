@@ -1,0 +1,22 @@
+fn sum_weighted(count: own u64) -> total: own u64 pure {
+  let total = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant bound: total <= i
+  ) {
+    set total = total + 0_u64;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: counted for with exactly one header invariant, multi-line form [GRAM-4, INV-1].";
+  let total = sum_weighted(count: 6_u64);
+  if total == 0_u64 {
+  } else {
+    let failed = exit_status(code: 1_u8);
+    return move failed;
+  }
+  let success = exit_status(code: 0_u8);
+  return move success;
+}

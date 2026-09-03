@@ -1,0 +1,21 @@
+fn wrapped_negate(x: own i32) -> result: own i32 pure contract {
+  requires x == -2147483648_i32;
+  ensures result >= 0_i32;
+} {
+  doc "expect REJECT: ineg.wrap(-2147483648_i32) returns MIN(T) unchanged (wrap identity on the signed minimum), so ensures result >= 0_i32 is false for x = -2147483648_i32.";
+  return ineg.wrap(x);
+}
+
+fn wrapped_negate_ordinary(x: own i32) -> result: own i32 pure {
+  doc "The same total wrap operation with no false postcondition attached, for contrast.";
+  return ineg.wrap(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let control = wrapped_negate_ordinary(x: -2147483648_i32);
+  if control == -2147483648_i32 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT [OP-2] -- sum is i16 (min -32768) and the loop runs 12 times unconditionally subtracting 3000 each time; the checked `-` at sum=-30000 (after 10 iterations) would produce -33000, below i16::MIN, so the domain obligation is genuinely unproved (and unprovable, since it is false for i=10).";
+  let sum = 0_i16;
+  for (
+    i in 0_u64..12_u64,
+    invariant bound: sum >= -32768_i16
+  ) {
+    set sum = sum - 3000_i16;
+  }
+  return exit_status(code: 0_u8);
+}

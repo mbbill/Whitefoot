@@ -10,7 +10,7 @@ command fn main() -> status: own ExitStatus pure {
   let a = half_checked(x: 20_i64);
   match a {
     Ok(value: v) => {
-      if ieq(v, 41_i64) {
+      if v == 41_i64 {
       } else {
         return exit_status(code: 1_u8);
       }

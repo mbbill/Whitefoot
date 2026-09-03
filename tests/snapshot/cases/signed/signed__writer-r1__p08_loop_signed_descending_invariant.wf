@@ -1,0 +1,27 @@
+fn accumulate_descending(count: own u64) -> result: own i32 pure contract {
+  requires count <= 40_u64;
+} {
+  let sum = 0_i32;
+  for (
+    i in 0_u64..count,
+    invariant lower_bound: sum >= -3_i32 * i
+  ) {
+    set sum = sum - 3_i32;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: an i32 accumulator descends by 3 each iteration; the header invariant carries the induction proof so the exact subtract discharges without a runtime branch.";
+  let a = accumulate_descending(count: 0_u64);
+  let b = accumulate_descending(count: 10_u64);
+  if a == 0_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if b == -30_i32 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

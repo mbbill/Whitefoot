@@ -1,0 +1,16 @@
+fn scale_pair(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
+  requires first <= first_limit;
+  requires second <= second_limit;
+} {
+  doc "Expect REJECT [PRF-1 duplicate premise]: same premise cited twice with two different explicit factors (2 and 3) instead of one combined factor of 5.";
+  invariant pair_bound: first + second <= first_limit + second_limit;
+  invariant scaled_bound: 5_u64 * first + 5_u64 * second <= 5_u64 * first_limit + 5_u64 * second_limit {
+    use 2 * pair_bound;
+    use 3 * pair_bound;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

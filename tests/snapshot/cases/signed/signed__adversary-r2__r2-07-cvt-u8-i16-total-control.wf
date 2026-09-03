@@ -1,0 +1,25 @@
+fn widen(x: own u8) -> result: own i16 pure {
+  doc "expect ACCEPT (control): u8->i16 IS a total cvt pair [OP-6] (uN->iM for N<M), so a direct own i16 return with no Result wrapper is well-typed and every u8 value round-trips exactly.";
+  return cvt::<u8, i16>(x);
+}
+
+fn round_trip_holds(x: own u8) -> result: own Bool pure {
+  doc "cvt is value-preserving [OP-6], so widening then narrowing back through u8 recovers x.";
+  let widened = widen(x: x);
+  let widened_again = cvt::<u8, i16>(x);
+  return widened == widened_again;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let ok = round_trip_holds(x: 200_u8);
+  if ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let widened_zero = widen(x: 0_u8);
+  if widened_zero == 0_i16 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

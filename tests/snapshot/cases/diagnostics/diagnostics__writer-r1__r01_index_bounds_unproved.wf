@@ -1,0 +1,15 @@
+fn first(row: own buffer<i32>) -> value: own i32 reads(row) contract {
+  define count = len(row);
+  requires count >= 1_u64;
+} {
+  return row[0_u64];
+}
+
+fn nth(row: own buffer<i32>, i: own u64) -> value: own i32 reads(row) {
+  doc "expect REJECT: [OP-4] the index bound i < len(row) is never established before the subscript";
+  return row[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

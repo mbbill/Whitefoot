@@ -5,33 +5,33 @@ fn store_u32_be['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) -
   let third_shifted = ishr.wrap(value, 8_u32);
   let third_word = iand(third_shifted, 255_u32);
   let fourth_word = iand(value, 255_u32);
-  let first = propagate cvt<u32, u8>(first_word);
-  let second = propagate cvt<u32, u8>(second_word);
-  let third = propagate cvt<u32, u8>(third_word);
-  let fourth = propagate cvt<u32, u8>(fourth_word);
+  let first = propagate cvt::<u32, u8>(first_word);
+  let second = propagate cvt::<u32, u8>(second_word);
+  let third = propagate cvt::<u32, u8>(third_word);
+  let fourth = propagate cvt::<u32, u8>(fourth_word);
   let second_offset = offset +wrap 1_u64;
   let third_offset = offset +wrap 2_u64;
   let fourth_offset = offset +wrap 3_u64;
   let store_room = len(deref(out));
-  if ilt(offset, store_room) {
+  if offset < store_room {
   } else {
     let error = NarrowError();
     return Err<unit, NarrowError>(error: error);
   }
   set deref(out)[offset] = first;
-  if ilt(second_offset, store_room) {
+  if second_offset < store_room {
   } else {
     let error = NarrowError();
     return Err<unit, NarrowError>(error: error);
   }
   set deref(out)[second_offset] = second;
-  if ilt(third_offset, store_room) {
+  if third_offset < store_room {
   } else {
     let error = NarrowError();
     return Err<unit, NarrowError>(error: error);
   }
   set deref(out)[third_offset] = third;
-  if ilt(fourth_offset, store_room) {
+  if fourth_offset < store_room {
   } else {
     let error = NarrowError();
     return Err<unit, NarrowError>(error: error);
@@ -45,30 +45,30 @@ fn load_u32_be['i](input: &'i buffer<u8>, offset: own u64) -> result: own u32 re
   let third_offset = offset +wrap 2_u64;
   let fourth_offset = offset +wrap 3_u64;
   let load_room = len(deref(input));
-  if ilt(offset, load_room) {
+  if offset < load_room {
   } else {
     return 0_u32;
   }
   let first_byte = deref(input)[offset];
-  if ilt(second_offset, load_room) {
+  if second_offset < load_room {
   } else {
     return 0_u32;
   }
   let second_byte = deref(input)[second_offset];
-  if ilt(third_offset, load_room) {
+  if third_offset < load_room {
   } else {
     return 0_u32;
   }
   let third_byte = deref(input)[third_offset];
-  if ilt(fourth_offset, load_room) {
+  if fourth_offset < load_room {
   } else {
     return 0_u32;
   }
   let fourth_byte = deref(input)[fourth_offset];
-  let first = cvt<u8, u32>(first_byte);
-  let second = cvt<u8, u32>(second_byte);
-  let third = cvt<u8, u32>(third_byte);
-  let fourth = cvt<u8, u32>(fourth_byte);
+  let first = cvt::<u8, u32>(first_byte);
+  let second = cvt::<u8, u32>(second_byte);
+  let third = cvt::<u8, u32>(third_byte);
+  let fourth = cvt::<u8, u32>(fourth_byte);
   let first_shifted = ishl.wrap(first, 24_u32);
   let second_shifted = ishl.wrap(second, 16_u32);
   let third_shifted = ishl.wrap(third, 8_u32);
@@ -80,9 +80,9 @@ fn load_u32_be['i](input: &'i buffer<u8>, offset: own u64) -> result: own u32 re
 command fn main() -> status: own ExitStatus allocates(heap) {
   let packet = buffer_new(12_u64, 0_u8);
   let temperature = 36.5_f32;
-  let temperature_bits = reinterpret<f32, u32>(temperature);
+  let temperature_bits = reinterpret::<f32, u32>(temperature);
   region 'temperature_write {
-    let stored = store_u32_be<'temperature_write>(out: &uniq 'temperature_write packet, offset: 0_u64, value: temperature_bits);
+    let stored = store_u32_be::<'temperature_write>(out: &uniq 'temperature_write packet, offset: 0_u64, value: temperature_bits);
     match move stored {
       Ok(value: success) => {
       }
@@ -92,9 +92,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let negative_zero = -0.0_f32;
-  let negative_zero_bits = reinterpret<f32, u32>(negative_zero);
+  let negative_zero_bits = reinterpret::<f32, u32>(negative_zero);
   region 'zero_write {
-    let stored = store_u32_be<'zero_write>(out: &uniq 'zero_write packet, offset: 4_u64, value: negative_zero_bits);
+    let stored = store_u32_be::<'zero_write>(out: &uniq 'zero_write packet, offset: 4_u64, value: negative_zero_bits);
     match move stored {
       Ok(value: success) => {
       }
@@ -103,10 +103,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
     }
   }
-  let nan = fnan<f32>();
-  let nan_bits = reinterpret<f32, u32>(nan);
+  let nan = fnan::<f32>();
+  let nan_bits = reinterpret::<f32, u32>(nan);
   region 'nan_write {
-    let stored = store_u32_be<'nan_write>(out: &uniq 'nan_write packet, offset: 8_u64, value: nan_bits);
+    let stored = store_u32_be::<'nan_write>(out: &uniq 'nan_write packet, offset: 8_u64, value: nan_bits);
     match move stored {
       Ok(value: success) => {
       }
@@ -116,18 +116,18 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   region 'temperature_read {
-    let bits = load_u32_be<'temperature_read>(input: &'temperature_read packet, offset: 0_u64);
-    let decoded = reinterpret<u32, f32>(bits);
+    let bits = load_u32_be::<'temperature_read>(input: &'temperature_read packet, offset: 0_u64);
+    let decoded = reinterpret::<u32, f32>(bits);
     if feq(decoded, temperature) {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   region 'zero_read {
-    let bits = load_u32_be<'zero_read>(input: &'zero_read packet, offset: 4_u64);
-    let decoded = reinterpret<u32, f32>(bits);
+    let bits = load_u32_be::<'zero_read>(input: &'zero_read packet, offset: 4_u64);
+    let decoded = reinterpret::<u32, f32>(bits);
     let reciprocal = fdiv.strict(1.0_f32, decoded);
-    let infinity = finf<f32>();
+    let infinity = finf::<f32>();
     let negative_infinity = fneg(infinity);
     if feq(reciprocal, negative_infinity) {
     } else {
@@ -135,8 +135,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   region 'nan_read {
-    let bits = load_u32_be<'nan_read>(input: &'nan_read packet, offset: 8_u64);
-    let decoded = reinterpret<u32, f32>(bits);
+    let bits = load_u32_be::<'nan_read>(input: &'nan_read packet, offset: 8_u64);
+    let decoded = reinterpret::<u32, f32>(bits);
     if fne(decoded, decoded) {
     } else {
       return exit_status(code: 1_u8);

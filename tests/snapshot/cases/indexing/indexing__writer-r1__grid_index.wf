@@ -1,0 +1,46 @@
+fn grid_get(cells: own buffer<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own Option<u8> reads(cells) contract {
+  requires row < height;
+  requires col < width;
+} {
+  doc "ACCEPT: flattened row*width+col grid read; the product and sum are checked, and the flattened offset is tested against the real backing length before the load.";
+  match row *checked width {
+    Ok(value: row_base) => {
+      match row_base +checked col {
+        Ok(value: at) => {
+          let capacity = len(cells);
+          let fits = at < capacity;
+          if fits {
+          } else {
+            return None<u8>();
+          }
+          let byte = cells[at];
+          return Some<u8>(value: byte);
+        }
+        Err(error: overflow) => {
+          return None<u8>();
+        }
+      }
+    }
+    Err(error: overflow) => {
+      return None<u8>();
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let cells = buffer_new(12_u64, 0_u8);
+  set cells[9_u64] = 99_u8;
+  let found = grid_get(cells: move cells, width: 4_u64, height: 3_u64, row: 2_u64, col: 1_u64);
+  match found {
+    Some(value: byte) => {
+      if byte == 99_u8 {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+}

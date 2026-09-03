@@ -1,0 +1,23 @@
+fn running_bound(limit: own u64) -> total: own u64 pure {
+  let sum = 0_u64;
+  for (
+    i in 0_u64..limit,
+    invariant sum_bound: sum <= i
+  ) {
+    set sum = sum + 1_u64;
+  }
+  invariant stale_bound: sum <= limit {
+    use sum_bound;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT -- a local invariant after the loop names the header invariant, which is out of lexical scope once the loop ends [INV-1].";
+  let total = running_bound(limit: 5_u64);
+  if total == 5_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

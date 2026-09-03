@@ -204,7 +204,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedLoopInvariant, CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::Invariant)?;
         let identifiers = self.tree.direct_identifiers(node)?;
-        let [name_token, relation_token] = identifiers.as_slice() else {
+        let [name_token] = identifiers.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
         let name = std::str::from_utf8(self.tree.token_bytes(*name_token)?)
@@ -219,7 +219,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let relation = self.check_ordered_affine_relation(
             node,
-            *relation_token,
             bindings,
             allowed_values,
             AffineProofOwner::InvariantTarget,

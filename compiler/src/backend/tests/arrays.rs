@@ -53,13 +53,13 @@ fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
 #[test]
 fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
     let source = br#"fn make() -> result: own array<u16, 4> pure {
-  return array_new<u16, 4>(42_u16);
+  return array_new::<u16, 4>(42_u16);
 }
 
 fn clamp_three(value: own u64) -> result: own u64 pure contract {
-  ensures ilt(result, 4_u64);
+  ensures result < 4_u64;
 } {
-  if ilt(value, 4_u64) {
+  if value < 4_u64 {
     return value;
   } else {
     return 3_u64;
@@ -75,11 +75,11 @@ fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 pure {
 command fn main() -> status: own ExitStatus pure {
   let values = make();
   let length = len(values);
-  if ine(length, 4_u64) {
+  if length != 4_u64 {
     return exit_status(code: 1_u8);
   }
   let value = read(values: move values, offset: 3_u64);
-  if ine(value, 42_u16) {
+  if value != 42_u16 {
     return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
@@ -107,7 +107,7 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
     // underivable obligation rejects at compile time with the exact
     // [ENT-6] residual.
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(7_u8);
+  let values = array_new::<u8, 2>(7_u8);
   let value = values[2_u64];
   return exit_status(code: 0_u8);
 }
@@ -134,10 +134,10 @@ fn indexed_set_checks_before_rhs_and_updates_the_array() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
-  if ine(stored, 9_u8) {
+  if stored != 9_u8 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -176,7 +176,7 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
 }
@@ -198,7 +198,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     // and now fits inside the 1 GiB stack the runtime gives every thread.
     let source = br#"command fn main() -> status: own ExitStatus pure {
   doc "Nested counted loops read and write one fixed array for two hundred thousand iterations.";
-  let window = array_new<u64, 8>(1_u64);
+  let window = array_new::<u64, 8>(1_u64);
   let completed = 0_u64;
   let total = 0_u64;
   for (batch in 0_u64..25000_u64) {
@@ -210,7 +210,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
       set completed = completed +wrap 1_u64;
     }
   }
-  if ine(completed, 200000_u64) {
+  if completed != 200000_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -265,18 +265,18 @@ fn replacement() -> result: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
   let stored = outer.inner.values[1_u64];
-  if ine(stored, 9_u8) {
+  if stored != 9_u8 {
     return exit_status(code: 1_u8);
   }
-  if ine(outer.inner.sibling, 77_u16) {
+  if outer.inner.sibling != 77_u16 {
     return exit_status(code: 2_u8);
   }
-  if ine(outer.prefix, 123_u32) {
+  if outer.prefix != 123_u32 {
     return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);

@@ -1,0 +1,14 @@
+fn scan_pair_bad(data: own array<i16, 8>, start: own u64) -> result: own i16 pure contract {
+  requires start < 8_u64;
+} {
+  doc "expect REJECT [OP-4]: start +wrap 3 kills the requires-proved bound (a concrete violating value is start=6, which requires proves in range but whose +wrap 3 image 9 is out of range), and the second index reuses the dead fact with no fresh branch or invariant re-establishing it.";
+  let first = data[start];
+  let jumped = start +wrap 3_u64;
+  set start = jumped;
+  let second = data[start];
+  return first +wrap second;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

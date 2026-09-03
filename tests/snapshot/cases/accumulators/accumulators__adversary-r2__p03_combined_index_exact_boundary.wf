@@ -1,0 +1,37 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- count_a is bounded by 3 (loop trip count) and count_b by 4, so combined is provably at most 7; target has length 8, so target[combined] (max index 7) is always in bounds, discharged by the explicit dominating in_bounds check.";
+  let first = buffer_new(3_u64, 5_u8);
+  let second = buffer_new(4_u64, 5_u8);
+  let count_a = 0_u64;
+  for (
+    i in 0_u64..3_u64,
+    invariant bound_a: count_a <= i
+  ) {
+    let byte = first[i];
+    let matches = byte == 5_u8;
+    if matches {
+      set count_a = count_a + 1_u64;
+    }
+  }
+  let count_b = 0_u64;
+  for (
+    j in 0_u64..4_u64,
+    invariant bound_b: count_b <= j
+  ) {
+    let byte = second[j];
+    let matches = byte == 5_u8;
+    if matches {
+      set count_b = count_b + 1_u64;
+    }
+  }
+  let combined = count_a + count_b;
+  let target = buffer_new(8_u64, 0_u8);
+  let target_len = len(target);
+  let in_bounds = combined < target_len;
+  if in_bounds {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  set target[combined] = 1_u8;
+  return exit_status(code: 0_u8);
+}

@@ -1,9 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "An arena<'r,T> stays within its region 'r and is released at block exit [STOR-4].";
   region 'r {
-    let a = arena_new<'r, i32>(4_i32);
+    let a = arena_new::<'r, i32>(4_i32);
     let v = deref(a);
-    if ieq(v, 4_i32) {
+    if v == 4_i32 {
     } else {
       return exit_status(code: 1_u8);
     }

@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: signed division truncates toward zero and remainder carries the dividend's sign; -7 / 3 = -2 and -7 % 3 = -1 satisfy n = (n/d)*d + (n%d).";
+  let dividend = -7_i32;
+  let divisor = 3_i32;
+  let quotient = dividend / divisor;
+  let remainder = dividend % divisor;
+  if quotient == -2_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if remainder == -1_i32 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let product = quotient * divisor;
+  let rebuilt = product + remainder;
+  if rebuilt == dividend {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

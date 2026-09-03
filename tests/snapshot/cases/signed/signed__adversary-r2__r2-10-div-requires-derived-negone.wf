@@ -1,0 +1,24 @@
+fn quotient(n: own i32, d: own i32) -> result: own i32 pure contract {
+  requires d == -1_i32;
+} {
+  doc "expect REJECT: d is forced to -1_i32 by requires but n is left unbounded (full i32 range, including MIN(i32) = -2147483648_i32), so n / d cannot exclude the signed MIN(T),-1 pair.";
+  return n / d;
+}
+
+fn quotient_guarded(n: own i32, d: own i32) -> result: own i32 pure contract {
+  define d_is_neg_one = d == -1_i32;
+  define n_above_min = n > -2147483648_i32;
+  requires band(d_is_neg_one, n_above_min);
+} {
+  doc "Adding the missing dividend bound to the same requires makes the division discharge.";
+  return n / d;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let safe = quotient_guarded(n: 6_i32, d: -1_i32);
+  if safe == -6_i32 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

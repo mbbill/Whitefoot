@@ -17,10 +17,10 @@ fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
 fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
-  let within = ilt(index, stored);
+  let within = index < stored;
   if within {
     let capacity = len(deref(s).buf);
-    let addressable = ilt(index, capacity);
+    let addressable = index < capacity;
     if addressable {
       let value = deref(s).buf[index];
       return Some<u8>(value: value);
@@ -33,12 +33,12 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
-  let headroom = ile(capacity, 9223372036854775679_u64);
+  let headroom = capacity <= 9223372036854775679_u64;
   if headroom {
   } else {
     return unit;
   }
-  let full = ige(count, capacity);
+  let full = count >= capacity;
   if full {
     let grown = capacity + 128_u64;
     let fresh = buffer_new(grown, value);
@@ -59,18 +59,18 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
 
 fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
-  requires ile(length, source_length);
+  requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
-    let pending = ilt(sent, length);
+    let pending = sent < length;
     if pending {
     } else {
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -85,7 +85,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
 
 fn stored_byte['r](records: &'r ByteString, index: own u64) -> result: own u8 reads(records.buf, records.fill) {
   doc "Reads one record byte, delivering zero for a position the record table does not hold.";
-  match bs_byte<'r>(s: records, index: index) {
+  match bs_byte::<'r>(s: records, index: index) {
     Some(value: byte) => {
       return byte;
     }
@@ -100,12 +100,12 @@ fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> 
   let left_base = left *wrap 128_u64;
   let right_base = right *wrap 128_u64;
   let left_length_at = left_base +wrap 1_u64;
-  let left_length = stored_byte<'r>(records: records, index: left_length_at);
+  let left_length = stored_byte::<'r>(records: records, index: left_length_at);
   let right_length_at = right_base +wrap 1_u64;
-  let right_length = stored_byte<'r>(records: records, index: right_length_at);
-  let left_count = cvt<u8, u64>(left_length);
-  let right_count = cvt<u8, u64>(right_length);
-  let shared = if ilt(left_count, right_count) {
+  let right_length = stored_byte::<'r>(records: records, index: right_length_at);
+  let left_count = cvt::<u8, u64>(left_length);
+  let right_count = cvt::<u8, u64>(right_length);
+  let shared = if left_count < right_count {
     give left_count;
   } else {
     give right_count;
@@ -114,41 +114,41 @@ fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> 
   let right_start = right_base +wrap 2_u64;
   let at = 0_u64;
   loop @compare {
-    let done = ige(at, shared);
+    let done = at >= shared;
     if done {
       break @compare;
     }
     let left_at = left_start +wrap at;
     let right_at = right_start +wrap at;
-    let left_byte = stored_byte<'r>(records: records, index: left_at);
-    let right_byte = stored_byte<'r>(records: records, index: right_at);
-    if ilt(left_byte, right_byte) {
+    let left_byte = stored_byte::<'r>(records: records, index: left_at);
+    let right_byte = stored_byte::<'r>(records: records, index: right_at);
+    if left_byte < right_byte {
       return True();
     }
-    if igt(left_byte, right_byte) {
+    if left_byte > right_byte {
       return False();
     }
     set at = at +wrap 1_u64;
   }
-  return ilt(left_count, right_count);
+  return left_count < right_count;
 }
 
 fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(records.buf, records.fill, destination), writes(destination) {
   doc "Renders one record as its kind glyph, one space, its relative path, and one newline.";
   let base = index *wrap 128_u64;
-  let kind = stored_byte<'r>(records: records, index: base);
+  let kind = stored_byte::<'r>(records: records, index: base);
   let length_at = base +wrap 1_u64;
-  let length = stored_byte<'r>(records: records, index: length_at);
-  let count = cvt<u8, u64>(length);
+  let length = stored_byte::<'r>(records: records, index: length_at);
+  let count = cvt::<u8, u64>(length);
   let room = len(deref(destination));
   let cursor = at;
   let glyph = 48_u8 +wrap kind;
-  let kind_fits = ilt(cursor, room);
+  let kind_fits = cursor < room;
   if kind_fits {
     set deref(destination)[cursor] = glyph;
     set cursor = cursor +wrap 1_u64;
   }
-  let space_fits = ilt(cursor, room);
+  let space_fits = cursor < room;
   if space_fits {
     set deref(destination)[cursor] = 32_u8;
     set cursor = cursor +wrap 1_u64;
@@ -156,13 +156,13 @@ fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &un
   let path_start = base +wrap 2_u64;
   let taken = 0_u64;
   loop @path {
-    let done = ige(taken, count);
+    let done = taken >= count;
     if done {
       break @path;
     }
     let path_at = path_start +wrap taken;
-    let byte = stored_byte<'r>(records: records, index: path_at);
-    let body_fits = ilt(cursor, room);
+    let byte = stored_byte::<'r>(records: records, index: path_at);
+    let body_fits = cursor < room;
     if body_fits {
     } else {
       break @path;
@@ -171,7 +171,7 @@ fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &un
     set cursor = cursor +wrap 1_u64;
     set taken = taken +wrap 1_u64;
   }
-  let end_fits = ilt(cursor, room);
+  let end_fits = cursor < room;
   if end_fits {
     set deref(destination)[cursor] = 10_u8;
     set cursor = cursor +wrap 1_u64;
@@ -182,14 +182,14 @@ fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &un
 fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, length: own u64, kind: own u8) -> result: own unit reads(records.buf, records.fill, path), writes(records.buf, records.fill), allocates(heap) {
   doc "Appends one fixed-stride record holding an entry kind and its relative path.";
   region 'kind_push {
-    let pushed = bs_push<'kind_push>(s: &uniq 'kind_push deref(records), value: kind);
+    let pushed = bs_push::<'kind_push>(s: &uniq 'kind_push deref(records), value: kind);
   }
-  let stored = if ile(length, 126_u64) {
+  let stored = if length <= 126_u64 {
     give length;
   } else {
     give 126_u64;
   }
-  let narrowed = cvt<u64, u8>(stored);
+  let narrowed = cvt::<u64, u8>(stored);
   let byte_length = match narrowed {
     Ok(value: exact) => {
       give exact;
@@ -199,25 +199,25 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
     }
   }
   region 'length_push {
-    let pushed = bs_push<'length_push>(s: &uniq 'length_push deref(records), value: byte_length);
+    let pushed = bs_push::<'length_push>(s: &uniq 'length_push deref(records), value: byte_length);
   }
   let room = len(deref(path));
   let at = 0_u64;
   loop @body {
-    let done = ige(at, 126_u64);
+    let done = at >= 126_u64;
     if done {
       break @body;
     }
     let byte = 0_u8;
-    let inside = ilt(at, stored);
+    let inside = at < stored;
     if inside {
-      let readable = ilt(at, room);
+      let readable = at < room;
       if readable {
         set byte = deref(path)[at];
       }
     }
     region 'body_push {
-      let pushed = bs_push<'body_push>(s: &uniq 'body_push deref(records), value: byte);
+      let pushed = bs_push::<'body_push>(s: &uniq 'body_push deref(records), value: byte);
     }
     set at = at +wrap 1_u64;
   }
@@ -225,25 +225,25 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
 }
 
 fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
-  let permit = reserve_file<'f>(factory: move factory);
-  return open_directory_source<'d>(permit: move permit, directory: directory);
+  let permit = reserve_file::<'f>(factory: move factory);
+  return open_directory_source::<'d>(permit: move permit, directory: directory);
 }
 
 fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
-  define ordered = ile(start, end);
+  define ordered = start <= end;
   define capacity = len(deref(name));
-  define within = ile(end, capacity);
+  define within = end <= capacity;
   requires ordered;
   requires within;
 } {
-  let permit = reserve_file<'f>(factory: move factory);
-  return open_directory<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+  let permit = reserve_file::<'f>(factory: move factory);
+  return open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
 }
 
 fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, records: &uniq 'r ByteString, used: own u64, depth: own u64) -> result: own u64 reads(factory, dir, prefix, records.buf, records.fill), writes(factory, records.buf, records.fill), allocates(heap) {
   doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names.";
   let count = used;
-  let too_deep = ige(depth, 8_u64);
+  let too_deep = depth >= 8_u64;
   if too_deep {
     return count;
   }
@@ -253,13 +253,13 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
   let entries_room = len(entries);
   let child_room = len(child);
   region 'directory_open {
-    match open_source_from_factory<'directory_open, 'directory_open>(factory: &uniq 'directory_open deref(factory), directory: &'directory_open deref(dir)) {
+    match open_source_from_factory::<'directory_open, 'directory_open>(factory: &uniq 'directory_open deref(factory), directory: &'directory_open deref(dir)) {
       Ok(value: list) => {
         loop @batches {
           let produced = 0_u64;
           let ended = 0_u8;
           region 'batch {
-            match directory_next<'batch, 'batch>(source: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
+            match directory_next::<'batch, 'batch>(source: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
               ListBytes(next: endpoint, entries: reported) => {
                 set produced = endpoint;
               }
@@ -271,115 +271,115 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
               }
             }
           }
-          if ieq(ended, 0_u8) {
+          if ended == 0_u8 {
           } else {
             break @batches;
           }
-          let empty_batch = ieq(produced, 0_u64);
+          let empty_batch = produced == 0_u64;
           if empty_batch {
             break @batches;
           }
           let at = 0_u64;
           loop @entry {
             let header_end = at +wrap 3_u64;
-            let complete = ile(header_end, produced);
+            let complete = header_end <= produced;
             if complete {
             } else {
               break @entry;
             }
-            let kind_readable = ilt(at, entries_room);
+            let kind_readable = at < entries_room;
             if kind_readable {
             } else {
               break @entry;
             }
             let kind = entries[at];
             let length_low_at = at +wrap 1_u64;
-            let length_low_readable = ilt(length_low_at, entries_room);
+            let length_low_readable = length_low_at < entries_room;
             if length_low_readable {
             } else {
               break @entry;
             }
             let length_high_at = at +wrap 2_u64;
-            let length_high_readable = ilt(length_high_at, entries_room);
+            let length_high_readable = length_high_at < entries_room;
             if length_high_readable {
             } else {
               break @entry;
             }
             let name_length_low = entries[length_low_at];
             let name_length_high = entries[length_high_at];
-            let name_count_low = cvt<u8, u64>(name_length_low);
-            let name_count_high = cvt<u8, u64>(name_length_high);
+            let name_count_low = cvt::<u8, u64>(name_length_low);
+            let name_count_high = cvt::<u8, u64>(name_length_high);
             let name_count_high_shifted = ishl.wrap(name_count_high, 8_u32);
             let name_count = ior(name_count_low, name_count_high_shifted);
             let name_at = at +wrap 3_u64;
             let name_end = name_at +wrap name_count;
-            let bounded = ile(name_end, produced);
+            let bounded = name_end <= produced;
             if bounded {
             } else {
               break @entry;
             }
-            let ordered = ile(name_at, name_end);
+            let ordered = name_at <= name_end;
             if ordered {
             } else {
               break @entry;
             }
-            let addressable = ile(name_end, entries_room);
+            let addressable = name_end <= entries_room;
             if addressable {
             } else {
               break @entry;
             }
             set at = name_end;
             let dotted = 0_u8;
-            let single = ieq(name_count, 1_u64);
+            let single = name_count == 1_u64;
             if single {
-              let first_readable = ilt(name_at, entries_room);
+              let first_readable = name_at < entries_room;
               if first_readable {
                 let first = entries[name_at];
-                if ieq(first, 46_u8) {
+                if first == 46_u8 {
                   set dotted = 1_u8;
                 }
               }
             }
-            let paired = ieq(name_count, 2_u64);
+            let paired = name_count == 2_u64;
             if paired {
               let second_at = name_at +wrap 1_u64;
-              let first_readable = ilt(name_at, entries_room);
-              let second_readable = ilt(second_at, entries_room);
+              let first_readable = name_at < entries_room;
+              let second_readable = second_at < entries_room;
               if first_readable {
                 if second_readable {
                   let first = entries[name_at];
                   let second = entries[second_at];
-                  if ieq(first, 46_u8) {
-                    if ieq(second, 46_u8) {
+                  if first == 46_u8 {
+                    if second == 46_u8 {
                       set dotted = 1_u8;
                     }
                   }
                 }
               }
             }
-            let separated = igt(prefix_length, 0_u64);
+            let separated = prefix_length > 0_u64;
             let separated_length = prefix_length +wrap 1_u64;
             let child_length = if separated {
               give separated_length +wrap name_count;
             } else {
               give name_count;
             }
-            let fits = ile(child_length, 126_u64);
-            let usable = ieq(dotted, 0_u8);
+            let fits = child_length <= 126_u64;
+            let usable = dotted == 0_u8;
             if usable {
               if fits {
                 let cursor = 0_u64;
                 loop @prefix_copy {
-                  let done = ige(cursor, prefix_length);
+                  let done = cursor >= prefix_length;
                   if done {
                     break @prefix_copy;
                   }
-                  let readable = ilt(cursor, prefix_room);
+                  let readable = cursor < prefix_room;
                   if readable {
                   } else {
                     break @prefix_copy;
                   }
-                  let writable = ilt(cursor, child_room);
+                  let writable = cursor < child_room;
                   if writable {
                   } else {
                     break @prefix_copy;
@@ -389,7 +389,7 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
                   set cursor = cursor +wrap 1_u64;
                 }
                 if separated {
-                  let separator_fits = ilt(cursor, child_room);
+                  let separator_fits = cursor < child_room;
                   if separator_fits {
                     set child[cursor] = 47_u8;
                     set cursor = cursor +wrap 1_u64;
@@ -397,17 +397,17 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
                 }
                 let taken = 0_u64;
                 loop @name_copy {
-                  let done = ige(taken, name_count);
+                  let done = taken >= name_count;
                   if done {
                     break @name_copy;
                   }
                   let source_at = name_at +wrap taken;
-                  let readable = ilt(source_at, entries_room);
+                  let readable = source_at < entries_room;
                   if readable {
                   } else {
                     break @name_copy;
                   }
-                  let writable = ilt(cursor, child_room);
+                  let writable = cursor < child_room;
                   if writable {
                   } else {
                     break @name_copy;
@@ -417,21 +417,21 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
                   set cursor = cursor +wrap 1_u64;
                   set taken = taken +wrap 1_u64;
                 }
-                let room_left = ilt(count, 64_u64);
+                let room_left = count < 64_u64;
                 if room_left {
                   region 'record_push {
-                    let recorded = record_entry<'record_push, 'record_push>(records: &uniq 'record_push deref(records), path: &'record_push child, length: cursor, kind: kind);
+                    let recorded = record_entry::<'record_push, 'record_push>(records: &uniq 'record_push deref(records), path: &'record_push child, length: cursor, kind: kind);
                   }
                   set count = count +wrap 1_u64;
                 }
-                let descending = ieq(kind, 2_u8);
+                let descending = kind == 2_u8;
                 if descending {
                   region 'descend {
-                    match open_directory_from_factory<'descend, 'descend, 'descend>(factory: &uniq 'descend deref(factory), root: &'descend deref(dir), name: &'descend entries, start: name_at, end: name_end) {
+                    match open_directory_from_factory::<'descend, 'descend, 'descend>(factory: &uniq 'descend deref(factory), root: &'descend deref(dir), name: &'descend entries, start: name_at, end: name_end) {
                       Ok(value: opened) => {
                         let deeper = depth +wrap 1_u64;
                         region 'child {
-                          set count = walk<'child, 'child, 'child, 'child>(factory: &uniq 'child deref(factory), dir: &'child opened, prefix: &'child child, prefix_length: cursor, records: &uniq 'child deref(records), used: count, depth: deeper);
+                          set count = walk::<'child, 'child, 'child, 'child>(factory: &uniq 'child deref(factory), dir: &'child opened, prefix: &'child child, prefix_length: cursor, records: &uniq 'child deref(records), used: count, depth: deeper);
                         }
                       }
                       Err(error: problem) => {
@@ -460,15 +460,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let order_room = len(order);
   let stored = 0_u64;
   region 'root {
-    set stored = walk<'root, 'root, 'root, 'root>(factory: &uniq 'root files, dir: &'root cwd, prefix: &'root root_prefix, prefix_length: 0_u64, records: &uniq 'root records, used: 0_u64, depth: 0_u64);
+    set stored = walk::<'root, 'root, 'root, 'root>(factory: &uniq 'root files, dir: &'root cwd, prefix: &'root root_prefix, prefix_length: 0_u64, records: &uniq 'root records, used: 0_u64, depth: 0_u64);
   }
   let seed = 0_u64;
   loop @seed_order {
-    let done = ige(seed, stored);
+    let done = seed >= stored;
     if done {
       break @seed_order;
     }
-    let writable = ilt(seed, order_room);
+    let writable = seed < order_room;
     if writable {
     } else {
       break @seed_order;
@@ -478,11 +478,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   let selected = 0_u64;
   loop @sort {
-    let done = ige(selected, stored);
+    let done = selected >= stored;
     if done {
       break @sort;
     }
-    let selected_readable = ilt(selected, order_room);
+    let selected_readable = selected < order_room;
     if selected_readable {
     } else {
       break @sort;
@@ -490,16 +490,16 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     let best = selected;
     let probe = selected +wrap 1_u64;
     loop @scan {
-      let scanned = ige(probe, stored);
+      let scanned = probe >= stored;
       if scanned {
         break @scan;
       }
-      let probe_readable = ilt(probe, order_room);
+      let probe_readable = probe < order_room;
       if probe_readable {
       } else {
         break @scan;
       }
-      let best_readable = ilt(best, order_room);
+      let best_readable = best < order_room;
       if best_readable {
       } else {
         break @scan;
@@ -508,17 +508,17 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       let incumbent = order[best];
       let earlier = 0_u8;
       region 'compare {
-        let closer = record_before<'compare>(records: &'compare records, left: candidate, right: incumbent);
+        let closer = record_before::<'compare>(records: &'compare records, left: candidate, right: incumbent);
         if closer {
           set earlier = 1_u8;
         }
       }
-      if ieq(earlier, 1_u8) {
+      if earlier == 1_u8 {
         set best = probe;
       }
       set probe = probe +wrap 1_u64;
     }
-    let best_readable = ilt(best, order_room);
+    let best_readable = best < order_room;
     if best_readable {
       let held = order[selected];
       let winner = order[best];
@@ -530,11 +530,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let status = 0_u8;
   let emitted = 0_u64;
   loop @emit {
-    let done = ige(emitted, stored);
+    let done = emitted >= stored;
     if done {
       break @emit;
     }
-    let readable = ilt(emitted, order_room);
+    let readable = emitted < order_room;
     if readable {
     } else {
       break @emit;
@@ -542,13 +542,13 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     let index = order[emitted];
     let length = 0_u64;
     region 'render {
-      set length = record_line<'render, 'render>(records: &'render records, index: index, destination: &uniq 'render line, at: 0_u64);
+      set length = record_line::<'render, 'render>(records: &'render records, index: index, destination: &uniq 'render line, at: 0_u64);
     }
     let line_room = len(line);
-    let length_fits = ile(length, line_room);
+    let length_fits = length <= line_room;
     if length_fits {
       region 'publish {
-        match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, length: length) {
+        match publish_all::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, length: length) {
           Ok(value: published) => {
           }
           Err(error: problem) => {
@@ -559,7 +559,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     } else {
       set status = 2_u8;
     }
-    if ieq(status, 0_u8) {
+    if status == 0_u8 {
     } else {
       break @emit;
     }

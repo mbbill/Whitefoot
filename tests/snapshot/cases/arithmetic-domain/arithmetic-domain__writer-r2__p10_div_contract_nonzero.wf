@@ -1,0 +1,16 @@
+fn average_step(total: own i32, steps: own i32) -> result: own i32 pure contract {
+  requires total /defined steps;
+} {
+  doc "expect ACCEPT: signed division by a caller-supplied divisor is admitted because a requires clause fixes the exact .defined predicate at every call site [OP-2, FN-8].";
+  let quotient = total / steps;
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = average_step(total: 90_i32, steps: 4_i32);
+  if result == 22_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

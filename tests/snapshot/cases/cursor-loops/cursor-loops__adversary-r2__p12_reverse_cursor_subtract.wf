@@ -1,0 +1,21 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: reverse traversal back = 4 - i for i in 0..5 stays within [0,4], all reads in bounds";
+  let data = array_new::<u64, 5>(0_u64);
+  set data[0_u64] = 1_u64;
+  set data[1_u64] = 2_u64;
+  set data[2_u64] = 3_u64;
+  set data[3_u64] = 4_u64;
+  set data[4_u64] = 5_u64;
+  let total = 0_u64;
+  for (i in 0_u64..5_u64) {
+    let back = 4_u64 - i;
+    let value = data[back];
+    set total = total +wrap value;
+  }
+  let correct = total == 15_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

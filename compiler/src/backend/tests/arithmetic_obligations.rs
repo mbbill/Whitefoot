@@ -10,9 +10,9 @@ use super::{emit, emit_arithmetic_obligations};
 /// check is an ordinary test oracle.
 const PROVED_EXACT: &[u8] =
     br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure contract {
-  ensures ilt(result, 1000_u64);
+  ensures result < 1000_u64;
 } {
-  if ilt(value, 1000_u64) {
+  if value < 1000_u64 {
     return value;
   } else {
     return 999_u64;
@@ -27,7 +27,7 @@ fn increment(x: own u64) -> result: own u64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let total = increment(x: 6_u64);
-  if ine(total, 7_u64) {
+  if total != 7_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

@@ -5,22 +5,22 @@ command fn main() -> status: own ExitStatus pure {
   let sum = 0_u32;
   for (
     i in 0_u64..4_u64,
-    invariant sum_bound: ile(sum, 255_u32 * i)
+    invariant sum_bound: sum <= 255_u32 * i
   ) {
     let byte = values[i];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     let zero = 0_u32;
     let parity = iand(wide, 1_u32);
-    let is_odd = ieq(parity, 1_u32);
+    let is_odd = parity == 1_u32;
     let addend = if is_odd {
       give zero;
     } else {
       give wide;
     }
-    invariant addend_bound: ile(addend, 255_u32);
+    invariant addend_bound: addend <= 255_u32;
     set sum = sum + addend;
   }
-  let folded = ieq(sum, 6_u32);
+  let folded = sum == 6_u32;
   if folded {
   } else {
     return exit_status(code: 1_u8);

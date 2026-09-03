@@ -370,7 +370,7 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 fn a_branch_fact_discharges_the_protected_array_read() {
     let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 pure {
   let length = len(values);
-  if ilt(i, length) {
+  if i < length {
     return values[i];
   } else {
     return values[0_u64];
@@ -391,12 +391,12 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn repeated_normalized_uses_are_a_prf1_rejection() {
     let source = br#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {
-  requires ile(value, limit);
+  requires value <= limit;
 } {
-  invariant scaled: ile(3_u64 * value, 3_u64 * limit) {
-    use ile(value, limit);
-    use ile(value, limit);
-    use ile(value, limit);
+  invariant scaled: 3_u64 * value <= 3_u64 * limit {
+    use value <= limit;
+    use value <= limit;
+    use value <= limit;
   }
   return unit;
 }
@@ -413,7 +413,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_non_ordered_local_invariant_target_is_an_inv1_rejection() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  invariant held: ieq(0_u64, 0_u64);
+  invariant held: 0_u64 == 0_u64;
   return exit_status(code: 0_u8);
 }
 "#;
@@ -425,7 +425,7 @@ fn a_non_ordered_local_invariant_target_is_an_inv1_rejection() {
 #[test]
 fn an_unproved_blockless_local_invariant_target_is_an_inv1_rejection() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  invariant impossible: ile(1_u64, 0_u64);
+  invariant impossible: 1_u64 <= 0_u64;
   return exit_status(code: 0_u8);
 }
 "#;
@@ -441,8 +441,8 @@ fn an_unproved_blockless_local_invariant_target_is_an_inv1_rejection() {
 #[test]
 fn a_non_ordered_use_relation_is_a_prf1_rejection() {
     let source = br#"fn check(value: own u64, limit: own u64) -> result: own unit pure {
-  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {
-    use ieq(value, limit);
+  invariant scaled: 2_u64 * value <= 2_u64 * limit {
+    use value == limit;
   }
   return unit;
 }
@@ -491,7 +491,7 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticIssueKind::ReturnMismatch,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ieq(0_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 == 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Inv1,
         |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
@@ -678,12 +678,12 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
     // A wrong-count argument list, the same failure on both classes.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt<i32>(value);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt::<i32>(value);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -842,7 +842,7 @@ fn undeclared_system_effect_categories_reject_both_row_directions() {
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn probe(args: own Args) -> result: own u64 pure {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: own Args) -> result: own u64 pure {\n  region 'a {\n    let total = args_count::<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -1171,7 +1171,7 @@ command fn main() -> status: own ExitStatus pure {
   let lines = sub.lines;
   let bytes = sub.bytes;
   let total = lines +wrap bytes;
-  let empty = ieq(total, 0_u64);
+  let empty = total == 0_u64;
   if empty {
     return exit_status(code: 0_u8);
   }

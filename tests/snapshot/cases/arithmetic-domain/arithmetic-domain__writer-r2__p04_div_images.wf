@@ -1,0 +1,25 @@
+fn consume_images(quotient: own u64, remainder: own u64, count: own u64) -> result: own unit pure contract {
+  requires quotient <= count;
+  requires remainder < 5_u64;
+} {
+  doc "expect ACCEPT: an unsigned literal division floor and its remainder image are consumed only through a requires contract they always establish [OP-2].";
+  return unit;
+}
+
+fn split_by_five(count: own u64) -> result: own u64 pure contract {
+  ensures result <= count;
+} {
+  let quotient = count / 5_u64;
+  let remainder = count % 5_u64;
+  let consumed = consume_images(quotient: quotient, remainder: remainder, count: count);
+  return quotient;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = split_by_five(count: 23_u64);
+  if result == 4_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

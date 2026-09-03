@@ -4,15 +4,15 @@ fn probe(src: own buffer<u8>) -> result: own u64 pure {
   let sum = 0_u64;
   loop @triples {
     let rem = n -wrap i;
-    if ilt(rem, 3_u64) {
+    if rem < 3_u64 {
       break @triples;
     }
     set i = i +wrap 3_u64;
   }
   let tail = n -wrap i;
-  if ieq(tail, 1_u64) {
+  if tail == 1_u64 {
     let x = src[i];
-    let wide = cvt<u8, u64>(x);
+    let wide = cvt::<u8, u64>(x);
     set sum = sum +wrap wide;
   }
   return sum;

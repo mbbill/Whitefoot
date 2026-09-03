@@ -1,0 +1,27 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: two nested counted for loops walk a fixed grid row by row and column by column, guarding each addend against a diagonal skip before accumulating a wrapped total.";
+  let grid = array_new::<u32, 9>(1_u32);
+  let total = 0_u32;
+  for (row in 0_u64..3_u64) {
+    for (col in 0_u64..3_u64) {
+      let on_diagonal = row == col;
+      if on_diagonal {
+      } else {
+        let index = row * 3_u64;
+        let flat = index + col;
+        let flat_in_bounds = flat < 9_u64;
+        if flat_in_bounds {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+        let cell = grid[flat];
+        set total = total +wrap cell;
+      }
+    }
+  }
+  if total == 6_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

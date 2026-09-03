@@ -1,0 +1,24 @@
+fn widen(x: own u8) -> result: own i16 pure contract {
+  requires x == 200_u8;
+  ensures result == -56_i16;
+} {
+  doc "expect REJECT: cvt<u8, i16> is value-preserving (never rounds/truncates/wraps) [OP-6], so cvt::<u8, i16>(200_u8) is 200_i16, not the byte-reinterpreted value -56_i16; this ensures is false.";
+  return cvt::<u8, i16>(x);
+}
+
+fn widen_true_ensures(x: own u8) -> result: own i16 pure contract {
+  requires x == 200_u8;
+  ensures result == 200_i16;
+} {
+  doc "The correct value-preserving result for contrast: cvt never reinterprets bytes.";
+  return cvt::<u8, i16>(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let widened = widen_true_ensures(x: 200_u8);
+  if widened == 200_i16 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

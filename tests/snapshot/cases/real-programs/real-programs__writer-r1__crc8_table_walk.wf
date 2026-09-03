@@ -1,0 +1,30 @@
+const crc8_table: array<u8, 16> =[0_u8, 7_u8, 14_u8, 9_u8, 28_u8, 27_u8, 18_u8, 21_u8, 56_u8, 63_u8, 54_u8, 49_u8, 36_u8, 35_u8, 42_u8, 45_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: ACCEPT -- walks a fixed 16-entry CRC nibble table by index and XORs a running checksum, wraparound intended";
+  let table_length = len(crc8_table);
+  let message = array_new::<u8, 4>(0_u8);
+  let checksum = 0_u8;
+  for (i in 0_u64..4_u64) {
+    let byte = message[i];
+    let low_nibble = iand(byte, 15_u8);
+    let low_nibble_wide = cvt::<u8, u64>(low_nibble);
+    let index_ok = low_nibble_wide < table_length;
+    if index_ok {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let table_entry = crc8_table[low_nibble_wide];
+    set checksum = ixor(checksum, table_entry);
+  }
+  if checksum == 0_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  set checksum = ixor(checksum, 9_u8);
+  if checksum == 9_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

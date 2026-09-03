@@ -1,0 +1,22 @@
+fn ring_write(buf: own array<u8, 8>, head: own u64, used: own u64, value: own u8) -> updated: own array<u8, 8> pure contract {
+  requires head < 8_u64;
+  requires used < 8_u64;
+} {
+  doc "ACCEPT: ring-buffer write slot; head+used is proved representable from the fixed 8-slot bound, and mod 8 keeps the slot inside the array without a written certificate.";
+  let sum = head + used;
+  let slot = sum % 8_u64;
+  let out = move buf;
+  set out[slot] = value;
+  return move out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let buf = array_new::<u8, 8>(0_u8);
+  let written = ring_write(buf: move buf, head: 6_u64, used: 3_u64, value: 42_u8);
+  let byte = written[1_u64];
+  if byte == 42_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

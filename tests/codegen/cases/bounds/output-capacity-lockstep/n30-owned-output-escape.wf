@@ -4,7 +4,7 @@ fn probe(out: own buffer<u8>, src: own buffer<u8>) -> result: own u64 pure {
   let o = 0_u64;
   loop @groups {
     let rem = n -wrap i;
-    if ilt(rem, 3_u64) {
+    if rem < 3_u64 {
       break @groups;
     }
     set out[o] = 0_u8;

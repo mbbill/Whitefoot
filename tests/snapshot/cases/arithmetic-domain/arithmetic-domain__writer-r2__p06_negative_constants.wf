@@ -1,0 +1,19 @@
+fn offset_from_origin(step: own i32) -> result: own i32 pure contract {
+  requires step <= 1000_i32;
+  requires step >= -1000_i32;
+} {
+  doc "expect ACCEPT: signed multiplication by a literal and addition of a negative constant both stay inside i32 range because a requires contract bounds the input step [OP-2].";
+  let base = -1000_i32;
+  let scaled = step * 3_i32;
+  let position = base + scaled;
+  return position;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = offset_from_origin(step: 10_i32);
+  if result == -970_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

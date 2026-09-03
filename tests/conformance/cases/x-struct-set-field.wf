@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;
   let v = c.n + 1_i32;
-  if ieq(v, 42_i32) {
+  if v == 42_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

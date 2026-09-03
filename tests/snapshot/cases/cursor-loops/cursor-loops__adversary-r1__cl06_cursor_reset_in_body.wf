@@ -1,0 +1,33 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: an inner cursor resets to zero inside the loop body whenever it reaches a threshold, counting wraps of a small window";
+  let outer = 0_u64;
+  let inner = 0_u64;
+  let wraps = 0_u64;
+  loop (
+    invariant outer_bound: outer <= 10_u64,
+    invariant inner_bound: inner < 3_u64
+  ) {
+    let more = outer < 10_u64;
+    if more {
+    } else {
+      break;
+    }
+    let at_edge = inner >= 2_u64;
+    if at_edge {
+      set inner = 0_u64;
+      set wraps = wraps +wrap 1_u64;
+    } else {
+      set inner = inner + 1_u64;
+    }
+    set outer = outer + 1_u64;
+  }
+  if outer == 10_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if wraps == 3_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

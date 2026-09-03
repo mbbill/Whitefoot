@@ -1,0 +1,25 @@
+fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+  doc "EXPECT REJECT under Sys8: start and end are threaded straight through from an external world value with no compile-time bound, so an invariant asserting the range fits source would be dishonest here; the correct repair is a real dominating branch on the range before publishing.";
+  region 'attempt {
+    match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
+      Ok(value: next) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args, command.stdout as output: own Output) -> status: own ExitStatus reads(args, output), writes(output), allocates(heap) {
+  region 'a {
+    let n = args_count::<'a>(args: &'a args);
+    let bytes = buffer_new(4_u64, 65_u8);
+    region 'o {
+      region 's {
+        let result = publish::<'o, 's>(output: &uniq 'o output, source: &'s bytes, start: 0_u64, end: n);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

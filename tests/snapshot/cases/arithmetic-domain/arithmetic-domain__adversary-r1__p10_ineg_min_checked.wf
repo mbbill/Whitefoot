@@ -1,0 +1,27 @@
+fn probe() -> result: own u8 pure {
+  doc "Signed negation of the minimum value overflows the exact and checked domains but is defined under wrap [OP-2].";
+  let wrapped = ineg.wrap(-128_i8);
+  if wrapped == -128_i8 {
+  } else {
+    return 9_u8;
+  }
+  let checked_result = ineg.checked(-128_i8);
+  match move checked_result {
+    Ok(value: v) => {
+      return 1_u8;
+    }
+    Err(error: e) => {
+      return 0_u8;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: ineg.checked(i8::MIN) is Err, ineg.wrap(i8::MIN) wraps to itself.";
+  let v = probe();
+  if v == 0_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

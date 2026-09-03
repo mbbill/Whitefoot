@@ -1,0 +1,19 @@
+fn ring_slot(buf: own buffer<u8>, head: own u64, used: own u64) -> found: own u8 reads(buf) contract {
+  define cap = len(buf);
+  requires cap > 0_u64;
+  requires head < cap;
+  requires used < cap;
+} {
+  doc "expect ACCEPT: slot = (head+wrap used) % cap is always < cap = len(buf) by OP-4 remainder discharge";
+  let room = len(buf);
+  let sum = head +wrap used;
+  let slot = sum % room;
+  let byte = buf[slot];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(8_u64, 0_u8);
+  let found = ring_slot(buf: move buf, head: 5_u64, used: 6_u64);
+  return exit_status(code: found);
+}

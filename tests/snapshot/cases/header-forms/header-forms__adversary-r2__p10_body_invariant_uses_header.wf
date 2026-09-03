@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: a body invariant_stmt inside the loop body cites the header invariant name via an explicit-factor 'use'; header names are visible in the body.";
+  let cursor = 0_u64;
+  for (
+    i in 0_u64..4_u64,
+    invariant bounded: cursor <= i
+  ) {
+    invariant scaled: 3_u64 * cursor <= 3_u64 * i {
+      use 3 * bounded;
+    }
+    set cursor = cursor + 1_u64;
+  }
+  let correct = cursor == 4_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

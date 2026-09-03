@@ -38,6 +38,36 @@ fn exact_empty_and_nonempty_source_forests_publish_canonical_syntax() {
     }
 }
 
+/// [FORM-2] a `<` or `>` selected by `compare_op` belongs to neither
+/// attachment set, so a comparison is spaced while a type-argument list and
+/// its `::` delimiter stay compact; the attached spelling of a comparison is
+/// not canonical.
+#[test]
+fn comparison_angles_are_spaced_while_type_application_attaches() {
+    let canonical = b"fn probe(a: own u64, b: own u64, w: own u8) -> result: own unit pure {\n  let lt = a < b;\n  let ge = a >= b;\n  let wide = cvt::<u8, u32>(w);\n  invariant bound: a <= b + 1_u64;\n  return unit;\n}\n";
+    assert_eq!(
+        rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+    audit_source(canonical, |outcome| {
+        assert!(
+            matches!(outcome, CanonicalOutcome::Complete(_)),
+            "spaced comparisons and attached type application are canonical: {outcome:?}"
+        );
+    });
+    let attached = b"fn probe(a: own u64, b: own u64, w: own u8) -> result: own unit pure {\n  let lt = a<b;\n  let ge = a >= b;\n  let wide = cvt::<u8, u32>(w);\n  invariant bound: a <= b + 1_u64;\n  return unit;\n}\n";
+    assert_eq!(
+        rendered_bytes(attached).as_deref(),
+        Some(canonical.as_slice())
+    );
+    audit_source(attached, |outcome| {
+        assert!(
+            matches!(outcome, CanonicalOutcome::SourceIssue(_)),
+            "an attached comparison is a FORM-2 rejection: {outcome:?}"
+        );
+    });
+}
+
 #[test]
 fn ordered_canonical_sources_keep_independent_forests() {
     let inputs = [
@@ -62,11 +92,11 @@ fn ordered_canonical_sources_keep_independent_forests() {
 #[test]
 fn nested_blocks_arms_and_requires_follow_tree_depth() {
     let source = br#"fn guarded(value: own i32) -> result: own unit pure contract {
-  requires ieq(value, 0_i32);
+  requires value == 0_i32;
 } {
   match value {
     Some(payload: item) => {
-      let drift = ieq(item, payload);
+      let drift = item == payload;
     }
     None() => {
       return unit;
@@ -85,14 +115,14 @@ fn nested_blocks_arms_and_requires_follow_tree_depth() {
 #[test]
 fn plain_and_variant_ensures_round_trip_with_clause_joins() {
     let source = br#"fn plain(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return value;
 }
 
 fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {
-  requires ieq(value, value);
-  ensures when Ok(value: payload): ieq(payload, value);
+  requires value == value;
+  ensures when Ok(value: payload): payload == value;
 } {
   return Ok<i32, i32>(value: value);
 }
@@ -485,9 +515,9 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
 fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
     // `(` remains in FORM-2's general right-attachment set, so the affine
     // parenthesized factor is `*(...)`, with no proof-syntax exception.
-    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: ile(index + 1_u64 *(1_u64), upper)\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: index + 1_u64 *(1_u64) <= upper\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range( index in lower .. upper,invariant limit : ile ( index+1_u64 * ( 1_u64 ) ,upper )){\nbreak @range;\n}\nreturn unit;\n}\n";
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range( index in lower .. upper,invariant limit : index+1_u64 * ( 1_u64 ) <= upper){\nbreak @range;\n}\nreturn unit;\n}\n";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
@@ -519,9 +549,9 @@ fn a_counted_header_without_an_invariant_stays_on_one_line() {
 
 #[test]
 fn local_invariant_certificates_render_their_header_and_steps_canonically() {
-    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: ile(left + 1_i32, right + 1_i32) {\n    use 2 * ile(left, right);\n    use earlier;\n  }\n  return unit;\n}\n";
+    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 * (left <= right);\n    use earlier;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ invariant ordered : ile ( left+1_i32,right+1_i32 ) { use 2 * ile ( left , right ) ; use earlier; } return unit; }";
+    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ invariant ordered : left+1_i32 <= right+1_i32 { use 2 * ( left <= right ) ; use earlier; } return unit; }";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
@@ -534,9 +564,9 @@ fn local_invariant_certificates_render_their_header_and_steps_canonically() {
 
 #[test]
 fn ordinary_loop_header_invariants_use_the_same_multiline_layout() {
-    let canonical = b"fn probe(value: own i32) -> result: own unit pure {\n  loop @again (\n    invariant stable: ile(value, value)\n  ) {\n    break @again;\n  }\n  return unit;\n}\n";
+    let canonical = b"fn probe(value: own i32) -> result: own unit pure {\n  loop @again (\n    invariant stable: value <= value\n  ) {\n    break @again;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(value:own i32)->result:own unit pure{ loop @again(invariant stable : ile(value,value)){ break @again; } return unit; }";
+    let sloppy = b"fn probe(value:own i32)->result:own unit pure{ loop @again(invariant stable : value <= value){ break @again; } return unit; }";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())

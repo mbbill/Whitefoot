@@ -13,12 +13,12 @@ command fn main() -> status: own ExitStatus pure {
   let second = Item(value: 2_u64);
   let previous = replace slot.item = move second;
   let old = previous.value;
-  if ieq(old, 1_u64) {
+  if old == 1_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let current = slot.item.value;
-  if ieq(current, 2_u64) {
+  if current == 2_u64 {
   } else {
     return exit_status(code: 2_u8);
   }

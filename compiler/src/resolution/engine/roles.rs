@@ -272,12 +272,13 @@ fn classify_node(
             )?;
         }
         Production::InvariantStmt | Production::HeaderInvariant => {
-            let [name, relation] = names.as_slice() else {
+            // The relation is a `compare_op` terminal between two affine
+            // expressions, not a name; the only direct IDENT is the
+            // invariant's own declaration.
+            let [name] = names.as_slice() else {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
-            if name_predicate(classified, *name) != Some(TerminalPredicate::Identifier)
-                || name_predicate(classified, *relation) != Some(TerminalPredicate::Identifier)
-            {
+            if name_predicate(classified, *name) != Some(TerminalPredicate::Identifier) {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             }
             add_complete(
@@ -288,22 +289,11 @@ fn classify_node(
                 roles,
                 complete_counts,
             )?;
-            add_complete(
-                classified,
-                owner,
-                *relation,
-                RawRoleKind::InvariantCarrier,
-                roles,
-                complete_counts,
-            )?;
         }
         Production::ProofUse => {
-            let [carrier] = names.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            if name_predicate(classified, *carrier) != Some(TerminalPredicate::Identifier) {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            }
+            // A relation-form use has no direct IDENT: its values sit inside
+            // the affine expressions and take the `ProofValue` role below. A
+            // named use has exactly one, the invariant it cites.
             let relation_form = topology
                 .node_children(owner)
                 .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
@@ -313,18 +303,26 @@ fn classify_node(
                         .node(*child)
                         .is_some_and(|record| record.production == Production::AffineExpr)
                 });
-            add_complete(
-                classified,
-                owner,
-                *carrier,
-                if relation_form {
-                    RawRoleKind::InvariantCarrier
-                } else {
-                    RawRoleKind::LexicalUse(LexicalUseRole::InvariantFact)
-                },
-                roles,
-                complete_counts,
-            )?;
+            if relation_form {
+                if !names.is_empty() {
+                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
+                }
+            } else {
+                let [carrier] = names.as_slice() else {
+                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
+                };
+                if name_predicate(classified, *carrier) != Some(TerminalPredicate::Identifier) {
+                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
+                }
+                add_complete(
+                    classified,
+                    owner,
+                    *carrier,
+                    RawRoleKind::LexicalUse(LexicalUseRole::InvariantFact),
+                    roles,
+                    complete_counts,
+                )?;
+            }
         }
         Production::AffineFactor if !names.is_empty() => {
             let role = if ancestor_with_production(topology, owner, Production::ProofUse).is_some()

@@ -1,0 +1,20 @@
+fn clamp_range(value: own i32, floor: own i32, ceiling: own i32) -> result: own i32 pure contract {
+  requires value >= floor;
+  requires value <= ceiling;
+  requires floor >= -100_i32;
+  requires ceiling <= 100_i32;
+  ensures result >= -100_i32;
+  ensures result <= 100_i32;
+} {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: two independent ensures clauses bound a signed result from two chained requires facts.";
+  let result = clamp_range(value: -7_i32, floor: -50_i32, ceiling: 50_i32);
+  if result == -7_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

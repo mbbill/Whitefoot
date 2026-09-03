@@ -1,0 +1,27 @@
+struct Box {
+  v: u8;
+}
+
+fn h(b: own Box, w: own u8) -> result: own u8 reads(b.v), writes(b.v) {
+  let old = b.v;
+  let bounded = old <= 5_u8;
+  if bounded {
+    set b.v = w;
+    let ok = b.v <= 5_u8;
+    if ok {
+      let z = b.v + 250_u8;
+      return z;
+    } else {
+      return 0_u8;
+    }
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: set b.v=w kills the fact, but code reproves b.v <= 5_u8 via an if-guard before the unchecked add";
+  let cell = Box(v: 0_u8);
+  let r = h(b: move cell, w: 3_u8);
+  return exit_status(code: 0_u8);
+}

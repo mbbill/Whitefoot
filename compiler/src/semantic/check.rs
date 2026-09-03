@@ -3022,7 +3022,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
-                                mechanical_fix: "when the allocation must fit, establish `buffer_fits<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
+                                mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
                             },
                         },
                         super::entailment::ObligationFamily::SystemRange => SemanticIssue {

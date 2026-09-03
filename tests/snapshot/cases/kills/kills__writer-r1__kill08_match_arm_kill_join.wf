@@ -1,0 +1,45 @@
+enum Mode {
+  Fast();
+  Slow();
+}
+
+fn step_size(mode: own Mode, table: own array<u16, 4>) -> result: own u16 pure {
+  doc "expect ACCEPT: pos is set to a different value in each arm, killing whatever fact reached the match from before it; each arm independently re-establishes pos's own bound before the join reads table[pos].";
+  let pos = 0_u64;
+  match mode {
+    Fast() => {
+      set pos = 1_u64;
+    }
+    Slow() => {
+      set pos = 3_u64;
+    }
+  }
+  let in_range = pos < 4_u64;
+  if in_range {
+  } else {
+    return 0_u16;
+  }
+  return table[pos];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first_table = array_new::<u16, 4>(0_u16);
+  set first_table[1_u64] = 5_u16;
+  set first_table[3_u64] = 9_u16;
+  let fast = Fast();
+  let fast_step = step_size(mode: fast, table: move first_table);
+  if fast_step == 5_u16 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let second_table = array_new::<u16, 4>(0_u16);
+  set second_table[1_u64] = 5_u16;
+  set second_table[3_u64] = 9_u16;
+  let slow = Slow();
+  let slow_step = step_size(mode: slow, table: move second_table);
+  if slow_step == 9_u16 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

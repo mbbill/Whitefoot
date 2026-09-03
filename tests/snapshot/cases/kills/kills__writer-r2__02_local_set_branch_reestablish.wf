@@ -1,0 +1,28 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- a local's bound dies at its own set [ENT-5](a); the guard after the write reestablishes it before use.";
+  let data = buffer_new(4_u64, 9_u8);
+  let room = len(data);
+  let position = 0_u64;
+  let first_ok = position < room;
+  if first_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let first = data[position];
+  set position = 3_u64;
+  let second_ok = position < room;
+  if second_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let second = data[position];
+  let first_wide = cvt::<u8, u32>(first);
+  let second_wide = cvt::<u8, u32>(second);
+  let total = first_wide + second_wide;
+  let correct = total == 18_u32;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

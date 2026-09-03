@@ -1,0 +1,13 @@
+fn f(x: own u8, w: own u8) -> result: own u8 pure contract {
+  requires x <= 5_u8;
+} {
+  set x = w;
+  let z = x + 250_u8;
+  return z;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT (OP-2 overflow obligation): set x=w kills requires x <= 5_u8; x=0,w=255 makes x+250_u8=255+250 overflow u8";
+  let r = f(x: 0_u8, w: 255_u8);
+  return exit_status(code: 0_u8);
+}

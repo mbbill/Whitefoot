@@ -14,9 +14,9 @@ use whitefoot::{
 const PARSER_PROBES: [&[u8]; 5] = [
     b"fn probe() -> result: own unit pure {\n  return unit;\n}\n",
     b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n",
-    b"fn range() -> result: own unit pure {\n  for @range (\n    index in 0_u64..1_u64,\n    invariant limit: ile(index, 1_u64)\n  ) {\n    break @range;\n  }\n  return unit;\n}\n",
-    b"fn proof(left: own i32, left_limit: own i32, middle: own i32, middle_limit: own i32, right: own i32, right_limit: own i32) -> result: own unit pure contract {\n  requires ile(left, left_limit);\n  requires ile(middle, middle_limit);\n  requires ile(right, right_limit);\n} {\n  invariant ordered: ile(left + middle + right, left_limit + middle_limit + right_limit) {\n    use ile(left, left_limit);\n    use ile(middle, middle_limit);\n    use ile(right, right_limit);\n  }\n  return unit;\n}\n",
-    b"fn checked(value: own i32) -> result: own Result<i32, i32> pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures when Ok(value: returned): ieq(returned, value);\n} {\n  return Ok<i32, i32>(value: value);\n}\n",
+    b"fn range() -> result: own unit pure {\n  for @range (\n    index in 0_u64..1_u64,\n    invariant limit: index <= 1_u64\n  ) {\n    break @range;\n  }\n  return unit;\n}\n",
+    b"fn proof(left: own i32, left_limit: own i32, middle: own i32, middle_limit: own i32, right: own i32, right_limit: own i32) -> result: own unit pure contract {\n  requires left <= left_limit;\n  requires middle <= middle_limit;\n  requires right <= right_limit;\n} {\n  invariant ordered: left + middle + right <= left_limit + middle_limit + right_limit {\n    use left <= left_limit;\n    use middle <= middle_limit;\n    use right <= right_limit;\n  }\n  return unit;\n}\n",
+    b"fn checked(value: own i32) -> result: own Result<i32, i32> pure contract {\n  define admitted = value == value;\n  requires admitted;\n  ensures when Ok(value: returned): returned == value;\n} {\n  return Ok<i32, i32>(value: value);\n}\n",
 ];
 
 const FRONTEND_SECTIONS: [(&str, &str); 3] = [
@@ -389,9 +389,9 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 82);
-        assert_eq!(report.decisions, 107);
-        assert_eq!(report.terminals, 101);
+        assert_eq!(report.productions, 83);
+        assert_eq!(report.decisions, 109);
+        assert_eq!(report.terminals, 106);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 

@@ -4,17 +4,17 @@ fn fold_prefix['b](source: &'b buffer<u8>, produced: own u64, seed: own u64) -> 
   let sum = seed;
   let at = 0_u64;
   loop @fold {
-    let scanned = ige(at, produced);
+    let scanned = at >= produced;
     if scanned {
       break @fold;
     }
-    let readable = ilt(at, room);
+    let readable = at < room;
     if readable {
     } else {
       break @fold;
     }
     let byte = deref(source)[at];
-    let widened = cvt<u8, u64>(byte);
+    let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;
     set at = at +wrap 1_u64;
@@ -29,17 +29,17 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
               region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     let digest = 0_u64;
                     region 'fold {
-                      set digest = fold_prefix<'fold>(source: &'fold data, produced: 64_u64, seed: 0_u64);
+                      set digest = fold_prefix::<'fold>(source: &'fold data, produced: 64_u64, seed: 0_u64);
                     }
                     set total = total +wrap digest;
                   }

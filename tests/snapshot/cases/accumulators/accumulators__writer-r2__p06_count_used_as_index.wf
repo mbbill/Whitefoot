@@ -1,0 +1,34 @@
+const source: array<u8, 6> =[0_u8, 9_u8, 0_u8, 8_u8, 0_u8, 7_u8];
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: a nonzero-count accumulator, bounded by the header invariant, is later used as the write index that appends a terminator into a heap buffer.";
+  let dest = buffer_new(8_u64, 0_u8);
+  let count = 0_u64;
+  for (
+    i in 0_u64..6_u64,
+    invariant count_bound: count <= i
+  ) {
+    let byte = source[i];
+    let is_nonzero = byte > 0_u8;
+    if is_nonzero {
+      set dest[count] = byte;
+      set count = count + 1_u64;
+    }
+  }
+  let index_ok = count < 8_u64;
+  if index_ok {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  set dest[count] = 255_u8;
+  if count == 3_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let terminator = dest[count];
+  if terminator == 255_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -82,10 +82,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set valid_input[14_u64] = 111_u8;
   let valid_output = buffer_new(5_u64, 0_u8);
   region 'valid_region {
-    let valid_result = inflate<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
+    let valid_result = inflate::<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
     match move valid_result {
       Ok(value: valid_length) => {
-        if ieq(valid_length, 5_u64) {
+        if valid_length == 5_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -103,23 +103,23 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let valid_two = valid_output[2_u64];
   let valid_three = valid_output[3_u64];
   let valid_four = valid_output[4_u64];
-  if ieq(valid_zero, 104_u8) {
+  if valid_zero == 104_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(valid_one, 101_u8) {
+  if valid_one == 101_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(valid_two, 108_u8) {
+  if valid_two == 108_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(valid_three, 108_u8) {
+  if valid_three == 108_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(valid_four, 111_u8) {
+  if valid_four == 111_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -132,7 +132,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_length_input[5_u64] = 65_u8;
   let invalid_length_output = buffer_new(1_u64, 9_u8);
   region 'invalid_length_region {
-    let invalid_length_result = inflate<'invalid_length_region>(out: &uniq 'invalid_length_region invalid_length_output, input: move invalid_length_input);
+    let invalid_length_result = inflate::<'invalid_length_region>(out: &uniq 'invalid_length_region invalid_length_output, input: move invalid_length_input);
     match move invalid_length_result {
       Ok(value: invalid_length_value) => {
         if False() {
@@ -185,7 +185,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let invalid_length_sentinel = invalid_length_output[0_u64];
-  if ieq(invalid_length_sentinel, 9_u8) {
+  if invalid_length_sentinel == 9_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -196,7 +196,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set truncated_input[3_u64] = 253_u8;
   let truncated_output = buffer_new(2_u64, 7_u8);
   region 'truncated_region {
-    let truncated_result = inflate<'truncated_region>(out: &uniq 'truncated_region truncated_output, input: move truncated_input);
+    let truncated_result = inflate::<'truncated_region>(out: &uniq 'truncated_region truncated_output, input: move truncated_input);
     match move truncated_result {
       Ok(value: truncated_value) => {
         if False() {
@@ -249,7 +249,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let truncated_sentinel = truncated_output[0_u64];
-  if ieq(truncated_sentinel, 7_u8) {
+  if truncated_sentinel == 7_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -263,7 +263,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set full_input[6_u64] = 66_u8;
   let full_output = buffer_new(1_u64, 11_u8);
   region 'full_region {
-    let full_result = inflate<'full_region>(out: &uniq 'full_region full_output, input: move full_input);
+    let full_result = inflate::<'full_region>(out: &uniq 'full_region full_output, input: move full_input);
     match move full_result {
       Ok(value: full_value) => {
         if False() {
@@ -316,7 +316,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let full_sentinel = full_output[0_u64];
-  if ieq(full_sentinel, 11_u8) {
+  if full_sentinel == 11_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -330,10 +330,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_literal_input[6_u64] = 0_u8;
   let fixed_literal_output = buffer_new(5_u64, 0_u8);
   region 'fixed_literal_region {
-    let fixed_literal_result = inflate<'fixed_literal_region>(out: &uniq 'fixed_literal_region fixed_literal_output, input: move fixed_literal_input);
+    let fixed_literal_result = inflate::<'fixed_literal_region>(out: &uniq 'fixed_literal_region fixed_literal_output, input: move fixed_literal_input);
     match move fixed_literal_result {
       Ok(value: fixed_literal_length) => {
-        if ieq(fixed_literal_length, 5_u64) {
+        if fixed_literal_length == 5_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -351,23 +351,23 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let fixed_literal_two = fixed_literal_output[2_u64];
   let fixed_literal_three = fixed_literal_output[3_u64];
   let fixed_literal_four = fixed_literal_output[4_u64];
-  if ieq(fixed_literal_zero, 104_u8) {
+  if fixed_literal_zero == 104_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(fixed_literal_one, 101_u8) {
+  if fixed_literal_one == 101_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(fixed_literal_two, 108_u8) {
+  if fixed_literal_two == 108_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(fixed_literal_three, 108_u8) {
+  if fixed_literal_three == 108_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(fixed_literal_four, 111_u8) {
+  if fixed_literal_four == 111_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -379,10 +379,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_match_input[4_u64] = 0_u8;
   let fixed_match_output = buffer_new(16_u64, 0_u8);
   region 'fixed_match_region {
-    let fixed_match_result = inflate<'fixed_match_region>(out: &uniq 'fixed_match_region fixed_match_output, input: move fixed_match_input);
+    let fixed_match_result = inflate::<'fixed_match_region>(out: &uniq 'fixed_match_region fixed_match_output, input: move fixed_match_input);
     match move fixed_match_result {
       Ok(value: fixed_match_length) => {
-        if ieq(fixed_match_length, 16_u64) {
+        if fixed_match_length == 16_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -397,18 +397,18 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let fixed_match_index = 0_u64;
   loop @check_fixed_match {
-    let fixed_match_done = ieq(fixed_match_index, 16_u64);
+    let fixed_match_done = fixed_match_index == 16_u64;
     if fixed_match_done {
       break @check_fixed_match;
     } else {
       let fixed_match_room = len(fixed_match_output);
-      let fixed_match_ok = ilt(fixed_match_index, fixed_match_room);
+      let fixed_match_ok = fixed_match_index < fixed_match_room;
       if fixed_match_ok {
       } else {
         return exit_status(code: 1_u8);
       }
       let fixed_match_byte = fixed_match_output[fixed_match_index];
-      if ieq(fixed_match_byte, 97_u8) {
+      if fixed_match_byte == 97_u8 {
       } else {
         return exit_status(code: 1_u8);
       }
@@ -428,10 +428,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_phrase_input[9_u64] = 0_u8;
   let fixed_phrase_output = buffer_new(17_u64, 0_u8);
   region 'fixed_phrase_region {
-    let fixed_phrase_result = inflate<'fixed_phrase_region>(out: &uniq 'fixed_phrase_region fixed_phrase_output, input: move fixed_phrase_input);
+    let fixed_phrase_result = inflate::<'fixed_phrase_region>(out: &uniq 'fixed_phrase_region fixed_phrase_output, input: move fixed_phrase_input);
     match move fixed_phrase_result {
       Ok(value: fixed_phrase_length) => {
-        if ieq(fixed_phrase_length, 17_u64) {
+        if fixed_phrase_length == 17_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -446,19 +446,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let fixed_phrase_index = 0_u64;
   loop @check_fixed_phrase {
-    let fixed_phrase_done = ieq(fixed_phrase_index, 17_u64);
+    let fixed_phrase_done = fixed_phrase_index == 17_u64;
     if fixed_phrase_done {
       break @check_fixed_phrase;
     } else {
       let fixed_phrase_room = len(fixed_phrase_output);
-      let fixed_phrase_out_ok = ilt(fixed_phrase_index, fixed_phrase_room);
+      let fixed_phrase_out_ok = fixed_phrase_index < fixed_phrase_room;
       if fixed_phrase_out_ok {
       } else {
         return exit_status(code: 1_u8);
       }
       let fixed_phrase_actual = fixed_phrase_output[fixed_phrase_index];
       let fixed_phrase_wanted = fixed_phrase_expected[fixed_phrase_index];
-      if ieq(fixed_phrase_actual, fixed_phrase_wanted) {
+      if fixed_phrase_actual == fixed_phrase_wanted {
       } else {
         return exit_status(code: 1_u8);
       }
@@ -468,10 +468,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let dynamic_input = make_dynamic_input();
   let dynamic_output = buffer_new(100_u64, 0_u8);
   region 'dynamic_region {
-    let dynamic_result = inflate<'dynamic_region>(out: &uniq 'dynamic_region dynamic_output, input: move dynamic_input);
+    let dynamic_result = inflate::<'dynamic_region>(out: &uniq 'dynamic_region dynamic_output, input: move dynamic_input);
     match move dynamic_result {
       Ok(value: dynamic_length) => {
-        if ieq(dynamic_length, 100_u64) {
+        if dynamic_length == 100_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -486,19 +486,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let dynamic_output_index = 0_u64;
   loop @check_dynamic_output {
-    let dynamic_output_done = ieq(dynamic_output_index, 100_u64);
+    let dynamic_output_done = dynamic_output_index == 100_u64;
     if dynamic_output_done {
       break @check_dynamic_output;
     } else {
       let dynamic_room = len(dynamic_output);
-      let dynamic_out_ok = ilt(dynamic_output_index, dynamic_room);
+      let dynamic_out_ok = dynamic_output_index < dynamic_room;
       if dynamic_out_ok {
       } else {
         return exit_status(code: 1_u8);
       }
       let dynamic_actual = dynamic_output[dynamic_output_index];
       let dynamic_wanted = dynamic_expected_bytes[dynamic_output_index];
-      if ieq(dynamic_actual, dynamic_wanted) {
+      if dynamic_actual == dynamic_wanted {
       } else {
         return exit_status(code: 1_u8);
       }
@@ -508,10 +508,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let literal_only_input = make_literal_only_dynamic_input();
   let literal_only_output = buffer_new(1_u64, 0_u8);
   region 'literal_only_region {
-    let literal_only_result = inflate<'literal_only_region>(out: &uniq 'literal_only_region literal_only_output, input: move literal_only_input);
+    let literal_only_result = inflate::<'literal_only_region>(out: &uniq 'literal_only_region literal_only_output, input: move literal_only_input);
     match move literal_only_result {
       Ok(value: literal_only_length) => {
-        if ieq(literal_only_length, 1_u64) {
+        if literal_only_length == 1_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -525,17 +525,17 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let literal_only_byte = literal_only_output[0_u64];
-  if ieq(literal_only_byte, 65_u8) {
+  if literal_only_byte == 65_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
   let dynamic_match_input = make_dynamic_match_input();
   let dynamic_match_output = buffer_new(400_u64, 0_u8);
   region 'dynamic_match_region {
-    let dynamic_match_result = inflate<'dynamic_match_region>(out: &uniq 'dynamic_match_region dynamic_match_output, input: move dynamic_match_input);
+    let dynamic_match_result = inflate::<'dynamic_match_region>(out: &uniq 'dynamic_match_region dynamic_match_output, input: move dynamic_match_input);
     match move dynamic_match_result {
       Ok(value: dynamic_match_length) => {
-        if ieq(dynamic_match_length, 400_u64) {
+        if dynamic_match_length == 400_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -550,32 +550,32 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let dynamic_match_repeat = 0_u64;
   loop @check_dynamic_match_repeats {
-    let all_repeats_checked = ieq(dynamic_match_repeat, 4_u64);
+    let all_repeats_checked = dynamic_match_repeat == 4_u64;
     if all_repeats_checked {
       break @check_dynamic_match_repeats;
     } else {
       let dynamic_match_base = dynamic_match_repeat *wrap 100_u64;
       let dynamic_match_index = 0_u64;
       loop @check_dynamic_match_chunk {
-        let chunk_checked = ieq(dynamic_match_index, 100_u64);
+        let chunk_checked = dynamic_match_index == 100_u64;
         if chunk_checked {
           break @check_dynamic_match_chunk;
         } else {
           let output_index = dynamic_match_base +wrap dynamic_match_index;
           let dynamic_match_room = len(dynamic_match_output);
-          let dynamic_match_out_ok = ilt(output_index, dynamic_match_room);
+          let dynamic_match_out_ok = output_index < dynamic_match_room;
           if dynamic_match_out_ok {
           } else {
             return exit_status(code: 1_u8);
           }
           let dynamic_match_actual = dynamic_match_output[output_index];
-          let dynamic_match_exp_ok = ilt(dynamic_match_index, 100_u64);
+          let dynamic_match_exp_ok = dynamic_match_index < 100_u64;
           if dynamic_match_exp_ok {
           } else {
             return exit_status(code: 1_u8);
           }
           let dynamic_match_wanted = dynamic_expected_bytes[dynamic_match_index];
-          if ieq(dynamic_match_actual, dynamic_match_wanted) {
+          if dynamic_match_actual == dynamic_match_wanted {
           } else {
             return exit_status(code: 1_u8);
           }
@@ -588,11 +588,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let mixed_block_input = buffer_new(78_u64, 0_u8);
   let mixed_block_input_index = 0_u64;
   loop @fill_mixed_block_input {
-    let mixed_block_input_done = ieq(mixed_block_input_index, 78_u64);
+    let mixed_block_input_done = mixed_block_input_index == 78_u64;
     if mixed_block_input_done {
       break @fill_mixed_block_input;
     } else {
-      let mixed_fill_ok = ilt(mixed_block_input_index, 78_u64);
+      let mixed_fill_ok = mixed_block_input_index < 78_u64;
       if mixed_fill_ok {
       } else {
         return exit_status(code: 1_u8);
@@ -604,10 +604,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let mixed_block_output = buffer_new(105_u64, 0_u8);
   region 'mixed_block_region {
-    let mixed_block_result = inflate<'mixed_block_region>(out: &uniq 'mixed_block_region mixed_block_output, input: move mixed_block_input);
+    let mixed_block_result = inflate::<'mixed_block_region>(out: &uniq 'mixed_block_region mixed_block_output, input: move mixed_block_input);
     match move mixed_block_result {
       Ok(value: mixed_block_length) => {
-        if ieq(mixed_block_length, 105_u64) {
+        if mixed_block_length == 105_u64 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -622,24 +622,24 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let mixed_block_index = 0_u64;
   loop @check_mixed_block_prefix {
-    let mixed_block_prefix_done = ieq(mixed_block_index, 100_u64);
+    let mixed_block_prefix_done = mixed_block_index == 100_u64;
     if mixed_block_prefix_done {
       break @check_mixed_block_prefix;
     } else {
       let mixed_room = len(mixed_block_output);
-      let mixed_out_ok = ilt(mixed_block_index, mixed_room);
+      let mixed_out_ok = mixed_block_index < mixed_room;
       if mixed_out_ok {
       } else {
         return exit_status(code: 1_u8);
       }
       let mixed_block_actual = mixed_block_output[mixed_block_index];
-      let mixed_exp_ok = ilt(mixed_block_index, 100_u64);
+      let mixed_exp_ok = mixed_block_index < 100_u64;
       if mixed_exp_ok {
       } else {
         return exit_status(code: 1_u8);
       }
       let mixed_block_wanted = dynamic_expected_bytes[mixed_block_index];
-      if ieq(mixed_block_actual, mixed_block_wanted) {
+      if mixed_block_actual == mixed_block_wanted {
       } else {
         return exit_status(code: 1_u8);
       }
@@ -651,23 +651,23 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let mixed_block_l0 = mixed_block_output[102_u64];
   let mixed_block_l1 = mixed_block_output[103_u64];
   let mixed_block_o = mixed_block_output[104_u64];
-  if ieq(mixed_block_h, 104_u8) {
+  if mixed_block_h == 104_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(mixed_block_e, 101_u8) {
+  if mixed_block_e == 101_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(mixed_block_l0, 108_u8) {
+  if mixed_block_l0 == 108_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(mixed_block_l1, 108_u8) {
+  if mixed_block_l1 == 108_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(mixed_block_o, 111_u8) {
+  if mixed_block_o == 111_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -675,7 +675,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_tree_input[0_u64] = 5_u8;
   let invalid_tree_output = buffer_new(1_u64, 0_u8);
   region 'invalid_tree_region {
-    let invalid_tree_result = inflate<'invalid_tree_region>(out: &uniq 'invalid_tree_region invalid_tree_output, input: move invalid_tree_input);
+    let invalid_tree_result = inflate::<'invalid_tree_region>(out: &uniq 'invalid_tree_region invalid_tree_output, input: move invalid_tree_input);
     match move invalid_tree_result {
       Ok(value: invalid_tree_length) => {
         if False() {
@@ -685,7 +685,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: invalid_tree_error) => {
         let invalid_tree_code = error_code(error: invalid_tree_error);
-        if ieq(invalid_tree_code, 3_u8) {
+        if invalid_tree_code == 3_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -695,11 +695,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let dynamic_truncated_input = buffer_new(10_u64, 0_u8);
   let dynamic_truncated_index = 0_u64;
   loop @fill_dynamic_truncated {
-    let dynamic_truncated_filled = ieq(dynamic_truncated_index, 10_u64);
+    let dynamic_truncated_filled = dynamic_truncated_index == 10_u64;
     if dynamic_truncated_filled {
       break @fill_dynamic_truncated;
     } else {
-      let truncated_fill_ok = ilt(dynamic_truncated_index, 10_u64);
+      let truncated_fill_ok = dynamic_truncated_index < 10_u64;
       if truncated_fill_ok {
       } else {
         return exit_status(code: 1_u8);
@@ -711,7 +711,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let dynamic_truncated_output = buffer_new(100_u64, 0_u8);
   region 'dynamic_truncated_region {
-    let dynamic_truncated_result = inflate<'dynamic_truncated_region>(out: &uniq 'dynamic_truncated_region dynamic_truncated_output, input: move dynamic_truncated_input);
+    let dynamic_truncated_result = inflate::<'dynamic_truncated_region>(out: &uniq 'dynamic_truncated_region dynamic_truncated_output, input: move dynamic_truncated_input);
     match move dynamic_truncated_result {
       Ok(value: dynamic_truncated_length) => {
         if False() {
@@ -721,7 +721,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: dynamic_truncated_error) => {
         let dynamic_truncated_code = error_code(error: dynamic_truncated_error);
-        if ieq(dynamic_truncated_code, 1_u8) {
+        if dynamic_truncated_code == 1_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -731,7 +731,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let dynamic_full_input = make_dynamic_input();
   let dynamic_full_output = buffer_new(99_u64, 0_u8);
   region 'dynamic_full_region {
-    let dynamic_full_result = inflate<'dynamic_full_region>(out: &uniq 'dynamic_full_region dynamic_full_output, input: move dynamic_full_input);
+    let dynamic_full_result = inflate::<'dynamic_full_region>(out: &uniq 'dynamic_full_region dynamic_full_output, input: move dynamic_full_input);
     match move dynamic_full_result {
       Ok(value: dynamic_full_length) => {
         if False() {
@@ -741,7 +741,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: dynamic_full_error) => {
         let dynamic_full_code = error_code(error: dynamic_full_error);
-        if ieq(dynamic_full_code, 7_u8) {
+        if dynamic_full_code == 7_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -751,7 +751,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let reserved_block_input = buffer_new(1_u64, 7_u8);
   let reserved_block_output = buffer_new(1_u64, 0_u8);
   region 'reserved_block_region {
-    let reserved_block_result = inflate<'reserved_block_region>(out: &uniq 'reserved_block_region reserved_block_output, input: move reserved_block_input);
+    let reserved_block_result = inflate::<'reserved_block_region>(out: &uniq 'reserved_block_region reserved_block_output, input: move reserved_block_input);
     match move reserved_block_result {
       Ok(value: reserved_block_length) => {
         if False() {
@@ -761,7 +761,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: reserved_block_error) => {
         let reserved_block_code = error_code(error: reserved_block_error);
-        if ieq(reserved_block_code, 6_u8) {
+        if reserved_block_code == 6_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -771,7 +771,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let fixed_truncated_input = buffer_new(1_u64, 203_u8);
   let fixed_truncated_output = buffer_new(5_u64, 0_u8);
   region 'fixed_truncated_region {
-    let fixed_truncated_result = inflate<'fixed_truncated_region>(out: &uniq 'fixed_truncated_region fixed_truncated_output, input: move fixed_truncated_input);
+    let fixed_truncated_result = inflate::<'fixed_truncated_region>(out: &uniq 'fixed_truncated_region fixed_truncated_output, input: move fixed_truncated_input);
     match move fixed_truncated_result {
       Ok(value: fixed_truncated_length) => {
         if False() {
@@ -781,7 +781,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: fixed_truncated_error) => {
         let fixed_truncated_code = error_code(error: fixed_truncated_error);
-        if ieq(fixed_truncated_code, 1_u8) {
+        if fixed_truncated_code == 1_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -793,7 +793,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_huffman_input[1_u64] = 3_u8;
   let invalid_huffman_output = buffer_new(1_u64, 0_u8);
   region 'invalid_huffman_region {
-    let invalid_huffman_result = inflate<'invalid_huffman_region>(out: &uniq 'invalid_huffman_region invalid_huffman_output, input: move invalid_huffman_input);
+    let invalid_huffman_result = inflate::<'invalid_huffman_region>(out: &uniq 'invalid_huffman_region invalid_huffman_output, input: move invalid_huffman_input);
     match move invalid_huffman_result {
       Ok(value: invalid_huffman_length) => {
         if False() {
@@ -803,7 +803,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: invalid_huffman_error) => {
         let invalid_huffman_code = error_code(error: invalid_huffman_error);
-        if ieq(invalid_huffman_code, 4_u8) {
+        if invalid_huffman_code == 4_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -815,7 +815,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_distance_input[1_u64] = 2_u8;
   let invalid_distance_output = buffer_new(3_u64, 0_u8);
   region 'invalid_distance_region {
-    let invalid_distance_result = inflate<'invalid_distance_region>(out: &uniq 'invalid_distance_region invalid_distance_output, input: move invalid_distance_input);
+    let invalid_distance_result = inflate::<'invalid_distance_region>(out: &uniq 'invalid_distance_region invalid_distance_output, input: move invalid_distance_input);
     match move invalid_distance_result {
       Ok(value: invalid_distance_length) => {
         if False() {
@@ -825,7 +825,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: invalid_distance_error) => {
         let invalid_distance_code = error_code(error: invalid_distance_error);
-        if ieq(invalid_distance_code, 5_u8) {
+        if invalid_distance_code == 5_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -842,7 +842,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_full_input[6_u64] = 0_u8;
   let fixed_full_output = buffer_new(4_u64, 0_u8);
   region 'fixed_full_region {
-    let fixed_full_result = inflate<'fixed_full_region>(out: &uniq 'fixed_full_region fixed_full_output, input: move fixed_full_input);
+    let fixed_full_result = inflate::<'fixed_full_region>(out: &uniq 'fixed_full_region fixed_full_output, input: move fixed_full_input);
     match move fixed_full_result {
       Ok(value: fixed_full_length) => {
         if False() {
@@ -852,7 +852,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
       Err(error: fixed_full_error) => {
         let fixed_full_code = error_code(error: fixed_full_error);
-        if ieq(fixed_full_code, 7_u8) {
+        if fixed_full_code == 7_u8 {
         } else {
           return exit_status(code: 1_u8);
         }

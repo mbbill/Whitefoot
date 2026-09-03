@@ -1,0 +1,51 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: a labelled break from the innermost of three nested loops jumps straight to the outermost continuation, skipping the middle loop's own cursor entirely";
+  let outer = 0_u64;
+  let total_skips = 0_u64;
+  loop @outer (
+    invariant outer_bound: outer <= 3_u64
+  ) {
+    let outer_more = outer < 3_u64;
+    if outer_more {
+    } else {
+      break @outer;
+    }
+    let middle = 0_u64;
+    loop @middle (
+      invariant middle_bound: middle <= 3_u64
+    ) {
+      let middle_more = middle < 3_u64;
+      if middle_more {
+      } else {
+        break @middle;
+      }
+      let inner = 0_u64;
+      loop @inner (
+        invariant inner_bound: inner <= 3_u64
+      ) {
+        let inner_more = inner < 3_u64;
+        if inner_more {
+        } else {
+          break @inner;
+        }
+        let escape = inner == 1_u64;
+        if escape {
+          set total_skips = total_skips +wrap 1_u64;
+          break @outer;
+        }
+        set inner = inner + 1_u64;
+      }
+      set middle = middle + 1_u64;
+    }
+    set outer = outer + 1_u64;
+  }
+  if total_skips == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if outer == 0_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

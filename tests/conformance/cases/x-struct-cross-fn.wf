@@ -13,7 +13,7 @@ command fn main() -> status: own ExitStatus pure {
   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
   let vec2_atom_0001 = Vec2(x: 20_i32, y: 22_i32);
   let total = sum_xy(v: move vec2_atom_0001);
-  if ieq(total, 42_i32) {
+  if total == 42_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

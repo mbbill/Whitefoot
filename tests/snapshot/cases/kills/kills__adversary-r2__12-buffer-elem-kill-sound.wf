@@ -1,0 +1,32 @@
+fn h2['a](buf: &uniq 'a buffer<u8>, i: own u64, w: own u8) -> result: own u8 reads(buf), writes(buf) {
+  let cap = len(deref(buf));
+  let in_range = i < cap;
+  if in_range {
+    let old = deref(buf)[i];
+    let bounded = old <= 5_u8;
+    if bounded {
+      set deref(buf)[i] = w;
+      let cur = deref(buf)[i];
+      let ok = cur <= 5_u8;
+      if ok {
+        let z = cur + 250_u8;
+        return z;
+      } else {
+        return 0_u8;
+      }
+    } else {
+      return 0_u8;
+    }
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expect ACCEPT: after set buf[i]=w kills old<=5, code reproves cur <= 5_u8 via an if-guard before the add";
+  let raw = buffer_new(1_u64, 0_u8);
+  region 'r {
+    let z = h2::<'r>(buf: &uniq 'r raw, i: 0_u64, w: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,5 +1,5 @@
 fn control(x: own i32) -> result: own i32 pure contract {
-  define permitted = ige(x, 0_i32);
+  define permitted = x >= 0_i32;
   return x;
   requires permitted;
 } {

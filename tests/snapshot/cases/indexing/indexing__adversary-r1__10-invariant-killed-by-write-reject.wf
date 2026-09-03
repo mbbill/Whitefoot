@@ -1,0 +1,22 @@
+fn shifted_read(buf: own buffer<u8>, offset: own u64, shift: own u64) -> value: own u8 reads(buf) contract {
+  define room = len(buf);
+  requires offset < room;
+  requires shift < room;
+} {
+  doc "expect REJECT (OP-2/OP-4): offset is proven in range before it is overwritten by a set that adds shift; the requires facts about the old offset must not carry to the new value used in the subscript";
+  let room = len(buf);
+  invariant offset_in_range: offset < room;
+  set offset = offset + shift;
+  let value = buf[offset];
+  return value;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(4_u64, 7_u8);
+  let value = shifted_read(buf: move buf, offset: 3_u64, shift: 3_u64);
+  if value == 7_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

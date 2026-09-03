@@ -1,0 +1,39 @@
+struct Position {
+  x: u32;
+  y: u32;
+}
+
+struct Sprite {
+  pos: Position;
+  speed: u32;
+}
+
+fn advance['a](s: &uniq 'a Sprite, limit: own u32) -> result: own Bool reads(s.pos.x, s.speed), writes(s.pos.x) {
+  doc "expect ACCEPT: the write to deref(s).pos.x kills the pre-write image of the nested field, so the post-write comparison reads the freshly stored value, not the stale one used to prove room.";
+  let room = deref(s).pos.x < limit;
+  if room {
+  } else {
+    return False();
+  }
+  let moved = deref(s).pos.x +wrap deref(s).speed;
+  set deref(s).pos.x = moved;
+  let still_room = deref(s).pos.x < limit;
+  return still_room;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let start = Position(x: 0_u32, y: 0_u32);
+  let final_sprite = Sprite(pos: move start, speed: 4_u32);
+  let moving = True();
+  region 'r1 {
+    set moving = advance::<'r1>(s: &uniq 'r1 final_sprite, limit: 10_u32);
+  }
+  region 'r2 {
+    set moving = advance::<'r2>(s: &uniq 'r2 final_sprite, limit: 10_u32);
+  }
+  if final_sprite.pos.x == 8_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

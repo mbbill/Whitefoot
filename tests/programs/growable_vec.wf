@@ -11,9 +11,9 @@ fn vec_new() -> result: own ByteVec allocates(heap) {
 fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads(v.buf, v.fill), writes(v.buf, v.fill), allocates(heap) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
-  let full = ige(count, cap);
+  let full = count >= cap;
   if full {
-    let growth_fits = ile(cap, 1000_u64);
+    let growth_fits = cap <= 1000_u64;
     if growth_fits {
     } else {
       let overflow = Overflow();
@@ -22,7 +22,7 @@ fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Over
     match cap +checked 8_u64 {
       Ok(value: ncap) => {
         let nbuf = buffer_new(ncap, x);
-        if ilt(cap, ncap) {
+        if cap < ncap {
         } else {
           let overflow = Overflow();
           return Err<unit, Overflow>(error: overflow);
@@ -52,7 +52,7 @@ fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: o
   for @append (i in 0_u64..count) {
     let byte = deref(src)[i];
     region 'c {
-      let pushed = propagate vec_push<'c>(v: &uniq 'c deref(dst), x: byte);
+      let pushed = propagate vec_push::<'c>(v: &uniq 'c deref(dst), x: byte);
     }
   }
   return Ok<unit, Overflow>(value: unit);
@@ -63,7 +63,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let b = 7_u8;
   for @seed (i in 0_u64..20_u64) {
     region 'push {
-      match vec_push<'push>(v: &uniq 'push v, x: b) {
+      match vec_push::<'push>(v: &uniq 'push v, x: b) {
         Ok(value: pushed) => {
         }
         Err(error: overflow) => {
@@ -74,18 +74,18 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     set b = b +wrap 7_u8;
   }
   let total = v.fill;
-  if ieq(total, 20_u64) {
+  if total == 20_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let cap_now = len(v.buf);
-  if ieq(cap_now, 24_u64) {
+  if cap_now == 24_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ilt(3_u64, cap_now) {
+  if 3_u64 < cap_now {
     let third = v.buf[3_u64];
-    if ieq(third, 28_u8) {
+    if third == 28_u8 {
     } else {
       return exit_status(code: 1_u8);
     }
@@ -94,7 +94,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let s = vec_new();
   region 'first {
-    match vec_push<'first>(v: &uniq 'first s, x: 65_u8) {
+    match vec_push::<'first>(v: &uniq 'first s, x: 65_u8) {
       Ok(value: pushed) => {
       }
       Err(error: overflow) => {
@@ -104,7 +104,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let raw = buffer_new(5_u64, 33_u8);
   region 'grow {
-    match bytes_append<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw) {
+    match bytes_append::<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw) {
       Ok(value: appended) => {
       }
       Err(error: overflow) => {
@@ -113,19 +113,19 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let stored = s.fill;
-  if ieq(stored, 6_u64) {
+  if stored == 6_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let scap = len(s.buf);
-  if ilt(5_u64, scap) {
+  if 5_u64 < scap {
     let last = s.buf[5_u64];
-    if ieq(last, 33_u8) {
+    if last == 33_u8 {
     } else {
       return exit_status(code: 1_u8);
     }
     let head = s.buf[0_u64];
-    if ieq(head, 65_u8) {
+    if head == 65_u8 {
     } else {
       return exit_status(code: 1_u8);
     }

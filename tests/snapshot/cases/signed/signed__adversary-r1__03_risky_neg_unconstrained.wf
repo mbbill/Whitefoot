@@ -1,0 +1,8 @@
+fn risky_neg(x: own i32) -> result: own i32 pure {
+  doc "EXPECT REJECT [OP-2]: x is unconstrained, so x=MIN(i32) makes exact ineg(x) overflow (undefined).";
+  return ineg(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

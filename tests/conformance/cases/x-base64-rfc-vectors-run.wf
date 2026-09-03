@@ -5,12 +5,12 @@ enum IndexError {
 }
 
 fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, IndexError> pure contract {
-  ensures when Ok(value: result): ilt(result, limit);
+  ensures when Ok(value: result): result < limit;
 } {
-  let nonzero = ine(limit, 0_u64);
+  let nonzero = limit != 0_u64;
   if nonzero {
     let bounded = index % limit;
-    let unchanged = ieq(bounded, index);
+    let unchanged = bounded == index;
     if unchanged {
       return Ok<u64, IndexError>(value: bounded);
     }
@@ -50,7 +50,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
   define required_input_length = len(input);
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);
   define required_covered_input = required_out_groups *wrap 3_u64;
-  requires ile(required_input_length, required_covered_input);
+  requires required_input_length <= required_covered_input;
 } {
   let out_room = len(deref(out));
   let input_length = len(input);
@@ -58,7 +58,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
   let output_offset = 0_u64;
   loop @full_groups {
     let remaining = input_length -wrap input_offset;
-    let short_group = ilt(remaining, 3_u64);
+    let short_group = remaining < 3_u64;
     if short_group {
       break @full_groups;
     } else {
@@ -71,86 +71,86 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
       let byte_one = 0_u8;
       let byte_two = 0_u8;
       region 'group_reads {
-        let loaded_zero = propagate read_index<'group_reads>(values: &'group_reads input, index: input_offset);
-        let loaded_one = propagate read_index<'group_reads>(values: &'group_reads input, index: input_one);
-        let loaded_two = propagate read_index<'group_reads>(values: &'group_reads input, index: input_two);
+        let loaded_zero = propagate read_index::<'group_reads>(values: &'group_reads input, index: input_offset);
+        let loaded_one = propagate read_index::<'group_reads>(values: &'group_reads input, index: input_one);
+        let loaded_two = propagate read_index::<'group_reads>(values: &'group_reads input, index: input_two);
         set byte_zero = loaded_zero;
         set byte_one = loaded_one;
         set byte_two = loaded_two;
       }
-      let word_zero = cvt<u8, u32>(byte_zero);
-      let word_one = cvt<u8, u32>(byte_one);
-      let word_two = cvt<u8, u32>(byte_two);
+      let word_zero = cvt::<u8, u32>(byte_zero);
+      let word_one = cvt::<u8, u32>(byte_one);
+      let word_two = cvt::<u8, u32>(byte_two);
       let shifted_zero = ishl.wrap(word_zero, 16_u32);
       let shifted_one = ishl.wrap(word_one, 8_u32);
       let combined_prefix = ior(shifted_zero, shifted_one);
       let combined = ior(combined_prefix, word_two);
       let sextet_zero_shifted = ishr.wrap(combined, 18_u32);
       let sextet_zero = iand(sextet_zero_shifted, 63_u32);
-      let alphabet_zero = cvt<u32, u64>(sextet_zero);
+      let alphabet_zero = cvt::<u32, u64>(sextet_zero);
       let sextet_one_shifted = ishr.wrap(combined, 12_u32);
       let sextet_one = iand(sextet_one_shifted, 63_u32);
-      let alphabet_one = cvt<u32, u64>(sextet_one);
+      let alphabet_one = cvt::<u32, u64>(sextet_one);
       let sextet_two_shifted = ishr.wrap(combined, 6_u32);
       let sextet_two = iand(sextet_two_shifted, 63_u32);
-      let alphabet_two = cvt<u32, u64>(sextet_two);
+      let alphabet_two = cvt::<u32, u64>(sextet_two);
       let sextet_three = iand(combined, 63_u32);
-      let alphabet_three = cvt<u32, u64>(sextet_three);
+      let alphabet_three = cvt::<u32, u64>(sextet_three);
       let encoded_zero = b64[alphabet_zero];
       let encoded_one = b64[alphabet_one];
       let encoded_two = b64[alphabet_two];
       let encoded_three = b64[alphabet_three];
       region 'group_write_zero {
-        let wrote_zero = propagate write_index<'group_write_zero>(values: &uniq 'group_write_zero deref(out), index: output_offset, value: encoded_zero);
+        let wrote_zero = propagate write_index::<'group_write_zero>(values: &uniq 'group_write_zero deref(out), index: output_offset, value: encoded_zero);
       }
       region 'group_write_one {
-        let wrote_one = propagate write_index<'group_write_one>(values: &uniq 'group_write_one deref(out), index: output_one, value: encoded_one);
+        let wrote_one = propagate write_index::<'group_write_one>(values: &uniq 'group_write_one deref(out), index: output_one, value: encoded_one);
       }
       region 'group_write_two {
-        let wrote_two = propagate write_index<'group_write_two>(values: &uniq 'group_write_two deref(out), index: output_two, value: encoded_two);
+        let wrote_two = propagate write_index::<'group_write_two>(values: &uniq 'group_write_two deref(out), index: output_two, value: encoded_two);
       }
       region 'group_write_three {
-        let wrote_three = propagate write_index<'group_write_three>(values: &uniq 'group_write_three deref(out), index: output_three, value: encoded_three);
+        let wrote_three = propagate write_index::<'group_write_three>(values: &uniq 'group_write_three deref(out), index: output_three, value: encoded_three);
       }
       set input_offset = input_offset +wrap 3_u64;
       set output_offset = output_offset +wrap 4_u64;
     }
   }
   let tail_length = input_length -wrap input_offset;
-  let one_byte_tail = ieq(tail_length, 1_u64);
+  let one_byte_tail = tail_length == 1_u64;
   if one_byte_tail {
     let tail_one_output_one = output_offset +wrap 1_u64;
     let tail_one_output_two = output_offset +wrap 2_u64;
     let tail_one_output_three = output_offset +wrap 3_u64;
     let tail_one_byte = 0_u8;
     region 'tail_one_read {
-      let loaded = propagate read_index<'tail_one_read>(values: &'tail_one_read input, index: input_offset);
+      let loaded = propagate read_index::<'tail_one_read>(values: &'tail_one_read input, index: input_offset);
       set tail_one_byte = loaded;
     }
-    let tail_one_word = cvt<u8, u32>(tail_one_byte);
+    let tail_one_word = cvt::<u8, u32>(tail_one_byte);
     let tail_one_first_shifted = ishr.wrap(tail_one_word, 2_u32);
     let tail_one_first_sextet = iand(tail_one_first_shifted, 63_u32);
-    let tail_one_first_index = cvt<u32, u64>(tail_one_first_sextet);
+    let tail_one_first_index = cvt::<u32, u64>(tail_one_first_sextet);
     let tail_one_second_shifted = ishl.wrap(tail_one_word, 4_u32);
     let tail_one_second_sextet = iand(tail_one_second_shifted, 63_u32);
-    let tail_one_second_index = cvt<u32, u64>(tail_one_second_sextet);
+    let tail_one_second_index = cvt::<u32, u64>(tail_one_second_sextet);
     let tail_one_first = b64[tail_one_first_index];
     let tail_one_second = b64[tail_one_second_index];
     region 'tail_one_write_zero {
-      let wrote = propagate write_index<'tail_one_write_zero>(values: &uniq 'tail_one_write_zero deref(out), index: output_offset, value: tail_one_first);
+      let wrote = propagate write_index::<'tail_one_write_zero>(values: &uniq 'tail_one_write_zero deref(out), index: output_offset, value: tail_one_first);
     }
     region 'tail_one_write_one {
-      let wrote = propagate write_index<'tail_one_write_one>(values: &uniq 'tail_one_write_one deref(out), index: tail_one_output_one, value: tail_one_second);
+      let wrote = propagate write_index::<'tail_one_write_one>(values: &uniq 'tail_one_write_one deref(out), index: tail_one_output_one, value: tail_one_second);
     }
     region 'tail_one_write_two {
-      let wrote = propagate write_index<'tail_one_write_two>(values: &uniq 'tail_one_write_two deref(out), index: tail_one_output_two, value: 61_u8);
+      let wrote = propagate write_index::<'tail_one_write_two>(values: &uniq 'tail_one_write_two deref(out), index: tail_one_output_two, value: 61_u8);
     }
     region 'tail_one_write_three {
-      let wrote = propagate write_index<'tail_one_write_three>(values: &uniq 'tail_one_write_three deref(out), index: tail_one_output_three, value: 61_u8);
+      let wrote = propagate write_index::<'tail_one_write_three>(values: &uniq 'tail_one_write_three deref(out), index: tail_one_output_three, value: 61_u8);
     }
     set output_offset = output_offset +wrap 4_u64;
   }
-  let two_byte_tail = ieq(tail_length, 2_u64);
+  let two_byte_tail = tail_length == 2_u64;
   if two_byte_tail {
     let tail_two_input_one = input_offset +wrap 1_u64;
     let tail_two_output_one = output_offset +wrap 1_u64;
@@ -159,38 +159,38 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_two_byte_zero = 0_u8;
     let tail_two_byte_one = 0_u8;
     region 'tail_two_reads {
-      let loaded_zero = propagate read_index<'tail_two_reads>(values: &'tail_two_reads input, index: input_offset);
-      let loaded_one = propagate read_index<'tail_two_reads>(values: &'tail_two_reads input, index: tail_two_input_one);
+      let loaded_zero = propagate read_index::<'tail_two_reads>(values: &'tail_two_reads input, index: input_offset);
+      let loaded_one = propagate read_index::<'tail_two_reads>(values: &'tail_two_reads input, index: tail_two_input_one);
       set tail_two_byte_zero = loaded_zero;
       set tail_two_byte_one = loaded_one;
     }
-    let tail_two_word_zero = cvt<u8, u32>(tail_two_byte_zero);
-    let tail_two_word_one = cvt<u8, u32>(tail_two_byte_one);
+    let tail_two_word_zero = cvt::<u8, u32>(tail_two_byte_zero);
+    let tail_two_word_one = cvt::<u8, u32>(tail_two_byte_one);
     let tail_two_shifted_zero = ishl.wrap(tail_two_word_zero, 8_u32);
     let tail_two_combined = ior(tail_two_shifted_zero, tail_two_word_one);
     let tail_two_first_shifted = ishr.wrap(tail_two_combined, 10_u32);
     let tail_two_first_sextet = iand(tail_two_first_shifted, 63_u32);
-    let tail_two_first_index = cvt<u32, u64>(tail_two_first_sextet);
+    let tail_two_first_index = cvt::<u32, u64>(tail_two_first_sextet);
     let tail_two_second_shifted = ishr.wrap(tail_two_combined, 4_u32);
     let tail_two_second_sextet = iand(tail_two_second_shifted, 63_u32);
-    let tail_two_second_index = cvt<u32, u64>(tail_two_second_sextet);
+    let tail_two_second_index = cvt::<u32, u64>(tail_two_second_sextet);
     let tail_two_third_shifted = ishl.wrap(tail_two_combined, 2_u32);
     let tail_two_third_sextet = iand(tail_two_third_shifted, 63_u32);
-    let tail_two_third_index = cvt<u32, u64>(tail_two_third_sextet);
+    let tail_two_third_index = cvt::<u32, u64>(tail_two_third_sextet);
     let tail_two_first = b64[tail_two_first_index];
     let tail_two_second = b64[tail_two_second_index];
     let tail_two_third = b64[tail_two_third_index];
     region 'tail_two_write_zero {
-      let wrote = propagate write_index<'tail_two_write_zero>(values: &uniq 'tail_two_write_zero deref(out), index: output_offset, value: tail_two_first);
+      let wrote = propagate write_index::<'tail_two_write_zero>(values: &uniq 'tail_two_write_zero deref(out), index: output_offset, value: tail_two_first);
     }
     region 'tail_two_write_one {
-      let wrote = propagate write_index<'tail_two_write_one>(values: &uniq 'tail_two_write_one deref(out), index: tail_two_output_one, value: tail_two_second);
+      let wrote = propagate write_index::<'tail_two_write_one>(values: &uniq 'tail_two_write_one deref(out), index: tail_two_output_one, value: tail_two_second);
     }
     region 'tail_two_write_two {
-      let wrote = propagate write_index<'tail_two_write_two>(values: &uniq 'tail_two_write_two deref(out), index: tail_two_output_two, value: tail_two_third);
+      let wrote = propagate write_index::<'tail_two_write_two>(values: &uniq 'tail_two_write_two deref(out), index: tail_two_output_two, value: tail_two_third);
     }
     region 'tail_two_write_three {
-      let wrote = propagate write_index<'tail_two_write_three>(values: &uniq 'tail_two_write_three deref(out), index: tail_two_output_three, value: 61_u8);
+      let wrote = propagate write_index::<'tail_two_write_three>(values: &uniq 'tail_two_write_three deref(out), index: tail_two_output_three, value: 61_u8);
     }
     set output_offset = output_offset +wrap 4_u64;
   }
@@ -209,14 +209,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let man_required_input_length = len(man_input);
     let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
     let man_required_covered_input = man_required_out_groups *wrap 3_u64;
-    let man_capacity = ile(man_required_input_length, man_required_covered_input);
+    let man_capacity = man_required_input_length <= man_required_covered_input;
     if man_capacity {
     } else {
       return exit_status(code: 216_u8);
     }
-    match encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input) {
+    match encode::<'man_region>(out: &uniq 'man_region man_output, input: move man_input) {
       Ok(value: man_length) => {
-        set man_length_ok = ieq(man_length, 4_u64);
+        set man_length_ok = man_length == 4_u64;
       }
       Err(error: man_index_error) => {
         return exit_status(code: 219_u8);
@@ -227,10 +227,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let man_one = man_output[1_u64];
   let man_two = man_output[2_u64];
   let man_three = man_output[3_u64];
-  let man_zero_ok = ieq(man_zero, 84_u8);
-  let man_one_ok = ieq(man_one, 87_u8);
-  let man_two_ok = ieq(man_two, 70_u8);
-  let man_three_ok = ieq(man_three, 117_u8);
+  let man_zero_ok = man_zero == 84_u8;
+  let man_one_ok = man_one == 87_u8;
+  let man_two_ok = man_two == 70_u8;
+  let man_three_ok = man_three == 117_u8;
   let m_input = buffer_new(1_u64, 77_u8);
   let m_output = buffer_new(4_u64, 0_u8);
   let m_length_ok = False();
@@ -239,14 +239,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let m_required_input_length = len(m_input);
     let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
     let m_required_covered_input = m_required_out_groups *wrap 3_u64;
-    let m_capacity = ile(m_required_input_length, m_required_covered_input);
+    let m_capacity = m_required_input_length <= m_required_covered_input;
     if m_capacity {
     } else {
       return exit_status(code: 217_u8);
     }
-    match encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input) {
+    match encode::<'m_region>(out: &uniq 'm_region m_output, input: move m_input) {
       Ok(value: m_length) => {
-        set m_length_ok = ieq(m_length, 4_u64);
+        set m_length_ok = m_length == 4_u64;
       }
       Err(error: m_index_error) => {
         return exit_status(code: 220_u8);
@@ -257,10 +257,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let m_one = m_output[1_u64];
   let m_two = m_output[2_u64];
   let m_three = m_output[3_u64];
-  let m_zero_ok = ieq(m_zero, 84_u8);
-  let m_one_ok = ieq(m_one, 81_u8);
-  let m_two_ok = ieq(m_two, 61_u8);
-  let m_three_ok = ieq(m_three, 61_u8);
+  let m_zero_ok = m_zero == 84_u8;
+  let m_one_ok = m_one == 81_u8;
+  let m_two_ok = m_two == 61_u8;
+  let m_three_ok = m_three == 61_u8;
   let ma_input = buffer_new(2_u64, 0_u8);
   set ma_input[0_u64] = 77_u8;
   set ma_input[1_u64] = 97_u8;
@@ -271,14 +271,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let ma_required_input_length = len(ma_input);
     let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
     let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
-    let ma_capacity = ile(ma_required_input_length, ma_required_covered_input);
+    let ma_capacity = ma_required_input_length <= ma_required_covered_input;
     if ma_capacity {
     } else {
       return exit_status(code: 218_u8);
     }
-    match encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input) {
+    match encode::<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input) {
       Ok(value: ma_length) => {
-        set ma_length_ok = ieq(ma_length, 4_u64);
+        set ma_length_ok = ma_length == 4_u64;
       }
       Err(error: ma_index_error) => {
         return exit_status(code: 221_u8);
@@ -289,10 +289,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let ma_one = ma_output[1_u64];
   let ma_two = ma_output[2_u64];
   let ma_three = ma_output[3_u64];
-  let ma_zero_ok = ieq(ma_zero, 84_u8);
-  let ma_one_ok = ieq(ma_one, 87_u8);
-  let ma_two_ok = ieq(ma_two, 69_u8);
-  let ma_three_ok = ieq(ma_three, 61_u8);
+  let ma_zero_ok = ma_zero == 84_u8;
+  let ma_one_ok = ma_one == 87_u8;
+  let ma_two_ok = ma_two == 69_u8;
+  let ma_three_ok = ma_three == 61_u8;
   if man_length_ok {
   } else {
     return exit_status(code: 201_u8);

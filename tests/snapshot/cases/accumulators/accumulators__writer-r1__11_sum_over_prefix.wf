@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected ACCEPT: the loop walks only a computed prefix of the buffer, and the bound tracks that shorter span.";
+  let data = buffer_new(10_u64, 6_u8);
+  let room = len(data);
+  let half = room / 2_u64;
+  let sum = 0_u64;
+  for (
+    i in 0_u64..half,
+    invariant per_byte: sum <= 255_u64 * i
+  ) {
+    let byte = data[i];
+    let wide = cvt::<u8, u64>(byte);
+    set sum = sum + wide;
+  }
+  if sum == 30_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

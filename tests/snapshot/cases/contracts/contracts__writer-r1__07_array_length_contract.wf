@@ -1,0 +1,20 @@
+fn last_index(values: own array<u8, 12>) -> index: own u64 pure contract {
+  define capacity = len(values);
+  requires capacity > 0_u64;
+  ensures index < capacity;
+} {
+  let capacity = len(values);
+  let index = capacity - 1_u64;
+  return index;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: requires and ensures both use a shared define over a fixed array len.";
+  let values = array_new::<u8, 12>(0_u8);
+  let index = last_index(values: move values);
+  if index == 11_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

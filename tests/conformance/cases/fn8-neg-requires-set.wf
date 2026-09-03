@@ -1,7 +1,7 @@
 fn mutable_clause(x: own i32) -> result: own i32 pure contract {
   define candidate = x;
   set candidate = candidate +wrap 1_i32;
-  define permitted = igt(candidate, x);
+  define permitted = candidate > x;
   requires permitted;
 } {
   doc "A contract block admits no mutation statement; grammar traversal rejects set under GRAM-2 before FN-8 forms a contract.";

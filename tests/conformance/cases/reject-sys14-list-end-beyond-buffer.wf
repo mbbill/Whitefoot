@@ -2,11 +2,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "`directory_next` carries SYS-8's two static range goals. End 4104 exceeds this 4096-byte destination, so compilation rejects the call before any host enumeration or runtime fallback.";
   let entries = buffer_new(4096_u64, 0_u8);
   region 'c {
-    let permit = reserve_file<'c>(factory: &uniq 'c files);
-    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
+    let permit = reserve_file::<'c>(factory: &uniq 'c files);
+    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
         region 'b {
-          match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 8_u64, end: 4104_u64) {
+          match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 8_u64, end: 4104_u64) {
             ListBytes(next: bytes, entries: reported) => {
               return exit_status(code: 5_u8);
             }

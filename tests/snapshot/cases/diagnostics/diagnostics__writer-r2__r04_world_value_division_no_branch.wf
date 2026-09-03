@@ -1,0 +1,16 @@
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+  doc "EXPECT REJECT under Op2: the divisor is args_count, a genuinely external world value that legitimately may be zero, so writing an unconditional invariant would be dishonest; the correct repair is a real dominating branch that tests the divisor before dividing.";
+  region 'a {
+    let divisor = args_count::<'a>(args: &'a args);
+    let pool = 100_u64;
+    let bonus = 4_u64;
+    let total = pool +wrap bonus;
+    let doubled = total +wrap total;
+    let tripled = doubled +wrap total;
+    let quadrupled = tripled +wrap total;
+    let share = quadrupled / divisor;
+    let doc_zero = 0_u64;
+    let final_code = 0_u8;
+    return exit_status(code: final_code);
+  }
+}

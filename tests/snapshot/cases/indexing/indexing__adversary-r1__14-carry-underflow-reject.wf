@@ -1,0 +1,33 @@
+fn scan_with_carry(buf: own buffer<u8>, start_carry: own u64) -> total: own u64 reads(buf) {
+  doc "expect REJECT (OP-2): carry can exceed cursor on the first iteration (cursor=0, carry=1), so cursor - carry underflows u64 before any bound on carry < cursor is established";
+  let room = len(buf);
+  let cursor = 0_u64;
+  let carry = start_carry;
+  let total = 0_u64;
+  loop (
+    invariant cursor_bounded: cursor <= room
+  ) {
+    let more = cursor < room;
+    if more {
+      let back_index = cursor - carry;
+      let value = buf[back_index];
+      let widened = cvt::<u8, u64>(value);
+      set total = total +wrap widened;
+      set carry = 1_u64;
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(5_u64, 2_u8);
+  let total = scan_with_carry(buf: move buf, start_carry: 1_u64);
+  if total == 10_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

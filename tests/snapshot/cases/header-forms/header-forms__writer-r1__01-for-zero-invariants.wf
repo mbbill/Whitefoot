@@ -1,0 +1,12 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT for the zero-invariant one-line header form, but nothing bounds total, so the body's checked addition leaves the domain obligation total +defined i unproved.";
+  let total = 0_u64;
+  for (i in 0_u64..5_u64) {
+    set total = total + i;
+  }
+  if total == 10_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

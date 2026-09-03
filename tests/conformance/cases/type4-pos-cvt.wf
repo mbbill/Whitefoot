@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "Representation change is the single explicit op cvt [TYPE-4]; i32->i64 is total.";
   let x = 7_i32;
-  let y = cvt<i32, i64>(x);
+  let y = cvt::<i32, i64>(x);
   return exit_status(code: 0_u8);
 }

@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: exact division on negative i32 operands truncates toward zero, not floor.";
+  let dividend = -7_i32;
+  let divisor = 2_i32;
+  let quotient = 0_i32;
+  let remainder = 0_i32;
+  if dividend /defined divisor {
+    set quotient = dividend / divisor;
+    set remainder = dividend % divisor;
+  }
+  if quotient == -3_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if remainder == -1_i32 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 2_u8);
+  }
+}

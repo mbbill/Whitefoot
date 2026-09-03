@@ -52,15 +52,15 @@ fn retains_each_mode_and_rejects_unsigned_types() {
 fn active_invariant_excludes_the_signed_minimum_from_exact_absolute_value() {
     let source =
         br#"fn magnitudes(floor: own i32, limit: own u64) -> result: own unit pure contract {
-  requires ile(-2147483647_i32, floor);
-  requires ile(floor, 100_i32);
-  requires ile(limit, 10_u64);
+  requires -2147483647_i32 <= floor;
+  requires floor <= 100_i32;
+  requires limit <= 10_u64;
 } {
   let value = floor;
   for @items (
     i in 0_u64..limit,
-    invariant above_minimum: ile(floor, value),
-    invariant progress: ile(value, floor + i)
+    invariant above_minimum: floor <= value,
+    invariant progress: value <= floor + i
   ) {
     let magnitude = iabs(value);
     set value = value + 1_i32;

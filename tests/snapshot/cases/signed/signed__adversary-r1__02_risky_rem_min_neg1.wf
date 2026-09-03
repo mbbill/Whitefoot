@@ -1,0 +1,11 @@
+fn risky_rem(n: own i32, d: own i32) -> result: own i32 pure contract {
+  define nonzero = d != 0_i32;
+  requires nonzero;
+} {
+  doc "EXPECT REJECT [OP-2]: d only proven nonzero, so n=MIN(i32),d=-1 makes n%d overflow (undefined).";
+  return n % d;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

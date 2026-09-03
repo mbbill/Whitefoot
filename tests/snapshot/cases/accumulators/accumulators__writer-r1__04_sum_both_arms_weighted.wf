@@ -1,0 +1,25 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected ACCEPT: one accumulator updated in both arms with different weights, bounded by 2*i per step.";
+  let data = buffer_new(6_u64, 0_u8);
+  set data[0_u64] = 1_u8;
+  set data[2_u64] = 1_u8;
+  set data[5_u64] = 1_u8;
+  let sum = 0_u64;
+  for (
+    i in 0_u64..6_u64,
+    invariant weighted_bound: sum <= 2_u64 * i
+  ) {
+    let byte = data[i];
+    let is_set = byte == 1_u8;
+    if is_set {
+      set sum = sum + 2_u64;
+    } else {
+      set sum = sum + 1_u64;
+    }
+  }
+  if sum == 9_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

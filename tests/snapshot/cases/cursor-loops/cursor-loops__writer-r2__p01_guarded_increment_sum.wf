@@ -1,0 +1,27 @@
+fn sum_below(limit: own u64) -> total: own u64 pure {
+  doc "ACCEPT: ordinary loop with a guarded increment; the header invariant bounds the cursor so the plain add proves in range.";
+  let cursor = 0_u64;
+  let total = 0_u64;
+  loop (
+    invariant bounded: cursor <= limit
+  ) {
+    let remaining = cursor < limit;
+    if remaining {
+      set total = total +wrap cursor;
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = sum_below(limit: 5_u64);
+  let correct = total == 10_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

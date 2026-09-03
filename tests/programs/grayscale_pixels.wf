@@ -1,23 +1,23 @@
 fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Result<u8, NarrowError> pure {
-  let red_float = cvt<u8, f32>(red);
-  let green_float = cvt<u8, f32>(green);
-  let blue_float = cvt<u8, f32>(blue);
+  let red_float = cvt::<u8, f32>(red);
+  let green_float = cvt::<u8, f32>(green);
+  let blue_float = cvt::<u8, f32>(blue);
   let red_green = fadd.strict(red_float, green_float);
   let total = fadd.strict(red_green, blue_float);
   let average = fdiv.strict(total, 3.0_f32);
   let rounded = froundeven(average);
-  return cvt<f32, u8>(rounded);
+  return cvt::<f32, u8>(rounded);
 }
 
 fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> result: own Result<unit, NarrowError> reads(input, output), writes(output) contract {
   define input_length = len(deref(input));
   define output_length = len(deref(output));
-  requires ige(input_length, 24_u64);
-  requires ige(output_length, 8_u64);
+  requires input_length >= 24_u64;
+  requires output_length >= 8_u64;
 } {
   let pixel = 0_u64;
   loop @pixels {
-    let done = ieq(pixel, 8_u64);
+    let done = pixel == 8_u64;
     if done {
       break @pixels;
     }
@@ -25,21 +25,21 @@ fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> resu
     let green_offset = base +wrap 1_u64;
     let blue_offset = base +wrap 2_u64;
     let input_room = len(deref(input));
-    let red_ok = ilt(base, input_room);
+    let red_ok = base < input_room;
     if red_ok {
     } else {
       let error = NarrowError();
       return Err<unit, NarrowError>(error: error);
     }
     let red = deref(input)[base];
-    let green_ok = ilt(green_offset, input_room);
+    let green_ok = green_offset < input_room;
     if green_ok {
     } else {
       let error = NarrowError();
       return Err<unit, NarrowError>(error: error);
     }
     let green = deref(input)[green_offset];
-    let blue_ok = ilt(blue_offset, input_room);
+    let blue_ok = blue_offset < input_room;
     if blue_ok {
     } else {
       let error = NarrowError();
@@ -48,7 +48,7 @@ fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> resu
     let blue = deref(input)[blue_offset];
     let value = propagate grayscale_value(red: red, green: green, blue: blue);
     let output_room = len(deref(output));
-    let pixel_ok = ilt(pixel, output_room);
+    let pixel_ok = pixel < output_room;
     if pixel_ok {
     } else {
       let error = NarrowError();
@@ -78,7 +78,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set input[23_u64] = 252_u8;
   let output = buffer_new(8_u64, 0_u8);
   region 'image {
-    let result = grayscale<'image, 'image>(input: &'image input, output: &uniq 'image output);
+    let result = grayscale::<'image, 'image>(input: &'image input, output: &uniq 'image output);
     match move result {
       Ok(value: success) => {
       }
@@ -87,35 +87,35 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       }
     }
   }
-  if ieq(output[0_u64], 0_u8) {
+  if output[0_u64] == 0_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[1_u64], 255_u8) {
+  if output[1_u64] == 255_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[2_u64], 85_u8) {
+  if output[2_u64] == 85_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[3_u64], 85_u8) {
+  if output[3_u64] == 85_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[4_u64], 85_u8) {
+  if output[4_u64] == 85_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[5_u64], 170_u8) {
+  if output[5_u64] == 170_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[6_u64], 2_u8) {
+  if output[6_u64] == 2_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(output[7_u64], 253_u8) {
+  if output[7_u64] == 253_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

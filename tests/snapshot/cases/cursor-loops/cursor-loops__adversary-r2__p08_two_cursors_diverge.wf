@@ -1,0 +1,37 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: fast cursor advances by 2 each step but is only guarded by fast < len; it can equal len+1 relative index and read data[fast] out of bounds when len is odd";
+  let data = array_new::<u8, 5>(0_u8);
+  set data[0_u64] = 1_u8;
+  set data[1_u64] = 2_u8;
+  set data[2_u64] = 3_u8;
+  set data[3_u64] = 4_u8;
+  set data[4_u64] = 5_u8;
+  let slow = 0_u64;
+  let fast = 0_u64;
+  let steps = 0_u64;
+  loop (
+    invariant slow_bounded: slow <= 5_u64,
+    invariant steps_bounded: steps <= 10_u64
+  ) {
+    let steps_ok = steps < 10_u64;
+    let fast_ok = fast < 5_u64;
+    let go = band(steps_ok, fast_ok);
+    if go {
+      let fv = data[fast];
+      let sv = data[slow];
+      let combined = fv +wrap sv;
+      set slow = slow + 1_u64;
+      set fast = fast + 2_u64;
+      invariant steps_adv: steps < 10_u64;
+      set steps = steps + 1_u64;
+    } else {
+      break;
+    }
+  }
+  let correct = steps == 3_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -6,7 +6,7 @@ fn dbl(x: own i32) -> result: own i32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let a = dbl(x: 21_i32);
-  if ieq(a, 42_i32) {
+  if a == 42_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

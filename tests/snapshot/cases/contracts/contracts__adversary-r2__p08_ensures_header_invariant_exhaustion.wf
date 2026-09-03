@@ -1,0 +1,22 @@
+fn count_to(limit: own u64) -> count: own u64 pure contract {
+  ensures count <= limit;
+} {
+  let cursor = 0_u64;
+  for (
+    i in 0_u64..limit,
+    invariant bounded: cursor <= i
+  ) {
+    set cursor = cursor + 1_u64;
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: the header invariant cursor <= i holds at every backedge; on normal exhaustion of the for loop i == limit, so the exported fact cursor <= limit discharges the function's ensures with no per-return certificate.";
+  let observed = count_to(limit: 4_u64);
+  if observed == 4_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

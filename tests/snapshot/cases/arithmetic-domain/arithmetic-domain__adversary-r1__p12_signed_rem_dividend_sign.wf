@@ -1,0 +1,17 @@
+fn probe() -> result: own i32 pure {
+  doc "Signed remainder has the dividend's sign, verified at runtime for a negative dividend [OP-2].";
+  let n = -7_i32;
+  let d = 2_i32;
+  let r = n % d;
+  return r;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT ACCEPT: signed remainder truncates toward zero, -7%2=-1.";
+  let v = probe();
+  if v == -1_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,35 @@
+fn blend(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, replacement: own u8, replacement_limit: own u8) -> result: own u8 pure contract {
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires replacement <= replacement_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 90_u8;
+  requires replacement_limit <= 80_u8;
+} {
+  doc "expect ACCEPT: set first = replacement kills the old first/first_limit pairing, so total_bound is re-derived from replacement_limit rather than the dead first_limit fact.";
+  invariant original_bound: first + second + third <= first_limit + second_limit + third_limit {
+    use first <= first_limit;
+    use second <= second_limit;
+    use third <= third_limit;
+  }
+  set first = replacement;
+  invariant updated_bound: first + second + third <= replacement_limit + second_limit + third_limit {
+    use first <= replacement_limit;
+    use second <= second_limit;
+    use third <= third_limit;
+  }
+  invariant limit_sum: replacement_limit + second_limit + third_limit <= 250_u8;
+  let result = first + second;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let picked = blend(first: 10_u8, first_limit: 40_u8, second: 5_u8, second_limit: 40_u8, third: 3_u8, third_limit: 50_u8, replacement: 20_u8, replacement_limit: 40_u8);
+  if picked == 25_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,15 @@
+fn gap(x: own i32, y: own i32) -> result: own i32 pure {
+  doc "Expected REJECT [OP-2]: x >= y proves x >= y but does NOT bound x - y away from signed overflow. Violating values x=2000000000_i32, y=-2000000000_i32 satisfy `>=`, yet x - y = 4000000000 exceeds i32::MAX (2147483647).";
+  let ordered = x >= y;
+  if ordered {
+    let difference = x - y;
+    return difference;
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = gap(x: 2000000000_i32, y: -2000000000_i32);
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,19 @@
+fn safe_add(a: own i8, b: own i8) -> sum: own i8 pure {
+  doc "ACCEPT: i8 negative-bound +defined check discharges the add before use.";
+  if a +defined b {
+    return a + b;
+  } else {
+    return 0_i8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let low = -100_i8;
+  let high = 20_i8;
+  let sum = safe_add(a: low, b: high);
+  if sum == -80_i8 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

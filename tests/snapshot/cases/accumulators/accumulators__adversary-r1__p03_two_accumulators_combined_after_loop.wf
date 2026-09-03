@@ -1,0 +1,24 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: ACCEPT -- count_even and count_odd each individually bounded by i via a coefficient-one invariant; their checked sum after the loop is provably at most 20 so `+` cannot overflow u64.";
+  let count_even = 0_u64;
+  let count_odd = 0_u64;
+  for (
+    i in 0_u64..10_u64,
+    invariant even_bound: count_even <= i,
+    invariant odd_bound: count_odd <= i
+  ) {
+    let parity = iand(i, 1_u64);
+    let is_even = parity == 0_u64;
+    if is_even {
+      set count_even = count_even + 1_u64;
+    } else {
+      set count_odd = count_odd + 1_u64;
+    }
+  }
+  let total = count_even + count_odd;
+  if total == 10_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

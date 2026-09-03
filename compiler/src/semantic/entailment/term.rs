@@ -122,7 +122,7 @@ impl TermTable {
     /// one term. Kept apart, a disequality reaches Z only by a bound
     /// strengthened through the constant's implicit equality, which exists
     /// only where the fragment already bounds the operand on that side: a
-    /// a source relation `ine(d, 0_i32)` then could not discharge an obligation stated
+    /// a source relation `d != 0_i32` then could not discharge an obligation stated
     /// against Z at a signed type, and [OP-2]'s own mechanical fix would be
     /// unwritable. Z carries exactly the bounds the constant zero would
     /// have contributed, so the merge loses no fact.

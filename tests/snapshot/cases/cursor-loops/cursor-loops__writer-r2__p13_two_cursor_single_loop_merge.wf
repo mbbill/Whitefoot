@@ -1,0 +1,57 @@
+fn merge_total(left: own buffer<u64>, right: own buffer<u64>) -> total: own u64 reads(left, right) {
+  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for two independently guarded cursors, but an arm that advances one cursor joins an arm that leaves it, so the guard fact dies at the join and the backedge target i <= left_len is unprovable [ENT-6].";
+  let left_len = len(left);
+  let right_len = len(right);
+  let i = 0_u64;
+  let j = 0_u64;
+  let total = 0_u64;
+  loop (
+    invariant bounded_left: i <= left_len,
+    invariant bounded_right: j <= right_len
+  ) {
+    let left_open = i < left_len;
+    let right_open = j < right_len;
+    if left_open {
+      if right_open {
+        let left_value = left[i];
+        let right_value = right[j];
+        let take_left = left_value <= right_value;
+        if take_left {
+          set total = total +wrap left_value;
+          set i = i + 1_u64;
+        } else {
+          set total = total +wrap right_value;
+          set j = j + 1_u64;
+        }
+      } else {
+        let left_value = left[i];
+        set total = total +wrap left_value;
+        set i = i + 1_u64;
+      }
+    } else if right_open {
+      let right_value = right[j];
+      set total = total +wrap right_value;
+      set j = j + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let left = buffer_new(3_u64, 0_u64);
+  set left[0_u64] = 1_u64;
+  set left[1_u64] = 4_u64;
+  set left[2_u64] = 6_u64;
+  let right = buffer_new(2_u64, 0_u64);
+  set right[0_u64] = 2_u64;
+  set right[1_u64] = 3_u64;
+  let total = merge_total(left: move left, right: move right);
+  let correct = total == 16_u64;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

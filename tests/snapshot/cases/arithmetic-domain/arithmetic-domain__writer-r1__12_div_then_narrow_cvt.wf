@@ -1,0 +1,26 @@
+fn quotient_byte(n: own u32, d: own u32) -> result: own u8 pure {
+  doc "ACCEPT: a `>` guard discharges the division obligation; cvt<u32, u8> then narrows the quotient through a Result.";
+  if d > 0_u32 {
+    let q = n / d;
+    let narrowed = cvt::<u32, u8>(q);
+    let byte = match narrowed {
+      Ok(value: low) => {
+        give low;
+      }
+      Err(error: too_big) => {
+        give 255_u8;
+      }
+    }
+    return byte;
+  }
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let byte = quotient_byte(n: 100_u32, d: 5_u32);
+  if byte == 20_u8 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

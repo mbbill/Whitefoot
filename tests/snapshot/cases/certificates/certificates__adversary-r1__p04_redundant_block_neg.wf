@@ -1,0 +1,15 @@
+fn keep(value: own u64, limit: own u64, other: own u64) -> result: own unit pure contract {
+  requires value <= limit;
+  requires other <= limit;
+} {
+  doc "expect REJECT PRF-1 RedundantUseBlock: AUTO already proves this target from the requires clause alone.";
+  invariant still_bound: value <= limit {
+    use value <= limit;
+    use other <= limit;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

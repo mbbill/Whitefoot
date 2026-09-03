@@ -1,0 +1,21 @@
+fn triple(x: own u8) -> result: own u8 pure contract {
+  requires x <= 100_u8;
+} {
+  doc "Expected REJECT [OP-2]: requires bounds x to at most 100_u8, but 3 * 100 = 300 still exceeds u8::MAX (255), so the exact multiplication obligation is not fully discharged by this bound. Violating value x=100_u8 (satisfies requires) still overflows.";
+  let tripled = x * 3_u8;
+  return tripled;
+}
+
+fn triple_correctly_guarded(x: own u8) -> result: own u8 pure contract {
+  requires x <= 85_u8;
+} {
+  doc "Contrast: bounding x to 85_u8 instead of 100_u8 is exactly tight enough since 3 * 85 = 255 = u8::MAX, so this sibling is sound while triple above is not.";
+  let tripled = x * 3_u8;
+  return tripled;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = triple(x: 100_u8);
+  let safe_result = triple_correctly_guarded(x: 80_u8);
+  return exit_status(code: 0_u8);
+}
