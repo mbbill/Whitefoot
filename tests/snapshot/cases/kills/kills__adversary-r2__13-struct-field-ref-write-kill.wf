@@ -2,7 +2,7 @@ struct Box {
   v: u8;
 }
 
-fn h3['a](b: &uniq 'a Box, w: own u8) -> result: own u8 reads(b.v), writes(b.v) {
+fn h3(b: &uniq Box, w: own u8) -> result: own u8 reads(b.v), writes(b.v) {
   let old = deref(b).v;
   let bounded = old <= 5_u8;
   if bounded {
@@ -18,8 +18,8 @@ fn h3['a](b: &uniq 'a Box, w: own u8) -> result: own u8 reads(b.v), writes(b.v) 
 command fn main() -> status: own ExitStatus pure {
   doc "expect REJECT (OP-2): writing through &uniq deref(b).v=w kills old<=5; old=0(ok), w=255 -> cur+250_u8 overflows u8";
   let cell = Box(v: 0_u8);
-  region 'r {
-    let z = h3::<'r>(b: &uniq 'r cell, w: 255_u8);
+  region {
+    let z = h3(b: &uniq cell, w: 255_u8);
   }
   return exit_status(code: 0_u8);
 }

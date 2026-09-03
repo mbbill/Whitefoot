@@ -9,46 +9,46 @@ use crate::backend::qualification::SystemTarget;
 
 const WRITER_SCHEDULER_PROBE: &str = include_str!("../completion/writer_scheduler_probe.c");
 
-const STACKLESS_WRAPPER: &[u8] = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+const STACKLESS_WRAPPER: &[u8] = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
-  return write_once::<'o, 's>(output: move output, source: source, start: start, end: end);
+  return write_once(output: move output, source: source, start: start, end: end);
 }
 
-fn relay['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+fn relay(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
-  return publish::<'o, 's>(output: move output, source: source, start: start, end: end);
+  return publish(output: move output, source: source, start: start, end: end);
 }
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
-  region 'io {
-    let outcome = relay::<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+  region {
+    let outcome = relay(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
 "#;
 
-const STACKLESS_EMPTY_WRAPPER: &[u8] = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+const STACKLESS_EMPTY_WRAPPER: &[u8] = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
-  return write_once::<'o, 's>(output: move output, source: source, start: start, end: end);
+  return write_once(output: move output, source: source, start: start, end: end);
 }
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
-  region 'io {
-    let outcome = publish::<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 0_u64);
+  region {
+    let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 0_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -283,8 +283,8 @@ fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
     let llvm = compile(
         br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
-  region 'io {
-    match write_once::<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64) {
+  region {
+    match write_once(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -304,16 +304,16 @@ fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
 #[test]
 fn a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi() {
     let llvm = compile(
-        br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+        br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
-  return write_once::<'o, 's>(output: move output, source: source, start: start, end: end);
+  return write_once(output: move output, source: source, start: start, end: end);
 }
 
-fn observe['r](values: own slice<'r, u8>) -> result: own unit reads(values) contract {
+fn observe(values: own slice<u8>) -> result: own unit reads(values) contract {
   define capacity = len(values);
   requires 0_u64 < capacity;
 } {
@@ -324,12 +324,12 @@ fn observe['r](values: own slice<'r, u8>) -> result: own unit reads(values) cont
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let local = array_new::<u8, 1>(65_u8);
   let bytes = buffer_new(1_u64, 65_u8);
-  region 'view {
-    let view = slice_of(&'view local);
-    region 'io {
-      let outcome = publish::<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+  region {
+    let view = slice_of(&local);
+    region {
+      let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
     }
-    let ignored = observe::<'view>(values: move view);
+    let ignored = observe(values: move view);
   }
   return exit_status(code: 0_u8);
 }

@@ -13,24 +13,24 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
-fn bubble_shift['b](node: &uniq 'b box<BoxNode>, shift: own u64) -> result: own u64 reads(node), writes(node), traps {
-  let base = bubble<'b>(node: move node);
+fn bubble_shift(node: &uniq box<BoxNode>, shift: own u64) -> result: own u64 reads(node), writes(node), traps {
+  let base = bubble(node: move node);
   let shifted_defined = base +defined shift;
   claim shift_fits: shifted_defined because "shift is zero";
   return base + shift;
 }
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {
+fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node), traps {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = bubble<'b>(node: move l);
+      let a = bubble(node: move l);
       let zero_defined = a -defined a;
       claim zero_fits: zero_defined because "x minus x is zero";
       let shift = a - a;
-      let b = bubble_shift<'b>(node: move r, shift: shift);
+      let b = bubble_shift(node: move r, shift: shift);
       let sum_defined = a +defined b;
       claim bubble_sum_fits: sum_defined because "an in-memory tree has representable widths";
       let total = a + b;
@@ -44,8 +44,8 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region 'tree {
-    let total = bubble<'tree>(node: &uniq 'tree branch0);
+  region {
+    let total = bubble(node: &uniq branch0);
     claim bubble_total: ieq(total, 7_u64) because "bubble total";
   }
   return exit_status(code: 0_u8);

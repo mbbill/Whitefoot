@@ -1,9 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "OWN-5: two shared borrows of one place coexist and are both read - shared reads never conflict.";
   let a = 7_i32;
-  region 'r {
-    let s1 = &'r a;
-    let s2 = &'r a;
+  region {
+    let s1 = &a;
+    let s2 = &a;
     if deref(s1) == deref(s2) {
     } else {
       return exit_status(code: 1_u8);

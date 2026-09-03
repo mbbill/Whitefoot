@@ -744,8 +744,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: GenericSubstitution,
         id: super::super::model::FunctionId,
     ) -> Result<FunctionSignature, CheckStop> {
-        let region_parameters = self.parse_region_parameters(template.node)?;
+        self.check_declaration_region_spelling(template.node)?;
+        let mut region_parameters = self.parse_region_parameters(template.node)?;
+        let written_regions = region_parameters.len();
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
+        // [FORM-8] every region a parameter position leaves unwritten is a
+        // formal region of this callable too.
+        Self::append_elided_formal_regions(&mut region_parameters, &parameters);
         let result_binding = self
             .tree
             .first_child_with(template.node, Production::ResultBinding)?
@@ -800,6 +805,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: template.name.clone(),
             symbol,
             region_parameters,
+            written_regions,
             parameters,
             result_mode,
             result,

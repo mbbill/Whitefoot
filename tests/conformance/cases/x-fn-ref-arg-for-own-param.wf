@@ -6,8 +6,8 @@ fn takesown(n: own i32) -> function_result: own i32 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "Caller passes a shared borrow where the signature declares an own value [FN-1].";
   let a = 5_i32;
-  region 'r {
-    let b = &'r a;
+  region {
+    let b = &a;
     let r = takesown(n: b);
   }
   return exit_status(code: 0_u8);

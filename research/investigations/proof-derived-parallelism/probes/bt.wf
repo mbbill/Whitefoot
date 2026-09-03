@@ -63,7 +63,7 @@ fn work(inh: own f64, v: own f64) -> result: own f64 pure {
   return fadd.strict(adj, lrb);
 }
 
-fn bfold['b](node: &uniq 'b box<BNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
+fn bfold(node: &uniq box<BNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
   match deref(deref(node)) {
     BLeaf(v: lv, out: lslot) => {
       let mine = work(inh: inh, v: deref(lv));
@@ -73,8 +73,8 @@ fn bfold['b](node: &uniq 'b box<BNode>, inh: own f64) -> result: own f64 reads(n
     BBranch(left: pl, right: pr, v: bv, out: bslot) => {
       let own_h = work(inh: inh, v: deref(bv));
       let child_inh = fmul.strict(own_h, 0.5_f64);
-      let ra = bfold<'b>(node: move pl, inh: child_inh);
-      let rb = bfold<'b>(node: move pr, inh: child_inh);
+      let ra = bfold(node: move pl, inh: child_inh);
+      let rb = bfold(node: move pr, inh: child_inh);
       let kids = fadd.strict(ra, rb);
       let total = fadd.strict(kids, own_h);
       set deref(bslot) = total;
@@ -99,7 +99,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   let limit = at +wrap 16_u64;
@@ -131,8 +131,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     if done {
       break @reps;
     }
-    region 'tree {
-      let total = bfold<'tree>(node: &uniq 'tree tree, inh: seed);
+    region {
+      let total = bfold(node: &uniq tree, inh: seed);
       set last = total;
     }
     set seed = fadd.strict(seed, 0.0625_f64);
@@ -140,12 +140,12 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   }
   let bits = reinterpret<f64, u64>(last);
   let report = buffer_new(17_u64, 10_u8);
-  region 'summary {
-    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: bits);
+  region {
+    let first = spell_hex(destination: &uniq report, at: 0_u64, value: bits);
   }
   region 'o {
-    region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+    region {
+      match write_once(output: &'o out, source: &report, start: 0_u64, end: 17_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

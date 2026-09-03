@@ -7,9 +7,14 @@ Active language authority: v0.41,
 `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`,
 which respells the six integer comparisons as symbols and delimits call-site
 type application with `::` over the v0.40 proof surface this plan delivered.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.40 is
+The superseded v0.40 is
 archived at `spec/kernel-spec-v0.40.md` and the merge-time record is in
-`governance/APPROVALS.md`. Activation is branch content: nothing merges to
+`governance/APPROVALS.md`. `spec/kernel-spec.md` currently carries the
+**v0.42 candidate** at `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`, which
+adds [FORM-8]'s one canonical region spelling over those ACTIVE bytes. A
+candidate is branch content and installs no identity: the authority above is
+unchanged and canonical `make check` rejects the candidate at
+`spec-archive-integrity` until the owner activates it. Activation is branch content: nothing merges to
 `main` until the owner approves the exact revision and canonical `make check`
 passes on that revision. This document records technical direction and
 sequencing; it grants no permission and adds no workflow gate.
@@ -106,7 +111,7 @@ and ordinary operation goals connect. A counted header carrying an invariant is
 multiline and has no trailing comma:
 
 ```wf
-fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32
+fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32
     reads(weights) contract {
   define room = len(deref(weights));
   requires count <= room;

@@ -471,10 +471,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
     let source = br#"contract LengthSum {
-  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads(x, y);
+  fn sum(x: &buffer<u8>, y: &buffer<u8>) -> result: own u64 reads(x, y);
 }
 
-fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads(second, first) {
+fn add_lengths(first: &buffer<u8>, second: &buffer<u8>) -> result: own u64 reads(second, first) {
   let first_length = len(deref(first));
   let second_length = len(deref(second));
   return first_length +wrap second_length;
@@ -499,10 +499,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_alpha_equality_includes_slice_type_regions() {
     let source = br#"contract ByteReader {
-  fn first['source](values: own slice<'source, u8>) -> result: own u8 reads(values);
+  fn first(values: own slice<u8>) -> result: own u8 reads(values);
 }
 
-fn read_first['input](bytes: own slice<'input, u8>) -> result: own u8 reads(bytes) {
+fn read_first(bytes: own slice<u8>) -> result: own u8 reads(bytes) {
   let room = len(bytes);
   let ok = 0_u64 < room;
   if ok {
@@ -531,10 +531,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_ordinal_swap_is_not_alpha_equal() {
     let source = br#"contract FirstLength {
-  fn length['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads(x);
+  fn length(x: &buffer<u8>, y: &buffer<u8>) -> result: own u64 reads(x);
 }
 
-fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads(second) {
+fn second_length(first: &buffer<u8>, second: &buffer<u8>) -> result: own u64 reads(second) {
   return len(deref(second));
 }
 
@@ -598,10 +598,10 @@ fn contract_effect_paths_compare_parameter_and_field_ordinals() {
 }
 
 contract Touch {
-  fn touch['contract](value: &uniq 'contract Pair) -> result: own unit reads(value.left), writes(value.right);
+  fn touch(value: &uniq Pair) -> result: own unit reads(value.left), writes(value.right);
 }
 
-fn apply['implementation](input: &uniq 'implementation Pair) -> result: own unit reads(input.left), writes(input.right) {
+fn apply(input: &uniq Pair) -> result: own unit reads(input.left), writes(input.right) {
   let observed = deref(input).left;
   set deref(input).right = observed;
   return unit;

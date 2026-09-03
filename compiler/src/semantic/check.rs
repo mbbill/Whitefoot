@@ -84,7 +84,12 @@ struct FunctionSignature {
     node: NodeId,
     name: String,
     symbol: String,
+    /// Every formal region of the callable: the written `region_params`
+    /// first, in their written order, then the regions [FORM-8] leaves
+    /// unwritten at a parameter position, in parameter order.
     region_parameters: Vec<DeclarationId>,
+    /// How many leading `region_parameters` entries the declaration writes.
+    written_regions: usize,
     parameters: Vec<ParameterSignature>,
     result_mode: CheckedMode,
     result: CheckedType,
@@ -714,7 +719,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             allocations.push("heap".to_owned());
         }
         for region in &effects.allocates_arenas {
-            allocations.push(format!("arena {}", self.declaration_spelling(*region)?));
+            allocations.push(format!("arena {}", self.region_phrase(*region)?));
         }
         if !allocations.is_empty() {
             categories.push(format!("allocates({})", allocations.join(" ")));
@@ -813,10 +818,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             for region in &left.allocates_arenas {
                 if !right.allocates_arenas.contains(region) {
-                    out.push(format!(
-                        "allocates(arena {})",
-                        self.declaration_spelling(*region)?
-                    ));
+                    out.push(format!("allocates(arena {})", self.region_phrase(*region)?));
                 }
             }
         }
@@ -824,6 +826,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One declaration's exact source spelling, including any sigil.
+    /// The source spelling of one region, or `None` where [FORM-8] leaves it
+    /// unwritten and no name exists to quote.
+    pub(in crate::semantic::check) fn written_region_name(
+        &self,
+        region: DeclarationId,
+    ) -> Result<Option<String>, CheckStop> {
+        let spelling = self.declaration_spelling(region)?;
+        Ok((!spelling.starts_with("'0_")).then_some(spelling))
+    }
+
+    /// One region as a diagnostic names it.
+    ///
+    /// A region [FORM-8] leaves unwritten has no source spelling: resolution
+    /// mints it under a name no source token can form, and printing that name
+    /// would name a region the writer cannot write. Diagnostics that quote a
+    /// region go through this instead of the raw spelling.
+    pub(in crate::semantic::check) fn region_phrase(
+        &self,
+        region: DeclarationId,
+    ) -> Result<String, CheckStop> {
+        let spelling = self.declaration_spelling(region)?;
+        Ok(if spelling.starts_with("'0_") {
+            "the region this position leaves unwritten".to_owned()
+        } else {
+            spelling
+        })
+    }
+
     pub(in crate::semantic::check) fn declaration_spelling(
         &self,
         declaration: DeclarationId,

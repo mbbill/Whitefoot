@@ -2,7 +2,7 @@ enum Packet {
   Data(value: i32);
 }
 
-fn inspect['r](holder: &'r Packet) -> return_value: own unit pure {
+fn inspect(holder: &Packet) -> return_value: own unit pure {
   doc "OWN-1: move deref(holder) cannot steal a borrowed enum; bare match deref(holder) derives borrowed payload binders.";
   match move deref(holder) {
     Data(value: payload) => {

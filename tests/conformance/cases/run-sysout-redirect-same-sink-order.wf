@@ -4,8 +4,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let second = buffer_new(2_u64, 66_u8);
   let page = buffer_new(8_u64, 0_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &first, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -15,8 +15,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
   }
   region 'e {
-    region 't {
-      match write_once::<'e, 't>(output: &uniq 'e out, source: &'t second, start: 0_u64, end: 2_u64) {
+    region {
+      match write_once(output: &uniq 'e out, source: &second, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -25,19 +25,19 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
     }
   }
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+              region {
+                let permit = reserve_file(factory: &uniq 'c files);
+                match open_read(permit: move permit, root: &'c cwd, path: &path) {
                   Ok(value: file) => {
                     region 'f {
-                      region 'd {
-                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                      region {
+                        match read_at(file: &'f file, destination: &uniq page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
                             let combined = n == 4_u64;
                             if combined {

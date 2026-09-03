@@ -315,14 +315,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(content_node, substitution)?;
             let content = self.parse_type_with(content_node, substitution)?;
-            let usage = self.use_at(node, crate::LexicalUseRole::TypeRegion)?;
-            let crate::ResolvedTarget::Source {
-                declaration: region,
-                class: crate::DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
+            let region = self.type_region(node)?;
             self.intern_arena_nominal(region, content)?;
             return Ok(());
         }

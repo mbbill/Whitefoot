@@ -164,7 +164,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
-        source: br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+        source: br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
   requires end <= len(deref(data));
 } {
   return 0_u64;
@@ -238,7 +238,7 @@ fn consume(ticket: own Ticket) -> seq: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let permit = Ticket(seq: 1_u64);
   let used = consume(ticket: move permit);
-  region 'r {
+  region {
     let permit = Ticket(seq: 2_u64);
     let again = consume(ticket: move permit);
   }
@@ -260,8 +260,8 @@ command fn main() -> status: own ExitStatus pure {
   let header = buffer_new(4_u64, 65_u8);
   let payload = buffer_new(9_u64, 66_u8);
   let wide = len(payload);
-  region 'w {
-    let sent = write_once::<'w, 'w>(output: &uniq 'w out, source: &'w header, start: 0_u64, end: wide);
+  region {
+    let sent = write_once(output: &uniq out, source: &header, start: 0_u64, end: wide);
   }
   return exit_status(code: 0_u8);
 }
@@ -286,26 +286,11 @@ command fn main() -> status: own ExitStatus pure {
     // [SYS-2] and [FN-2]: written type and region arguments.
     // -------------------------------------------------------------------
     Probe {
-        name: "system-region-argument-count.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
-  let payload = buffer_new(4_u64, 65_u8);
-  region 'w {
-    let sent = write_once::<'w>(output: &uniq 'w out, source: &'w payload, start: 0_u64, end: 4_u64);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "SYS-2",
-        sentences: &[
-            r#"TypeMismatch { expected: "2 written region arguments", found: "1 written argument" }"#,
-        ],
-    },
-    Probe {
         name: "system-argument-does-not-name-a-region.wf",
         source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let payload = buffer_new(4_u64, 65_u8);
-  region 'w {
-    let sent = write_once::<'w, ExitStatus>(output: &uniq 'w out, source: &'w payload, start: 0_u64, end: 4_u64);
+  region {
+    let sent = write_once::<ExitStatus>(output: &uniq out, source: &payload, start: 0_u64, end: 4_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -315,42 +300,26 @@ command fn main() -> status: own ExitStatus pure {
             r#"TypeMismatch { expected: "a region argument in this position", found: "an argument that does not name a region" }"#,
         ],
     },
+    // The two region-arity rows this table carried until v0.42 are retired
+    // with the sentences they pinned: [FORM-8] gives a call exactly one legal
+    // region-argument list, so "no region argument list" and "too many region
+    // arguments" are no longer faults a call can commit. Their replacements
+    // are the two FORM-8 rows at the end of this table. The generic half of
+    // FN-2's arity sentence survives and is pinned here.
     Probe {
-        name: "call-without-its-region-arguments.wf",
-        source: br#"fn measure['a](data: &'a buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+        name: "call-without-its-type-arguments.wf",
+        source: br#"fn identity<T: Int>(value: own T) -> out: own T pure {
+  return value;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let store = buffer_new(4_u64, 0_u8);
-  region 'r {
-    let size = measure(data: &'r store);
-  }
+command fn main() -> status: own ExitStatus pure {
+  let doubled = identity(value: 1_u64);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-2",
         sentences: &[
-            r#"TypeMismatch { expected: "1 written region argument", found: "no type-argument list" }"#,
-        ],
-    },
-    Probe {
-        name: "call-with-too-many-arguments.wf",
-        source: br#"fn measure['a](data: &'a buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
-}
-
-command fn main() -> status: own ExitStatus allocates(heap) {
-  let store = buffer_new(4_u64, 0_u8);
-  region 'r {
-    let size = measure::<'r, 'r>(data: &'r store);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FN-2",
-        sentences: &[
-            r#"TypeMismatch { expected: "1 written type and region argument", found: "2 written arguments" }"#,
+            r#"TypeMismatch { expected: "1 written type argument", found: "no type-argument list" }"#,
         ],
     },
     // -------------------------------------------------------------------
@@ -599,7 +568,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "writes-through-a-shared-borrow.wf",
-        source: br#"fn touch['a](data: &'a buffer<u8>) -> out: own u64 writes(data) {
+        source: br#"fn touch(data: &buffer<u8>) -> out: own u64 writes(data) {
   return len(deref(data));
 }
 
@@ -664,7 +633,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "declared-row-is-narrower-than-the-body.wf",
-        source: br#"fn touch['a](data: &'a buffer<u8>) -> out: own u64 pure {
+        source: br#"fn touch(data: &buffer<u8>) -> out: own u64 pure {
   return len(deref(data));
 }
 
@@ -760,8 +729,8 @@ command fn main() -> status: own ExitStatus pure {
         name: "slice-of-a-unique-borrow.wf",
         source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let store = buffer_new(4_u64, 0_u8);
-  region 'v {
-    let view = slice_of(&uniq 'v store);
+  region {
+    let view = slice_of(&uniq store);
   }
   return exit_status(code: 0_u8);
 }
@@ -776,9 +745,9 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "slice-of-arena-content-under-a-foreign-region.wf",
-        source: br#"fn arena_view['r, 'v](storage: own arena<'r, array<u8, 2>>, marker: &'v u64) -> result: own u64 pure {
+        source: br#"fn arena_view['v](storage: own arena<array<u8, 2>>, marker: &'v u64) -> result: &'v u64 pure {
   let view = slice_of(&'v deref(storage));
-  return 0_u64;
+  return marker;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -787,18 +756,19 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "OWN-10",
         sentences: &[
-            r#"InvalidBorrowLifetime { region: "'v", binder: "storage", mechanical_fix: "arena content outlives its arena's region 'r, not the arena binding; name 'r on this view, or a region 'r outlives" }"#,
+            r#"InvalidBorrowLifetime { region: "'v", binder: "storage", mechanical_fix: "arena content outlives its arena's own region, not the arena binding; that region is unwritten here, so write it on the arena and name it on this view, or take the view in a region it outlives" }"#,
         ],
     },
     Probe {
         name: "borrow-of-local-storage-under-a-parameter-region.wf",
-        source: br#"fn sum['r](data: &'r buffer<u8>) -> out: own u64 reads(data) {
+        source: br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
   return len(deref(data));
 }
 
-fn caller['r](anchor: &'r buffer<u8>) -> out: own u64 allocates(heap) {
+fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {
   let local = buffer_new(4_u64, 0_u8);
-  return sum::<'r>(data: &'r local);
+  let counted = sum(data: &'r local);
+  return anchor;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -812,7 +782,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "returned-child-reborrow-names-a-foreign-region.wf",
-        source: br#"fn pass['a, 'b](holder: &'a buffer<u8>, marker: &'b u64) -> out: &'b buffer<u8> pure {
+        source: br#"fn pass['b](holder: &buffer<u8>, marker: &'b u64) -> out: &'b buffer<u8> pure {
   return &'b deref(holder);
 }
 
@@ -822,14 +792,16 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "OWN-10",
         sentences: &[
-            r#"InvalidBorrowLifetime { region: "'b", binder: "holder", mechanical_fix: "a returned child reborrow names a region its holder's own region 'a outlives; name 'a itself, or a region 'a outlives, on the returned reborrow" }"#,
+            r#"InvalidBorrowLifetime { region: "'b", binder: "holder", mechanical_fix: "a returned child reborrow names a region its holder's own region outlives; that region is unwritten here, so relate the holder's region to this result and name it on the returned reborrow" }"#,
         ],
     },
     Probe {
         name: "returned-borrow-of-a-local-region.wf",
         source: br#"fn leak['r0](x: &'r0 i32) -> return_value: &'r0 i32 pure {
   region 's {
-    return &'s deref(x);
+    region {
+      return &'s deref(x);
+    }
   }
 }
 
@@ -844,14 +816,14 @@ command fn main() -> return_value: own ExitStatus pure {
     },
     Probe {
         name: "two-statements-in-a-child-region.wf",
-        source: br#"fn take['r](out: &uniq 'r buffer<u8>) -> result: own unit pure {
+        source: br#"fn take(out: &uniq buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-fn invalid['r](out: &uniq 'r buffer<u8>) -> result: own unit pure {
-  region 'child {
-    take::<'child>(out: &uniq 'child deref(out));
-    take::<'child>(out: &uniq 'child deref(out));
+fn invalid(out: &uniq buffer<u8>) -> result: own unit pure {
+  region {
+    take(out: &uniq deref(out));
+    take(out: &uniq deref(out));
   }
   return unit;
 }
@@ -867,33 +839,33 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "borrow-kind-does-not-match-the-destination.wf",
-        source: br#"fn measure['a](data: &'a buffer<u8>) -> out: own u64 reads(data) {
+        source: br#"fn measure(data: &buffer<u8>) -> out: own u64 reads(data) {
   return len(deref(data));
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let store = buffer_new(4_u64, 0_u8);
-  region 'r {
-    let n = measure::<'r>(data: &uniq 'r store);
+  region {
+    let n = measure(data: &uniq store);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "&'r", found: "&uniq 'r" }"#],
+        sentences: &[r#"TypeMismatch { expected: "a shared borrow", found: "&uniq buffer<u8>" }"#],
     },
     Probe {
         name: "shared-borrow-where-a-unique-one-is-required.wf",
         source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let payload = buffer_new(4_u64, 65_u8);
-  region 'w {
-    let sent = write_once::<'w, 'w>(output: &'w out, source: &'w payload, start: 0_u64, end: 4_u64);
+  region {
+    let sent = write_once(output: &out, source: &payload, start: 0_u64, end: 4_u64);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "&uniq 'w", found: "& 'w" }"#],
+        sentences: &[r#"TypeMismatch { expected: "a `uniq` borrow", found: "&Output" }"#],
     },
     Probe {
         name: "slice-value-where-a-scalar-is-required.wf",
@@ -904,15 +876,15 @@ fn measure(view: own u64) -> out: own u64 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  region 'v {
-    let view = slice_of(&'v digits);
+  region {
+    let view = slice_of(&digits);
     let n = measure(view: move view);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "u64", found: "slice<'v, u8>" }"#],
+        sentences: &[r#"TypeMismatch { expected: "u64", found: "slice<u8>" }"#],
     },
     // -------------------------------------------------------------------
     // [TYPE-5] and [FORM-5]: projections, replacement, and operands.
@@ -1103,15 +1075,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     },
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
-        source: br#"fn need['a](names: &'a buffer<u8>, pos: own u64) -> out: own u64 pure contract {
+        source: br#"fn need(names: &buffer<u8>, pos: own u64) -> out: own u64 pure contract {
   define room = len(deref(names));
   requires pos <= room;
 } {
   return pos;
 }
 
-fn outer['a](names: &'a buffer<u8>) -> out: own u64 pure {
-  let r = need::<'a>(names: names, pos: 9_u64);
+fn outer(names: &buffer<u8>) -> out: own u64 pure {
+  let r = need(names: names, pos: 9_u64);
   return r;
 }
 
@@ -1121,6 +1093,131 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "FN-8",
         sentences: &[r#"instantiated_goal: "9_u64 <= len(deref(names))""#],
+    },
+    // [FORM-8] one canonical region spelling: each position a region can
+    // occupy, written exactly where the surrounding text does not fix it.
+    Probe {
+        name: "region-written-at-an-unrelated-parameter.wf",
+        source: br#"fn peek['r](value: &'r i32) -> result: own i32 reads(value) {
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "drop the region name: no other position of this declaration names this region, so the position denotes one region of its own",
+        ],
+    },
+    Probe {
+        name: "region-elided-at-a-result.wf",
+        source: br#"fn pass(value: &i32) -> result: &i32 pure {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "write this result region: name the parameter region the result shares, or a region parameter of its own that the caller supplies",
+        ],
+    },
+    Probe {
+        name: "region-parameter-list-out-of-order.wf",
+        source: br#"fn pass['s, 'r](first: &'r i32, second: &'s i32, third: &'s i32) -> result: &'r i32 pure {
+  return first;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "the region parameter list holds exactly the region names this declaration writes, once each, in the order of their first written occurrence, and is absent when it writes none",
+        ],
+    },
+    Probe {
+        name: "region-written-at-the-innermost-borrow.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let a = 40_i32;
+  region 'r {
+    let p = &'r a;
+    let observed = deref(p);
+    if observed == 40_i32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "drop the region name: this borrow takes the region of the `region` block that most closely encloses it",
+        ],
+    },
+    Probe {
+        name: "region-block-name-nothing-references.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let a = 40_i32;
+  region 'r {
+    let p = &a;
+    let observed = deref(p);
+    if observed == 40_i32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "drop the region name: nothing inside this block names it, so the block is written `region { ... }`",
+        ],
+    },
+    Probe {
+        name: "region-argument-the-call-determines.wf",
+        source: br#"fn peek(value: &i32) -> result: own i32 reads(value) {
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = 40_i32;
+  region 'r {
+    let p = &a;
+    let v = peek::<'r>(value: p);
+    if v == 40_i32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "write exactly the callee's region parameters that occur in no parameter type, in their declared order; every other region argument is determined by this call's own arguments and is not written",
+        ],
+    },
+    Probe {
+        name: "system-region-argument-the-call-determines.wf",
+        source: br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+  region 'a {
+    let total = args_count::<'a>(args: &args);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "drop the region arguments: every system operation's region occurs at one parameter position, so this call's own arguments determine it",
+        ],
     },
 ];
 

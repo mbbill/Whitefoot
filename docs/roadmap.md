@@ -1,8 +1,8 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 63 (v0.41 respells the six integer comparisons as symbols and
-delimits call-site type application with `::`)
+Revision: 64 (the v0.42 forced-region-spelling candidate is installed on the
+stable path; the active authority remains v0.41 until the owner activates it)
 
 The active language authority is v0.41, SHA-256
 `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, carried by
@@ -17,6 +17,26 @@ record for v0.39 remains [batch 0091](done/0091-par3-judgment.md). The
 execution plan is [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
+
+The stable path currently carries the **v0.42 CANDIDATE** at
+`8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`, whose status line declares
+`CANDIDATE v0.42 supersedes v0.41 899437ec…`. A candidate is work-branch
+content, not an installed identity: canonical `make check` rejects it at
+`spec-archive-integrity` until an activation archives the outgoing v0.41 bytes
+and records a new chain line, so the authority named above is unchanged.
+v0.42 adds [FORM-8], one canonical region spelling. A REGIONID is written
+exactly where the document does not otherwise fix the region: a declaration
+writes a name only to relate two of its own positions or to name an
+output-position region no parameter determines; a `borrow_expr` writes its
+region only when it is not the innermost enclosing `region_stmt`'s; a
+`region_stmt` writes its name only when its body still references it; and a
+call writes exactly the callee region parameters no parameter position
+determines, so a call whose regions are all determined writes no `::`
+application at all. No liveness, outlives, exclusivity, storage-duration,
+provenance, effect, or confinement judgment changes. Over the four `.wf` test
+corpora the rule takes 2623 written region tokens in 261 files to 260 in 75,
+and every remaining one carries a relation, a caller's choice, or an outer
+block a deeper one encloses.
 
 v0.40 carries source proof through the
 ordinary semantic compiler. It checks contracts, explicit loop-header

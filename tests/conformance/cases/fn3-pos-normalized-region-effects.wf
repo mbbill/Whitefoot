@@ -1,12 +1,12 @@
 contract BorrowedSum {
-  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads(x, y);
+  fn sum(x: &buffer<u8>, y: &buffer<u8>) -> result: own u64 reads(x, y);
 }
 
 conform buffer<u8>: BorrowedSum {
   sum = add_borrowed;
 }
 
-fn add_borrowed['a, 'b](x: &'a buffer<u8>, y: &'b buffer<u8>) -> result: own u64 reads(y, x) {
+fn add_borrowed(x: &buffer<u8>, y: &buffer<u8>) -> result: own u64 reads(y, x) {
   let x_length = len(deref(x));
   let y_length = len(deref(y));
   return x_length +wrap y_length;

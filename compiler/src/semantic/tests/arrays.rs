@@ -317,8 +317,8 @@ command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
-  region 'view {
-    let held = &'view outer;
+  region {
+    let held = &outer;
     set outer.inner.values[1_u64] = 9_u8;
   }
   return exit_status(code: 0_u8);
@@ -335,7 +335,7 @@ fn region_bearing_array_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid['r](value: own array<slice<'r, u8>, 1>) -> result: own unit pure {
+        br#"fn invalid(value: own array<slice<u8>, 1>) -> result: own unit pure {
   return unit;
 }
 
@@ -347,8 +347,8 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit pure {
-  array_new::<slice<'r, u8>, 1>(move value);
+        br#"fn invalid(value: own slice<u8>) -> result: own unit pure {
+  array_new::<slice<u8>, 1>(move value);
   return unit;
 }
 

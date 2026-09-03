@@ -1,6 +1,6 @@
 fn leak['r0](x: &'r0 i32) -> return_value: &'r0 i32 pure {
-  region 's {
-    return &'s deref(x);
+  region {
+    return &deref(x);
   }
 }
 

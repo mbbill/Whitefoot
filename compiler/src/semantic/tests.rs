@@ -187,9 +187,9 @@ fn with_semantics_inputs_for<ResultValue>(
     let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
         panic!("semantic test source must be canonical");
     };
-    let ResolutionOutcome::Complete(resolved) = crate::resolve_with_inventory(canonical, inventory)
-    else {
-        panic!("semantic test source must resolve");
+    let outcome = crate::resolve_with_inventory(canonical, inventory);
+    let ResolutionOutcome::Complete(resolved) = outcome else {
+        panic!("semantic test source must resolve: {outcome:?}");
     };
     run(check_semantics(resolved))
 }
@@ -815,7 +815,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Full(v: 20_i32);\n  region {\n    let p = &c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
@@ -842,7 +842,7 @@ fn undeclared_system_effect_categories_reject_both_row_directions() {
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn probe(args: own Args) -> result: own u64 pure {\n  region 'a {\n    let total = args_count::<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: own Args) -> result: own u64 pure {\n  region {\n    let total = args_count(args: &args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );

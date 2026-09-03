@@ -1,4 +1,4 @@
-fn fill_running_sum['a](out: &uniq 'a buffer<u64>, count: own u64) -> result: own unit reads(out), writes(out) {
+fn fill_running_sum(out: &uniq buffer<u64>, count: own u64) -> result: own unit reads(out), writes(out) {
   doc "expect ACCEPT: every iteration writes deref(out)[i], killing that element's prior fact, but the header invariant is proved fresh against the current header batch each time, per P8.";
   let capacity = len(deref(out));
   let room = count < capacity;
@@ -19,8 +19,8 @@ fn fill_running_sum['a](out: &uniq 'a buffer<u64>, count: own u64) -> result: ow
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let scratch = buffer_new(6_u64, 0_u64);
-  region 'w {
-    let done = fill_running_sum::<'w>(out: &uniq 'w scratch, count: 5_u64);
+  region {
+    let done = fill_running_sum(out: &uniq scratch, count: 5_u64);
   }
   if scratch[4_u64] == 10_u64 {
   } else {

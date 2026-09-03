@@ -120,6 +120,8 @@ fn the_entry_is_nongeneric_and_declares_no_region_parameter() {
         SemanticIssueKind::InvalidMain,
         b"<T>",
     );
+    // [FORM-8] separately rejects a region parameter list no position of the
+    // declaration writes; [FN-7] is defined first and owns the entry form.
     assert_rule_at(
         b"command fn main['a]() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
@@ -408,12 +410,12 @@ fn arg_get_calls_are_checked_by_the_same_general_rule() {
         declared_parameters: vec!["args".to_owned(), "position".to_owned()],
     };
     assert_rule(
-        b"fn probe['a](args: &'a Args) -> result: own unit reads(args) {\n  let value = arg_get::<'a>(args: args);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: &Args) -> result: own unit reads(args) {\n  let value = arg_get(args: args);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         declared.clone(),
     );
     assert_rule(
-        b"fn probe['a](args: &'a Args) -> result: own unit reads(args) {\n  let value = arg_get::<'a>(args: args, offset: 0_u64);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: &Args) -> result: own unit reads(args) {\n  let value = arg_get(args: args, offset: 0_u64);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         declared,
     );

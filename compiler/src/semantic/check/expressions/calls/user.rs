@@ -21,6 +21,41 @@ use super::super::super::{
     TypedExpression, borrow_result_provenance,
 };
 
+/// One formal region's binding at one call site.
+///
+/// [FORM-8] writes only the region parameters no parameter position
+/// determines; every other formal region starts unbound and takes the least
+/// region of the actual arguments at the positions naming it.
+#[derive(Clone, Copy)]
+pub(in crate::semantic::check) struct RegionBinding {
+    /// Whether the caller wrote this region argument.
+    written: bool,
+    /// The substituted region: fixed for a written argument, and the least
+    /// actual region observed so far for an inferred one.
+    region: Option<DeclarationId>,
+}
+
+impl RegionBinding {
+    const INFERRED: Self = Self {
+        written: false,
+        region: None,
+    };
+}
+
+/// What one parameter position requires of its actual argument's mode.
+#[derive(Clone, Copy)]
+pub(in crate::semantic::check) enum ModeExpectation {
+    /// An owned value.
+    Own,
+    /// A borrow of this kind. `region` is `None` where [FORM-8] leaves the
+    /// formal region for the actual to determine, and the actual's own region
+    /// is then the substituted one.
+    Borrow {
+        kind: BorrowKind,
+        region: Option<DeclarationId>,
+    },
+}
+
 struct CallAccessClaim {
     kind: BorrowKind,
     origin: CallClaimOrigin,
@@ -88,7 +123,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .signatures
             .get(target.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let actual_regions = self.call_region_arguments(node, signature)?;
+        let mut region_bindings = self.call_region_arguments(node, signature)?;
         let fields = if let Some(list) = self
             .tree
             .first_child_with(node, Production::FieldinitList)?
@@ -171,9 +206,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                 }
             }
-            let expected_mode = self.substitute_mode(parameter.mode, signature, &actual_regions)?;
-            let expected_type =
-                self.substitute_parameter_type(parameter.ty, signature, &actual_regions)?;
+            let expectation = self.substitute_mode(parameter.mode, signature, &region_bindings)?;
+            let expected_type = self.substitute_parameter_type(
+                parameter.ty,
+                signature,
+                &region_bindings,
+                argument.expression.ty(),
+            )?;
             if argument.expression.ty() != expected_type {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -184,7 +223,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             }
-            let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
+            let (passed_borrow, expected_mode) =
+                self.call_argument_borrow(expectation, &argument, atom)?;
+            // [FORM-8] every inferred formal region this position names takes
+            // the actual it just observed into its running least region.
+            for (formal, actual) in [
+                (
+                    match parameter.mode {
+                        CheckedMode::Own => None,
+                        CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
+                    },
+                    match expected_mode {
+                        CheckedMode::Own => None,
+                        CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
+                    },
+                ),
+                (
+                    match parameter.ty {
+                        CheckedType::Slice { region, .. } => Some(region),
+                        _ => None,
+                    },
+                    match expected_type {
+                        CheckedType::Slice { region, .. } => Some(region),
+                        _ => None,
+                    },
+                ),
+            ] {
+                let (Some(formal), Some(actual)) = (formal, actual) else {
+                    continue;
+                };
+                let index = Self::formal_region_index(signature, formal)?;
+                let mut binding = *region_bindings
+                    .get(index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if !binding.written {
+                    self.observe_actual_region(&mut binding, actual, atom)?;
+                    *region_bindings
+                        .get_mut(index)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)? = binding;
+                }
+            }
             state_origins.push(self.state_origins_of_value(&argument, bindings)?);
             argument_places.push(
                 argument
@@ -216,6 +294,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
         }
+        let actual_regions = Self::resolved_regions(&region_bindings)?;
         self.check_call_borrow_overlap(node, &checked_borrows, &checked_slices)?;
         self.project_call_effects(
             node,
@@ -230,10 +309,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             &mut effects,
         )?;
-        let result =
-            self.substitute_parameter_type(signature.result, signature, &actual_regions)?;
+        let result = self.substitute_result_type(signature.result, signature, &actual_regions)?;
         let result_mode =
-            self.substitute_mode(signature.result_mode, signature, &actual_regions)?;
+            self.substituted_mode(signature.result_mode, signature, &actual_regions)?;
         let slice = self.substitute_slice_result(signature, result, &checked_slices)?;
         let slice_origins = slice
             .as_ref()
@@ -524,82 +602,278 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// TYPE-5 governs whether an argument's *type* matches its parameter, one
     /// step later and at the offending atom; it does not own the argument list
     /// itself.
-    pub(in crate::semantic::check) fn call_region_arguments(
-        &self,
-        node: NodeId,
-        signature: &FunctionSignature,
-    ) -> Result<Vec<DeclarationId>, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            if signature.region_parameters.is_empty() {
-                return Ok(Vec::new());
-            }
-            return self.issue_node(
-                SemanticRule::Fn2,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(
-                        signature.region_parameters.len(),
-                        "region argument",
-                    ),
-                    "no type-argument list",
-                ),
-            );
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let generic_count = signature.substitution.len();
-        let expected = generic_count
-            .checked_add(signature.region_parameters.len())
-            .ok_or(SemanticCompilerFailure::CounterOverflow)?;
-        if arguments.len() != expected {
-            return self.issue_node(
-                SemanticRule::Fn2,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(expected, "type and region argument"),
-                    crate::semantic::written_count(arguments.len(), "argument"),
-                ),
-            );
-        }
-        arguments
-            .into_iter()
-            .skip(generic_count)
-            .map(|argument| {
-                let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
-                match usage.target() {
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::Region,
-                    } => Ok(declaration),
-                    _ => self.issue_node(
-                        SemanticRule::Fn2,
-                        argument,
-                        SemanticIssueKind::type_mismatch(
-                            "a region argument in this position",
-                            "an argument that does not name a region",
-                        ),
-                    ),
-                }
+    /// Whether one formal region occupies a parameter position of this
+    /// callable: a `param` mode or a `slice` parameter type [FORM-8].
+    fn formal_region_is_determined(signature: &FunctionSignature, formal: DeclarationId) -> bool {
+        signature.parameters.iter().any(|parameter| {
+            matches!(
+                parameter.mode,
+                CheckedMode::Shared(region) | CheckedMode::Unique(region) if region == formal
+            ) || matches!(
+                parameter.ty,
+                CheckedType::Slice { region, .. } if region == formal
+            )
+        })
+    }
+
+    /// The formal regions a caller writes: exactly those the callee's own
+    /// parameter positions leave undetermined [FORM-8].
+    fn caller_chosen_regions(signature: &FunctionSignature) -> Vec<usize> {
+        (0..signature.written_regions)
+            .filter(|index| {
+                signature
+                    .region_parameters
+                    .get(*index)
+                    .is_some_and(|formal| !Self::formal_region_is_determined(signature, *formal))
             })
             .collect()
     }
 
+    /// Binds each formal region of the callee for one call.
+    ///
+    /// [FORM-8] writes exactly the region parameters no parameter position
+    /// determines; every other formal region — a written one a parameter
+    /// position names, and every region a parameter position leaves unwritten
+    /// — is determined by the actual arguments at those positions and is
+    /// filled in as they are checked.
+    ///
+    /// [DIAG-1] selects the cited rule by the callee's class rather than by
+    /// the kind of argument problem, and for a user-generic call that rule is
+    /// FN-2 — "a missing, wrong-kind, wrong-count, or wrong-domain argument".
+    /// TYPE-5 governs whether an argument's *type* matches its parameter, one
+    /// step later and at the offending atom; it does not own the argument list
+    /// itself.
+    pub(in crate::semantic::check) fn call_region_arguments(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+    ) -> Result<Vec<RegionBinding>, CheckStop> {
+        let generic_count = signature.substitution.len();
+        let chosen = Self::caller_chosen_regions(signature);
+        let written = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => {
+                let arguments = self.tree.children_with(targs, Production::Targ)?;
+                if arguments.len() < generic_count {
+                    return self.issue_node(
+                        SemanticRule::Fn2,
+                        node,
+                        SemanticIssueKind::type_mismatch(
+                            crate::semantic::written_count(
+                                generic_count
+                                    .checked_add(chosen.len())
+                                    .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                                "type and region argument",
+                            ),
+                            crate::semantic::written_count(arguments.len(), "argument"),
+                        ),
+                    );
+                }
+                arguments
+                    .into_iter()
+                    .skip(generic_count)
+                    .collect::<Vec<_>>()
+            }
+            None => {
+                if generic_count > 0 {
+                    return self.issue_node(
+                        SemanticRule::Fn2,
+                        node,
+                        SemanticIssueKind::type_mismatch(
+                            crate::semantic::written_count(
+                                generic_count
+                                    .checked_add(chosen.len())
+                                    .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                                "type and region argument",
+                            ),
+                            "no type-argument list",
+                        ),
+                    );
+                }
+                Vec::new()
+            }
+        };
+        if written.len() != chosen.len() {
+            // A member that is not a bare REGIONID makes this an [FN-2]
+            // arity fault over the type and const arguments; only a list
+            // whose type part is right and whose region part is wrong is
+            // [FORM-8]'s.
+            let mut regional = true;
+            for argument in &written {
+                if self
+                    .tree
+                    .first_child_with(*argument, Production::Type)?
+                    .is_some()
+                    || self
+                        .tree
+                        .first_child_with(*argument, Production::Const)?
+                        .is_some()
+                {
+                    regional = false;
+                    break;
+                }
+            }
+            if !regional {
+                return self.issue_node(
+                    SemanticRule::Fn2,
+                    node,
+                    SemanticIssueKind::type_mismatch(
+                        crate::semantic::written_count(
+                            generic_count
+                                .checked_add(chosen.len())
+                                .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                            "type and region argument",
+                        ),
+                        crate::semantic::written_count(
+                            generic_count
+                                .checked_add(written.len())
+                                .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                            "argument",
+                        ),
+                    ),
+                );
+            }
+            return self.issue_node(
+                SemanticRule::Form8,
+                node,
+                SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "write exactly the callee's region parameters that occur in \
+no parameter type, in their declared order; every other region argument is determined by this \
+call's own arguments and is not written",
+                },
+            );
+        }
+        let slots = chosen;
+        let mut bindings = vec![RegionBinding::INFERRED; signature.region_parameters.len()];
+        for (slot, argument) in slots.into_iter().zip(written) {
+            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return self.issue_node(
+                    SemanticRule::Fn2,
+                    argument,
+                    SemanticIssueKind::type_mismatch(
+                        "a region argument in this position",
+                        "an argument that does not name a region",
+                    ),
+                );
+            };
+            let Some(binding) = bindings.get_mut(slot) else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            *binding = RegionBinding {
+                written: true,
+                region: Some(declaration),
+            };
+        }
+        Ok(bindings)
+    }
+
+    /// The index of one formal region in the callee's formal-region list.
+    fn formal_region_index(
+        signature: &FunctionSignature,
+        formal: DeclarationId,
+    ) -> Result<usize, CheckStop> {
+        signature
+            .region_parameters
+            .iter()
+            .position(|region| *region == formal)
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// Records one actual region observed at a position naming an inferred
+    /// formal region, keeping the least region every observation outlives
+    /// [OWN-3, OWN-4]. Two incomparable actual regions leave the formal with
+    /// no legal substitution and reject exactly as an unsatisfiable written
+    /// region argument does.
+    fn observe_actual_region(
+        &self,
+        binding: &mut RegionBinding,
+        actual: DeclarationId,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        let Some(current) = binding.region else {
+            binding.region = Some(actual);
+            return Ok(());
+        };
+        if self.region_outlives(actual, current)? {
+            return Ok(());
+        }
+        if self.region_outlives(current, actual)? {
+            binding.region = Some(actual);
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Own4,
+            node,
+            SemanticIssueKind::InvalidBorrowLifetime {
+                region: self.region_phrase(current)?,
+                binder: self.region_phrase(actual)?,
+                mechanical_fix: format!(
+                    "this parameter position and an earlier one share one region, but {} and {} \
+are incomparable; pass borrows whose regions are nested, or give the parameters distinct regions",
+                    self.region_phrase(actual)?,
+                    self.region_phrase(current)?
+                ),
+            },
+        )
+    }
+
+    /// Every formal region's substituted actual after the argument list is
+    /// checked.
+    fn resolved_regions(bindings: &[RegionBinding]) -> Result<Vec<DeclarationId>, CheckStop> {
+        bindings
+            .iter()
+            .map(|binding| {
+                binding
+                    .region
+                    .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+            })
+            .collect()
+    }
+
+    /// What one formal mode requires of its actual, after region binding.
     fn substitute_mode(
         &self,
         mode: CheckedMode,
         signature: &FunctionSignature,
-        actual_regions: &[DeclarationId],
+        bindings: &[RegionBinding],
+    ) -> Result<ModeExpectation, CheckStop> {
+        let (kind, formal) = match mode {
+            CheckedMode::Own => return Ok(ModeExpectation::Own),
+            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+        };
+        let index = Self::formal_region_index(signature, formal)?;
+        let binding = bindings
+            .get(index)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(ModeExpectation::Borrow {
+            kind,
+            region: if binding.written {
+                binding.region
+            } else {
+                None
+            },
+        })
+    }
+
+    /// One formal mode substituted with regions already resolved.
+    fn substituted_mode(
+        &self,
+        mode: CheckedMode,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
     ) -> Result<CheckedMode, CheckStop> {
         let (kind, formal) = match mode {
             CheckedMode::Own => return Ok(CheckedMode::Own),
             CheckedMode::Shared(region) => (BorrowKind::Shared, region),
             CheckedMode::Unique(region) => (BorrowKind::Unique, region),
         };
-        let index = signature
-            .region_parameters
-            .iter()
-            .position(|region| *region == formal)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let actual = *actual_regions
+        let index = Self::formal_region_index(signature, formal)?;
+        let actual = *regions
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         Ok(match kind {
@@ -608,7 +882,96 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Checks one actual argument against its parameter's mode expectation and
+    /// returns the loan it passes together with the exact mode that position
+    /// carries after region binding.
+    pub(in crate::semantic::check) fn call_argument_borrow(
+        &self,
+        expectation: ModeExpectation,
+        argument: &TypedExpression,
+        atom: NodeId,
+    ) -> Result<(Option<BorrowInfo>, CheckedMode), CheckStop> {
+        let (kind, region) = match expectation {
+            ModeExpectation::Own => {
+                let borrow = self.borrow_for_destination(CheckedMode::Own, argument, atom)?;
+                return Ok((borrow, CheckedMode::Own));
+            }
+            ModeExpectation::Borrow { kind, region } => (kind, region),
+        };
+        if let Some(region) = region {
+            let mode = match kind {
+                BorrowKind::Shared => CheckedMode::Shared(region),
+                BorrowKind::Unique => CheckedMode::Unique(region),
+            };
+            let borrow = self.borrow_for_destination(mode, argument, atom)?;
+            return Ok((borrow, mode));
+        }
+        // [FORM-8] the parameter leaves its region to this actual, so the
+        // position constrains the borrow kind only and the actual's own
+        // region is the substituted one. No [OWN-4] order is required here
+        // because the loan is not being shortened to a written region.
+        let Some(borrow) = argument.borrow.clone() else {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atom,
+                SemanticIssueKind::type_mismatch(
+                    match kind {
+                        BorrowKind::Shared => "a shared borrow".to_owned(),
+                        BorrowKind::Unique => "a `uniq` borrow".to_owned(),
+                    },
+                    self.checked_value_name(argument.mode, argument.expression.ty())?,
+                ),
+            );
+        };
+        if borrow.kind != kind {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atom,
+                SemanticIssueKind::type_mismatch(
+                    match kind {
+                        BorrowKind::Shared => "a shared borrow".to_owned(),
+                        BorrowKind::Unique => "a `uniq` borrow".to_owned(),
+                    },
+                    self.checked_value_name(argument.mode, argument.expression.ty())?,
+                ),
+            );
+        }
+        let mode = match kind {
+            BorrowKind::Shared => CheckedMode::Shared(borrow.region),
+            BorrowKind::Unique => CheckedMode::Unique(borrow.region),
+        };
+        Ok((Some(borrow), mode))
+    }
+
+    /// One formal parameter type with its formal region substituted.
+    ///
+    /// A written region argument fixes the region; a region [FORM-8] leaves
+    /// for the actual to determine takes the actual slice's own region, so
+    /// this position constrains the element type alone.
     fn substitute_parameter_type(
+        &self,
+        ty: CheckedType,
+        signature: &FunctionSignature,
+        bindings: &[RegionBinding],
+        actual: CheckedType,
+    ) -> Result<CheckedType, CheckStop> {
+        let CheckedType::Slice { region, element } = ty else {
+            return Ok(ty);
+        };
+        let index = Self::formal_region_index(signature, region)?;
+        let binding = bindings
+            .get(index)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let region = match (binding.written, binding.region, actual) {
+            (true, Some(region), _) => region,
+            (false, _, CheckedType::Slice { region, .. }) => region,
+            _ => return Ok(ty),
+        };
+        Ok(CheckedType::Slice { region, element })
+    }
+
+    /// One formal type with every formal region already resolved.
+    fn substitute_result_type(
         &self,
         ty: CheckedType,
         signature: &FunctionSignature,
@@ -617,11 +980,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let CheckedType::Slice { region, element } = ty else {
             return Ok(ty);
         };
-        let index = signature
-            .region_parameters
-            .iter()
-            .position(|formal| *formal == region)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let index = Self::formal_region_index(signature, region)?;
         Ok(CheckedType::Slice {
             region: *actual_regions
                 .get(index)

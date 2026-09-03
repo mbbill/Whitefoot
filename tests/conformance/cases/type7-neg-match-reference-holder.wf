@@ -6,8 +6,8 @@ enum State {
 command fn main() -> status: own ExitStatus pure {
   doc "TYPE-7 applies to match scrutinees: a reference holder requires explicit deref(.) before matching its referent.";
   let state = Ready();
-  region 'r {
-    let holder = &'r state;
+  region {
+    let holder = &state;
     match holder {
       Ready() => {
       }

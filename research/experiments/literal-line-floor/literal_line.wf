@@ -9,7 +9,7 @@ fn finish_digest(digest: own u64, match_count: own u64, haystack_length: own u64
   return digest_word(digest: with_haystack, value: needle_length);
 }
 
-fn find_scalar ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>, search_start: own u64, search_end: own u64) -> own u64 reads(haystack, needle), traps {
+fn find_scalar (haystack: &buffer<u8>, needle: &buffer<u8>, search_start: own u64, search_end: own u64) -> own u64 reads(haystack, needle), traps {
   let needle_length: own u64 = len<u8>(deref(needle));
   let range_length: own u64 = isub.wrap<u64>(search_end, search_start);
   let too_short: own Bool = ilt<u64>(range_length, needle_length);
@@ -95,7 +95,7 @@ fn find_scalar ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>, search
   return search_end;
 }
 
-fn literal_line ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>) -> own u64 reads(haystack, needle), traps {
+fn literal_line (haystack: &buffer<u8>, needle: &buffer<u8>) -> own u64 reads(haystack, needle), traps {
   let haystack_length: own u64 = len<u8>(deref(haystack));
   let needle_length: own u64 = len<u8>(deref(needle));
   let digest: own u64 = 14695981039346656037_u64;
@@ -143,7 +143,7 @@ fn literal_line ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>) -> ow
     }
   }
   loop @matching_lines {
-    let match_start: own u64 = find_scalar<'h, 'n>(haystack: haystack, needle: needle, search_start: search_cursor, search_end: haystack_length);
+    let match_start: own u64 = find_scalar(haystack: haystack, needle: needle, search_start: search_cursor, search_end: haystack_length);
     let no_match: own Bool = ieq<u64>(match_start, haystack_length);
     match no_match {
       True() => {
@@ -204,7 +204,7 @@ fn literal_line ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>) -> ow
     }
     let candidate: own u64 = line_start;
     loop @line_matches {
-      let found: own u64 = find_scalar<'h, 'n>(haystack: haystack, needle: needle, search_start: candidate, search_end: line_end);
+      let found: own u64 = find_scalar(haystack: haystack, needle: needle, search_start: candidate, search_end: line_end);
       let line_done: own Bool = ieq<u64>(found, line_end);
       match line_done {
         True() => {

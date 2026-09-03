@@ -4,7 +4,7 @@ struct Ring {
   used: u64;
 }
 
-fn push_slot['r](r: &uniq 'r Ring, value: own u8) -> result: own unit reads(r.slots, r.head, r.used), writes(r.slots) contract {
+fn push_slot(r: &uniq Ring, value: own u8) -> result: own unit reads(r.slots, r.head, r.used), writes(r.slots) contract {
   define capacity = len(deref(r).slots);
   requires capacity > 0_u64;
   requires deref(r).head < capacity;
@@ -33,8 +33,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   if capacity > 0_u64 {
     if head_ok {
       if used_ok {
-        region 'r {
-          push_slot::<'r>(r: &uniq 'r ring, value: 9_u8);
+        region {
+          push_slot(r: &uniq ring, value: 9_u8);
         }
       } else {
         return exit_status(code: 1_u8);

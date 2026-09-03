@@ -1103,24 +1103,24 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
-    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
+    let source = br#"fn observe(value: &u64) -> result: own unit reads(value) contract {
   requires deref(value) > 0_u64;
 } {
   let copied = deref(value);
   return unit;
 }
 
-fn proxy['r](value: &'r u64) -> result: own unit reads(value) {
-  region 'child {
-    observe::<'child>(value: &'child deref(value));
+fn proxy(value: &u64) -> result: own unit reads(value) {
+  region {
+    observe(value: &deref(value));
   }
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let local = 1_u64;
-  region 'direct {
-    observe::<'direct>(value: &'direct local);
+  region {
+    observe(value: &local);
   }
   return exit_status(code: 0_u8);
 }
@@ -1203,7 +1203,7 @@ command fn main() -> status: own ExitStatus pure {
 fn call_goal_substitutes_type_const_and_slice_region_arguments() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn inspect['r](values: own slice<'r, u8>) -> result: own unit pure contract {
+fn inspect(values: own slice<u8>) -> result: own unit pure contract {
   define size = len(values);
   requires size == size;
 } {
@@ -1221,9 +1221,9 @@ fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> resu
 }
 
 command fn main() -> status: own ExitStatus pure {
-  region 'view {
-    let view = slice_of(&'view bytes);
-    inspect::<'view>(values: move view);
+  region {
+    let view = slice_of(&bytes);
+    inspect(values: move view);
   }
   let values = array_new::<u8, 3>(1_u8);
   let result = guarded::<i32, 3>(value: 4_i32, values: move values);

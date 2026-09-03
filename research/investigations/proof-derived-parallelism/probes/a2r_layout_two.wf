@@ -22,7 +22,7 @@ fn build(depth: own u64, w: own f64) -> result: own box<LNode> allocates(heap), 
   return box_new(move branch);
 }
 
-fn measure_words['w, 'k](words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads(words, kern), traps {
+fn measure_words(words: &buffer<f64>, kern: &buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads(words, kern), traps {
   let min_width = 0.0_f64;
   let max_width = 0.0_f64;
   let k = 0_u64;
@@ -80,21 +80,21 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn layout['b, 'w, 'k](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words, kern), writes(node), traps {
+fn layout(node: &uniq box<LNode>, words: &buffer<f64>, kern: &buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads(node, words, kern), writes(node), traps {
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
-      let m = measure_words<'w, 'k>(words: words, kern: kern, count: count, font: v);
+      let m = measure_words(words: words, kern: kern, count: count, font: v);
       let total = fadd.strict(v, m);
       set deref(lslot) = total;
       return total;
     }
     Branch(left: l, right: r, w: bw, h: bh, out: bslot) => {
       let own_h = cascade(inh: inh, w: deref(bw), h: deref(bh));
-      let m = measure_words<'w, 'k>(words: words, kern: kern, count: count, font: own_h);
+      let m = measure_words(words: words, kern: kern, count: count, font: own_h);
       let child_inh = fmul.strict(own_h, 0.5_f64);
-      let a = layout<'b, 'w, 'k>(node: move l, words: words, kern: kern, count: count, inh: child_inh);
-      let b = layout<'b, 'w, 'k>(node: move r, words: words, kern: kern, count: count, inh: child_inh);
+      let a = layout(node: move l, words: words, kern: kern, count: count, inh: child_inh);
+      let b = layout(node: move r, words: words, kern: kern, count: count, inh: child_inh);
       let kids = fadd.strict(a, b);
       let mine = fadd.strict(own_h, m);
       let total = fadd.strict(kids, mine);
@@ -117,8 +117,8 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @reps;
     }
     region 'tree {
-      region 'words {
-        let total = layout<'tree, 'words, 'words>(node: &uniq 'tree tree, words: &'words words, kern: &'words kern, count: 64_u64, inh: seed);
+      region {
+        let total = layout(node: &uniq 'tree tree, words: &words, kern: &kern, count: 64_u64, inh: seed);
         set last = total;
       }
     }

@@ -1,0 +1,8 @@
+fn peek['r](value: &'r i32) -> result: own i32 reads(value) {
+  doc "No other position of this declaration names `'r`, so [FORM-8] leaves the parameter's region unwritten and rejects the written spelling.";
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

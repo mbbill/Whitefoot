@@ -46,13 +46,13 @@ const MIXED_DEFINITIONS: &[u8] = br#"enum Chain {
   More(next: box<Chain>);
 }
 
-fn depth['r](chain: &'r box<Chain>) -> result: own u64 reads(chain) {
+fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
   match deref(deref(chain)) {
     End() => {
       return 0_u64;
     }
     More(next: inner) => {
-      let below = depth::<'r>(chain: inner);
+      let below = depth(chain: inner);
       return below +wrap 1_u64;
     }
   }
@@ -63,8 +63,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let bottom = box_new(move end);
   let one = More(next: move bottom);
   let boxed = box_new(move one);
-  region 'chain {
-    let measured = depth::<'chain>(chain: &'chain boxed);
+  region {
+    let measured = depth(chain: &boxed);
     if measured == 1_u64 {
     } else {
       return exit_status(code: 1_u8);
@@ -834,8 +834,8 @@ const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allo
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let count = 0_u64;
-  region 'invocation {
-    set count = args_count::<'invocation>(args: &'invocation args);
+  region {
+    set count = args_count(args: &args);
   }
   match cvt::<u64, u8>(count) {
     Ok(value: v) => {
@@ -1005,8 +1005,8 @@ const LARGE_FRAME_SPINE: &[u8] =
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
-  region 'invocation {
-    set count = args_count::<'invocation>(args: &'invocation args);
+  region {
+    set count = args_count(args: &args);
   }
   match cvt::<u64, u8>(count) {
     Ok(value: idx) => {

@@ -210,8 +210,8 @@ fn replace_through_a_shared_borrow_rejects() {
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
-  region 'r {
-    let view = &'r holder;
+  region {
+    let view = &holder;
     let second = buffer_new(1_u64, 0_u8);
     let old = replace deref(view).payload = move second;
   }
@@ -277,7 +277,7 @@ fn element_position_replace_through_a_unique_holder_accepts() {
   fill: u64;
 }
 
-fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
+fn push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = count < cap;
@@ -291,8 +291,8 @@ fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.f
 command fn main() -> status: own ExitStatus allocates(heap) {
   let empty = buffer_vacant::<u32>(2_u64);
   let v = OptVec(buf: move empty, fill: 0_u64);
-  region 'p {
-    push::<'p>(v: &uniq 'p v, x: 5_u32);
+  region {
+    push(v: &uniq v, x: 5_u32);
   }
   return exit_status(code: 0_u8);
 }
@@ -438,16 +438,16 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
         br#"command fn main() -> status: own ExitStatus pure {
   let left = array_new::<u8, 2>(11_u8);
   let right = array_new::<u8, 2>(29_u8);
-  region 'view {
-    let view = slice_of(&'view left);
-    let previous = replace view = slice_of(&'view right);
+  region {
+    let view = slice_of(&left);
+    let previous = replace view = slice_of(&right);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Set2,
         SemanticIssueKind::InvalidReplaceTarget {
-            target_type: "slice<'view, u8>".to_owned(),
+            target_type: "slice<u8>".to_owned(),
             mechanical_fix: expected_fix,
         },
     );

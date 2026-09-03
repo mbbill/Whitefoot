@@ -48,10 +48,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   } else {
     return exit_status(code: 203_u8);
   }
-  region 'fill_region {
-    let left_out = &uniq 'fill_region columns.left;
-    let right_out = &uniq 'fill_region columns.right;
-    fill::<'fill_region>(left: move left_out, right: move right_out, length: length);
+  region {
+    let left_out = &uniq columns.left;
+    let right_out = &uniq columns.right;
+    fill(left: move left_out, right: move right_out, length: length);
   }
   let fold_left_length = len(columns.left);
   if length <= fold_left_length {
@@ -63,10 +63,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   } else {
     return exit_status(code: 205_u8);
   }
-  region 'fold_region {
-    let left_in = &'fold_region columns.left;
-    let right_in = &'fold_region columns.right;
-    let total = fold::<'fold_region>(left: left_in, right: right_in, length: length);
+  region {
+    let left_in = &columns.left;
+    let right_in = &columns.right;
+    let total = fold(left: left_in, right: right_in, length: length);
     if total == 52_u64 {
     } else {
       return exit_status(code: 201_u8);

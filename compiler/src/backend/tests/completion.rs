@@ -16,9 +16,9 @@ const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own
   region 'out {
     region 'err {
       region 'bulk {
-        region 'marker {
-          let first = write_once::<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1048576_u64);
-          let second = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+        region {
+          let first = write_once(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1048576_u64);
+          let second = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
         }
       }
     }
@@ -32,9 +32,9 @@ const POSITIONED_READS: &[u8] = br#"fn probe(file: own ReadFile) -> result: own 
   let right = buffer_new(1_u64, 0_u8);
   region 'file {
     region 'left {
-      region 'right {
-        let first = read_at::<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-        let second = read_at::<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+      region {
+        let first = read_at(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+        let second = read_at(file: &'file file, destination: &uniq right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
       }
     }
   }
@@ -54,10 +54,10 @@ const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(comma
     region 'err {
       region 'first_bytes {
         region 'middle_bytes {
-          region 'last_bytes {
-            let first = write_once::<'out, 'first_bytes>(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
-            let middle = write_once::<'err, 'middle_bytes>(output: &uniq 'err err, source: &'middle_bytes middle_bytes, start: 0_u64, end: 1_u64);
-            let last = write_once::<'out, 'last_bytes>(output: &uniq 'out out, source: &'last_bytes last_bytes, start: 0_u64, end: 1_u64);
+          region {
+            let first = write_once(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
+            let middle = write_once(output: &uniq 'err err, source: &'middle_bytes middle_bytes, start: 0_u64, end: 1_u64);
+            let last = write_once(output: &uniq 'out out, source: &last_bytes, start: 0_u64, end: 1_u64);
           }
         }
       }
@@ -68,21 +68,21 @@ const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(comma
 "#;
 
 const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             let first_bytes = buffer_new(1_u64, 65_u8);
             let last_bytes = buffer_new(1_u64, 67_u8);
             region 'state {
-              let permit = reserve_file::<'state>(factory: &uniq 'state files);
+              let permit = reserve_file(factory: &uniq files);
               region 'out {
                 region 'first_bytes {
-                  region 'last_bytes {
-                    let first = write_once::<'out, 'first_bytes>(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
-                    let middle = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
-                    let last = write_once::<'out, 'last_bytes>(output: &uniq 'out out, source: &'last_bytes last_bytes, start: 0_u64, end: 1_u64);
+                  region {
+                    let first = write_once(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
+                    let middle = open_read(permit: move permit, root: &'state cwd, path: &'state path);
+                    let last = write_once(output: &uniq 'out out, source: &last_bytes, start: 0_u64, end: 1_u64);
                   }
                 }
               }
@@ -103,8 +103,8 @@ const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args:
 "#;
 
 const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
@@ -112,10 +112,10 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
             region 'c {
               region 'p {
                 region 'err {
-                  region 'marker {
-                    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                    let opened = open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path);
-                    let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+                  region {
+                    let permit = reserve_file(factory: &uniq 'c files);
+                    let opened = open_read(permit: move permit, root: &'c cwd, path: &'p path);
+                    let announced = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
                   }
                 }
               }
@@ -136,14 +136,14 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
 "#;
 
 const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
-            region 'state {
-              let permit = reserve_file::<'state>(factory: &uniq 'state files);
-              match open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path) {
+            region {
+              let permit = reserve_file(factory: &uniq files);
+              match open_read(permit: move permit, root: &cwd, path: &path) {
                 Ok(value: file) => {
                   return exit_status(code: 1_u8);
                 }
@@ -167,18 +167,18 @@ const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: 
 "#;
 
 const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             let marker = buffer_new(1_u64, 77_u8);
             region 'state {
-              let permit = reserve_file::<'state>(factory: &uniq 'state files);
+              let permit = reserve_file(factory: &uniq files);
               region 'marker {
-                region 'err {
-                  let opened = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
-                  let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+                region {
+                  let opened = open_read(permit: move permit, root: &'state cwd, path: &'state path);
+                  let announced = write_once(output: &uniq err, source: &'marker marker, start: 0_u64, end: 1_u64);
                   match move opened {
                     Ok(value: file) => {
                       return exit_status(code: 1_u8);
@@ -208,11 +208,11 @@ const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cw
   let first_name = buffer_new(1_u64, 46_u8);
   let second_name = buffer_new(1_u64, 46_u8);
   region 'c {
-    let first_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    let second_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    region 'n {
-      let first = open_directory::<'c, 'n>(permit: move first_permit, root: &'c cwd, name: &'n first_name, start: 0_u64, end: 1_u64);
-      let second = open_directory::<'c, 'n>(permit: move second_permit, root: &'c cwd, name: &'n second_name, start: 0_u64, end: 1_u64);
+    let first_permit = reserve_file(factory: &uniq files);
+    let second_permit = reserve_file(factory: &uniq files);
+    region {
+      let first = open_directory(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
+      let second = open_directory(permit: move second_permit, root: &'c cwd, name: &second_name, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -220,11 +220,11 @@ const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cw
 "#;
 
 const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  region 'listing {
-    let first_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    let second_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    let first = open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd);
-    let second = open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd);
+  region {
+    let first_permit = reserve_file(factory: &uniq files);
+    let second_permit = reserve_file(factory: &uniq files);
+    let first = open_directory_source(permit: move first_permit, directory: &cwd);
+    let second = open_directory_source(permit: move second_permit, directory: &cwd);
   }
   return exit_status(code: 0_u8);
 }
@@ -234,11 +234,11 @@ const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as
   let first_name = buffer_new(1_u64, 120_u8);
   let second_name = buffer_new(1_u64, 120_u8);
   region 'c {
-    let first_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    let second_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    region 'n {
-      let first = open_file::<'c, 'n>(permit: move first_permit, root: &'c cwd, name: &'n first_name, start: 0_u64, end: 1_u64);
-      let second = open_file::<'c, 'n>(permit: move second_permit, root: &'c cwd, name: &'n second_name, start: 0_u64, end: 1_u64);
+    let first_permit = reserve_file(factory: &uniq files);
+    let second_permit = reserve_file(factory: &uniq files);
+    region {
+      let first = open_file(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
+      let second = open_file(permit: move second_permit, root: &'c cwd, name: &second_name, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -248,16 +248,16 @@ const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as
 const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let first_bytes = buffer_new(4096_u64, 0_u8);
   let second_bytes = buffer_new(4096_u64, 0_u8);
-  region 'listing {
-    let first_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    let second_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    match open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd) {
+  region {
+    let first_permit = reserve_file(factory: &uniq files);
+    let second_permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move first_permit, directory: &cwd) {
       Ok(value: first_list) => {
-        match open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd) {
+        match open_directory_source(permit: move second_permit, directory: &cwd) {
           Ok(value: second_list) => {
-            region 'step {
-              let first = directory_next::<'step, 'step>(source: &uniq 'step first_list, destination: &uniq 'step first_bytes, start: 0_u64, end: 4096_u64);
-              let second = directory_next::<'step, 'step>(source: &uniq 'step second_list, destination: &uniq 'step second_bytes, start: 0_u64, end: 4096_u64);
+            region {
+              let first = directory_next(source: &uniq first_list, destination: &uniq first_bytes, start: 0_u64, end: 4096_u64);
+              let second = directory_next(source: &uniq second_list, destination: &uniq second_bytes, start: 0_u64, end: 4096_u64);
             }
             return exit_status(code: 0_u8);
           }
@@ -277,8 +277,8 @@ const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cw
 const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'out {
-    region 'source {
-      let empty = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 0_u64);
+    region {
+      let empty = write_once(output: &uniq 'out out, source: &bytes, start: 0_u64, end: 0_u64);
       match move empty {
         Ok(value: next) => {
           if next == 0_u64 {
@@ -306,11 +306,11 @@ const OVERLAP_BEFORE_A_BLOCK_JOIN: &[u8] = br#"command fn main(command.stdout as
   let first = buffer_new(2_u64, 65_u8);
   let second = buffer_new(2_u64, 66_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &first, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
-          let a = write_once::<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64);
-          let b = write_once::<'o, 's>(output: &uniq 'o err, source: &'s second, start: 0_u64, end: 2_u64);
+          let a = write_once(output: &uniq 'o out, source: &first, start: 0_u64, end: 2_u64);
+          let b = write_once(output: &uniq 'o err, source: &second, start: 0_u64, end: 2_u64);
         }
         Err(error: problem) => {
         }
@@ -345,9 +345,9 @@ command fn main(command.stdout as out: own Output, command.stderr as err: own Ou
   set bytes[1_u64] = 66_u8;
   region 'out {
     region 'err {
-      region 'source {
-        let first = write_once::<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
-        let second = write_once::<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+      region {
+        let first = write_once(output: &uniq 'out out, source: &bytes, start: 0_u64, end: 1_u64);
+        let second = write_once(output: &uniq 'err err, source: &bytes, start: 1_u64, end: 2_u64);
       }
     }
   }
@@ -360,9 +360,9 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..12_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }
@@ -387,9 +387,9 @@ const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own 
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..1_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
           }
           Err(error: problem) => {
@@ -412,9 +412,9 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
   for @scan (index in 0_u64..5_u64) {
     let end = index + 1_u64;
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n names, start: index, end: end) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &names, start: index, end: end) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }
@@ -437,17 +437,17 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
 
 fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     let mut source = String::from(
-        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region 'a {\n    match arg_get::<'a>(args: &'a args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region 'p {\n                let permit = reserve_file::<'c>(factory: &uniq 'c files);\n                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {\n                  Ok(value: file) => {\n",
+        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region {\n    match arg_get(args: &args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region {\n                let permit = reserve_file(factory: &uniq 'c files);\n                match open_read(permit: move permit, root: &'c cwd, path: &path) {\n                  Ok(value: file) => {\n",
     );
     for index in 0..count {
         source.push_str(&format!(
             "                    let bytes{index} = buffer_new(1_u64, 0_u8);\n"
         ));
     }
-    source.push_str("                    region 'f {\n                      region 'd {\n");
+    source.push_str("                    region {\n                      region {\n");
     for index in 0..count {
         source.push_str(&format!(
-            "                        let read{index} = read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes{index}, file_offset: 0_u64, start: 0_u64, end: 1_u64);\n"
+            "                        let read{index} = read_at(file: &file, destination: &uniq bytes{index}, file_offset: 0_u64, start: 0_u64, end: 1_u64);\n"
         ));
     }
     source.push_str(
@@ -2096,9 +2096,9 @@ const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out
   region 'out {
     region 'err {
       region 'bulk {
-        region 'marker {
-          let first = write_once::<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
-          let second = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+        region {
+          let first = write_once(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          let second = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
           match second {
             Ok(value: written) => {
             }
@@ -2120,9 +2120,9 @@ const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as o
   region 'out {
     region 'err {
       region 'bulk {
-        region 'marker {
-          let first = write_once::<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
-          match write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64) {
+        region {
+          let first = write_once(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          match write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64) {
             Ok(value: written) => {
             }
             Err(error: problem) => {
@@ -2152,9 +2152,9 @@ const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as 
   region 'out {
     region 'err {
       region 'bulk {
-        region 'marker {
-          let first = write_once::<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
-          let written = match write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64) {
+        region {
+          let first = write_once(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          let written = match write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64) {
             Ok(value: count) => {
               give count;
             }
@@ -2183,14 +2183,14 @@ const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as o
   region 'out {
     region 'err {
       region 'bulk {
-        region 'marker {
-          match write_once::<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64) {
+        region {
+          match write_once(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64) {
             Ok(value: written) => {
             }
             Err(error: problem) => {
             }
           }
-          let second = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+          let second = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
         }
       }
     }

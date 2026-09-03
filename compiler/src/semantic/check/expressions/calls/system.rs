@@ -13,9 +13,8 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, SystemOperation, SystemParameterMode,
-    operation_state_effects,
+    DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
+    SystemOperation, SystemParameterMode, operation_state_effects,
 };
 
 use super::super::super::super::model::{CheckedExpression, CheckedMode, CheckedStateOrigins};
@@ -25,6 +24,7 @@ use super::super::super::borrows::{
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
+use super::user::ModeExpectation;
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn check_system_call(
@@ -38,7 +38,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let operation = crate::SYSTEM_OPERATIONS
             .get(usize::from(operation_index))
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let actual_regions = self.system_call_region_arguments(node, operation)?;
+        let mut actual_regions = self.system_call_region_arguments(node, operation)?;
         let fields = if let Some(list) = self
             .tree
             .first_child_with(node, Production::FieldinitList)?
@@ -110,18 +110,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                 }
             }
-            let expected_mode = match parameter.mode {
-                SystemParameterMode::Own => CheckedMode::Own,
-                SystemParameterMode::Borrow(region) => CheckedMode::Shared(
-                    *actual_regions
+            let expectation = match parameter.mode {
+                SystemParameterMode::Own => ModeExpectation::Own,
+                SystemParameterMode::Borrow(region) => ModeExpectation::Borrow {
+                    kind: BorrowKind::Shared,
+                    region: *actual_regions
                         .get(usize::from(region))
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                ),
-                SystemParameterMode::UniqueBorrow(region) => CheckedMode::Unique(
-                    *actual_regions
+                },
+                SystemParameterMode::UniqueBorrow(region) => ModeExpectation::Borrow {
+                    kind: BorrowKind::Unique,
+                    region: *actual_regions
                         .get(usize::from(region))
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                ),
+                },
             };
             let expected_type = self.system_type(parameter.ty)?;
             if argument.expression.ty() != expected_type {
@@ -134,7 +136,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             }
-            let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
+            let (passed_borrow, expected_mode) =
+                self.call_argument_borrow(expectation, &argument, atom)?;
+            // [FORM-8] an inferred region takes the actual borrow's own.
+            if let (
+                SystemParameterMode::Borrow(region) | SystemParameterMode::UniqueBorrow(region),
+                CheckedMode::Shared(actual) | CheckedMode::Unique(actual),
+            ) = (parameter.mode, expected_mode)
+            {
+                *actual_regions
+                    .get_mut(usize::from(region))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)? = Some(actual);
+            }
             state_origins.push(self.state_origins_of_value(&argument, bindings)?);
             argument_places.push(
                 argument
@@ -172,7 +185,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 operation: operation_index,
                 target_action: operation.target_action,
                 call: self.tree.path(node)?.clone(),
-                regions: actual_regions,
+                regions: actual_regions
+                    .into_iter()
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 argument_nodes,
                 arguments,
                 result,
@@ -194,75 +210,54 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         operation: &SystemOperation,
-    ) -> Result<Vec<DeclarationId>, CheckStop> {
+    ) -> Result<Vec<Option<DeclarationId>>, CheckStop> {
+        // [FORM-8] every [SYS-2] region occupies exactly one parameter
+        // position and no output position, so no call writes one and the
+        // actual argument at that position determines it. A written member
+        // that is not a region is still SYS-2's, judged at that member: the
+        // two rules establish different premises at different nodes, and only
+        // the complete written application is FORM-8's.
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            if operation.regions.is_empty() {
-                return Ok(Vec::new());
-            }
-            return self.issue_node(
-                SemanticRule::Sys2,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(operation.regions.len(), "region argument"),
-                    "no type-argument list",
-                ),
-            );
+            return Ok(vec![None; operation.regions.len()]);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
-        if arguments.len() != operation.regions.len() {
-            return self.issue_node(
-                SemanticRule::Sys2,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(operation.regions.len(), "region argument"),
-                    crate::semantic::written_count(arguments.len(), "argument"),
-                ),
-            );
-        }
-        arguments
-            .into_iter()
-            .map(|argument| {
-                // `targ := type | REGIONID | const`, so a region argument is
-                // the one alternative carrying neither child production. The
-                // grammar decides that here, before any name is looked up: a
-                // `type` or `const` written in a region position records no
-                // region use at all, and asking the resolver for one turned a
-                // source rejection into an internal failure.
-                if self
+        for argument in &arguments {
+            // `targ := type | REGIONID | const`, so a region argument is the
+            // one alternative carrying neither child production. The grammar
+            // decides that here, before any name is looked up: a `type` or
+            // `const` written in a region position records no region use at
+            // all, and asking the resolver for one turned a source rejection
+            // into an internal failure.
+            if self
+                .tree
+                .first_child_with(*argument, Production::Type)?
+                .is_some()
+                || self
                     .tree
-                    .first_child_with(argument, Production::Type)?
+                    .first_child_with(*argument, Production::Const)?
                     .is_some()
-                    || self
-                        .tree
-                        .first_child_with(argument, Production::Const)?
-                        .is_some()
-                {
-                    return self.issue_node(
-                        SemanticRule::Sys2,
-                        argument,
-                        SemanticIssueKind::type_mismatch(
-                            "a region argument in this position",
-                            "an argument that does not name a region",
-                        ),
-                    );
-                }
-                let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
-                match usage.target() {
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::Region,
-                    } => Ok(declaration),
-                    _ => self.issue_node(
-                        SemanticRule::Sys2,
-                        argument,
-                        SemanticIssueKind::type_mismatch(
-                            "a region argument in this position",
-                            "an argument that does not name a region",
-                        ),
+            {
+                return self.issue_node(
+                    SemanticRule::Sys2,
+                    *argument,
+                    SemanticIssueKind::type_mismatch(
+                        "a region argument in this position",
+                        "an argument that does not name a region",
                     ),
-                }
-            })
-            .collect()
+                );
+            }
+        }
+        if arguments.is_empty() {
+            return Ok(vec![None; operation.regions.len()]);
+        }
+        self.issue_node(
+            SemanticRule::Form8,
+            node,
+            SemanticIssueKind::RegionSpelling {
+                mechanical_fix: "drop the region arguments: every system operation's region \
+occurs at one parameter position, so this call's own arguments determine it",
+            },
+        )
     }
 
     fn project_system_call_effects(

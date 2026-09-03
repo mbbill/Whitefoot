@@ -1,9 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "OWN-5: a second uniq borrow of an already-uniquely-borrowed place overlaps its predecessor.";
   let a = 3_i32;
-  region 'r {
-    let u1 = &uniq 'r a;
-    let u2 = &uniq 'r a;
+  region {
+    let u1 = &uniq a;
+    let u2 = &uniq a;
   }
   return exit_status(code: 0_u8);
 }

@@ -57,9 +57,9 @@ fn a_discarded_borrow_returning_call_compiles_and_runs() {
 
 command fn main() -> status: own ExitStatus pure {
   let v = 5_i32;
-  region 'a {
-    let h = &'a v;
-    source::<'a>(x: h);
+  region {
+    let h = &v;
+    source(x: h);
   }
   if v != 5_i32 {
     return exit_status(code: 1_u8);
@@ -89,18 +89,18 @@ fn extension_chains_execute_and_write_the_owners_storage() {
   return &uniq 'r0 deref(x);
 }
 
-fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
+fn bump(n: &uniq i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let v = 1_i32;
-  region 'a {
-    let h = &uniq 'a v;
-    let r = passthru::<'a>(x: &uniq 'a deref(h));
-    region 'c {
-      bump::<'c>(n: &uniq 'c deref(r));
+  region {
+    let h = &uniq v;
+    let r = passthru(x: &uniq deref(h));
+    region {
+      bump(n: &uniq deref(r));
     }
   }
   if v != 42_i32 {
@@ -121,15 +121,15 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
     let llvm = compile(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
+        br#"fn bump(n: &uniq i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let a = 0_i32;
-  region 'r {
-    bump::<'r>(n: &uniq 'r a);
+  region {
+    bump(n: &uniq a);
   }
   if a != 42_i32 {
     return exit_status(code: 1_u8);
@@ -165,7 +165,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect['r](packet: &'r Packet) -> result: own i32 reads(packet) {
+fn inspect(packet: &Packet) -> result: own i32 reads(packet) {
   match deref(packet) {
     Data(item: payload) => {
       return deref(payload).left;
@@ -180,14 +180,14 @@ command fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 41_i32, right: 1_i32);
   let packet = Data(item: move pair);
   let fallback = Empty();
-  region 'r {
-    let held = &'r packet;
-    let read = inspect::<'r>(packet: held);
+  region {
+    let held = &packet;
+    let read = inspect(packet: held);
     if read != 41_i32 {
       return exit_status(code: 1_u8);
     }
-    let hollow = &'r fallback;
-    let zero = inspect::<'r>(packet: hollow);
+    let hollow = &fallback;
+    let zero = inspect(packet: hollow);
     if zero != 0_i32 {
       return exit_status(code: 2_u8);
     }

@@ -1821,3 +1821,13 @@ keeps its chain, because the operation identities, comparison origins,
 contract-clause roots, invariant relations, and diagnostic attributions are
 unchanged under the new spellings. Statistics unchanged: 80 derived · 48
 existence-only · 0 underived.
+
+## v0.42 amendment — [FORM-8] canonical region spelling (candidate)
+
+This amendment binds the one row v0.42 adds. The active authority remains
+v0.41 until the owner activates the candidate; the statistics line above is
+unchanged because a candidate installs no identity.
+
+| Rule | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| FORM-8 | A REGIONID is written exactly where the document does not otherwise fix the region denoted: a declaration relates two of its own positions or names an output-position region no parameter determines; a `borrow_expr` names a region other than the innermost enclosing `region_stmt`'s; a `region_stmt` name survives a reference inside it; a call's `::` application names the callee region parameters no parameter position determines | 🟡 existence-only | Existence derived: FORM-1/R3 require exactly one spelling per semantic construct, and a written region at a position the surrounding text already fixes is a second spelling of one semantics — the same defect FORM-1 removes everywhere else. The derived-fact class is TYPE-5's derived `let` binder mode and OWN-13's derived match-binder mode: a fact the checker determines is not written, and a fact it cannot determine is. The optional-name-resolving-to-the-innermost-enclosing-construct form is TYPE-6's unlabeled `break`, already META-2-clean. Form NOT derived: the exact position partition (input positions determine, output positions are written) is minimality-selected against the 2026-09-03 owner ruling that whether a region is written must be decidable from the declaration text alone, and no weak-writer trial has measured it. | Registered: the writer trial that would select this form against the alternatives — writing every region as today, eliding at every position and inferring the result region from the body, or a per-declaration opt-in — has not run. Corpus evidence only: over `tests/programs`, `tests/conformance/cases`, `tests/snapshot/cases`, and `tests/codegen/cases` the rule takes the corpus's written region tokens down by about nine tenths, and no declaration outside a small set of conformance cases relates two positions at all. |

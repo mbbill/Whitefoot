@@ -722,8 +722,8 @@ fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
   return unit;
 }
 
-fn invalid['r]() -> result: own unit pure {
-  instantiate::<slice<'r, u8>>();
+fn invalid() -> result: own unit pure {
+  instantiate::<slice<u8>>();
   return unit;
 }
 
@@ -738,7 +738,7 @@ command fn main() -> status: own ExitStatus pure {
         br#"struct Marker<T> {
 }
 
-fn invalid['r](value: own Marker<slice<'r, u8>>) -> result: own unit pure {
+fn invalid(value: own Marker<slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -750,7 +750,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['r](value: own Option<slice<'r, u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own Option<slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -766,8 +766,8 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn invalid['r]() -> result: own unit pure {
-  instantiate::<arena<'r, u8>>();
+fn invalid() -> result: own unit pure {
+  instantiate::<arena<u8>>();
   return unit;
 }
 

@@ -1,11 +1,11 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let bytes = buffer_new(3_u64, 0_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 1_u64, end: 3_u64) {
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 1_u64, end: 3_u64) {
               Ok(value: next) => {
                 if next == 3_u64 {
                 } else {
