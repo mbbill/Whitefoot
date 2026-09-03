@@ -1764,7 +1764,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn entry_inventory_precedes_a_poisoned_body_constructor() {
     let source = br#"fn poisoned(value: own i32) -> result: own i32 pure contract {
-  define ilt = value == value;
+  define cvt = value == value;
   ensures result == value;
 } {
   return Missing();
@@ -1781,7 +1781,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(issue.rule(), ResolutionRule::Form3);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::ReservedName { spelling, .. } if spelling == "ilt"
+            ResolutionIssueKind::ReservedName { spelling, .. } if spelling == "cvt"
         ));
     });
 }
@@ -1927,7 +1927,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn unavailable_generic_type_argument_does_not_invent_a_selector_instance() {
     let source = br#"fn generic<T>(value: own T) -> result: own T pure contract {
-  define ilt = value == value;
+  define cvt = value == value;
   ensures result == value;
 } {
   return value;
@@ -1951,7 +1951,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn unavailable_const_argument_does_not_invent_a_selector_instance() {
     let source = br#"fn generic<T, const n: u64>(value: own T) -> result: own T pure contract {
-  define ilt = value == value;
+  define cvt = value == value;
   ensures result == value;
 } {
   return value;

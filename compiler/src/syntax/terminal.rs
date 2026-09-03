@@ -798,7 +798,7 @@ mod tests {
         assert_eq!(FixedTerminal::Invariant as u8, 91);
         assert_eq!(FixedTerminal::Use as u8, 92);
         assert_eq!(TerminalPredicate::Identifier.index(), 98);
-        assert_eq!(TerminalPredicate::Digits.index(), 100);
+        assert_eq!(TerminalPredicate::Digits.index(), 105);
     }
 
     #[test]
