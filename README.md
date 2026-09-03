@@ -57,15 +57,17 @@ priorities and repository discipline.
 
 ## Current state
 
-The last activated kernel specification is v0.40, SHA-256
-`5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`; its exact
+Kernel specification v0.39 is the last activated language authority, SHA-256
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`; its exact
 activation identity is recorded in
-[governance/APPROVALS.md](governance/APPROVALS.md). The outgoing v0.39 bytes are
+[governance/APPROVALS.md](governance/APPROVALS.md), and those bytes are
 preserved byte-for-byte at
 [`spec/kernel-spec-v0.39.md`](spec/kernel-spec-v0.39.md). The current work branch
-is a source-proof candidate whose final specification identity is intentionally
-left open until its source, compiler, conformance evidence, and complete gate
-agree. It is not described as activated or complete before that verification.
+drafts a source-proof candidate v0.40 at
+[`spec/kernel-spec.md`](spec/kernel-spec.md), whose final specification
+identity is intentionally left open until its source, compiler, conformance
+evidence, and the complete gate agree. It is not described as activated or
+complete before that verification.
 
 The candidate checks `requires`, `ensures`, loop-header `invariant` relations,
 and local `invariant` statements in the ordinary semantic compiler. A local
@@ -126,7 +128,7 @@ implementation cycle; its final source-language failure model remains open.
 That scope choice changes neither the project direction nor the required
 layout, address, target, parallel-independence, and bounded-completion proofs.
 
-v0.40 retains v0.39's ordinary opaque values, `own`, `move`, `&`, and
+Candidate v0.40 retains v0.39's ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,

@@ -3,11 +3,13 @@
 Status: IMPLEMENTATION COMPLETE; CANDIDATE EVIDENCE RECORDED on
 `codex/source-proof`.
 
-The last activated language is v0.40. This branch is drafting its source-proof
-successor. Its exact version, digest, activation record, and completion status
-remain unset until the same exact revision passes the complete repository gate
-and receives the required merge approval. This document records technical
-direction and sequencing; it grants no permission and adds no workflow gate.
+Active language authority: v0.39,
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`. This branch
+is drafting its source-proof successor, candidate v0.40. That candidate's exact
+digest, activation record, and completion status remain unset until the same
+exact revision passes the complete repository gate and receives the required
+merge approval. This document records technical direction and sequencing; it
+grants no permission and adds no workflow gate.
 
 ## Outcome
 

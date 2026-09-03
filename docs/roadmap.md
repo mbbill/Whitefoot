@@ -1,17 +1,17 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 60 (the source-proof successor to v0.40 is an implementation
+Revision: 60 (the source-proof successor to v0.39 is an implementation
 candidate; the former runtime-assertion releases remain historical evidence)
 
-The last activated language authority is v0.40, SHA-256
-`5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`, at the
-stable specification path. The work branch is drafting its source-proof
-successor at [`spec/kernel-spec.md`](../spec/kernel-spec.md); its exact version,
-digest, activation record, and completion status remain open until the
-candidate and its complete evidence agree. The outgoing v0.39 bytes remain archived at
-[`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The v0.40
-activation record is in
+The active language authority is v0.39, SHA-256
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, archived
+byte-for-byte at
+[`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The work branch is
+drafting its source-proof successor, candidate v0.40, at
+[`spec/kernel-spec.md`](../spec/kernel-spec.md); its exact digest, activation
+record, and completion status remain open until the candidate and its complete
+evidence agree. The v0.39 activation record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md); the batch record for
 v0.39 remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
 [`docs/current-plan.md`](current-plan.md).
@@ -80,7 +80,7 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.40 retains
+belong in the [compiler README](../compiler/README.md). Candidate v0.40 retains
 v0.39's system interface around formal state paths, ordinary ownership, and
 completion-only lowering, with no separate world region, capability class,
 blocking-call family, or `Ordered` relation.
@@ -100,7 +100,7 @@ Which gap matters next is selected by a project, never by checklist length.
   earlier entry-contract exception with one closed-world command entry. The
   direction and its plan are terminal.
 - outline:PROOF-10 records the terminal lifecycle correction implemented by
-  released v0.39. Its rules remain release history; active v0.40 supersedes
+  released v0.39. Its rules remain release history; candidate v0.40 supersedes
   that runtime-assertion model on this branch.
 - outline:PROOF-11 is the selected successor. Proof is written in `.wf` source
   and checked directly by the normal semantic compiler. Automatic reasoning is
@@ -889,7 +889,7 @@ and failure semantics survive the runtime implementation.
 
 - **Goal:** prove disjoint subranges or injective indexed writes when
   region-level separation is too coarse.
-- **Current:** the v0.41 candidate admits a narrow one-map-per-root form
+- **Current:** the v0.40 candidate admits a narrow one-map-per-root form
   when the discharged OP-4 result retains the offset's exact value `a*i+b`, i
   is the counted binder, and `a != 0`. Copies and checked affine transforms are
   accepted because permission consumes that checked value rather than source
@@ -982,14 +982,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: active v0.40 retains the released v0.39 unified-state model]`
+`[current: active v0.39 unified-state model; candidate v0.40 retains it]`
 `[next: wider APIs and target measurements]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** active v0.40 retains this released v0.39 model. It uses
+- **Current:** candidate v0.40 retains this released v0.39 model. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration
@@ -1011,7 +1011,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   drains every issued result in order before slot zero reuse, including an odd
   final batch and dynamic per-iteration paths. The following results are
   historical evidence from the released
-  v0.39 line, not a gate report for the active v0.40 bytes. Whole programs
+  v0.39 line, not a gate report for the candidate v0.40 bytes. Whole programs
   were measured on both macOS and Linux with io_uring
   ([batch 0084](done/0084-io-performance.md)): the shipped build is about
   twice its own sequential build on a many-independent-files workload, and

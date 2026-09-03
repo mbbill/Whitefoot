@@ -2,12 +2,12 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.40 authority at SHA-256
-`5079ef2efa7862184f06ccf7dc273ae97eda791679a44f66c86e75afbc46c6e0`.
-v0.40 supersedes v0.39 at
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`;
-the outgoing v0.39 bytes are archived at `spec/kernel-spec-v0.39.md`, and the
-v0.40 amendment at the end of this file binds its changed derivations.
+the active v0.39 authority at SHA-256
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, whose
+bytes are archived at `spec/kernel-spec-v0.39.md`. Candidate v0.40 at
+`spec/kernel-spec.md` supersedes it; the candidate v0.40 amendment at the end
+of this file binds its changed derivations and takes effect only with that
+candidate's activation.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -16,16 +16,16 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 amendment below and the active specification define the changed
-active rows. The table is not independent live source guidance. In
+the candidate v0.40 amendment below and the candidate specification define the
+changed rows. The table is not independent live source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
 `deny_claims`, strict-partition, runtime-latch, and proof-replay vocabulary does
-not describe the v0.40 compiler. v0.40 removes SCOPE-4,
+not describe the work-branch compiler. Candidate v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
-below explain only why those former released rules once existed.
+below explain only why those released rules once existed.
 
-**Released v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
-(138 rules). **Active v0.40 statistics: 79 derived · 52 existence-only · 0
+**Active v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
+(138 rules). **Candidate v0.40 statistics: 79 derived · 52 existence-only · 0
 underived** (131 rules: remove the nine historical rules named above, add
 existence-only INV-1 and PRF-1, and retain every other rule's derivation status).
 
@@ -57,7 +57,7 @@ existence-only INV-1 and PRF-1, and retain every other rule's derivation status)
 | ERR-4 | Per-operation typed-outcome versus static-proof classification | ✅ derived | R4 places expected environment or input failure in a typed `Result`, while T1/T2 require every undefined operation, layout, address, parallel-independence, and bounded-completion domain to be proved before execution. META-2 fixes that classification in the operation table and owning rule rather than at each call site. | Unavailable external resources and TCB failures remain the separate SCOPE-3 boundary. No call-site override, writer abort, or hidden runtime proof fallback exists. |
 | SCOPE-1 | Writer-facing kernel; gated family unreachable by writers | ✅ derived | W3 (no writer-emittable unsafe or trust) -> round-3 unsafe-hatch synthesis 2026-07-02 (no free-form writer-emittable unsafe anywhere; exactly one gated fact-boundary construct family with obligation ledger) + D0a (gated channel is toolchain-side, AI-authored human-approved) -> kernel programs contain no gated constructs. T1/T2 premises require writer-unreachability of unsafe. R0 delta named in constitution: Rust's unsafe is writer-accessible everywhere. Stub visibility/pricing per round-4 kernel-priced-first law (GATE/LEDGER stubs counted in v0.1 delta). | Strongest W3 rule in the section. Gate-efficacy experiments (D0a's declared revisit trigger) are unscheduled per the audit, but they affect the human-approval process for gated content, not the writer-unreachability this rule states. |
 | SCOPE-2 | Acceptance: canonical parse and every specification judgment succeeds | ✅ derived | T1/T2 require every supported partial operation to be proved before it can execute; W3 forbids a writer-stated conclusion, debug mode, optimizer assumption, or runtime fallback from substituting for that proof. R4 moves an unavailable proof to a rule-citing compile-time rejection, while P0 benefits because successful proof erases all proof syntax and emits no guard. | This is one source-checking state with no writer-emittable third state. A compiler inconsistency is repaired in compiler code and tests rather than hedged by another verifier. |
-| SCOPE-3 | No-UB envelope conditional on TCB and foreign-code behavior | ✅ derived | T2 verbatim: no-UB conditional on declared TCB (round-3 Layer 4), itself derived from T1's premises plus R4 (silent corruption is the forbidden failure mode). D1a owner ruling confirmed the Rust-class conditional envelope, gated on checker-core feasibility — that blocking gate PASSED 2026-07-02 (prototype, 19/19 tests after v0.1). Clause (b) FFI conditionality per round-3 mandatory conservative FFI declaration frames + D4 rewrite-first FFI-narrow scoping. Conditional (not unconditional) form was an explicit owner arbitration, recorded 2026-07-02. | v0.40 temporarily leaves heap exhaustion, stack exhaustion, OS quota, and runtime-start availability outside the source outcome model. This does not defer layout, address, target-domain, parallel-independence, or bounded-completion proof. The resource scope cut changes neither the Constitution nor the no-UB direction. |
+| SCOPE-3 | No-UB envelope conditional on TCB and foreign-code behavior | ✅ derived | T2 verbatim: no-UB conditional on declared TCB (round-3 Layer 4), itself derived from T1's premises plus R4 (silent corruption is the forbidden failure mode). D1a owner ruling confirmed the Rust-class conditional envelope, gated on checker-core feasibility — that blocking gate PASSED 2026-07-02 (prototype, 19/19 tests after v0.1). Clause (b) FFI conditionality per round-3 mandatory conservative FFI declaration frames + D4 rewrite-first FFI-narrow scoping. Conditional (not unconditional) form was an explicit owner arbitration, recorded 2026-07-02. | Candidate v0.40 temporarily leaves heap exhaustion, stack exhaustion, OS quota, and runtime-start availability outside the source outcome model. This does not defer layout, address, target-domain, parallel-independence, or bounded-completion proof. The resource scope cut changes neither the Constitution nor the no-UB direction. |
 | SCOPE-4 | Contract violations trap with machine-readable report; abort, no unwinding | ✅ derived | R4 ladder (runtime trap ranks above forbidden silent corruption) + W3 ('failures trap with reports, never silently' — constitutional text) -> round-2 decided law: no exceptions/unwinding, Result + trap=abort (error-handling verdict: replace_with_alternative). Machine-readable report per R4 rule-citing diagnostics + R1/W1 feedback loop (T1 derivation: an unattended writer cannot debug latent runtime failure). No-unwind consistent with D4's unwind-abort-at-boundary FFI ruling. | The report-content half is under-delivered: DIAG-3 report field schemas remain DEFERRED, which the audit flags as R4-load-bearing rather than deferrable; the free-text trap message is a flagged R1 human-residue channel. Neither undermines this rule's own chain. |
 | FORM-1 | One spelling, one byte form; reject non-canonical; never auto-format | 🟡 existence-only | Existence derived: R3 (one way to say anything) + W3 (canonical bytes leave nowhere to hide edits) + round-2 syntax verdict — drift detection, node-path diagnostics, content-addressed caching on the carded D001/D004 compile-time channel, F003/N006 frontend-soundness-chokepoint argument against any second surface. Conservative-extension clause from round-4 decided law. Form NOT derived: reject-never-canonicalize vs accept-and-canonicalize was never tested; specific byte form untested — R3-provisional register item (constitution audit 2026-07-05). | Unrun: drift-hypothesis test, caching-realization measurement, reject-vs-canonicalize A/B with repair-round-trip counts. Audit R1 tension: every byte-level deviation costs a full generate-reject-regenerate loop. Time-urgent: FORM-1 itself makes any later evidence-driven form switch a breaking canonical-form change. |
 | FORM-2 | Exhaustive byte-level formatting: indent, spacing, line discipline | 🟡 existence-only | Existence derived: FORM-1's one-byte-form regime plus W3 canonical bytes require a TOTAL byte-format definition (an unspecified formatting dimension would reopen multiple spellings); round-2 syntax obligations mandate exactly one legal byte-level formatting. Form NOT derived: the specific conventions (two-space indent, blank-line separation, inter-token spacing table, one statement per line) were never tested for model formatting-error rates — R3-provisional register item. | Audit additionally flags indentation/spacing as R1 human-residue: they encode information already carried by braces/separators; the training-distribution-alignment defense exists but is uncarded. R1 justification pass owed (card the grounding or record an explicit R5 exception). W2 (token-count) arguments for or against are non-gating post-D2a. |
@@ -114,8 +114,8 @@ existence-only INV-1 and PRF-1, and retain every other rule's derivation status)
 | FN-7 | Single main entry, capped effects, no globals/'static | 🟡 existence-only | PROG-1's closed world demands a unique entry. The command entry's explicit standard-input parameters follow from PROG-3 and the no-ambient-state rule: every system state value begins as a named ordinary parameter rather than an ambient function or retained process object. Ordinal identity distinguishes `command.stdout` from `command.stderr` even though both use `Output`; FORM-1/GRAM-8 select increasing table order. v0.37 adds `command.files: own FileFactory` so file-open authority is likewise a parameter rather than ambient process state. | v0.37 changes the effect cap from region/capability subjects to paths rooted in labelled inputs and appends the file-factory input. No card decides global-state rejection specifically; adding statics or `'static` remains a breaking META-5 delta. The input-label spelling remains proposal-selected. |
 | FN-8 | Erased `requires` goals proved at every ordinary call | 🟡 existence-only | The base64 ceiling and later real clients show that one entry relation can discharge many partial operations. W3 forbids trusting the clause, so each caller proves the fully substituted goal before transfer; only then does the body receive it as a static fact. R4 makes a missing proof a call-site rejection, and P0 follows because no callee prologue or fallback branch is emitted. | The contract expression calculus remains deliberately finite and pure/total. Broader relations require more fixed proof rules or explicit source proof, not an executable contract form. |
 | FN-9 | Verified normal-return relations publish facts to callers | 🟡 existence-only | Real transfer and append clients require one caller-visible relation that the callee proves at every selected normal exit. W3/T1 make that proof mandatory and reject vacuity; ordinary substitution, support kills, and finite SCC publication carry the result without opening the callee or trusting the written clause. ENT-2 through ENT-5 and DIAG-2 provide one deterministic proof system rather than a solver, runtime fallback, recognizer, or second proof authority. | The `ensures` spelling, selected-result routes, and currently admitted carrier forms remain existence-only. Wider result expressions or delivery forms require their own finite semantics and evidence. |
-| INV-1 | Source-written counted-loop invariant checked by fixed finite induction | 🟡 existence-only | T2 and W3 require every partial operation to be justified by machine proof rather than a writer assertion; R4 requires failure before lowering when the proof is missing. A loop recurrence cannot in general be summarized by acyclic branch propagation alone, so the writer supplies the induction proposition while the compiler checks the base case and every arbitrary reachable backedge. P0 is served because a proved invariant removes runtime guards and the proof syntax is erased. Restricting the first surface to affine integer `ile`, fixed checked arithmetic, a direct counted-body prefix, and exact exhaustion gives one deterministic algorithm with a source-size work bound and no SMT, timeout, invariant search, premise search, or runtime fallback. | The need for explicit induction and the prove-or-reject boundary are derived; the exact `invariant` spelling, direct-prefix placement, and first affine grammar are the minimal first implementation selected for the measured `weigh` path and remain existence-only until broader real programs compare their writing cost. Optional loop labels do not affect structural ownership of the invariant. |
-| PRF-1 | Source-written finite affine proof checked premise-by-premise and erased | 🟡 existence-only | T2 and W3 require a missing theorem to enter acceptance only after machine proof, while compilation must remain deterministic, terminating, and directly work-bounded. The source therefore chooses the target, premise relations, and intermediate steps; the compiler snapshots the pre-proof context, proves every written `use` independently in that same snapshot, and checks one specification-fixed coefficient-one affine sum in source order. This makes checker work proportional to written proof length and eliminates SMT, timeout, premise selection, coefficient search, case search, and runtime fallback. P0 is served because the accepted conclusion can discharge partial operations and `par` obligations before the proof statement is erased. | The need for an explicit finite written proof and a fixed checker is derived. The exact `prove`/`use` spelling, coefficient-one first calculus, and affine-only initial surface are minimality-selected for the current real programs and remain existence-only until wider source compares proof length, diagnostic quality, and missing expressivity. |
+| INV-1 | Source-written loop-header and program-point invariant checked by fixed finite induction | 🟡 existence-only | T2 and W3 require every partial operation to be justified by machine proof rather than a writer assertion; R4 requires failure before lowering when the proof is missing. A loop recurrence cannot in general be summarized by acyclic branch propagation alone, so the writer supplies the induction proposition while the compiler checks the base case and every arbitrary reachable backedge. P0 is served because a proved invariant removes runtime guards and the proof syntax is erased. Restricting the first surface to affine integer `ile`, fixed checked arithmetic, a direct counted-body prefix, and exact exhaustion gives one deterministic algorithm with a source-size work bound and no SMT, timeout, invariant search, premise search, or runtime fallback. | The need for explicit induction and the prove-or-reject boundary are derived; the exact `invariant` spelling, direct-prefix placement, and first affine grammar are the minimal first implementation selected for the measured `weigh` path and remain existence-only until broader real programs compare their writing cost. Optional loop labels do not affect structural ownership of the invariant. |
+| PRF-1 | Source-written finite affine proof checked premise-by-premise and erased | 🟡 existence-only | T2 and W3 require a missing theorem to enter acceptance only after machine proof, while compilation must remain deterministic, terminating, and directly work-bounded. The source therefore chooses the target, premise relations, and intermediate steps; the compiler snapshots the pre-proof context, proves every written `use` independently in that same snapshot, and checks one specification-fixed coefficient-one affine sum in source order. This makes checker work proportional to written proof length and eliminates SMT, timeout, premise selection, coefficient search, case search, and runtime fallback. P0 is served because the accepted conclusion can discharge partial operations and `par` obligations before the proof statement is erased. | The need for an explicit finite written proof and a fixed checker is derived. The exact `invariant`/`use` spelling, coefficient-one first calculus, and affine-only initial surface are minimality-selected for the current real programs and remain existence-only until wider source compares proof length, diagnostic quality, and missing expressivity. |
 | EFF-1 | Canonical reads/writes/allocates rows over formal-rooted static state paths | 🟡 existence-only | Exact rows remain required by P0/R0, W3, and the round-3 writer floor. A region says how long a loan lives, while a parameter path says which state is touched. Two parameters may share one lifetime and one owned state resource has no borrow lifetime, so REGIONID cannot be effect identity. The selected `IDENT(.IDENT)*` path names a formal root and static struct fields; one row covers memory and system state. `external`, `blocks`, `world`, runtime-assertion effects, and a capability category are absent. | Dynamic subscripts, ranges, and enum payload paths require separate overlap rules and remain deferred. `pure` is exactly the empty reads/writes/allocates row, not termination. |
 | EFF-2 | Exact exhibits relation over places; calls and releases use ordinary substitution | ✅ derived | Undeclared behavior violates W3 and overdeclared behavior violates the exact-effect P0/R0 contract. Direct accesses resolve to formal-rooted places; calls substitute each formal effect path through its actual place; holder and slice projection reuse OWN-5/OWN-6; moves preserve the ownership identity they already carry. Fresh local state frames out of the enclosing signature. `reserve(factory)` therefore contributes its own `writes(factory)`, while `create(permit)` and later writes to a fresh local result do not invent child-to-factory ancestry. Release uses the same owner identity and conservative FN-1 exit graph. | No new source move rule, resource root, parent graph, or effect domain is selected. The compiler-derived result-state summary only preserves existing ownership across calls. Framing out is not a dead-code license: the checked inner call retains its local instantiated effect and deletion still needs an ordinary closed-state, escape, result, release, and no-observer proof. A path describes behavior and never shrinks a loan. Existing box, buffer, arena, and const cleanup rows remain empty; system resource release rows are per-type state effects. |
 | EFF-3 | pure licenses dedup/reorder; elimination needs termination proof | ✅ derived | P0 via F002-class redundancy payoffs requires deduplication and reordering of genuinely pure equal calls. T2 and W3 still forbid eliminating an unused call without a termination proof. v0.37 defines `pure` as the absence of every state read, state write, allocation, and trap; system I/O receives no special category or license. A parameter write remains observable even when the call result is unused. | The derivation is unchanged, but the old references to payload-free `external` and `blocks` are superseded. Kernel purity is computed by EFF-2 rather than trusted. The cost of retaining unused terminating pure calls remains unmeasured. |
@@ -655,7 +655,7 @@ independently rederive the complete relation at a separately approved boundary.
 totality or any algebraic equation.
 
 The independent-rederivation proposal in the preceding historical v0.16 text
-is superseded by the active FN-4 derivation above and active v0.40: the
+is superseded by the active FN-4 derivation above and candidate v0.40: the
 originating semantic check now retains one checked fact for fixed consumers in
 the same compilation, while its diagnostic derivation never runs a second
 verification pass.
@@ -1666,20 +1666,22 @@ witness identity and its tie-break, the protected families, and the constrained
 subjects are all untouched, as is PRV-1 provenance, which never included
 control dependence. No other rule's derivation moves.
 
-## v0.40 amendment — source-carried proof and deterministic proof flow (activated 2026-09-01)
+## v0.40 candidate amendment — source-carried proof and deterministic proof flow (2026-09-02)
 
 **Two added rules, nine retired rules, and no compiler search.** INV-1 lets
-source state the affine induction proposition needed by one counted loop. The
-compiler checks the base case and every arbitrary reachable backedge with a
-fixed finite rule, exports only the separately justified exact-exhaustion
-consequence, and erases the statement before lowering. PRF-1 lets source name an
-affine target and its ordered premises. The compiler proves every premise
-independently in the same pre-proof context and checks one fixed coefficient-one
-sum in source order. The source selects propositions, premises, and intermediate
-steps; the compiler does not guess an invariant, premise set, coefficient, case,
-path, or lemma.
+source state one affine relation at a loop header or an ordinary program point
+under the single spelling `invariant`. At a header placement the compiler
+checks the base case and every arbitrary reachable backedge with a fixed finite
+rule and exports only the separately justified exact-exhaustion consequence; at
+a body placement it discharges the one ordinary program-point obligation. Either
+placement erases before lowering. PRF-1 lets source name an affine target and
+its ordered premises in that same declaration's `use` block. The compiler proves
+every premise independently in the same pre-proof context and checks one fixed
+coefficient-one sum in source order. The source selects propositions, premises,
+and intermediate steps; the compiler does not guess an invariant, premise set,
+coefficient, case, path, or lemma.
 
-v0.40 retires SCOPE-4, DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1
+Candidate v0.40 retires SCOPE-4, DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1
 through PRV-3. Their runtime assertion, assertion-authority, strict partition,
 provenance mask, report, and latch machinery supplied no safety that a
 successful pre-lowering proof does not supply, while it allowed accepted source
@@ -1688,10 +1690,11 @@ only two dispositions: its exact domain goal is proved before lowering, or the
 source is rejected. There is no inserted runtime fallback.
 
 **Proof-carrying means Whitefoot source.** Contracts, invariants, and
-`prove`/`use` statements are the writer-controlled proof input. The syntax tree,
-fact context, and checked program are ordinary compiler data in one whole-unit
-compilation. A disagreement among them is a compiler bug to fix and test, not a
-reason to serialize compiler-generated data or run a second verification pass.
+`invariant`/`use` statements are the writer-controlled proof input. The syntax
+tree, fact context, and checked program are ordinary compiler data in one
+whole-unit compilation. A disagreement among them is a compiler bug to fix and
+test, not a reason to serialize compiler-generated data or run a second
+verification pass.
 Proof authoring may use AI or offline search; compiler acceptance uses only the
 committed source and specification-fixed terminating checkers, never SMT,
 solver seeds, heuristics, or timeouts.
@@ -1771,7 +1774,7 @@ selected-target layout/address facts, and finite queue/completion bounds. It has
 no second proof language and proof checking cannot serialize PAR-1, PAR-2, or
 PAR-3 code.
 
-External resource availability alone remains outside v0.40:
+External resource availability alone remains outside candidate v0.40:
 heap exhaustion, stack exhaustion, operating-system quotas, and runtime-start
 resources may still fail at the declared host boundary, but their final
 source-language model is not selected here. This is a temporary scope cut, not

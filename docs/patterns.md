@@ -8,9 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries candidate guidance for the source-proof successor to
-v0.40,
-including the unified-state completion-I/O forms introduced by v0.37, the
+This document carries active v0.39 guidance plus candidate guidance for its
+source-proof successor, candidate v0.40, including the unified-state
+completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
 2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
 inside P15, the hoisted length fact (P16), and the subtotal-returning walk
@@ -45,7 +45,7 @@ write intents as plain values. Exactly one shallow function holds the single
 `&uniq` and applies the intents. Effect rows make the architecture checkable:
 grep the signatures and find one `writes(state)` in the system. The superseded
 v0.36 wrote those subjects as lifetimes; v0.39 introduced formal state paths and
-v0.40 retains them.
+candidate v0.40 retains them.
 Current value: exact effect rows make scattered writes visible and reject a
 false architectural summary. Potential speed: the retired channel-2 experiment
 mapped read-only/pure code to memory attributes for hoisting, CSE, and call

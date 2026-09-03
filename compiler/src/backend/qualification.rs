@@ -141,23 +141,18 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // admitted claim already lowers to, so the trap and diagnostic surfaces a
 // target must supply are the ones already qualified here. Every v0.38 mapping
 // therefore stands unchanged.
-// v0.40 review (2026-08-30): S5's post-SET-1 value image and ENT-5's
-// close-before-lexical-kill order are front-end proof rules. They add no
-// system operation, resource type, release action, outcome constructor,
-// entry form, target guarantee, signature, borrow mode, effect row, or host
-// ABI. Both rules erase before lowering; they can only admit the same raw
-// partial-operation instruction after its existing static obligation has a
-// derivation. Every v0.39 target mapping therefore stands unchanged.
-// v0.41 source-proof review (2026-09-02): written proofs, invariants, and
-// contracts erase before lowering. Retiring the writer-facing runtime-check
-// instruction removes a target surface rather than adding one: every emitted
-// partial operation has already passed its static domain obligation, and
-// selected-target allocation limits are checked before emission. Heap and
-// stack availability remain external resource failures with resource-only
-// records; trusted-runtime consistency failures still stop internally. No
-// system operation, resource representation, release row, result shape, entry
-// form, or host ABI mapping changes, so the v0.41 mapping remains complete.
-const REVIEWED_FOR: &str = "v0.41";
+// v0.40 source-proof candidate review (2026-09-02): S5's post-SET-1 value
+// image and ENT-5's close-before-lexical-kill order are front-end proof
+// rules, and written proofs, invariants, and contracts erase before lowering.
+// Retiring the writer-facing runtime-check instruction removes a target
+// surface rather than adding one: every emitted partial operation has already
+// passed its static domain obligation, and selected-target allocation limits
+// are checked before emission. Heap and stack availability remain external
+// resource failures with resource-only records; trusted-runtime consistency
+// failures still stop internally. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.39 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.40";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.
