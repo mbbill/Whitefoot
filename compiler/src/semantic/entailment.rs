@@ -722,8 +722,7 @@ pub(crate) enum RemainderEndpoint {
 }
 
 /// The value one retained S7 image was established on: the `let` binder that
-/// introduced it, or the commit value of one `set` or `replace` occurrence
-/// [ENT-2].
+/// introduced it, or the commit value of one `set` occurrence [ENT-2].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum S7Subject {
     Binding(BindingId),

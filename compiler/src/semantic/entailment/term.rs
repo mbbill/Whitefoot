@@ -2,9 +2,9 @@
 //!
 //! A term is a tracked place, a length term over a place, one of the two
 //! private endpoint captures of a written counted range, the private commit
-//! value of one `set` or `replace` occurrence, a constant, a symbolic
-//! const-generic parameter, or the distinguished zero term Z. Term
-//! identity is declaration-anchored: two places are the same term exactly when
+//! value of one `set` occurrence, a constant, a symbolic const-generic
+//! parameter, or the distinguished zero term Z. Term identity is
+//! declaration-anchored: two places are the same term exactly when
 //! their roots resolve to the same declaration event — one [`BindingId`] in
 //! one checked function — and their canonical spellings agree, which the
 //! structural representation below captures byte-for-byte for canonical
@@ -53,10 +53,13 @@ pub(crate) enum TermKind {
         side: CountedCaptureSide,
     },
     /// One immutable compiler-owned commit value [ENT-2]: the value the
-    /// right-hand side of one `set` or `replace` statement evaluated to at
-    /// that occurrence, before its target kill. The statement's finalized
+    /// right-hand side of one `set` statement evaluated to at that
+    /// occurrence, before its target kill. The statement's finalized
     /// NodePath plus the value's fragment type is its complete function-local
-    /// identity; source can neither name nor mutate it.
+    /// identity; source can neither name nor mutate it. The flow visits that
+    /// statement once, so this one term denotes its value in the single
+    /// abstract evaluation the walk performs, as a counted header image does
+    /// for an arbitrary iteration.
     CommitValue {
         commit_path: Vec<u32>,
         ty: IntegerType,

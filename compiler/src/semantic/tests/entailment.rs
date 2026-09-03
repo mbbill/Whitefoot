@@ -197,8 +197,8 @@ fn retained_term(summary: &FunctionEntailment, id: TermId) -> &TermKind {
 }
 
 /// One retained S7 image names exactly the value its subject identifies: the
-/// `let` binder's own place term, or the commit value of the `set` or
-/// `replace` occurrence whose right-hand side produced it [ENT-2, ENT-3.S7].
+/// `let` binder's own place term, or the commit value of the `set`
+/// occurrence whose right-hand side produced it [ENT-2, ENT-3.S7].
 fn s7_result_names_subject(
     summary: &FunctionEntailment,
     result: TermId,

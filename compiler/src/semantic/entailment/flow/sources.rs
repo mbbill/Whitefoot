@@ -47,7 +47,7 @@ const BOUNDARY_ENDPOINTS: [(&str, &str); 5] = [
 
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, or the compiler-owned commit value of one
-/// `set` or `replace` occurrence, named by that statement's NodePath [ENT-2].
+/// `set` occurrence, named by that statement's NodePath [ENT-2].
 /// The sources below are written once against this destination so that a
 /// commit's right-hand side receives exactly the image the same initializer
 /// receives at a `let`.
@@ -380,7 +380,7 @@ impl Analyzer<'_, '_> {
 
     /// The term one evaluated value's image is established on, when its type
     /// is one fragment type: a freshly bound integer place, or the commit
-    /// value of one `set` or `replace` occurrence.
+    /// value of one `set` occurrence.
     fn bound_term(
         &mut self,
         destination: ValueImage<'_>,
@@ -400,10 +400,10 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The commit-value term of one `set` or `replace` occurrence, interned
-    /// on first use. Its identity is the statement's NodePath and the value's
-    /// fragment type, so every source establishing at that one occurrence
-    /// names one term [ENT-2].
+    /// The commit-value term of one `set` occurrence, interned on first use.
+    /// Its identity is the statement's NodePath and the value's fragment
+    /// type, so every source establishing at that one occurrence names one
+    /// term [ENT-2].
     fn commit_value_term(
         &mut self,
         node_path: &crate::NodePath,
