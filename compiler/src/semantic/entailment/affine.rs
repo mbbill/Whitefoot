@@ -286,28 +286,33 @@ pub(crate) fn integer_tightening(
 /// Both factors are functions of the two coefficient vectors alone. Nothing
 /// here searches for a factor, selects a premise, or forms a candidate outside
 /// the caller's fixed family; a factor that tightens nothing is absent.
+///
+/// Each factor is derived and divided out on its own. A factor whose
+/// derivation or division leaves the checked `i128` range, or exceeds an
+/// ordinary checker capacity, is an unrepresentable candidate: it is skipped
+/// and cannot suppress the other factor, which may still be representable.
+/// This function therefore reports no failure of its own, and the fixed order
+/// of the surviving candidates is independent of which were skipped.
 pub(crate) fn integer_tightenings(
     candidate: &AffineInequality,
     target: &AffineInequality,
     check: &mut AffineCheckState,
-) -> Result<Vec<AffineInequality>, AffineCheckError> {
-    let mut factors = Vec::new();
-    if let Some(factor) = target_multiple_factor(candidate, target, check)? {
-        factors.push(factor);
-    }
-    if let Some(factor) = coefficient_gcd(candidate, check)?
-        && !factors.contains(&factor)
-    {
-        factors.push(factor);
-    }
+) -> Vec<AffineInequality> {
+    let multiple = target_multiple_factor(candidate, target, check)
+        .ok()
+        .flatten();
+    let divisor = coefficient_gcd(candidate, check)
+        .ok()
+        .flatten()
+        .filter(|factor| Some(*factor) != multiple);
 
     let mut tightenings = Vec::new();
-    for factor in factors {
-        if let Some(tightened) = integer_tightening(candidate, factor, check)? {
+    for factor in [multiple, divisor].into_iter().flatten() {
+        if let Ok(Some(tightened)) = integer_tightening(candidate, factor, check) {
             tightenings.push(tightened);
         }
     }
-    Ok(tightenings)
+    tightenings
 }
 
 /// Reads the one positive integer `k` for which the candidate's coefficient
@@ -1098,8 +1103,7 @@ mod tests {
     fn integer_tightenings_offer_the_target_multiple_before_the_coefficient_divisor() {
         let candidate = inequality(&[(0, 4), (1, -4)], 7);
         let target = inequality(&[(0, 2), (1, -2)], 3);
-        let tightenings = integer_tightenings(&candidate, &target, &mut AffineCheckState::new())
-            .expect("both fixed factors are representable");
+        let tightenings = integer_tightenings(&candidate, &target, &mut AffineCheckState::new());
         assert_eq!(tightenings.len(), 2);
         assert_eq!(coefficients(&tightenings[0]), vec![(0, 2), (1, -2)]);
         assert_eq!(tightenings[0].upper(), 3);
@@ -1117,8 +1121,7 @@ mod tests {
             (inequality(&[(0, 1)], 1), true),
             (inequality(&[(0, 1)], 0), false),
         ] {
-            let tightenings = integer_tightenings(&candidate, &target, &mut check)
-                .expect("the fixed factor is representable");
+            let tightenings = integer_tightenings(&candidate, &target, &mut check);
             let residual = AffineInequality::residual_after(&target, &tightenings[0], &mut check)
                 .expect("the tightened residual is representable");
             assert!(residual.terms().is_empty());
@@ -1140,7 +1143,7 @@ mod tests {
                 &inequality(&[(0, 1), (1, 1)], 0),
                 &mut AffineCheckState::new(),
             ),
-            Ok(Vec::new()),
+            Vec::new(),
             "the target is no multiple of this candidate and its divisor is one"
         );
         assert_eq!(
@@ -1149,8 +1152,79 @@ mod tests {
                 &inequality(&[(0, 1)], 0),
                 &mut AffineCheckState::new(),
             ),
-            Ok(Vec::new()),
+            Vec::new(),
             "an unrepresentable divisor grants no authority"
+        );
+    }
+
+    #[test]
+    fn an_unrepresentable_target_multiple_does_not_suppress_the_divisor_tightening() {
+        // The first coefficient pair reads the multiple 6/3 = 2, and verifying
+        // that multiple against the second pair doubles a coefficient that is
+        // already past i128::MAX / 2. The target-multiple candidate is
+        // therefore unrepresentable, while the coefficient divisor 6 divides
+        // the same candidate exactly and stays inside i128.
+        let wide = i128::MAX / 8;
+        let candidate = inequality(&[(0, 6), (1, 6 * wide)], 13);
+        let target = inequality(&[(0, 3), (1, 6 * wide)], 5);
+        assert_eq!(
+            target_multiple_factor(&candidate, &target, &mut AffineCheckState::new()),
+            Err(AffineCheckError::ArithmeticOverflow),
+            "the multiple cannot be verified in i128"
+        );
+
+        let tightenings = integer_tightenings(&candidate, &target, &mut AffineCheckState::new());
+        assert_eq!(
+            tightenings.len(),
+            1,
+            "the skipped multiple leaves the representable divisor candidate"
+        );
+        assert_eq!(coefficients(&tightenings[0]), vec![(0, 1), (1, wide)]);
+        assert_eq!(tightenings[0].upper(), 2);
+    }
+
+    #[test]
+    fn two_unrepresentable_tightening_factors_are_an_ordinary_skip() {
+        // Reading the multiple divides i128::MIN by -1, and the divisor of the
+        // same candidate is the magnitude of i128::MIN. Neither factor exists
+        // in i128, so both candidates are absent and the caller sees an
+        // ordinary empty list rather than a checker failure.
+        let candidate = inequality(&[(0, i128::MIN), (1, i128::MIN)], 0);
+        let target = inequality(&[(0, -1), (1, -1)], 0);
+        let mut check = AffineCheckState::new();
+        assert_eq!(
+            target_multiple_factor(&candidate, &target, &mut check),
+            Err(AffineCheckError::ArithmeticOverflow)
+        );
+        assert_eq!(coefficient_gcd(&candidate, &mut check), Ok(None));
+        assert_eq!(
+            integer_tightenings(&candidate, &target, &mut AffineCheckState::new()),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn a_tightening_over_a_checker_capacity_is_skipped_rather_than_reported() {
+        // The factor 2 is representable and divides the candidate exactly, but
+        // the divided inequality cannot be built inside a one-term input
+        // capacity. A capacity failure inside one candidate is the same skip
+        // as an arithmetic one.
+        let candidate = inequality(&[(0, 2), (1, 2)], 4);
+        let target = inequality(&[(0, 1), (1, 1)], 1);
+        let mut check = AffineCheckState::with_limits(AffineCheckLimits {
+            max_input_terms: 1,
+            ..AFFINE_CHECK_LIMITS
+        });
+        assert_eq!(
+            integer_tightening(&candidate, 2, &mut check),
+            Err(AffineCheckError::LimitExceeded(
+                AffineCheckLimit::InputTerms
+            ))
+        );
+        assert_eq!(
+            integer_tightenings(&candidate, &target, &mut check),
+            Vec::new(),
+            "the one shared factor is skipped without reporting a failure"
         );
     }
 

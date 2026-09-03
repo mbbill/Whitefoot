@@ -9333,7 +9333,9 @@ impl Analyzer<'_, '_> {
     /// also proves `v <= floor(u / k)`. The tightening factors are functions
     /// of the candidate and the target alone: this step selects no additional
     /// premise, guesses no multiplier, and leaves the candidate families
-    /// exactly as fixed by the specification.
+    /// exactly as fixed by the specification. Each tightening is formed on its
+    /// own: an unrepresentable one is skipped and removes neither the other
+    /// tightening nor the untightened candidate.
     fn affine_candidate_residual_proof(
         &mut self,
         target: &AffineInequality,
@@ -9343,7 +9345,7 @@ impl Analyzer<'_, '_> {
         closed: &ClosedState,
         check: &mut AffineCheckState,
     ) -> Option<Vec<DerivationId>> {
-        let tightenings = integer_tightenings(candidate, target, check).unwrap_or_default();
+        let tightenings = integer_tightenings(candidate, target, check);
         for accumulated in std::iter::once(candidate).chain(tightenings.iter()) {
             let Ok(residual) = AffineInequality::residual_after(target, accumulated, check) else {
                 continue;
