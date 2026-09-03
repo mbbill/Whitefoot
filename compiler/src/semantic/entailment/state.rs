@@ -1891,9 +1891,10 @@ pub(crate) struct OutcomeFact {
 pub(crate) struct FactState {
     /// Term-universe size for which `bounds` and `distinct` already contain
     /// the complete ENT-4 relation closure. S11 snapshots, pre-kill
-    /// materialization, and ENT-5 joins produce such states. Endpoint kills
-    /// preserve closure; adding a source relation, removing a proof candidate,
-    /// or interning a new term invalidates the marker.
+    /// materialization, and ENT-5 joins produce such states. Every operation
+    /// that adds a source relation, removes a fact or a proof candidate, or
+    /// interns a new term invalidates the marker: only a state that is its own
+    /// closure may answer a query without closing again.
     closed_term_count: Option<u32>,
     /// The loop rule's empty join: the contradictory all-derivable state, in
     /// which every relation is derivable and every fact is present. Z has
@@ -2242,10 +2243,18 @@ impl FactState {
     /// predicate reaches. Flow callers materialize the complete closure before
     /// invoking this endpoint filter, so survivor-only consequences remain
     /// independently live and closure never resurrects a killed fact.
+    ///
+    /// The projection is not closure-preserving even so. The [ENT-2] implicit
+    /// facts of a killed term are a function of the term table and the place's
+    /// type alone, so they hold again the instant the kill is done and can
+    /// carry survivors to conclusions the projected map no longer lists. The
+    /// state therefore stops being a witness of its own closure here, and the
+    /// next query closes it again.
     pub(crate) fn kill(&mut self, mut killed: impl FnMut(TermId) -> bool) {
         if self.all_derivable {
             return;
         }
+        self.closed_term_count = None;
         let dead: Vec<(TermId, TermId)> = self
             .bounds
             .keys()
@@ -2344,11 +2353,14 @@ impl FactState {
     }
 
     /// Removes signed facts and ordinary-let origin expansions whose exact
-    /// goal support is invalidated by one ENT-5 event.
+    /// goal support is invalidated by one ENT-5 event. Like the term-endpoint
+    /// filter, removing signed facts leaves a state that is no longer a
+    /// witness of its own closure.
     pub(crate) fn kill_goals(&mut self, mut killed: impl FnMut(GoalId) -> bool) {
         if self.all_derivable {
             return;
         }
+        self.closed_term_count = None;
         self.opaque.retain(|(goal, _)| !killed(*goal));
         self.opaque_proofs.retain(|(goal, _), _| !killed(*goal));
         self.goal_origins.retain(|_, goal| !killed(*goal));
@@ -2856,6 +2868,91 @@ pub(crate) fn close(
     close_with_excluded_term(state, terms, goals, ledger, None)
 }
 
+/// Emits every [ENT-2] implicit bound carried by one term: the reflexive
+/// bound, the fragment-type range, the constant fold through Z, and the
+/// `len(P) = N` equality of an `array<T, N>` place.
+///
+/// Implicit facts are a function of the term table and the place's type
+/// alone. They hold at every program point, so this is the single rule table
+/// every closure entry point re-emits; no [ENT-5] kill and no join can remove
+/// one, and a state that lost the materialized copy of one regains it here.
+fn for_each_implicit_bound(
+    terms: &TermTable,
+    id: TermId,
+    mut emit: impl FnMut(TermId, TermId, i128, ImplicitBoundKind),
+) {
+    emit(id, id, 0, ImplicitBoundKind::Reflexive);
+    match terms.kind(id) {
+        TermKind::Zero | TermKind::ConstParameter(_) => {}
+        TermKind::Constant(value) => {
+            emit(id, ZERO, *value, ImplicitBoundKind::Constant);
+            emit(ZERO, id, -value, ImplicitBoundKind::Constant);
+        }
+        TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
+            let (minimum, maximum) = type_range(*ty);
+            emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
+            emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
+        }
+        TermKind::Length(_) | TermKind::ProjectedLength(_) => {
+            let (minimum, maximum) = type_range(IntegerType::U64);
+            emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
+            emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
+            match terms.length_bound(id) {
+                Some(LengthBound::Constant(length)) => {
+                    emit(id, ZERO, length, ImplicitBoundKind::ArrayLength);
+                    emit(ZERO, id, -length, ImplicitBoundKind::ArrayLength);
+                }
+                Some(LengthBound::Equal(parameter)) => {
+                    emit(id, parameter, 0, ImplicitBoundKind::ArrayLength);
+                    emit(parameter, id, 0, ImplicitBoundKind::ArrayLength);
+                }
+                None => {}
+            }
+        }
+        TermKind::CountedCapture { .. } => {
+            let (minimum, maximum) = type_range(IntegerType::U64);
+            emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
+            emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
+        }
+        TermKind::CommitValue { ty, .. } => {
+            let (minimum, maximum) = type_range(*ty);
+            emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
+            emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
+        }
+    }
+}
+
+/// Puts one [ENT-2] implicit bound back into an already closed view.
+///
+/// A stronger stored relation stays as it is, together with its proof: the
+/// implicit bound is an axiom about the term, not a competing derivation of
+/// what the state already knows.
+fn restore_implicit_bound(
+    closed: &mut ClosedState,
+    left: TermId,
+    right: TermId,
+    bound: i128,
+    kind: ImplicitBoundKind,
+    ledger: &mut DerivationLedger,
+) {
+    let pair = (left, right);
+    if closed
+        .bounds
+        .get(&pair)
+        .is_some_and(|current| *current <= bound)
+    {
+        return;
+    }
+    let proof = ledger.intern(DerivationNode::ImplicitBound {
+        left,
+        right,
+        bound,
+        kind,
+    });
+    closed.bounds.insert(pair, bound);
+    closed.bound_proofs.insert(pair, proof);
+}
+
 /// Exact contradiction query without constructing a derivation DAG.
 ///
 /// Kill handling needs to know whether contradiction must become absorbing,
@@ -2894,45 +2991,9 @@ pub(crate) fn contradiction_without_proofs(
         insert(&mut bounds, left, right, bound);
     }
     for id in terms.ids() {
-        insert(&mut bounds, id, id, 0);
-        match terms.kind(id) {
-            TermKind::Zero | TermKind::ConstParameter(_) => {}
-            TermKind::Constant(value) => {
-                insert(&mut bounds, id, ZERO, *value);
-                insert(&mut bounds, ZERO, id, -value);
-            }
-            TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
-                let (minimum, maximum) = type_range(*ty);
-                insert(&mut bounds, id, ZERO, maximum);
-                insert(&mut bounds, ZERO, id, -minimum);
-            }
-            TermKind::Length(_) | TermKind::ProjectedLength(_) => {
-                let (minimum, maximum) = type_range(IntegerType::U64);
-                insert(&mut bounds, id, ZERO, maximum);
-                insert(&mut bounds, ZERO, id, -minimum);
-                match terms.length_bound(id) {
-                    Some(LengthBound::Constant(length)) => {
-                        insert(&mut bounds, id, ZERO, length);
-                        insert(&mut bounds, ZERO, id, -length);
-                    }
-                    Some(LengthBound::Equal(parameter)) => {
-                        insert(&mut bounds, id, parameter, 0);
-                        insert(&mut bounds, parameter, id, 0);
-                    }
-                    None => {}
-                }
-            }
-            TermKind::CountedCapture { .. } => {
-                let (minimum, maximum) = type_range(IntegerType::U64);
-                insert(&mut bounds, id, ZERO, maximum);
-                insert(&mut bounds, ZERO, id, -minimum);
-            }
-            TermKind::CommitValue { ty, .. } => {
-                let (minimum, maximum) = type_range(*ty);
-                insert(&mut bounds, id, ZERO, maximum);
-                insert(&mut bounds, ZERO, id, -minimum);
-            }
-        }
+        for_each_implicit_bound(terms, id, |left, right, bound, _| {
+            insert(&mut bounds, left, right, bound);
+        });
     }
 
     let mut distinct = state.distinct.clone();
@@ -3062,20 +3123,26 @@ fn close_with_excluded_term(
     let term_count_id =
         u32::try_from(term_count).expect("ENT term inventory exceeds the u32 identity space");
     if excluded.is_none() && state.closed_term_count == Some(term_count_id) {
-        return close_goal_contradictions(
-            ClosedState {
-                all_derivable: false,
-                contradiction: None,
-                bounds: state.bounds.clone(),
-                bound_proofs: state.bound_proofs.clone(),
-                distinct: state.distinct.clone(),
-                distinct_proofs: state.distinct_proofs.clone(),
-                opaque: state.opaque.clone(),
-                opaque_proofs: state.opaque_proofs.clone(),
-            },
-            goals,
-            ledger,
-        );
+        let mut closed = ClosedState {
+            all_derivable: false,
+            contradiction: None,
+            bounds: state.bounds.clone(),
+            bound_proofs: state.bound_proofs.clone(),
+            distinct: state.distinct.clone(),
+            distinct_proofs: state.distinct_proofs.clone(),
+            opaque: state.opaque.clone(),
+            opaque_proofs: state.opaque_proofs.clone(),
+        };
+        // The marker says the stored relations are already the least closure
+        // over this term universe, so the fixed point would add nothing. The
+        // [ENT-2] implicit bounds are re-emitted regardless: they hold at
+        // every program point by term kind, never by surviving in a map.
+        for id in terms.ids() {
+            for_each_implicit_bound(terms, id, |left, right, bound, kind| {
+                restore_implicit_bound(&mut closed, left, right, bound, kind, ledger);
+            });
+        }
+        return close_goal_contradictions(closed, goals, ledger);
     }
     let mut distinct = state.distinct.clone();
     let mut distinct_proofs = state.distinct_proofs.clone();
@@ -3114,49 +3181,12 @@ fn close_with_excluded_term(
                 ledger,
             );
         };
-        // Implicit facts [ENT-2]: reflexive bounds, fragment-type ranges, the
-        // constant fold through Z, and array length equalities registered on the
-        // length term itself by the flow.
+        // Implicit facts [ENT-2]. They are a function of the term table and
+        // the place's type alone, so every closure re-emits all of them.
         for id in ids.iter().copied() {
-            add(id, id, 0, ImplicitBoundKind::Reflexive, ledger);
-            match terms.kind(id) {
-                TermKind::Zero | TermKind::ConstParameter(_) => {}
-                TermKind::Constant(value) => {
-                    add(id, ZERO, *value, ImplicitBoundKind::Constant, ledger);
-                    add(ZERO, id, -value, ImplicitBoundKind::Constant, ledger);
-                }
-                TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
-                    let (minimum, maximum) = type_range(*ty);
-                    add(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum, ledger);
-                    add(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum, ledger);
-                }
-                TermKind::Length(_) | TermKind::ProjectedLength(_) => {
-                    let (minimum, maximum) = type_range(IntegerType::U64);
-                    add(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum, ledger);
-                    add(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum, ledger);
-                    match terms.length_bound(id) {
-                        Some(LengthBound::Constant(length)) => {
-                            add(id, ZERO, length, ImplicitBoundKind::ArrayLength, ledger);
-                            add(ZERO, id, -length, ImplicitBoundKind::ArrayLength, ledger);
-                        }
-                        Some(LengthBound::Equal(parameter)) => {
-                            add(id, parameter, 0, ImplicitBoundKind::ArrayLength, ledger);
-                            add(parameter, id, 0, ImplicitBoundKind::ArrayLength, ledger);
-                        }
-                        None => {}
-                    }
-                }
-                TermKind::CountedCapture { .. } => {
-                    let (minimum, maximum) = type_range(IntegerType::U64);
-                    add(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum, ledger);
-                    add(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum, ledger);
-                }
-                TermKind::CommitValue { ty, .. } => {
-                    let (minimum, maximum) = type_range(*ty);
-                    add(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum, ledger);
-                    add(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum, ledger);
-                }
-            }
+            for_each_implicit_bound(terms, id, |left, right, bound, kind| {
+                add(left, right, bound, kind, ledger);
+            });
         }
     }
     // Least fixed point of transitivity (1), disequality strengthening (2),
