@@ -1,24 +1,25 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 60 (the source-proof successor to v0.39 is an implementation
-candidate; the former runtime-assertion releases remain historical evidence)
+Revision: 61 (v0.40 replaces the runtime claim path with one source-carried
+proof surface; the former runtime-assertion releases remain historical
+evidence)
 
-The active language authority is v0.39, SHA-256
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, archived
-byte-for-byte at
-[`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The work branch is
-drafting its source-proof successor, candidate v0.40, at
-[`spec/kernel-spec.md`](../spec/kernel-spec.md); its exact digest, activation
-record, and completion status remain open until the candidate and its complete
-evidence agree. The v0.39 activation record is in
-[`governance/APPROVALS.md`](../governance/APPROVALS.md); the batch record for
-v0.39 remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
-[`docs/current-plan.md`](current-plan.md).
+The active language authority is v0.40, SHA-256
+`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, carried by
+the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
+v0.39 at `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`,
+archived byte-for-byte at
+[`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The merge-time
+approval record is in
+[`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
+with the owner's merge approval of the exact revision containing it; the batch
+record for v0.39 remains [batch 0091](done/0091-par3-judgment.md). The
+execution plan is [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
 
-The current work branch is implementing source-carried proof through the
+v0.40 carries source proof through the
 ordinary semantic compiler. It checks contracts, explicit loop-header
 invariants, and local invariants with optional `use` steps; submits every
 supported partial operation to the same deterministic proof context; proves
@@ -80,7 +81,7 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). Candidate v0.40 retains
+belong in the [compiler README](../compiler/README.md). v0.40 retains
 v0.39's system interface around formal state paths, ordinary ownership, and
 completion-only lowering, with no separate world region, capability class,
 blocking-call family, or `Ordered` relation.
@@ -100,8 +101,8 @@ Which gap matters next is selected by a project, never by checklist length.
   earlier entry-contract exception with one closed-world command entry. The
   direction and its plan are terminal.
 - outline:PROOF-10 records the terminal lifecycle correction implemented by
-  released v0.39. Its rules remain release history; candidate v0.40 supersedes
-  that runtime-assertion model on this branch.
+  released v0.39. Its rules remain release history; v0.40 supersedes
+  that runtime-assertion model.
 - outline:PROOF-11 is the selected successor. Proof is written in `.wf` source
   and checked directly by the normal semantic compiler. Automatic reasoning is
   deterministic, terminating, specification-complete for its fixed families,
@@ -633,7 +634,7 @@ writer.
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter installed]`
-`[next: publish an exact-revision report for the source-proof candidate]`
+`[next: publish an exact-revision report for v0.40]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
@@ -644,7 +645,7 @@ writer.
   ordinary test runs. Historical exact-revision results remain in their batch
   and activation records; this outline carries no floating count of its own.
 - **Missing / next:** publish the next independent pass/fail/skip report for
-  the exact source-proof candidate revision. Any
+  the exact v0.40 revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -755,7 +756,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 - **Goal:** give the AI deterministic, actionable failures that shorten the
   path from rejected source to a correct, efficient program.
-- **Current:** the source-proof candidate requires deterministic rule/location diagnostics
+- **Current:** v0.40 requires deterministic rule/location diagnostics
   and exact failed-goal plus failed-premise records; single-shot writability and repair
   effectiveness are not established.
 - **Missing / next:** measure repair-to-green on real project failures and turn
@@ -889,7 +890,7 @@ and failure semantics survive the runtime implementation.
 
 - **Goal:** prove disjoint subranges or injective indexed writes when
   region-level separation is too coarse.
-- **Current:** the v0.40 candidate admits a narrow one-map-per-root form
+- **Current:** v0.40 admits a narrow one-map-per-root form
   when the discharged OP-4 result retains the offset's exact value `a*i+b`, i
   is the counted binder, and `a != 0`. Copies and checked affine transforms are
   accepted because permission consumes that checked value rather than source
@@ -982,14 +983,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: active v0.39 unified-state model; candidate v0.40 retains it]`
+`[current: active v0.40 unified-state model, retained from v0.39]`
 `[next: wider APIs and target measurements]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** candidate v0.40 retains this released v0.39 model. It uses
+- **Current:** v0.40 retains this released v0.39 model. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration
@@ -1011,7 +1012,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   drains every issued result in order before slot zero reuse, including an odd
   final batch and dynamic per-iteration paths. The following results are
   historical evidence from the released
-  v0.39 line, not a gate report for the candidate v0.40 bytes. Whole programs
+  v0.39 line, not a gate report for the v0.40 bytes. Whole programs
   were measured on both macOS and Linux with io_uring
   ([batch 0084](done/0084-io-performance.md)): the shipped build is about
   twice its own sequential build on a many-independent-files workload, and

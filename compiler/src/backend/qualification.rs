@@ -141,7 +141,7 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // admitted claim already lowers to, so the trap and diagnostic surfaces a
 // target must supply are the ones already qualified here. Every v0.38 mapping
 // therefore stands unchanged.
-// v0.40 source-proof candidate review (2026-09-02): S5's post-SET-1 value
+// v0.40 source-proof review (2026-09-02): S5's post-SET-1 value
 // image and ENT-5's close-before-lexical-kill order are front-end proof
 // rules, and written proofs, invariants, and contracts erase before lowering.
 // Retiring the writer-facing runtime-check instruction removes a target

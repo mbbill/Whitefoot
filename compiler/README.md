@@ -6,14 +6,13 @@ private implementation choices; the active language is defined by
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), not by the compiler source or
 this README.
 
-The last activated frontend target is v0.39, SHA-256
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`; that
-activation installed the exact v0.39 bytes archived at
-`../spec/kernel-spec-v0.39.md`.
-The current work branch is drafting source-proof candidate v0.40 at
-`../spec/kernel-spec.md`; its exact activation digest remains pending until the
-specification, generated syntax, compiler, conformance evidence, and complete
-gate agree. `whitefoot-spec` checks the selected identity, activation chain,
+The frontend targets the exact v0.40 bytes at `../spec/kernel-spec.md`,
+SHA-256 `15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`.
+v0.40 replaces the runtime claim path with one source-carried proof surface and
+supersedes v0.39 at
+`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.39.md`.
+`whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 
 ## Compilation path

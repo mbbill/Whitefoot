@@ -123,7 +123,7 @@ current correction.
 - **Per-operation numeric semantics.** Wrapping, checked, and saturating forms
   are explicit values. Exact arithmetic is admitted only after its matching
   total `.defined` goal is proved. The dated design used an explicit `claim` as
-  a runtime backstop; the current source-proof candidate instead rejects an
+  a runtime backstop; v0.40 instead rejects an
   unproved exact operation and provides no writer trap. Debug and release are
   therefore the same program,
   with neither signed-overflow UB nor a hidden arithmetic trap. *Status:*

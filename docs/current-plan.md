@@ -1,15 +1,16 @@
 # Current Plan: finish source-carried proof in the compiler
 
-Status: IMPLEMENTATION COMPLETE; CANDIDATE EVIDENCE RECORDED on
+Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
-Active language authority: v0.39,
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`. This branch
-is drafting its source-proof successor, candidate v0.40. That candidate's exact
-digest, activation record, and completion status remain unset until the same
-exact revision passes the complete repository gate and receives the required
-merge approval. This document records technical direction and sequencing; it
-grants no permission and adds no workflow gate.
+Active language authority: v0.40,
+`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.39 is
+archived at `spec/kernel-spec-v0.39.md` and the merge-time record is in
+`governance/APPROVALS.md`. Activation is branch content: nothing merges to
+`main` until the owner approves the exact revision and canonical `make check`
+passes on that revision. This document records technical direction and
+sequencing; it grants no permission and adds no workflow gate.
 
 ## Outcome
 
@@ -324,7 +325,7 @@ This work is complete only when one exact revision has all of the following:
    and sequential fallback when parallel permission is absent;
 4. compile-cost and runtime measurements record the actual boundary without
    turning time into an acceptance rule;
-5. all live documentation and derived syntax data match the candidate; and
+5. all live documentation and derived syntax data match v0.40; and
 6. canonical `make check` passes for the exact revision.
 
 ### Candidate measurement
@@ -340,5 +341,7 @@ Proof erasure stays structural evidence rather than a timing inference: the
 and without proof-only source, and separate compiler tests prove that a denied
 optional `par` permission emits the sequential call sequence.
 
-Until those conditions hold, this branch remains an implementation candidate,
-not an activated or completed language release.
+The activation those conditions gate is now recorded on this branch: v0.40 is
+the ACTIVE identity, the outgoing v0.39 bytes are archived, and the derived
+documentation and syntax data name v0.40. What remains is rules 2 and 3 — the
+owner's approval of the exact revision and canonical `make check` on it.
