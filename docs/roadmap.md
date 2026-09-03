@@ -1,15 +1,15 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 62 (the native x86-64 MSVC Windows row now requires its compute
-pool and IOCP path and has same-host paired performance evidence)
+Revision: 63 (v0.41 respells the six integer comparisons as symbols and
+delimits call-site type application with `::`)
 
-The active language authority is v0.40, SHA-256
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, carried by
+The active language authority is v0.41, SHA-256
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.39 at `b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`,
+v0.40 at `15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`,
 archived byte-for-byte at
-[`spec/kernel-spec-v0.39.md`](../spec/kernel-spec-v0.39.md). The merge-time
+[`spec/kernel-spec-v0.40.md`](../spec/kernel-spec-v0.40.md). The merge-time
 approval record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch
@@ -764,7 +764,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### outline:FLOOR-5 — Spelling rule and surface relief
 
-`[v0.23: class deletions and infix arithmetic]` `[next: v0.41 candidate — comparison symbols]`
+`[v0.23: class deletions and infix arithmetic]` `[v0.41: comparison symbols and the call-site delimiter]`
 
 - **Goal:** every surface byte carries a decision the checker cannot
   reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
@@ -772,17 +772,18 @@ and every slower-but-accepted divergence becomes a measured finding.
   class while boundaries stay fully explicit.
 - **Current:** v0.23 landed the sweep's whole-class deletions and infix
   arithmetic; its comparison row was cancelled on the `<` collision with
-  call-site type arguments. Owner rulings of 2026-09-03 reopen that row: the
-  six integer comparisons become `== != < <= > >=`, call-site type
-  application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so `IDENT <`
-  is always a comparison and the parser stays two-token, `!` enters the
-  alphabet only inside `!=`, and a multiplied `use` relation is
+  call-site type arguments. v0.41 lands that row under the owner rulings of
+  2026-09-03: the six integer comparisons are `== != < <= > >=`, call-site
+  type application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so
+  `IDENT <` is always a comparison and the parser stays two-token, `!` enters
+  the alphabet only inside `!=`, and a multiplied `use` relation is
   parenthesized. Bool logic, the bit family, float and enum comparison, and
-  every unary operation stay named; ANF relaxation stays deferred.
-- **Missing / next:** the v0.41 candidate specification, the compiler front
-  end and checker sites, and the mechanical corpus respelling, in one batch.
+  every unary operation stay named by ruling; ANF relaxation stays deferred.
+- **Missing / next:** nothing is open in this row; the retired comparison
+  names are free identifiers, and the corpus, snapshot index, conformance
+  manifest, and live documentation are respelled.
 - **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
-  [candidate](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
+  [activation record](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
 
 ## Storage, ownership, and representation
 

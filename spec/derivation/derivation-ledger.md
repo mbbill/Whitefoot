@@ -2,12 +2,12 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.40 authority at SHA-256
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`.
-v0.40 supersedes v0.39 at
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, whose
-bytes are archived at `spec/kernel-spec-v0.39.md`; the v0.40 amendment at the
-end of this file binds its changed derivations.
+the active v0.41 authority at SHA-256
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
+v0.41 supersedes v0.40 at
+`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, whose
+bytes are archived at `spec/kernel-spec-v0.40.md`; the v0.40 and v0.41
+amendments at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -16,7 +16,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 amendment below and the active specification define the
+the v0.40 and v0.41 amendments below and the active specification define the
 changed rows. The table is not independent live source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
 `deny_claims`, strict-partition, runtime-latch, and proof-replay vocabulary does
@@ -24,7 +24,10 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
-**Active v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
+**Active v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
+(131 rules: v0.41 respells 21 rules and adds or retires none, so every
+derivation status carries over from v0.40).
+**Superseded v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
 (131 rules: remove the nine historical rules named above, add existence-only
 INV-1 and PRF-1, and retain every other rule's derivation status).
 **Superseded v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
@@ -1788,16 +1791,19 @@ a constitutional or derivation change. It does not defer layout, address,
 target qualification, target-domain proof, parallel independence, or bounded
 queue/completion protocols.
 
-## v0.41 amendment — integer comparison symbols and the call-site delimiter (2026-09-03, candidate stage)
+## v0.41 amendment — integer comparison symbols and the call-site delimiter (activated 2026-09-03)
 
-Specification binding: candidate `spec/kernel-spec.md`, headed v0.41, at
-SHA-256 `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06`, declared as superseding the active v0.40
-(`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`). The
-owner rulings of 2026-09-03 and the rejected alternatives are recorded in
-`governance/spec-evolution/comparison-symbols-v041-candidate.md` and
-`research/investigations/spelling-relief/SWEEP.md`; the `docs/WORKFLOW.md`
-exact-byte approval and activation are pending, and this binding is restated
-at activation.
+Specification binding: active `spec/kernel-spec.md`, headed v0.41, at
+SHA-256 `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`,
+superseding v0.40
+(`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`), whose
+bytes are archived at `spec/kernel-spec-v0.40.md`. The candidate bytes hashed
+to `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06` until
+the status line flipped to `ACTIVE v0.41`; no other byte changed at
+activation. The owner rulings of 2026-09-03 and the rejected alternatives are
+recorded in `governance/spec-evolution/comparison-symbols-v041-candidate.md`
+and `research/investigations/spelling-relief/SWEEP.md`; the merge-time record
+is in `governance/APPROVALS.md`.
 
 v0.41 adds and removes no rules. It modifies 21 existing rules at
 38 verbatim-anchored sites, plus the

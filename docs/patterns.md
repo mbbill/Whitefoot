@@ -8,8 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.40 guidance, including the source-proof forms
-v0.40 activates, the unified-state
+This document carries active v0.41 guidance, including the comparison symbols
+and call-site `::` delimiter v0.41 activates, the source-proof forms introduced
+by v0.40, the unified-state
 completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
 2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve

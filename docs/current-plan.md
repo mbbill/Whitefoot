@@ -3,10 +3,12 @@
 Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
-Active language authority: v0.40,
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.39 is
-archived at `spec/kernel-spec-v0.39.md` and the merge-time record is in
+Active language authority: v0.41,
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`,
+which respells the six integer comparisons as symbols and delimits call-site
+type application with `::` over the v0.40 proof surface this plan delivered.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.40 is
+archived at `spec/kernel-spec-v0.40.md` and the merge-time record is in
 `governance/APPROVALS.md`. Activation is branch content: nothing merges to
 `main` until the owner approves the exact revision and canonical `make check`
 passes on that revision. This document records technical direction and

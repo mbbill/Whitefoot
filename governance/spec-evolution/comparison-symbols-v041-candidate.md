@@ -1,12 +1,18 @@
 # Integer comparison symbols and the call-site `::` delimiter — v0.41 candidate
 
-Status: CANDIDATE, drafted 2026-09-03 on the work branch; not merge-ready until
-the owner's exact-byte approval activates it per `docs/WORKFLOW.md`. The stable
-file `spec/kernel-spec.md` is headed v0.41, declares
+Status: ACTIVATED as v0.41 on 2026-09-03 on the work branch. The stable file
+`spec/kernel-spec.md` is headed v0.41, declares `ACTIVE v0.41`, and hashes to
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`; the
+outgoing v0.40 bytes
+(`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`) are
+archived at `spec/kernel-spec-v0.40.md`, and the merge-time record in
+`governance/APPROVALS.md` becomes effective with the owner's merge approval of
+the exact revision containing it. Drafted the same day as a candidate declaring
 `CANDIDATE v0.41 supersedes v0.40 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`,
-and hashes to `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06` at this record's writing; a changed byte returns to
-review and re-keys that digest. Removal condition: superseded by activation
-(this file then records the activated digest) or by rejection.
+which hashed to `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06`;
+activation flipped that status line and changed no other byte. Retained as the
+record of the rulings, the rejected alternatives, and the delta; it is removed
+only if a later specification restates them.
 
 ## 1. What the batch does
 

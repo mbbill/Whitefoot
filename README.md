@@ -57,12 +57,13 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.40 is the active language authority, SHA-256
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, carried by
-the stable [specification path](spec/kernel-spec.md). It replaces the runtime
-claim path with one source-carried proof surface, and supersedes v0.39, whose
-outgoing bytes are preserved byte-for-byte at
-[`spec/kernel-spec-v0.39.md`](spec/kernel-spec-v0.39.md). The merge-time record
+Kernel specification v0.41 is the active language authority, SHA-256
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, carried by
+the stable [specification path](spec/kernel-spec.md). It respells the six
+integer comparisons as `== != < <= > >=`, delimits call-site type application
+with `::`, and parenthesizes a multiplied `use` relation; it supersedes v0.40,
+whose outgoing bytes are preserved byte-for-byte at
+[`spec/kernel-spec-v0.40.md`](spec/kernel-spec-v0.40.md). The merge-time record
 for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.

@@ -1,10 +1,10 @@
-# Kernel Specification v0.41
+# Kernel Specification v0.40
 
-Status: ACTIVE v0.41
+Status: ACTIVE v0.40
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (131 remain); grammar productions +1/-0 (83 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +5/-0 (8 remain); token bytes +1/-0 (`!`, inside `!=` only); writer operation spellings +6/-6; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. The added production is `compare_op`; the added compound tokens are `==`, `!=`, `<=`, `>=`, and `::`; the respelled operations are the six integer comparisons, `ieq` `ine` `ilt` `ile` `igt` `ige` becoming `==` `!=` `<` `<=` `>` `>=`, which thereby leave `DotlessOperationNames` and `ReservedLowerNames`. This candidate carries the second FLOOR-5 spelling batch. Integer comparison joins integer arithmetic as an `infix` expression: one `compare_op` over two atoms, integer-only exactly as the arithmetic symbols are, while float and tag-only enum comparison keep their prefixed names. Call-site type application is delimited by `::` — `cvt::<u8, u32>(w)`, `open_file::<'f, 'n>(...)` — so that `IDENT "<"` begins only a comparison and every grammar decision keeps its two-token bound; constructors and type position are unchanged. In proof position the four ordered symbols replace `ile`, `ilt`, `ige`, and `igt` as the relation of a header invariant, a local invariant, and a relation-form use step; a multiplied relation-form use step is parenthesized, `use 3 * (a <= b);`, and a bare one is not. No rule's semantics changes: every comparison origin, contract-clause root, invariant relation, and diagnostic attribution is keyed on the same operation identities under their new spellings, and the accepted-program set is unchanged up to respelling.
-Selection ground: evidence-selected under the FLOOR-5 spelling rule (T1–T4 and its measured tiebreaks): the six integer comparisons are the most frequent operation class in the corpus, the positional comparison call was the last direction-sensitive positional form, v0.40's proof surface had already made the ordered comparisons relations over infix affine operands, and the `<` collision that cancelled the v0.23 comparison row is dissolved by the `::` delimiter without widening any parser decision beyond two tokens; the rulings and the rejected alternatives are recorded in `research/investigations/spelling-relief/SWEEP.md` and `governance/spec-evolution/comparison-symbols-v041-candidate.md`. Prior selection ground for the v0.40 proof surface remains: every writer-reachable partial operation must be proved before execution, while resource availability remains the explicitly deferred boundary [SCOPE-3]. Source control flow, verified contracts, machine-proved invariants, and finite writer-directed `use` steps form the complete writer proof surface; their checked conclusions may also authorize erased optimizations and optional parallel lowering. Prior selection ground for [PAR-3] remains the staged-pipeline design derived against the completion model and the io-completion benchmark's own measurements; first-principles derivation is recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
+META-5 delta declaration: numbered rules +2/-9 (131 remain); grammar productions +8/-1 (82 remain); unique fixed lowercase grammar atoms +2/-4 (54 remain); writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-1 (0 remain); entry forms +0/-1 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. The added rules are [INV-1] and [PRF-1]; the retired rule ids, which this version no longer defines and never reuses, are CLM-1, CLM-2, CLM-3, DIAG-3, PRV-1, PRV-2, PRV-3, SCOPE-4, and TRAP-1. The added productions are `affine_add_op`, `affine_expr`, `affine_factor`, `affine_term`, `for_binding`, `header_invariant`, `invariant_stmt`, and `proof_use`; the removed production is `claim_stmt`. The added atoms are `invariant` and `use`; the removed atoms are `because`, `claim`, `deny_claims`, and `traps`. This candidate replaces v0.39's runtime claim path with one source-carried proof surface: every writer-reachable partial operation is proved before execution, the claim trap and its exact runtime record are gone, and with them the `deny_claims` entry form. One proof-only `invariant` declaration serves both a loop header and an ordinary program point. A counted `for` header now encloses its binding followed by zero or more induction relations; an ordinary `loop` may enclose only induction relations; neither form admits a trailing comma, and a header relation carries no certificate block. A local invariant may carry ordered `use` steps with explicit proof-domain multipliers and named earlier invariants. Each use is independently proved in the same entering state, adds nothing to that state, and only the checked outer target is published. The automatic affine rule is complete for exactly the direct, every coefficient-one single-premise, every coefficient-one unordered premise-pair including self-pairs, and final closed-L0-image families; larger or specially weighted combinations are writer-directed. Exact operation and subscript value identities now enter later Goals only after their own nested domain obligations succeed, with occurrence-local evaluated-value identities covering values outside that admitted structural fragment. Value images, source facts, branch joins, pre-kill closure, counted exhaustion, function requirements and postconditions, and operation domains consume this one deterministic source ProofContext. Selected-target layout/address and parallel permission keep their own deterministic checker domains and consume the conclusions retained by source proof rather than repeating it or creating a second source-acceptance authority. Every admitted family runs to its specification-fixed completion without solver, heuristic stopping, elapsed-time verdict, cumulative work budget, runtime fallback, or compiler-generated proof replay.
+Selection ground: every writer-reachable partial operation must be proved before execution, while resource availability remains the explicitly deferred boundary [SCOPE-3]. Source control flow, verified contracts, machine-proved invariants, and finite writer-directed `use` steps form the complete writer proof surface; their checked conclusions may also authorize erased optimizations and optional parallel lowering. Prior selection ground for [PAR-3] remains the staged-pipeline design derived against the completion model and the io-completion benchmark's own measurements; first-principles derivation is recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
@@ -49,12 +49,11 @@ A nonempty source has exactly one empty line between consecutive top-level `item
 A source containing zero items is exactly one LF.
 Terminal interiors retain their exact bytes and are checked by their owning FORM rule.
 
-The left-attachment set contains `(`, `[`, `<`, `&`, `.`, `..`, and `::`.
-The right-attachment set contains `)`, `]`, `>`, `,`, `;`, `.`, `:`, `(`, `<`, `[`, `..`, and `::`.
+The left-attachment set contains `(`, `[`, `<`, `&`, `.`, and `..`.
+The right-attachment set contains `)`, `]`, `>`, `,`, `;`, `.`, `:`, `(`, `<`, `[`, and `..`.
 Between two consecutive terminals on the same line, emit zero bytes when the left terminal is in the left-attachment set or the right terminal is in the right-attachment set; otherwise emit exactly one ASCII space.
-A `<` or `>` terminal selected by `compare_op` [GRAM-5] is rendered as a member of neither set, so a comparison is `a < b` while a type-argument list is `f::<T>(x)` and `buffer<u8>`; this stated spacing overrides the generic attachment of those two bytes exactly as the `for` header's stated space does below.
-Thus function headers are `fn f()`, `fn f<T>()`, and `fn f['r]()`; subscripts are `p[i]`; a counted range is `lower..upper`; generic and square-bracket interiors are compact; `](`, `>(`, and `::<` are attached; and commas and colons attach to their left operand and have one space before the grammar-required following element.
-Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `conform i32: Zeroed`, `['r, 's]`, and `[10_u8, 20_u8]`.
+Thus function headers are `fn f()`, `fn f<T>()`, and `fn f['r]()`; subscripts are `p[i]`; a counted range is `lower..upper`; generic and square-bracket interiors are compact; `](` and `>(` are attached; and commas and colons attach to their left operand and have one space before the grammar-required following element.
+Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `conform i32: Zeroed`, `['r, 's]`, and `[10_u8, 20_u8]`.
 
 Every nonempty physical line begins with exactly two ASCII spaces for each enclosing brace block.
 A closing brace is rendered after reducing the depth for the block it closes.
@@ -70,7 +69,6 @@ An `invariant_stmt` ending in `;` renders completely on one line.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
-A `proof_use` whose multiplied source is a parenthesized relation renders exactly one space between its `*` and that `(`, `use 3 * (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, while the relation's own affine parentheses keep the generic attachment.
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.
@@ -142,12 +140,11 @@ Raw formation deliberately retains broad candidates such as `1e+`, `1.00_f64`, a
 - A STRING form starts with `"` and ends at the first unescaped `"`.
 Its interior consists only of raw bytes `0x20` through `0x7e` other than `"` and `\`, or the two-byte escapes `\\`, `\"`, and `\n`.
 An escape consumes its backslash and follower together.
-- `->`, `=>`, `..`, `==`, `!=`, `<=`, `>=`, and `::` are the eight compound punctuation tokens; each is formed exactly when its two bytes are adjacent, by the same maximal rule that forms `=>` from `=` and `>`.
-The byte `!` occurs in no other token: a `!` not immediately followed by `=` is a raw lexical defect.
+- `->`, `=>`, and `..` are the three compound punctuation tokens.
 Otherwise each byte in `(`, `)`, `{`, `}`, `[`, `]`, `<`, `>`, `,`, `:`, `;`, `.`, `=`, and `&` is one exact punctuation token.
 
 In source EBNF, each quoted fixed atom denotes the unique sequence of raw formed tokens whose concatenated bytes equal that atom.
-In particular, `"&uniq"` expands to the punctuation token `&` followed by the fixed lower-word token `uniq`, while `"->"`, `"=>"`, `".."`, `"=="`, `"!="`, `"<="`, `">="`, and `"::"` each denote one compound punctuation token.
+In particular, `"&uniq"` expands to the punctuation token `&` followed by the fixed lower-word token `uniq`, while `"->"`, `"=>"`, and `".."` each denote one compound punctuation token.
 The quoted `"[0-9]+"` occurrences in the `const` production and the optional multiplier position of `proof_use` share the grammar's sole pattern predicate: each denotes one numeric-form token whose complete bytes match `[0-9]+`, and neither is a fixed atom.
 `SELECT_2` and the two-token parser bound count the expanded raw formed tokens, not quoted-atom occurrences.
 An external terminal denotes one predicate over one formed token.
@@ -163,7 +160,7 @@ A grammar terminal is therefore a predicate over a token's shape kind and exact 
 Exact-spelling and union predicates may overlap only when they do not compete at one grammar decision; every choice, optional, and repetition decision has pairwise-disjoint strong-LL(2) `SELECT_2` languages, so a parser selects exactly one arm with at most two tokens.
 In particular, a noncompeting overlap such as fixed `unit` with the `literal` union does not create an ambiguous parse, but no decision may use predicate priority to hide an overlap.
 Every production maps 1:1 to one core-tree node kind; there is no desugaring.
-`infix_tail` maps to the `infix` node kind: a selected tail forms one `infix` node spanning the complete `expr` — the atom and the tail — so the 1:1 production-to-node mapping is preserved by the factored recognition; its operator child is one `infix_op` or one `compare_op` node.
+`infix_tail` maps to the `infix` node kind: a selected tail forms one `infix` node spanning the complete `expr` — the atom and the tail — so the 1:1 production-to-node mapping is preserved by the factored recognition.
 
 [GRAM-2] Items:
 
@@ -236,11 +233,11 @@ loop_stmt   := "loop" LABEL? ("(" header_invariant ("," header_invariant)* ")")?
 for_stmt    := "for" LABEL? "(" for_binding ("," header_invariant)* ")"
                "{" stmt* "}"
 for_binding := IDENT "in" atom ".." atom
-header_invariant := "invariant" IDENT ":" affine_expr compare_op affine_expr
-invariant_stmt := "invariant" IDENT ":" affine_expr compare_op affine_expr
+header_invariant := "invariant" IDENT ":" IDENT "(" affine_expr "," affine_expr ")"
+invariant_stmt := "invariant" IDENT ":" IDENT "(" affine_expr "," affine_expr ")"
                   (";" | "{" proof_use+ "}")
-proof_use   := "use" ( "[0-9]+" "*" (IDENT | "(" affine_expr compare_op affine_expr ")")
-             | IDENT | affine_expr compare_op affine_expr ) ";"
+proof_use   := "use" ("[0-9]+" "*")?
+               (IDENT | IDENT "(" affine_expr "," affine_expr ")") ";"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
 affine_factor := literal | IDENT | "(" affine_expr ")"
@@ -259,15 +256,14 @@ fieldbind      := IDENT ":" IDENT
 
 ```wf-ebnf GRAM-5
 expr           := atom infix_tail? | call | construct
-infix_tail     := (infix_op | compare_op) atom
+infix_tail     := infix_op atom
 infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
                 | "-" | "-wrap" | "-defined" | "-checked" | "-sat"
                 | "*" | "*wrap" | "*defined" | "*checked" | "*sat"
                 | "/" | "/defined" | "/checked"
                 | "%" | "%defined" | "%checked"
-compare_op     := "==" | "!=" | "<" | "<=" | ">" | ">="
 atom           := literal | "move" place | place | borrow_expr
-call           := callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
+call           := callee targs? "(" ( atom_list | fieldinit_list )? ")"
 callee         := IDENT | OPNAME
 construct      := TYPEID targs? "(" fieldinit_list? ")"
 fieldinit_list := fieldinit ("," fieldinit)*
@@ -280,7 +276,6 @@ psuffix        := "." IDENT | "[" atom "]"
 ```
 
 [GRAM-6] There is no general operator syntax and no precedence: an `infix` expression is exactly one operation over two atoms [GRAM-5, GRAM-9], composition is by `let`, and no precedence, associativity, or parenthesization surface exists.
-The `compare_op` alternatives are the six integer comparisons of [OP-1] and form `infix` expressions exactly as the `infix_op` arithmetic does; a `call` writes its type and region arguments after the `::` delimiter, `cvt::<u8, u32>(w)`, so that `IDENT "<"` begins a comparison and never a type-argument list, while a `construct` and a `type` write theirs bare.
 There is no `while`.
 Conditional control is type-driven with one form per class: a Bool condition takes `if`/`else`, an enum scrutinee takes `match`, and each is the sole legal form for its class — a `match` whose scrutinee has type `Bool` is a hard error citing GRAM-6 at the scrutinee `expr` node (spell `if`).
 An `if` condition must have exact value mode and type `own Bool` under exactly the [OP-5] condition judgment, TYPE-7 exclusivity included; every other condition failure cites GRAM-6 at the condition `expr` node.
@@ -362,7 +357,7 @@ Affine elements leave and enter their slots only through [SET-2] element replace
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
 
 [TYPE-4] There are no implicit conversions.
-Representation change is the single explicit op `cvt::<Src, Dst>(x)`.
+Representation change is the single explicit op `cvt<Src, Dst>(x)`.
 Totality is decided by value-preservation, not bit-width: `cvt` returns `own Dst` where every value of Src is exactly representable in Dst, and `own Result<Dst, NarrowError>` for every other distinct numeric pair; it never rounds, truncates, or saturates.
 The exact partition and per-value semantics are [OP-6].
 Deliberate rounding is a separate DEFERRED float-round op family, never `cvt`.
@@ -682,7 +677,7 @@ Growable or keyed collections (dynamic vector, hash map, set, byte-string, text)
 The arena-index-pool ownership pattern remains rejected as a collection basis (it resurrects use-after-free as well-typed slot-recycling); keyed collections additionally remain blocked on their own occupancy and identity designs.
 Char and Unicode text are out-of-v0, recorded.
 
-[STOR-2] Creation: `box_new(v)` returns `own box<T>` for `v`'s exact type T [OP-2]; `arena_new::<'r, T>(v)` returns `own arena<'r, T>`; both are ordinary calls in the operation table.
+[STOR-2] Creation: `box_new(v)` returns `own box<T>` for `v`'s exact type T [OP-2]; `arena_new<'r, T>(v)` returns `own arena<'r, T>`; both are ordinary calls in the operation table.
 Content access is through `deref`.
 
 [STOR-3] Deallocation and resource release are compiler-derived and explicit in the checked program [DIAG-2]: every drop and every release is represented before lowering.
@@ -785,7 +780,7 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | `ineg` | signed int T | `(T) -> own T` | pure |
 | `ineg.defined` | signed int T | `(T) -> own Bool` | pure |
 | `ineg.checked` | signed int T | `(T) -> own Result<T, Overflow>` | pure |
-| `==` `!=` `<` `<=` `>` `>=` | all int T | `(T, T) -> own Bool` | pure |
+| `ieq` `ine` `ilt` `ile` `igt` `ige` | all int T | `(T, T) -> own Bool` | pure |
 | `eeq` `ene` | one exact nominal tag-only enum T (every variant nullary), including `Bool` | `(T, T) -> own Bool` | pure |
 | `fadd.strict` `fsub.strict` `fmul.strict` `fdiv.strict` | f32 f64 | `(T, T) -> own T` | pure |
 | `feq` `flt` `fle` `fgt` `fge` `fne` | f32 f64 | `(T, T) -> own Bool` | pure |
@@ -834,7 +829,7 @@ A printed review list is non-authoritative and, when present, must equal the cor
 
 Each distinct complete spelling in the operation table declares one operation-family identity, even when more than one row carries that spelling; the two `cvt` rows therefore belong to one `cvt` family.
 An OPNAME callee resolves to its exactly spelled operation family.
-An `infix_op` or `compare_op` token resolves to its exactly spelled operation by the operator table row; infix resolution consults no name domain, and an operator token is never a declaration, callee IDENT, or OPNAME.
+An `infix_op` token resolves to its exactly spelled operation by the operator table row; infix resolution consults no name domain, and an operator token is never a declaration, callee IDENT, or OPNAME.
 An IDENT callee whose spelling belongs to `DotlessOperationNames` resolves to that operation family; every other IDENT callee admits a top-level source `fn_decl` or an admitted system operation [SYS-1].
 Absence from the selected operation-family, function, or system-operation inventory is a hard error citing OP-1.
 Later typed operation checking uses the operand domains and, for the retained-argument operations [TYPE-5], the written arguments, to select the applicable row within the resolved family.
@@ -893,7 +888,7 @@ The checked add, subtract, multiply, negation, and absolute forms return `Ok(val
 The existing saturating forms clamp exactly as [OP-8] fixes.
 There is no wrap division or remainder because divisor zero has no modular quotient or remainder.
 
-For `==`, `!=`, `<`, `<=`, `>`, and `>=`, both operands denote their mathematical values in T and the result is respectively `True()` exactly when `a=b`, `a!=b`, `a<b`, `a<=b`, `a>b`, or `a>=b`.
+For `ieq`, `ine`, `ilt`, `ile`, `igt`, and `ige`, both operands denote their mathematical values in T and the result is respectively `True()` exactly when `a=b`, `a!=b`, `a<b`, `a<=b`, `a>b`, or `a>=b`.
 Ordering on signed T is signed mathematical ordering and on unsigned T is unsigned ordering.
 All six comparisons are pure, total, Bool-valued operations.
 
@@ -938,12 +933,11 @@ Every other distinct numeric pair returns `(Src) -> own Result<Dst, NarrowError>
 
 [OP-7] Operation-name convention (regularity, W1-predictable).
 An arithmetic, logic, bit, or compare op carries a domain prefix — `i` (integer), `f` (float), `b` (Bool logic), or `e` (tag-only enum comparison, including `Bool`) — whether or not a cross-domain twin exists; the structural ops (`cvt`, `reinterpret`, `len`, `slice_of`, `box_new`, `arena_new`) carry no prefix.
-The integer arithmetic and integer comparison symbols of [GRAM-5] are the one prefix-free operation class: each is an integer-only table row, so `+` and `<` never denote a float or enum operation, and `fadd.strict`, `feq`, and `eeq` keep their prefixed names.
 `Bool` participates in the `b` family for boolean logic and the `e` family for tag-only equality; the operation name, not operand inference, selects the family.
 A respelled operation's token is its one constant spelling under the same one-spelling-per-operation discipline.
 Bare infix and dotless named integer spellings are proof-required exact operations; `.defined` is the distinct total Bool-valued domain query, not a result mode and not an execution of the partial primitive.
 The total value-result policies remain `.wrap`, `.checked`, and `.sat` where [OP-1] lists them, and float `.strict` is unchanged.
-Signedness-parametric lowering keyed on the operand-derived selected type [OP-2] (`ishr` is `ashr` for signed T and `lshr` for unsigned T; `imin` is `smin` or `umin`) is the same discipline as the `<` = `slt`/`ult` row, not overloading.
+Signedness-parametric lowering keyed on the operand-derived selected type [OP-2] (`ishr` is `ashr` for signed T and `lshr` for unsigned T; `imin` is `smin` or `umin`) is the same discipline as the `ilt` = `slt`/`ult` row, not overloading.
 Nominal enum identity is likewise checked from the operand-derived selected type before `eeq`/`ene` lowering; equal representation width never makes distinct enum types interchangeable.
 
 [OP-8] Edge semantics and confirmed lowerings for the operations added in this revision; every totality edge is closed here as table data, so no added row is writer-reachable poison (per T2 and W3).
@@ -963,7 +957,7 @@ Every `.defined` query computes only its total comparison or overflow predicate 
 `frem` is the LLVM frem instruction (the C `fmod`: remainder with the dividend's sign, truncated quotient, exact), a distinct operation from IEEE `remainder`.
 `fsqrt.strict` is `llvm.sqrt` and `ffma.strict` is `llvm.fma` (single-rounding fused, distinct from the contraction [OP-3] forbids; a correctly-rounded libcall on hardware without an FMA unit).
 The comparisons `feq`/`flt`/`fle`/`fgt`/`fge` are ordered (`fcmp o*`, false when either operand is NaN) and `fne` is unordered (`fcmp une`), so `fne` equals `bnot(feq)` on every input and `fne(x, x)` is true exactly when x is NaN.
-`finf` is the positive-infinity value (negative infinity is `fneg(finf::<T>())`) and `fnan` is the canonical quiet NaN; other NaN payloads are reachable through `reinterpret`.
+`finf` is the positive-infinity value (negative infinity is `fneg(finf<T>())`) and `fnan` is the canonical quiet NaN; other NaN payloads are reachable through `reinterpret`.
 For a tag-only enum T — the operand-derived selected type [OP-2] — `eeq(a, b)` is `True()` exactly when `a` and `b` denote the same declared variant of that nominal T, and `ene(a, b)` is its exact boolean complement.
 Both operands must have that exact T, derived by [OP-2]'s agreement rule; representation equality never permits cross-enum comparison.
 `Bool` is admitted by the same tag-only rule.
@@ -971,12 +965,12 @@ Both operations lower directly to equality or inequality of the validated discri
 They are pure and total: after normal operand evaluation, the primitive does not inspect a payload, access memory, trap, convert a value, or introduce a new optimizer fact channel; an operand read still exhibits its ordinary effect before the primitive executes.
 Payload-carrying enums, enum ordering, and enum/integer conversion remain outside the operation table.
 
-[OP-9] `buffer_fits::<T>(n)` is the pure, total, target-independent allocation-domain predicate
+[OP-9] `buffer_fits<T>(n)` is the pure, total, target-independent allocation-domain predicate
 `n <= floor((2^64 - 1) / stride_ceiling(T))`, where `stride_ceiling(T) >= 1` is the language layout ceiling fixed below.
 It returns `own Bool`, exposes no target ABI value, and has the same result for one source type and n on every qualified target.
 
-`buffer_new(n, v)` over fill type T carries the one canonical obligation `buffer_fits::<T>(n)`.
-`buffer_vacant::<T>(n)` carries `buffer_fits::<Option<T>>(n)`.
+`buffer_new(n, v)` over fill type T carries the one canonical obligation `buffer_fits<T>(n)`.
+`buffer_vacant<T>(n)` carries `buffer_fits<Option<T>>(n)`.
 Each is accepted only when [ENT-6] discharges that exact goal; its sole normalized component is the defining comparison above, which may supply an alternate L0 derivation of the same root.
 The root does not project a new general L0 fact in the other direction.
 A refuted or unproved goal is a static OP-9 rejection; a contradictory state discharges it under [ENT-4].
@@ -1309,7 +1303,7 @@ The header whole-Result binder is unavailable in a routed clause.
 Borrow-mode, unit, float, aggregate, nested-payload, whole-Result, non-Ok, and every other shape remains a legal ordinary result but cannot supply a relation datum in this version.
 Omitting Err routes means Err exits are unselected, not unreachable.
 
-After recursively alpha-expanding every shared `contract_define`, the clause expression must have exact type `own Bool` and its root must be exactly one `compare_op` — `==`, `!=`, `<`, `<=`, `>`, or `>=` [GRAM-5].
+After recursively alpha-expanding every shared `contract_define`, the clause expression must have exact type `own Bool` and its root must be exactly one of `ieq`, `ine`, `ilt`, `ile`, `igt`, or `ige`.
 Both operands must be the clause's symbolic result datum, a parameter datum with field and `deref` projections, a named const, a typed integer literal, or `len(P)` for an admitted formal place P; at least one operand contains the result datum.
 No proof-required exact operation, computed arithmetic result, subscript, occurrence-local evaluated-value datum, Boolean connective, nested result projection, or body local becomes a relation term.
 The comparison normalizes to one finite L0 RelationTemplate; equality's two bounds remain one relation occurrence.
@@ -1411,7 +1405,7 @@ Binding, moving, passing, returning, borrowing, reborrowing, and slicing preserv
 At a user or system call, each callee effect path selects its root formal's actual argument and appends its static field suffix to that actual's resolved place. Holder resolution then reaches the borrowed referent, and a slice actual projects through its complete [OWN-5] origin set. A projection rooted in one of the current function's formals contributes the corresponding current-function path. A projection rooted only in fresh local state contributes no enclosing effect.
 Thus a callee write through a child reborrow of incoming `&uniq` storage reaches the incoming formal path, while the same callee write through fresh local storage frames out. Equal lifetime arguments never merge two suppliers because lifetimes do not participate in this substitution.
 
-Resource-producing calls follow the same rule. For example, `reserve_file::<'r>(factory: &uniq 'r factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
+Resource-producing calls follow the same rule. For example, `reserve_file<'r>(factory: &uniq 'r factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
 Framing an action on fresh local state out of the enclosing signature means only that it contributes no formal-rooted boundary path. The checked call still retains its instantiated nonempty effect on that local place. Eliminating it requires the ordinary closed-state, escape, result, release, and observer proof which justifies deleting any stateful call; absence from the enclosing row alone proves none of those facts. A target operation is lowered with its qualified physical side effects intact. The mandatory direct write on the creating factory, namespace, allocator, or permit prevents the enclosing call from becoming `pure` merely because the produced owner stayed local [EFF-5].
 
 The release contribution collects the effects of compiler-derived release.
@@ -1604,12 +1598,12 @@ The first matching row stops traversal.
 A row retains the frontier expected-terminal set and coordinate unless that row names a replacement.
 
 1.
-If the boundary token is one member of four consecutive actual tokens `IDENT "." IDENT ("("|"::")`, that dotted call-or-targs spelling cites [FORM-3].
+If the boundary token is one member of four consecutive actual tokens `IDENT "." IDENT ("("|"<")`, that dotted call-or-targs spelling cites [FORM-3].
 Its coordinate is the complete interval from the first IDENT through the second IDENT.
 An allowed suffix would already be one maximal OPNAME token, while a field place cannot be called or given targs.
 This bounded diagnostic window may include already recognized tokens, performs no operation-table or name lookup, consumes nothing, and does not enlarge recognition's two-token lookahead.
 2.
-If source-EBNF provenance reaches or would next enter an `atom` occurrence in `atom_list`, `fieldinit`, an `infix` operand, the subscript offset, or either endpoint of a `for_stmt`, and the two actual tokens at the start of that occurrence are `(IDENT, "(")`, `(IDENT, "::")`, `(OPNAME, "(")`, `(OPNAME, "::")`, `(TYPEID, "(")`, or `(TYPEID, "<")`, the rejection cites [GRAM-9]; in an infix-operand occurrence, a two-token start whose second token is an `infix_op` or `compare_op` token — the forbidden nested-infix start — likewise cites [GRAM-9].
+If source-EBNF provenance reaches or would next enter an `atom` occurrence in `atom_list`, `fieldinit`, an `infix` operand, the subscript offset, or either endpoint of a `for_stmt`, and the two actual tokens at the start of that occurrence are `(IDENT, "(")`, `(IDENT, "<")`, `(OPNAME, "(")`, `(OPNAME, "<")`, `(TYPEID, "(")`, or `(TYPEID, "<")`, the rejection cites [GRAM-9]; in an infix-operand occurrence, a two-token start whose second token is an operator token — the forbidden nested-infix start — likewise cites [GRAM-9].
 These are exactly the `call` and `construct` starts forbidden in an atom-only position; no name lookup participates.
 Its coordinate is the complete interval from the first through the second token of that forbidden call or construct start.
 3.
@@ -2286,7 +2280,7 @@ No unlisted result, projection, written parameter, field, storage value, or comp
 Ordinary effect paths and loans describe interference independently [EFF-2, EFF-5].
 
 Every system operation is nongeneric: it declares no type parameter and no const parameter, so no `targ` in a system-operation call is a `type` or a `const`.
-A call whose callee resolves to a system operation writes its region arguments as `targs` after the `::` delimiter [GRAM-5] in declared region-parameter order and its value arguments as a `fieldinit_list` [GRAM-5] whose IDENTs equal the declared parameter names in declared order, under the same discipline [GRAM-11] applies to a user function.
+A call whose callee resolves to a system operation writes its region arguments as `targs` in declared region-parameter order and its value arguments as a `fieldinit_list` [GRAM-5] whose IDENTs equal the declared parameter names in declared order, under the same discipline [GRAM-11] applies to a user function.
 Positional operands are not admitted.
 A system operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise; a conformance binds only a top-level source function.
 
@@ -2735,7 +2729,7 @@ S11 is only the compiler-owned consequence of the counted operations [FN-1] actu
 Each accepted fact retains the constructor identity and direct parents that already produced it; this diagnostic information establishes and kills no additional relation or signed goal, and no [ENT-4] answer depends on a second provenance state.
 
 A comparison origin is defined first.
-An expression has comparison origin R when (a) it is an `infix` expression whose operator is a `compare_op` — `==`, `!=`, `<`, `<=`, `>`, `>=` [OP-2] — and whose two operands are each a term or constant, R the corresponding relation over them; or (b) it is a bare IDENT naming a `let` binding of type `own Bool` whose initializer right-hand side satisfies (a) with relation R, no [ENT-5] kill event (a)–(d) applies to a fact supported by an operand term of R on any path from that initializer to the use, and the binding is the target of no `set` on any such path.
+An expression has comparison origin R when (a) it is a call to one of `ieq`, `ine`, `ilt`, `ile`, `igt`, `ige` [OP-2] whose two operands are each a term or constant, R the corresponding relation over them; or (b) it is a bare IDENT naming a `let` binding of type `own Bool` whose initializer right-hand side satisfies (a) with relation R, no [ENT-5] kill event (a)–(d) applies to a fact supported by an operand term of R on any path from that initializer to the use, and the binding is the target of no `set` on any such path.
 No other shape has one: `band`, `bor`, `bxor`, `bnot`, `eeq`, `ene`, user-function results, and deeper indirection chains contribute no L0 comparison origin in this version; an established Boolean goal contributes relations only through the members of its signed decomposition set.
 
 An expression has integer-domain-predicate origin G when (a) it is one total `+defined`, `-defined`, `*defined`, `/defined`, `%defined`, `ineg.defined`, `iabs.defined`, `ishl.defined`, or `ishr.defined` operation with its selected concrete operand type and complete ordered admitted value-expression identities, after every nested obligation in those operands has succeeded, G that exact typed GoalExpression; or (b) it is a bare IDENT naming an own-Bool ordinary-let binding whose initializer satisfies (a), no [ENT-5] kill event applies to G's support on any path from that initializer to the use, and the binding is the target of no `set` on any such path.
@@ -2768,12 +2762,12 @@ L0 negation is exact over mathematical integers: the negation of `a - b <= c` is
 [ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
-When and only when G's complete root is one comparison admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len(P)` length term, that exact relation R is also established.
+When and only when G's complete root is one comparison call admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len(P)` length term, that exact relation R is also established.
 Beyond that projection, only the members of G's signed decomposition set and their projections are established; no other child of any goal is established.
 S4 is the admitted-body axiom justified by every ordinary caller's static discharge; no callee-entry prologue or boundary check executes.
 [ENT-3.S5]
 - S5 (copy and conversion equalities).
-An `ordinary_let_rhs` establishes at its binding: for `let x = lit;`, x = value(lit); for `let x = p;` with p a term of type T, x = p; for `let y = cvt::<Src, Dst>(p);` with (Src, Dst) a total pair [OP-6] and p a term or constant, y = p — `cvt` keeps its written type pair [TYPE-5].
+An `ordinary_let_rhs` establishes at its binding: for `let x = lit;`, x = value(lit); for `let x = p;` with p a term of type T, x = p; for `let y = cvt<Src, Dst>(p);` with (Src, Dst) a total pair [OP-6] and p a term or constant, y = p — `cvt` keeps its written type pair [TYPE-5].
 A successful [SET-1] commit to a direct fragment-typed place first evaluates its right-hand side to that occurrence's commit value v, establishing at v exactly the [ENT-3] image the same right-hand side establishes at an `ordinary_let_rhs` binding: this clause's three rows and every S6, S7, and S9 row whose conclusion is a relation over the bound value itself.
 A row concluding instead over a length term of the destination place has no commit form, a commit value being no place.
 Every fact supported by the old target value then dies under [ENT-5], and only then is the post-write equality x = v established.
@@ -2781,7 +2775,7 @@ Evaluating v before that kill is what lets [ENT-5]'s pre-kill closure carry the 
 An array- or buffer-index target and a non-fragment target receive no commit value, and a right-hand side whose form matches no image row forms none either: with no commit value to name, S5 establishes no post-write equality and adds nothing to the state [ENT-5]'s kill leaves, and no S5 commit image beyond that exists in this version.
 [ENT-3.S6]
 - S6 (length facts).
-`let b = buffer_new(n, v);` and `let b = buffer_vacant::<T>(n);` each establish len(b) = n on the normal continuation [OP-9], n read as term or constant.
+`let b = buffer_new(n, v);` and `let b = buffer_vacant<T>(n);` each establish len(b) = n on the normal continuation [OP-9], n read as term or constant.
 `let m = len(P);` for a tracked P establishes m = len(P).
 `let s = slice_of…(&'r P);` for a tracked P establishes len(s) = len(P).
 [ENT-3.S7]
@@ -3026,7 +3020,7 @@ Consequently an author can determine from this rule alone whether a target is au
 An [FN-8] Signed Goal query first applies the ordinary positive and negative [ENT-4] disposition to its complete root.
 When neither sign is ordinarily derivable, its one remaining positive-proof route recursively follows exactly [ENT-4]'s fixed Boolean introduction table over the already-written goal tree: positive `band` and negative `bor` require every child in source order; negative `band` and positive `bor` visit every child in source order and retain the first successful witness; and `bnot` checks its sole child under the opposite sign.
 `bxor` has no introduction route.
-At each visited child, the ordinary [ENT-4] proof is tried first; when the child root is `<=`, `<`, `>=`, or `>` over values having current affine images, the checker normalizes that exact truth sign to one affine inequality and submits it to `AUTO` in the same ProofContext.
+At each visited child, the ordinary [ENT-4] proof is tried first; when the child root is `ile`, `ilt`, `ige`, or `igt` over values having current affine images, the checker normalizes that exact truth sign to one affine inequality and submits it to `AUTO` in the same ProofContext.
 Successful children are joined only by the stated Boolean introduction node; they publish no child, parent, L0, or affine fact, and an unsuccessful candidate changes no later candidate or acceptance result.
 This structural traversal invents no proposition, connective, rewrite, premise, or coefficient and is part of the single Signed Goal query rather than an [FN-8] retry or fallback.
 
@@ -3072,13 +3066,13 @@ For exact shift, the finite L0 normalization is `k < K`, equivalently `k - Z <= 
 A refuted or unproved IntegerDomain Goal is an OP-2 rejection carrying its canonical `.defined` spelling.
 The `.defined` Goal itself is not an invariant target: when an affine route needs writer guidance, a preceding proved invariant establishes the required operand or interval relation, optionally using [PRF-1], and the operation's fixed checker consumes that published relation.
 
-AllocationFit attaches one canonical `buffer_fits::<T>(n)` Goal to every `buffer_new(n, v)`, and `buffer_fits::<Option<T>>(n)` to every `buffer_vacant::<T>(n)`, at that `call` node [OP-9].
+AllocationFit attaches one canonical `buffer_fits<T>(n)` Goal to every `buffer_new(n, v)`, and `buffer_fits<Option<T>>(n)` to every `buffer_vacant<T>(n)`, at that `call` node [OP-9].
 Its length child uses the same stable-or-occurrence-local identity rule as IntegerDomain, so every AllocationFit occurrence has one canonical Goal.
 After contradiction, an exact positive Goal discharges and an exact negative Goal refutes; otherwise its normalization is `n <= floor((2^64 - 1) / stride_ceiling(S))` for the selected stored type S.
 The closed L0 relation is tried when available, followed by `AUTO` over the same normalized relation when n has a current affine image; a derived false comparison refutes, and absence of every proof is unproved.
 A refuted or unproved occurrence is an OP-9 rejection and creates no allocation or runtime operation.
 
-SystemRange attaches two independent Goals in declared order to each [SYS-8] range-bearing call: ordinal zero is `start <= end`; ordinal one is `end <= len(buffer)`.
+SystemRange attaches two independent Goals in declared order to each [SYS-8] range-bearing call: ordinal zero is `ile(start, end)`; ordinal one is `ile(end, len(buffer))`.
 Each value child uses the same stable-or-occurrence-local identity rule; the one evaluated end identity is constructed once and shared by both Goals, and every SystemRange ordinal therefore has a canonical Goal even when no L0 normalization exists.
 Each uses the same BoundedRelation checker as SubscriptBounds, additionally carrying its exact signed comparison Goal and its direct affine normalization when formable.
 It therefore checks contradiction, the exact positive or negative signed fact, closed L0, direct `AUTO`, and the fixed affine-left/L0-right bridge in that order; a result from one ordinal supplies no premise to the other.
@@ -3102,8 +3096,8 @@ Internal derivation metadata is only the diagnostic explanation of that acceptan
 A loop-header placement additionally creates induction obligations because control may enter that point from the preheader and from a backedge; a body placement creates only the one ordinary program-point obligation in its entering ProofContext.
 The spelling `invariant` therefore describes the writer-visible meaning in both positions, while the control-flow owner determines how many incoming-edge obligations exist.
 
-The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `proof_use` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error citing INV-1 at the `compare_op` node.
-The checker normalizes `a <= b` to `a-b <= 0`, `a < b` to `a-b <= -1`, `a >= b` to `b-a <= 0`, and `a > b` to `b-a <= -1`.
+The relation IDENT in a `header_invariant`, `invariant_stmt`, or relation-form `proof_use` must be exactly `ile`, `ilt`, `ige`, or `igt`; it selects a proof-domain relation and performs no [OP-1] call.
+The checker normalizes `ile(a,b)` to `a-b <= 0`, `ilt(a,b)` to `a-b <= -1`, `ige(a,b)` to `b-a <= 0`, and `igt(a,b)` to `b-a <= -1`.
 Equality, disequality, and every other Bool root are outside this version's invariant surface.
 
 An `affine_expr` denotes a mathematical integer expression and never a runtime evaluation.
@@ -3161,21 +3155,21 @@ It supplies an ordered list of `proof_use` steps that tells the checker which al
 A next-state relation using one current header theorem and then a value-range discharge by `DIRECT` remains inside `AUTO` and therefore has no block:
 
 ```wf
-invariant next_per_byte: sum <= 255_u32 * (i + 1_u64);
+invariant next_per_byte: ile(sum, 255_u32 * (i + 1_u64));
 ```
 
 The first example below names three listed affine premises, beyond `AUTO`'s complete two-listed-premise family.
 The second uses one explicit non-unit factor, which `AUTO` never guesses:
 
 ```wf
-invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
-  use first <= first_limit;
-  use second <= second_limit;
-  use third <= third_limit;
+invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit) {
+  use ile(first, first_limit);
+  use ile(second, second_limit);
+  use ile(third, third_limit);
 }
 
-invariant pair_bound: first + second <= first_limit + second_limit;
-invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
+invariant pair_bound: ile(first + second, first_limit + second_limit);
+invariant scaled_bound: ile(3_u64 * first + 3_u64 * second, 3_u64 * first_limit + 3_u64 * second_limit) {
   use 3 * pair_bound;
 }
 ```
@@ -3189,7 +3183,6 @@ Every use, named or written, is checked against the same snapshot immediately be
 No use publishes a fact, and no earlier use can help prove a later use.
 
 The optional bare-decimal multiplier in `proof_use` is a proof-domain positive integer factor.
-A multiplied relation-form source writes its relation in parentheses, `use 3 * (a <= b);`, an unmultiplied relation-form source is bare, `use a <= b;`, and a named source is never parenthesized [GRAM-4]; those parentheses delimit the premise the factor scales and are the grammar's own, not an affine grouping.
 Its canonical spelling is one bare decimal with no leading zero, its value must be in `2..=i128::MAX`, and omission alone means one.
 It is neither a source integer literal nor a runtime type.
 Zero, an explicit one, a leading zero, an out-of-range factor, a negative or typed literal, and arithmetic overflow reject.
@@ -3227,9 +3220,9 @@ enum Sign {
 
 fn sign_of(x: own i32) -> result: own Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
-  if x < 0_i32 {
+  if ilt(x, 0_i32) {
     return Neg();
-  } else if x == 0_i32 {
+  } else if ieq(x, 0_i32) {
     return Zero();
   } else {
     return Pos();
@@ -3250,7 +3243,7 @@ command fn main() -> status: own ExitStatus pure {
         return move failed;
       }
     }
-    let expected = v == 42_i32;
+    let expected = ieq(v, 42_i32);
     if expected {
     } else {
       let failed = exit_status(code: 1_u8);
