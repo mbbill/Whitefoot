@@ -663,9 +663,7 @@ mod tests {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -699,9 +697,7 @@ mod tests {
     /// judgment grants.
     const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1072,9 +1068,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_ledger_names_the_host_path_the_source_was_read_from() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1368,9 +1362,7 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   let hits = 0_u64;
-  for @scan (
-    i in 0_u64..4096_u64
-  ) {
+  for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
     if escaped {
       set hits = hits +wrap 1_u64;
@@ -1403,9 +1395,7 @@ command fn main() -> status: own ExitStatus pure {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
-  for @sum (
-    i in 0_u64..1024_u64
-  ) {
+  for @sum (i in 0_u64..1024_u64) {
     set total = fadd.strict(total, step);
   }
   return exit_status(code: 0_u8);
@@ -1426,9 +1416,7 @@ command fn main() -> status: own ExitStatus pure {
         let integral = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
-  for @sum (
-    i in 0_u64..1024_u64
-  ) {
+  for @sum (i in 0_u64..1024_u64) {
     set total = total +wrap step;
   }
   return exit_status(code: 0_u8);
@@ -1450,9 +1438,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_proven_counted_binder_buffer_map_is_permitted() {
         let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
-  for @fill (
-    i in 0_u64..64_u64
-  ) {
+  for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
   return exit_status(code: 0_u8);
@@ -1489,9 +1475,7 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
-  for @sum (
-    i in 0_u64..8_u64
-  ) {
+  for @sum (i in 0_u64..8_u64) {
     region 'acc {
       let one = accum<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
       set count = count +wrap one;
@@ -1520,9 +1504,7 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
-  for @sum (
-    i in 0_u64..8_u64
-  ) {
+  for @sum (i in 0_u64..8_u64) {
     let one = weigh(x: total);
     set count = count +wrap one;
   }
@@ -1555,9 +1537,7 @@ command fn main() -> status: own ExitStatus pure {
   let acc = 0_u64;
   let always = True();
   let answer = if always {
-    for @scan (
-      i in 0_u64..count
-    ) {
+    for @scan (i in 0_u64..count) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
       let hit = ieq(v, needle);
@@ -1596,9 +1576,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let acc = 0_u64;
   let always = True();
   let answer = if always {
-    for @scan (
-      i in 0_u64..count
-    ) {
+    for @scan (i in 0_u64..count) {
       let v = deref(src)[i];
       set acc = acc +wrap v;
     }
@@ -1643,9 +1621,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let every = True();
   let any = False();
   let parity = False();
-  for @scan (
-    i in 0_u64..64_u64
-  ) {
+  for @scan (i in 0_u64..64_u64) {
     let low = iand(i, 1_u64);
     let bit = ieq(low, 0_u64);
     set every = band(every, bit);
@@ -1681,9 +1657,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     fn the_permission_ledger_reports_a_granted_stage_and_its_disposition_table() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1758,9 +1732,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(8_u64, 1_u8);
   let right = buffer_new(8_u64, 2_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1820,9 +1792,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1891,9 +1861,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let byte = data[0_u64];
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1965,13 +1933,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     #[test]
     fn nested_loops_sharing_one_cut_print_at_their_own_heads() {
         let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  for @outer (
-    step in 0_u64..2_u64
-  ) {
+  for @outer (step in 0_u64..2_u64) {
     let shared = buffer_new(16_u64, 97_u8);
-    for @scan (
-      index in 0_u64..4_u64
-    ) {
+    for @scan (index in 0_u64..4_u64) {
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
         region 'n {
@@ -1999,7 +1963,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
             "the outer loop is anchored on its own head: {stages:?}"
         );
         assert!(
-            stages[1].starts_with("PAR stage       nested.wf:6  for   permitted"),
+            stages[1].starts_with("PAR stage       nested.wf:4  for   permitted"),
             "the inner loop is anchored on its own head: {stages:?}"
         );
     }
@@ -2012,9 +1976,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     fn a_loop_without_io_gets_a_counted_line_and_no_staged_line() {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
-  for @sum (
-    i in 0_u64..8_u64
-  ) {
+  for @sum (i in 0_u64..8_u64) {
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -2872,9 +2834,7 @@ command fn main() -> status: own ExitStatus pure {
         let per_iteration = format!(
             "{EMIT}
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
-  for @scan (
-    index in 0_u64..4_u64
-  ) {{
+  for @scan (index in 0_u64..4_u64) {{
     region 'p {{
       let wrote = emit<'p>(out: &uniq 'p out, value: 65_u8);
     }}
@@ -2903,9 +2863,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             "{EMIT}
 command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {{
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {{
+  for @scan (index in 0_u64..4_u64) {{
     let name = buffer_new(16_u64, 97_u8);
     region 'f {{
       let permit = reserve_file<'f>(factory: &uniq 'f files);

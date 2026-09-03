@@ -193,6 +193,11 @@ pub(super) fn build_gap_styles(
             }
         }
 
+        // A loop header carrying at least one `header_invariant` breaks after
+        // `(`, placing each header item on its own line and `) {` back at the
+        // construct's depth. A counted `for` whose header is only its binding
+        // has no invariant to set apart, so its whole header stays on one line;
+        // an ordinary `loop` with no header has no parentheses at all.
         if matches!(
             record.production,
             Production::ForStmt | Production::LoopStmt
@@ -200,18 +205,25 @@ pub(super) fn build_gap_styles(
             let children = topology
                 .node_children(node)
                 .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
-            let mut header_items = 0_u32;
+            let mut first_header = None;
+            let mut invariants = 0_u32;
             for child in children {
                 let child = topology
                     .node(*child)
                     .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
-                if matches!(
-                    child.production,
-                    Production::ForBinding | Production::HeaderInvariant
-                ) {
-                    header_items = header_items
-                        .checked_add(1)
-                        .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
+                match child.production {
+                    Production::ForBinding => {}
+                    Production::HeaderInvariant => {
+                        invariants = invariants
+                            .checked_add(1)
+                            .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
+                    }
+                    _ => continue,
+                }
+                if first_header.is_none() {
+                    first_header = Some(child.first_terminal);
+                }
+                if invariants != 0 {
                     mark_before(
                         &mut gaps,
                         topology,
@@ -220,27 +232,19 @@ pub(super) fn build_gap_styles(
                     )?;
                 }
             }
-            if header_items != 0 {
-                let first_header = children
-                    .iter()
-                    .filter_map(|child| topology.node(*child))
-                    .find(|child| {
-                        matches!(
-                            child.production,
-                            Production::ForBinding | Production::HeaderInvariant
-                        )
-                    })
-                    .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+            if let Some(first_header) = first_header {
                 let open = first_header
-                    .first_terminal
                     .checked_sub(1)
                     .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
                 mark_before(&mut gaps, topology, open, GapStyle::Spaced)?;
-                let close = record
-                    .body_open
-                    .and_then(|open| open.checked_sub(1))
-                    .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
-                mark_before(&mut gaps, topology, close, GapStyle::Break)?;
+                if invariants != 0 {
+                    mark_before(&mut gaps, topology, first_header, GapStyle::HeaderBreak)?;
+                    let close = record
+                        .body_open
+                        .and_then(|open| open.checked_sub(1))
+                        .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+                    mark_before(&mut gaps, topology, close, GapStyle::Break)?;
+                }
             }
         }
     }

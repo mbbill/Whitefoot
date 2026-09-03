@@ -2,9 +2,7 @@ const input: array<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64
 
 fn checksum() -> function_result: own u64 pure {
   let total = 0_u64;
-  for (
-    cursor in 0_u64..8_u64
-  ) {
+  for (cursor in 0_u64..8_u64) {
     let value = input[cursor];
     set total = total +wrap value;
   }

@@ -145,9 +145,7 @@ fn an_uncounted_loop_is_admitted_on_the_same_terms_as_a_counted_one() {
 fn an_exit_edge_written_in_the_prologue_is_admitted() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let done = ige(index, 2_u64);
     if done {
       break @scan;
@@ -180,9 +178,7 @@ fn an_exit_edge_written_in_the_prologue_is_admitted() {
 fn a_loop_with_no_may_suspend_action_gets_no_staged_verdict() {
     let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
-  for @sum (
-    i in 0_u64..8_u64
-  ) {
+  for @sum (i in 0_u64..8_u64) {
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -202,9 +198,7 @@ fn a_loop_with_no_may_suspend_action_gets_no_staged_verdict() {
 fn each_loop_that_performs_io_is_judged_on_its_own() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @outer (
-    outer_index in 0_u64..2_u64
-  ) {
+  for @outer (outer_index in 0_u64..2_u64) {
     let outer_name = buffer_new(16_u64, 97_u8);
     region 'of {
       let outer_permit = reserve_file<'of>(factory: &uniq 'of files);
@@ -218,9 +212,7 @@ fn each_loop_that_performs_io_is_judged_on_its_own() {
         }
       }
     }
-    for @inner (
-      inner_index in 0_u64..2_u64
-    ) {
+    for @inner (inner_index in 0_u64..2_u64) {
       let inner_name = buffer_new(16_u64, 97_u8);
       region 'if {
         let inner_permit = reserve_file<'if>(factory: &uniq 'if files);
@@ -262,9 +254,7 @@ fn each_loop_that_performs_io_is_judged_on_its_own() {
 fn a_submission_reached_on_only_some_paths_has_no_cut() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let wanted = ilt(index, 2_u64);
     if wanted {
@@ -300,9 +290,7 @@ fn a_submission_reached_on_only_some_paths_has_no_cut() {
 fn a_submission_written_inside_a_loop_of_the_body_has_no_cut() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let inner = 0_u64;
     loop @twice {
       let done = ige(inner, 2_u64);
@@ -363,9 +351,7 @@ fn a_return_after_the_submission_denies() {
 fn a_break_after_the_submission_denies() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -423,9 +409,7 @@ fn a_give_leaving_the_loop_denies_and_one_delivered_inside_it_does_not() {
     let leaving = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let taken = ieq(1_u64, 1_u64);
   let outcome = if taken {
-    for @scan (
-      index in 0_u64..4_u64
-    ) {
+    for @scan (index in 0_u64..4_u64) {
       let name = buffer_new(16_u64, 97_u8);
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -455,9 +439,7 @@ fn a_give_leaving_the_loop_denies_and_one_delivered_inside_it_does_not() {
 
     let inside = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -520,9 +502,7 @@ fn an_enclosing_enumeration_cursor_can_never_be_replicated() {
     let permit = reserve_file<'c>(factory: &uniq 'c files);
     match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
-        for @scan (
-          index in 0_u64..4_u64
-        ) {
+        for @scan (index in 0_u64..4_u64) {
           let entries = buffer_new(1024_u64, 0_u8);
           region 'b {
             match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
@@ -591,9 +571,7 @@ fn a_pure_exclusive_borrow_of_enclosing_storage_in_the_remainder_denies() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let cell = 0_u64;
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -632,9 +610,7 @@ fn the_same_exclusive_borrow_taken_in_the_prologue_is_serialized() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let cell = 0_u64;
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let touched = 0_u64;
     region 'c {
@@ -699,9 +675,7 @@ fn an_accumulator_written_only_in_the_remainder_is_serialized_there() {
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -757,9 +731,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 fn a_construction_whose_elements_are_affine_costs_the_loop_nothing() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let slots = buffer_vacant<u64>(4_u64);
     region 'f {
@@ -814,9 +786,7 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let shared = buffer_new(8_u64, 0_u8);
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'b {
       let holder = &uniq 'b shared;
@@ -863,9 +833,7 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
 fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let scratch = buffer_new(8_u64, 0_u8);
     region 'b {
@@ -910,9 +878,7 @@ fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() 
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'v {
       let view = slice_of(&'v table);
@@ -957,9 +923,7 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let seen = len(table);
     set total = total +wrap seen;
@@ -1001,9 +965,7 @@ fn an_expression_statement_refuses_as_a_form_and_names_the_let_binding() {
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let scratch = buffer_new(8_u64, 0_u8);
     region 's {
@@ -1050,9 +1012,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 #[test]
 fn a_discarded_owned_result_refuses_as_its_own_form() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     buffer_new(8_u64, 0_u8);
     region 'f {
@@ -1101,9 +1061,7 @@ fn two_uniq_borrows_of_one_cell_with_reads_only_rows_still_deny() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let cell = 7_u64;
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1138,9 +1096,7 @@ fn a_statement_interposed_after_the_submission_is_judged_like_any_other() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let carried = 0_u64;
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let bound = ilt(carried, 4_u64);
     region 'f {
@@ -1178,9 +1134,7 @@ fn two_shared_borrows_of_one_enclosing_buffer_deny_nothing() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let table = buffer_new(8_u64, 3_u8);
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let counted = 0_u64;
     region 't {
@@ -1278,9 +1232,7 @@ fn two_disjoint_fields_of_one_record_are_judged_independently() {
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let pair = Pair(a: 1_u64, b: 0_u64);
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let carried = pair.a;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -1330,9 +1282,7 @@ fn the_mirror_of_the_field_recurrence_denies_as_well() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let carrier = Carrier(tag: 0_u64, spare: 0_u64);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let previous = replace carrier = Carrier(tag: index, spare: 0_u64);
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -1386,9 +1336,7 @@ fn a_borrow_into_storage_the_remainder_replaces_denies_by_the_retained_borrow() 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let first = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move first, seen: 0_u64);
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let fresh = buffer_new(16_u64, 98_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1457,9 +1405,7 @@ fn bump['b](holder: &uniq 'b Holder) -> result: own unit reads(holder.seen), wri
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seed = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move seed, seen: 0_u64);
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1518,9 +1464,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 fn a_propagate_whose_right_hand_side_is_the_cut_leaves_from_the_remainder() {
     let source = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -1585,9 +1529,7 @@ fn a_propagate_written_before_the_cut_leaves_from_the_prologue_and_is_admitted()
 
 fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let kept = propagate classify(index: index);
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
@@ -1643,9 +1585,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
     let constant = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     set name[0_u64] = 98_u8;
     region 'f {
@@ -1666,9 +1606,7 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
 "#;
     let branched = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let room = len(name);
     let fits = ilt(index, room);
@@ -1783,9 +1721,7 @@ const FIELD_RECURRENCE: &[u8] = br#"struct Work {
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let work = Work(seen: 0_u64, code: 0_u64);
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let carried = work.seen;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -1809,9 +1745,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// The granted shape, named once because four tests read it.
 const ITERATION_OWN_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -1872,9 +1806,7 @@ const UNCOUNTED_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own Direct
 
 const EXIT_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let seen = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -1898,9 +1830,7 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -1958,9 +1888,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let scratch = buffer_new(1_u64, 0_u8);
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan (
-    index in 0_u64..4_u64
-  ) {
+  for @scan (index in 0_u64..4_u64) {
     region 's {
       let stamped = stamp<'s>(slot: &uniq 's scratch, index: index);
     }

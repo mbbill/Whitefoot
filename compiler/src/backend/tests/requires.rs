@@ -6,9 +6,7 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, s
   requires ile(source_length, out_length);
 } {
   let length = len(source);
-  for (
-    offset in 0_u64..length
-  ) {
+  for (offset in 0_u64..length) {
     let value = source[offset];
     set deref(out)[offset] = value;
   }

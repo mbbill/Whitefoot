@@ -566,7 +566,7 @@ creating writer trust or weakening the checked safety envelope.
   domain goal and must be proved before lowering. Proof syntax and diagnostic
   derivations are erased; consumers retain only checked semantic outcomes and
   permissions.
-- **Loop surface:** a counted loop is multiline `for (` with the binding first
+- **Loop surface:** a counted loop is `for (` with the binding first
   and zero or more header invariants after it; an ordinary loop may use `loop (`
   with invariants only. Neither form permits a trailing comma. Header invariants
   have no use block and their names are body-only. Exact counted exhaustion may

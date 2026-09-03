@@ -115,9 +115,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
   let symbols = buffer_new(symbol_count, 0_u64);
   let nonzero = 0_u64;
   let sole_length = 0_u32;
-  for @count_lengths (
-    symbol in 0_u64..symbol_count
-  ) {
+  for @count_lengths (symbol in 0_u64..symbol_count) {
     let length_byte = lengths[symbol];
     let length = cvt<u8, u32>(length_byte);
     let too_long = igt(length, max_bits);
@@ -185,9 +183,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       set length = length +wrap 1_u32;
     }
   }
-  for @order_symbols (
-    symbol in 0_u64..symbol_count
-  ) {
+  for @order_symbols (symbol in 0_u64..symbol_count) {
     let length_byte = lengths[symbol];
     let symbol_length = cvt<u8, u32>(length_byte);
     let present = igt(symbol_length, 0_u32);

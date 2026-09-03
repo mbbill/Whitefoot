@@ -1138,9 +1138,7 @@ fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tr
 command fn main() -> status: own ExitStatus allocates(heap) {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
-  for @grow (
-    i in 0_u64..{depth}_u64
-  ) {{
+  for @grow (i in 0_u64..{depth}_u64) {{
     let sibling = boxed_leaf();
     let placeholder = boxed_leaf();
     let taken = replace held.node = move placeholder;
@@ -1198,9 +1196,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
     Some(value: stray) => {{
     }}
   }}
-  for @build (
-    i in 0_u64..{depth}_u64
-  ) {{
+  for @build (i in 0_u64..{depth}_u64) {{
     let taken = replace holder[0_u64] = None<Chain>();
     match taken {{
       None() => {{

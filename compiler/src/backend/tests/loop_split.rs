@@ -105,9 +105,7 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
 
 fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   let total = 0_u64;
-  for @points (
-    i in lo..hi
-  ) {
+  for @points (i in lo..hi) {
     let mixed = mix(seed: i);
     set total = total +wrap mixed;
   }
@@ -160,9 +158,7 @@ const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
 
 fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   let total = 7_u64;
-  for @points (
-    i in lo..hi
-  ) {
+  for @points (i in lo..hi) {
     let mixed = mix(seed: i);
     set total = total +wrap mixed;
   }
@@ -251,9 +247,7 @@ command fn main() -> status: own ExitStatus pure {
   let d0 = 30_u64;
   let d1 = 31_u64;
   let total = 0_u64;
-  for @points (
-    i in 0_u64..400000_u64
-  ) {
+  for @points (i in 0_u64..400000_u64) {
     let mixed = mix(seed: i);
     let biased = mixed +wrap a0;
     set total = total +wrap biased;
@@ -329,9 +323,7 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
 fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pure {
   doc "Three captured values, each used differently, folded under ixor.";
   let total = 12345678901234567890_u64;
-  for @points (
-    i in 0_u64..400000_u64
-  ) {
+  for @points (i in 0_u64..400000_u64) {
     let stepped = i *wrap stride;
     let mixed = mix(seed: stepped, salt: salt, rounds: rounds);
     set total = ixor(total, mixed);
@@ -395,9 +387,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
 
 fn mapped() -> result: own buffer<u8> allocates(heap) {
   let out = buffer_new(400000_u64, 0_u8);
-  for @fill (
-    i in 0_u64..400000_u64
-  ) {
+  for @fill (i in 0_u64..400000_u64) {
     let copied = i;
     let slot = copied * 1_u64;
     let mixed = mix(seed: i);
@@ -433,8 +423,8 @@ fn map_and_reduction_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "  for @fill (\n    i in 0_u64..400000_u64\n  ) {\n",
-            "  let checksum = 0_u64;\n  for @fill (\n    i in 0_u64..400000_u64\n  ) {\n",
+            "  for @fill (i in 0_u64..400000_u64) {\n",
+            "  let checksum = 0_u64;\n  for @fill (i in 0_u64..400000_u64) {\n",
             1,
         )
         .replacen(
@@ -1295,7 +1285,7 @@ fn admitted_combine_source() -> Vec<u8> {
         } = combine;
         source.push_str(&format!(
             "\nfn fold_{name}(lo: own u64, hi: own u64) -> result: own {ty} pure {{\n  \
-             let total = {seed};\n  for @points (\n    i in lo..hi\n  ) {{\n    \
+             let total = {seed};\n  for @points (i in lo..hi) {{\n    \
              let mixed = mix(seed: i);\n"
         ));
         for statement in *element {

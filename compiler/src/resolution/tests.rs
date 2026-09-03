@@ -1217,9 +1217,7 @@ fn a_break_label_must_lexically_enclose_the_break() {
 #[test]
 fn counted_range_binder_and_label_are_visible_only_in_the_body() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    index in 0_u64..limit
-  ) {
+  for @range (index in 0_u64..limit) {
     let copied = index;
     break @range;
   }
@@ -1419,9 +1417,7 @@ fn an_unresolved_affine_local_is_reported_as_an_invariant_value() {
 fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
     for source in [
         br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    index in index..limit
-  ) {
+  for @range (index in index..limit) {
     break @range;
   }
   return unit;
@@ -1429,9 +1425,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 "#
         .as_slice(),
         br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    index in 0_u64..index
-  ) {
+  for @range (index in 0_u64..index) {
     break @range;
   }
   return unit;
@@ -1439,9 +1433,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 "#
         .as_slice(),
         br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    index in 0_u64..limit
-  ) {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   let after = index;
@@ -1468,9 +1460,7 @@ fn counted_range_endpoints_with_an_outer_same_name_still_enforce_no_shadowing() 
     for source in [
         br#"fn probe(limit: own u64) -> result: own unit pure {
   let index = 0_u64;
-  for @range (
-    index in index..limit
-  ) {
+  for @range (index in index..limit) {
     break @range;
   }
   return unit;
@@ -1479,9 +1469,7 @@ fn counted_range_endpoints_with_an_outer_same_name_still_enforce_no_shadowing() 
         .as_slice(),
         br#"fn probe(limit: own u64) -> result: own unit pure {
   let index = 0_u64;
-  for @range (
-    index in 0_u64..index
-  ) {
+  for @range (index in 0_u64..index) {
     break @range;
   }
   return unit;
@@ -1709,9 +1697,7 @@ fn header_invariant_names_are_invisible_after_their_loop() {
 #[test]
 fn counted_range_label_is_non_enclosing_after_the_loop() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    index in 0_u64..limit
-  ) {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   break @range;
@@ -1732,9 +1718,7 @@ fn counted_range_label_is_non_enclosing_after_the_loop() {
 #[test]
 fn counted_range_binder_uses_the_for_binder_reservation_role() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    ilt in 0_u64..limit
-  ) {
+  for @range (ilt in 0_u64..limit) {
     break @range;
   }
   return unit;
@@ -1760,9 +1744,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
 fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     let live_outer = br#"fn probe(limit: own u64) -> result: own unit pure {
   let index = 0_u64;
-  for @range (
-    index in 0_u64..limit
-  ) {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   return unit;
@@ -1780,12 +1762,8 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     });
 
     let nested = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @outer (
-    index in 0_u64..limit
-  ) {
-    for @inner (
-      index in 0_u64..limit
-    ) {
+  for @outer (index in 0_u64..limit) {
+    for @inner (index in 0_u64..limit) {
       break @inner;
     }
     break @outer;
@@ -1805,12 +1783,8 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     });
 
     let nested_distinct = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @outer (
-    outer_index in 0_u64..limit
-  ) {
-    for @inner (
-      inner_index in outer_index..limit
-    ) {
+  for @outer (outer_index in 0_u64..limit) {
+    for @inner (inner_index in outer_index..limit) {
       let copied = inner_index;
       break @inner;
     }
@@ -1827,14 +1801,10 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
     });
 
     let reused = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (
-    index in 0_u64..limit
-  ) {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
-  for @range (
-    index in 0_u64..limit
-  ) {
+  for @range (index in 0_u64..limit) {
     break @range;
   }
   let index = 7_u64;
@@ -2040,9 +2010,7 @@ fn probe() -> result: own unit pure {
   loop @done {
     break @done;
   }
-  for @counted (
-    index in 0_u64..2_u64
-  ) {
+  for @counted (index in 0_u64..2_u64) {
     let observed = index;
     break @counted;
   }

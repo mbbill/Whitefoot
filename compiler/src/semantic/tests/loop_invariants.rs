@@ -91,9 +91,7 @@ fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
 #[test]
 fn a_body_local_invariant_is_not_a_counted_header_invariant() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  for (
-    i in 0_u64..1_u64
-  ) {
+  for (i in 0_u64..1_u64) {
     let value = i;
     invariant limit: ile(i, 1_u64);
   }

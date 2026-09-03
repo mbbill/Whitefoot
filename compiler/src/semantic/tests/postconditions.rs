@@ -642,9 +642,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   let admitted = ile(filled, capacity);
   let length = len(text);
   if admitted {
-    for @append (
-      at in filled..capacity
-    ) {
+    for @append (at in filled..capacity) {
       let taken = at -wrap filled;
       let done = ige(taken, length);
       if done {

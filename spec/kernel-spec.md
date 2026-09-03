@@ -68,9 +68,9 @@ Empty blocks still use an opening line followed by a closing-brace line.
 An `invariant_stmt` ending in `;` renders completely on one line.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
-A `for_stmt` renders `for`, its optional label, exactly one space, and `(` on one line; this stated space overrides the generic right attachment of `(`.
-Its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
-Thus even a counted loop with no invariant has the three-line header `for (`, one indented binding line, and `) {`.
+A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
+A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
+A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.
 With a header it instead renders `loop`, its optional label, exactly one space, and `(` on one line, again overriding generic right attachment; every `header_invariant` renders on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 In either loop form, body children and the final closing brace retain the ordinary block-bearing rendering.
