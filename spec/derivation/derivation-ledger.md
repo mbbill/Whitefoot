@@ -1791,7 +1791,7 @@ queue/completion protocols.
 ## v0.41 amendment — integer comparison symbols and the call-site delimiter (2026-09-03, candidate stage)
 
 Specification binding: candidate `spec/kernel-spec.md`, headed v0.41, at
-SHA-256 `71cfbabc4058693241ba3b7f2c6a5a0c7e61552296f8c18f50246162da209cb7`, declared as superseding the active v0.40
+SHA-256 `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06`, declared as superseding the active v0.40
 (`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`). The
 owner rulings of 2026-09-03 and the rejected alternatives are recorded in
 `governance/spec-evolution/comparison-symbols-v041-candidate.md` and

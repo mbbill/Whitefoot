@@ -4,7 +4,7 @@ Status: CANDIDATE, drafted 2026-09-03 on the work branch; not merge-ready until
 the owner's exact-byte approval activates it per `docs/WORKFLOW.md`. The stable
 file `spec/kernel-spec.md` is headed v0.41, declares
 `CANDIDATE v0.41 supersedes v0.40 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`,
-and hashes to `71cfbabc4058693241ba3b7f2c6a5a0c7e61552296f8c18f50246162da209cb7` at this record's writing; a changed byte returns to
+and hashes to `55ee571e7f342471b16078da05fa8b3bfdab11fbe6819a925baad83687966c06` at this record's writing; a changed byte returns to
 review and re-keys that digest. Removal condition: superseded by activation
 (this file then records the activated digest) or by rejection.
 
@@ -83,6 +83,15 @@ where an atom is expected ([GRAM-5]), and `use 3 * a <= b;` does not derive
   is followed by `(` and the name is not a type keyword or a declaration);
   the `doc` prose that named a retired operation respelled by hand. Verdicts,
   rule citations, statuses, and coverage rows are unchanged.
+  Five conformance cases are added for the new rules: `gram5-pos-comparison-operators`
+  (all six operators and a delimited call run to exit 0),
+  `gram5-neg-type-application-without-delimiter` (a bare `cvt<u8, u32>(...)`
+  parses as a comparison and fails at `u8`; DIAG-1 row 3 attributes that
+  keyword to FORM-3), `gram4-neg-multiplied-use-relation-bare` (a multiplied
+  relation-form use without parentheses does not derive),
+  `prf1-pos-multiplied-relation-use` (`use 3 * (a + b <= c + d)` closes a
+  factor-three target), and `inv1-neg-equality-relation` (`==` as an
+  invariant relation is rejected citing INV-1).
 - Docs: `README.md`, `compiler/README.md`, `docs/patterns.md`,
   `docs/why-whitefoot.md` (current examples only; the historical kernels in
   Part II keep their historical spelling), `docs/current-plan.md`,

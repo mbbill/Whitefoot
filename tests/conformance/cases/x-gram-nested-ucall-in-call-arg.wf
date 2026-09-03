@@ -1,9 +1,9 @@
 fn inc (y: own i32) -> function_result: own i32 pure {
-  return iadd.wrap<i32>(y, 1_i32);
+  return iadd.wrap::<i32>(y, 1_i32);
 }
 
 fn add2 (x: own i32, y: own i32) -> function_result: own i32 pure {
-  return iadd.wrap<i32>(x, y);
+  return iadd.wrap::<i32>(x, y);
 }
 
 command fn main () -> status: own ExitStatus pure {

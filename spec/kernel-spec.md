@@ -70,6 +70,7 @@ An `invariant_stmt` ending in `;` renders completely on one line.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
+A `proof_use` whose multiplied source is a parenthesized relation renders exactly one space between its `*` and that `(`, `use 3 * (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, while the relation's own affine parentheses keep the generic attachment.
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.

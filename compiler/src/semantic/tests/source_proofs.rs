@@ -64,7 +64,7 @@ fn assert_prf1_issue_named(
         match expected_node {
             ExpectedProofIssueNode::Invariant => {
                 assert!(
-                    cited.starts_with(&format!("invariant {expected_name}: ile(")),
+                    cited.starts_with(&format!("invariant {expected_name}: ")),
                     "PRF-1 cited {cited:?} instead of the complete invariant statement"
                 );
                 assert!(cited.ends_with('}'));
@@ -1470,7 +1470,7 @@ fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
 }} {{
   invariant upper_bound: a + b + c <= a_limit + b_limit + c_limit {{
     use a <= a_limit;
-    use 170141183460469231731687303715884105727 * 2_u64 * b <= 2_u64 * b_limit;
+    use 170141183460469231731687303715884105727 * (2_u64 * b <= 2_u64 * b_limit);
     use c <= c_limit;
   }}
   return unit;
@@ -1482,7 +1482,7 @@ fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
         source.as_bytes(),
         SourceProofObligation::CertificateArithmeticOverflow,
         ExpectedProofIssueNode::Use {
-            source: "use 170141183460469231731687303715884105727 * 2_u64 * b <= 2_u64 * b_limit;",
+            source: "use 170141183460469231731687303715884105727 * (2_u64 * b <= 2_u64 * b_limit);",
             occurrence: 0,
         },
     );

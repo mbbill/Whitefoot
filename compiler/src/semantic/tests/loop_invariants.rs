@@ -32,11 +32,16 @@ fn assert_invariant_issue(source: &[u8], expected: LoopInvariantProofObligation)
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("invariant source is UTF-8");
+        // The citation is the whole invariant node: a header relation ends at
+        // its last affine token, a local invariant at its `;`, and neither
+        // stops inside the relation or runs into the next header item.
         assert!(
-            cited.starts_with("invariant limit: ile("),
+            cited.starts_with("invariant limit: ")
+                && cited.contains(" <= ")
+                && !cited.contains('\n')
+                && !cited.ends_with(','),
             "INV-1 cited {cited:?} instead of the complete invariant statement"
         );
-        assert!(cited.ends_with(')'));
     });
 }
 

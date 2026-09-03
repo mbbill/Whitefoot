@@ -361,14 +361,14 @@ fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles
 
 #[test]
 fn selector_candidates_use_their_exact_form3_reservation_roles() {
-    let plain = br#"fn plain(value: own i32) -> ilt: own i32 pure contract {
-  ensures ilt == value;
+    let plain = br#"fn plain(value: own i32) -> cvt: own i32 pure contract {
+  ensures cvt == value;
 } {
   return value;
 }
 "#;
     let variant = br#"fn variant(value: own i32) -> result: own Result<i32, i32> pure contract {
-  ensures when Ok(value: ilt): ilt == value;
+  ensures when Ok(value: cvt): cvt == value;
 } {
   return Ok<i32, i32>(value: value);
 }
@@ -396,9 +396,9 @@ fn selector_candidates_use_their_exact_form3_reservation_roles() {
                 ResolutionIssueKind::ReservedName {
                     spelling,
                     declaration_role,
-                    inventory_ordinal: 24,
+                    inventory_ordinal: 44,
                     ..
-                } if spelling == "ilt" && *declaration_role == expected_role
+                } if spelling == "cvt" && *declaration_role == expected_role
             ));
         });
     }
@@ -452,8 +452,9 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
             .expect("plain selector candidate");
         assert_eq!(candidate.live_conflicts.len(), 1);
         assert!(candidate.later_local_collision.is_none());
-        assert_eq!(postcondition.provisional_uses.len(), 1);
-        assert_eq!(postcondition.provisional_uses[0].spelling(), "ieq");
+        // The comparison is an operator token since v0.41 and produces no
+        // lexical use; only the two `result` operands remain as selector uses.
+        assert_eq!(postcondition.provisional_uses.len(), 0);
         assert_eq!(postcondition.selector_uses.len(), 2);
         assert!(postcondition.entry_resolution_issue.is_none());
         assert!(postcondition.entry_inventory_issue.is_none());
@@ -463,7 +464,7 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
 #[test]
 fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
     let source = br#"fn poisoned(value: own i32) -> result: own i32 pure contract {
-  define ilt = value == value;
+  define cvt = value == value;
   ensures result == value;
 } {
   return value;
@@ -480,7 +481,7 @@ fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::Let,
                 ..
-            } if spelling == "ilt"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1080,7 +1081,7 @@ const value: i32 = 1_i32;
 
 #[test]
 fn dotless_operation_names_are_reserved_from_source_declarations() {
-    with_one_resolution(b"fn ilt() -> result: own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn cvt() -> result: own unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("operation name declaration must reject: {outcome:?}");
         };
@@ -1089,32 +1090,27 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
             issue.kind(),
             ResolutionIssueKind::ReservedName {
                 spelling,
-                inventory_ordinal: 24,
+                inventory_ordinal: 44,
                 ..
-            } if spelling == "ilt"
+            } if spelling == "cvt"
         ));
     });
 }
 
-/// OP-1 (iii): reservation is derived from the op column, so every one of the
-/// six comparisons is reserved again after the owner cancelled their infix
-/// spellings. The test above pins `ilt`, which never moved; this one pins the
-/// four that did, because they were declarable for exactly one revision and a
-/// program written against it must stop compiling.
+/// OP-1: reservation is derived from the op column, so the six retired
+/// comparison names left `DotlessOperationNames` the moment v0.41 respelled
+/// their rows as operators, and a program may declare them like any other
+/// identifier. The operator spellings themselves are not identifiers and
+/// cannot be declared at all, so nothing is reserved on their behalf.
 #[test]
-fn every_comparison_name_is_reserved_from_source_declarations() {
-    for spelling in ["ieq", "ine", "ile", "ige"] {
+fn every_retired_comparison_name_is_a_free_identifier() {
+    for spelling in ["ieq", "ine", "ilt", "ile", "igt", "ige"] {
         let source = format!("fn {spelling}() -> result: own unit pure {{\n}}\n");
         with_one_resolution(source.as_bytes(), |outcome| {
-            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a comparison name declaration must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), ResolutionRule::Form3);
-            assert!(matches!(
-                issue.kind(),
-                ResolutionIssueKind::ReservedName { spelling: declared, .. }
-                    if declared == spelling
-            ));
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a retired comparison name must be declarable: {outcome:?}"
+            );
         });
     }
 }
@@ -1124,7 +1120,7 @@ fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for (
     index in 0_u64..limit,
-    invariant ile: index <= limit
+    invariant cvt: index <= limit
   ) {
     break;
   }
@@ -1142,7 +1138,7 @@ fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::Invariant,
                 ..
-            } if spelling == "ile"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1150,7 +1146,7 @@ fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
 #[test]
 fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
     let source = br#"fn probe(value: own u64) -> result: own unit pure {
-  invariant ile: value <= value;
+  invariant cvt: value <= value;
   return unit;
 }
 "#;
@@ -1165,7 +1161,7 @@ fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::Invariant,
                 ..
-            } if spelling == "ile"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1718,7 +1714,7 @@ fn counted_range_label_is_non_enclosing_after_the_loop() {
 #[test]
 fn counted_range_binder_uses_the_for_binder_reservation_role() {
     let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (ilt in 0_u64..limit) {
+  for @range (cvt in 0_u64..limit) {
     break @range;
   }
   return unit;
@@ -1735,7 +1731,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
                 spelling,
                 declaration_role: ReservedDeclarationRole::ForBinder,
                 ..
-            } if spelling == "ilt"
+            } if spelling == "cvt"
         ));
     });
 }
@@ -1857,9 +1853,8 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
 /// not move these rows to a different name — it took them out of the name
 /// domain entirely, which is a property worth a gate of its own.
 ///
-/// The split is smaller than it was: after the owner cancelled the infix
-/// comparisons only arithmetic crosses this line, so `ieq` joins `imin` on the
-/// named side and is a second control rather than a second subject.
+/// Since v0.41 the integer comparisons cross this line with the arithmetic:
+/// `==` is a second respelled subject, and `imin` is the one named control.
 #[test]
 fn a_respelled_family_produces_no_lexical_use_at_all() {
     let source = br#"fn probe() -> result: own unit pure {
@@ -1880,10 +1875,17 @@ fn a_respelled_family_produces_no_lexical_use_at_all() {
             .map(|usage| usage.spelling())
             .collect();
         operations.sort_unstable();
-        // The two named rows in the same function are the control: they prove
-        // the filter finds operation uses at all, so the infix row being
+        // The named row in the same function is the control: it proves the
+        // filter finds operation uses at all, so the two infix rows being
         // absent is the property and not an empty search.
-        assert_eq!(operations, ["ieq", "imin"]);
+        assert_eq!(operations, ["imin"]);
+        assert!(
+            !resolved
+                .lexical_uses()
+                .iter()
+                .any(|usage| usage.spelling() == "=="),
+            "a respelled comparison must produce no lexical use"
+        );
         assert!(
             !resolved
                 .lexical_uses()
@@ -2413,7 +2415,7 @@ fn semantic_stage_order_precedes_source_position_and_inventory_rank_is_event_loc
   missing();
 }
 
-fn ilt() -> result: own unit pure {
+fn cvt() -> result: own unit pure {
 }
 "#;
     with_one_resolution(later_inventory_error, |outcome| {
@@ -2423,7 +2425,7 @@ fn ilt() -> result: own unit pure {
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
 
-    let later_fn8_error = br#"fn ilt() -> result: own unit pure {
+    let later_fn8_error = br#"fn cvt() -> result: own unit pure {
 }
 
 fn guarded() -> result: own unit pure contract {
@@ -2444,7 +2446,7 @@ fn guarded() -> result: own unit pure contract {
 
 const value: i32 = 1_i32;
 
-fn ilt() -> result: own unit pure {
+fn cvt() -> result: own unit pure {
 }
 "#;
     with_one_resolution(earlier_lower_rank, |outcome| {
@@ -2582,18 +2584,19 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
 
 #[test]
 fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
-    // The callee path now covers the families that keep a name; the twenty-one
-    // operator-spelled rows reach their family by operator token and are
-    // covered by `a_respelled_family_produces_no_lexical_use_at_all`. The two
-    // halves are counted here so that a family silently leaving one for the
-    // other cannot pass unnoticed — which is what the owner's cancellation of
-    // the infix comparisons did, moving four families back across this line.
+    // The callee path now covers the families that keep a name; the
+    // twenty-seven operator-spelled rows — twenty-one arithmetic since v0.23
+    // and the six integer comparisons since v0.41 — reach their family by
+    // operator token and are covered by
+    // `a_respelled_family_produces_no_lexical_use_at_all`. The two halves are
+    // counted here so that a family silently leaving one for the other cannot
+    // pass unnoticed.
     let named: Vec<_> = OPERATION_FAMILIES
         .iter()
         .enumerate()
         .filter(|(_, spelling)| !is_operator_family(spelling))
         .collect();
-    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 21);
+    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 27);
 
     let mut source = String::from("fn probe() -> result: own unit pure {\n");
     for (_, operation) in &named {

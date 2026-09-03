@@ -816,7 +816,7 @@ mod tests {
         let detail = failure.detail();
         // The set as spellings, in the grammar's own order.
         assert!(
-            detail.contains(r#"expected: ["{", ";", ")", ",", "["#),
+            detail.contains(r#"expected: ["{", ";", ")", ",", "<", ">", "["#),
             "{detail}"
         );
         // The line the writer wrote, and where in it the parser stopped.

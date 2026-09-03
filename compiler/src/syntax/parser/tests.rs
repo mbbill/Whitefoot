@@ -187,8 +187,9 @@ return unit;
     ) else {
         panic!("undelimited fixture must classify");
     };
-    let ParseOutcome::SourceIssue(issue) = parse(&classified, PARSE_LIMITS) else {
-        panic!("a type-argument list without `::` must fail to derive");
+    let outcome = parse(&classified, PARSE_LIMITS);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("a type-argument list without `::` must fail to derive: {outcome:?}");
     };
     let type_argument = undelimited
         .windows(4)
@@ -589,6 +590,7 @@ let borrowed = &'r ordinary;
 let unique_borrow = &uniq 'r ordinary;
 let loaded = table[ordinary];
 let compared = ordinary < moved;
+let least = imin(ordinary, moved);
 let chosen = if compared { give ordinary; } else { give moved; }
 set deref(pointer).field = ordinary;
 let previous = replace deref(pointer).field = ordinary;
@@ -637,7 +639,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 82);
+    assert_eq!(productions().len(), 83);
     assert_eq!(
         parsed
             .tree
@@ -945,7 +947,9 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
             b"}",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_comma: ile(left right) {\n    use left <= right;\n  }\n  return unit;\n}\n",
+            // A relation with no operator: `left` completes an affine
+            // expression and `right` can neither extend it nor open a block.
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_operator: left right {\n    use left <= right;\n  }\n  return unit;\n}\n",
             b"right",
         ),
         (

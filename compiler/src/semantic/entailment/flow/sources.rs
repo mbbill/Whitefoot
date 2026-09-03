@@ -666,7 +666,7 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
     ///
-    /// `iadd.wrap<T>(p, k)` and `isub.wrap<T>(p, k)` with a constant k
+    /// `iadd.wrap::<T>(p, k)` and `isub.wrap::<T>(p, k)` with a constant k
     /// establish s = p ± k only where the closed state already proves the
     /// unwrapped result stays in T's range, so the established equality is
     /// over the mathematical value the wrap did not reach. Exact `+` and `-`
@@ -1183,7 +1183,7 @@ impl Analyzer<'_, '_> {
             .or_else(|| self.boundary_endpoint_outcome(value))
     }
 
-    /// [ENT-3] S7: `iadd.checked<T>(p, k)` and `isub.checked<T>(p, k)` with a
+    /// [ENT-3] S7: `iadd.checked::<T>(p, k)` and `isub.checked::<T>(p, k)` with a
     /// constant k give the `Ok(value: w)` arm w = p ± k; the `Err` arm
     /// establishes nothing.
     fn checked_offset_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {

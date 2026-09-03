@@ -31,7 +31,7 @@ fn retains_every_equal_width_reinterpret_pair() {
             }
             writeln!(
                 source,
-                "fn reinterpret_{source_name}_{destination_name}(value: own {source_name}) -> result: own {destination_name} pure {{\n  return reinterpret<{source_name}, {destination_name}>(value);\n}}\n"
+                "fn reinterpret_{source_name}_{destination_name}(value: own {source_name}) -> result: own {destination_name} pure {{\n  return reinterpret::<{source_name}, {destination_name}>(value);\n}}\n"
             )
             .expect("write reinterpret function");
             expected.push((source_type, destination_type));

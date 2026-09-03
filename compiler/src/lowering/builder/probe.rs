@@ -165,7 +165,7 @@ fn recognize_load(
     Some((*binding, root.binding))
 }
 
-/// The trailing step: `set i = iadd.wrap<u64>(i, 1_u64)`.
+/// The trailing step: `set i = iadd.wrap::<u64>(i, 1_u64)`.
 fn recognize_increment(increment: &CheckedStatement, induction: BindingId) -> bool {
     let CheckedStatement::Set { target, value, .. } = increment else {
         return false;

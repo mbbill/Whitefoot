@@ -35,7 +35,7 @@ fn classifies_every_distinct_integer_pair_through_one_conversion_judgment() {
             };
             writeln!(
                 source,
-                "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> result: own {result} pure {{\n  return cvt<{source_name}, {destination_name}>(value);\n}}\n"
+                "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> result: own {result} pure {{\n  return cvt::<{source_name}, {destination_name}>(value);\n}}\n"
             )
             .expect("write generated source");
             expected.push((source_type, destination_type, total));

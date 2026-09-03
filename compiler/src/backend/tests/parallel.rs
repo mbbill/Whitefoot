@@ -173,8 +173,8 @@ fn lane_frame_program(length: u64) -> Vec<u8> {
         "fn first(values: own array<u8, {length}>) -> result: own u8 pure {{\n  \
          return values[0_u64];\n}}\n\n\
          command fn main() -> status: own ExitStatus pure {{\n  \
-         let left_values = array_new<u8, {length}>(7_u8);\n  \
-         let right_values = array_new<u8, {length}>(9_u8);\n  \
+         let left_values = array_new::<u8, {length}>(7_u8);\n  \
+         let right_values = array_new::<u8, {length}>(9_u8);\n  \
          let left = first(values: move left_values);\n  \
          let right = first(values: move right_values);\n  \
          if left != 7_u8 {{\n    return exit_status(code: 1_u8);\n  }}\n  \
