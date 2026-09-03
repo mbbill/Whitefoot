@@ -3004,10 +3004,12 @@ Ordinary L0 relations are not copied into that list.
 `AUTO(T)` for one affine target T exhausts exactly these finite families: `DIRECT(T)`; for every listed premise P, form `S = P` and check `DIRECT(T - S)`; for every unordered listed pair P,Q including P equal to Q, form `S = P + Q` in pair order and check `DIRECT(T - S)`; and for every strongest canonical L0 image R, form `S = R` and check `DIRECT(T - S)`.
 Every premise has coefficient one; forming S and then the one residual uses checked `i128` arithmetic in the stated order.
 An unrepresentable candidate is skipped, not accepted and not allowed to suppress a later candidate.
-These complete zero-, one-, unordered-two-, and final L0-image families define AUTO's semantic candidate set.
+Every accumulated S carrying at least one term is also offered in its integer tightening: because every atom denotes a mathematical integer, S divided by a positive integer factor k dividing each of its coefficients proves that divided left-hand side against the mathematical floor of S's bound divided by k, taken toward negative infinity, and `DIRECT(T - S/k)` is checked immediately after `DIRECT(T - S)`.
+Exactly two factors are formed, in this order: the k for which S's coefficient vector is exactly k times T's, and the greatest common divisor of S's coefficient magnitudes; each is read from those two vectors in checked `i128` arithmetic, and a factor of one, a factor not dividing S exactly, and an unrepresentable division each add no candidate.
+These complete zero-, one-, unordered-two-, and final L0-image families, each with its two integer tightenings, define AUTO's semantic candidate set.
 Within one family, premises use the traversal above, unordered pairs use lexicographic `(first, second)` order with `first <= second`, and strongest canonical L0 images use Z followed by live own integer bindings in their compiler-owned source-allocation order for each ordered `(left, right)` pair, retaining the first occurrence of a coefficient vector unless a later image has a strictly smaller upper bound.
 An unproved result exhausts the whole set; a proved result may stop at the first witness in this fixed traversal because later candidates cannot revoke it, so traversal order selects only retained diagnostic parents and cannot change acceptance.
-`AUTO` does not recurse, saturate newly derived residuals, guess a multiplier, choose a subset larger than two published affine premises, or publish an intermediate result.
+`AUTO` does not recurse, saturate newly derived residuals, search for a multiplier outside the two integer-tightening factors fixed above, choose a subset larger than two published affine premises, or publish an intermediate result.
 Consequently an author can determine from this rule alone whether a target is automatic: a derivation outside these exact shapes requires the explicit [PRF-1] `proof_use` list rather than compiler probing.
 
 An [FN-8] Signed Goal query first applies the ordinary positive and negative [ENT-4] disposition to its complete root.
@@ -3184,7 +3186,8 @@ No global or subset-minimality judgment is performed on the remaining list.
 
 The checker forms S independently of premise admission by multiplying each normalized premise by its written positive factor and adding the results in source order with checked `i128` arithmetic; acceptance additionally requires every source to be independently admitted.
 Let S be that one accumulated inequality and T the owning invariant target.
-The certificate succeeds exactly when `DIRECT(T - S)` succeeds in the same entering ProofContext.
+The certificate succeeds exactly when `DIRECT(T - S)` succeeds in the same entering ProofContext, or when `DIRECT(T - S/k)` succeeds there for one of the two integer-tightening factors k that [ENT-6] fixes for S and T.
+In particular, when S's coefficient vector is exactly k times T's, that tightened residual is constant and the target is admitted whenever the mathematical floor of S's bound divided by k is no greater than T's bound.
 This admits a target that is a fixed L0 or interval weakening of the written sum; it does not require byte-for-byte equality and it does not call `AUTO` on the residual.
 The checker never guesses a source, multiplier, ordering, subset, case split, or intermediate lemma.
 

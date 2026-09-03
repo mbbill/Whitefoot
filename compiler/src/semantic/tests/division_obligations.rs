@@ -501,6 +501,54 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// The scaled quotient image proves the doubled midpoint relation
+/// `2*mid + 1 <= 2*hi` automatically, and AUTO then halves that published fact
+/// over the integers, so the midpoint subscript needs no written certificate.
+#[test]
+fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
+    let source = br#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define room = len(deref(table));
+  requires ilt(lo, hi);
+  requires ile(hi, room);
+} {
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: ile(2_u64 * mid + 1_u64, 2_u64 * hi);
+  let byte = deref(table)[mid];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the halved midpoint fact must discharge the subscript: {outcome:?}");
+        };
+        let function = named(&checked.data.functions, "probe");
+        validate_derivations(&function.entailment);
+        assert!(
+            function.entailment.source_proofs.is_empty()
+                || function
+                    .entailment
+                    .source_proofs
+                    .iter()
+                    .all(|proof| proof.check.premises.is_empty()),
+            "the automatic route uses no written premise"
+        );
+        let bounds = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::Bounds)
+            .collect::<Vec<_>>();
+        assert_eq!(bounds.len(), 1, "the one subscript owns one bounds goal");
+        assert!(bounds[0].discharged);
+    });
+}
+
 #[test]
 fn signed_literal_division_does_not_publish_unsigned_ordering_images() {
     let source = br#"fn signed_half(value: own i32) -> result: own i32 pure contract {
