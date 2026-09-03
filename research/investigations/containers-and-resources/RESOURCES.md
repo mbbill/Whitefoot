@@ -2,7 +2,7 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **third draft, after falsifier round 2**; this file has been brought to that
+> **fourth draft, after falsifier round 3**; this file has been brought to that
 > draft and carries no rule text of its own. Where a sentence here disagrees with
 > `DESIGN.md`, `DESIGN.md` wins.
 
@@ -124,9 +124,10 @@ refuses to give a bounded general heap the resource-closed label, because total
 free bytes do not answer a request for a contiguous aligned extent; it does not
 add a depth certificate, a resource solver, a search for allocator placements, or
 any acceptance path with a budget or a timeout; it does not define the container
-operations that consume providers, which are `CONTAINERS.md`'s; and it does not
+operations that consume providers, which are `DESIGN.md` [SEQ-0]'s; and it does not
 attempt the `par` continuation-frame redesign that `DESIGN.md` section 5's Q11
 shows is the real obstacle to a resource-closed program that uses parallelism.
+That question is `DESIGN.md` Q5 in the fourth draft's numbering.
 
 ## 2. The writer's view
 
@@ -144,19 +145,19 @@ structural change. Every rule id cited exists in `DESIGN.md` section 3.
 ### 2.1 From "it needs a growable vector" to a fixed store
 
 ```wf-design
-resource_closed command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+resource_closed command fn main['h](command.heap as heap: own Heap<'h>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Collects every decoded record.";
-  let records = seq_heap<Record>();
+  let records = seq_heap<Record, 'h>();
   ...
 }
 ```
 
 ```text
-error [RES-5]: this program cannot be resource-closed: it reaches the general heap
-  --> records.wf:1:33
+error [RES-4]: this program cannot be resource-closed: it reaches the general heap
+  --> records.wf:1:37
    |
- 1 | resource_closed command fn main(command.heap as heap: own Heap) ...
-   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the Heap enters here
+ 1 | resource_closed command fn main['h](command.heap as heap: own Heap<'h>) ...
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the Heap enters here
    |
    = heap-reaching path:
        main              records.wf:1:1
@@ -164,8 +165,8 @@ error [RES-5]: this program cannot be resource-closed: it reaches the general he
    = a general store cannot appear in an envelope: total free bytes do not decide
      whether the next contiguous aligned request has a home
    = restructure: give the store a capacity the compiler can check --
-     FixedVector<Record, N> over frame storage, or PoolVector over a
-     Pool<'p, Record, N> reserved by pool_frame; or drop the resource_closed
+     FixedVector<Record, N> over frame storage, or PoolVector<'p, Record, N>
+     leased from a Pool reserved by pool_frame; or drop the resource_closed
      marker and handle OutOfMemory as a value
 ```
 
@@ -190,6 +191,9 @@ store.
 
 ### 2.2 From recursive descent to an explicit work list
 
+`TooDeep` below is this snippet's own error enum, declared beside the program; no
+rule of the design introduces it.
+
 ```wf-design
 fn parse_node['a](input: &'a Span<'a, u8>, at: own u64) -> result: own Node reads(input) {
   doc "Parses one node, recursing into its children.";
@@ -203,7 +207,7 @@ fn parse_node['a](input: &'a Span<'a, u8>, at: own u64) -> result: own Node read
 error [STK-2]: this program cannot be resource-closed: its call graph has a cycle
   --> parse.wf:1:1
    |
- 1 | fn parse_node['a](input: &'a Span<'a, u8>, at: own u64) -> result: own Node pure {
+ 1 | fn parse_node['a](input: &'a Span<'a, u8>, at: own u64) -> result: own Node reads(input) {
    | ^^^^^^^^^^^^^^^^^ this function is in the cycle
    |
    = cycle, in call order:
@@ -265,7 +269,7 @@ requires a `borrow_expr` in a loop body to name a region introduced there, and
 in `DESIGN.md` 6.1 are the two halves of that discipline.
 
 ```text
-error [RES-6]: this loop's demand on 'p has no finite bound
+error [RES-3]: this loop's demand on 'p has no finite bound
   --> pager.wf:12:16
    |
 12 |       let page = pool_take(pool: &uniq 'c pages, value: move blank);
@@ -282,7 +286,8 @@ error [RES-6]: this loop's demand on 'p has no finite bound
          acquisition is discharged from a header invariant
        an invariant relating the two stores
          (`invariant slots_match: ile(len(pages), len(kept))`)
-       or the checked spelling, whose refusal exit is a real exit with delta 0
+       or the checked spelling anywhere on the loop's paths, which cannot succeed
+         on a full store whether its refusal leaves the loop or not
 ```
 
 The proved spelling and the checked spelling are both accepted, and both keep the
@@ -291,7 +296,10 @@ Note which alternative the third draft deleted: the second draft offered "a
 structural capacity cutoff (`len <= cap`)", which is a standing identity of [MSR-2]
 that holds of every measured place at every point and therefore discharged every
 loop vacuously. What it was reaching for is a condition on the *acquisitions*, and
-3.3.1 now states it as one.
+3.3.1 now states it as one. The fourth draft made one further correction here: the
+third draft required a checked refusal to be "a real exit with delta 0", which
+refuses the shape above, whose `Err` arm rejoins the backedge. The condition is on
+the acquisition and not on where its refusal edge goes.
 
 ```wf-design
   for @fill (
@@ -333,7 +341,7 @@ or, when the writer would rather answer the refusal than prove it away:
 ```
 
 The fourth repair is the one the first draft offered and could not deliver, twice
-over. Its result type `Result<slot<'p, Page>, PoolExhausted<Page>>` was rejected by
+over. Its result type `Result<PoolSlot<'p, Page>, PoolExhausted<Page>>` was rejected by
 [FN-2] as a region-bearing generic argument and by [STOR-5] as a region-bearing
 enum payload, so no checked acquisition anywhere in the design was a program;
 `DESIGN.md` [CNT-4] admits it, because the instance's own type names `'p` and the
@@ -344,11 +352,19 @@ own `room(pages) = Z` on that edge, which [RES-6] now declares as that row's `Er
 relation rather than leaving it to the reader.
 
 One statement is missing from every snippet above and its absence is deliberate: a
-`slot<'p, Page>` is **linear** [PROV-6], so each retained page is disposed by
-`pool_release(pool: ..., item: move page)` before the region ends, or by moving the
-container out; `kept` is a `FixedVector<slot<'p, Page>, 64>`, so it is linear too
-and cannot simply be dropped. That is the change law L13 makes, and it is what the
-second draft's derived release hid.
+`PoolSlot<'p, Page>` is **linear** [PROV-6], and `kept` is a
+`FixedVector<PoolSlot<'p, Page>, 64>`, which is linear too because linearity is
+closed under containment. One statement destroys the whole tree:
+
+```wf-design
+  dispose kept using (pages);
+```
+
+The walk visits each initialized element, releases each slot to the store its own
+type names, and needs no drain first. Under the third draft that statement did not
+exist: disposal was four leaf operations, none of which took a `FixedVector`, so
+the container could be neither dropped nor destroyed. That is the change law L13
+makes, and it is what the second draft's derived release hid.
 
 The proved repair also depends on `room` being readable. Under the first draft's
 L15 it was not, so a dominating branch could bound `len(kept)` and never reach a
@@ -365,7 +381,9 @@ could allocate. `r1_ambient` re-confirms that the heap is ambient today, which i
 one of the two facts this half exists to change. And `r2_5` is the other: a callee
 that takes `own box<u64>`, never returns it, and declares `pure` compiles, so a heap
 free happens where no signature mentions it and no [PAR-1] footprint can see it,
-which is what law L13 and [PROV-6] replace.
+which is what law L13 and [PROV-6] replace. Probe `w7` shows the same free one
+field deeper, through a struct with a heap-backed field, and probe `w5` shows a
+live heap value crossing a `propagate` edge, which [PROV-6] now refuses.
 
 The `--stack-ledger` read of `tests/programs/recursive_tree.wf` is worth keeping
 here in one sentence, because three rules rest on it: it reports `main` and the
@@ -375,7 +393,9 @@ runs through the compiler's drop glue into `wf_resource_abort`. That is why
 the writer's call graph from `main`, why [STK-5] gives the guard-page handler's
 alternate stack an item of its own for a resource-closed build, and why [RES-6]'s
 claim that the abort site has a reachable caller today is a reading of emitted code
-rather than an assumption.
+rather than an assumption. One figure this file no longer promises: a `stack` item
+carries a target-stage figure only, and [RES-2] now says so rather than quantifying
+two figures over every item.
 
 Nothing in this file is verified. Every program above is design text and compiles
 nowhere.

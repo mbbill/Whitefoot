@@ -2,7 +2,7 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **third draft, after falsifier round 2**; this file has been brought to that
+> **fourth draft, after falsifier round 3**; this file has been brought to that
 > draft and carries no rule text of its own. Where a sentence here disagrees with
 > `DESIGN.md`, `DESIGN.md` wins.
 
@@ -42,41 +42,40 @@ system I/O over views; `par` via reserved disjoint ranges; the names `HeapVector
 | the verified/reasoned register       | DESIGN.md section 6, re-run and extended  |
 ```
 
-## What round 3 changed, so this file is not read as current
+## What round 4 changed, so this file is not read as current
 
-`DESIGN.md`'s second draft was falsified in four more passes, and round 2 found as
-many breaks as round 1, most of them opened by round-1 repairs added one per
-finding. The third draft is a consolidation: the rule count falls from sixty-five
-to fifty-three, every rule states its judgment, what it publishes and what it
-amends, and the amendment register is a collation of those `Amends:` lines. Six
-concepts do the work eighteen clauses were doing, and the snippets below are
-written against them.
+`DESIGN.md`'s third draft was falsified in four more passes, and round 3 found one
+cause under three of the four reports: a value's relationship to its backing store
+was carried by something other than its type. The fourth draft makes one change at
+the root and lets it discharge the findings it covers. Five concepts do the work,
+and the snippets below are written against them.
 
-- **Provenance is one origin set** ([PROV-3]), carried by views *and* by every
-  provider-derived value. It is what identifies the store a value came from, so a
-  release cannot go to a different pool of the same type, and it is what freezes the
-  offset of a view formed at `table[k]`.
-- **Disposal is linear** ([PROV-6], law L13). `box<T>`, `slot<'p,T>`, `HeapVector`
-  and `PoolVector` have no compiler-derived release; each is disposed by an
-  operation that names the provider its acquisition named. The second draft's
-  derived-release-with-a-provider-row could not state its own subject.
-- **A measure datum** ([MSR-3]) is an immutable term with empty support, formed at
-  function entry per measured parameter and at each call's pre-transfer point. It is
-  what lets a value-in / value-out row publish anything at the caller, and what
-  makes `absorb` exact.
-- **A measure's support is its descriptor**, not its root ([MSR-2]), so a write to a
-  sibling field of one record does not kill another field's length.
-- **Reservation is region-local and its placement is written** ([PROV-5]):
-  `pool_frame`, `pool_extent`, `arena_frame`, `arena_extent`, with the region
-  argument opened by the reserving function.
-- **`update p by op(args);`** ([LIV-3]) is the one spelling of the receiver-threading
-  shape, and it reaches subscripted places `set` cannot.
+- **A store's identity is a region, and the region is in the type** ([PROV-1]). A
+  region names at most one store, and every value that store backs carries that
+  region: `Pool<'s, T, N>`, `PoolSlot<'s, T>`, `PoolVector<'s, T, N>`,
+  `Heap<'s>`, `HeapVector<'s, T>`, `Arena<'s, BYTES, ALIGN>`, `ArenaVector<'s, T>`.
+  Store identity is preserved by type formation itself, so a field, an element, a
+  payload, a join and a call all carry it with no preservation clause.
+- **Disposal is structural and closed under containment** ([PROV-6], law L13).
+  `dispose p using (q1, ...);` walks the type, releases every linear leaf to the
+  store its own type names, and drains a container on the way. There are no
+  per-type release rows and no emptiness premise.
+- **Provenance is for loans** ([PROV-3]), which is the three views alone. Each
+  origin carries the half-open range its value reaches, which is what gives a `par`
+  fill over one owner its [PAR-2] permission.
+- **A measure datum** ([MSR-3]) is an immutable term with empty support, keyed on
+  (program point, place, measure) and placed at body entry and at a call's
+  pre-transfer point. A view carries its formation call's datums, which is what
+  `absorb` names. A measure's support is its **descriptor storage** ([MSR-2]), so a
+  write to a sibling field or to an element does not kill a length.
+- **`update p by op(args);`** and **`update p by op(args) into x;`** ([LIV-3]) are
+  the one spelling of the receiver-threading shape. Both are [SET-2] exchanges, so
+  they reach a subscripted place without partial-moving its root.
 
 Two smaller corrections carried into every snippet below: a borrow of a local names
-a region opened **after** the binding ([OWN-10], which refused two of the second
-draft's own borrows), and `seq_reserve` is split into `seq_reserve_heap` and
-`seq_reserve_arena`, because one row cannot vary provider, effect row and failure
-type by receiver.
+a region opened **after** the binding ([OWN-10]), and `seq_reserve` is split into
+`seq_reserve_heap` and `seq_reserve_arena`, because one row cannot vary provider,
+effect row and failure type by receiver.
 
 Round 1's five surviving changes are unchanged and are restated here only because
 this file's older snippets predate them: `[BLD]` is deleted, `cap` and `room` are
@@ -91,13 +90,13 @@ value holds its own loan, and affine liveness must agree at every join.
 
 | # | Goal | Test it must pass |
 |---|---|---|
-| G1 | One growable sequence per resource, with the resource in the type | Reading `HeapVector<u8>` in a signature tells you the callee needs `Heap`; reading `FixedVector<u8, 4096>` tells you it does not |
+| G1 | One growable sequence per resource, with the resource in the type | Reading `HeapVector<'s, u8>` in a signature tells you the callee needs the heap named `'s`; reading `FixedVector<u8, 4096>` tells you it needs no store at all |
 | G2 | One algorithm body, many backings | `checksum`, `sort`, `escape` are written once and called with a `FixedVector`, a `HeapVector`, and an `ArenaVector` without monomorphizing on the backing |
 | G3 | No hidden growth and no hidden failure | Every allocation is at a source point whose operation names a provider and returns a typed failure |
 | G4 | Heap-free programs can do I/O and can build sequences | `wfgrep`'s inner loop compiles with no `allocates(heap)` anywhere on its call graph |
 | G5 | Facts that cross a call are readable from the signature | D1 is not expressible, and the reason is a rule about types, not about a repaired projection flag |
 | G6 | Affine elements | A kernel object table `FixedVector<Handle, 64>` holds affine handles, is constructible, admits removal from the middle, and drops in a fixed order |
-| G7 | No runtime tag, vtable, or allocator pointer anywhere in a container value | Layout of `FixedVector<u8, N>` is `N` bytes plus one `u64`; of `HeapVector<T>` one pointer plus two `u64` |
+| G7 | No runtime tag, vtable, or allocator pointer anywhere in a container value | Layout of `FixedVector<u8, N>` is `N` bytes plus one `u64`; of `HeapVector<'s, T>` one pointer plus two `u64`, the store region being erased |
 | G8 | `par` can fill a sequence | A counted loop can write disjoint slots of a filled owner through a `MutSpan` and receive [PAR-2] permission under one stated loan refinement |
 
 G6 and G8 are the two the first draft failed. G6 failed because `seq_fixed` gives
@@ -172,7 +171,7 @@ D1's program is reproduced in `DESIGN.md` section 1.2 and reproduces accepted at
 this tip. Under this design it is **inexpressible four times over**, and each
 refusal is independent:
 
-1. **The signature does not typecheck.** `handle: &uniq 'a HeapVector<u8>` is
+1. **The signature does not typecheck.** `handle: &uniq 'a HeapVector<'s, u8>` is
    refused by [CNT-7] at the `param` node. There is no `&uniq` container parameter
    to project a write through.
 2. **The body has no operation.** Even granting the parameter, no `[SEQ]` row
@@ -240,7 +239,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
 **After** (design text):
 
 ```wf-design
-fn append_span['o, 's](out: own AppendView<'o, u8>, source: own Span<'s, u8>) -> written: own AppendView<'o, u8> reads(out, source), writes(out) contract {
+fn collect['o, 's](out: own AppendView<'o, u8>, source: own Span<'s, u8>) -> written: own AppendView<'o, u8> reads(out, source), writes(out) contract {
   requires ile(len(source), room(out));
   ensures ile(len(written), cap(out));
 } {
@@ -268,8 +267,8 @@ of the receiver-threading shape and which lets the parameter be threaded with no
 single-state, entry datum on the left, result on the right.
 
 The header invariant is the load-bearing line. Its base holds because
-`cap(out) = room(out)` at formation over the pre-transfer datum, and the `requires`
-bounds the source. Its backedge holds because `room(out)` decreases by one while
+`cap(out) = room(out)` at formation over that formation call's own datum [MSR-3],
+and the `requires` bounds the source. Its backedge holds because `room(out)` decreases by one while
 `at` increases by one. And `seq_push`'s own `igt(room(out), Z)` follows from the
 invariant and `at < count` by [MSR-4]'s unordered-pair family.
 
@@ -278,8 +277,8 @@ The caller:
 ```wf-design
 region 'report {
   let view = seq_append_view(vector: &uniq 'report report);
-  set view = append_span<'report, 'prefix>(out: move view, source: move prefix);
-  set view = append_span<'report, 'reason>(out: move view, source: move reason);
+  set view = collect<'report, 'prefix>(out: move view, source: move prefix);
+  set view = collect<'report, 'reason>(out: move view, source: move reason);
   set length = absorb(view: move view);
 }
 region 'w {
@@ -339,13 +338,13 @@ This is **exactly D1's shape**, a callee replacing a buffer reached through a
 **After** (design text): the struct, `vec_new`, and `vec_push` are all deleted.
 
 ```wf-design
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+command fn main['h](command.heap as heap: own Heap<'h>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Grows one heap vector once, fills it, and reports what it holds.";
   let total = 0_u64;
   let b = 7_u8;
-  let empty = seq_heap<u8>();
-  region 'h {
-    let reserved = seq_reserve_heap(vector: move empty, heap: &uniq 'h heap, additional: 20_u64);
+  let empty = seq_heap<u8, 'h>();
+  region 'g {
+    let reserved = seq_reserve_heap(vector: move empty, heap: &uniq 'g heap, additional: 20_u64);
     match reserved {
       Ok(value: v) => {
         region 'fill {
@@ -359,13 +358,11 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           }
           set total = absorb(view: move view);
         }
-        let cleared = seq_clear(vector: move v);
-        seq_release_heap(heap: &uniq 'h heap, vector: move cleared);
+        dispose v using (heap);
       }
       Err(error: refused) => {
         let recovered = move refused.rejected;
-        let emptied = seq_clear(vector: move recovered);
-        seq_release_heap(heap: &uniq 'h heap, vector: move emptied);
+        dispose recovered using (heap);
         return exit_status(code: 1_u8);
       }
     }
@@ -378,13 +375,15 @@ The reserve is the only failure point, it happens once, before any element moves
 and it is where the 2026-09-01 refutation's item 3 said it must be. The twenty
 pushes are total: `cap(view) = room(v) = 20` comes from `seq_reserve_heap`'s
 published `cap(v) = cap(empty) + 20` and the formation relation, and the header
-invariant carries it around the loop. `bytes_append` collapses to one `append_span`.
+invariant carries it around the loop. `bytes_append` collapses to one `collect`.
 
-Two lines are new since the second draft and are the visible cost of L13: a
-`HeapVector` is **linear**, so it has no compiler-derived release and both arms
-dispose it explicitly with the `Heap` in hand. Today the opposite is true and
-invisible; probe `r2_5` in `DESIGN.md` 6.1 compiles a callee that frees heap storage
-while declaring `pure`.
+One line per arm is new and is the visible cost of L13: a `HeapVector<'h, u8>` is
+**linear**, so it has no compiler-derived release and both arms dispose it while the
+`Heap<'h>` is in hand. The third draft needed two lines per arm, a `seq_clear` and
+a release row carrying `requires ieq(len(v), Z)`; [PROV-6]'s walk drains what it
+finds, so the clear is gone. Today the opposite is true and invisible; probes `r2_5`
+and `w7` in `DESIGN.md` 6.1 compile callees that free heap storage while declaring
+no such effect.
 
 The first draft printed `invariant room: ile(i, 20_u64)`, which is trivially true
 and discharges nothing, because it does not mention the view at all.
@@ -533,8 +532,8 @@ phase.
 ### 4.3 Trying to grow through a view
 
 ```wf-design
-fn collect['o, 's, 'h](out: own AppendView<'o, u8>, source: own Span<'s, u8>, heap: &uniq 'h Heap) -> written: own AppendView<'o, u8> ... {
-  update out by seq_reserve_heap(heap: &uniq 'h deref(heap), additional: 64_u64);
+fn extend['o, 's, 'h, 'b](out: own AppendView<'o, u8>, source: own Span<'s, u8>, heap: &uniq 'b Heap<'h>) -> written: own AppendView<'o, u8> ... {
+  update out by seq_reserve_heap(heap: &uniq 'b deref(heap), additional: 64_u64);
 ```
 
 ```text
@@ -552,6 +551,7 @@ on, and it is what makes one algorithm serve a growing and a fixed container:
 
 ```wf-design
 fn decode_chunk['o, 's](out: own AppendView<'o, u8>, source: own Span<'s, u8>) -> (written: own AppendView<'o, u8>, consumed: own u64, outcome: own ChunkOutcome) ...
+// ChunkOutcome is this snippet's own three-variant enum: Done, NeedCapacity, Malformed
 
 // heap shell: NeedCapacity -> absorb, reserve, re-form, continue from consumed
 // fixed shell: NeedCapacity -> report Full
@@ -565,18 +565,18 @@ told to restructure into a resumable core with no example does not find the shap
 ### 4.4 Two containers, one function
 
 ```wf-design
-fn partition['i](accepted: own HeapVector<u8>, rejected: own HeapVector<u8>, input: own Span<'i, u8>) -> result: own HeapVector<u8> ...
+fn partition['s, 'i](accepted: own HeapVector<'s, u8>, rejected: own HeapVector<'s, u8>, input: own Span<'i, u8>) -> result: own HeapVector<'s, u8> ...
 ```
 
 There is **one** diagnostic here and it is not the one a writer expects. Affinity
 means a consumed owner may be dropped: probe `q16` takes two `own buffer<u8>`
 parameters, returns one, drops the other, and is **accepted** today, and the first
 draft's walkthrough quoted an `[OWN-1] ConsumedOwnerNotReturned` rejection that
-exists in no rule. What the third draft adds is [PROV-6]: a `HeapVector` is linear,
-so the dropped one is a `LinearValueNotDisposed` error at the scope exit unless the
-function holds the `Heap` and releases it. That is a guardrail for
-*provider-backed* containers only; a dropped `FixedVector` is still silent, and the
-advice below is still advice.
+exists in no rule. What this design adds is [PROV-6]: a `HeapVector<'s, u8>` is
+linear, so the dropped one is a `LinearValueNotDisposed` error at the scope exit
+unless the function holds a `Heap<'s>` and disposes it. That is a guardrail for
+*store-backed* containers only; a dropped `FixedVector` of copy elements is still
+silent, and the advice below is still advice.
 
 The advice is therefore advice, and it has two halves. If the function changes
 neither container's length, pass two `MutSpan`s and keep both owners in the
@@ -585,9 +585,9 @@ them, return every owner it consumes, which is [CALL-4]'s multi-return reason to
 exist:
 
 ```wf-design
-fn partition['i](accepted: own HeapVector<u8>, rejected: own HeapVector<u8>, input: own Span<'i, u8>) -> (kept: own HeapVector<u8>, dropped: own HeapVector<u8>) ... { ... }
+fn partition['s, 'i](accepted: own HeapVector<'s, u8>, rejected: own HeapVector<'s, u8>, input: own Span<'i, u8>) -> (kept: own HeapVector<'s, u8>, dropped: own HeapVector<'s, u8>) ... { ... }
 
-let (kept, dropped) = partition<'i>(accepted: move a, rejected: move r, input: move view);
+let (kept, dropped) = partition<'h, 'i>(accepted: move a, rejected: move r, input: move view);
 ```
 
 One trap this entry should name because nothing else does: if the two results had
@@ -600,12 +600,14 @@ discovery.
 ## 5. Evidence
 
 The verified-versus-reasoned register that stood here has moved to `DESIGN.md`
-section 6, where the third draft added ten more probes of its own: the two that
-establish [OWN-10]'s region-after-the-binding discipline, the three that bound the
-measure kill, the one that shows a heap free is invisible today, and the four that
-show region-parametric nominals, the `update` statement, stable-identity slots and
-the purity of the readers. `DESIGN.md` 6.5 and 6.6 list every falsifier finding of
-both rounds and the rule that now refuses it.
+section 6, where the fourth draft added eight more probes of its own: the one that
+shows a region name is unique per function, which is what lets a region be a
+store's name; the one that shows the compiler accepts a `replace` of an arena
+descriptor the specification forbids; the two that bound `[LIV-2]`'s premise from
+the live and dead sides; and the four that show the clause form, the element-write
+survival, a heap free through a struct field, and two argument borrows of one place
+with a write between them. `DESIGN.md` 6.5, 6.6 and 6.7 list every falsifier
+finding of all three rounds and the rule that now refuses it.
 
 Nothing in this file is verified. Every "after" snippet above is design text and
 compiles nowhere.
