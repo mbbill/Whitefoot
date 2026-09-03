@@ -1,0 +1,31 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: a counted for loop writes through a ring cursor into a fixed capacity array, resetting the cursor to zero inside the body once it reaches capacity, exercising cursor reset across several full wraps, with a header invariant bounding the cursor by the ring's capacity.";
+  let ring = array_new<u32, 4>(0_u32);
+  let cursor = 0_u64;
+  let total = 0_u32;
+  let value = 0_u32;
+  for (
+    i in 0_u64..10_u64,
+    invariant cursor_in_ring: ilt(cursor, 4_u64)
+  ) {
+    set ring[cursor] = value;
+    set total = total +wrap value;
+    let can_advance = ilt(cursor, 3_u64);
+    if can_advance {
+      set cursor = cursor + 1_u64;
+    } else {
+      set cursor = 0_u64;
+    }
+    set value = value +wrap 1_u32;
+  }
+  if ieq(total, 45_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let last_written = ring[1_u64];
+  if ieq(last_written, 9_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

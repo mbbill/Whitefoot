@@ -1,0 +1,23 @@
+fn indexed_byte(b: own buffer<u8>, flag: own Bool) -> result: own u8 reads(b) contract {
+  define capacity = len(b);
+  requires ige(capacity, 10_u64);
+} {
+  doc "ACCEPT: both arms bump idx by a different wrap delta before the join, but the explicit range check after the join still discharges OP-4 for the subscript regardless of which delta was taken.";
+  let room = len(b);
+  let idx = 0_u64;
+  if flag {
+    set idx = idx +wrap 3_u64;
+  } else {
+    set idx = idx +wrap 7_u64;
+  }
+  let in_range = ilt(idx, room);
+  if in_range {
+  } else {
+    return 0_u8;
+  }
+  return b[idx];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

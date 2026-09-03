@@ -1,0 +1,25 @@
+fn probe_midpoint['r](table: &'r buffer<u32>, lo: own u64, hi: own u64) -> found: own u32 reads(table) contract {
+  define room = len(deref(table));
+  requires ilt(lo, hi);
+  requires ile(hi, room);
+} {
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: ile(2_u64 * mid + 1_u64, 2_u64 * hi);
+  let value = deref(table)[mid];
+  return value;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "ACCEPT: lo < hi and hi <= room let the automatic affine rule fold the division image 2*half <= span into 2*mid + 1 <= 2*hi, which with hi <= room discharges the subscript [ENT-6, OP-4].";
+  let table = buffer_new(7_u64, 0_u32);
+  region 'r {
+    let value = probe_midpoint<'r>(table: &'r table, lo: 1_u64, hi: 6_u64);
+    if ieq(value, 0_u32) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

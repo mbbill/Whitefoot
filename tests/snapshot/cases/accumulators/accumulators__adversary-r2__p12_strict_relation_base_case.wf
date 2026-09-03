@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT [INV-1] -- count starts at 0 and i starts at 0, so the stated invariant ilt(count, i), a strict less-than, requires 0 < 0 at loop entry (preheader), which is genuinely false; ile would have been the correct, provable relation.";
+  let count = 0_u64;
+  for (
+    i in 0_u64..5_u64,
+    invariant bound: ilt(count, i)
+  ) {
+    set count = count + 1_u64;
+  }
+  return exit_status(code: 0_u8);
+}

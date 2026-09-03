@@ -1,0 +1,25 @@
+fn narrow_or_default(wide: own u32) -> result: own u16 pure {
+  doc "expect ACCEPT: cvt from u32 to u16 is a partial narrowing operation whose Result is handled by an ordinary match, so a value outside the target range is a normal typed Err [OP-6].";
+  match cvt<u32, u16>(wide) {
+    Ok(value: narrow) => {
+      return narrow;
+    }
+    Err(error: failure) => {
+      return 0_u16;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let fits = narrow_or_default(wide: 4000_u32);
+  let overflows = narrow_or_default(wide: 90000_u32);
+  if ieq(fits, 4000_u16) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(overflows, 0_u16) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

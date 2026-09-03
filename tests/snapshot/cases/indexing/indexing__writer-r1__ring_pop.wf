@@ -1,0 +1,38 @@
+struct Popped {
+  byte: u8;
+  next_head: u64;
+  next_used: u64;
+}
+
+fn ring_pop(buf: own array<u8, 8>, head: own u64, used: own u64) -> value: own Option<Popped> pure contract {
+  requires ilt(head, 8_u64);
+} {
+  doc "ACCEPT: pops the oldest byte from a fixed 8-slot ring; the head is proved inside the array by the contract, and it advances mod 8 without a written certificate.";
+  let empty = ieq(used, 0_u64);
+  if empty {
+    return None<Popped>();
+  }
+  let byte = buf[head];
+  let advanced = head +wrap 1_u64;
+  let next_head = advanced % 8_u64;
+  let next_used = used -wrap 1_u64;
+  let popped = Popped(byte: byte, next_head: next_head, next_used: next_used);
+  return Some<Popped>(value: move popped);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let buf = array_new<u8, 8>(0_u8);
+  let out = ring_pop(buf: move buf, head: 6_u64, used: 2_u64);
+  match out {
+    Some(value: popped) => {
+      if ieq(popped.next_head, 7_u64) {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+}

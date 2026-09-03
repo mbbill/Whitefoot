@@ -1,0 +1,26 @@
+fn count_to(limit: own u64) -> reached: own u64 pure {
+  doc "expect REJECT: the loop body picks between a +1 step and a +8 step by parity, but the declared invariant ile(cursor, limit) is false for concrete inputs (limit = 10, cursor = 9 takes the +8 arm and lands at 17), so the backedge cannot discharge.";
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let remaining = ilt(cursor, limit);
+    if remaining {
+      let parity = cursor % 2_u64;
+      let even = ieq(parity, 0_u64);
+      if even {
+        set cursor = cursor + 1_u64;
+      } else {
+        set cursor = cursor + 8_u64;
+      }
+    } else {
+      break;
+    }
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let reached = count_to(limit: 10_u64);
+  return exit_status(code: 0_u8);
+}

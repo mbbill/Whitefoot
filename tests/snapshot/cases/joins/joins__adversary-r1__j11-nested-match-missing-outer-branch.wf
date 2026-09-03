@@ -1,0 +1,32 @@
+enum Pick {
+  Narrow();
+  Wide();
+}
+
+fn get(b: own buffer<u8>, i: own u64, outer: own Bool, choice: own Pick) -> result: own u8 reads(b) {
+  doc "expect REJECT: the outer true branch checks the bound via a nested match on both arms, but the outer false branch skips the check entirely, so the join after the outer if does not carry ilt(i, room) for i = len(b) taking outer = False.";
+  let room = len(b);
+  if outer {
+    match choice {
+      Narrow() => {
+        let inside_n = ilt(i, room);
+        if inside_n {
+        } else {
+          return 0_u8;
+        }
+      }
+      Wide() => {
+        let inside_w = ilt(i, room);
+        if inside_w {
+        } else {
+          return 0_u8;
+        }
+      }
+    }
+  }
+  return b[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

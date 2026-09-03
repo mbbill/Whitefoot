@@ -1,0 +1,23 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: signed absolute value uses the checked table row so i32::MIN's unrepresentable magnitude is an expected typed Err rather than a domain violation [OP-1].";
+  match iabs.checked(-42_i32) {
+    Ok(value: magnitude) => {
+      if ieq(magnitude, 42_i32) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 2_u8);
+    }
+  }
+  let min = -2147483648_i32;
+  match iabs.checked(min) {
+    Ok(value: magnitude) => {
+      return exit_status(code: 3_u8);
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 0_u8);
+    }
+  }
+}

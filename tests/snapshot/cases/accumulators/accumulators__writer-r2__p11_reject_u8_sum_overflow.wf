@@ -1,0 +1,15 @@
+const samples: array<u8, 4> =[200_u8, 200_u8, 200_u8, 200_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "REJECT: accumulating bytes directly into a u8 sum with plain `+` and no invariant or wrap leaves the OP-2 overflow obligation undischarged, and 200+200 genuinely exceeds u8.";
+  let sum = 0_u8;
+  for (i in 0_u64..4_u64) {
+    let byte = samples[i];
+    set sum = sum + byte;
+  }
+  if ieq(sum, 0_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

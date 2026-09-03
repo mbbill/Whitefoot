@@ -1,0 +1,36 @@
+fn locate_pair(target: own u64) -> hit: own u64 pure {
+  doc "ACCEPT: labelled break from an inner ordinary loop exits the outer counted for directly on a match.";
+  let row = 0_u64;
+  let found = 999_u64;
+  for @rows (r in 0_u64..3_u64) {
+    let base = r * 10_u64;
+    let col = 0_u64;
+    loop @cols (
+      invariant bounded: ile(col, 3_u64)
+    ) {
+      let more = ilt(col, 3_u64);
+      if more {
+        let candidate = base + col;
+        let same = ieq(candidate, target);
+        if same {
+          set found = candidate;
+          break @rows;
+        }
+        set col = col + 1_u64;
+      } else {
+        break @cols;
+      }
+    }
+  }
+  return found;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let hit = locate_pair(target: 12_u64);
+  let correct = ieq(hit, 12_u64);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: ordinary loop with guarded increment stays within limit, cursor ends exactly at limit";
+  let limit = 6_u64;
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let remaining = ilt(cursor, limit);
+    if remaining {
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  if ieq(cursor, 6_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

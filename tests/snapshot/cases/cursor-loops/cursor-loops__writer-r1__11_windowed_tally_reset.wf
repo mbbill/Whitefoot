@@ -1,0 +1,26 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: a counted for loop maintains a windowed tally cursor that resets to zero inside the body whenever it reaches a fixed window size, while a separate running grand total keeps accumulating across every window.";
+  let values = array_new<u32, 9>(1_u32);
+  let window_tally = 0_u32;
+  let grand_total = 0_u32;
+  let completed_windows = 0_u32;
+  for (i in 0_u64..9_u64) {
+    let value = values[i];
+    set window_tally = window_tally +wrap value;
+    set grand_total = grand_total +wrap value;
+    let window_full = ieq(window_tally, 3_u32);
+    if window_full {
+      set window_tally = 0_u32;
+      set completed_windows = completed_windows +wrap 1_u32;
+    }
+  }
+  if ieq(grand_total, 9_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(completed_windows, 3_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

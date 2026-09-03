@@ -1,0 +1,11 @@
+fn probe(x: own i8) -> result: own i8 pure {
+  doc "Exact subtraction with no bound on x cannot discharge the i8 underflow obligation at x = -128 [OP-1].";
+  let y = x - 1_i8;
+  return y;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT REJECT: exact sub x-1 unguarded, false at x=i8::MIN.";
+  let v = probe(x: -128_i8);
+  return exit_status(code: 0_u8);
+}

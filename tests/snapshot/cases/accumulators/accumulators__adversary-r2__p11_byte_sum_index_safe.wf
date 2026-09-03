@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- idx accumulates the widened byte values over 3 iterations, so idx is provably at most 3*255=765; table has length 766, so table[idx] (max index 765) is always in bounds, discharged by the explicit dominating in_bounds check.";
+  let data = buffer_new(3_u64, 100_u8);
+  let table = buffer_new(766_u64, 0_u8);
+  let idx = 0_u64;
+  for (
+    i in 0_u64..3_u64,
+    invariant bound: ile(idx, 255_u64 * i)
+  ) {
+    let byte = data[i];
+    let wide = cvt<u8, u64>(byte);
+    set idx = idx + wide;
+  }
+  let table_len = len(table);
+  let in_bounds = ilt(idx, table_len);
+  if in_bounds {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let value = table[idx];
+  return exit_status(code: 0_u8);
+}

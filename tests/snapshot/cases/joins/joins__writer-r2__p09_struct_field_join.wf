@@ -1,0 +1,27 @@
+struct Cursor {
+  buf: buffer<u8>;
+  pos: u64;
+}
+
+fn cursor_read['a](c: &'a Cursor, wide: own Bool) -> result: own u8 reads(c.buf, c.pos) {
+  doc "expected ACCEPT: the index and length are read once from struct fields through a shared borrow, then if/else arms establish ilt(pos, room) from two different derivations before the join reaches the shared subscript.";
+  let room = len(deref(c).buf);
+  let pos = deref(c).pos;
+  if wide {
+    let direct = ilt(pos, room);
+    if direct {
+    } else {
+      return 0_u8;
+    }
+  } else {
+    let far = ige(pos, room);
+    if far {
+      return 0_u8;
+    }
+  }
+  return deref(c).buf[pos];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

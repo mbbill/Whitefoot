@@ -1,0 +1,18 @@
+fn touch_all(count: own u64) -> touched: own u64 pure {
+  for (i in 0_u64..count) {
+    let ignored = i;
+  }
+  return count;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: counted for with zero header invariants keeps the one-line form [GRAM-4].";
+  let total = touch_all(count: 5_u64);
+  if ieq(total, 5_u64) {
+  } else {
+    let failed = exit_status(code: 1_u8);
+    return move failed;
+  }
+  let success = exit_status(code: 0_u8);
+  return move success;
+}

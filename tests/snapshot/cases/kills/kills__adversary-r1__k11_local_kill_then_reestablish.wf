@@ -1,0 +1,17 @@
+fn bump(x: own u8) -> result: own u8 pure contract {
+  requires ile(x, 100_u8);
+} {
+  doc "expect ACCEPT: set x = 250_u8 kills the original requires fact, but the following if branch re-derives ilt(x, 200_u8) explicitly, so the checked-free add is sound again; sanity check that reproof after a kill is honored.";
+  set x = 250_u8;
+  let safe = ilt(x, 200_u8);
+  if safe {
+    return x + 10_u8;
+  } else {
+    return 0_u8;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = bump(x: 5_u8);
+  return exit_status(code: 0_u8);
+}

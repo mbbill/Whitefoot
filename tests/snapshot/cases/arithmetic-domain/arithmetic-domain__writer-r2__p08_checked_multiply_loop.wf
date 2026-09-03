@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: a loop folds a running product with checked multiplication [OP-1]; overflow is an expected typed Err handled by ordinary control.";
+  let i = 0_u32;
+  let acc = 1_u32;
+  loop @l {
+    if ige(i, 15_u32) {
+      break @l;
+    }
+    match acc *checked 3_u32 {
+      Ok(value: product) => {
+        set acc = product;
+      }
+      Err(error: overflow) => {
+        return exit_status(code: 0_u8);
+      }
+    }
+    set i = i +wrap 1_u32;
+  }
+  return exit_status(code: 1_u8);
+}

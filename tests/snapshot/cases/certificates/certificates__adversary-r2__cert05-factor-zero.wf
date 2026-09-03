@@ -1,0 +1,14 @@
+fn scale_one(first: own u64, first_limit: own u64) -> result: own unit pure contract {
+  requires ile(first, first_limit);
+} {
+  doc "Expect REJECT [PRF-1]: explicit factor of zero on the sole use, which is degenerate (contributes nothing) so the target is not actually established; concrete violation: first=6, first_limit=1, second=6, second_limit=1 makes scaled_bound false (18 <le 6) while pair_bound (12 <= 2) is also false.";
+  invariant pair_bound: ile(first, first_limit);
+  invariant scaled_bound: ile(3_u64 * first, 3_u64 * first_limit) {
+    use 0 * pair_bound;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT [OP-2] -- count is u8 (max 255) and the loop runs 300 times unconditionally adding 1 each time; the checked `+` at count=255 would overflow u8, so the domain obligation count +defined 1_u8 is genuinely unproved (and unprovable, since it is false for i=255).";
+  let count = 0_u8;
+  for (
+    i in 0_u64..300_u64,
+    invariant bound: ile(count, 255_u8)
+  ) {
+    set count = count + 1_u8;
+  }
+  return exit_status(code: 0_u8);
+}

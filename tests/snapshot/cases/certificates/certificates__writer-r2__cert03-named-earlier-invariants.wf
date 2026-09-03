@@ -1,0 +1,20 @@
+fn combined_ports(p: own u32, p_cap: own u32, q: own u32, q_cap: own u32, r: own u32, r_cap: own u32) -> result: own unit pure contract {
+  requires ile(p, p_cap);
+  requires ile(q, q_cap);
+  requires ile(r, r_cap);
+} {
+  doc "ACCEPT: three earlier single-variable invariants, each individually its own coefficient, are combined at three distinct non-unit factors, beyond AUTO's single-scaled-term family.";
+  invariant base_p: ile(p, p_cap);
+  invariant base_q: ile(q, q_cap);
+  invariant base_r: ile(r, r_cap);
+  invariant combined: ile(2_u32 * p + 3_u32 * q + 4_u32 * r, 2_u32 * p_cap + 3_u32 * q_cap + 4_u32 * r_cap) {
+    use 2 * base_p;
+    use 3 * base_q;
+    use 4 * base_r;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

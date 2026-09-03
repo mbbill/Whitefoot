@@ -1,0 +1,21 @@
+fn f(left_len: own u64, right_len: own u64) -> total: own u64 pure {
+  doc "REJECT (correct per [ENT-6] join-image rule): the two arms leave i with images i_h + 1 and i_h, so the if_stmt continuation gives i the image i_h + delta with delta a fresh atom over 0..=1; the header assumption ile(i_h, left_len) leaves the residual delta <= 0, which DIRECT refutes at delta's upper endpoint 1.";
+  let i = 0_u64;
+  let j = 0_u64;
+  loop (
+    invariant bounded_left: ile(i, left_len)
+  ) {
+    let left_open = ilt(i, left_len);
+    if left_open {
+      set i = i + 1_u64;
+    } else {
+      set j = j + 1_u64;
+    }
+  }
+  return i;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = f(left_len: 3_u64, right_len: 2_u64);
+  return exit_status(code: 0_u8);
+}

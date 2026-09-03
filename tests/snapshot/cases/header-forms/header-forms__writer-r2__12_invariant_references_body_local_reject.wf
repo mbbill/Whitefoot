@@ -1,0 +1,17 @@
+fn sum_weighted(count: own u64) -> total: own u64 pure {
+  let total = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant bound: ile(scratch, i)
+  ) {
+    let scratch = total;
+    set total = total + 1_u64;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "REJECT: header invariant names scratch, a body-local declared inside the loop body, not live in the preheader [INV-1].";
+  let total = sum_weighted(count: 5_u64);
+  return exit_status(code: 0_u8);
+}

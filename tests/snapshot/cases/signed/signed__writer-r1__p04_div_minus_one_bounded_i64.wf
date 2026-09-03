@@ -1,0 +1,22 @@
+fn negate_by_division(n: own i64) -> result: own i64 pure {
+  doc "ACCEPT: dividing by the constant -1 divisor is total once the dividend is bounded above i64::MIN [OP-2, ENT-6].";
+  if igt(n, -9223372036854775808_i64) {
+    let m = n / -1_i64;
+    return m;
+  }
+  return 0_i64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = negate_by_division(n: 41_i64);
+  let b = negate_by_division(n: -41_i64);
+  if ieq(a, -41_i64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(b, 41_i64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

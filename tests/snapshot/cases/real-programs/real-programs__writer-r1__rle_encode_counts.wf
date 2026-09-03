@@ -1,0 +1,53 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- run-length encodes a fixed byte buffer with a bounds-checked output-slot write";
+  let input = buffer_new(5_u64, 0_u8);
+  set input[0_u64] = 5_u8;
+  set input[1_u64] = 5_u8;
+  set input[2_u64] = 5_u8;
+  set input[3_u64] = 2_u8;
+  set input[4_u64] = 9_u8;
+  let input_length = len(input);
+  let output = buffer_new(10_u64, 0_u8);
+  let output_room = len(output);
+  let output_index = 0_u64;
+  let i = 0_u64;
+  loop @scan {
+    if ige(i, input_length) {
+      break @scan;
+    }
+    let value = input[i];
+    let count = 1_u8;
+    let j = i +wrap 1_u64;
+    loop @run {
+      if ilt(j, input_length) {
+        let next = input[j];
+        if ieq(next, value) {
+          set count = count +wrap 1_u8;
+          set j = j +wrap 1_u64;
+        } else {
+          break @run;
+        }
+      } else {
+        break @run;
+      }
+    }
+    let next_slot = output_index +wrap 1_u64;
+    let value_ok = ilt(output_index, output_room);
+    let next_ok = ilt(next_slot, output_room);
+    if band(value_ok, next_ok) {
+      set output[output_index] = value;
+      set output[next_slot] = count;
+      set output_index = output_index +wrap 2_u64;
+      set i = j;
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let length_ok = ieq(output_index, 6_u64);
+  let count0_ok = ieq(output[1_u64], 3_u8);
+  if band(length_ok, count0_ok) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

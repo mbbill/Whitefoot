@@ -1,0 +1,45 @@
+struct ByteVec {
+  buf: buffer<u8>;
+  fill: u64;
+}
+
+fn push_one['a](v: &uniq 'a ByteVec, x: own u8) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
+  let count = deref(v).fill;
+  let cap = len(deref(v).buf);
+  let has_room = ilt(count, cap);
+  if has_room {
+  } else {
+    return unit;
+  }
+  set deref(v).buf[count] = x;
+  match count +checked 1_u64 {
+    Ok(value: bumped) => {
+      set deref(v).fill = bumped;
+    }
+    Err(error: overflow) => {
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- the callee's projected `writes(fill)` kills the caller's fact about the field [ENT-5](b); rereading it after the call reestablishes it.";
+  let buf = buffer_new(4_u64, 0_u8);
+  let v = ByteVec(buf: move buf, fill: 0_u64);
+  let before = v.fill;
+  let before_ok = ieq(before, 0_u64);
+  if before_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  region 'p {
+    let pushed = push_one<'p>(v: &uniq 'p v, x: 5_u8);
+  }
+  let after = v.fill;
+  let after_ok = ieq(after, 1_u64);
+  if after_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

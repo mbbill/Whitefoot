@@ -1,0 +1,24 @@
+fn clamp_difference(a: own u32, b: own u32) -> result: own u32 pure {
+  doc "expect ACCEPT: unsigned subtraction a - b is guarded by an ile(b, a) branch, so [OP-2]'s domain obligation is discharged before the exact op executes.";
+  let safe = ile(b, a);
+  if safe {
+    let diff = a - b;
+    return diff;
+  } else {
+    return 0_u32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = clamp_difference(a: 10_u32, b: 4_u32);
+  let second = clamp_difference(a: 3_u32, b: 9_u32);
+  if ieq(first, 6_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(second, 0_u32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

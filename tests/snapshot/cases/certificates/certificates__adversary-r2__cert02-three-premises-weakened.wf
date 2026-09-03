@@ -1,0 +1,23 @@
+fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {
+  requires ile(first, first_limit);
+  requires ile(second, second_limit);
+  requires ile(third, third_limit);
+  requires ile(first_limit, 80_u8);
+  requires ile(second_limit, 80_u8);
+  requires ile(third_limit, 90_u8);
+} {
+  doc "Expect ACCEPT: three explicit premises combined (coefficient one each), target is a direct weakening (+1_u8 slack) of the exact weighted sum.";
+  invariant total_bound: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {
+    use ile(first, first_limit);
+    use ile(second, second_limit);
+    use ile(third, third_limit);
+  }
+  let sum = first + second;
+  let result = sum + third;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = bounded_sum(first: 1_u8, first_limit: 5_u8, second: 2_u8, second_limit: 5_u8, third: 3_u8, third_limit: 5_u8);
+  return exit_status(code: result);
+}

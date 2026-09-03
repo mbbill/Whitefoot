@@ -1,0 +1,5 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "REJECT: ineg requires the signed subset (OP-1); applying it to u32 is a hard error at that call node.";
+  let value = ineg.wrap(5_u32);
+  return exit_status(code: 0_u8);
+}

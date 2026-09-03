@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT [OP-2] -- at i=2 the break branch sets sum = sum +wrap 4294967293 while sum=2, landing sum at exactly u32::MAX (4294967295); the loop then exits via break, not normal exhaustion, so the published invariant ile(sum, i) does not cover this state. The post-loop checked `sum + 1_u32` would silently wrap MAX->0 if the compiler wrongly treated the exhaustion fact as available after a break exit. Concrete violating input: no runtime input needed, the trace is fixed -- sum=4294967295 at the checked add site.";
+  let sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant per_step: ile(sum, 1_u32 * i)
+  ) {
+    let should_break = ieq(i, 2_u64);
+    if should_break {
+      set sum = sum +wrap 4294967293_u32;
+      break;
+    }
+    set sum = sum + 1_u32;
+  }
+  let after = sum + 1_u32;
+  if ieq(after, 0_u32) {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,22 @@
+struct Sink {
+  buf: buffer<u8>;
+}
+
+fn shrink_then_read['a](dst: &uniq 'a Sink, i: own u64) -> value: own u8 reads(dst.buf), writes(dst.buf), allocates(heap) contract {
+  define room = len(deref(dst).buf);
+  requires ilt(i, room);
+} {
+  doc "expect REJECT [OP-4]: replace deref(dst).buf swaps in a 1-element buffer, killing the requires(ilt(i, room)) fact tied to the old length before the index; a wrong accept lets i=3 read past the shrunk 1-element buffer.";
+  let smaller = buffer_new(1_u64, 0_u8);
+  let old = replace deref(dst).buf = move smaller;
+  return deref(dst).buf[i];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let start = buffer_new(5_u64, 3_u8);
+  let sink = Sink(buf: move start);
+  region 'r {
+    let value = shrink_then_read<'r>(dst: &uniq 'r sink, i: 3_u64);
+  }
+  return exit_status(code: 0_u8);
+}

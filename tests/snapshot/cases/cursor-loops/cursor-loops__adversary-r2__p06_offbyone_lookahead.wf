@@ -1,0 +1,21 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: for i in 0..5 reads data[i+1], which is data[5] (OOB) on the last iteration i=4";
+  let data = array_new<u8, 5>(0_u8);
+  set data[0_u64] = 1_u8;
+  set data[1_u64] = 2_u8;
+  set data[2_u64] = 3_u8;
+  set data[3_u64] = 4_u8;
+  set data[4_u64] = 5_u8;
+  let total = 0_u8;
+  for (i in 0_u64..5_u64) {
+    let next_index = i +wrap 1_u64;
+    let lookahead = data[next_index];
+    set total = total +wrap lookahead;
+  }
+  let correct = ieq(total, 14_u8);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,49 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- decodes an unsigned LEB128 varint from a byte buffer with a bounded shift-amount check";
+  let encoded = buffer_new(3_u64, 0_u8);
+  set encoded[0_u64] = 172_u8;
+  set encoded[1_u64] = 2_u8;
+  set encoded[2_u64] = 0_u8;
+  let encoded_length = len(encoded);
+  let value = 0_u32;
+  let shift = 0_u32;
+  let index = 0_u64;
+  let finished = False();
+  loop @decode {
+    if finished {
+      break @decode;
+    }
+    let index_ok = ilt(index, encoded_length);
+    if index_ok {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let shift_ok = ilt(shift, 32_u32);
+    if shift_ok {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    let byte = encoded[index];
+    let payload = iand(byte, 127_u8);
+    let payload_wide = cvt<u8, u32>(payload);
+    let shifted = ishl.wrap(payload_wide, shift);
+    set value = value +wrap shifted;
+    let continues = iand(byte, 128_u8);
+    let has_more = ine(continues, 0_u8);
+    set index = index +wrap 1_u64;
+    set shift = shift +wrap 7_u32;
+    if has_more {
+    } else {
+      set finished = True();
+    }
+  }
+  if ieq(value, 300_u32) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if ieq(index, 2_u64) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

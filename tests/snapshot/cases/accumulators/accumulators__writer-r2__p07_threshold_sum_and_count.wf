@@ -1,0 +1,29 @@
+const readings: array<u8, 6> =[100_u8, 5_u8, 200_u8, 3_u8, 150_u8, 2_u8];
+
+command fn main() -> status: own ExitStatus pure {
+  doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for a one-armed conditional update of a sum and a count, but the arm that leaves above_sum alone joins the arm that advances it, so the backedge target ile(above_sum, 255_u32 * (i + 1_u64)) is unprovable [ENT-6].";
+  let above_sum = 0_u32;
+  let above_count = 0_u64;
+  for (
+    i in 0_u64..6_u64,
+    invariant sum_bound: ile(above_sum, 255_u32 * i),
+    invariant count_bound: ile(above_count, i)
+  ) {
+    let byte = readings[i];
+    let over = igt(byte, 50_u8);
+    if over {
+      let wide = cvt<u8, u32>(byte);
+      set above_sum = above_sum + wide;
+      set above_count = above_count + 1_u64;
+    }
+  }
+  if ieq(above_sum, 450_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(above_count, 3_u64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,41 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: an ordinary loop advances a low cursor upward and a high cursor downward toward each other across a fixed array, guarding the step so it stops as soon as the two cursors meet or cross.";
+  let data = array_new<u32, 7>(0_u32);
+  set data[0_u64] = 10_u32;
+  set data[1_u64] = 20_u32;
+  set data[2_u64] = 30_u32;
+  set data[3_u64] = 40_u32;
+  set data[4_u64] = 50_u32;
+  set data[5_u64] = 60_u32;
+  set data[6_u64] = 70_u32;
+  let low = 0_u64;
+  let high = 6_u64;
+  let total = 0_u32;
+  loop @meet {
+    let crossed = ige(low, high);
+    if crossed {
+      break @meet;
+    }
+    let low_ok = ilt(low, 7_u64);
+    if low_ok {
+    } else {
+      break @meet;
+    }
+    let high_ok = ilt(high, 7_u64);
+    if high_ok {
+    } else {
+      break @meet;
+    }
+    let low_value = data[low];
+    let high_value = data[high];
+    set total = total +wrap low_value;
+    set total = total +wrap high_value;
+    set low = low +wrap 1_u64;
+    set high = high -wrap 1_u64;
+  }
+  if ieq(total, 240_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

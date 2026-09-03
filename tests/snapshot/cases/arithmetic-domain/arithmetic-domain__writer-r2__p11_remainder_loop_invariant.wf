@@ -1,0 +1,17 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: a counted loop accumulates a running sum mod 100 through a header invariant that states the maintained bound so the exact remainder needs no runtime test [INV-1, P8].";
+  let total = 0_u64;
+  for (
+    i in 0_u64..40_u64,
+    invariant bounded: ile(total, 99_u64)
+  ) {
+    let combined = total + 99_u64;
+    let reduced = combined % 100_u64;
+    set total = reduced;
+  }
+  if ile(total, 99_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

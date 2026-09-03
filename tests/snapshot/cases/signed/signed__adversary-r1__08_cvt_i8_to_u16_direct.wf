@@ -1,0 +1,8 @@
+fn widen_bad(x: own i8) -> result: own u16 pure {
+  doc "EXPECT REJECT [OP-6/TYPE-5]: i8->u16 is signed->unsigned, never in the 29 TOTAL pairs (x=-1_i8 has no u16 image), so cvt returns Result and a bare own u16 return is a type mismatch.";
+  return cvt<i8, u16>(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

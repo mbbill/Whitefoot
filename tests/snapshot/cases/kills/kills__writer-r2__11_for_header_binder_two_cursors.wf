@@ -1,0 +1,17 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- P11: the compiler-owned for-binder update on `i` is a kill on every backedge [ENT-5], but the structural half-open bound licenses `marks[i]` with no written invariant, even while the loop-carried `step` is set fresh each iteration.";
+  let marks = buffer_new(5_u64, 0_u32);
+  let base = 100_u32;
+  let step = 0_u32;
+  for (i in 0_u64..5_u64) {
+    set marks[i] = base +wrap step;
+    set step = step +wrap 1_u32;
+  }
+  let last = marks[4_u64];
+  let evens_ok = ieq(last, 104_u32);
+  if evens_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

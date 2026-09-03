@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- the header invariant is reproved on the backedge despite the body's set to the value it names [INV-1].";
+  let weights = buffer_new(5_u64, 3_u8);
+  let sum = 0_u32;
+  for (
+    i in 0_u64..5_u64,
+    invariant per_byte: ile(sum, 255_u32 * i)
+  ) {
+    let w = weights[i];
+    let wide = cvt<u8, u32>(w);
+    set sum = sum + wide;
+  }
+  let correct = ieq(sum, 15_u32);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

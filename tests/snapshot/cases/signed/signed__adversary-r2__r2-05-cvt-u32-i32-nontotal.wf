@@ -1,0 +1,25 @@
+fn widen(x: own u32) -> result: own i32 pure {
+  doc "expect REJECT: u32->i32 is NOT a total cvt pair [OP-6] (u32::MAX 4294967295 has no i32 image), so cvt<u32, i32> must return Result<i32, NarrowError>, not own i32 directly.";
+  return cvt<u32, i32>(x);
+}
+
+fn widen_checked(x: own u32) -> result: own i32 pure {
+  doc "The Result-matching form is the only sound shape for this non-total pair.";
+  match cvt<u32, i32>(x) {
+    Ok(value: v) => {
+      return v;
+    }
+    Err(error: e) => {
+      return 0_i32;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let checked_value = widen_checked(x: 3000000000_u32);
+  if ieq(checked_value, 0_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

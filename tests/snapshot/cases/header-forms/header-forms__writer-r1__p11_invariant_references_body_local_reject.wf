@@ -1,0 +1,21 @@
+fn running_bound(limit: own u64) -> total: own u64 pure {
+  let sum = 0_u64;
+  for (
+    i in 0_u64..limit,
+    invariant sum_bound: ile(sum, doubled)
+  ) {
+    let doubled = 2_u64 * i;
+    set sum = sum + 1_u64;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: REJECT -- the header invariant relation names a local declared only inside the loop body, which is not in scope at the header.";
+  let total = running_bound(limit: 5_u64);
+  if ieq(total, 5_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

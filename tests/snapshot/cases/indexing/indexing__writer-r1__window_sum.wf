@@ -1,0 +1,24 @@
+fn window_sum(data: own buffer<u8>, start: own u64, end: own u64) -> total: own u32 reads(data) contract {
+  define capacity = len(data);
+  requires ile(start, end);
+  requires ile(end, capacity);
+} {
+  doc "ACCEPT: sums one contiguous start..end byte window; both endpoints are proved against the buffer length before the walk.";
+  let sum = 0_u32;
+  for (i in start..end) {
+    let byte = data[i];
+    let wide = cvt<u8, u32>(byte);
+    set sum = sum +wrap wide;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(8_u64, 3_u8);
+  let total = window_sum(data: move data, start: 2_u64, end: 6_u64);
+  if ieq(total, 12_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

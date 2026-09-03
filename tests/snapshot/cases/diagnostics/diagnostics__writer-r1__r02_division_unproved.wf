@@ -1,0 +1,16 @@
+fn safe_average(total: own u64, d: own u64) -> value: own u64 pure contract {
+  requires ige(d, 1_u64);
+} {
+  let q = total / d;
+  return q;
+}
+
+fn average(total: own u64, d: own u64) -> value: own u64 pure {
+  doc "expect REJECT: [OP-2] the divisor d is never proved nonzero before the division";
+  let q = total / d;
+  return q;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

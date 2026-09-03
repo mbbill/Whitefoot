@@ -1,0 +1,16 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: REJECT [OP-4] -- idx accumulates the widened byte values themselves (not a match count), so after 3 iterations idx can reach 3*255=765; table has length 256, and the concrete violating trace is data all 100s: idx = 100+100+100 = 300, and table[300] indexes past a length-256 buffer.";
+  let data = buffer_new(3_u64, 100_u8);
+  let table = buffer_new(256_u64, 0_u8);
+  let idx = 0_u64;
+  for (
+    i in 0_u64..3_u64,
+    invariant bound: ile(idx, 255_u64 * i)
+  ) {
+    let byte = data[i];
+    let wide = cvt<u8, u64>(byte);
+    set idx = idx + wide;
+  }
+  let value = table[idx];
+  return exit_status(code: 0_u8);
+}

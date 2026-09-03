@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: a counted for loop with two comma-separated header invariants both hold as one simultaneous base and backedge batch [INV-1].";
+  let sum = 0_u64;
+  let count = 0_u64;
+  for (
+    i in 0_u64..5_u64,
+    invariant sum_bound: ile(sum, 5_u64 * i),
+    invariant count_bound: ile(count, i)
+  ) {
+    set sum = sum + i;
+    set count = count + 1_u64;
+  }
+  if ieq(sum, 10_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(count, 5_u64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

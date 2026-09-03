@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: imin/imax lower to smin/smax for a signed operand type, so -50_i8 is the minimum and -3_i8 is the maximum among negative operands.";
+  let smallest = imin(-3_i8, -50_i8);
+  let largest = imax(-3_i8, -50_i8);
+  if ieq(smallest, -50_i8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(largest, -3_i8) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let mixed_smallest = imin(-1_i64, 0_i64);
+  if ieq(mixed_smallest, -1_i64) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

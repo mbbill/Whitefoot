@@ -1,0 +1,30 @@
+fn fetch(b: own buffer<u8>, i: own u64, outer: own Bool, inner: own Bool) -> result: own u8 reads(b) {
+  doc "expected REJECT [OP-4]: the outer true arm nests an if/else whose two leaves prove ilt and ile respectively, so the inner join already keeps only the weaker ile(i, room); joining that with the outer false arm's tight ilt(i, room) still keeps the weakest ile, leaving the trailing subscript's strict obligation undischarged.";
+  let room = len(b);
+  if outer {
+    if inner {
+      let tight = ilt(i, room);
+      if tight {
+      } else {
+        return 0_u8;
+      }
+    } else {
+      let loose = ile(i, room);
+      if loose {
+      } else {
+        return 0_u8;
+      }
+    }
+  } else {
+    let tight2 = ilt(i, room);
+    if tight2 {
+    } else {
+      return 0_u8;
+    }
+  }
+  return b[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,37 @@
+fn store_byte['r](out: &uniq 'r buffer<u8>, i: own u64, value: own u8, pick: own Bool) -> result: own unit reads(out), writes(out) {
+  doc "ACCEPT: both arms of the if/else independently prove ilt(i, room) via different routes before the join, and ENT-5 carries the common bound into the write subscript, discharging OP-4 for the store just as it would for a read.";
+  let room = len(deref(out));
+  if pick {
+    let direct_bound = ilt(i, room);
+    if direct_bound {
+    } else {
+      return unit;
+    }
+  } else {
+    let reversed_bound = igt(room, i);
+    if reversed_bound {
+    } else {
+      return unit;
+    }
+  }
+  set deref(out)[i] = value;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let scratch = buffer_new(8_u64, 0_u8);
+  let take_direct = True();
+  let take_reversed = False();
+  region 'p {
+    store_byte<'p>(out: &uniq 'p scratch, i: 3_u64, value: 42_u8, pick: take_direct);
+  }
+  region 'q {
+    store_byte<'q>(out: &uniq 'q scratch, i: 5_u64, value: 9_u8, pick: take_reversed);
+  }
+  let observed = scratch[3_u64];
+  if ieq(observed, 42_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

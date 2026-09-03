@@ -1,0 +1,10 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: counted for loop is bounded 0..9 but the array holds only 8 elements, so values[i] at i==8 is out of bounds";
+  let values = array_new<u64, 8>(0_u64);
+  let total = 0_u64;
+  for (i in 0_u64..9_u64) {
+    let value = values[i];
+    set total = total +wrap value;
+  }
+  return exit_status(code: 0_u8);
+}

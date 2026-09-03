@@ -1,0 +1,27 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: ACCEPT -- data has length 6 but the loop only scans the first 5 slots, so count <= 5 < 6 = len(data); the explicit dominating in_bounds check discharges data[count] before the read.";
+  let data = buffer_new(6_u64, 7_u8);
+  let count = 0_u64;
+  for (
+    i in 0_u64..5_u64,
+    invariant bound: ile(count, i)
+  ) {
+    let byte = data[i];
+    let matches = ieq(byte, 7_u8);
+    if matches {
+      set count = count + 1_u64;
+    }
+  }
+  let data_len = len(data);
+  let in_bounds = ilt(count, data_len);
+  if in_bounds {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let value = data[count];
+  if ieq(value, 7_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

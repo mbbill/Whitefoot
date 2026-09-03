@@ -1,0 +1,12 @@
+fn safe_div(n: own i32, d: own i32) -> result: own i32 pure contract {
+  define nonzero = ine(d, 0_i32);
+  define not_neg1 = ine(d, -1_i32);
+  requires band(nonzero, not_neg1);
+} {
+  doc "EXPECT ACCEPT: d nonzero and d != -1 together exclude the signed MIN/-1 overflow pair for any n.";
+  return n / d;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "expected: REJECT [OP-4] -- the whole-place replace of `line` kills the old `room` length fact [ENT-5](a); the later index reuses that stale fact instead of a fresh len().";
+  let line = buffer_new(10_u64, 0_u8);
+  let room = len(line);
+  let shrunk = buffer_new(2_u64, 3_u8);
+  let old = replace line = move shrunk;
+  let end = 9_u64;
+  let fits = ile(end, room);
+  if fits {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let sample = line[end];
+  let correct = ieq(sample, 3_u8);
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

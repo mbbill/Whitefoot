@@ -1,0 +1,19 @@
+fn negate(n: own i32) -> result: own i32 pure {
+  doc "Expected REJECT [OP-2]: exact ineg on an unguarded i32 has no proof that n != i32::MIN. Violating value n=-2147483648_i32 (i32::MIN) has no positive representable negation, so ineg is undefined there.";
+  let negated = ineg(n);
+  return negated;
+}
+
+fn negate_guarded(n: own i32) -> result: own i32 pure contract {
+  requires igt(n, -2147483648_i32);
+} {
+  doc "Contrast: excluding i32::MIN by contract makes the same exact ineg total, unlike negate above which has no such guard.";
+  let negated = ineg(n);
+  return negated;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = negate(n: -2147483648_i32);
+  let safe_result = negate_guarded(n: -100_i32);
+  return exit_status(code: 0_u8);
+}

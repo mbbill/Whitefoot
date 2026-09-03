@@ -1,0 +1,15 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expected: ACCEPT -- count is u8 (max 255) and the loop runs exactly 255 times unconditionally adding 1 each time; the final value is exactly 255, which is representable in u8, so the checked `+` never crosses the domain boundary.";
+  let count = 0_u8;
+  for (
+    i in 0_u64..255_u64,
+    invariant bound: ile(count, i)
+  ) {
+    set count = count + 1_u8;
+  }
+  if ieq(count, 255_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

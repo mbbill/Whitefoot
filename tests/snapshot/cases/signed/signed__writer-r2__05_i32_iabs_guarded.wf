@@ -1,0 +1,28 @@
+fn magnitude(x: own i32) -> abs_value: own i32 pure {
+  doc "ACCEPT: exact iabs on i32 is admitted after a dominating branch excludes MIN(i32).";
+  let is_min = ieq(x, -2147483648_i32);
+  if is_min {
+    return 2147483647_i32;
+  } else {
+    return iabs(x);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = magnitude(x: -17_i32);
+  let b = magnitude(x: 17_i32);
+  let c = magnitude(x: -2147483648_i32);
+  if ieq(a, 17_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(b, 17_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if ieq(c, 2147483647_i32) {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 3_u8);
+  }
+}

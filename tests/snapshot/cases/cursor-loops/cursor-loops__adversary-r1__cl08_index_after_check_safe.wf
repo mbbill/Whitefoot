@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect ACCEPT: same size-8 array and cursor as cl07 but the sentinel check runs before the index, so cursor==8 breaks before values[cursor] is ever reached";
+  let values = array_new<u64, 8>(0_u64);
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, 8_u64)
+  ) {
+    let done = ige(cursor, 8_u64);
+    if done {
+      break;
+    }
+    let value = values[cursor];
+    set cursor = cursor + 1_u64;
+  }
+  if ieq(cursor, 8_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

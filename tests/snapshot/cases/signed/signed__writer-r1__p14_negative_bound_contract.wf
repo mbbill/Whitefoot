@@ -1,0 +1,21 @@
+fn shift_up(temperature: own i32) -> result: own i32 pure contract {
+  requires ige(temperature, -273_i32);
+  requires ile(temperature, 1000_i32);
+} {
+  return temperature + 10_i32;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "ACCEPT: a verified requires clause with a negative lower bound discharges the exact add's overflow obligation inside the callee [FN-8, ENT-3].";
+  let a = shift_up(temperature: -273_i32);
+  let b = shift_up(temperature: 20_i32);
+  if ieq(a, -263_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(b, 30_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

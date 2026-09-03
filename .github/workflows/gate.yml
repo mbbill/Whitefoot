@@ -63,9 +63,9 @@ jobs:
           - stage: corpus
             run: make -C compiler test-corpus
           # The conformance corpus, through its own runner and then through the
-          # native adapter.
+          # native adapter, then the recorded-verdict snapshot corpus.
           - stage: conformance
-            run: make conformance && make conformance-run
+            run: make conformance && make conformance-run && make snapshot-run
           # The maintained executable tests under `research/`.
           - stage: research
             run: make research-tests

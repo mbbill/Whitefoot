@@ -1,0 +1,36 @@
+fn count_to(limit: own u64) -> reached: own u64 pure {
+  doc "expect ACCEPT: the +2 step is only taken when cursor + 2 <= limit is checked first, so both arms of the join preserve ile(cursor, limit) and the loop invariant discharges on every backedge.";
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let remaining = ilt(cursor, limit);
+    if remaining {
+      let step_defined = cursor +defined 2_u64;
+      if step_defined {
+      } else {
+        break;
+      }
+      let candidate = cursor + 2_u64;
+      let big_fits = ile(candidate, limit);
+      if big_fits {
+        set cursor = candidate;
+      } else {
+        let small_defined = cursor +defined 1_u64;
+        if small_defined {
+        } else {
+          break;
+        }
+        set cursor = cursor + 1_u64;
+      }
+    } else {
+      break;
+    }
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let reached = count_to(limit: 10_u64);
+  return exit_status(code: 0_u8);
+}

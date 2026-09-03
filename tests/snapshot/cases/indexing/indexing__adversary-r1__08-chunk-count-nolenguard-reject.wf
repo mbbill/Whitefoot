@@ -1,0 +1,22 @@
+fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own u8 reads(buf, status) contract {
+  define status_len = len(status);
+  requires igt(status_len, 0_u64);
+} {
+  doc "expect REJECT (OP-2 underflow): no requires that data_len >= 3, so chunk_count can be 0 and chunk_count - 1_u64 underflows u64 when buf has fewer than 3 elements";
+  let data_len = len(buf);
+  let chunk_count = data_len / 3_u64;
+  let last_chunk = chunk_count - 1_u64;
+  let value = status[last_chunk];
+  return value;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(0_u64, 0_u8);
+  let stat = buffer_new(1_u64, 3_u8);
+  let value = last_chunk_status(buf: move buf, status: move stat);
+  if ieq(value, 3_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

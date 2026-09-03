@@ -1,0 +1,18 @@
+fn widen(x: own u8) -> result: own i32 pure {
+  doc "ACCEPT: cvt<u8, i32> is value-preserving (total): every u8 value fits exactly in i32, so the row is (Src) -> own Dst with no Result [OP-6].";
+  return cvt<u8, i32>(x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = widen(x: 250_u8);
+  if ieq(a, 250_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let b = widen(x: 0_u8);
+  if ieq(b, 0_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

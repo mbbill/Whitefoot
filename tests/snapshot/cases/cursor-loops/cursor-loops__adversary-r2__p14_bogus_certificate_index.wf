@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "expect REJECT: the local invariant claims ilt(cursor, 3_u64) backed only by ile(cursor, limit) with limit=9, a certificate that does not entail the claim, then uses it to index a 3-slot array; must not be accepted as a proof";
+  let data = array_new<u8, 3>(0_u8);
+  set data[0_u64] = 7_u8;
+  set data[1_u64] = 8_u8;
+  set data[2_u64] = 9_u8;
+  let limit = 9_u64;
+  let cursor = 5_u64;
+  let bounded = ile(cursor, limit);
+  if bounded {
+    invariant sneaky: ilt(cursor, 3_u64) {
+      use ile(cursor, limit);
+    }
+    let value = data[cursor];
+    let correct = ieq(value, 0_u8);
+    if correct {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

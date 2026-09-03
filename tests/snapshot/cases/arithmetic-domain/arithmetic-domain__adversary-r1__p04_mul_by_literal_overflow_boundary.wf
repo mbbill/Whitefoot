@@ -1,0 +1,13 @@
+fn scale(x: own u8) -> result: own u8 pure contract {
+  requires ile(x, 26_u8);
+} {
+  doc "Exact multiplication by a literal must be rejected when the bound admits overflow [OP-1].";
+  let y = x * 10_u8;
+  return y;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "EXPECT REJECT: requires ile(x,26) allows x*10=260, overflowing u8.";
+  let v = scale(x: 26_u8);
+  return exit_status(code: 0_u8);
+}
