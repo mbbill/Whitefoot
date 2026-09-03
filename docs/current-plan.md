@@ -327,61 +327,16 @@ This work is complete only when one exact revision has all of the following:
 
 ### Candidate measurement
 
-The measured compiler/source baseline is exact commit
-`1c8c596b969629e3e8fa543b624ec31b644a890d`. The evidence commit that contains
-this record changes documentation only; it does not change the compiler or any
-measured `.wf` input. The release `whitefootc` used below has SHA-256
-`f53ce0e0d937aa200eea1017ce130a94664132d57cbd9531d550ee84fd84afe6`.
+Compile cost for this candidate is measured on the GitHub-hosted gate runners,
+not locally: canonical `make check` ends with the wall time of each of its
+stages, so the candidate's per-stage breakdown is compared there against the
+same stages on the base branch. No local measurement is recorded, because only
+runner timings are comparable across branches.
 
-The host was a MacBook Air `Mac16,12`, Apple M4 with 10 cores and 16 GB memory,
-running macOS 26.5.2 build 25F84. The toolchain was Rust 1.97.1
-(`8bab26f4f 2026-07-14`) with LLVM 22.1.6 and Apple clang 21.0.0.
-
-Compile cost was measured with the locked offline release build. Each process
-ran `whitefootc --emit-llvm -o /dev/null`; each unit received two warmups and
-15 measured runs, interleaved in rotating order. Times are process wall time:
-
-| Compilation unit | Source bytes | Minimum | Median | Mean | Maximum |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `utf8parse` | 9,279 | 0.031105 s | 0.040537 s | 0.046102 s | 0.084170 s |
-| four-file `raw_deflate_boundary` unit | 58,280 | 0.233336 s | 0.261331 s | 0.283424 s | 0.522629 s |
-| `wfgrep` | 49,555 | 0.933678 s | 1.069286 s | 1.087987 s | 1.405960 s |
-
-The exact measured source identities were:
-
-| Source | SHA-256 |
-| --- | --- |
-| `tests/programs/utf8parse.wf` | `27d2bf9b78e08893ebf60c00198df44a10072830a0b675ecca61cb62bf882d99` |
-| `tests/programs/raw_deflate.wf` | `1eb5226751f7bf954aa026fb44764fa3f91a3d99121848b93609472ed46460c2` |
-| `tests/programs/raw_deflate_dynamic.wf` | `ba1326724805ffc46508f6767414aa1c962bd99e38d00d8e17b26f21a6582c24` |
-| `tests/programs/raw_deflate_dynamic_decode.wf` | `9531ed86231bf542e1649a9c3c5cc37e3393bc777f844ee89802fc90fa6cd93a` |
-| `tests/programs/raw_deflate_boundary.wf` | `0408dd2315e5de7b8d7cf96c7e3a68107064679296bc4098a56e18f9f6842cf7` |
-| `tests/programs/wfgrep.wf` | `60c22994396a244e07568b277ff648c67cfddc8bf35610527d043cf448f78d29` |
-
-Proof erasure is structural evidence, not a timing inference: the
+Proof erasure stays structural evidence rather than a timing inference: the
 `source_proof_is_erased_before_typed_ir` test compares the full typed IR with
-and without proof-only source and passed.
-
-The existing `par_layout` workload was also built once with sequential lowering
-and once with proved parallel lowering. Fifteen interleaved executions of each
-configuration used the repository's `timeit.zsh` harness:
-
-| Lowering / worker setting | Minimum | Maximum | Spread | Failures |
-| --- | ---: | ---: | ---: | ---: |
-| sequential | 0.8030 s | 1.0144 s | 26.3% | 0 |
-| parallel, `WF_WORKERS=1` | 0.8021 s | 0.9993 s | 24.6% | 0 |
-| parallel, `WF_WORKERS=2` | 0.4102 s | 0.4600 s | 12.1% | 0 |
-| parallel, `WF_WORKERS=4` | 0.2646 s | 0.3191 s | 20.6% | 0 |
-| parallel, default workers | 0.1899 s | 0.2242 s | 18.1% | 0 |
-
-All 75 executions produced byte-identical output with SHA-256
-`0e28f3d229be2e69d55fcc66976913738fb0d876de43cd15e13f8f39084d3de9`.
-Separate compiler tests prove that a denied optional `par` permission emits
-the sequential call sequence.
-
-These numbers are implementation observations used to judge whether the fixed
-rules are practical. No elapsed-time threshold, sample result, machine speed,
-or worker count participates in source acceptance or rejection.
+and without proof-only source, and separate compiler tests prove that a denied
+optional `par` permission emits the sequential call sequence.
 
 Until those conditions hold, this branch remains an implementation candidate,
 not an activated or completed language release.
