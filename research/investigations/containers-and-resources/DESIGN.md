@@ -1,48 +1,58 @@
 # Containers and resources: the integrated design
 
-The single design for batch 0116. It merges the two drafts beside it,
-`RESOURCES.md` (providers, the envelope `E`, the `resource-closed` judgment) and
-`CONTAINERS.md` (owners, views, and the facts that cross a call), into one set of
-laws, one set of rules, one vocabulary, and one amendment register. A reader who
-has not read either draft can read this file alone. The drafts remain for their
-detailed rationale, their rejected alternatives, and their migrations; every rule
-they stated normatively lives here.
+The single design for batch 0116: one set of laws, one set of rules, one
+vocabulary, one amendment register. `RESOURCES.md` beside it keeps the writer's-eye
+resource migrations and `CONTAINERS.md` the longer library functions of 3.L; neither
+carries rule text, and a reader who reads only this file has the whole design.
 
-**Fourth draft, after falsifier round 3.** Round 3 found one cause under three of
-its four reports. A value's relationship to its backing store was carried by
-something other than its type: by a provider's *place*, by an origin *set* the
-preservation rules did not traverse, by a per-activation *extent* whose region
-block could be entered twice. Store identity therefore fell to a move plus a
-reinitializing `set`, to a runtime offset, and to every field, element and payload
-position the same draft had just opened. Disposal was a leaf-only operation on a
-class closed under containment, so a container of leases was undestroyable and a
-helper could release nothing. And an arena's capacity was an ordinary killable
-fact, so no arena loop had a bound.
+**Fifth draft, after falsifier round 4 and the owner's minimality ruling of
+2026-09-03.** Round 4 confirmed that the fourth draft's root change was right and
+total — a store's identity is a region carried in the type of every value it
+backs, and no falsifier could find a rule anywhere that admits a store region by
+outlives rather than by identity. What round 4 broke was everything the fourth
+draft had *not* closed the same way: a store's **activation** (recursion makes two
+entries of one region block live at once over one committed extent), a store's
+**release** (a partial move abandons a linear leaf; an arena's reset runs no
+content release; the disposal walk imports a heap-growing worklist that aborts),
+and three type-level notions introduced without the closure the brand got —
+`linear` declared beside affine instead of refining it, `loan-bearing` given a
+prohibition whose two halves disagree, and a carried formation datum with no
+transport across a call.
 
-This draft makes one change at the root. **A store's identity is a region, and the
-region is in the type.** A region names at most one store, a reserving occurrence
-mints its store at the region it names, and every value that store backs carries
-that region in its own type: `Pool<'s, T, N>`, `PoolSlot<'s, T>`,
-`PoolVector<'s, T, N>`. Store identity is then preserved by type formation itself,
-through construct, field projection, container elements, enum payloads,
-multi-return, joins and calls, because no value-forming step changes a value's
-type. Disposal becomes structural, closed under containment exactly as linearity
-is, and checkable inside a helper by type equality. Provenance keeps its [OWN-5]
-shape for the one kind that needs it, the views, which carry a loan and not a
-store. The rule count falls from fifty-three to fifty-two, and one preservation
-closure replaces four preservation sentences and a deferred per-leaf-provenance
-obligation, one structural disposal replaces a four-operation list and a per-owner
-release table, and one type parameter replaces a confinement region beside a store
-identity.
+The owner's ruling reshapes the answer rather than adding to it.
+
+> The kernel specification is the **minimal** set: it admits only what cannot be
+> implemented in wf itself. Anything a writer could implement in wf on top of the
+> kernel does not enter the spec; it belongs to a standard library — and the owner
+> leans toward not having one at all — or to user code. Container capabilities are
+> abstracted to the lowest common primitive, and only the truly unimplementable
+> part enters the spec. Non-normative content (bound tables, operation
+> inventories) never goes in the spec body. Batches are an implementation order
+> only, not spec versions; a single implementation is fine if correct.
+> Human-factors conveniences are not spec content.
+
+Applying it is not a trim. Section 3 is now two sections that are read
+differently. **3.K** is the kernel: forty-eight rules over six nominals and
+fourteen operations, every one of which a writer cannot write in wf. **3.L** is
+the library, **written out in wf** against 3.K, with each item's proof obligations
+walked against the kernel rules and against what v0.40 proves today; its longer
+functions live in `CONTAINERS.md` §3 and 3.L.2 is the result. The partition is the
+argument: five owners became one primitive in two brandings, thirty-odd operations
+became fourteen, three views became two, sixteen added nominals became five, and the
+fourth draft's `update` statement, its `AppendView`, its `Pool` store, its three
+failure structs and its whole [CNT] and [SEQ] inventory left the kernel and were
+rewritten as ordinary wf. **Seven** things the library could not be written without
+are now in the kernel, and 3.L.6 names each with the function that demanded it. That test — write it in wf, and only what refuses to be
+written enters the spec — is what this draft is for.
 
 Tree read: `batch/0116-containers-and-resources` at `main` a40c7e70,
 `spec/kernel-spec.md` **v0.40 ACTIVE**. Bare four-digit line numbers are that
-file; every other citation names its file.
+file, re-derived in this session; every other citation names its file.
 
-**Nothing here is implemented.** No compiler code was written for it. Section 3
-is draft rule text for a work branch, not an amendment. Every program in
-section 4 is design text and compiles nowhere. Section 6 separates what a
-compiler executed in this session from what is argued on paper.
+**Nothing here is implemented.** No compiler code was written for it. Section 3.K
+is draft rule text for a work branch, not an amendment; section 3.L is design text
+for programs that compile nowhere. Section 6 separates what a compiler executed in
+this session from what is argued on paper.
 
 Settled by the owner, and not reopened anywhere below:
 
@@ -52,12 +62,11 @@ Settled by the owner, and not reopened anywhere below:
   of tangible resources; a general heap, including a bounded general heap, is
   never part of `E`.
 - No frame-accumulating recursion in v1; tail recursion is lowered.
-- `FixedVector<T, N>` holds affine `T` through an initialized-prefix typestate.
+- `FixedVector<T, n>` holds affine `T` through an initialized-prefix typestate.
 - The core is a contiguous initialized-prefix sequence; keyed containers are
   fixed families over it, later.
-- Owners (`HeapVector`, `FixedVector<T, N>`, `ArenaVector`, `PoolVector`) versus
-  affine views (`Span`, `MutSpan`, `AppendView`), transformed by value, with
-  single-state `ensures` under [FN-9]. Two-state `ensures` is rejected.
+- Owners versus affine views, transformed by value, with single-state `ensures`
+  under [FN-9]. Two-state `ensures` is rejected.
 - Append helpers take the owner by value and return it. Pass-by-pointer is only
   an ABI.
 - Three call rules: through a shared borrow all facts survive; through a value
@@ -69,23 +78,43 @@ Settled by the owner, and not reopened anywhere below:
 - Every rule is a deterministic function of program text and compiler version,
   never of time or of a work budget.
 
-Three footnotes, because three rounds have read that list against the rules.
-[CNT-1] declares a fifth owner, `FixedRing<T, N>`, and the settled list names the
-four prefix owners and excludes no rotation. The settled append example writes its
-source argument first, while [GRAM-11] fixes argument order from the declaration
-and every helper here declares its owner first. And the settled owner names are
-unchanged: what this draft adds to `HeapVector<T>` is the store region, giving
-`HeapVector<'s, T>`, the same type with its store written down.
+Five footnotes, because the minimality ruling moves material the settled list
+names. Each states what survives and what changed, and each is a decision the
+owner has not separately ruled on; 5.0 collects them.
+
+1. **The owner inventory.** The settled list names four owners. `FixedVector<T,
+   n>` is unchanged. `HeapVector`, `ArenaVector` and `PoolVector` were three names
+   for one shape at three stores; with [PROV-1] putting the store in the brand,
+   nothing else distinguished them, so they are one kernel nominal `Vector<'s, T>`
+   at three regions, and the three names survive in 3.L as what a writer calls an
+   instance.
+2. **`FixedRing`.** The fourth draft made it a fifth owner. It is a
+   `FixedVector<Option<T>, n>` plus a head and a fill, written in wf in `CONTAINERS.md` §3, so
+   it leaves the kernel. The settled list excluded no rotation and names no ring.
+3. **`AppendView`.** The settled list names the owner/view split and the
+   by-value transformation, both of which survive. `AppendView` and `absorb` were
+   the fourth draft's device for one *proof* problem — keeping a caller's length
+   alive across an appending callee. [CALL-4]'s exit datum over a `&uniq`
+   parameter solves that problem for every borrowed value rather than for one
+   type, which is the ruling's own instruction, so the third view and its commit
+   event are gone. 5.0 states exactly what is lost.
+4. **`update`.** The fourth draft's transformation statement is not a new
+   statement here. Its one unwritable half — transforming a place through a call
+   with no observable point between the read and the write — becomes an admission
+   on the existing `set` [LIV-3]; its other half was sugar and is gone.
+5. **Argument order.** The settled append example writes its source argument
+   first, while [GRAM-11] fixes argument order from the declaration and every
+   helper here declares its destination first.
 
 ## Contents
 
-1. [The problem](#1-the-problem)
-2. [The laws](#2-the-laws)
-3. [The rules](#3-the-rules)
-4. [Two worked programs](#4-two-worked-programs)
-5. [Open questions](#5-open-questions)
-6. [Verified versus reasoned](#6-verified-versus-reasoned)
-7. [Implementation order](#7-implementation-order)
+1 [The problem](#1-the-problem) · 2 [The laws](#2-the-laws) ·
+3 [The rules](#3-the-rules): [3.K kernel](#3k-kernel-rules),
+[3.L library](#3l-the-library-written-in-wf) ·
+4 [Two worked programs](#4-two-worked-programs) · 5 [Open questions](#5-open-questions) ·
+6 [Verified versus reasoned](#6-verified-versus-reasoned) ·
+7 [Implementation order](#7-implementation-order) ·
+[Appendix A](#appendix-a-generated-data)
 
 ---
 
@@ -97,30 +126,21 @@ unchanged: what this draft adds to `HeapVector<T>` is the store region, giving
 OS kernel, a bootloader, a flight controller, or a device driver wants a program
 that cannot corrupt memory, cannot race, cannot read an uninitialized byte, cannot
 silently overflow, and also cannot die because a store ran out. Today the language
-delivers the first four and not the fifth: [SCOPE-3] (27-34) leaves heap
+delivers the first four and not the fifth: [SCOPE-3] (27-31) leaves heap
 exhaustion, stack exhaustion, operating-system quotas and runtime-start resources
 outside the source outcome model, so an accepted program may stop at the host
 boundary with no Whitefoot value, no status, and no cleanup. A program that can
 vanish at three in the morning has not removed the class of failure the writer came
 here to remove.
 
-The owner's shape for goal A is a **promise**, not a guarantee about the world.
-The compiler computes one finite, shaped envelope `E`; the program promises never
-to demand more than `E`; the environment decides whether it can deliver `E`. Only
-the conjunction gives freedom from exhaustion, and a program that reaches the heap
-makes no such promise, because total free bytes cannot answer a request for a
-contiguous aligned extent.
-
-**Goal B: with a heap, be honest.** A hosted program wants the heap and should
-have it. What it must not have is a hidden trap. Today it has two. Allocation is
+**Goal B: with a heap, be honest.** A hosted program wants the heap and should have
+it. What it must not have is a hidden trap, and it has two today. Allocation is
 ambient: any function may allocate while holding nothing, and refusal ends the
 process. And release is invisible: probe `r2_5` compiles a function that takes
-`own box<u64>`, never returns it, and declares `pure`, so a heap free happens
-inside a callee whose signature does not mention a heap and whose caller cannot
-order anything against it. Goal B asks for both halves to be values: allocation is
-an operation on a provider the caller holds, refusal is an ordinary typed outcome
-that hands back every affine input it did not consume, and release is a statement
-that names the same provider.
+`own box<u64>`, never returns it, and declares `pure`. Goal B asks for both halves to
+be values: allocation is an operation on a provider the caller holds, refusal is an
+ordinary typed outcome that hands back every affine input it did not consume, and
+release is a statement that names the same provider.
 
 Both goals are one language. There is no subset mode, no second prelude, and no
 dialect: the same rules judge every program, and one entry marker turns the
@@ -158,29 +178,6 @@ uses it to discharge offset 9 of what is now a two-byte object: an accepted
 out-of-bounds heap read, and (with `set line[9_u64] = 7_u8;` instead) an accepted
 out-of-bounds heap write.
 
-The located mechanism is the point. `argument_referent`
-(`compiler/src/semantic/places.rs:349-355`) classifies a projected callee write as
-an *element* write for every `&uniq buffer<T>` actual, from the **actual's
-syntactic shape**; `event_kills_term`
-(`compiler/src/semantic/entailment/flow.rs:2927`) then honours [ENT-5]'s true
-sentence "an element write never kills a length fact" and keeps the stale length.
-The specification is right and the compiler is wrong, but repairing the flag
-repairs one sentence. The defect class is that a caller inferred a fact-preserving
-property of a callee from information about the **call site**, and nothing in
-[EFF-2]'s row distinguishes an element write from a whole-referent replace.
-
-That class is what a container design multiplies. A caller wants to keep across a
-call a container's length, its capacity, its initialized prefix, the spare of an
-append window, the disjointness of a range handed to a lane; every one of those,
-justified by anything other than the callee's declared types and contract, is
-another D1 waiting for the next sweep.
-
-D1 has a sibling, and this draft is the first to name it. A caller also wants to
-know **which store** a value belongs to, and every answer derived from anything
-but the value's own type is defeated the same way. Round 3's rank-one break was
-three statements: lease from the pool bound at `a`, move `a` out, rebind `a` to a
-second pool, release the lease into the store now standing at that place.
-
 ### 1.3 What the design therefore has to do
 
 Turn every resource a program can exhaust into a value it must hold in order to
@@ -191,17 +188,59 @@ the second into a compilation requirement. Make every failure to obtain a resour
 a typed value that returns the affine inputs it did not consume. Put the runtime
 inside the same envelope as the writer's code. Make every fact that survives a
 call readable from the callee's declared parameter modes, declared types, and
-declared contract, so D1 has no expressible form. And make every value's store
-readable from the value's own type, so D1's sibling has none either.
+declared contract, so D1 has no expressible form. Make every value's store
+readable from the value's own type, so D1's sibling has none either. And make each
+of those a property that is **closed** — closed under containment, under every
+value-forming step, under every activation of the scope that creates it, and under
+every way a value can leave a scope — because round 4's whole finding is that a
+property closed in three places and open in the fourth is not a property.
 
-The first draft did all of that and was unusable, because it had no answer to
-*what is a length, arithmetically?* The second was unsound because it had no answer
-to *what identifies a store, and what identifies a measured value across a
-consume?* The third answered the first with a datum keyed on a parameter position
-and the second with a place, and both answers were too narrow for their consumers.
-Sections 3.1 and 3.2 answer all three, and everything else is built on them.
+### 1.4 The minimality ruling, and the partition test
 
-### 1.4 What this design does not decide: execution contexts
+The ruling asks one question of every candidate rule: *could a writer implement
+this in wf, given the rest of the kernel?* If yes, it is not spec.
+
+Applying that question needs a criterion for the container half, because
+containers are where "could a writer write it" is least obvious. The criterion is
+storage. A writer can express **values**: construct them, move them, place them
+into fields and elements, match on them, and let them go. A writer cannot express
+**storage that holds no value**: a slot in `[len, cap)` is typed, addressable and
+uninitialized, and wf has no spelling that reaches it, no spelling that declares
+it, and no way to make the boundary a checker-maintained fact rather than a
+killable data field. `array<T, n>` is the shape a writer *can* have, and it
+requires `n` live values, which for affine `T` is exactly what the writer does not
+have. So the initialized-prefix run of slots is the lowest common primitive of
+every container this design ever proposed, and it is genuinely unimplementable.
+
+Everything above it is arithmetic over that primitive and is written in 3.L: a
+ring is a full run of `Option<T>` plus a head and a fill; a pool is a run of runs;
+a growable vector is a run plus a growth policy; a keyed table is a full run of
+`Option<T>` with element `replace`; middle removal is an exchange and a take;
+filled and vacant construction are counted loops. The store half divides the same
+way: a **store** — a thing that hands out runs and takes them back — cannot be
+written, because it manages storage; a **pool** — a thing that hands out *values*
+that happen to be runs, and takes them back — is ordinary data and is written.
+
+Seven things the library could not be written without are in 3.K and nowhere else,
+and 3.L.6 names each with the library function that demanded it. That list is the
+deliverable of this draft: it is the only honest way to know that the kernel is
+neither too big nor too small.
+
+One amendment this design **assumes and does not draft** is stated in 3.K.0, because
+without it the container half is not writable. [FORM-1] admits one spelling per
+semantic construct, so a store's identity cannot be in the type unless the text
+determines when the region is written; the owner has ruled that the determination
+rule lands first, separately, and uniformly over every region position in the
+language. The one property this design needs from it is that the spelling be
+decidable by reading the declaration text alone, never by waiting for compiler
+feedback, and every program below is written under exactly that.
+
+Two consequences hold once and for all. **The library is not part of the language**:
+no rule of 3.K names a library function and a program that never reads 3.L is a
+complete program. **And it is not blessed**: whether any of it ships is 5.0's
+question.
+
+### 1.5 What this design does not decide: execution contexts
 
 A scheduler that switches contexts, an interrupt handler, and a per-task kernel
 stack are **out of scope for this batch, by the orchestrator's ruling**, and this
@@ -212,79 +251,46 @@ one entry, so an `interrupt fn` does not parse. Program 4.1 is written according
 it is a cooperative run queue of state machines that advance on one chain, not a
 scheduler that switches stacks.
 
-**What the follow-on inherits, and what it must reopen.** The third draft claimed
-nothing here would have to be reopened. That claim was false in two places and is
-withdrawn; the table below states the interface and marks each row with whether it
-is inherited or owed.
+**What the follow-on inherits, and what it must reopen.** Round 4 found the
+fourth draft's version of this table self-contradictory: it marked the brand
+*inherited* while marking the extent item's per-context identity *owed*, and those
+cannot both be true. This draft moves the brand row to **owed with a stated
+bound**, which is what [PROV-1]'s new activation invariant makes precise.
 
 ```text
-| this design fixes                | what a context switch must do with it                   |
-|----------------------------------|---------------------------------------------------------|
-| E carries one stack item per     | inherited: a new context is a new item of E, measured    |
-| execution context [STK-3]        | by [STK-3] over its own whole chain, and creating one    |
-|                                  | is an acquisition covered by [RES-1]                     |
-| a store's identity is a region    | inherited: a switch cannot change a value's type, so it  |
-| in its type [PROV-1]             | cannot change which store a value belongs to             |
-| an extent item is named by its    | **owed**: an item is per (occurrence, context), so the   |
-| reserving occurrence [PROV-5]    | context count enters [RES-2]'s item vocabulary and       |
-|                                  | [RES-3]'s closed-expression sentence. [PROV-5] refuses   |
-|                                  | the multiplicity it cannot count until then              |
-| envelope accounting is per       | inherited: the per-domain map of 3.3.1 composes per      |
-| domain and peak-based [RES-5]    | context; a switch transfers no peak and creates no domain|
-| disposal is structural and        | **owed**: [LIV-1] is a per-join check over one function's|
-| explicit [PROV-6]                | [FN-1] graph. A context that dies is not an edge of any  |
-|                                  | such graph, and the successor owes a rule that a context |
-|                                  | may not be abandoned holding a linear value              |
-| a loan is held by a value for its| **owed**: [OWN-5]'s exclusivity argument is over one     |
-| whole life [L10, VIEW-2]         | thread of control, so a suspension point needs the same  |
-|                                  | no-live-loan premise [STK-1] gives a tail edge           |
+| this design fixes                | what a context switch must do with it                    |
+|----------------------------------|----------------------------------------------------------|
+| E carries one stack item per      | inherited: a new context is a new item of E, measured    |
+| execution context [STK-3]         | by [STK-3] over its own whole chain, and creating one    |
+|                                   | is an acquisition covered by [RES-1]                     |
+| a store's identity is a region in  | **owed, and bounded**: [PROV-1] identifies a store per   |
+| its type [PROV-1]                 | *live activation of its region block*, and [PROV-5]      |
+|                                   | refuses every placement whose storage cannot be per      |
+|                                   | activation wherever more than one activation can reach   |
+|                                   | it. A switch multiplies activations, so the successor    |
+|                                   | either extends that refusal or gives an extent item a    |
+|                                   | per-context identity. The type is untouched either way   |
+| envelope accounting is per        | inherited: the per-domain map of 3.3.1 composes per      |
+| domain and peak-based [RES-5]     | context; a switch transfers no peak and creates no domain|
+| disposal is structural and         | **owed**: [LIV-1] is a per-join check over one function's|
+| explicit [PROV-6]                 | [FN-1] graph. A context that dies is not an edge of any  |
+|                                   | such graph, and the successor owes a rule that a context |
+|                                   | may not be abandoned holding a linear value              |
+| a loan is held by a value for its  | **owed**: [PROV-3]'s exclusivity argument is over one    |
+| whole life [L10, VIEW-2]          | thread of control, so a suspension point needs the same  |
+|                                   | no-live-loan premise [STK-1] gives a tail edge           |
 ```
 
-The interference question that follow-on has to answer, and that a stack item does
-not answer, is stated once here so it is not lost: a preemptible context is a
-second thread of control, and [CAP-1] 1962 makes `own`, `&`, `&uniq` and place
-overlap the complete interference vocabulary. A handler that preempts a foreground
-activation holding a `&uniq` on a place the handler touches makes two usable
-mutable paths to one place live at once, which [OWN-9] promises does not happen.
-The successor is a masking discipline the checker can hold plus proved disjointness
-between a handler's reachable place set and every place a preemptible statement can
-hold a loan on, judged by the machinery [PAR-1] already has. That is a language
-feature of the size of `par`, and it is not this batch.
-
-**What a cooperative run queue can and cannot do in this version.** Stated
-plainly, because 4.1 is the only witness this design has for goal A's control
-shape and a reader should not over-read it.
-
-- A task **can** own a resource. `struct Task['s] { block: PoolVector<'s, u8, 256>; state: u32; }`
-  is linear [PROV-6], a `FixedVector<Task<'s>, 32>` of them is linear, and
-  `dispose queue using (blocks);` destroys the whole tree. This is new in this
-  draft; under the third draft the same program was undestroyable.
-- A task **cannot** keep a view across a turn. A view is loan-bearing, and
-  [CNT-4] admits no loan-bearing value into a field, an element, or a payload.
-  The task holds the owner and forms the view inside the turn that uses it.
-- A task **cannot** have an outstanding I/O operation. A may-suspend system
-  operation retains its argument loans until its `loan-released` milestone
-  ([FN-1]'s target summary), so the loan is held inside the call and the call
-  completes within one turn.
-
-That is acceptable for this design, and the reason is the same for both
-prohibitions: a suspended operation and a stored loan are one request, to hold an
-exclusive claim across a point where another thread of control may run, and that
-claim is what the follow-on's suspension premise has to define. Building either
-half now would fix the answer before the rule that judges it exists. What a writer
-loses is real: a driver that wants to overlap two reads writes two turns and one
-state field, and the compiler checks none of that correspondence.
-
 ---
-
 ## 2. The laws
 
-Seventeen laws. Every rule in section 3 is an instance of one of them, and **a
-rule that cannot name its law is not admitted.** L1 through L9 are the resource
-laws, L10 through L15 the container laws, L16 and L17 the two the first falsifier
-round added. One law is restated in this draft, L13, and that restatement is the
-largest change in the file. Each law states its rationale and the owner ruling or
-evidence it rests on in one sentence; ruling ids cite
+Seventeen live laws. Every rule in 3.K is an instance of one of them, and **a rule
+that cannot name its law is not admitted.** L1 through L9 are the resource laws,
+L10 through L15 the container laws, L16 and L17 the two the first falsifier round
+added, and L18 is the minimality ruling stated as law. **L14 is retired**, with its
+id never reused: it stated that an `AppendView` reaches only what it appended, and
+the type it quantified over is gone (footnote 3). Each law states its rationale and
+the owner ruling or evidence it rests on in one sentence; ruling ids cite
 `EVIDENCE-owner-discussion-2026-08-31.md`.
 
 **L1. The envelope is the program's promise, and the promise is made in two
@@ -311,10 +317,13 @@ is no ambient system state" loses its last exception.
 **L3. Nothing fails silently, and nothing grows behind the writer.** *Every
 operation that can fail to obtain a covered resource returns a typed value naming
 the failure and handing back every affine input it did not consume; no operation
-traps, aborts, retries, falls back, or promotes a store to a larger one.*
+traps, aborts, retries, falls back, or promotes a store to a larger one, and no
+compiler-derived action does either.*
 Because v0.40 claims zero writer-reachable runtime-trap families (spec line 6)
 while heap exhaustion still ends a process with no source value: owner ruling R12
-(`L5657-5666`), B3, audit answer Q8.
+(`L5657-5666`), B3, audit answer Q8. The last clause is round 4's: probe `a8`
+showed a compiler-derived drop calling `realloc` and `wf_resource_abort`, so a law
+stated over operations alone did not reach the code that broke it.
 
 **L4. No hidden growth.** *No operation both uses existing capacity and acquires
 new capacity; every operation that may acquire capacity takes a provider, names
@@ -322,16 +331,15 @@ its allocation effect, and returns a typed failure, while every operation that
 only uses existing capacity is total under a proved capacity requirement and can
 allocate on no path.*
 Because one `push` cannot carry one return type and one effect row across backings:
-owner ruling R5 (`L2332`), B2, B3, X1. The third draft wrote "takes an owner and a
-provider", which excluded this law's own constructors.
+owner ruling R5 (`L2332`), B2, B3, X1.
 
 **L5. The runtime is inside the envelope.** *The artifact `E` describes is the
-writer's code, the compiler-derived cleanup and drop glue, the `par` runtime, and
-the target adapter together, from the frame the environment hands the program to
-the frame it takes back; a resource any of them needs is an item of `E`, or the
-program is not resource-closed on that target.*
-Because a guarantee that stops at the edge of generated code is not one: owner
-ruling R12, B12, the ledger read in 6.1.
+writer's code, the compiler-derived cleanup and drop glue, the `par` runtime, the
+allocator and the target adapter together, from the frame the environment hands the
+program to the frame it takes back; a resource any of them needs is an item of `E`,
+or the program is not resource-closed on that target.*
+Because a guarantee that stops at the edge of generated code is not one: owner ruling
+R12, B12, the ledger read in 6.1.
 
 **L6. Shape, not bytes.** *`E` is a list of tangible resources (contiguous aligned
 extents, per-class slot counts, per-context stacks, lane counts) and never one byte
@@ -343,13 +351,15 @@ cannot serve an eight-byte request, and a deployment reading one stack number
 cannot tell an alignment failure from a size failure: owner ruling R12, B9, B11.
 
 **L7. Lowering before judgment, and a tail call is a dead caller frame.** *Tail
-recursion, including mutual tail recursion, is rewritten into loops before any
-resource judgment runs; an intra-component call edge is a tail edge exactly when
-the caller's activation record is dead at the jump, and never because the call is
-written in a return statement.*
+recursion, including mutual tail recursion, is rewritten into one dispatcher
+function before any resource judgment runs; an intra-component call edge is a tail
+edge exactly when the caller's activation record is dead at the jump, and never
+because the call is written in a return statement.*
 Because an optimization that may or may not fire cannot be a premise of a guarantee
 and a syntactic condition cannot see a live loan into a caller's frame: owner
 rulings R3 (`L989`) and R12, B10, probes `f2b` and `f8_tailframe`, accepted today.
+"Into one dispatcher function" is round 4's correction: the fourth draft stated an
+ABI obligation about a jump its own rewrite removes.
 
 **L8. Demand is computed as if every acquisition succeeds; a store's own refusal
 is an ordinary fact.** *The judgment replays each execution assuming every covered
@@ -388,68 +398,69 @@ a verified contract relation; no rule infers a measure from the shape of an
 argument, the name of a callee, the absence of a write, or what a body was seen to
 do.*
 This is D1 stated as a law, and it is why the repair is not "fix the flag" but
-"have no flag derived from an actual to be wrong": `EVIDENCE-sweep-D1.md`, probe
-`d1`, accepted today.
+"have no flag derived from an actual to be wrong": `EVIDENCE-sweep-D1.md`, probes
+`d1` and `x11`, both accepted today.
 
-**L12. The initialized prefix is a stack, and the language says so.** *A prefix
-sequence's storage is exactly `[0, len)` initialized and `[len, cap)` raw; the
-boundary is checker-maintained typestate carried by the owner's static type, and no
-per-slot tag, occupancy bitmap, or runtime discriminant is language state. A prefix
-admits append at the end, removal from the end, removal from the middle by exchange
-with the end, and exchange of two positions; it does not admit removal from the
-front, and a kernel that needs a queue gets a second owner whose initialized region
-is a rotation of the prefix.*
+**L12. The initialized prefix is a stack, and the language says so.** *A run of
+slots is exactly `[0, len)` initialized and `[len, cap)` raw; the boundary is
+checker-maintained typestate carried by the run's own value, and no per-slot tag,
+occupancy bitmap, or runtime discriminant is language state. The kernel admits
+exactly append at the end, removal from the end, and exchange of two initialized
+positions; every other order is arithmetic a writer performs over those three.*
 With no per-slot state the checker never needs a quantified proposition over slots,
-and occupancy at a stable index is ordinary data: `FixedVector<Option<T>, N>` with
-element-position `replace` is that program, and probe `r2_7` compiles its shape
-today. Owner's settled decision; audit answers Q2, Q4, Q10.
+and occupancy at a stable index is ordinary data: `FixedVector<Option<T>, n>` full,
+with element-position `replace`, is that program, and probe `x7` compiles its shape
+today. The last sentence is the minimality ruling applied to L12 itself: the fourth
+draft's five removal and construction forms are 3.L.3 to `CONTAINERS.md` §3. Owner's settled
+decision; audit answers Q2, Q4, Q10.
 
-**L13. A value's store is a component of its type, and acquisition and release are
-symmetric over it.** *Every store the program can exhaust is named by one region,
-minted where the store is reserved or where the runtime hands it in, and every
-value that store backs carries that region in its own type. A value whose backing
-is reclaimed per value is **linear**: it has no compiler-derived release, and it
-leaves a scope only by being moved out or by being disposed to the store its type
-names. Linearity and disposal are both closed under containment: a nominal, an
-enum, or a container reaching a linear value is linear, and disposing it disposes
-every linear value it reaches. No source construct selects, replaces, or observes a
-release action.*
-The first sentence is round 3's rank-one repair: the third draft identified a store
-by the place its provider stood in, so a `move` plus a reinitializing `set` handed
-a lease to the wrong store while every rule agreed. A type travels with a value and
-a place does not. The rest is round 3's rank-two repair: the third draft closed the
-linear class under containment and left disposal a list of four leaf operations, so
-a container of leases could be neither dropped nor destroyed. Together they remove
-an invisible free, which probe `r2_5` shows the language has today. B2's drop order,
-audit answer Q10, [STOR-3] 683, [EFF-2] 1421.
+**L13. A value's store is a component of its type; acquisition, release and
+activation are all closed over it.** *Every store the program can exhaust is named
+by one region, minted where the store is reserved or where the runtime hands it in,
+and every value that store backs carries that region in its own type. A region
+names **at most one live store at any program point**, and a placement whose
+storage cannot be per activation is refused wherever more than one activation of
+its region block can reach it. A value whose backing is reclaimed per value is
+**linear**, which is a property of an affine type and not a third class: it has no
+compiler-derived release, and it leaves a scope only by being moved out whole, by
+being destructured whole, or by being disposed to the store its type names.
+Linearity and disposal are both closed under containment, and a partial move of a
+linear value is refused because it is the one way a leaf leaves by none of the
+three. No source construct selects, replaces, or observes a release action, and a
+store's storage reclamation never stands in for its content's own release.*
+Sentence one is round 3's rank-one repair and survived round 4 from every position
+attacked. Sentences two, three, four and five are round 4's four: recursion made
+one region name two live stores over one committed extent (F1 attack 1, F2 NB2);
+`linear` declared beside affine deleted `move` and `dispose` for every value it
+classified (F3 defect 3); a partial move abandoned a linear leaf that no rule saw
+(F1 attack 2, F2 NB6, F4 blocking 1, probe `x4` accepted today); and an arena's
+reset ran no content release, leaking every host handle placed in arena content
+(F2 NB5). B2's drop order, audit answer Q10, [STOR-3] 683, [EFF-2] 1421.
 
-**L14. An `AppendView` reaches only what it appended.** *An `AppendView` presents
-the spare window `[base, cap)` of its owner, where `base` is the owner's length at
-formation; its own `len` counts what was appended through it and starts at zero, no
-operation on it reaches an index below `base`, and no operation on it decreases the
-owner's length.*
-This is what lets a caller's length fact stay alive across a callee that appends:
-B6, the owner's third call rule of 2026-09-03.
+**L14 is retired.** It stated that an `AppendView` reaches only what it appended
+and never decreases its owner's length. The type is gone (footnote 3) and the
+guarantee it bought — a caller keeping a length across an appending callee — is
+[CALL-4]'s exit datum, which is stated over every borrowed value. The id is not
+reused.
 
 **L15. The descriptor's capacity is a value; the allocator's extent is not.**
-*`len(v)`, `cap(v)` and `room(v)` are the descriptor's own logical measures and are
-readable as ordinary `u64` values. No operation observes the physical extent the
-allocator provided, and every operation that changes a descriptor's capacity
-publishes the exact new capacity. Every operation that writes a measured place
-publishes the new value of each of that place's measures, including the ones it
-did not change.*
+*`len(v)`, `cap(v)` and `room(v)` are a run's own logical measures and are readable
+as ordinary `u64` values. No operation observes the physical extent the allocator
+provided. Every operation that writes a measured place publishes, for each measure
+of that place, its exact new value where that measure is exact and a two-sided
+bound where it is monotone, including the measures it did not change.*
 The first draft forbade reading `cap` and `room` on a rationale that only forbids
 reading the allocator's size, so every pop proved and no push did: B3, audit answer
-Q9, probes `q24`, `v25`, `v26`. The last sentence is round 3's arena finding: a row
-that published its cursor and not its extent killed the extent at the first
-allocation, and no arena loop had a bound.
+Q9, probes `q24`, `v25`, `v26`. The exact/monotone split is round 4's: an arena's
+cursor is monotone and no exact value exists for it, so a law demanding one made
+three rows ill-formed and killed `len(arena)` on every refusal edge (F3 defect 6).
 
 **L16. One measure algebra, and one goal disposition.** *`len`, `cap` and `room`
 are one-place terms of the term language, defined once with their support, their
-kills and their standing identities, over every measured place: sequence owners,
-views, and providers alike. Every consumer of a numeric goal asks one question,
-whose complete admitted derivation is stated once; no rule grants a proof route to
-a construct by name.*
+kills and their standing identities, over every measured place: runs, views, and
+providers alike. Every consumer of a numeric goal asks one question, whose complete
+admitted derivation is stated once; no rule grants a proof route to a construct by
+name.*
 A language in which "can this inequality be derived?" depends on which construct is
 asking has several provers and a writer can reason about none of them; probes `v25`
 and `v26` are the same proof asked twice with opposite verdicts. [ENT-1] 2645.
@@ -457,57 +468,114 @@ and `v26` are the same proof asked twice with opposite verdicts. [ENT-1] 2645.
 **L17. Affine liveness agrees at every join, and a linear value never reaches a
 scope exit alive.** *A binding's live-or-dead status must be the same on every
 predecessor of every join and at every loop head; a disagreement is a hard error at
-the join. Consequently a compiler-derived release on a scope-exit edge is
-unconditional, exactly as [STOR-3] requires, and there is no runtime state that
-says whether it should run. A linear binding [L13] that is live on any edge leaving
-its scope, a `propagate` error edge included, is the error, because no derived
-release exists to carry it.*
+the join. Consequently **whether** a compiler-derived release runs on a scope-exit
+edge is not runtime state and the edge's disposition is unconditional; **which**
+release runs inside a value may be, exactly as an enum's derived drop selects on its
+discriminant today. A linear binding [L13] that is live on any edge leaving its
+scope, a `propagate` error edge included, is the error, because no derived release
+exists to carry it.*
 The reinitializing `set` makes liveness non-monotone, and [OWN-11] and today's
 `Semantics/Unsupported: OwnershipJoin` avoid the question rather than answering it;
-the same per-edge check makes linear disposal checkable. Probe `f3`; [ENT-5]'s own
-all-predecessor join.
+the same per-edge check makes linear disposal checkable. The whether/which split is
+round 4's: `FixedVector<Option<T>, n>` is the design's own promoted idiom and its
+per-element release *is* selected by a runtime discriminant (F1 finding 10). Probe
+`f3`; [ENT-5]'s own all-predecessor join.
+
+**L18. The kernel admits only what wf cannot express.** *A rule enters the kernel
+exactly when no program a writer can write in wf over the remaining kernel has its
+effect. A capability a writer can build is not a rule, a convenience is not a rule,
+and a table of data is not a rule: the rule is the sentence that says such a table
+exists and what it must contain, and the table is generated data beside it.*
+The owner's ruling of 2026-09-03, stated as law so that every rule below can be
+checked against it and every removal can name it. Its converse is the obligation
+3.L discharges: an item moved out of the kernel is written in wf, or the kernel
+lacked a primitive and 3.L.6 says which.
 
 ---
 
+#### 3.K.0 The region-spelling assumption
+
+This design assumes one amendment it does not draft. **Whether a region is written
+at a given position is determined by the program text, and the determined spelling
+is the only legal one**: a region name is written exactly where it relates two
+positions of one declaration, and elided everywhere else. That is a change to
+[FORM-2], [GRAM-2] to [GRAM-5], [FN-2] and the [OWN] borrow forms, it is uniform over
+every region position in the language — parameter lists, borrow annotations, region
+arguments on types, call-site region arguments, and region blocks — and **it lands
+first, as its own separate and mechanical spec amendment**. It is not a rule of this
+design, it is not in 3.K's count, and 3.K.11 does not register it.
+
+It is stated here because the container half cannot be written without assuming it.
+[FORM-1] admits exactly one spelling per semantic construct. Putting a store's
+identity in the type means a region in every type that names a store, unless the
+text determines it — in which case *writing* it is a second spelling and the law says
+there is only one. So the brand cannot be in the type without that amendment, and
+the amendment cannot be brand-specific, because a brand is one more region argument.
+
+**The one property this design needs from it** is narrower than the amendment
+itself, and it is the property the owner named: *whether a region or a brand is
+written at a given position must be decidable by reading the declaration text alone,
+never by waiting for compiler feedback.* Every rule below is written against that
+and against nothing else. In particular [PROV-1] supplies the datum a brand position
+needs — the enclosing nominal's own region parameters, plus the entry heap's store
+region when the entry selects `command.heap` — and that datum is read from one
+declaration and one entry input row, never from a callee, a caller, or an
+instantiation.
+
+**How the brand is therefore spelled**, which is what section 4 and 3.L are written
+in:
+
+- A **heap-derived** type carries no visible brand. The entry heap is unique, it has
+  program lifetime, and [OWN-3] 575 makes its region incomparable with every other,
+  so `Vector<u8>`, `Bytes` and `Heap` name it and nothing else can be named that way.
+  4.2 declares no region parameter anywhere.
+- An **arena- or pool-derived** type writes the brand exactly where the same store
+  appears at two positions of one declaration:
+
+  ```wf-design
+  struct BlockPool['s] { free: FixedVector<Vector<'s, u8>, 8>; }
+
+  fn pool_take['s](pool: &uniq BlockPool<'s>) -> leased: own Option<Vector<'s, u8>>
+  ```
+
+  `'s` relates the nominal's parameter to its field, and the parameter's type to the
+  result's, so it is written at every one of those positions. The loan region of
+  `&uniq` relates nothing and is elided, here and at every provider call in the
+  language.
+- A helper whose brand relates nothing writes none, and is thereby generic over the
+  store it is handed: 3.L.4's `collect(out: &uniq Vector<u8>, source: own Span<u8>)`
+  is the whole signature.
+
+Measured on this worktree, `tests/programs` is 28 files and 131 top-level function
+declarations, of which **67 carry a region parameter list**, and across all 67 **no
+region name is used at two positions outside its own parameter list**. The corpus
+also writes 484 named borrow annotations, 251 call-site region arguments and 232
+region-block names. Under the amendment essentially all of them become [FORM-1]
+rejections and disappear, no program's meaning changes, and one mechanical migration
+pass over the corpus, the conformance cases and the snapshot cases converts them —
+by a tool that ships nowhere, because [FORM-1] 36 says the toolchain never
+auto-formats. Two costs this design would otherwise carry go with them: [VIEW-7]'s
+two writer-visible regions per I/O site, and the forty-four reborrow regions
+[PROV-7] was written to buy back.
 ## 3. The rules
 
-Ten families and fifty-two rules. `[MSR]` is the measure terms and the proof
-surface, `[PROV]` the stores, their providers and their disposal, `[RES]` the
-covered set, the envelope and the judgment, `[STK]` the stack, `[RUN]` the
-runtime's own closure and the environment's half of the bargain, `[CNT]` the
-sequence owners and their typestate, `[VIEW]` the views and the commit event,
-`[LIV]` affine liveness and the transformation statement, `[CALL]` what survives a
-call, and `[SEQ]` the operation inventory.
+Section 3 is two sections, read differently. **3.K is the kernel**: nine families,
+**forty-eight rules**, six nominals, fourteen operations, two added statement forms,
+and 3.K.0's one assumed amendment. Every rule answers L18's question with *no writer
+can write this in wf*, and 3.L.6 lists the seven that only the partition test proved.
+**3.L is the library**, written in wf against 3.K; it is not part of the language,
+it is not blessed, and no rule of 3.K names any of it.
 
-**Every rule states five things: the judgment it creates, the fact it publishes,
-what it amends, what it depends on, and its law.** A rule that creates no judgment
-writes `*Judgment:* none` and says what it is instead; a rule whose soundness
-argument cites no unchanged rule omits `*Depends:*`. Section 3.13 is a **collation
-of those `Amends:` and `Depends:` lines and carries nothing else**: it is written
-last, from the rules. A register row with no rule behind it, an `Amends:` or
-`Depends:` line no row carries, a rule appearing in both lists for one line range,
-and a rule a `Depends:` line cites whose subject any `Amends:` line in this file
-renames, retires or redefines are each a defect of this file. That last condition
-is mechanical, and it is the one that would have caught round 2's [SET-2] finding
-and round 3's [OWN-5] finding without anyone remembering to look.
+**Every kernel rule states five things: the judgment it creates, the fact it
+publishes, what it amends, what it depends on, and its law.** A rule that creates no
+judgment writes `*Judgment:* none` and says what it is instead. `*History:*` points
+at the round in 6.5-6.8 that produced the rule's current shape and carries nothing
+else. Section 3.K.11 is a **collation of the `Amends:` and `Depends:` lines and
+carries nothing else**: it is written last, from the rules.
 
-The family is `[PROV]` and not `[CAP]` because [CAP-1] already exists (1962) and
-rule ids are never reused. The collision is worth a sentence: [CAP-1] says the
-kernel defines *no writer-visible capability category and no system-specific
-permission*, and this design does not add one. A provider is an ordinary affine
-value, held under `own` or `&uniq`, judged by place overlap and by the ordinary
-effect row. "Capability" here means *a value you must hold in order to act*, which
-is what `FilePermit` already is.
+### 3.K Kernel rules
 
-Three families or rules the earlier drafts had are gone. `[BLD]`, the `par`
-builder, is deleted outright; its ids are retired and not reused. The second
-draft's separate view provenance rule was merged into [PROV-3], and this draft
-narrows [PROV-3] again, to views alone, because a store's identity is now in the
-type and needs no origin set. `[CNT-5]`, the per-owner release table, is deleted;
-[PROV-6] states its content in one sentence for every type, including the ones
-[CNT-5] could not name.
-
-### 3.1 `[MSR]`: measures, and the one goal disposition
+#### 3.K.1 `[MSR]`: measures, and the one goal disposition
 
 This family is first because everything else consumes it. It adds no statement
 form and no type; it is a specification amendment.
@@ -515,46 +583,27 @@ form and no type; it is a specification amendment.
 **[MSR-1] Three measure terms, over one place, for every measured value.**
 `len(P)`, `cap(P)` and `room(P)` are terms of the [ENT-2] term language, of
 fragment type `u64`, where `P` is an admitted place. They are defined once, here,
-for every *measured* type, and which measures a type has is table data rather than
-a rule with an exception:
-
-```text
-| measured type            | len                  | cap                 | room          |
-|--------------------------|----------------------|---------------------|---------------|
-| array<T, N>              | N                    | N                   | Z             |
-| the prefix owners        | initialized elements | slots               | cap - len     |
-| FixedRing<T, N>          | queued elements      | N                   | cap - len     |
-| Span, MutSpan            | viewed elements      | len                 | Z             |
-| AppendView               | appended elements    | the window          | cap - len     |
-| Arena<'s, BYTES, ALIGN>  | cursor bytes         | BYTES               | cap - len     |
-| Pool<'s, T, N>           | live slots           | N                   | cap - len     |
-| FileFactory              | live handle records  | the profile's       | cap - len     |
-|                          |                      | handle-table row    |               |
-| Heap<'s>                 | none                 | none                | none          |
-```
-
-`Heap<'s>` has no row because L6 says a general store has no measure that means
-anything; that is the absence of table data, not an exception clause on a total
-definition. `FileFactory` has one because the runtime's handle table is a covered
-store [RES-1] and a covered store whose measures no place names cannot appear in a
-writer's invariant, which is what round 3 found missing.
+for every *measured* type, and which measures a type has, and whether each is
+exact or monotone, is table data rather than a rule with an exception. The table
+is Appendix A.1; the rule is that it exists, that it gives every measured type a
+row, and that every row's cell is one of *exact*, *monotone*, or *absent*.
 
 An admitted place for a measure term is a `place` [GRAM-5] formed with field
 selections, `deref` wrappings **and subscripts**, whose final selected type is a
 measured type. The subscript admission is the change: `len(table[i])` is a term,
-so a container of containers has provable operations. A subscripted place's own
-[OP-4] obligation is judged independently and is not weakened by occurring under
-a measure term.
+so a run of runs has provable operations.
 
-*Judgment:* none by itself. *Publishes:* the term. *Amends:* [ENT-2] clause (b)
-(2675), which today admits `len(P)` only for `array`, `slice` and `buffer`, and
-only for subscript-free places. *Law:* L16.
+*Judgment:* the [OP-4] admission above at every subscripted measure place.
+*Publishes:* the term. *Amends:* [ENT-2] clause (b) (2675), which today admits
+`len(P)` only for `array`, `slice` and `buffer`, and only for subscript-free
+places; [OP-4] 909, whose obligation gains the erased-clause attach-site case.
+*Law:* L15, L16. *History:* 6.8, F1 attack 8; 6.5, F1-11.
 
-**[MSR-2] Support is descriptor storage, and a kill is an ordinary [ENT-5]
-event.** A measured value's storage is two disjoint parts, exactly as [STOR-1] and
-L12 already describe the object: its **descriptor storage**, the length, capacity
-and head words its type carries, and its **element storage**. The support of a
-measure term over `P` is:
+**[MSR-2] Support is descriptor storage, a kill is an ordinary [ENT-5] event, and
+a standing fact has empty support.** A measured value's storage is two disjoint
+parts, exactly as [STOR-1] and L12 already describe the object: its **descriptor
+storage**, the length and capacity words its value carries, and its **element
+storage**. The support of a measure term over `P` is:
 
 - `P`'s descriptor storage;
 - every borrow or content holder any prefix of `P` reads through; and
@@ -568,34 +617,30 @@ call and a compiler-derived release alike. Stating the kill over the effect row
 rather than over a list of syntactic forms is what keeps it closed when a later
 family derives a new action.
 
-Four consequences follow from that one definition, and none is an exception
-clause.
+Four consequences follow and none is an exception clause. An **element write** does
+not kill, because element storage is not descriptor storage (probe `w4`). A write to
+a **sibling field** does not kill, because `deref(r).flags`'s descriptor storage and
+`deref(r).tail` do not overlap — probes `r2_4`, `r2_4b` and `r2_4c` show today's
+compiler is root-granular where [EFF-2] on the same statement is field-precise, and
+this rule uses the precision [EFF-2] already computes. A write to an **offset** does
+kill, at every level, so a fact over `len(grid[i][j])` dies when `i` is written. And
+an element-position **replace of a descriptor** kills that descriptor's measures
+while one of a scalar kills nothing: `set grid[i][j] = x;` writes element storage of
+`grid[i]`, `replace grid[i] = w;` writes its descriptor storage.
 
-- An **element write** does not kill, because element storage is not descriptor
-  storage. This is [ENT-5]'s existing sentence obtained rather than asserted.
-  Probe `w4` is that program today, accepted.
-- A write to a **sibling field** does not kill: `len(deref(ring).flags)` has
-  descriptor storage inside `deref(ring).flags`, which `deref(ring).tail` does not
-  overlap. Probe `r2_4` shows today's compiler kills it and `r2_4b`/`r2_4c` bound
-  the behavior: the current implementation is root-granular where [EFF-2] on the
-  same statement is field-precise, and this rule makes the measure use the
-  precision [EFF-2] already computes. This is the same move [PROV-4] makes for
-  `allocates`.
-- A write to an **offset** does kill, at every level of the projection, so a fact
-  over `len(grid[i][j])` dies when `i` is written and not only when `j` is.
-- The nested case comes out right without a second sentence: `set grid[i][j] = x;`
-  writes element storage of `grid[i]`, so `len(grid[i])` survives, while
-  `replace grid[i] = w;` writes `grid[i]`'s descriptor storage, so it does not.
-
-The third draft stated the kill as [OWN-7] overlap with the descriptor *place*,
-which is prefix-based, so it killed every measure on every element write. Moving
-the granularity into the support, where [ENT-5] already puts it, is the repair.
+The fourth consequence is why [ENT-5] 2887 clause (a)'s parenthetical carve-out —
+"*while an element-position replace, like an element write, kills none*" — is
+**removed rather than narrowed**. That sentence is true in v0.40 for a reason
+[MSR-1] deletes: `len(P)` is defined only for `array`, `slice` and `buffer` and
+admits no subscript, so an element position can never hold a descriptor. Once it
+can, the carve-out is a second statement of the granularity, in the wrong place and
+now false. The kill becomes the plain overlap test and the four consequences are
+derived from it.
 
 At every program point at which `P` is live, these hold implicitly:
 
 ```text
 Z <= len(P)          Z <= room(P)          len(P) <= cap(P)
-cap(P) = N           for a type whose capacity is the constant N
 ```
 
 and the three-term identity `len(P) + room(P) = cap(P)` is appended, as the two
@@ -603,26 +648,34 @@ inequalities `len(P) + room(P) - cap(P) <= 0` and `cap(P) - len(P) - room(P) <= 
 to [ENT-6] 3001's automatic affine-premise sequence, with the empty support every
 standing fact has. That is the shape [ENT-6]'s premises already take, it is usable
 by `AUTO`'s families unchanged, and it keeps the identity out of L0, whose
-uniqueness argument [ENT-4] 2854 rests on the difference-bound shape. The third
-draft gave the identity to "the affine domain, where [INV-1] already carries
-relations of that shape", which is not a home: [INV-1] 3099 admits four relation
-roots and carries no standing premise, and every discharge in this file uses it.
+uniqueness argument [ENT-4] 2854 rests on the difference-bound shape.
 
-*Judgment:* none. *Publishes:* the implicit facts and the two automatic premises.
-*Amends:* [ENT-2]'s implicit-fact sentence (2722), [ENT-5]'s support and kill
-sentences (2857-2887), whose length-term support becomes the descriptor-storage
-relation above and whose kill classes (a) through (d) gain the effect-row
-statement, and [ENT-6] 3001's automatic affine-premise sequence, which gains one
-specification-fixed member. *Depends:* [ENT-4] 2854, whose difference-bound
-uniqueness argument is why the identity is a premise and not an L0 fact. *Law:*
-L16.
+**A measure whose value is a compile-time constant or a runtime-profile symbol is
+a standing fact with empty support.** A formation row that publishes `cap(result) =
+n` for a written const `n`, and a runtime store whose `cap` is a profile row,
+therefore both give a capacity that no event kills for the life of the term. This
+is where the fourth draft put a type-level constant and it generalizes to the one
+store whose capacity cannot go in a type: [RES-5] already asserts the sentence for
+a profile symbol and [MSR-2] is where the kill lives, so it belongs here.
 
-**[MSR-3] Measure datums, and where an image dies.** A **measure datum** is a
-compiler-owned immutable [ENT-2] term of fragment type `u64` with **empty
-support**: no [ENT-5] event kills it, no place occurs in it, and no later write
-retargets it. It is the device [ENT-2] already has for a `for_stmt` capture and a
-[SET-1] commit value, extended to one more producer. There is exactly one former,
-and it is keyed on what a datum denotes rather than on where the value came from:
+*Judgment:* none. *Publishes:* the implicit facts, the two automatic premises, and
+the standing-fact class. *Amends:* [ENT-2]'s implicit-fact sentence (2722);
+[ENT-5]'s support and kill sentences (2857-2890), whose length-term support becomes
+the descriptor-storage relation above, whose kill classes (a) through (d) gain the
+effect-row statement, and whose clause (a) loses its element-position carve-out;
+and [ENT-6] 3001's automatic affine-premise sequence, which gains two
+specification-fixed members. *Depends:* [ENT-4] 2854, whose difference-bound
+uniqueness argument is why the identity is a premise and not an L0 fact; [ENT-5]
+2936-2940, whose "no fact established inside an iteration survives to the next
+iteration's head" is what keeps an empty-support fact from crossing a backedge.
+*Law:* L15, L16. *History:* 6.8, F1 attack 3 and F2 NB3; 6.7, F1-8.
+
+**[MSR-3] Measure datums, images, and what an atom is keyed by.** A **measure
+datum** is a compiler-owned immutable [ENT-2] term of fragment type `u64` with
+**empty support**: no [ENT-5] event kills it, no place occurs in it, and no later
+write retargets it. It is the device [ENT-2] already has for a `for_stmt` capture
+and a [SET-1] commit value, extended to one more producer. There is exactly one
+former, keyed on what a datum denotes rather than on where the value came from:
 
 ```text
 a datum is identified by (program point, admitted place P, measure), is
@@ -630,7 +683,7 @@ compiler-owned and immutable, and is established equal to <measure>(P) at that
 point
 ```
 
-Two placements exist, and no third:
+Four placements exist, and no fifth:
 
 ```text
 entry placement       body entry, for each parameter of measured type and each
@@ -640,58 +693,57 @@ call placement        one call's pre-transfer point [ENT-5], for each operand
                         place of measured type and each measure it has, reading a
                         borrow operand through its resolved referent and an own
                         operand as its value before transfer
+exit placement        one call's post-kill point [ENT-5], for each operand place
+                        of measured type whose parameter mode is `&uniq` and each
+                        measure it has, read through the resolved referent
+construct placement   one `construct` [GRAM-8] or enum-payload construction, for
+                        each field or payload operand of measured type and each
+                        measure it has, read as that operand's value before
+                        transfer
 ```
 
-The borrow half is the split [FN-8] 1269 already makes for a goal actual, applied
-to the datum former. The third draft minted a datum only for an `own` operand,
-which left four of its five consumers naming a datum nothing produced.
-
-A **view carries the call datums of its own formation call**, one per measure of
-its origin place, for its whole life. That is what `absorb` names [VIEW-3], and it
-is exact rather than approximate because the view holds an exclusive loan on that
-origin from formation to consume [L10], so no event between the two can change the
-owner's measures except through the view itself.
-
-One static datum per program point is enough, inside a loop body included, for
-[ENT-2] 2687's own reason: forward flow visits every statement once, so every fact
-derived about a per-point datum holds of each dynamic evaluation separately. That
-is [ENT-2]'s argument for a commit value and a capture, stated here because a datum
-is the third such term.
+The borrow half of the call placement is the split [FN-8] 1269 already makes for a
+goal actual, applied to the datum former. The exit placement is [CALL-4]'s, and it
+is what makes a helper able to tell its caller what it did to a borrowed run; it
+exists only for a `&uniq` operand because only there is the referent exclusive for
+the call, so the datum is exact rather than approximate.
 
 Three rules read datums and nothing else does. A [FN-9] or [FN-8] clause operand
-naming a parameter's measure denotes that parameter's **entry datum**, so a
-consuming use of an `own` parameter cannot invalidate it and a helper that writes
-`let acc = move out;` can still state `ensures ile(len(written), cap(out))`. A
-[SEQ-0] declared relation naming an operand's measure denotes that call's **call
-datum**, so it survives the argument consume that the same statement performs.
-And [VIEW-3] step 4 names the view's carried formation datums. A fourth reader the
-third draft carried, `let x = move p;`, is deleted: [ENT-3.S5]'s copy equality plus
-[ENT-5] 2888's pre-kill closure already carry the measure across the consume, and
-[LIV-2]'s distinct-term rule stops the revival it was written to prevent.
+naming a parameter's measure denotes that parameter's **entry datum** in a
+`requires` and its **exit datum** in an `ensures` [CALL-4], so a consuming use of an
+`own` parameter cannot invalidate the first and a callee that changed a borrowed
+run can publish the second. A [BLK-0] declared relation naming an operand's measure
+denotes that call's **call datum**, so it survives the argument consume that the
+same statement performs.
 
-Measures also carry [ENT-6] affine value images, formed and transferred exactly as
-for a live own integer binding: an operation's declared relation over its call
-datum and its result installs the result's image, a whole-binding `set` [LIV-2]
-makes the target denote that image, a join keeps an identical image or the common
-nonconstant form plus one fresh delta atom, and a loop's continuing kill replaces a
-loop-carried measure by a fresh header atom. **An image dies exactly where a fact
-over the same term dies**: same support, same events. And an [INV-1] affine atom
-over a measured place is keyed by the [ENT-2] **term**, so a reinitializing `set`
-retires the old atom and introduces a new one; a header invariant over an updated
-owner is re-established on the backedge from the operation's declared relation over
-its call datum, which has empty support. That last sentence is the derivation every
-`update` inside a loop rests on, and 4.1's walkthrough writes it out.
+**One sentence fixes what an [INV-1] affine atom over a measured place is keyed
+by, and it covers both writing forms.**
+
+> An [INV-1] affine atom over a measured place is keyed by the [ENT-2] term. A
+> **reinitializing `set`** [LIV-2] is a declaration event: the old term is retired,
+> a new one is introduced, and a header invariant over the new term is
+> re-established on the backedge from the operation's declared relation over its
+> call datum, which has empty support. An **in-place exchange** [LIV-3] is not a
+> declaration event: the root's term survives, the facts over it die by [MSR-2],
+> and the same declared relation re-establishes them on the same term. Either way
+> the invariant is preservable and the derivation is three steps; a form that is
+> neither, and that rewrites a measured place a header invariant names, is a
+> diagnostic and not a silence.
 
 *Judgment:* none by itself; a datum is formed, never proved. *Publishes:* the
-datum and the image. *Amends:* [ENT-2]'s term list (a new clause beside its capture
-and commit-value clauses), [ENT-5]'s call-boundary paragraph (2892-2899) and its
-FN-9 entry-image-stability paragraph (2879-2884), which are replaced by the datum
-rather than repaired, [FN-9]'s `M(c,q)` (1345, a datum operand is always live) and
-its parameter-entry-image sentences (1310, 1320-1322), and [ENT-6]'s image
-formation, join and loop-header paragraphs (2970-2996). *Depends:* [ENT-2] 2687,
-whose one-static-term-per-statement argument is why a per-point datum is sound
-inside a loop; [FN-8] 1269, whose borrow-versus-own actual split the call placement
-reuses. *Law:* L11, L16.
+datum, the image, and the atom-identity rule. *Amends:* [ENT-2]'s term list (a new
+clause beside its capture and commit-value clauses); [ENT-5]'s call-boundary
+paragraph (2892-2899) and its FN-9 entry-image-stability paragraph (2881-2885),
+which are replaced by the datum rather than repaired; [FN-9]'s `M(c,q)` (1339, a
+datum operand is always live) and its parameter-entry-image sentences (1310);
+[ENT-6]'s image formation, join and loop-header paragraphs (2970-2996); [ENT-3.S5]
+2768-2776's copy-equality clause, which gains the construct placement's measured
+fields; and [INV-1] 3099's atom identity, which gains the sentence above. *Depends:* [ENT-2]
+2687, whose one-static-term-per-statement argument is why a per-point datum is
+sound; [ENT-5] 2936-2940, whose head-state construction is why a body-placed datum
+does not cross a backedge; [FN-8] 1269, whose borrow-versus-own actual split the
+call and exit placements reuse. *Law:* L11, L16. *History:* 6.8, F4 blocking 2 and
+F1 attack 10; 6.7, F1-4.
 
 **[MSR-4] One numeric goal disposition, shared by every consumer.** [ENT-6]
 states once the complete ordered derivation of a numeric goal, and every consumer
@@ -711,113 +763,122 @@ submits its goal to it:
 The consumers are exactly: [OP-4] subscript bounds, [SYS-8] system range, [OP-2]
 integer domain, [OP-9] allocation fit, [FN-8] requirements, [FN-9] normal-result
 relations, [INV-1] invariant targets, and the operation-domain obligations of
-[SEQ-0]. **The per-family route lists retire.**
+[BLK-0]. **The per-family route lists retire.**
 
 *Judgment:* the disposition itself. *Publishes:* the disposition of every numeric
 goal. *Amends:* [ENT-6] 3034, 3041, 3069 and 3078, the four per-family route and
 attach-site grants, which keep their normalization and lose their route grant, and
 [FN-9]'s `prove_ordering` route, whose undocumented direct-affine branch becomes
 one of the six steps. *Note:* this rule is why the design does not have to be
-revisited when [SEQ] adds an operation: an operation adds a goal, never a route.
-*Law:* L16.
+revisited when the library adds an operation: an operation adds a goal, never a
+route. *Law:* L16. *History:* 6.5, F4-3.
 
 **[MSR-5] The contract surface has its own production, over terms.** A `requires`,
 `ensures`, `header_invariant`, `invariant_stmt` or `proof_use` operand is a
 **term** of the [ENT-2] term language, not an `atom` of [GRAM-5]. The amendment
 goes where the refusal is. [GRAM-5] 265's `atom` production has no `call`
 alternative, so `ile(len(x), y)` derives nowhere and [GRAM-9] is only [DIAG-1]
-1606's attribution of that failure; the third draft scoped [GRAM-9] and left the
-production that actually refuses the form unregistered and unchanged. Probe `w3` is
-that rejection, with the compiler's own mechanical fix naming `define`.
-
-The contract surface therefore gains its own productions and `atom` is untouched:
+1606's attribution of that failure. Probes `w3`, `x5` and `m07` are that rejection,
+with the compiler's own mechanical fix naming `define`.
 
 ```text
-clause_expr    := relation_op "(" clause_operand "," clause_operand ")"
+clause_expr    := IDENT "(" clause_operand "," clause_operand ")"
 clause_operand := affine_expr
 affine_factor  := literal | ent2_place | measure_term | "(" affine_expr ")"
 ```
 
-`requires_clause` and `ensures_clause` take a `clause_expr` instead of an `expr`;
-`ent2_place` is [ENT-2] 2675(a)'s place grammar and `measure_term` is [MSR-1]'s
-three formers over one admitted place. Widening `atom` instead would reopen nested
-runtime calls at every argument, subscript offset and `for` endpoint, which is
-[GRAM-9]'s actual purpose. So `requires ile(len(source), room(out));` is writable
-directly, and so is `invariant fill: ile(r.fill, 8_u64);` over a struct field path.
-
-`affine_factor` **gains** two alternatives and loses none; the second draft wrote
-that the production was replaced, which would have deleted the literal and the
-parenthesized group and unformed every invariant in this file. One consequence is a
-real capability gain and is stated rather than left to arrive: [ENT-2] 2675(a)
-admits a named const as a tracked place root, so a named const becomes an affine
-atom, which [INV-1] 3107 forbids today.
-
-One shape is **not** admitted, and the third draft's own example was ahead of its
-production: `invariant order: ile(table[i], n);` does not derive, because
-`ent2_place` admits no subscript. A measure term over a subscripted place is
-admitted and an ordinary value at one is not, and the reason is not an accident of
-the grammar: `len(table[i])` is a property of a descriptor and carries no [OP-4]
-obligation, while `table[i]` in an erased clause would carry one, and a proof
-obligation inside erased proof syntax has no program point at which to discharge.
+`requires_clause` and `ensures_clause` (spec 182-183, [GRAM-2]) take a
+`clause_expr` instead of an `expr`; `ent2_place` is [ENT-2] 2675(a)'s place grammar
+and `measure_term` is [MSR-1]'s three formers over one admitted place. The relation
+is an **IDENT and not a new terminal**, exactly as [INV-1]'s `header_invariant` and
+`invariant_stmt` productions already write it (spec 236-238), and it carries
+[INV-1] 3099's own sentence in [FN-9]'s wider form: *the IDENT must be exactly
+`ieq`, `ine`, `ilt`, `ile`, `igt` or `ige` — [FN-9] 1306's closed root set — and it
+selects a proof-domain relation and performs no [OP-1] call, so a `clause_expr` is
+not an expression and carries no [OP-5] type judgment.*
 
 *Judgment:* the ordinary [FN-8]/[FN-9]/[INV-1] admission over the widened operand
 set. *Publishes:* nothing new. *Amends:* [GRAM-5] 265-266 (a new `clause_expr` and
-`clause_operand` production; `atom` and `atom_list` unchanged), [GRAM-4]'s
-`requires_clause`, `ensures_clause` and `affine_factor` productions, [FN-8]'s
-clause-expression judgment (1256-1257), [FN-9]'s operand list (1306-1308), and
-[INV-1]'s atom sentence (3107); [GRAM-9] is unchanged and needs no scope sentence.
-*Verified today:* probes `w3`, `q1`, `q9`, `r1_lenatom` and `r1_field` are parse
-rejections, so this is an amendment and not a compiler defect. *Law:* L16.
+`clause_operand` production; `atom` and `atom_list` unchanged), [GRAM-2] 182-183's
+`requires_clause` and `ensures_clause`, [GRAM-4]'s `affine_factor` production,
+[OP-5] 921's contract-predicate scope, [FN-8] 1256-1261, [FN-9]'s operand list
+(1306-1308), and [INV-1] 3107's atom sentence; [GRAM-9] is unchanged and needs no
+scope sentence. *Depends:* [INV-1] 3099, whose relation-IDENT restriction and
+no-call sentence this production reuses verbatim. *Verified today:* probes `w3`,
+`x5`, `q1`, `q9`, `r1_lenatom` and `r1_field` are parse rejections, so this is an
+amendment and not a compiler defect. *Law:* L16. *History:* 6.8, F3 defect 5;
+6.7, F3-6.
 
-### 3.2 `[PROV]`: stores, providers, provenance, and disposal
+#### 3.K.2 `[PROV]`: stores, brand, activation, and release
 
-**[PROV-1] A store's identity is a region, and the region is in the type.** This
-is the rule the fourth draft is written around, and everything else in this family
-is derived from it.
+**[PROV-1] A store's identity is a region, the region is in the type, and a region
+names at most one live store at any program point.** This is the rule the design is
+built around, and everything else in this family is derived from it.
 
 A **store region** is a region that names one store. A region becomes one by being
 named as the store argument of a reserving occurrence [PROV-5], or, for the heap,
 by being the entry's own store-region parameter. A region may be named by **at most
 one** reserving occurrence; a second occurrence naming a region already used is a
 hard error citing PROV-1 at that occurrence's `targ`, with the restructuring `open
-one region per store`. Because [OWN-3] 573 makes region identifiers unique within a
-function, and probe `w1` confirms the compiler enforces it, a store region's
-spelling denotes exactly one store per entry of its block.
+one region per store`. [OWN-3] 573 makes region identifiers unique within a
+function, and probe `w1` confirms the compiler enforces it.
 
 Every value a store backs carries that store's region in its own type. There are
-three stores and three shapes over each, and the table is the whole vocabulary:
+two stores and one run shape over each, and the table is the whole vocabulary:
 
 ```text
-| store       | provider                | one value                 | one sequence          |
-|-------------|-------------------------|---------------------------|-----------------------|
-| general     | Heap<'s>                | HeapBox<'s, T>            | HeapVector<'s, T>     |
-| bump extent | Arena<'s, BYTES, ALIGN> | ArenaBox<'s, T>           | ArenaVector<'s, T>    |
-| slot pool   | Pool<'s, T, N>          | PoolSlot<'s, T>           | PoolVector<'s, T, N>  |
+| store       | provider                 | one run of slots     | reclamation           |
+|-------------|--------------------------|----------------------|-----------------------|
+| general     | Heap<'s>                 | Vector<'s, T>        | per run, by dispose   |
+| bump extent | Arena<'s, bytes, align>  | Vector<'s, T>        | with 's, by reset     |
+| (none)      | (none)                   | FixedVector<T, n>    | with its own scope    |
 ```
 
-A confinement region and a store identity merge into one parameter here, because a
-store's lifetime and a store's identity are one fact about one reservation.
-`Arena<'s, BYTES, ALIGN>` additionally carries its extent, so `cap` is a standing
-type fact [MSR-2] that no event kills, which is what a pool already had and an
-arena did not.
+`FixedVector<T, n>` has no store region because it has no store: its run is inline
+in its owner or the stack frame, nothing is ever released to it, and its
+confinement is ordinary [OWN-1] liveness. Its capacity is in its type because a
+frame-resident run must have a size before layout runs; a store-resident run's
+capacity is a measure fixed at the take, because a growth policy that could not
+change it would not be a growth policy. Those are the only two differences and
+each has one reason.
 
 **Preservation is a closure property and needs no clause of its own.** A value's
-store is a component of its type; no value-forming step in the language changes a
-value's type; therefore no value-forming step changes a value's store. That covers
-`construct`, field projection, container placement and removal, enum payload
-construction and `match` binding, multi-return, a control-flow join, a
-value-in / value-out row's result, an argument transfer and a return, in one
-sentence, and it covers every future step for the same reason. Two values have the
-same store exactly when their types name the same region, which [OWN-12] 645 and
-[TYPE-5] 372 already decide by exact identity: region substitution controls type
-equality, argument types match declared parameter types exactly, and v0.40 has no
-subtyping, so a branded type is invariant in its store region without a variance
-design.
+store is a component of its type; no value-forming step changes a value's type;
+therefore none changes a value's store. That covers `construct`, field projection,
+element placement and removal, enum payload construction and `match` binding,
+multi-return, a join, a value-in / value-out row's result, an argument transfer and a
+return, in one sentence, and every future step for the same reason. Two values have
+the same store exactly when their types name the same region, which [OWN-12] 645 and
+[TYPE-5] 374 decide by exact identity. All four round-4 reports attacked this from
+every position they could build and none moved it; 6.8 records the routes.
 
-The third draft carried this in an [OWN-5] origin set, which its four preservation
-sentences did not carry through a field, an element, a payload or a
-value-in / value-out row, and which a `move` of the provider plus a reinitializing
-`set` could point at a different store. Both defeats are type errors here.
+**The brand's spelling is 3.K.0's assumption, and this rule adds nothing to it.** A
+store brand is one more region argument, so which spelling of it is canonical is
+decided by the separate region-spelling amendment and not by a rule of this family.
+Applied here it says: when the entry selects `command.heap` and the enclosing
+nominal declares no region parameter, the brand's only possible value is the heap's
+store region and it is not written; when the same store appears at two positions of
+one declaration, it is written at both.
+
+What this rule owes that amendment is the **candidate set at a stored position**: the
+enclosing nominal's own region parameters, plus the entry heap's store region when
+the entry selects `command.heap`. That set is read from the nominal's own declaration
+and from the entry's one input row, never from a callee, a caller, or an
+instantiation, which is what makes the spelling decidable from the declaration text
+alone. At a parameter or result position a brand that relates nothing is an implicit
+region parameter instead, so a helper handed a run is generic over its store without
+saying so.
+
+**The provider parameter itself is never elided.** `heap: &uniq Heap` keeps its
+parameter, its mode and its effect row, because that is the signature-visible
+allocation fact L2 exists to create; what goes is the region *inside* the type and
+the region of the borrow, never the parameter. A signature that allocates still says
+so at its parameter list and at its `allocates` row, and [PROV-4]'s reachability
+closure reads exactly those. [OWN-3] 575 makes the entry heap's region incomparable
+with every other and no second general store can be formed, so the elided brand can
+denote nothing else. `struct Bytes { v: Vector<u8>; }` is then an ordinary nominal
+with no region parameter, and `CONTAINERS.md` §3 writes `byte_string.wf`'s join with and without
+the brand so the difference is visible rather than argued.
 
 `Heap<'s>` is delivered as an `own` entry parameter and lives for the program.
 The `command` standard-input table [FN-7] gains ordinal 5:
@@ -825,39 +886,42 @@ The `command` standard-input table [FN-7] gains ordinal 5:
 ```text
 | ordinal | label        | written mode and type | supplied value                                      |
 |---------|--------------|-----------------------|-----------------------------------------------------|
-| 5       | command.heap | own Heap<'s>          | the one general store the runtime minted before main |
+| 5       | command.heap | own Heap              | the one general store the runtime minted before main |
 ```
 
 and the entry may declare **exactly one region parameter**, admitted only when it
-selects that row, which names the heap's store region; program start supplies it
-and it outlives every region of the program. [OWN-3] 575's incomparability of
-distinct caller-supplied regions is what makes it invariant. The row is optional
-like every other: a `main` that omits it receives no `Heap` and cannot obtain one
-[PROV-2]. The `Heap` `main` receives is dropped on the return edge with the
-**empty** release row: the store itself is the runtime's, the program returns the
-handle, and no covered acquisition or release happens there.
+selects that row; program start supplies it and it outlives every region of the
+program. Under 3.K.0 the entry writes it only when it also reserves an arena. The
+`Heap` `main` receives is dropped on the return edge with the **empty** release row:
+the store is the runtime's, the program returns the handle, and no covered
+acquisition or release happens there.
 
-*Judgment:* one store per store region, checked at each reserving occurrence;
-provider and branded types are nominal and closed, and no source declaration
-introduces another; plus the ordinary [FN-7] label, order, mode and type checks.
-*Publishes:* each value's store, as a component of its type; the store's measures;
-and the whole-program fact `heap-unreachable` when the entry row is absent.
-*Amends:* [TYPE-2] 352, which gains the nine branded nominals above and from which
-`box<T>`, `arena<'r, T>` and `buffer<T>` retire from the writer surface; [TYPE-7]
-471, whose closed deref domain becomes `&'r T`, `&uniq 'r T`, `HeapBox<'s, T>`,
-`ArenaBox<'s, T>` and `PoolSlot<'s, T>`; [GRAM-3] 204-207, whose fixed `box`,
-`arena`, `slice` and `buffer` type productions retire in favour of ordinary TYPEIDs
-with `targs`; [FN-7]'s table (1221-1227), its "declares no region parameters"
+*Judgment:* one live store per store region, established by [PROV-5]; provider and
+branded types are nominal and closed, and no source declaration introduces another;
+the elision resolution above; plus the ordinary [FN-7] label, order, mode and type
+checks. *Publishes:* each value's store, as a component of its type; the store's
+measures; and the whole-program fact `heap-unreachable` when the entry row is
+absent. *Amends:* [TYPE-2] 352, which gains the five branded and
+container nominals below and from which `box<T>`, `arena<'r, T>` and `buffer<T>` retire from the
+writer surface; [TYPE-7] 471, whose closed deref domain becomes `&'r T` and
+`&uniq 'r T` alone, because a single stored value is a run of capacity one and is
+reached by subscript; [GRAM-3] 204-207, whose fixed `box`, `arena`, `slice` and
+`buffer` type productions retire in favour of ordinary TYPEIDs with `targs`, and
+which gains the omitted-store-region form; [OWN-10] 636-640, whose `arena<'r, T>`
+content clause becomes a clause over `Vector<'s, T>` content with `'s` in the
+subject position; [FN-7]'s table (1221-1227), its "declares no region parameters"
 sentence (1212), its canonical five-input byte sequence (1246), and its effect-row
 sentence (1214), whose `allocates(heap)` becomes `allocates` over the entry's own
 labelled provider input. *Depends:* [OWN-3] 573 and 575, for uniqueness within a
-function and incomparability across the boundary; [OWN-12] 645 and [TYPE-5] 372,
+function and incomparability across the boundary, which is also why the elided brand
+can denote only one region; [OWN-12] 645 and [TYPE-5] 374,
 for exact region identity in type equality, which is the whole of the invariance
-argument. *Law:* L2, L13, L16.
+argument. *Law:* L2, L13, L16. *History:* 6.8, F1 attack 1 and F4 finding 6; 6.7,
+F2-NA1.
 
-**[PROV-2] Unforgeable, uncopyable, and taken as a loan.** No source construct
-produces a provider; a `Heap<'s>` exists only because the runtime minted exactly
-one before `main`, and an `Arena` or `Pool` only as the result of a reserving
+**[PROV-2] Unforgeable, uncopyable, taken as a loan, and never stored.** No source
+construct produces a provider; a `Heap<'s>` exists only because the runtime minted
+exactly one before `main`, and an `Arena` only as the result of a reserving
 operation [PROV-5]. No operation duplicates, reconstructs, compares, serializes, or
 derives a provider from a non-provider value.
 
@@ -867,125 +931,97 @@ passed `own`: it is confined to its own store region, and a moved provider stran
 its own store. The one `own` provider in the language is the `Heap` the entry
 receives.
 
-Every provider operation declares two regions: `'s`, the store's region, which
-appears in the provider's type and in the type of everything it produces, and `'b`,
-the region of the loan the call holds. They are always distinct, and [OWN-10] 636
-is the general reason: a borrow of a local names a region introduced **inside that
-binding's own scope**, and `'s` is introduced before the provider binding exists.
-Probe `r2_2` is that rejection and probe `r2_1` is the admitted shape.
-
-```text
-| op                 | signature                                                                                          | effects                         |
-|--------------------|----------------------------------------------------------------------------------------------------|---------------------------------|
-| heap_take          | ['s,'b](heap: &uniq 'b Heap<'s>, value: own T) -> own Result<HeapBox<'s,T>, OutOfMemory<T>>          | allocates(heap), writes(heap)   |
-| heap_release       | ['s,'b](heap: &uniq 'b Heap<'s>, item: own HeapBox<'s,T>) -> own T                                   | writes(heap)                    |
-| arena_take         | ['s,'b](arena: &uniq 'b Arena<'s,BYTES,ALIGN>, value: own T) -> own ArenaBox<'s,T>                   | allocates(arena), writes(arena) |
-| arena_take_checked | ['s,'b](arena: &uniq 'b Arena<'s,BYTES,ALIGN>, value: own T) -> own Result<ArenaBox<'s,T>, NeedCapacity<T>> | allocates(arena), writes(arena) |
-| pool_take          | ['s,'b](pool: &uniq 'b Pool<'s,T,N>, value: own T) -> own PoolSlot<'s,T>                             | allocates(pool), writes(pool)   |
-| pool_take_checked  | ['s,'b](pool: &uniq 'b Pool<'s,T,N>, value: own T) -> own Result<PoolSlot<'s,T>, PoolExhausted<T>>   | allocates(pool), writes(pool)   |
-| pool_release       | ['s,'b](pool: &uniq 'b Pool<'s,T,N>, item: own PoolSlot<'s,T>) -> own T                              | writes(pool)                    |
-```
-
-`heap_release` and `pool_release` hand the content back; they are the inverses of
-their acquisitions and they destroy nothing. Destroying a value is `dispose`
-[PROV-6], which is a different construct. There is no `arena_release`, because
-arena content is reclaimed with the store and not per value.
-
-These are container-domain rows [SEQ-0], not [OP-1] table rows. The third draft
-declared them in [SEQ-0] and amended them as [OP-1] rows at once, leaving them in
-two domains with two argument forms and two diagnostic rules. `box_new` and
-`arena_new` therefore **retire** from [OP-1] rather than being amended there,
-exactly as `buffer_new`, `buffer_vacant` and `slice_of` do.
-
-*Judgment:* a `construct` [GRAM-8] naming a provider or branded nominal, and every
-other source route to one, is a hard error citing PROV-2 at the complete
+*Judgment:* a `construct` [GRAM-8] naming a provider or container nominal, and
+every other source route to one, is a hard error citing PROV-2 at the complete
 `construct`, with the restructuring `receive the provider as a parameter, or
-reserve one with pool_frame or arena_frame`; and an allocation or release call
-whose provider argument is missing, is not a provider place, or is not writable is
-a hard error citing PROV-2 at the `call`. *Publishes:* uniqueness of the `Heap`;
-and the store's post-state measures, which are [SEQ-0] declared relations over the
-call's own datums [MSR-3], stated single-state:
-`len(pool) = <call datum of len(pool)> + 1` at a take,
-`len(pool) = <call datum of len(pool)> - 1` at a release,
-`len(arena) <= <call datum of len(arena)> + K<T>` at an arena allocation, and
-`cap(P) = <call datum of cap(P)>` at every one of them. The third draft wrote these
-with a primed post-state term, which the settled list rejects, over a datum its own
-producer could not mint, on a result binding that does not exist. Single-state over
-a live term and an immutable datum is [ENT-3.S5]'s own post-write shape. *Amends:* [OP-1]
-793-798, from which `box_new` and `arena_new` retire, and [STOR-2] 680, which
-defined them. *Depends:* [OWN-10] 636, which is why `'s` and `'b` are always
-distinct; [OWN-6] 609, which makes an argument borrow a call-scoped temporary, the
-fact probe `w8` exercises and the reason store identity may not rest on what stands
-at a place between two calls. *Law:* L2, L3, L4, L13, L16.
+reserve one with arena_frame`; a provider type in a stored position is a hard error
+citing PROV-2 at the complete contained `type`, with the restructuring `lend the
+provider to the operation that needs it; a provider is never stored`; and an
+allocation or release call whose provider argument is missing, is not a provider
+place, or is not writable is a hard error citing PROV-2 at the `call`. *Publishes:*
+uniqueness of the `Heap`; and the store's post-state measures, which are [BLK-0]
+declared relations over the call's own datums [MSR-3], stated single-state.
+*Amends:* [OP-1] 793-798, from which `box_new` and `arena_new` retire, and [STOR-2]
+680, which defined them; [STOR-5] 718-732, whose enumerated stored-content
+positions gain the provider prohibition. *Depends:* [OWN-10] 636, which is why `'s`
+and `'b` are always distinct; [OWN-6] 609, which makes an argument borrow a
+call-scoped temporary, the fact probe `w8` exercises and the reason store identity
+may not rest on what stands at a place between two calls. *Law:* L2, L3, L4, L13,
+L16. *History:* 6.8, F1 attack 7.
 
 **[PROV-3] Provenance is for loans, and a loan reaches a range.** [OWN-5]'s finite
-origin set, today defined for `slice<'r, T>`, generalizes to the three views and to
-nothing else. A **loan-bearing** type is `Span<'r,T>`, `MutSpan<'r,T>` or
-`AppendView<'r,T>`; a value of one carries a finite set of origins, each an origin
-place paired with the half-open index range the value reaches of it.
+origin set, today defined for `slice<'r, T>`, generalizes to the two views and to
+nothing else. A **loan-bearing** type is `Span<'r,T>` or `MutSpan<'r,T>`; a value of
+one carries a finite set of origins, each an origin place paired with the half-open
+index range the value reaches of it, **and, per measure of that place, the
+formation datum [MSR-3] minted when the origin entered the set**.
 
 Formation makes a **singleton**: `seq_mut_span(vector: &uniq 'w table[i])` has the
-singleton origin `table[i]` with range `[Z, len(table[i]))`, and
-`seq_append_view(vector: &uniq 'w v)` has the singleton origin `v` with range
-`[len(v), cap(v))`. A named const maps to the distinguished `immutable-const`
-origin. Binding, moving, passing and returning preserve the set; a control-flow join
-takes the union; a parameter of loan-bearing type starts with the singleton
-containing its own formal origin, substituted at a call boundary. The **resolved**
-origin set is the set minus `immutable-const`, which creates no conflicting access
-and has no writable storage [OWN-5] 602, [OWN-7] 627; every rule needing a singleton
-needs a singleton *resolved* set.
+singleton origin `table[i]` with range `[Z, len(table[i]))` and that formation's
+own datums. A named const maps to the distinguished `immutable-const` origin.
+Binding, moving, passing and returning preserve the set, its ranges and its datums;
+a control-flow join takes the union; a parameter of loan-bearing type starts with
+the singleton containing its own formal origin, substituted at a call boundary by
+exactly the rule [FN-1] 1035-1041 already applies to the origin place. The
+**resolved** origin set is the set minus `immutable-const`, which creates no
+conflicting access and has no writable storage [OWN-5] 602, [OWN-7] 627.
 
 Four uses, and no fifth:
 
 1. **Access strength, over the range.** An access through a value of shared loan
    strength is one shared access to the range of every resolved origin; an access
    through a value of exclusive loan strength is one exclusive access to the range
-   of every resolved origin. [VIEW-1] fixes each view's strength.
+   of every resolved origin. [VIEW-1] fixes each view's strength. An ordinary
+   access to a place that is a resolved origin is judged at the range that access
+   reaches, which is the whole place for a whole-place access and the single
+   element for a subscript.
 2. **A loan covers its address computation.** While a loan on a resolved place is
    live, every binding that place's address computation reads is frozen: a write to
    it conflicts under [OWN-5], at the write, naming the loan. Forming a view at
    `table[k]` therefore freezes `k` exactly as it freezes `table`.
-3. **A live origin set fixes its storage.** No statement may rebind the storage a
-   live origin set describes: a `set` target, a `replace` target, and every future
-   exchange form whose target type is loan-bearing is a hard error, wherever the
-   target is reached from.
-4. **Disjointness.** [OWN-7] 624's overlap test extends to ranges: two origins with
+3. **A live origin set fixes its storage.** While a value's origin set is live, no
+   statement may write, replace, or exchange the storage any resolved origin of
+   that set describes. This clause is **storage-keyed and says nothing about the
+   view descriptor**; [LIV-3] is the rule that governs a write to a loan-bearing
+   place. Splitting the two is round 4's repair: the fourth draft wrote one
+   sentence whose premise was storage-keyed and whose operative clause was
+   type-keyed, and the type reading refused the central statement of both worked
+   programs.
+4. **Disjointness.** [OWN-7] 625's overlap test extends to ranges: two origins with
    the same resolved place overlap exactly when their ranges intersect, judged by
    the same affine reasoning [PAR-2] 1999 already performs for a single-binder
-   element write. This is what makes a `par` fill over one owner expressible, and
-   it is the relation a later `seq_split_at` needs.
+   element write. This is what makes a `par` fill over one owner expressible.
 
-Use 3 is stated over **loan-bearing** targets only. The third draft quantified it
-over provider-derived values too, which refused `replace deref(h).b = move fresh;`
-at a heap-backed field, a program probe `q2` shows the compiler accepts today and
-[STOR-1] 677 calls the language's own growable-collection idiom. A store-branded
-value holds no loan and aliases nothing, so exchanging one for another of the same
-type retargets no loan and hides no store.
-
-Use 2 is checkable only because [OWN-7] 624's subscript overlap stays
+Use 2 is checkable only because [OWN-7] 625's subscript overlap stays
 conservative, and the register's `Depends:` list carries that.
 
-*Judgment:* a loan-bearing value in a prohibited position [CNT-4] is a hard error
-there; a rebinding of storage under a live origin set is a hard error citing PROV-3
-at the complete target `place`, with the restructuring `a view's origin set is
-fixed at formation; bind a new view under a new let`; and a write to a binding a
-live loan's address computation reads is the ordinary [OWN-5] conflict.
-*Publishes:* the origin set, the resolved origin set, and each origin's range.
-*Amends:* [OWN-5] 589-607, whose slice-origin paragraphs generalize to loan-bearing
-values, whose one access clause becomes the two of use 1 over ranges, which gains
-the address-computation and resolved-set sentences, and whose 603 becomes "a formal
-view origin has a writable storage path inside its callee exactly when that view's
-loan strength on its resolved origin set is exclusive", the callee-side twin of the
-[SET-1] change below, its second sentence unchanged; 596-599's no-slice-valued-join
-sentence, restated over the loan-bearing predicate rather than over one retired type
-name, because the union of two loans is not a loan any rule can end at one consume;
-[OWN-7] 624, which gains the range clause; [SET-1] 483-485, whose "no writable
-target path may traverse a `slice<'r, U>` value" is restated as *a target path may
-traverse a view value exactly when that view's loan strength on its resolved origin
-set is exclusive*, which is what admits the `MutSpan` element write probe `p7` is
-refused today; [SET-2] 508-513, whose region-bearing target rejection is replaced by
-use 3; and [EFF-2] 1400-1404, whose slice-parameter projection generalizes to a
-loan-bearing parameter. *Law:* L10.
+*Judgment:* a loan-bearing value in a prohibited position [BLK-4] is a hard error
+there; a write to the storage a live resolved origin describes is the ordinary
+[OWN-5] conflict, at the write, naming the loan; and a write to a binding a live
+loan's address computation reads is the same conflict. *Publishes:* the origin set,
+the resolved origin set, each origin's range, and each origin's carried formation
+datums. *Amends:* [OWN-5] 589-607, whose slice-origin paragraphs generalize to
+loan-bearing values, whose one access clause becomes the two of use 1 over ranges,
+which gains the address-computation, resolved-set and carried-datum sentences, and
+whose 603 becomes "a formal view origin has a writable storage path inside its
+callee exactly when that view's loan strength on its resolved origin set is
+exclusive", the callee-side twin of the [SET-1] change below, its second sentence
+unchanged; 596-599's no-slice-valued-join sentence, restated over the loan-bearing
+predicate rather than over one retired type name, because the union of two loans is
+not a loan any rule can end at one consume; [OWN-7] 625, which gains the range
+clause; [SET-1] 483-485, whose "no writable target path may traverse a `slice<'r,
+U>` value" is restated as *a target path may traverse a view value exactly when
+that view's loan strength on its resolved origin set is exclusive*, which is what
+admits the `MutSpan` element write probe `p7` is refused today; [SET-2] 508-513,
+whose region-bearing target rejection is replaced by use 3 and [LIV-3]; [EFF-1]
+1380, whose "for a direct `slice<'r, T>` parameter, [an effect path] names the
+viewed backing state rather than the descriptor" generalizes to a loan-bearing
+parameter, which is the declaration-side half [CALL-3] and [VIEW-7] both read; and
+[EFF-2] 1400-1404, whose slice-parameter projection generalizes the same way.
+*Depends:* [FN-1] 1035-1041, whose call-boundary origin substitution is what carries
+a formation datum into a callee and back; [OWN-7] 625, whose conservative subscript
+overlap is what makes use 2 checkable. *Law:* L10. *History:* 6.8, F3 defects 1
+and 2, F1 attack 9.
 
 **[PROV-4] `allocates` names a provider path, and reachability reads the leaf.**
 The effect grammar's `allocates` entry takes formal-rooted [EFF-1] paths naming
@@ -1008,10 +1044,6 @@ compilation unit is closed [PROG-1], there are no function values, and there is 
 ambient store, the transitive closure of that relation over the call graph is
 exact and is computed from signatures alone.
 
-A body that allocates only from a provider it reserved itself frames out of its
-own signature exactly as any other fresh-local state does, and [PROV-5] makes the
-reserved extent an ordinary place of that activation.
-
 *Judgment:* [EFF-2]'s both-ways row check, unchanged. *Publishes:* the
 provider-reachability closure, and the heap-reaching path, which is the ordered
 call chain from `main` to the allocation that [RES-4] prints. *Amends:* [EFF-1]'s
@@ -1020,184 +1052,818 @@ and [FN-3] 1117-1121, whose conformance effect-row normalization is defined over
 "the allocation set whose members are `heap` and each alpha-mapped `arena` region"
 and which becomes the set of `allocates` paths under the same parameter-ordinal and
 field-ordinal identity 1121 already fixes for `reads` and `writes`, with the region
-alpha-mapping applying to modes and types only. Without that second row a
-conformance's signature equality is stated in a vocabulary this rule deletes.
-*Law:* L2.
+alpha-mapping applying to modes and types only. *Depends:* [PROG-1] 1486, whose one
+closed compilation unit with no function values is why the closure is exact.
+*Law:* L2. *History:* 6.7, F3-12.
 
-**[PROV-5] Reservation is an event of the region block, and its placement is
-written.** Four reserving operations exist:
+**[PROV-5] Reservation is an event of the region block, and one live activation is
+the condition.** Two reserving operations exist, differing only in placement:
 
 ```text
-pool_frame<T, const N: u64>['s]()                      -> own Pool<'s, T, N>
-pool_extent<T, const N: u64>['s]()                     -> own Pool<'s, T, N>
-arena_frame<const BYTES: u64, const ALIGN: u64>['s]()  -> own Arena<'s, BYTES, ALIGN>
-arena_extent<const BYTES: u64, const ALIGN: u64>['s]() -> own Arena<'s, BYTES, ALIGN>
+arena_frame<const bytes: u64, const align: u64>['s]()  -> own Arena<'s, bytes, align>
+arena_extent<const bytes: u64, const align: u64>['s]() -> own Arena<'s, bytes, align>
 ```
 
 No operand supplies any of those parameters, so each call writes its complete list
-in [GRAM-2]'s declaration order, type and const parameters then region parameters:
-`pool_frame<FixedVector<u8, 256>, 8, 'p>()` [SEQ-0]. The written region argument
-`'s` must be a region introduced by an enclosing `region_stmt` of the reserving
-function; a caller-supplied region parameter is not admitted, and [PROV-1] admits
-at most one reserving occurrence per region.
+in [GRAM-2] 193-194's declaration order, type and const parameters then region
+parameters, with each const parameter a lowercase IDENT as [FORM-3] requires:
+`arena_frame<4096, 16, 'a>()`. The written region argument `'s` must be a region
+introduced by an enclosing `region_stmt` of the reserving function; a
+caller-supplied region parameter is not admitted, and [PROV-1] admits at most one
+reserving occurrence per region.
 
-**Each reserves one store per entry of the region block naming `'s`.** The `frame`
-forms lay the extent out in the reserving activation's frame, so it enters that
-context's `stack` item of `E`; the `extent` forms produce their own
+**Each reserves one store per activation of the region block naming `'s`.** The
+`frame` form lays the extent out in the reserving activation's frame, so it enters
+that context's `stack` item of `E`; the `extent` form produces its own
 `region(name, bytes, alignment, contiguous)` item of `E`, whose name is derived
-from the reserving occurrence and is not written. Storage is per occurrence in both
-cases and is reused across entries. **On every edge leaving `'s`'s block the store's
-release action resets it to its initial state**: a bump cursor to zero, a slot pool
-to zero live slots. That action joins [STOR-3]'s release-action table beside the
-owners' and the `AppendView`'s.
+from the reserving occurrence and is not written. **On every edge leaving `'s`'s
+block the store's release action resets it to its initial state**: the bump cursor
+to zero, and nothing else. That action joins [STOR-3]'s release-action table.
 
-The reset is what makes the freshly published `len(store) = Z` true on a second
-entry, and it is sound because every value the store served names `'s`, [CNT-4]
-confines it to `'s`, and [LIV-1] makes it dead on that edge. Without the reset a
-`region` block inside a loop republishes `len = Z` over a cursor the previous
-iteration advanced, which round 3 turned into an out-of-extent write in eleven
-statements. `E` is unaffected: peak demand over a resetting store is one entry's.
+The refusal is therefore stated over the property and not over an enumeration of
+the ways to reach it:
 
-Frame placement is the default for scratch. Extent placement is what a page table,
-an MMIO window and a DMA descriptor ring need, and L6 is the reason the choice
-exists: a deployment reading one stack total cannot tell a 4096-alignment failure
-from a size failure, and cannot grant the page table separately from the stack.
-
-One multiplicity this version cannot count, it refuses. An `extent`-form occurrence
-reachable from more than one execution context, or from a statement an
-implementation may execute with overlapping execution under [PAR-1], [PAR-2] or
-[PAR-3], is a hard error at the `targ`, with the restructuring `reserve the store
-in the caller and lend the provider down, or use the frame form`. An item named by
-an occurrence is one item however many activations reach it, so two simultaneous
-activations would hold one committed extent and two providers each believing it
-owns the whole. Section 1.4 records that lifting this is the follow-on's.
+> An `arena_extent` occurrence is a hard error at its `targ` when the reserving
+> function is a member of a strongly connected component of the call graph, or is
+> reachable from more than one execution context. The restructuring is `reserve the
+> store in the caller and lend the provider down [PROV-7], or use the frame form`.
 
 *Judgment:* the ordinary region, confinement and [OWN-5] exclusivity judgments,
 plus the region-locality check, [PROV-1]'s one-store-per-region check, and the
-multiplicity refusal above, each a hard error citing PROV-5 at the `targ` with the
+activation refusal above, each a hard error citing PROV-5 at the `targ` with the
 restructuring stated there. *Publishes:* the reserved store's measures, its store
-region, and its envelope item, one `stack` contribution or one `region` item.
-*Amends:* [STOR-3] 683-715, whose release-action table gains the store reset;
-nothing else. *Law:* L2, L5, L6, L13.
+region, its envelope item — one `stack` contribution or one `region` item — and the
+one-live-store-per-region invariant [PROV-1] reads. *Amends:* [STOR-3] 683-715,
+whose release-action table gains the store reset; nothing else, and the deleted
+third clause is why. *Depends:* [ERR-4] 1481, whose
+"absence of a complete permission derivation ... never rejects the source" is why
+the third clause is gone. *Law:* L2, L5, L6, L13. *History:* 6.8, F1 attack 1, F2
+NB2, F3 defect 8.
 
-**[PROV-6] Linearity and disposal are both closed under containment.** A type is
-**linear** exactly when it reaches, at any depth, a value whose backing is
-reclaimed per value: `HeapBox<'s,T>`, `PoolSlot<'s,T>`, `HeapVector<'s,T>`,
-`PoolVector<'s,T,N>`, any nominal with a linear field, any enum with a linear
-payload, and any container whose element type is linear. A type whose backing is
-reclaimed with a region or with a frame is not linear: `ArenaBox<'s,T>`,
-`ArenaVector<'s,T>`, `FixedVector<T,N>` and `FixedRing<T,N>` over non-linear
+**[PROV-6] Linearity refines affine; disposal, destructuring and the partial-move
+refusal are one closure.** A type is **linear** exactly when it reaches, at any
+depth, a value whose backing is reclaimed per value: `Vector<'s, T>` where `'s` is
+a `Heap` region, any nominal with a linear field, any enum with a linear payload,
+any run whose element type is linear, and any view whose element type is linear.
+A type whose backing is reclaimed with a region or with a frame is not linear:
+`Vector<'s, T>` at an `Arena` region and `FixedVector<T, n>` over non-linear
 elements keep their ordinary compiler-derived release, and a provider is not linear
 because [PROV-5] gives its store a reset.
 
-A linear value has **no compiler-derived release**. It leaves a scope only by being
-moved out, or by being consumed by one statement:
+**Linear is a property of an affine type and not a third class.** [OWN-1] 558-559's
+classification is unchanged; every linear type is affine; the linear predicate is a
+further property of an affine type, defined here, that removes its
+compiler-derived release action and fixes its scope-exit disposition. That one
+sentence is what lets `move p`, [OWN-13]'s own-place match move, [SET-2]'s affine
+target requirement and [ERR-3]'s `propagate` operand reach a linear value at all;
+the fourth draft declared the class *beside* copy and affine, and under that
+reading no rule admitted `move` or `dispose` of the values the design exists to
+manage.
+
+A linear value has **no compiler-derived release**. It leaves a scope by exactly
+three routes, and the three are closed under containment together:
 
 ```wf-design
-dispose queue using (blocks);
-dispose table using (heap, blocks);
+let tail = move queue;                        // moved out whole
+let Chunk(page: p, used: u) = move chunk;     // destructured whole
+dispose table using (heap);                   // disposed to its store
 ```
 
-`dispose p using (q1, ..., qk);` consumes the owner place `p`; each `qi` is a
-**writable provider place**, not a written borrow, and the statement takes one
-statement-scoped exclusive access to each, exactly as a [SET-1] commit does to its
-target. That is why no `dispose` needs a region of its own. **Its judgment is a
-walk of `p`'s type.** For every store region `'s` that `p`'s type names at a linear
-leaf, exactly one named provider whose type names `'s` must appear, and no named
-provider may be unused; the walk then visits every leaf in the order [STOR-3]
-already fixes for a derived drop, releasing each linear leaf to the provider its own
-type names and running each non-linear leaf's ordinary derived release. A
-container's elements are visited before its backing is released, so `dispose` on a
-full container is legal and the emptiness premise the third draft wrote on its two
-release rows disappears.
+**Destructure whole.** `let N(f1: b1, ..., fk: bk) = move v;` is one added
+`let_stmt` alternative that consumes a value of nominal type `N` and binds every
+field of `N` in declaration order to a fresh IDENT, judged exactly as [CALL-4]'s
+multi-result destructuring `let` is: each binder is an independent destination,
+each receives its field's declared type and `own` mode, and no residual exists for
+any rule to define. It is the inverse of `construct`, and it is what makes
+"linearity is closed under containment" true of disassembly as well as of assembly.
 
-Four things follow and are stated rather than discovered.
+**Dispose.** `dispose p using (q1, ..., qk);` consumes the owner place `p`; each
+`qi` is a **writable provider place**, reached directly or through a borrow —
+`dispose item using (deref(heap));` is the spelling inside a helper — and the
+statement takes one statement-scoped exclusive access to each, exactly as a [SET-1]
+commit does to its target. That is why no `dispose` needs a region of its own. **Its
+judgment is a walk of `p`'s type**, and the walk is stated over the type's variant
+structure rather than over a flat leaf set:
 
-- **Disposal introduces no new reclamation action.** It is [STOR-3]'s own derived
-  drop with the store's release substituted at each linear leaf, so a reader who
-  knows how a `buffer<T>` of affine elements is dropped today knows this walk.
-- **Every free is visible in a signature and in a footprint.** The statement's
-  effect contribution is one write of each named provider place, which [EFF-2]
-  projects to the enclosing row exactly as it projects a `set` commit. Two disposals
-  of values from one store therefore conflict under [PAR-1], and a callee that
-  disposes exhibits the row at its caller. Today the opposite is true and invisible:
-  probe `r2_5` compiles `fn swallow(item: own box<u64>) -> result: own u64 pure`,
-  and probe `w7` does the same one field deeper.
-- **Disposal is modular, and no new effect category is needed to make it so.** A
-  helper writes
-  `fn retire['s,'b](pool: &uniq 'b Pool<'s,u64,4>, item: own PoolSlot<'s,u64>) -> done: own unit writes(pool)`
-  and disposes inside it, because both formals name `'s` and the walk's requirement
-  is type equality. The third draft could not: its check compared a formal origin
-  token with a formal borrow's resolved place, two objects never equal, so its own
-  virality paragraph described a program its judgment refused. A `disposes(item ->
-  pool)` effect category was the obvious repair and is **not** adopted: with the
-  brand it would restate what the two formals' types already say, and the footprint
-  it would supply is the `writes` row the statement already carries.
-- **Virality is real and is visible.** A function that takes ownership of a linear
-  value on any path and does not return it must hold a provider for every store the
-  value's type names, so it names those providers in its signature, transitively up
-  to the holder. That is the honest signature fact, and it is the discipline
-  `FilePermit` already imposes.
+```text
+for a struct or a run element type: every field in [STOR-3]'s order
+for an enum:                        the active variant's payload, selected by the discriminant
+for a run:                          every element of [0, len), in ascending order
+at a linear leaf:                   release to the store its own type names
+at a non-linear leaf:               that leaf's ordinary derived release action
+```
+
+For every store region that `p`'s type names at a linear leaf, exactly one named
+provider whose type names that region must appear, and no named provider may be
+unused. **A container's elements are visited before its backing is released**, so
+`dispose` on a full container is legal and needs no emptiness premise.
+
+**The walk's depth is the disposed type's containment height, a compile-time
+constant, and the walk therefore uses no auxiliary storage.** That sentence is
+round 4's rank-one resource finding and it is a language decision, not a codegen
+one: probe `a8` shows today's derived drop of a self-referential owned type
+emitting a worklist grown by `realloc` with `wf_resource_abort` on refusal, and
+probe `x6` shows that `struct Node { next: Option<Vector<Node>>; value: u64; }` is
+**accepted today**, so the shape is reachable. A type whose containment graph has a
+cycle has no compile-time height; its release is then an unbounded demand on the
+cleanup-scratch domain [RES-5], which is exactly how [RES-3] premise 3 refuses any
+other unbounded store, and the diagnostic names the type and the cycle. An unmarked
+program keeps today's behaviour and 6.3 records that its abort site survives.
+
+**A partial move of a value of linear type is a hard error.** [OWN-1] 564's "after
+any consuming use, the whole binding rooting `p` is dead (partial moves kill the
+whole binding)" is the one event that makes a linear binding *not live* without
+disposing it, and both [LIV-1]'s check and this rule's own error are stated over
+live bindings, so the abandoned sibling leaves its scope by none of the three
+routes and no rule sees it. Probe `x4` shows the shape is accepted today, and the
+same statement is the mechanical route around the `propagate` refusal below. The
+refusal is stated where the death happens, and its mechanical fix names the
+destructuring form.
 
 `propagate` and a live linear binding are mutually exclusive, and this rule says
 so rather than leaving it to be discovered. A `propagate` error edge leaves every
 enclosing scope and offers no statement position on which to dispose, so a
 `propagate` in a function holding a live linear binding is a hard error citing
 PROV-6 at the `propagate_let_rhs`, with the restructuring `expand the propagate
-into a match and dispose on the Err arm`. Probe `w5` compiles that shape today, so
-this is a refusal the design adds and a cost it owes the writer; 6.7 records it and
-Q10 asks whether a release list on the statement should later remove it.
+into a match and dispose on the Err arm`. Probes `w5` and `m03` compile that shape
+today, so this is a refusal the design adds and a cost it owes the writer; Q10 asks
+whether a release list on the statement should later remove it.
 
 *Judgment:* a linear binding live on any edge leaving its scope, including a
 `propagate` error edge and a function-return edge, is a hard error citing PROV-6 at
 that edge, naming the binding, its store regions, and the providers a `dispose`
-would need, with the restructuring `move the value out, or dispose it here while
-the providers are live`; a `dispose` whose named providers do not cover the store
-regions of `p`'s linear leaves exactly once is a hard error citing PROV-6 at the
-statement, rendering the uncovered region and the type path that reaches it.
-*Publishes:* the release events and each store's post-state measure. *Amends:*
-[STOR-3] 683-715, whose `box<T>` and `buffer<T>` drop rows retire with their types
-and whose release-action table gains the statement that a linear type has none;
-[OWN-1] 558, which gains the linear class beside copy and affine; [GRAM-4]'s `stmt`
-production (one added statement form) and [FORM-2], which renders it as one line;
-[EFF-2] 1421's "each of these memory-reclamation actions carries the empty effect
-row", which stays **true** and stays unchanged, because after this rule no memory
-reclamation of store-owned storage is a derived action; [PAR-1] 1969's footprint,
-through the ordinary `writes` row rather than a special case. *Depends:* [STOR-3]
-694-700, whose derived-drop order and its affine-element clause are the walk this
-rule reuses. *Law:* L3, L5, L13, L17.
+would need; a partial move of a value of linear type is a hard error citing PROV-6
+at that `move`, with the restructuring `destructure the whole value with
+let N(f: a, ...) = move v;, or dispose it`; a `dispose` whose named providers do
+not cover the store regions of `p`'s linear leaves exactly once is a hard error
+citing PROV-6 at the statement, rendering the uncovered region and the type path
+that reaches it; and a `dispose` of a type whose containment graph has a cycle
+denies [RES-3] premise 3 at that statement. *Publishes:* the release events, each
+store's post-state measure, and the walk's effect contribution. *Amends:* [STOR-3]
+683-715, whose `box<T>` and `buffer<T>` drop rows retire with their types, whose
+release-action table gains the statement that a linear type has none and the split
+between a store's reset and its content's release, and whose 704-707 system-resource
+release contract gains a second subject [RES-9]; [OWN-1] 558-564, whose
+classification is unchanged and which gains the linear refinement and the
+partial-move refusal; [GRAM-4]'s `stmt` and `let_stmt` productions (one added
+statement form and one added `let` alternative) and [FORM-2], which renders each as
+one line; [EFF-2] 1421's "each of these memory-reclamation actions carries the
+empty effect row", which stays **true** for the four types it names and is joined by
+the walk's own contribution; [PAR-1] 1969's footprint, through the ordinary `writes`
+row, and [PAR-1] 1990's admitted intervening-statement list, which gains the
+`dispose` statement so that a permitted window containing one is not denied.
+*Depends:* [STOR-3] 694-700, whose derived-drop order and its affine-element clause
+are the walk this rule reuses. *Law:* L3, L5, L13, L17. *History:* 6.8, F3 defect 3,
+F1 attack 2, F2 NB1, NB5, NB6, F4 blocking 1.
 
-**[PROV-7] A provider can be lent onward.** A helper that receives a provider as
-`&uniq 'b P` must be able to hand it to the operation that allocates. Today it
-cannot: [OWN-6]'s child reborrow admits only a locally-introduced region whose
-block does not extend beyond the enclosing statement, so a reborrow into `'b` is
-inadmissible and a reborrow into a fresh local region cannot carry an affine result
-out. The amendment is [OWN-6]'s own reasoning applied one position further, and it
-is stated over the right quantity:
+**[PROV-7] A provider can be lent onward, generally.** A helper that receives a
+provider as `&uniq 'b P` must be able to hand it to the operation that allocates.
+Today it cannot: [OWN-6]'s child reborrow admits only a locally-introduced region
+whose block does not extend beyond the enclosing statement, so a reborrow into `'b`
+is inadmissible and a reborrow into a fresh local region cannot carry an affine
+result out. The amendment is [OWN-6]'s own reasoning applied one position further,
+and it is stated **generally, over every child reborrow and not only over a
+provider**:
 
 > A child reborrow may name a caller-supplied region `'b` that resolved(`h`)'s
 > region outlives-or-equals **when the receiving call's result type does not name
 > `'b`**. That child's loan ends at the end of its receiving statement, and the
 > parent resumes there.
 
-The condition is on the **loan** region and not on region-freedom. The second
-draft required a region-free result, which admits `heap_take` and refuses
-`pool_take`, `arena_take` and `seq_lease`, whose results name the store's `'s` and
-never the loan's `'b`; it left goal A with no `alloc_page` helper and no layered
-allocator. Under the corrected condition every provider-consuming row is lendable.
-One correction to the original justification matters for the next batch: nothing
-derived from the child outlives the statement in the sense [OWN-6] means, a loan,
-while the result's store region does travel out in its type, which is the point of
-the brand rather than a leak.
-
 *Judgment:* [OWN-6]'s admission, with one more admitted region source under the
 stated result-type condition. *Publishes:* the child loan's extent. *Amends:*
-[OWN-6] 611 and [OWN-4] 577, for this one form. *Verified today:* probe `r1_relend`
-is `[OWN-6] InvalidChildReborrow`, and `r1_relend_affine` shows the existing
+[OWN-6] 611 and [OWN-4] 577. *Verified today:* probes `r1_relend` and `m19` are
+`[OWN-6] InvalidChildReborrow`, and `r1_relend_affine` shows the existing
 local-region escape cannot carry an affine result out. *Note:* this also unblocks
-`docs/patterns.md` P17's threaded-factory shape. *Law:* L2.
+`docs/patterns.md` P17's threaded-factory shape. *Law:* L2. *History:* 6.8, F4
+finding 9; 6.6, F2-N3.
 
-### 3.3 `[RES]`: the covered set, the envelope, and the judgment
+#### 3.K.3 `[BLK]`: the branded run of slots
+
+**[BLK-0] The kernel declaration domain.** The container and store operations are
+one compiler-owned **generic** declaration domain, built as [SYS-1] and [SYS-2]
+build the system domain and admitted to every compilation unit on the same terms.
+Each operation is one complete signature record: named parameters in declared order
+[GRAM-11], its type, const and region parameters written as [GRAM-2] 193-194 orders
+them, one declared effect row, one declared result mode and type or one ordered
+result list, one declared requirement list, and one declared relation list.
+**The first declared parameter is the value the operation transforms and returns;
+an operation that transforms nothing names its provider first.** The inventory is
+Appendix A.2; the rule is that it exists and that every row satisfies the five
+sentences below.
+
+**Written arguments.** A row writes its complete type, const and region argument
+list in one `targs` list exactly when some parameter of that list is supplied by no
+operand; otherwise it writes none. A partial list is not a spelling option. This is
+[TYPE-5] 369's own criterion applied to a domain, and a written type argument may
+itself be branded.
+
+**The argument form is named.** A kernel-domain call writes its value arguments as
+a `fieldinit_list` in declared order, exactly as a user `fn` and a system operation
+do. [GRAM-11] 341 admits that form for exactly "a user `fn` or ... an admitted
+system operation", 343 forces positional operands for an [OP-1] table operation,
+and 345 resolves callee kind by "the same partition that already selects the
+callee", which [OP-1] 833 states. A kernel-domain operation is a fourth class in
+all four sentences, [OP-1] 833's included, and [TYPE-6] 396's `callee` IDENT
+admission gains it too.
+
+**Every row is complete over the measures it writes.** A row carrying `writes(P)`
+for a measured `P` publishes, for each measure of `P`, its exact new value where
+that measure is exact and a two-sided bound where it is monotone, including the
+measures it does not change and **on every exit including a refusal** (L15). Where
+two of the three follow from [MSR-2]'s identity the row states one and Appendix A.2
+says so. This is the discipline whose absence killed an arena's cursor on its
+refusal edge.
+
+**The readers are not in this domain.** `len`, `cap` and `room` are three [OP-1]
+table operations taking a bare non-consuming place operand and returning `own u64`,
+and they are **`pure`**: the operation reads no state the caller does not already
+hold, and [EFF-2] attributes the operand's own read exactly as it does for any
+other non-consuming table operand. Probe `r2_10` shows the consequence today. **A
+`let` binding one of them establishes an equality**: [ENT-3.S6] 2779's row, today
+`let m = len(P);` for a tracked `P` establishes `m = len(P)`, generalizes over
+[MSR-1]'s three measures, so `let spare = room(v);` establishes `spare = room(v)`
+with the same support [MSR-2] gives the term. Without that one row no `cap` or
+`room` value is ever a fact, every branch on capacity is a fresh unrelated atom,
+and the whole checked half of 3.L is unwritable — 3.L.6 records it as one of the
+six.
+
+*Judgment:* row resolution by name, receiver type and written arguments; the
+per-row requirement discharge under [MSR-4]; and the [GRAM-11] named-argument
+check. A diagnostic for an operation cites **[BLK-0]** and names the operation in
+its payload, exactly as an [OP-1] diagnostic cites [OP-1]; [DIAG-1] 1535 admits one
+numbered language rule and the inventory rows are table data, not rules.
+*Publishes:* every declared relation of every row. *Amends:* [SYS-1] 2130 (a fourth
+admitted declaration source), [SYS-3] 2303 (admitted to every unit), [TYPE-6]
+391-403 (the operation spellings enter the lexical IDENT domain, the nominals the
+TYPEID domain, and 396's `callee` IDENT admission gains the fourth class),
+[DIAG-1] 1687-1712 (collision rank 5, and a `container_declaration_ordinal` beside
+the system one), [ENT-3] 2724 (one added enumerated source S13, plus the arm route
+above) and [ENT-3.S6] 2779 (the equality row generalizes over the three measures),
+[OP-1] 766-845 (`len` gains `cap` and `room`, their domain extends to runs, views
+and providers, and `slice_of`, `buffer_new`, `buffer_vacant`, `box_new` and
+`arena_new` retire; `ReservedLowerNames` gains `cap` and `room`; 833's callee
+partition gains the fourth class), [TYPE-5] 369 (the written-argument criterion
+covers a fourth callee class), [GRAM-11] 341-345, and [FN-2] 1087 (its
+explicit-argument rule covers this domain). *Law:* L11, L15, L16. *History:* 6.8,
+F3 defects 6 and 7; 6.7, F3-1.
+
+**[BLK-1] Two runs, one shape, and what a slot may hold.** Exactly two container
+nominals, differing in two properties for two reasons:
+
+```text
+| type                | capacity            | storage              | linear        |
+|---------------------|---------------------|----------------------|---------------|
+| FixedVector<T, n>   | the type constant n | inline in its owner  | never by      |
+|                     |                     | or the stack frame   | itself        |
+| Vector<'s, T>       | a measure, fixed at | one run taken from   | when 's       |
+|                     | the take            | the store 's names   | reclaims per  |
+|                     |                     |                      | run           |
+```
+
+Each is a run of slots whose **initialized storage is exactly `[0, len)`** and whose
+`[len, cap)` is raw. `len`, `cap` and `room` are [MSR-1]'s terms with [MSR-2]'s facts
+and [BLK-0]'s readers. A run carries no other state: no per-slot tag, no occupancy
+bitmap, no head offset, no runtime discriminant (L12). A `Vector<'s, T>` of capacity
+one is a single stored value, so the language needs no box nominal and [TYPE-7]'s
+deref domain loses its three. `array<T, n>` is retained exactly as it is, as the
+`len = cap = n` case with no typestate and a copy-only element domain, so
+`tests/programs/fir_filter.wf` is untouched.
+
+No operation, no subscript, and no borrow yields a place outside a run's
+initialized region. A subscript on a run or a view carries the ordinary [OP-4]
+obligation `ilt(index, len(base))`, against `len` and never against `cap`. There is
+no uninitialized read to reject, because there is no spelling that reaches one.
+
+`T` may be copy, affine, or linear. The initialized region is what makes an affine
+element sound: an element enters and leaves only through an operation that moves the
+boundary or exchanges two initialized positions, so no slot is read before it is
+written or after it is taken. A run over a linear `T` is itself linear [PROV-6], and
+`dispose` walks it.
+
+*Judgment:* the ordinary nominal-resolution and construction judgments; a
+`construct` naming a container nominal is a hard error citing BLK-1; [OP-4] at
+every subscript, against `len`. *Publishes:* the two types, their measure rows and
+their typestate. *Amends:* [TYPE-2] 352, two added composite types, and its
+flat-element restriction, which the runs do not inherit; [OP-4] 909, whose
+indexable bases extend to the two runs, `Span` and `MutSpan`, and whose obligation
+is against `len`. *Verified today:* `array_new<box<u64>, 4>` is [OP-1]
+`InvalidOperation` (probe `p9`), so an affine element is new capability. *Law:*
+L12, L13. *History:* 6.8, the minimality ruling; 6.5, F1-10.
+
+**[BLK-2] Formation, one row per placement and one per store.** Five rows, and no
+sixth:
+
+```text
+seq_fixed<T, const n: u64>()                       -> own FixedVector<T, n>          pure
+seq_frame<T, const n: u64>['s]()                   -> own Vector<'s, T>              pure
+seq_arena<T>['s](arena: &uniq Arena<'s,bytes,align>, count: own u64)
+                                                   -> own Option<Vector<'s, T>>
+seq_arena_proved<T>['s](arena: ..., count: own u64) -> own Vector<'s, T>
+seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)
+                                                   -> own Option<Vector<'s, T>>
+```
+
+**Every failure is an `Option` and the kernel declares no failure nominal.** L3
+requires a failure to hand back every affine input it did not consume, and no
+kernel acquisition takes one: a count is copy and a provider is borrowed. So the
+three failure structs and the fourth draft's `NoRecord` all leave the kernel, and a
+library that wants to return an owner inside a refusal declares its own struct over
+its own type — `CONTAINERS.md` §3 writes one. The `Heap` has **no proved form**, because no
+honest domain predicate exists for a general store (L6); the arena has one, whose
+requirement [MSR-4] discharges and whose failure is a static rejection with no
+fallback, exactly as an unproved subscript is.
+
+*Judgment:* [BLK-0] row resolution, [MSR-4] discharge at the proved spelling, and
+[PROV-5]'s judgments at `seq_frame`. *Publishes:* each run's measures, and each
+store's post-state measures and refusal relation. *Amends:* [OP-1] 793-798
+(`buffer_new`, `buffer_vacant`, `box_new` and `arena_new` retire); [TYPE-2] 352.
+*Law:* L3, L4, L6, L8, L18. *History:* 6.8, F3 defect 4 and the minimality ruling.
+
+**[BLK-3] Three operations move the boundary, and nothing else does.** `V` is
+either run type.
+
+```text
+seq_place(vector: own V, value: own T)  -> own V
+    requires igt(room(vector), Z)
+seq_take(vector: own V)                 -> (rest: own V, value: own T)
+    requires igt(len(vector), Z)
+seq_exchange(vector: own V, first: own u64, second: own u64) -> own V
+    requires ilt(first, len(vector)), ilt(second, len(vector))
+```
+
+Element access is the ordinary v0.40 surface over the initialized prefix: `v[i]`
+reads, `set v[i] = e;` writes a copy element [SET-1], and `let old = replace v[i] =
+e;` exchanges an affine one [SET-2]. That surface is what a ring and a keyed table
+are built out of, and probe `x7` compiles its shape today.
+
+Each takes the run **by value** and returns it, carries `reads(vector),
+writes(vector)`, and publishes its complete measure row.
+
+There is **no removal from the middle, no removal from the front, no clear, no
+truncate, no growth, no filled construction and no vacant construction** in the
+kernel. Each is written in wf in 3.L, and 3.L.6 records that none of them needed a
+primitive the three rows above do not have.
+
+*Judgment:* [BLK-0] row resolution and [MSR-4] discharge of each requirement.
+*Publishes:* each row's declared relations. *Amends:* nothing beyond [BLK-0]'s.
+*Verified today:* probe `c8` shows a function writing one position of an
+`own buffer<u8>` parameter and returning it must exhibit `writes(vector)`, so these
+rows are not `pure`. *Law:* L4, L9, L12, L15, L18.
+
+**[BLK-4] Confinement, and the one position closure.** A type is **confined** when
+its complete type after substitution names a region. The confinement of a value is
+the **set** of regions its complete type names, and it may be moved, returned, or
+bound to a destination that **every** member outlives-or-equals [OWN-3]. That
+quantifier is the whole rule: a value of type
+`Result<Vector<'s, Page>, Shortfall<Vector<'q, u64>>>` names two regions, which
+[OWN-3] 575 makes incomparable, and fail-closed is the right answer.
+
+A confined value may occupy any position whose owning value's own complete type
+names the same region, so the position is itself confined and [STOR-4] governs it.
+That is what admits a store-branded value into a field, a run element and an enum
+payload, and it is safe because the store's identity travels in the type into the
+position and back out of it [PROV-1].
+
+A **loan-bearing** type [PROV-3] may occupy no position from which a value could
+outlive or hide its origin set: no field, no enum payload, no element of any run,
+no generic type argument, and no result outside [VIEW-6]'s ceiling. A **provider**
+type may occupy none of the same positions, for [PROV-2]'s different reason. A
+store-branded run may occupy any of them, because it is a type parameter and
+aliases nothing. Three clauses, three reasons, one closure.
+
+**A source nominal may declare region parameters**, written exactly as a function
+declares them, and is confined by them:
+
+```wf-design
+struct Chunk['s] {
+  page: Vector<'s, u8>;
+  used: u64;
+}
+```
+
+and is used as `Chunk<'s>`, an ordinary TYPEID with `targs`. Under [PROV-1]'s
+elision a nominal over the entry heap declares no region parameter at all and is
+written `Chunk`; the parametric form is what a program with two stores writes. Two
+instances of one such nominal have the same type only when their region arguments
+are identical: region parameters on a nominal are **invariant**, which is [OWN-12]
+645 and [TYPE-5] 374 applied where they already apply, and which is why this
+feature needs no variance design.
+
+*Judgment:* a loan-bearing or provider type in a prohibited position, or a confined
+type in a position whose owner does not name its region, is a hard error citing
+BLK-4 at the complete contained `type`, with the restructuring `keep the view as a
+direct local, parameter, or result` for the first, `lend the provider to the
+operation that needs it` for the second, and `give this nominal a region parameter
+and confine the field to it` for the third; and a confined value bound to a
+destination some member of its region set does not outlive is a hard error citing
+BLK-4 at the binding, rendering every member. *Publishes:* the confinement set.
+*Amends:* [STOR-4] 716, whose "may not be returned" becomes the ordinary outlives
+relation over the set; [STOR-5] 718-732, whose enumerated position list is replaced
+by the intensional split above and whose deferral of per-leaf provenance inside
+stored values is **withdrawn as unnecessary** rather than discharged, because a
+store brand is a type parameter and needs no per-leaf record; [FN-2] 1087, whose
+blanket rejection of a region-bearing generic argument narrows to loan-bearing and
+provider arguments and whose "instantiation arguments are always explicit" now
+covers region arguments on nominals; and [GRAM-2]'s `struct_decl` and `enum_decl`,
+which gain `region_params?` after `generics?`. *Depends:* [OWN-3] 575, whose
+fail-closed incomparability is the invariance argument. *Verified today:* probe
+`f7_regionresult` is [FN-2] `RegionBearingGenericArgument` and probes `r2_6` and
+`m05` are [GRAM-2] parse errors at `struct Wrap['p]`, so both halves are new.
+*Law:* L10, L13. *History:* 6.7, F1-6.
+
+*[CNT-1] through [CNT-7] and [SEQ-0] are deleted.* Five owners, a per-owner release
+table, a `&uniq`-container prohibition, a growth rule and an operation-domain rule
+are [BLK-0] through [BLK-4] plus 3.L. [CNT-7] is worth its own sentence, because it
+is the one whose deletion adds capability rather than removing text: it refused a
+`&uniq` parameter whose direct type is a container, and round 4 showed the refusal
+is nullified by a one-field wrapper struct while costing every writer their
+container helpers. The shape it was protecting is refused where it should be, by
+[CALL-5]'s conservative kill: a projected callee write through a `&uniq Vector`
+kills the caller's measures over that origin, which is exactly the sweep's sound
+repair and is why probe `x11`'s accepted program becomes a rejection. The ids are
+retired and not reused.
+
+#### 3.K.4 `[VIEW]`: views and loans
+
+**[VIEW-1] The two views.**
+
+```text
+| type            | reads | writes elements | changes length     | loan      | affine |
+|-----------------|-------|-----------------|--------------------|-----------|--------|
+| Span<'r, T>     | yes   | no              | no                 | shared    | yes    |
+| MutSpan<'r, T>  | yes   | yes             | no, fixed by type  | exclusive | yes    |
+```
+
+Each is an `own` affine value carrying a region `'r`, exactly as `slice<'r, T>`
+does today, and each is loan-bearing [PROV-3]. `Span<'r, T>` **is** today's
+`slice<'r, T>` renamed; the rename is the whole of the change to it. Its measures
+are [MSR-1]'s rows.
+
+There is no third view. The fourth draft's `AppendView` presented a run's spare
+window so that a caller's length could survive an appending callee; [CALL-4]'s exit
+datum publishes that for every borrowed value, so the type, its commit event, its
+carried formation datum and L14 are all gone (footnote 3). What a writer loses is
+the *guarantee* that a callee cannot shrink what it was handed: an appending helper
+now takes `&uniq 'a Vector<'s, T>` and could take elements out of it. That is a
+contract question, not a memory-safety one, and a `requires`/`ensures` pair states
+it; 5.0 records the trade as a decision the owner has not ruled on.
+
+*Judgment:* none by itself. *Publishes:* the two types and their loan strengths.
+*Amends:* [TYPE-2] 352 (one added view type, `slice` renamed `Span`), [OWN-1] 558
+(both are affine), and [CONST-2] 547-551, [OP-7] 935 and [OP-1]'s `slice_of` row,
+which name the retired spellings. *Law:* L10. *History:* 6.8, footnote 3.
+
+**[VIEW-2] Formation, and the loan the view value holds.** A view is formed from a
+borrow of the run:
+
+```text
+seq_span['r](vector: &'r v)          -> own Span<'r, T>
+seq_mut_span['r](vector: &uniq 'r v) -> own MutSpan<'r, T>
+```
+
+and **the view value, not the argument borrow, holds the loan**. For its whole
+life, a view value holds a loan of its own strength on the range it reaches of
+every place in its resolved origin set [PROV-3]. The loan begins at formation and
+ends when the view value is consumed or released. The argument borrow is a
+call-scoped temporary, which probes `f2b`, `r1_twouniq` and `w8` confirm by
+accepting two of them on one place in one region with an ordinary write between; it
+could not be the freeze.
+
+*Judgment:* [OWN-5] at the formation borrow, and the ordinary [BLK-0] relation
+establishment. *Publishes:* the loan, the two formation relations, and the origin
+record's carried datums [PROV-3]. *Amends:* nothing beyond [PROV-3]'s amendment of
+[OWN-5]. *Depends:* [OWN-5] 601, the conflict sentence that refuses a second
+exclusive view, and [OWN-6] 609, which makes the argument borrow call-scoped.
+*Law:* L10, L15. *History:* 6.8, F1 attack 20.
+
+*[VIEW-3] and [VIEW-5] are deleted.* [VIEW-3] was `absorb`, the append window's
+commit event, and [VIEW-5] the disposition of an abandoned window. Both retire with
+`AppendView`; their ids are not reused.
+
+**[VIEW-4] A view descriptor's length cannot be changed through a borrow.** No
+operation takes a `MutSpan` or a `&uniq` to one and produces a different length,
+and none changes its owner's length. The ground is two properties of a **borrowed**
+view descriptor, and both survive [LIV-2] and [LIV-3]:
+
+- [LIV-2] admits a reinitializing `set` only for a bare binding **declared in the
+  current function**, and a `&uniq 'b MutSpan<'r, T>` holder in a callee is a
+  borrow of a descriptor the caller declared, so no callee can reinitialize it.
+- [LIV-3] admits an in-place exchange at a loan-bearing place only when the
+  displaced value is consumed at that commit point; `deref(handle)` in a callee
+  holds a view the callee did not form and does not consume, so the premise fails
+  there and `replace deref(handle) = ...` is refused with it.
+
+Therefore `MutSpan<'r,T>` and `&uniq 'b MutSpan<'r,T>` are both length-fixed for
+[CALL-3].
+
+*Judgment:* none by itself; it is the premise of [CALL-3]. *Publishes:* the
+length-fixed class. *Amends:* nothing beyond [PROV-3]'s amendments of [SET-1] and
+[SET-2]. *Depends:* [LIV-2]'s bare-binding-declared-in-this-function premise and
+[LIV-3]'s consume premise, the two properties above. *Law:* L11. *History:* 6.8,
+F3 defect 1 and I19; 6.7, F3-2.
+
+**[VIEW-6] Views are never stored, and a view result declares its origin.** A view
+is never stored [BLK-4] and never returned except under this rule. [FN-1]'s
+slice-result ceiling applies unchanged to each view type: a function whose written
+result is `own Span<'r, T>` (respectively `MutSpan`) has the ceiling containing
+`immutable-const` and the formal-view origin of every parameter whose written mode
+and type are exactly that same view type with the same formal region and element
+type.
+
+**An ordered result list containing two results of the same view type and the same
+formal region is a hard error citing VIEW-6 at the `result_binding` of the second**,
+with the restructuring `give each result its own formal region`. Without it a
+three-output demux written with one region returns three views each aliasing all
+three inputs.
+
+One consequence is recorded because it is a real restriction: [FN-1]'s containment
+check forbids a helper from manufacturing a view of storage it reaches through a
+borrow, so `seq_span` and `seq_mut_span` are usable only in the function that
+directly owns the run, and **no helper library over views can exist in this
+version**. That is why 3.L's appending helpers take `&uniq 'a Vector<'s, T>` and
+not a view: the `&uniq` container parameter [CNT-7] used to forbid is what a helper
+can actually hold. Disposal is not confined this way, because [PROV-6]'s walk
+compares types and not places.
+
+*Judgment:* [FN-1]'s ceiling containment at every `return_stmt`, plus the
+same-region result rejection. *Publishes:* the result's origin set. *Amends:*
+[FN-1] 1017-1030, by generalizing "slice" to "view" and by adding the same-region
+rejection. *Law:* L10, L11. *History:* 6.5, F4-7.
+
+**[VIEW-7] System operations over views.** The seven range-bearing operations
+[SYS-8] take views instead of `buffer<u8>`, and their modes are fixed rather than
+left to a table cell:
+
+```text
+a destination the operation writes  ->  &uniq 'd MutSpan<'r, u8>
+a source the operation reads        ->  &'s Span<'r, u8>
+```
+
+so `read_at(file: &ReadFile, destination: &uniq MutSpan<u8>, file_offset: own u64,
+start: own u64, end: own u64) -> result: own ReadOutcome`, whose three regions
+relate nothing and are therefore all elided (3.K.0).
+Both are borrows of the **descriptor**, so the view survives the call and a
+destination can be filled by a loop of reads, which an `own` destination could not.
+Both are length-fixed [VIEW-4], so [CALL-3] gives the caller its measures back. The
+two obligations keep their form and their order with `len(deref(buffer))` reading
+`len(deref(destination))`.
+
+This is the change that lets a heap-free program do I/O, and it is a rule rather
+than a register row because it is goal A's container half. Its cost is that a
+destination must be **addressable** before the host writes into it, so it is built
+by 3.L.3's `filled` and the count the host produced is an ordinary `u64` beside the
+run rather than the run's own `len`; Q7 records the fix. Its second cost under the fourth draft — two writer-visible regions per I/O site,
+because the view's region and the call's borrow region are two regions and [OWN-10]
+requires each to be opened after its subject — is **gone**: both relate nothing, so
+both are elided under 3.K.0, and Q11 is answered rather than deferred.
+
+*Judgment:* [SYS-8]'s two range obligations, restated over `len` of the borrowed
+view. *Publishes:* the endpoint facts [ENT-3.S10] already enumerates, now over a
+view. *Amends:* [SYS-8] 2482-2521, [SYS-2] 2158-2301's declaration records and its
+normative counts, and the prose of [SYS-9], [SYS-11], [SYS-12] and [SYS-14], which
+name `buffer<u8>`. *Depends:* [EFF-1] 1380 as [PROV-3] amends it, which is what
+makes a view parameter's effect path name the viewed backing rather than the
+descriptor. *Law:* L11. *History:* 6.8, F1 attack 9; 6.7, F3-10.
+
+#### 3.K.5 `[LIV]`: liveness, reinitialization, and the in-place exchange
+
+**[LIV-1] Liveness is join-checked, and that is what makes release
+unconditional.** A binding's live-or-dead status is a property of a program point,
+not of a path: at every join of the conservative structural graph [FN-1], and at
+every loop head, every predecessor must agree on the status of every binding in
+scope. A disagreement is a hard error citing LIV-1 at the join, naming the two
+predecessors and the binding. On every edge leaving a scope, a `propagate` error
+edge and the function-return edge included, every **linear** binding of that scope
+must be dead [PROV-6], because no derived release exists to carry it.
+
+*Judgment:* a per-join and per-scope-exit structural check over the ownership state
+the checker already computes; no search. *Publishes:* the unconditional release set
+of every edge. *Amends:* [OWN-1] 558 and [OWN-11] 641. *Law:* L17. *History:* 6.5,
+F1-1, F1-2.
+
+**[LIV-2] Reinitializing `set`, and a new declaration event.** `set p = e;` is
+additionally admitted when `p` is a bare binding of affine type declared in the
+current function, a `let` binding or a parameter, `e` produces exactly `p`'s type,
+and **`p` is dead at the commit point**, whether `p` died before the statement or
+inside `e`.
+
+Its judgment: evaluate `e` under ordinary rules; every fact whose support contains
+`p`'s root dies at the consume that killed it; then the binding is reinitialized with
+`e`'s value, live and usable, with no observable program point between. It derives no
+drop and no release, because the target holds no value at the commit.
+
+**A reinitializing `set` is a declaration event for [ENT-2] term identity**, and
+[MSR-3]'s atom-identity sentence states what follows: the reinitialized binding is
+a *distinct term* from the consumed one, exactly as [ENT-2] 2677 already rules for
+"a fresh binding legally reusing an expired spelling", so a fact stated over the
+old value never reaches the new one, and a header invariant over the new term is
+re-established on the backedge from the operation's declared relation over its call
+datum.
+
+*Judgment:* the deadness premise plus the ordinary [TYPE-5] exact-type check.
+*Publishes:* the new binding's term identity and its measure images. *Amends:*
+[ENT-2] 2677's term-identity paragraph (one added declaration event), [OWN-1] 564's
+"reinitialization requires a new `let`", [STOR-1] 674 and [SET-1] 482-500, whose
+affine-target rejection, dead-root sentence and post-right-hand-side revalidation
+together carry the old premise. *Verified today:* probe `p10` is [STOR-1]
+`AffineSetTarget` for a live target and probe `w6` is [OWN-1] `UseAfterMove` for a
+dead one, the two halves this rule replaces. *Law:* L10, L16, L17. *History:* 6.7,
+F3-8.
+
+**[LIV-3] The in-place exchange, which is an admission on `set` and not a new
+statement.** `set p = f(q: move p, args);` is additionally admitted when `p` is a
+writable place of affine type, `f` is any call — a user `fn`, a kernel-domain row,
+or a system operation — whose first result has exactly `p`'s type, and `move p`
+occurs **exactly once** in `f`'s argument list. Its two-result form is
+
+```wf-design
+set p = seq_place(vector: move p, value: byte);
+set (p, taken) = seq_take(vector: move p);
+```
+
+where the first target is the exchanged place and every later target is a fresh
+IDENT bound to the result at that ordinal.
+
+**Its judgment is [SET-2]'s, not [SET-1]'s, and that is what makes it not sugar.**
+The previous value is read out of `resolved(p)` into the operation's named
+parameter, the operation runs, its first result is written back into
+`resolved(p)`, and each later result initializes its binder. There is no
+writer-observable program point between the read and the write (spec 515), so there
+is no partial move, no dead root and no uninitialized hole, and the root binding
+stays live (spec 516).
+
+**This is the one form the partition test could not write in wf**, and the reason
+is worth stating because it decides the whole convenience question. At a bare
+binding the writer could rebind: `let next = f(q: move p, ...); set p = move next;`
+is two statements and [LIV-2] admits the second. At every other place they cannot.
+`move p[i]` and `move p.f` are partial moves that kill the root [OWN-1] 564, and
+`move deref(h)` is a move through a borrow, which [OWN-5] 614 forbids outright with
+[SET-2]'s exchange as the sole exception. So the only route is a placeholder —
+`let old = replace p[i] = <something>;` — and a placeholder must be a value of the
+displaced type, which for a `Vector<'s, T>` is a run that owns storage and is
+itself linear, so every transformation costs an allocation and a disposal on a
+provably dead arm, and for a type with no cheap empty value there is no route at
+all. Probes `x2` and `x3` are the two rejections today, and `x2`'s own mechanical
+fix names the field-by-field fold that is exactly the ceremony this removes.
+
+An exchange is **not** a declaration event [MSR-3]: the root's term survives, the
+facts over it die by [MSR-2], and the call's declared relations re-establish them on
+the same term through **one added [ENT-3.S12] destination clause**, without which the
+row's relations have no destination at the one form that is the only spelling for a
+whole class of places:
+
+> The written-back place of an in-place exchange is the S12 destination for every
+  > published relation naming the call's first result, and each later target is the
+  > destination for every relation naming the result at its ordinal, each
+  > established after the statement's own [SET-2] read-out, write-in and kills, in
+  > [ENT-5] 2892-2899's existing order, with `M(c,q)` requiring every other
+  > referenced support to be live at establishment.
+
+*Judgment:* the single-occurrence check on `move p`, the result-count and type
+checks, then [SET-2]'s exchange judgment. *Publishes:* the call's declared
+relations, on the written-back place and on each later target. *Amends:* [SET-1]
+476-500 (one added admission), [SET-2] 508-524, which gains a compiler-derived
+exchange whose replacement value is derived from the read-out rather than written
+by the writer, and whose target may be linear or region-bearing because nothing is
+rebound; [GRAM-4]'s `set_stmt` production (a target list); [ENT-3.S12] 2827's
+destination list (one added clause); and [FORM-2], which renders the form on one
+line. *Verified today:* probes `x2` and `x3` are [STOR-1] `AffineSetTarget`, so this
+is new capability and not a compiler defect. *Law:* L10, L18. *History:* 6.8, F1
+attack 4, F4 finding 5 and blocking 2, and the minimality ruling.
+
+#### 3.K.6 `[CALL]`: what survives a call
+
+This is D1's section. Exactly three transports exist, and **each reads only the
+callee's declared parameter modes and types and its declared contract.** These are
+the owner's three call rules of 2026-09-03.
+
+**[CALL-1] Through a shared borrow, every fact survives.** For an argument whose
+parameter mode is `&'r`, of any type, run and view included, the call is not a kill
+event for any fact supported by the actual's resolved place. Ground: [OWN-5] admits
+no write through a shared holder, so [EFF-2] can project no `writes` occurrence
+onto that place, so [MSR-2]'s kill does not fire.
+*Judgment:* none; the absence of a kill. *Publishes:* the survival of every such
+fact. *Amends:* nothing. *Verified today* for `&'a buffer<u8>`: probe `p6` keeps
+`len(line) = 10` across the call and the subsequent `line[9_u64]` is accepted.
+*Law:* L11.
+
+**[CALL-2] Through a value passed and returned, only the contract's facts exist on
+the result.** An `own` argument is a consuming use, so every fact whose support
+contains that binding's root dies. The result is a fresh binding carrying exactly
+the callee's verified relations, and nothing else. Those relations may name the
+consumed parameter's measure, which denotes that call's **call datum** [MSR-3]:
+`len(result) = len(view) + 1` means what it reads as, and it is establishable at
+the caller precisely because a datum has empty support and the consume the same
+statement performs cannot kill it.
+*Judgment:* the ordinary [ENT-3.S12] establishment, subject to `M(c,q)` as [MSR-3]
+amends it. *Publishes:* the callee's declared relations on the result. *Amends:*
+nothing beyond [MSR-3]'s. *Verified today:* probe `p1`, `passthrough(out: move a)`
+returning the same buffer, then `b[9_u64]`, is **rejected** with residual
+`9_u64 < len(b)`; the transport already behaves correctly and what was missing is
+the vocabulary to publish across it. *Law:* L11.
+
+**[CALL-3] An element write through a length-fixed view never touches length
+facts.** For an argument whose parameter's declared type is `MutSpan<'r, T>` or
+`&uniq 'b MutSpan<'r, T>`, which [VIEW-4] fixes a length for, a projected callee
+`writes` occurrence kills every fact whose support overlaps the viewed **element
+storage** and kills no measure term over that origin. For every other parameter
+type the projected write kills measures as an ordinary descriptor-storage-overlapping
+event [MSR-2]. That "every other" now includes `&uniq 'b Vector<'s, T>`, which
+[CNT-7] used to forbid outright: a callee holding one can call `seq_place` and
+`seq_take` through it, so the caller's `len` must die, and probe `x11` is the
+program whose accept becomes a rejection.
+*Judgment:* the kill classification per parameter type. *Publishes:* the surviving
+measures. *Amends:* nothing beyond [MSR-2]'s. *Depends:* [VIEW-4], the
+length-fixedness this classification reads; [EFF-1] 1380 as [PROV-3] amends it,
+without which a view parameter's projected write reaches the descriptor and not the
+element storage this rule names. *Law:* L11. *History:* 6.8, F1 attack 9, F4
+finding 4.
+
+**[CALL-4] Contract vocabulary, the ordered result list, the exit datum, and where
+the relations land.** [FN-9]'s clause operands are terms [MSR-5], so `len(P)`,
+`cap(P)` and `room(P)` over an admitted formal place are operands with no
+per-family admission. `len(result)`, `cap(result)` and `room(result)` are operands
+when the written result type is measured, which today's result-datum restriction to
+fragment integers forbids.
+
+```wf-design
+fn collect['s, 'd, 'v](out: &uniq 'd Vector<'s, u8>, source: own Span<'v, u8>) -> written: own u64
+    reads(source), writes(out) contract {
+  requires ile(len(source), room(out));
+  ensures ieq(len(out), written);
+} { ... }
+```
+
+The clause is still **single-state**: no clause names two states of one term, there
+is no `old()`, and there is no frame rule. A writer who wants the entry value names
+it in a `requires`, and a writer who wants the exit value names it in an `ensures`;
+the two never appear in one clause. Two-state `ensures` is rejected by the owner and
+is not proposed here.
+
+The exit datum is one of the six things the partition test found the kernel needed
+(3.L.6). Without it a helper that changes a borrowed run can tell its caller
+nothing, so every capacity proof collapses into the function that owns the run,
+every helper boundary costs a re-read and a real branch, and `collect` — the one
+program every draft has carried — is unwritable in wf. It is sound because the
+`&uniq` is exclusive for the call and [ENT-5]'s order puts the callee's kills before
+the establishment; probe `x10` shows the *syntax* already compiles today, read as
+the entry image, so this is a semantic addition and not a grammar one.
+
+**Which state a parameter's measure denotes is fixed by the clause, not by the
+parameter.** In a `requires` it denotes that parameter's **entry datum**, so a
+consuming use inside the body cannot take it away. In an `ensures` it denotes that
+parameter's **exit datum** [MSR-3] when the parameter's mode is `&uniq`, and its
+entry datum otherwise. The clause is still **single-state**: no clause names two
+states of one term, there is no `old()`, and there is no frame rule.
+
+A function may declare an ordered result tuple, and **each result binding is a
+datum of every clause of that function**, so one clause may name more than one:
+
+```wf-design
+fn render['s](block: own Vector<'s, u8>, task: own Task) -> (rest: own Vector<'s, u8>, written: own u64) ... contract {
+  ensures ile(written, len(rest));
+}
+
+let (rest, task) = seq_take(vector: move pending);
+```
+
+**Those relations reach the caller through one added [ENT-3.S12] destination
+clause**, and without it a multi-result contract publishes nothing: 2827 fixes a
+closed destination list of four, and a destructuring `let` is none of them. The
+clause is the single-binder route quantified over ordinals:
+
+> Each binder of a destructuring `let` is the S12 destination for every published
+> relation naming the result at that ordinal, established after the call's ordinary
+> transfer, consumes, borrow commits and kills in [ENT-5] 2892-2899's existing
+> order, with `M(c,q)` requiring every other referenced support to be live at
+> establishment.
+
+The same clause serves [PROV-6]'s destructuring consume, whose binders are the
+nominal's fields rather than a call's results, and [LIV-3]'s later targets.
+
+*Judgment:* the ordinary [FN-8]/[FN-9] admission over the widened operand set and
+the widened result shape. *Publishes:* the clause relations, on every result
+ordinal and on every `&uniq` parameter's exit datum. *Amends:* [FN-9] 1295-1360
+(measured results, multi-datum clauses, the entry-datum and exit-datum operands),
+[ENT-3.S12] 2827's destination list (one added clause, serving three forms),
+[GRAM-2]'s `fn_decl` result shape, [GRAM-4]'s `let_stmt` and `return_stmt`,
+[FORM-2] 52-76's rendering, and [FN-1] 999-1013's result shape. *Verified today:*
+probe `x10` compiles a single-state `ensures` anchored on a `&uniq` parameter's
+`len` through a `define`, probe `p2` shows `len(result)` does not parse, and probes
+`p8`/`k09` show the multi-return signature does not parse. *Law:* L10, L11, L16.
+*History:* 6.8, F4 finding 3; 6.7, F3-3.
+
+**[CALL-5] No transport reads the actual's spelling.** The three transports above
+are selected by the callee's declared parameter mode and type and by its declared
+contract. No rule of this design consults the argument expression's shape, the
+callee's body, its name, or any per-parameter summary derived from its body. A
+parameter type for which no transport is selected kills conservatively.*Judgment:* the conservative default for every unselected parameter type.
+*Publishes:* the absence of a call-site-derived fact. *Amends:* [ENT-5] 2870's
+clause (b), whose projected-callee-write kill is now classified by [CALL-1..3] and
+by nothing else. *Law:* L11.
+
+#### 3.K.7 `[RES]`: the covered set, the envelope, and the judgment
 
 **[RES-1] `CoreResources`.** Bare *resource-closed* means resource-closed for
 exactly this set, and for no more:
@@ -1206,25 +1872,20 @@ exactly this set, and for no more:
 | class              | members                                                                        |
 |--------------------|--------------------------------------------------------------------------------|
 | execution memory   | the static image; every frame of every execution context, including every       |
-|                    | frame-placed provider extent [PROV-5]; every extent-placed provider store;      |
+|                    | frame-placed arena [PROV-5]; every extent-placed arena and every seq_frame run; |
 |                    | every worker-lane stack; allocator and runtime metadata; compiler-derived       |
-|                    | cleanup scratch; the adapter's persistent buffers                               |
+|                    | cleanup and release-walk scratch; the adapter's persistent buffers              |
 | execution capacity | par lanes; task records; submission, completion and wait records; queue slots;  |
 |                    | the runtime's fixed handle table; every other runtime-owned store               |
 ```
 
-Every member presents its state as one of [RES-5]'s domains; a runtime-owned store
-that does not is a qualification failure of that runtime [RUN-2], not a source
-condition. An extension is written and never implied:
-`resource_closed(core + file_handles)` is a different, stronger declaration, and no
-such extension is defined in this version.
 *Judgment:* none; it fixes the domains [RES-3] quantifies over. *Publishes:* the
 covered set. *Amends:* nothing. *Law:* L1, L5.
 
-**[RES-2] The envelope `E`, over the target's profile table.** `E = E(P, T)` is,
-for one program `P` and one selected target and ABI `T` [STOR-6], a finite table
-with one row for each lane count `W` the target's runtime supports. Each row is a
-finite list of shaped items:
+**[RES-2] The envelope `E`, over the target's profile table.** `E = E(P, T, B)` is,
+for one program `P`, one selected target and ABI `T` [STOR-6], **and one build
+`B`**, a finite table with one row for each lane count `W` the target's runtime
+supports. Each row is a finite list of shaped items:
 
 ```text
 region(name, bytes, alignment, contiguous)   one extent the environment must deliver whole
@@ -1233,27 +1894,20 @@ stack(context, bytes)                        one execution context's maximum cha
 lanes(count)                                 scheduler lanes, including the entry lane
 ```
 
-No item is a bare byte total, and no two items are summed into one. Items are not
-fungible: two `region` items are two extents. The table, not a row, is the
-program's promise, because [PAR-1] 1988 makes parallel permission never an
-obligation, so `W = 1` must always be legal.
+**`E` is a function of three things and not two**, because [STK-3] makes it an output
+of code generation: two builds of one accepted program at two optimization levels
+publish different rows, and a deployment sizes against the row it was given.
 
-**Which items carry a source-stage figure, and which do not, is stated rather than
-quantified over.** A `region` item's bytes and alignment, and a `slots` item's
-count, are computed by [RES-5]'s target-independent arithmetic and are read by
-acceptance; each additionally carries the target-stage exact figure that
-materialization checks. A `stack` item has **no source-stage figure at all**, and
-this draft says so instead of promising one: [STOR-6] 759 defines no numeric
-per-function frame ceiling, [STK-3] measures `frame(f)` after code generation, and
-[RES-5]'s frame-placement domain contributes no stage-one demand. Stage one's
-entire stack content is therefore premise 2 of [RES-3], acyclicity; the bytes
-arrive at target stage. The third draft wrote that every item carries two figures,
-which is false for the item the owner's list names first, and the false universal
-hid the one domain where the marker's promise is made after the promise is checked.
+**Which items carry a source-stage figure is stated rather than quantified over.** A
+`region` item's bytes and alignment, and a `slots` item's count, are [RES-5]'s
+target-independent arithmetic and are read by acceptance; each additionally carries
+the target-stage exact figure. A `stack` item has **no source-stage figure at all**
+([STOR-6] 759, [STK-3]), so stage one's entire stack content is premise 2 of [RES-3],
+acyclicity.
 *Judgment:* `E` is well-formed only if every item's arithmetic was performed in
 the unbounded mathematical domain and is representable on `T`, the same standard
 [STOR-6] already applies. *Publishes:* `E` itself, as a compilation artifact.
-*Amends:* nothing. *Law:* L1, L6.
+*Amends:* nothing. *Law:* L1, L6. *History:* 6.8, F2 NB15.
 
 **[RES-3] The judgment, in two stages.** For a program `P`,
 `source-resource-closed(P)` holds exactly when, on the rewritten call graph
@@ -1263,37 +1917,38 @@ the unbounded mathematical domain and is representable on `T`, the same standard
 1  no reachable store is a Heap                                    [PROV-4, RES-4]
 2  the call graph is acyclic                                       [STK-2]
 3  every covered store's demand is bounded, per domain, by the
-     symbolic composition of 3.3.1                                 [RES-5]
+     symbolic composition of 3.K.7.1                               [RES-5]
 ```
 
-**A bound is a closed expression in compile-time constants, type-level constants
-and runtime-profile symbols. A per-domain figure that names a runtime value is not
-a bound**, and premise 3 fails at the loop or call that introduced it, with that
-value named. That sentence is what makes stage two a substitution rather than a
-discovery.
+**A bound is a closed expression in compile-time constants, type-level constants and
+runtime-profile symbols. A per-domain figure that names a runtime value is not a
+bound**, and premise 3 fails at the loop or call that introduced it, with that value
+named. That sentence is what makes stage two a substitution rather than a discovery.
 
-The second draft carried a fourth premise, "no execution context reachable from
-source can be re-entered from outside the call graph". It is deleted, not weakened:
-v0.40 has no source form that declares a reentrant entry point, so the premise
-refused nothing. Reentrancy arrives with the execution-context design [1.4].
+**What premise 3 is for is stated.** It is a boundedness filter over the published
+envelope: it decides whether a finite `E` exists and what its figures are. It is
+*not* what stops an acquisition from over-drawing a store; that is the
+per-acquisition obligation — a checked spelling refuses with a value [RES-6], a
+proved spelling discharges under [MSR-4] — and it holds with or without the marker.
+Both halves are needed and neither substitutes for the other.
 
-For a selected target `T` and its runtime, `E-materializes(P, T)` holds when every
-symbolic figure of stage one has a concrete value on `T` (frame sizes measured
-after code generation [STK-3], strides and alignments [STOR-6], the runtime's own
+For a selected target `T` and its runtime, `E-materializes(P, T, B)` holds when
+every symbolic figure of stage one has a concrete value (frame sizes measured after
+code generation [STK-3], strides and alignments [STOR-6], the runtime's own
 profile rows [RUN-3]), every row of the resulting table is representable and is one
-the runtime's published profile can carry [RUN-2], and the selected ABI satisfies
-[STK-1]'s target-stage tail obligation. Failure here is a **target-qualification
-failure** under [STOR-6] and [QUAL-2]: it stops compilation, cites no language
-rule, and is not a source rejection.
+the runtime's published profile can carry [RUN-2]. Failure here is a
+**target-qualification failure** under [STOR-6] and [QUAL-2]: it stops compilation,
+cites no language rule, and is not a source rejection.
 *Judgment:* stage one, per domain, over the checked program; deterministic,
 terminating, and free of search, budget or timeout. *Publishes:* the property, and
 `E`. *Amends:* [STOR-6] 733-765, whose "the language defines no numeric
 per-function frame ceiling" sentence keeps its scope for the *language* and is
 joined, for a resource-closed build, by a computed per-context envelope, and whose
-target-stage obligations gain `E`-materialization. *Law:* L1, L8, L9.
+target-stage obligations gain `E`-materialization. *Law:* L1, L8, L9. *History:*
+6.8, F2 NB17.
 
-**[RES-4] The entry requirement, and the heap.** The entry may carry the marker
-`resource_closed` before its `command` program-kind marker:
+**[RES-4] The entry requirement, the heap, and the deferrals it moves.** The entry
+may carry the marker `resource_closed` before its `command` program-kind marker:
 
 ```wf-design
 resource_closed command fn main() -> status: own ExitStatus pure {
@@ -1302,8 +1957,11 @@ resource_closed command fn main() -> status: own ExitStatus pure {
 The marker changes no acceptance judgment: every program is judged by exactly the
 same rules. It changes two things. It makes the failure of [RES-3] stage one a
 hard error rather than a reported property. And it selects which [SCOPE-3]
-deferrals apply: for a marked program, stack exhaustion and covered-store
-exhaustion are inside the model, and for every other program they stay deferred.
+deferrals apply: for a marked program, **stack exhaustion and covered-store
+exhaustion are inside the model** — [STK-2] and [STK-3] make the maximum chain a
+computed item of `E` and under an admitted run [RUN-5] it is unreachable — and for
+every other program they stay deferred, as does the guard-page floor that reports
+them, whose own alternate stack is, for a marked build, an item of `E`.
 
 A program whose call graph reaches a `Heap<'s>` is not resource-closed, and a
 `main` selecting `command.heap` is by itself the rejection. A bounded general store
@@ -1313,126 +1971,96 @@ that the next contiguous aligned request has a home.
 is a hard error naming its own cause: the heap-reaching path, rendered from `main`
 to the allocation and located at the offending `input_label` or the deepest `call`;
 the call-graph cycle [STK-2]; or the unbounded store [RES-5]. *Publishes:* the
-property as a compilation fact. *Amends:* [FN-7] 1211, which fixes main's marker
-set, and [GRAM-2]'s `program_kind` production. *Law:* L1, L6.
+property as a compilation fact, and the scope of [SCOPE-3]'s deferrals. *Amends:*
+[FN-7] 1211, which fixes main's marker set; [GRAM-2]'s `program_kind` production;
+and [SCOPE-3] 27-31. *Law:* L1, L6.
 
 **[RES-5] Store domains and their algebras, in target-independent arithmetic.**
 Every covered store presents its state through [MSR-1]'s measures, and exactly
-four domains are defined. Nothing else is admitted, and a store outside this list
+five domains are defined. Nothing else is admitted, and a store outside this list
 contributes no envelope item and denies [RES-3].
 
 ```text
 | domain                     | state         | acquire            | release        | serviceable when |
 |----------------------------|---------------|--------------------|----------------|------------------|
-| uniform slots              | len, cap = N  | len + 1            | len - 1        | room >= 1        |
-|  (Pool; lane, task, queue, |               |                    | [PROV-6]       |                  |
-|   completion and handle    |               |                    |                |                  |
-|   records of the runtime)  |               |                    |                |                  |
-| bump extent                | len, cap      | len + K<T>         | nothing; the   | room >= K<T>     |
-|  (Arena<'s, BYTES, ALIGN>) |  in bytes,    |                    | store resets   |                  |
-|                            |  cap = BYTES  |                    | with 's        |                  |
+| uniform slots              | len, cap      | len + 1            | len - 1, on    | room >= 1        |
+|  (lane, task, queue,       |               |                    | the store's    |                  |
+|   completion and handle    |               |                    | own release    |                  |
+|   records of the runtime)  |               |                    | event [RES-9]  |                  |
+| bump extent                | len monotone, | len + advance<T>   | nothing; the   | room >= advance  |
+|  (Arena<'s, bytes, align>) |  in bytes,    |                    | store resets   |                  |
+|                            |  cap = bytes  |                    | with 's        |                  |
+| general heap (Heap<'s>)    | -             | -                  | per run, by    | undecidable      |
+|                            |               |                    | dispose        | from E [RES-4]   |
 | static and frame placement | fixed offsets | none at run time   | none           | decided at       |
 |                            |               |                    |                | compile time     |
-| general heap (Heap<'s>)    | -             | -                  | -              | undecidable      |
-|                            |               |                    |                | from E [RES-4]   |
+| cleanup scratch            | depth         | +1 per containment | -1 per level   | depth <= the     |
+|                            |               |  level entered     |  left          | type's height    |
 ```
 
-`K<T>` is the compile-time constant `align_ceiling(T) - 1 + size_ceiling(T)`,
-computed by [OP-9]'s existing ceiling arithmetic. It is **target-independent**, and
-it is the only arena advance quantity in this design: stage one is the ceiling and
-[RES-2]'s second figure carries the exact composition at target stage.
+The **cleanup scratch** domain is where round 4's rank-one resource finding lands. A
+release walk's depth is the disposed type's containment height, a compile-time
+constant [PROV-6], so a non-recursive type's walk needs no runtime structure at all
+(probes `a5`, `a6`). A type whose containment graph has a cycle has no height, its
+demand is not a closed expression, and premise 3 fails at the release with the type
+and the cycle named — probe `x6` shows such a type is accepted today and probe `a8`
+shows its drop emitting a `realloc`'d worklist with `wf_resource_abort`.
 
-Two data additions are needed and are stated here rather than assumed. [OP-9] 983's
-`(size_ceiling, align_ceiling)` table gains a pair for each nominal this design
-adds, on the same aggregate composition rule it already uses, and its sentence
-excluding region-bearing types from `buffer_fits`'s domain is **lifted**, because
-it exists for values that could not be stored and [CNT-4] now stores them:
+`advance<T>` is the arena's per-take quantity and is **exact when the store is at
+least as aligned as `T`**, which its own type says: for `align >= align_ceiling(T)`
+it is `round_up(len, align_ceiling(T)) - len + size_ceiling(T)`, a closed
+expression in exactly the constants [RES-3] admits, and `arena_take` requires
+`align >= align_ceiling(T)` as a compile-time comparison of two constants.
+Otherwise it falls back to the ceiling `align_ceiling(T) - 1 + size_ceiling(T)`.
+The ceiling alone costs a proved arena `(align - 1)/(size + align - 1)` of its
+extent per take — half of it for a 16-aligned 16-byte record — and putting the
+alignment in the type is what makes the exact form available.
 
-```text
-| nominal                              | (size_ceiling, align_ceiling)                    |
-|--------------------------------------|--------------------------------------------------|
-| Heap<'s>, Arena<..>, Pool<..>        | (32, 16)   proof-only representation, one word   |
-| HeapBox<'s,T>, PoolSlot<'s,T>        | (16, 16)   as box<T> today                       |
-| ArenaBox<'s,T>                       | (16, 16)                                         |
-| HeapVector<'s,T>, ArenaVector<'s,T>  | (32, 16)   as buffer<T> today, plus one length   |
-| PoolVector<'s,T,N>                   | the pair of FixedVector<T,N>, plus (8,8)         |
-| FixedVector<T,N>, FixedRing<T,N>     | T's pair repeated N times, plus (8,8) per word   |
-| Span, MutSpan, AppendView            | (32, 16)                                         |
-| OutOfMemory<T>, PoolExhausted<T>,    | T's own pair                                     |
-| NeedCapacity<T>                      |                                                  |
-```
-
-Without those rows `K<T>` is undefined for every content type this design admits,
-[RES-5]'s bump algebra has no acquire term, and [STOR-6]'s "actual does not exceed
-the ceiling" check has nothing to check against.
-
-The runtime's own tables are uniform-slot stores of this list, with their `cap`
-published by the profile row [RUN-3] and their `len` composed from the program by
-the algebra of 3.3.1. A profile symbol is a standing fact with empty support, so a
-store whose `cap` is one satisfies 3.3.1's loop rule exactly as a type-level
-constant does.
-*Judgment:* the composition of 3.3.1 per domain. *Publishes:* per program point,
-per domain, the store's `len` bound. *Amends:* [OP-9] 968-998, whose `buffer_fits`
-stays a representability predicate, whose ceiling table gains the rows above, whose
-region-bearing exclusion is lifted, and which additionally fixes `K<T>`. *Law:* L6,
-L16.
+*Judgment:* the composition of 3.K.7.1 per domain. *Publishes:* per program point,
+per domain, the store's `len` bound. *Amends:* [OP-9] 968-996, whose `buffer_fits`
+stays a representability predicate, whose ceiling table gains Appendix A.1's derived
+rows, whose region-bearing exclusion is lifted, and which additionally fixes
+`advance<T>`. *Law:* L3, L6, L16. *History:* 6.8, F2 NB1, NB11, NB13.
 
 **[RES-6] Typed failure, and the two spellings.** Every operation that can fail to
 obtain a covered resource returns a typed value that names the failure and hands
-back every affine input it did not consume. The failure family is three
-compiler-owned generic **structs**, each with exactly one field:
+back every affine input it did not consume. **The kernel declares no failure
+nominal**, because no kernel acquisition takes an affine input: a count is copy and
+a provider is borrowed, so `Option<Vector<'s, T>>` carries everything a refusal has
+to carry. A library operation that consumes an owner and may refuse declares its
+own one-field struct over its own type; `CONTAINERS.md` §3 writes one and 3.L.2 explains why the
+kernel does not.
 
-```text
-struct OutOfMemory<T>   { rejected: T; }
-struct PoolExhausted<T> { rejected: T; }
-struct NeedCapacity<T>  { rejected: T; }
-```
+Each covered-store acquisition with a measure comes in exactly two spellings, on the
+model of `+` and `+checked`: a proved form admitted only when [MSR-4] discharges its
+goal, and a checked form that is total. **The `Heap` has no proved form** (L6). A
+store with measures publishes more: a refused `seq_arena` establishes
+`ilt(room(arena), advance<T>)`, which is L8's second half.
 
-`T` is `unit` where nothing is handed back. They are structs and not enums because
-L3 requires the failure to *carry* the unconsumed input rather than to choose among
-variants, and because `let recovered = move refused.rejected;` is then one
-statement instead of a nested `match` on every refusal edge. They are the design's
-only compiler-owned nominals with a writer-visible field; [SEQ-0] registers their
-field table so [DIAG-1] 1768's deferred-use carrier has one to check.
-
-Each covered-store acquisition comes in exactly two spellings, on the model of `+`
-and `+checked`:
-
-```text
-pool_take(pool: p, value: v)          requires igt(room(p), Z)        -> own PoolSlot<'s, T>
-pool_take_checked(pool: p, value: v)  total                           -> own Result<PoolSlot<'s,T>, PoolExhausted<T>>
-arena_take(arena: a, value: v)        requires ige(room(a), K<T>)     -> own ArenaBox<'s, T>
-arena_take_checked(arena: a, value: v) total                          -> own Result<ArenaBox<'s,T>, NeedCapacity<T>>
-```
-
-The proved form is admitted only when [MSR-4]'s disposition discharges its goal; an
-unproved goal is a static rejection with no fallback, exactly as an unproved
-subscript is. **The `Heap` has no proved form**: no honest domain predicate exists
-for a general store (L6), so every heap acquisition is total and returns `Result`
-unconditionally, and its `Err` edge publishes only the returned owner. A store with
-measures publishes more: a refused `pool_take_checked` establishes
-`ieq(room(pool), Z)` and a refused `arena_take_checked` establishes
-`ilt(room(arena), K<T>)`, which is L8's second half and is what makes a checked
-acquisition change a loop's summary.
-
-The runtime's handle table is a covered store, so `reserve_file` joins this rule:
-its outcome becomes `own Result<FilePermit, NoRecord<unit>>` and its `Err` edge
-establishes `ieq(room(factory), Z)`. Round 3's finding is that a covered store
-whose exhaustion is indistinguishable from a host refusal has no refusal relation,
-so no marked program that opens anything can establish premise 3.
+The runtime's handle table is a covered store, and its refusal joins the **existing**
+`IoError` channel: `reserve_file` keeps `own Result<FilePermit, IoError>` and its
+`Err` edge establishes `ieq(room(factory), Z)` when the class is
+`ResourceExhausted`. [SYS-7]'s "the class is the sole portable semantic
+discriminator" is the reason, and the cost of a second non-unifiable error type is
+measured — five broken `propagate` chains in `wfgrep.wf` — for a distinction the
+class set already carries. This rule needs the *relation*, not a nominal.
 
 No covered-resource failure is a trap, an abort, a process exit, a retry, or a
-promotion to a larger store, in the writer's code or in the runtime.
-*Judgment:* the ordinary [ERR-3]/[OWN-13] handling of a `Result`, plus [MSR-4]
-discharge at the proved spelling. *Publishes:* the returned owner's identity on the
-`Err` edge, and the store's own refusal relation where the store has measures.
-*Amends:* [TYPE-2] 352 (three failure structs and `NoRecord`); [SYS-2] 2255 and
-2451, `reserve_file`'s signature and outcome row; [SYS-7] 2467's closed class set,
-which gains no `IoError` class because the exhaustion outcome is a separate type;
-the batch 0079 exhaustion floor, whose `wf_resource_abort` site for allocation
-refusal loses its last reachable caller once allocation returns a value; and
-[SCOPE-3] 29, whose "heap exhaustion ... may stop execution at the host boundary
-without a Whitefoot value" ceases to be true. *Law:* L3, L6, L8, L16.
+promotion to a larger store, in the writer's code or in the runtime. The batch-0079
+floor's `wf_resource_abort` site loses its **allocation-refusal** caller once
+allocation returns a value and **keeps two others** — the release walk's exhaustion
+arm and its doubling-overflow arm — until [PROV-6]'s bounded walk replaces them. The
+fourth draft claimed it lost its last caller, which probe `a8` falsifies.
+
+*Judgment:* the ordinary [ERR-3]/[OWN-13] handling of a `Result` or an `Option`,
+plus [MSR-4] discharge at the proved spelling. *Publishes:* the returned owner's
+identity on the refusal edge, and the store's own refusal relation where the store
+has measures. *Amends:* [SYS-2] 2255 and 2451, `reserve_file`'s outcome row, which
+gains a recoverable failure outcome; [SYS-7] 2467-2481's closed class set, which is
+**unchanged** and is the reason no nominal is added; the batch 0079 exhaustion floor
+as stated above; and [SCOPE-3] 29, whose "heap exhaustion ... may stop execution at
+the host boundary without a Whitefoot value" ceases to be true. *Law:* L3, L6, L8,
+L16. *History:* 6.8, F3 defect 4, F4 finding 7, F2 NB1.
 
 **[RES-7] What bare resource-closedness does not cover, and the one exclusion
 test.** Disk space, the successful acquisition of a file, socket or other host
@@ -1442,60 +2070,114 @@ and OS quota revocation are outside [RES-1] and outside every judgment in this
 file. They remain typed system outcomes where the operation defines one, and
 environment conditions where it does not.
 
-Which **operations** a marked program may not call is decided by a property and
-never by a written list:
+Which **operations** a marked program may not call is decided by a property, never
+by a written list, and **the property is a source-stage record**:
 
-> A system operation is unavailable in a resource-closed program exactly when its
-> [QUAL-1] semantic-ID record names a store that is not an item of `E`.
+> The [SYS-2] declaration record gains one target-independent column, *acquires
+> from*, whose value is a covered store or `none`, written once per operation
+> beside its effect row. A system operation is unavailable in a resource-closed
+> program exactly when that column names a store that is not an item of `E`.
 
-Applied to v0.40, **that set is presently empty**, and the third draft's list of
-four excluded operations was written from a premise the specification denies.
-[SYS-2] 2264 says "No system operation allocates." [SYS-9] 2525 says `arg_get`
-returns "one inline opaque `HostString` lease with no allocation and no byte copy".
-[SYS-9] 2543 says neither outcome of `relative_path` "allocates or copies a byte",
-and [QUAL-2] establishes the argument backing before entry, which is where
-[RUN-4] puts every other item of `E`. So `arg_get`, `relative_path`,
-`host_copy_bytes` and `host_copy_utf8` are all available, and the exclusions the
-third draft wrote had a second cost it did not see: `arg_get` is the only producer
-of a `HostString` and `relative_path` the only producer of a `RelativePath`
-([SYS-14] 2626), so excluding them silently deleted the copies and `open_read` from
-every marked program, and no marked program could read its command line.
+Applied to v0.40 **that set is presently empty** and the column reads `none` for all
+sixteen operations: [SYS-2] 2264 says no system operation allocates, [SYS-9] 2525 and
+2543 say `arg_get` and `relative_path` allocate and copy nothing, and the current
+backend agrees. Excluding them would have silently deleted every `HostString`, every
+`RelativePath` and `open_read` from every marked program.
 
-What is genuinely covered, and what the third draft left with no vocabulary, is the
-runtime's own handle table. [MSR-1] gives it a measure over the `FileFactory` the
-entry holds, [RES-5] gives it the uniform-slot domain, [RUN-3] publishes its `cap`
-as a profile symbol, and [RES-6] gives `reserve_file` a typed exhaustion outcome
-with a refusal relation. With those four, a marked program that opens files
-composes its handle demand exactly as it composes pool demand, and 3.3.1's loop
-rule bounds it.
-*Judgment:* a call to an operation the test excludes, from a marked program's call
+The column is why this is a **source** judgment. Reading [QUAL-1]'s semantic-ID
+record instead makes acceptance a function of the linked implementation, which L1 and
+[SCOPE-2] forbid; a qualified implementation needing an undeclared store fails
+[QUAL-2] **qualification**, citing no language rule, which is where every other
+implementation property lives.
+*Judgment:* a call to an operation the column excludes, from a marked program's call
 graph, is a hard error citing RES-7 at the `call`. *Publishes:* the boundary.
-*Amends:* [ERR-4] 1478, whose "unavailable external resources remain outside the
-source outcome model" gains the two families [RES-6] and [STK-5] move inside.
-*Depends:* [SYS-2] 2264 and [QUAL-2] 2363, which are why the excluded set is empty
-in this version and would not be under a runtime that allocated. *Law:* L1.
+*Amends:* [SYS-2] 2158-2301's declaration records, which gain the column; [QUAL-2]
+2363, whose qualification obligations gain an undeclared-store failure; [ERR-4]
+1478, whose "unavailable external resources remain outside the source outcome
+model" gains the two families [RES-6] and [RES-4] move inside. *Depends:* [SYS-2]
+2264, which is why every column value is `none` in this version. *Law:* L1.
+*History:* 6.8, F2 NB7.
 
-**[RES-8] The per-function summary is part of the callable boundary, in two
-pieces.** Each function's boundary [FN-1] gains two derived components, and they
-are separate because they belong to different stages:
+**[RES-8] The per-function summary is part of the callable boundary, in three
+pieces.** Each function's boundary [FN-1] gains three derived components:
 
 - a **source-stage per-domain map** over that function's formal provider and
-  measure terms, substitutable at a call site; and
+  measure terms, substitutable at a call site;
+- a **source-stage per-domain saturation flag**: whether every acquisition the
+  function performs on that domain, transitively, is one that cannot succeed when
+  the store is full; and
 - a **target-stage own-storage figure** covering every store it reserves [PROV-5]
   and its own frame.
 
-The third draft published one component that was half a source-stage map over
-formals and half a target-stage byte count over storage the signature does not
-mention. Splitting them is also what keeps [PROV-4]'s framing honest: a
-self-reserved store contributes to the second component, which is where the frame
-item already lives, so 3.3.1's call rule never meets a callee demand with no actual
-to substitute. The map composes across the one closed compilation unit [PROG-1]
-and this version claims no more than that; the third draft claimed composition
-across units, which [PROG-1] 1486 does not have.
-*Judgment:* none; a boundary statement. *Publishes:* both components. *Amends:*
-[FN-1] 999-1006's boundary list. *Law:* L1, L5.
+The flag is what makes 3.K.7.1's second loop discharge compose across a call. It is
+derived from the callee's declared rows — a checked spelling has it, a proved
+spelling has it when its goal comes from a header invariant — and never from its
+body, so [CALL-5] is respected. Without it a caller's loop can never evaluate the
+full-store discharge, and the retaining shape 4.1 is written around is refused the
+moment its acquisition is one function down.
 
-#### 3.3.1 How `E` is composed
+The three are separate because they belong to different stages, and splitting them
+keeps [PROV-4]'s framing honest: a self-reserved store contributes to the third, so
+3.K.7.1's call rule never meets a callee demand with no actual to substitute. The map
+composes across the one closed compilation unit [PROG-1] and no further.
+*Judgment:* none; a boundary statement. *Publishes:* all three components.
+*Amends:* [FN-1] 999-1006's boundary list. *Depends:* [PROG-1] 1486, the one closed
+unit the composition claim is scoped to. *Law:* L1, L5. *History:* 6.8, F2 NB10.
+
+**[RES-9] The runtime's own stores, and the handle table's five parts.** A covered
+store needs five things written in one place: a **capacity**, an **acquire event**,
+a **release event**, a **refusal relation**, and a **multiplicity**. The program's
+own stores have all five from [PROV-5], [BLK-2] and [MSR-2]. The runtime's have
+them from the profile row and the operations that touch them, and the one a marked
+program can actually reach — the handle table — needs three amendments that no
+earlier draft made, because [SYS-2] and [SYS-10] together deny it.
+
+[SYS-10] 2548-2552 **is amended.** Its sentence "Reserving it promises no native
+descriptor, **handle-table entry**, kernel memory, or host quota" is replaced by:
+*reserving a `FilePermit` consumes one record of a runtime store whose capacity the
+target's profile publishes; the record returns when the permit, or the `ReadFile`,
+`DirectoryRead` or `DirectorySource` it became, is released; host exhaustion at the
+open is a different condition and remains the ordinary `ResourceExhausted` member
+of the open operation's typed `IoError` result, outside `E`.* And its "This first
+slice never returns or recycles the permit" is replaced by the release event below,
+because a store whose records never come back is a consumable budget and not
+reusable capacity, and 3.K.7.1's row would then be wrong about which question to
+ask.
+
+[SYS-2] 2295's closed proposition set is **amended too.** It says today that the only
+system-result propositions available to source invariants are [SYS-9]'s enumerated
+relations and the facts of selecting one typed outcome, and that no unlisted
+component establishes any relation. The measure relations of a covered system store
+join that enumeration as a named source; without it `cap(files)` dies at the first
+`reserve_file` and no marked program can open a file in a loop.
+
+**The release event is the third amendment, and it goes where every other release
+in this design is made visible: in the release action's own effect row.** [STOR-3]
+704-707 already gives a system resource type "one ordinary state-effect row" for its
+release action and already substitutes a formal path for its table-local `owner`
+subject. What it lacks is a second subject. A type whose backing is a covered store
+names that store in its release row, so `ReadFile`'s release exhibits `writes(owner)`
+**and** the runtime handle-table path. The path needs a spelling reachable from a
+function that holds no `FileFactory`, and the honest one is the device [RES-5]
+already uses for a capacity: the runtime's stores are named by the profile, not by a
+formal, and a release row may name a runtime store directly.
+
+Two things then fall out with no further rule: [MSR-2]'s kill fires on
+`len(factory)` at every close, and 3.K.7.1's `release one` transfer has a program
+event, so a marked program that opens a file in a loop composes a zero backedge
+delta. Reclassifying `ReadFile` as linear was considered and refused: it would put a
+`dispose` on every close site in the corpus and retire the release-completeness
+[SYS-5] grants.
+*Judgment:* none by itself; it supplies the fact sources [RES-5] and 3.K.7.1 read,
+and its failure is a runtime's [QUAL-2] qualification failure. *Publishes:* each
+runtime store's capacity, acquire event, release event, refusal relation and
+multiplicity. *Amends:* [SYS-10] 2548-2552 (the reservation's promise and the
+permit's recycling), [SYS-2] 2295 (the closed proposition set), [STOR-3] 704-707
+(the release contract's second subject), and [SYS-5]'s release-completeness, which
+is **kept**. *Depends:* [QUAL-2] 2363, which is where a runtime that cannot publish
+a capacity fails. *Law:* L1, L3, L5. *History:* 6.8, F2 NB3, NB4, F1 attack 5.
+
+##### 3.K.7.1 How `E` is composed
 
 Every covered resource is one of three kinds, and conflating them is the single
 most common way to get a wrong answer (L9).
@@ -1503,8 +2185,8 @@ most common way to get a wrong answer (L9).
 ```text
 | kind                 | question                          | examples                              | bound         |
 |----------------------|-----------------------------------|---------------------------------------|---------------|
-| reusable capacity    | how many are held at once?        | pool slots, task and completion       | peak len      |
-|                      |                                   | records, lanes, queue slots, handles  |               |
+| reusable capacity    | how many are held at once?        | task and completion records, lanes,   | peak len      |
+|                      |                                   | queue slots, handle records           |               |
 | consumable budget    | how much is spent and not         | arena cursor bytes, a fixed           | net consumed  |
 |                      | returned in this epoch?           | append-only log's records             |               |
 | external effect flow | how many times did it happen?     | opens, writes, submissions            | not bounded,  |
@@ -1514,24 +2196,22 @@ most common way to get a wrong answer (L9).
 A statement's summary is **one map from exit label to `(peak, delta)`**. The exit
 labels of a statement are its fallthrough, each variant of a result it produces,
 each `break` label it may take, and `propagate`. A statement with no fallthrough
-label, which after [STK-4] includes a `loop_stmt` no `break` resolves to, simply
-carries no fallthrough entry, and the sequence rule below is written so that this
-is a defined case and not a hole.
+label, which after [STK-4] includes a `loop_stmt` no `break` resolves to, carries no
+fallthrough entry, and the sequence rule is written so that this is a defined case.
 
 Per resource kind `r`, the primitive transfers are fixed:
 
 ```text
 acquire one       (peak 1, delta +1)     on the success exit; (0, 0) on a refusal exit
-release one       (peak 0, delta -1)
-move an owner     (peak 0, delta  0)     moving into a container acquires nothing
+release one       (peak 0, delta -1)     at a dispose, or at a store's own release event
+derived release   (peak 0, delta -1)     contributed by a scope-exit edge, per released value
+move an owner     (peak 0, delta  0)     moving into a run acquires nothing
 borrow an owner   (peak 0, delta  0)
 ```
 
 A delta may be an integer or an interval `[min, max]`. **An interval enters the
 peak equation as its `max` and the delta equation as an interval, and every test
-below reads its `max`**; the third draft stated that only in the loop rule, where
-the intent shows, and left the sequence rule, where the interval is consumed,
-without it. The compositions are:
+below reads its `max`.** The compositions are:
 
 ```text
 sequence   when A has a fallthrough exit, for each exit label L of B:
@@ -1545,109 +2225,89 @@ branch     the union of the arms' maps, keyed by exit label; two arms reaching o
            differ, the interval [min, max] of delta
 
 call       substitute the callee's source-stage map [RES-8] at the call site, with its
-           formal measure and provider terms replaced by the actual ones
+           formal measure and provider terms replaced by the actual ones, and read its
+           per-domain saturation flag for the loop rule below
 
-loop       for the backedge label, let d be the backedge delta:
-             max(d) <= 0  -> peak is one iteration's peak; no iteration bound is needed
+loop       let d be the backedge delta and p one iteration's peak.
+             max(d) <= 0  -> peak(loop) = p; delta(loop) = d; no iteration bound is needed
              max(d) >  0  -> the loop is bounded on a domain exactly when the composed
-               peak is a closed expression [RES-3], which it becomes exactly through: a
-               trip count that is a compile-time constant; or a store whose cap is a
-               standing fact (a type-level constant or a profile symbol) and whose every
-               acquisition of that domain on the loop's paths is one that cannot succeed
-               when the store is full, which is the checked spelling anywhere on any path
-               or a proved spelling whose goal is discharged from a header invariant; or a
-               writer [INV-1] invariant over the measure terms. Otherwise there is no
-               finite E and premise 3 fails here.
-           each exit label of the loop carries the map of the edge that reaches it
+               peak is a closed expression [RES-3], which it becomes exactly through one
+               of three discharges, and the loop's own map is stated per discharge:
+                 (i)  a compile-time constant trip count T:
+                        peak(loop) = p + (T - 1) * max(d);  delta(loop) = T * d
+                 (ii) a store whose cap is a standing fact [MSR-2] and whose every
+                        acquisition of that domain on the loop's paths, transitively
+                        [RES-8], cannot succeed when the store is full:
+                        peak(loop) = cap(store);  delta(loop) = [0, cap(store)]
+                 (iii) a writer [INV-1] invariant over the measure terms:
+                        peak(loop) = the invariant's own target;  delta(loop) likewise
+               Otherwise there is no finite E and premise 3 fails here.
+           each exit label of the loop carries the loop's own map, not the map of the
+           edge that reaches it
 
 par        peak = (M - K) * d + K * p   for M logical iterations, per-iteration peak p
                                         and retained d, and K the profile's window
 ```
 
-The loop rule's second discharge is stated over the **acquisition** and not over
-the refusal edge's position in the graph. The third draft required the refusal exit
-to be "a real exit with delta 0", which refuses the design's own idiom: 4.1's `Err`
-arm rejoins the backedge rather than leaving the loop, and a retaining variant of
-it is bounded by `cap` whether the refusal leaves the loop or not, because the
-checked spelling cannot succeed on a full store. What the condition needs to say is
-that no path can overdraw, which is a property of the acquisition.
-
-Which shapes need a writer annotation and which do not is worked through in
-`RESOURCES.md`. The rule here is only that an annotation, where one is needed, is
-an ordinary [INV-1] invariant over the measure terms, which are affine atoms by
-[MSR-5]. The checker never searches for one: it does not enumerate paths, guess
-loop invariants, choose allocator placements, or divide a store between claimants.
-
-#### 3.3.2 Which stage decides what
+##### 3.K.7.2 Which stage decides what
 
 ```text
  1  tail-SCC rewrite, source premise [STK-1]        source stage   compiler
  2  call-graph acyclicity [STK-2]                   source stage   compiler
  3  provider reachability, heap-freedom [PROV-4]    source stage   compiler
- 4  per-function source-stage demand map [RES-8]    source stage   compiler
- 5  loop and branch composition (3.3.1)             source stage   compiler
+ 4  per-function source-stage demand map and
+      saturation flag [RES-8]                       source stage   compiler
+ 5  loop and branch composition (3.K.7.1)           source stage   compiler
  6  concrete sizes, strides, static image           target stage   compiler
- 7  the ABI tail obligation [STK-1]                 target stage   compiler
- 8  per-context frame envelope [STK-3]              target stage   compiler, post-codegen
- 9  runtime profile row for each supported W        target stage   runtime data
-10  par composition against the profile             target stage   compiler
-11  assembling E and emitting it as an artifact     target stage   compiler
-12  selecting W for this run                        PreStart       launcher
-13  committing every region and stack item          PreStart       launcher
-14  creating lanes and reaching the ready barrier   PreStart       runtime
-15  initializing every adapter record and queue     PreStart       runtime
-16  crossing SourceStart and invoking main          PreStart -> Running  runtime
+ 7  per-context frame envelope [STK-3]              target stage   compiler, post-codegen
+ 8  runtime profile row for each supported W        target stage   runtime data
+ 9  par composition against the profile             target stage   compiler
+10  assembling E and emitting it as an artifact     target stage   compiler
+11  selecting W for this run                        PreStart       launcher
+12  committing every region and stack item          PreStart       launcher
+13  creating lanes and reaching the ready barrier   PreStart       runtime
+14  initializing every adapter record and queue     PreStart       runtime
+15  crossing SourceStart and invoking main          PreStart -> Running  runtime
 ```
 
 Steps 1 to 5 decide whether the program is source-resource-closed, and are the
-only steps a source rejection may cite. Steps 6 to 11 decide whether this build
-qualifies. Steps 12 to 16 decide whether this run is admitted.
+only steps a source rejection may cite. Steps 6 to 10 decide whether this build
+qualifies. Steps 11 to 15 decide whether this run is admitted.
 
-### 3.4 `[STK]`: the stack
+#### 3.K.8 `[STK]`: the stack
 
-**[STK-1] A tail edge is one whose caller frame is dead, and the premise is split
-across the two stages.** For each strongly connected component of the call graph in
-which every intra-component call edge is a tail edge, the compiler rewrites the
-component into one dispatcher loop before frames are measured.
+**[STK-1] A tail edge is one whose caller frame is dead, and the rewrite removes
+the transfer.** For each strongly connected component of the call graph in which
+every intra-component call edge is a tail edge, the compiler rewrites the component
+into **one dispatcher function with one frame** before frames are measured. The
+intra-component edges are then not calls at all: the dispatcher owns the frame, the
+loop body assigns the next state, and there is no ABI transfer left to ask about.
 
-The **source premise**, which is what [RES-3] premise 2 reads, is a fact about
-ownership and loans and nothing else. An intra-component edge is a source tail edge
-exactly when, at that edge: no loan, borrow, view, region or reborrow the caller
-introduced is live; no compiler-derived drop remains to run after the call; no
-linear binding of the caller is still live [PROV-6]; no `par` join is outstanding;
-and no place the caller declared is read by any value live across the call.
+The premise is a fact about ownership and loans and nothing else. An
+intra-component edge is a tail edge exactly when, at that edge: no loan, borrow,
+view, region or reborrow the caller introduced is live; no compiler-derived drop
+remains to run after the call; no linear binding of the caller is still live
+[PROV-6]; no `par` join is outstanding; and no place the caller declared is read by
+any value live across the call.
 
-The **target obligation**, which is [RES-3] stage two's and which cites no language
-rule, is that the selected ABI does not keep the caller's frame live across the
-jump for any argument of any rewritten edge.
-
-The split is the repair of a category error. An activation record and a frame are
-target-stage objects ([STOR-6] 741, [STK-3]), and the third draft's last clause,
-"no place the caller's frame holds is reachable from any argument of the call",
-asks the by-value-versus-by-pointer question the settled list puts outside source.
-Under it one source program is resource-closed on one ABI and rejected by [STK-2]
-on another, with a hard error citing a numbered language rule, which is the defect
-[SCOPE-2] and [RES-3]'s own two-stage split exist to prevent.
-
-That one premise still replaces the first draft's five syntactic conditions. Being
-written as the complete `expr` of a `return_stmt` is a consequence of the premise,
-not a condition beside it. A confined value cannot defeat it, because [PROV-5]
-makes a store region local to the reserving function: a live `ArenaBox<'s, T>`
-argument implies `'s`'s block is open, which implies the reserving activation is
-live, and that activation is not the caller being rewritten unless the caller
-introduced `'s`, in which case the first clause already fires.
+**There is no separate target obligation.** An activation record and a frame are
+target-stage objects ([STOR-6] 741, [STK-3]), and the fourth draft's obligation was
+attached to a transfer its own rewrite removes. Naming the lowering is the repair:
+one dispatcher, one frame, no transfer, no ABI condition, and R3's second fallback
+stays real for a program carrying a run of any size.
 
 One cost of the first clause is recorded rather than discovered: a component member
-that opens a region for a `pool_frame` or `arena_frame` has a live region at the
+that opens a region for an `arena_frame` or a `seq_frame` has a live region at the
 jump, so its edge is not a tail edge and [STK-2] refuses the component. Tail
 recursion and region-scoped scratch are mutually exclusive, and a writer who needs
 both writes the loop.
 *Judgment:* per edge, from the ownership and loan state the checker already has;
 no proof search. *Publishes:* an acyclic call graph, or a component that is still
-cyclic. *Amends:* nothing; this is a lowering and not an admission rule, so
-recursion stays permitted. *Verified today:* probes `f2b` and `f8_tailframe` are
-mutual tail recursions carrying a live borrow of a caller local and are accepted,
-so the premise refuses a shape the syntactic list admitted. *Law:* L7.
+cyclic, and the strongly connected components [PROV-5]'s activation refusal reads.
+*Amends:* nothing; this is a lowering and not an admission rule, so recursion stays
+permitted. *Verified today:* probes `f2b` and `f8_tailframe` are mutual tail
+recursions carrying a live borrow of a caller local and are accepted, so the premise
+refuses a shape the syntactic list admitted. *Law:* L7. *History:* 6.8, F2 NB14.
 
 **[STK-2] Acyclicity is required, and there are no depth certificates.** After
 [STK-1], a program whose call graph still contains a cycle has no finite stack
@@ -1658,7 +2318,8 @@ are **not** admitted as a substitute.
 cycle in call order and the restructuring `rewrite the recursion as a loop over
 an explicit FixedVector work list, or make every recursive call a tail call whose
 caller frame is dead at the jump`. *Publishes:* nothing. *Amends:* nothing.
-*Law:* L7.
+*Depends:* [FN-6] 1205, whose permission of recursion is why a recursive program is
+excluded from [RES-4] rather than rejected. *Law:* L7.
 
 **[STK-3] The frame envelope, over the whole chain.** For each execution context,
 the `stack` item of `E` is measured over the context's **whole chain**, from the
@@ -1672,25 +2333,16 @@ Within one segment,
 Stack(f) = frame(f) + max over every possibly-active callee g of ( call_overhead(f, g) + Stack(g) )
 ```
 
-over the acyclic graph of [STK-2], where the possibly-active callees include those
-reached on error and propagation edges, compiler-derived drop glue, the target
-adapter's helpers, and the ABI save area. `frame(f)` is measured **after final code
-generation**, which is why this is a target-stage figure.
+The entry context's **initial** stack is part of the deployment grant, and [RUN-4]
+checks it like every other item rather than assuming it. A **worker lane's** chain
+has no defined root; that question does not arise, because [RUN-2] fixes `W = 1` for
+every resource-closed build.
 
-Two things the second draft left undefined are settled here. The entry context's
-**initial** stack is part of the deployment grant that `Admitted` [RUN-5] covers
-and that `PreStart` does not create, so the protocol commits only stacks it did not
-receive. And a **worker lane's** chain has no defined root, because a lane executes
-whatever the runtime handed it; that question does not arise here, because [RUN-2]
-fixes `W = 1` for every resource-closed build, and it is one of the two things the
-`par` continuation work must answer before `W > 1` is admitted.
-
-`E` is an **output** of code generation and never an input to it, so the compiler
-recomputes `E` after every optimization and publishes the figure the emitted code
-needs; two builds of one accepted program may therefore publish different rows.
+`E` is an **output** of code generation, recomputed after every optimization, which
+is why [RES-2] makes it a function of the build.
 *Judgment:* target-stage arithmetic under [STOR-6]'s checked-arithmetic discipline.
 *Publishes:* one `stack(context, bytes)` item per context per profile row.
-*Amends:* [STOR-6] 757-761. *Law:* L5, L6.
+*Amends:* [STOR-6] 757-761. *Law:* L5, L6. *History:* 6.8, F2 NB15.
 
 **[STK-4] A loop with no resolved break has no normal successor.** [FN-1]'s
 conservative structural graph gains exactly one sentence, and it replaces one:
@@ -1700,39 +2352,28 @@ conservative structural graph gains exactly one sentence, and it replaces one:
 
 No second clause. A `return`, a `propagate` `Err` edge, and a `give` delivering
 outside the loop are edges to the function-return sink or to an enclosing
-construct, and were never edges to the loop's normal successor. The second draft
-wrote "no resolved break **and no other exit**", which reintroduced them by hand
-and left every driver loop that reports an error outward exactly as refused as
-before; probe `n3_propagate_loop` is that program and is `[FN-1]
+construct, and were never edges to the loop's normal successor. Probe
+`n3_propagate_loop` is the driver loop this admits and is `[FN-1]
 FunctionFallthrough` today.
 
 This is the rule that lets a kernel's idle loop and a driver's service loop be
-entries at all. It creates one silence, and this draft states its disposition
-rather than calling it unexploitable: a scope whose exit edge is unreachable
+entries at all. Its one silence is stated: a scope whose exit edge is unreachable
 carries no compiler-derived release and no [LIV-1] check, so a **linear** binding
-live on a path that reaches only such a loop is not an error, and **is** a retained
-item of 3.3.1's map for its store. The leak is then visible in `E` rather than
-invisible in the fact state, which is L9's stock-not-flow applied to the one
-control shape this rule newly admits.
+live on a path reaching only such a loop is not an error. It is a **retained item of
+the enclosing scope's map** — attributed to the region block or function scope that
+would have released it, since the loop has no exit label of its own — so the leak is
+visible in `E` rather than invisible in the fact state. No reset runs on that absent
+edge either, so nothing observes the retained store.
 *Judgment:* [FN-1]'s existing reachability and fallthrough judgment over the
-corrected edge set. *Publishes:* the graph, and hence 3.3.1's exit labels.
-*Amends:* [FN-1] 1070. *Verified today:* probes `n2_idle` and `f3_forever` are
-`[FN-1] FunctionFallthrough`. *Law:* L1, L9.
+corrected edge set. *Publishes:* the graph, hence 3.K.7.1's exit labels, and the
+retained item's attribution. *Amends:* [FN-1] 1070. *Verified today:* probes
+`n2_idle` and `f3_forever` are `[FN-1] FunctionFallthrough`. *Law:* L1, L9.
+*History:* 6.8, F2 NB9.
 
-**[STK-5] Stack exhaustion moves inside the model, for these programs only.** For
-a program that is resource-closed on its target, stack exhaustion is not a
-deferred external resource condition: [STK-2] and [STK-3] make the maximum chain a
-computed item of `E`, and under an admitted run [RUN-5] it is unreachable. For
-every other program, [SCOPE-3]'s deferral stands unchanged, and so does the
-guard-page floor that reports it, whose own alternate stack is, for a
-resource-closed build, an item of `E`.
-*Judgment:* none; a scope statement. *Publishes:* the scope. *Amends:* [SCOPE-3]
-27-34. *Law:* L1.
+#### 3.K.9 `[RUN]`: runtime closure and admission
 
-### 3.5 `[RUN]`: runtime closure and admission
-
-**[RUN-1] The artifact, and runtime closure as one obligation.** For every
-judgment in this file the artifact is the writer's code, the compiler-derived
+**[RUN-1] The artifact, runtime closure, and the no-permission obligation.** For
+every judgment in this file the artifact is the writer's code, the compiler-derived
 cleanup and drop glue, the monomorphized instances, the `par` runtime, the
 allocator and its metadata, and the qualified target adapter: everything the
 process runs between process entry and `ProgramFinished`.
@@ -1745,66 +2386,56 @@ first-use mapping, and no first-error formatting buffer. Every runtime record is
 established before the barrier or is carved from a fixed store that is already an
 item of `E`.
 
-**Acquisition and admission control are different obligations.** A qualified
-runtime must additionally have, for every one of its stores, a **bounded admission
-discipline** whose bound is that store's published capacity: it declines to start
-work for which no record is available and resumes when one is, without acquiring
-anything. Lazily chunking a `par` index range is exactly such a discipline.
-Saturation of a **program-owned** store is unreachable, because the program's peak
-was composed against the published capacity; saturation of the runtime's own
-scheduling is admission control and must exist. What stays forbidden is **inline
-execution**, which nests a task's chain inside a lane's current activation and
-which no term of [STK-3] counts, and **unbounded waiting** on a store no other
-frame will release. A runtime that cannot publish a bounded capacity for one of its
-stores does not support the marker.
+**And it takes no [PAR-1], [PAR-2] or [PAR-3] permission for any statement or loop
+of a marked program.** That obligation lives here, whose subject is already an
+implementation, and not in a rule: [PAR-1] 2102 says whether an overlap was performed
+at all is not observable and that **no rule of this specification is stated in terms
+of it**. The obligation is soundness-critical and the hazard is executed: the current
+runtime's wait path runs a stolen task on the waiting lane's own stack, so
+`stack(lane_i)` as [STK-3] computes it is wrong by a factor bounded only by the
+outstanding-task count.
 
-The scope of this obligation is stated plainly, because the third draft answered
-every parallel resource question with "cannot occur in a marked build" and left the
-build where parallelism actually happens with no answer. This rule is what a
-runtime must meet **to support the marker**. For an unmarked build the worker
-lane's chain, [PAR-3]'s replicated places, and the stolen-task nesting remain
-[SCOPE-3]-deferred exactly as they are today, and this design neither improves nor
-worsens them.
+**Acquisition and admission control are different obligations.** A qualified runtime
+must additionally have, per store, a **bounded admission discipline** whose bound is
+that store's published capacity: it declines work for which no record is available
+and resumes when one is, acquiring nothing. What stays forbidden is **inline
+execution**, which nests a task's chain inside a lane's current activation and which
+no term of [STK-3] counts, and **unbounded waiting** on a store no other frame will
+release. A runtime that cannot publish a bounded capacity does not support the
+marker.
+
 *Judgment:* a target-qualification obligation, auditable from the emitted code and
 the runtime's own translation units; its failure is a [QUAL-2] qualification
 failure, not a source rejection, and no source construct can weaken or waive it.
 *Publishes:* the runtime's own items and capacities. *Amends:* [SYS-2] 2264's "no
 system operation allocates", which is kept and given its companion: an adapter
 record and a handle-table record are runtime-owned stores of [RES-1] with published
-capacities. *Law:* L3, L5.
+capacities; [RES-1]'s covered set, which the obligation quantifies over.
+*Depends:* [PAR-1] 2102, whose unobservability sentence is why the no-permission
+obligation is here and not in a rule. *Law:* L3, L5. *History:* 6.8, F2 NB12.
 
-**[RUN-2] `par` enters `E` as a profile, and a marked program takes no `par`
-permission.** For each supported lane count `W`, the runtime publishes one finite
-profile row: `W` lanes, `W - 1` worker stacks, a task-record capacity `K(W, d)`
-where `d` is the program's maximum nested `par` depth, fixed queue capacities, a
-fixed completion-record capacity, and the handle-table capacity. The number of
-iterations of a `par`-permitted loop never appears in `E`.
+**[RUN-2] `par` enters `E` as a profile, and a marked build publishes `lanes(1)`.**
+For each supported lane count `W`, the runtime publishes one finite profile row: `W`
+lanes, `W - 1` worker stacks, a task-record capacity `K(W, d)` where `d` is the
+program's maximum nested `par` depth, fixed queue capacities, a fixed
+completion-record capacity, and the handle-table capacity. The number of iterations
+of a `par`-permitted loop never appears in `E`.
 
-**Until a compiler-managed continuation representation exists, an implementation
-may not take [PAR-1], [PAR-2] or [PAR-3] permission for a statement or loop of a
-program whose entry carries the marker, and the profile row for such a build
-publishes `lanes(1)`.** The subject is permission, because v0.40 has no `par`
-statement: [PAR-1] 1988 makes overlapping execution a permission over ordinary
-statements and never an obligation, and the third draft's "a `par` statement in a
-resource-closed program is executed sequentially" named a construct that does not
-exist.
-
-This is a rule and not a recommendation, because the alternative is unsound and no
-compiler check catches it: the current runtime's wait path executes a stolen task
-on the waiting lane's own stack, so `stack(lane_i)` as [STK-3] computes it is wrong
-by a factor bounded only by the outstanding-task count, and [RUN-5]'s theorem is
-then false on an admitted environment. Two consequences follow for free: [PAR-3]'s
+What this rule keeps is exactly what **is** a function of program text: **the
+profile row a marked build publishes is the `W = 1` row.** The obligation not to
+take permission is [RUN-1]'s. Two consequences follow for free: [PAR-3]'s
 replicated places, which are execution memory no envelope item counts, cannot occur
 in a marked build; and [STK-3]'s undefined worker-lane chain does not have to be
 defined in this version.
-*Judgment:* a fixed-arithmetic composition (3.3.1's `par` rule) against each
-profile row for an unmarked program, plus the no-permission rule on a marked one;
+*Judgment:* a fixed-arithmetic composition (3.K.7.1's `par` rule) against each
+profile row for an unmarked program, plus the published-row rule on a marked one;
 the compiler emits no per-`W` clone. *Publishes:* the `lanes` and `slots` items of
 each row. *Amends:* the sentence common to [PAR-1] 1989, [PAR-2] 2024 and [PAR-3]
 2049, "exhaustion of the execution resources an implementation spends on
 overlapping is a resource condition under [SCOPE-3] and is not an observable of
 this rule": for a program resource-closed on this target that exhaustion is
-unreachable, because no permission is taken. *Law:* L5, L9.
+unreachable, because [RUN-1] takes no permission. *Law:* L5, L9. *History:* 6.8,
+F2 NB12.
 
 **[RUN-3] The parallel footprint of an allocation is its provider place, and of a
 view its origin range.** In [PAR-1]'s written-footprint clause, "the caller region
@@ -1813,38 +2444,28 @@ each `allocates(arena 'r)` entry names after region substitution" is replaced by
 projection", the same projection the rule already applies to `reads` and `writes`.
 Two statements that allocate from one provider therefore conflict, and two that
 allocate from distinct providers do not. With [PROV-6] the same is true of two
-statements that only dispose, because a disposal is a statement with a `writes` row
-on each provider it names.
+statements that only dispose.
 
-[PAR-2]'s permission for a fill through a `MutSpan` needs two amendments, and the
-third draft supplied only the first.
+[PAR-2]'s permission for a fill through a `MutSpan` needs two amendments. The
+**loan** condition is stated over **iteration-formed** loans: every exclusive loan
+formed by a statement of `B` is rooted in a binding `B` introduces, and a loan formed
+before `L` on a root every footprint of `B` reaches only through 1999-2002's refined
+single-element ranges does not deny. And the **write footprint** of `set m[at] = v;`
+contains its origin at range `[a*at+b, a*at+b+1)` rather than at whole place
+([PROV-3] use 1), which is what [PAR-2]'s standing condition needs.
 
-- The **loan** condition. [PAR-2] 2006 requires every place a footprint of `B`
-  holds an exclusive loan on to be rooted in a binding `B` introduces, and 2004
-  denies on any loan overlapping the resolved root. A `MutSpan` formed **once,
-  outside** the loop holds one loan for all iterations, which is not the hazard
-  either condition names. The amendment states the condition over
-  **iteration-formed** loans: every exclusive loan *formed by a statement of B* is
-  rooted in a binding `B` introduces, and a loan formed before `L` on a root every
-  footprint of `B` reaches only through the refined single-element ranges of
-  1999-2002 does not deny.
-- The **write footprint**. [PROV-3] use 1 makes an access through a view one access
-  to the range of every resolved origin, so the footprint of `set m[at] = value;`
-  contains the origin `target` at range `[a*at+b, a*at+b+1)` rather than at whole
-  place. That is what [PAR-2]'s standing condition needs, because the origin is
-  rooted in a binding declared outside `L` and nothing else refines it. Without the
-  range the third draft's own pinned test could not pass: [PAR-2] denies on a
-  whole-root write and denies on an unresolved footprint element alike.
-
-Its element-write form additionally reads "a direct subscript of an array, a prefix
-owner, or a `MutSpan`", never a `FixedRing` subscript, whose logical-to-physical
-mapping is not affine in the binder.
+[PAR-1] 1990's admitted intervening-statement list **gains the `dispose`
+statement**, whose footprint is one write of each named provider place. Without it
+every window containing a disposal is denied, and since the `set` exchange [LIV-3]
+is an ordinary `set_stmt` it is already admitted, so `dispose` is the only addition
+the two new forms need.
 *Judgment:* the existing [PAR-1] and [PAR-2] permission judgments, with one fewer
-special case, one added loan clause, and ranged origins. *Publishes:* permission.
-*Amends:* [PAR-1] 1969, [PAR-2] 1994-2028, and [PAR-3] 2029-2058 through their
-"forms every footprint exactly as [PAR-1] forms one" clauses. *Depends:* [PAR-2]
-1999's single-binder affine element-write refinement, which is the disjointness
-argument the range clause composes with. *Law:* L2, L5, L10.
+special case, one added loan clause, ranged origins, and one added intervening
+form. *Publishes:* permission. *Amends:* [PAR-1] 1969 and 1990, [PAR-2] 1994-2028,
+and [PAR-3] 2029-2056 through their "forms every footprint exactly as [PAR-1] forms
+one" clauses. *Depends:* [PAR-2] 1999's single-binder affine element-write
+refinement, which is the disjointness argument the range clause composes with.
+*Law:* L2, L5, L10. *History:* 6.8, F2 NB16.
 
 **[RUN-4] The startup protocol.** Program start has four points, and the covered
 guarantee spans the last three:
@@ -1852,6 +2473,8 @@ guarantee spans the last three:
 ```text
 PreStart
     select a row of E from the target's profile table, largest supported W first
+    read the granted extent of the entry context's stack and compare it with the
+        selected row's stack(entry) figure
     materialize every item of that row the deployment grant did not already supply:
         commit each region (committed backing, not a reserved address range)
         commit each stack other than the entry context's own
@@ -1875,16 +2498,10 @@ ProgramFinished
     the runtime's bounded teardown is complete
 ```
 
-Descending the table is not a retry of a failed acquisition and does not violate
-L3: it is the selection step being made with better information, and [PAR-1] 1988
-already guarantees `W = 1` is legal for every program. A `PreStart` failure at
-`W = 1` is reported as `StartFailed(item)` on an implementation-defined channel
-using fixed, preallocated storage; no source statement executes, no owner comes
-into existence, no language cleanup runs, and no `ExitStatus` is produced.
 *Judgment:* a target obligation, not a source judgment. *Publishes:* the selected
 row. *Amends:* [PROG-3] 1499-1509, whose start-time obligation gains the
-materialization of `E` and whose `ProgramFinished` boundary is now named. *Law:*
-L1, L5.
+materialization of `E` and the entry-stack comparison, and whose `ProgramFinished`
+boundary is now named. *Law:* L1, L5. *History:* 6.8, F2 NB15.
 
 **[RUN-5] Admission, and the theorem.** `Admitted(H, row)` holds when an
 environment `H` has actually established a grant implementing every item of the
@@ -1893,1349 +2510,594 @@ for the duration of the run, does not revoke it and permits no unmodelled
 competitor to consume from it. Then:
 
 ```text
-source-resource-closed(P)  and  E-materializes(P, T)  and  Admitted(H, row)
---------------------------------------------------------------------------
-no covered-resource exhaustion in run(H, T(P))
-```
-
-An environment that later revokes the grant, kills the process, or violates the
-target profile has falsified `Admitted`; it has not falsified the program's
-property. The row a deployment reads is a fact about **one build**: [STK-3] makes
-`E` an output of code generation, so a rebuild at another optimization level
-publishes its own row and a deployment sizes against the row it was given.
+source-resource-closed(P)  and  E-materializes(P, T, B)  and  Admitted(H, row)
 *Judgment:* none by the compiler. *Publishes:* the deployment contract, which is
 the selected row. *Amends:* nothing. *Law:* L1.
 
-### 3.6 `[CNT]`: owners, typestate, and confinement
-
-**[CNT-1] The owner inventory.** Exactly five sequence owners, each with a static
-backing fixed by its type. Four are prefix owners (L12); the fifth is the rotation
-a queue needs and a prefix cannot express.
-
-```text
-| type                 | shape  | backing              | provider  | cap        | linear | growth      |
-|----------------------|--------|----------------------|-----------|------------|--------|-------------|
-| FixedVector<T, N>    | prefix | inline, N slots      | none      | N          | no     | never       |
-| HeapVector<'s, T>    | prefix | one heap allocation, | Heap<'s>  | runtime    | yes    | seq_reserve_heap |
-|                      |        | none while empty     |           |            |        |             |
-| ArenaVector<'s, T>   | prefix | one arena block      | Arena<'s> | runtime    | no     | seq_reserve_arena |
-| PoolVector<'s, T, N> | prefix | one pool lease of a  | Pool<'s>  | N, from    | yes    | never       |
-|                      |        | FixedVector<T,N> slot|           | the slot   |        |             |
-| FixedRing<T, N>      | ring   | inline, N slots      | none      | N          | no     | never       |
+------------------------------------------------------------------------------
+no covered-resource exhaustion in run(H, T(P))
 ```
 
-The `linear` column is [PROV-6]'s classification and follows from the backing:
-`HeapVector` and `PoolVector` reclaim per value and are linear; `ArenaVector`'s
-block resets with its store region and `FixedVector` and `FixedRing` are
-frame-resident, so none of the three is. An owner over a linear element type is
-linear whatever its own backing, and `dispose` destroys it either way.
-
-A prefix owner's initialized storage is exactly `[0, len)`. A ring carries one
-further piece of typestate, a head offset, and its initialized storage is
-`[head, head + len)` modulo `N`; that is still one scalar relation and no per-slot
-state, so L12 holds unchanged. A ring's element access is by logical index
-`0 <= i < len(ring)`, written as an ordinary subscript, and a ring yields **no
-view**, because its initialized region is not contiguous.
-
-A container type is a compiler-owned nominal: no writer-visible field, constructed
-only by the [SEQ] operations, no source construction form. An ordinary struct whose
-invariants are reproved at every use is refused, because `len <= cap` would then be
-a fact with support the writer can kill.
-*Judgment:* the ordinary nominal-resolution and construction judgments; a
-`construct` naming an owner nominal is a hard error citing CNT-1. *Publishes:* the
-five types and their measure rows. *Amends:* [TYPE-2] 352, five added composite
-types. *Law:* L4, L12, L13.
-
-**[CNT-2] Container state is typestate, raw slots are unreachable, and stable
-identity is data.** Each owner carries `len` and, where it is not a constant,
-`cap`; a ring carries a head the writer cannot name. `len(v)`, `cap(v)` and
-`room(v)` are [MSR-1]'s terms with [MSR-2]'s facts and [SEQ-0]'s readers. There is
-no second definition of a length here.
-
-No [SEQ] operation, no subscript, and no borrow yields a place outside a
-container's initialized region. A subscript on an owner or view carries the
-ordinary [OP-4] obligation `ilt(index, len(base))`, against `len` and never against
-`cap`. There is no uninitialized read to reject, because there is no spelling that
-reaches one.
-
-Storage whose **slot identity is stable across removals** is written and needs no
-second family: `seq_vacant<T, N>()` constructs `FixedVector<Option<T>, N>` full of
-`None`, with `replace v[i] = Some(...)` to occupy a slot and
-`replace v[i] = None()` to vacate it. The prefix is full at `N` and never moves, so
-no index is renumbered, and the occupancy is the writer's own `Option`
-discriminant, which is data and not typestate, so L12 is untouched. Probe `r2_7`
-compiles that shape today, including a `len` read that survives an element-position
-replace, and probe `w4` confirms the surviving length reaches a subscript.
-
-`seq_vacant` is new in this draft and it exists for a measured reason. The third
-draft said the table is "filled once" and left the filling to a `seq_place` loop,
-because `seq_filled` requires `T copy` and `Option<T>` is affine. Round 3 showed no
-loop can publish the equality: an equality is not an [INV-1] invariant root (probe
-`n14`), and the two-sided `ige`/`ile` pair reaches an ordering at the loop exit and
-not the equality (probes `n15`, `n19`). One inventory row publishes `len = N`
-directly, needs no `copy`, needs no construction loop, and needs no invariant. It
-is `buffer_vacant` made frame-resident and non-allocating.
-*Judgment:* [OP-4] at every subscript, against `len`. *Publishes:* the typestate.
-*Amends:* [OP-4] 909, whose indexable bases extend to the prefix owners, the ring,
-`Span` and `MutSpan`, and whose obligation is against `len`. *Law:* L11, L12, L15,
-L16.
-
-**[CNT-3] Affine and linear elements, and `array<T, N>` unchanged.** `T` may be
-affine in every owner, and may be linear. The initialized region is what makes this
-sound: an element enters and leaves only through an operation that moves the
-boundary or exchanges two initialized positions, so no slot is read before it is
-written or after it is taken. An owner over a linear `T` is itself linear
-[PROV-6], and `dispose` walks it.
-
-`array<T, N>` is retained exactly as it is, as the `len = cap = N` case. It keeps
-its copy-only element domain, because `array` carries no length separate from `N`,
-so every slot is live at once and there is no boundary to make an affine element's
-entry and exit unambiguous. A program that needs no length carries no length, and
-`tests/programs/fir_filter.wf` is untouched by this design.
-*Judgment:* none by itself; the element-type domain of each [SEQ] row.
-*Publishes:* the affine-element capability. *Amends:* [TYPE-2]'s flat-element
-restriction, by not inheriting it for the owners. *Verified today:*
-`array_new<box<u64>, 4>` is [OP-1] `InvalidOperation` (probe `p9`), so this is new
-capability. *Law:* L12.
-
-**[CNT-4] Confinement, and the one position closure.** A type is **confined** when
-its complete type after substitution names a region. The confinement of a value is
-the **set** of regions its complete type names, and it may be moved, returned, or
-bound to a destination that **every** member outlives-or-equals [OWN-3]. That
-quantifier is the whole rule: a value of type
-`Result<PoolSlot<'s, Page>, NeedCapacity<ArenaBox<'q, u64>>>` names two regions,
-which [OWN-3] 575 makes incomparable, and fail-closed is the right answer.
-
-A confined value may occupy any position whose owning value's own complete type
-names the same region, so that the position is itself confined and [STOR-4] governs
-it. That is what admits a store-branded value into a field, a container element and
-an enum payload, which is the capability goal A needs, and it is safe because the
-store's identity travels in the type into the position and back out of it
-[PROV-1].
-
-A **loan-bearing** type [PROV-3] may occupy no position from which a value could
-outlive or hide its origin set: no field, no enum payload, no element of any owner,
-no content of a branded single value, no generic type argument, and no result
-outside [VIEW-6]'s ceiling. This is the narrowing round 3 forced. The third draft
-applied that prohibition to every provenance-bearing type, which then included
-`box`, `slot` and every provider-backed owner, and it therefore refused, by name,
-`Result<HeapVector<T>, OutOfMemory<HeapVector<T>>>` and every other row of its own
-inventory, `struct Chunk['p]`, its own flagship example, and `struct Rec { b: box<u64>; }`,
-which probe `q1` shows the language accepts today. A loan may not be stored because
-a stored loan outlives the exclusivity argument [OWN-5] makes for it; a store brand
-may be stored because it is a type parameter and aliases nothing.
-
-**A source nominal may declare region parameters**, written exactly as a function
-declares them, and is confined by them:
-
-```wf-design
-struct Chunk['s] {
-  page: PoolVector<'s, u8, 4096>;
-  used: u64;
-}
-```
-
-and is used as `Chunk<'s>`, an ordinary TYPEID with `targs`, exactly as a generic
-function's instance is written. Two instances of one such nominal have the same
-type only when their region arguments are identical: region parameters on a nominal
-are **invariant**, which is [OWN-12] 645 and [TYPE-5] 372 applied where they
-already apply, and which is why this feature needs no variance design.
-
-This is decided on the merits rather than deferred. Forbidding a confined value in
-a record field buys **no soundness at all** once the same value is admitted into a
-container element, and it forces every kernel structure into parallel columns whose
-index correspondence nothing checks, which is the defect L11 exists to remove.
-*Judgment:* a loan-bearing type in a prohibited position, or a confined type in a
-position whose owner does not name its region, is a hard error citing CNT-4 at the
-complete contained `type`, with the restructuring `keep the view as a direct local,
-parameter, or result` for the first and `give this nominal a region parameter and
-confine the field to it` for the second; and a confined value bound to a
-destination some member of its region set does not outlive is a hard error citing
-CNT-4 at the binding, rendering every member. *Publishes:* the confinement set.
-*Amends:* [STOR-4] 716, whose "may not be returned" becomes the ordinary outlives
-relation over the set; [STOR-5] 718-732, whose enumerated position list is replaced
-by the intensional split above and whose deferral of per-leaf provenance inside
-stored values is **withdrawn as unnecessary** rather than discharged, because a
-store brand is a type parameter and needs no per-leaf record; [FN-2] 1087, whose
-blanket rejection of a region-bearing generic argument narrows to loan-bearing
-arguments and whose "instantiation arguments are always explicit" now covers region
-arguments on nominals; and [GRAM-2]'s `struct_decl` and `enum_decl`, which gain
-`region_params?` after `generics?`. *Depends:* [OWN-3] 575, whose fail-closed
-incomparability is the invariance argument. *Verified today:* probe
-`f7_regionresult` is [FN-2] `RegionBearingGenericArgument` and probe `r2_6` is a
-[GRAM-2] parse error at `struct Wrap['p]`, so both halves are new. *Law:* L10, L13.
-
-*[CNT-5] is deleted.* It was a per-owner table of scope-exit dispositions, and it
-disagreed with [PROV-6] for every owner over a linear element type: it promised a
-`FixedVector` a derived element drop that [PROV-6] had abolished, so one type had
-two dispositions and both were wrong, one an invisible free of every element and
-the other a value no program could let go of. [PROV-6] now states the disposition
-once, for every type: a non-linear type keeps its ordinary compiler-derived
-release, a linear type has none and leaves by move or by `dispose`, and a
-provider's release is [PROV-5]'s store reset. The id is retired and not reused.
-
-**[CNT-6] Acquiring capacity is owner-level and provider-bearing.** Every
-operation that may change `cap(v)` takes the owner **by value**, takes the
-provider, names its allocation effect, and returns `Result`, handing the untouched
-owner back inside the error. There is no capacity-changing operation on a borrow
-and none on a view, and there is none that keeps a larger backing on failure: a
-fallback is what L3 forbids.
-*Judgment:* [SEQ-0] row selection; a growth operation on a view receiver is a hard
-error citing SEQ-0 `InvalidReceiver`. *Publishes:* nothing beyond the rows.
-*Amends:* nothing. *Law:* L3, L4.
-
-**[CNT-7] A container type never appears behind `&uniq`.** A `param`, `rtype`, or
-`let`-bound holder whose mode is `&uniq 'r` and whose direct type is a container
-type is a hard error citing CNT-7 at the complete `param`. A shared `&'r` container
-parameter remains legal: it can observe measures and read elements and can change
-nothing.
-
-Its restructuring branches on the owner, because one string is false for two of the
-five: for a prefix owner, `pass a MutSpan or AppendView for element and append
-work, or take the owner by value and return it`; for a `FixedRing`, `take the ring
-by value and return it, or transform it in place with update`, because a ring
-yields no view and the third draft's single string sent a ring writer to one.
-
-This is the rule that retires D1's shape. `&uniq` survives everywhere its
-referent's measures are type facts rather than state: a `&uniq` to a struct holding
-`array<T, N>` fields, or to a `MutSpan`, is legal because no operation on either can
-change a length. It does **not** survive on a `&uniq PoolSlot<'s, Container>`:
-[CNT-7] bites on the direct type, `deref(s)` selects the container, and a `replace`
-through the holder is D1 one indirection over. That shape is refused, but by
-[CALL-5]'s conservative default and not by this rule, and the difference matters
-because someone will one day extend [CALL-3]'s class using the wrong sentence as
-the criterion.
-*Judgment:* the parameter and holder check above. *Publishes:* the absence of a
-`&uniq` container transport. *Retires:* the writer-facing `&uniq buffer<T>` and
-`&uniq Container` state-borrow forms. *Amends:* nothing beyond retiring those
-forms. *Law:* L11.
-
-### 3.7 `[VIEW]`: views, loans, and write-back
-
-**[VIEW-1] The three views.**
-
-```text
-| type              | reads             | writes elements   | changes length      | loan on its origins | affine |
-|-------------------|-------------------|-------------------|---------------------|---------------------|--------|
-| Span<'r, T>       | yes               | no                | no                  | shared              | yes    |
-| MutSpan<'r, T>    | yes               | yes               | no, fixed by type   | exclusive           | yes    |
-| AppendView<'r, T> | the window it     | the window it     | grows the window    | exclusive           | yes    |
-|                   | appended          | appended          | only                |                     |        |
-```
-
-Each is an `own` affine value carrying a region `'r`, exactly as `slice<'r, T>`
-does today, and each is loan-bearing [PROV-3]. `Span<'r, T>` **is** today's
-`slice<'r, T>` renamed; the rename is the whole of the change to it. Its measures
-are [MSR-1]'s rows.
-*Judgment:* none by itself. *Publishes:* the three types and their loan strengths.
-*Amends:* [TYPE-2] 352 (two added view types, `slice` renamed `Span`), [OWN-1] 558
-(all three are affine), and [CONST-2] 547-551, [OP-7] 935 and [OP-1]'s `slice_of`
-row, which name the retired spellings. *Law:* L10.
-
-**[VIEW-2] Formation, and the loan the view value holds.** A view is formed from a
-borrow of the owner:
-
-```text
-seq_span['r](vector: &'r v)             -> own Span<'r, T>
-seq_mut_span['r](vector: &uniq 'r v)    -> own MutSpan<'r, T>
-seq_append_view['r](vector: &uniq 'r v) -> own AppendView<'r, T>
-```
-
-and **the view value, not the argument borrow, holds the loan**. For its whole
-life, a view value holds a loan of its own strength on the range it reaches of
-every place in its resolved origin set [PROV-3]. The loan begins at formation and
-ends when the view value is consumed or released. The argument borrow is a
-call-scoped temporary, which probes `f2b`, `r1_twouniq` and `w8` confirm by
-accepting two of them on one place in one region with an ordinary write between; it
-could not be the freeze.
-
-Exclusivity then refuses a second `AppendView` on one owner at its formation, and
-the sentence that does that work is [OWN-5] 601's "a write, move, or unique borrow
-of an ordinary place conflicts when that place overlaps any such origin", applied
-to the second formation's argument borrow.
-
-The rule deliberately admits a *shared* borrow and a direct `let n = len(buf);`
-while an exclusive view is live, and this draft states the justification that
-actually covers both view kinds rather than the one that covers `AppendView` alone.
-For an `AppendView` the reason is publication: it reaches only `[base, cap)` and
-publishes nothing until `absorb`, so a concurrent reader of `[0, base)` and a
-concurrent reader of `len` both see committed state. For a `MutSpan` the reason is
-the range: the shared reader's access is to the origin at the range the *reader*
-reaches, and [PROV-3] use 4 judges the two accesses by range overlap, so a shared
-read of a `len` word or of a disjoint element does not conflict and a shared read
-of an element the `MutSpan` covers does. The third draft asserted the admission and
-justified it only for `AppendView`.
-
-Formation publishes:
-
-```text
-seq_span         len(s) = <call datum of len(v)>,  cap(s) = <call datum of len(v)>
-seq_mut_span     len(m) = <call datum of len(v)>,  cap(m) = <call datum of len(v)>
-seq_append_view  len(a) = Z,                       cap(a) = <call datum of room(v)>
-```
-
-Each is a two-term relation over that formation call's own datums [MSR-3], which
-exist for a borrow operand because the call placement reads a borrow through its
-resolved referent. `room(a) = room(v)` follows from [MSR-2]'s identity and is not
-separately published.
-*Judgment:* [OWN-5] at the formation borrow, and the ordinary [SEQ-0] relation
-establishment. *Publishes:* the loan, the three formation relations, and the
-carried formation datums [MSR-3]. *Amends:* nothing beyond [PROV-3]'s amendment of
-[OWN-5]. *Depends:* [OWN-5] 601, the conflict sentence that refuses a second
-exclusive view, and [OWN-6] 609, which makes the argument borrow call-scoped.
-*Law:* L10, L14, L15.
-
-**[VIEW-3] The spare window, and `absorb` as the commit.** An `AppendView`'s
-`base` is the owner's length at formation and is not a source-visible value.
-`len(a)` counts what this view appended and `cap(a)` is the window. Every [SEQ]
-operation on an `AppendView` acts on `[base + i]` for `0 <= i < len(a)`;
-`seq_truncate` may reduce `len(a)` to zero and no further. A callee that receives an
-`AppendView` therefore cannot reduce its caller's `len(v)`.
-
-```wf-design
-let written = absorb(view: move a);
-```
-
-`absorb` consumes the view, ends its loan, and returns `own u64`. Its judgment, in
-this order:
-
-1. the view's **resolved** origin set [PROV-3] must be a singleton, and its member
-   must be a resolved place of the current function; a formal-view origin is not
-   one, so a callee cannot commit its caller's length behind the caller's back;
-2. the result is bound to the commit value `w`, with `w = len(a)` established at it;
-3. every fact whose support overlaps `P`'s descriptor storage dies [MSR-2]; and
-4. `len(P) = <the view's carried formation datum of len(P)> + w` and
-   `cap(P) = <the view's carried formation datum of cap(P)>` are established, and
-   `room(P)` follows from [MSR-2]'s identity.
-
-Step 4 names the datum the view has carried since its formation [MSR-3], and the
-value is exact because the view held an exclusive loan on `P` from formation to
-this consume, so nothing outside the view could change `P`'s measures in between.
-The third draft's rule named a pre-transfer datum of a place that is not an operand
-of the `absorb` call, which no producer could mint, and its only worked instance
-silently substituted the *entry* datum, which differs from the formation datum by
-every operation the owner underwent between entry and formation. That substitution
-publishes a length one too large for a program that removes an element before
-forming the view, and the extra index is a raw slot in `[len, cap)`.
-
-Requiring a singleton **resolved** set is what makes step 1 satisfiable at all:
-[FN-1] 1036 includes `immutable-const` in every call-site origin set, so a view that
-crossed a call never has a singleton origin set.
-*Judgment:* the four steps above; a non-singleton resolved origin, or one that is a
-formal-view origin, is a hard error citing VIEW-3 at the operand `atom`, with the
-restructuring `return the view to the function that formed it and absorb it there`.
-*Publishes:* the commit value and the owner's new measures. *Amends:* [ENT-3.S5]'s
-commit-value clause, which gains `absorb`'s. *Depends:* [FN-1] 1036, whose
-call-site origin set always contains `immutable-const`, which is why step 1 is over
-the resolved set. *Law:* L10, L14, L16.
-
-**[VIEW-4] A view descriptor's length cannot be changed through a borrow.** No
-operation takes a `MutSpan` or a `&uniq` to one and produces a different length,
-and none changes its owner's length. The ground is stated once, as two properties
-of a **borrowed** view descriptor, and both survive [LIV-2]:
-
-- [LIV-2] admits a reinitializing `set` only for a bare binding **declared in the
-  current function**. A `&uniq 'b MutSpan<'r, T>` holder in a callee is a borrow of
-  a descriptor the caller declared, so no callee can reinitialize it, and
-  `deref(handle)` is not a bare binding in any case.
-- `replace deref(handle) = ...` is refused by [PROV-3] use 3, because the view's
-  origin set is live at every program point of the callee: the view value is not
-  consumed there.
-
-Therefore `MutSpan<'r,T>`, `&uniq 'b MutSpan<'r,T>` and `&uniq 'b AppendView<'r,T>`
-are all length-fixed for [CALL-3].
-
-The third draft's first ground was "a view is affine, so [SET-1] refuses a `set` of
-it", which is the sentence [LIV-2] deletes and [LIV-3] then makes the central
-statement of both worked programs. A rule whose premise the same document removes
-is not a premise. **This dependency is load-bearing and the register carries it as
-a `Depends:` row.**
-*Judgment:* none by itself; it is the premise of [CALL-3]. *Publishes:* the
-length-fixed class. *Amends:* nothing beyond [PROV-3]'s amendments of [SET-1] and
-[SET-2]. *Depends:* [LIV-2]'s bare-binding-declared-in-this-function premise and
-[PROV-3] use 3, the two properties above. *Law:* L11.
-
-**[VIEW-5] An abandoned `AppendView` drops what it appended.** Its
-compiler-derived release drops the elements of `[base, base + len(a))` in ascending
-order, then nothing. The owner's `len` is unchanged, so the abandoned elements are
-neither leaked nor double-dropped, and no fact about `len(P)` was ever published.
-Not absorbing is a well-defined, safe program that discards work, which is what
-makes `absorb` an ordinary operation rather than a must-use obligation. When `T` is
-linear the view is linear too, so it has no derived release and abandoning it is
-[LIV-1]'s error; the writer disposes it, and the walk visits exactly
-`[base, base + len(a))`.
-*Judgment:* [LIV-1] at the scope exit. *Publishes:* the release. *Amends:*
-[STOR-3]'s release-action table, one added row. *Law:* L13, L14.
-
-**[VIEW-6] Views are never stored, and a view result declares its origin.** A view
-is never stored [CNT-4] and never returned except under this rule. [FN-1]'s
-slice-result ceiling applies unchanged to each view type: a function whose written
-result is `own Span<'r, T>` (respectively `MutSpan`, `AppendView`) has the ceiling
-containing `immutable-const` and the formal-view origin of every parameter whose
-written mode and type are exactly that same view type with the same formal region
-and element type.
-
-The consequence a caller cannot see is made a declaration error rather than a
-discovery: **an ordered result list containing two results of the same view type
-and the same formal region is a hard error citing VIEW-6 at the `result_binding` of
-the second**, with the restructuring `give each result its own formal region`.
-Without this a three-output demux written with one region `'o` returns three views
-each aliasing all three inputs, and every later judgment about them is conservative
-for a reason nothing in the signature shows.
-
-One consequence is recorded because the second draft did not: [FN-1]'s containment
-check forbids a helper from manufacturing a view of storage it reaches through a
-borrow, [CNT-7] forbids a `&uniq` container parameter, and [VIEW-3] confines
-`absorb` to the formation function. Together, `seq_span`, `seq_mut_span` and
-`seq_append_view` are usable only in the function that directly owns the container.
-Both worked programs satisfy that by forming every view in the owning function and
-passing it down, and no helper library over views can exist in this version. Note
-what changed beside it: **disposal is not confined this way**, because [PROV-6]'s
-walk compares types and not places, so a helper may release what it is handed even
-though it may not view what it reaches.
-*Judgment:* [FN-1]'s ceiling containment at every `return_stmt`, plus the
-same-region result rejection. *Publishes:* the result's origin set. *Amends:*
-[FN-1] 1017-1030, by generalizing "slice" to "view" and by adding the same-region
-rejection. *Law:* L10, L11.
-
-**[VIEW-7] System operations over views.** The seven range-bearing operations
-[SYS-8] take views instead of `buffer<u8>`, and their modes are fixed rather than
-left to a table cell:
-
-```text
-a destination the operation writes  ->  &uniq 'd MutSpan<'r, u8>
-a source the operation reads        ->  &'s Span<'r, u8>
-```
-
-so `read_at['f, 'd, 'r](file: &'f ReadFile, destination: &uniq 'd MutSpan<'r, u8>,
-file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome`.
-Both are borrows of the **descriptor**, so the view survives the call and a
-destination can be filled by a loop of reads, which an `own` destination could not.
-Both are length-fixed [VIEW-4], so [CALL-3] gives the caller its measures back. The
-two obligations keep their form and their order with `len(deref(buffer))` reading
-`len(deref(destination))`.
-
-This is the change that lets a heap-free program do I/O, and it is a rule rather
-than a register row because it is goal A's container half. It carries two costs
-this design does not hide. A destination must be **addressable** before the host
-writes into it, so it is built with `seq_filled` and the count the host produced is
-an ordinary `u64` beside the container rather than the container's own `len`; the
-write-back machinery of [VIEW-3] does not reach the one boundary where lengths
-genuinely come from outside, and Q7 records the fix. And every I/O site costs two
-writer-visible items rather than one, because the view's region and the call's
-borrow region are two regions and [OWN-10] requires each to be opened after its
-subject; Q11 records the relief.
-*Judgment:* [SYS-8]'s two range obligations, restated over `len` of the borrowed
-view. *Publishes:* the endpoint facts [ENT-3.S10] already enumerates, now over a
-view. *Amends:* [SYS-8] 2482-2522, [SYS-2] 2158-2302's declaration records and its
-normative counts, and the prose of [SYS-9], [SYS-11], [SYS-12] and [SYS-14], which
-name `buffer<u8>`. *Law:* L11, L14.
-
-### 3.8 `[LIV]`: liveness, reinitialization, and transformation
-
-**[LIV-1] Liveness is join-checked, and that is what makes release
-unconditional.** A binding's live-or-dead status is a property of a program point,
-not of a path: at every join of the conservative structural graph [FN-1], and at
-every loop head, every predecessor must agree on the status of every binding in
-scope. A disagreement is a hard error citing LIV-1 at the join, naming the two
-predecessors and the binding. On every edge leaving a scope, a `propagate` error
-edge and the function-return edge included, every **linear** binding of that scope
-must be dead [PROV-6], because no derived release exists to carry it.
-
-Today the compiler answers the first class with `Semantics/Unsupported:
-OwnershipJoin` (probe `f3`) and [OWN-11] avoids it a second way, by forbidding an
-outer binding to be moved inside a loop body. Both are avoidance. Once [LIV-2]
-admits reinitialization, liveness stops being monotone and the question has to be
-answered, because [STOR-3] carries releases on edges and "no release action is
-conditional": one static edge with two runtime dispositions is a double free on one
-path or a leak on the other, and L12 forbids the runtime discriminant that would
-tell them apart.
-
-With LIV-1 in hand, [OWN-11]'s move prohibition is **replaced** rather than lifted:
-a binding declared outside a loop body may be moved inside it exactly when the loop
-head and every exit edge see it with one status. [OWN-11]'s borrow half is
-unchanged: a `borrow_expr` inside a loop body still names only regions introduced
-inside that body, which the programs of section 4 satisfy by opening a region
-inside the loop, exactly as `docs/patterns.md` P15 prescribes and as probe `k31`
-accepts today.
-*Judgment:* a per-join and per-scope-exit structural check over the ownership state
-the checker already computes; no search. *Publishes:* the unconditional release set
-of every edge. *Amends:* [OWN-1] 558 and [OWN-11] 641. *Law:* L17.
-
-**[LIV-2] Reinitializing `set`, and a new declaration event.** `set p = e;` is
-additionally admitted when `p` is a bare binding of affine type declared in the
-current function, a `let` binding or a parameter, `e` produces exactly `p`'s type,
-and **`p` is dead at the commit point**.
-
-```wf-design
-set pending = move rest;
-```
-
-One premise, stated once: dead at the commit point, whether `p` died before the
-statement or inside `e`. The third draft wrote the admission over "whose current
-value has already been consumed" and then judged "evaluate `e` under ordinary
-rules, **including any consume of `p` inside it**", which are two different
-premises, and every `update` in both worked programs is the second shape. The
-premise is checkable from the state [SET-1] 496-500 already computes after the
-right-hand side, which is where it re-establishes root liveness today.
-
-Its judgment: evaluate `e` under ordinary rules, including any consume of `p`
-inside it; every fact whose support contains `p`'s root dies at that consume; then
-the binding is reinitialized with `e`'s value, live and usable, with no observable
-program point between. It derives no drop and no release, because the target holds
-no value at the commit.
-
-**A reinitializing `set` is a declaration event for [ENT-2] term identity.** The
-reinitialized binding is a *distinct term* from the consumed one, exactly as
-[ENT-2] 2678 already rules for "a fresh binding legally reusing an expired
-spelling". Without it a fact stated over the old value reaches the new one, and the
-language admits an eight-element measure on an empty container. Its measure images
-transfer by [MSR-3], and an [INV-1] affine atom over it is keyed by the term, so a
-header invariant is re-established on the backedge from the operation's declared
-relation over its call datum.
-*Judgment:* the deadness premise plus the ordinary [TYPE-5] exact-type check.
-*Publishes:* the new binding's term identity and its measure images. *Amends:*
-[ENT-2] 2678's term-identity paragraph (one added declaration event), [OWN-1] 564's
-"reinitialization requires a new `let`", [STOR-1] 674 and [SET-1] 482-500, whose
-affine-target rejection, dead-root sentence and post-right-hand-side revalidation
-together carry the old premise. *Verified today:* probe `p10` is [STOR-1]
-`AffineSetTarget` for a live target and probe `w6` is [OWN-1] `UseAfterMove` for a
-dead one, the two halves this rule replaces. *Law:* L10, L16, L17.
-
-**[LIV-3] The transformation statement.** One statement form is added, in two
-shapes, and it is the only spelling of the receiver-threading shape:
-
-```wf-design
-update view by seq_push(value: byte);
-update buckets[slot] by seq_clear();
-update work by seq_try_take() into taken;
-update ring by ring_try_place(value: byte) into shed;
-```
-
-`update p by op(args);` is admitted when `op` is a container-domain operation
-[SEQ-0] whose first result has the type of `p`, and `p` is a writable owner place.
-The `into x` shape is admitted when `op` has exactly two results, the second
-binding a fresh IDENT `x`; the plain shape when `op` has exactly one.
-
-**Its judgment is [SET-2]'s, not [SET-1]'s, and that is what makes it not sugar.**
-The previous owner is read out of `resolved(p)` into the operation's first declared
-parameter, the operation runs, its first result is written back into
-`resolved(p)`, and, for the `into` shape, its second result initializes `x`. There
-is no writer-observable program point between the read and the write (spec 515),
-so there is no partial move, no dead root and no uninitialized hole, and the root
-binding stays live (spec 516). A bare binding is the special case of that general
-form, not a separate rule.
-
-The third draft defined it as "exactly `set p = op(<first parameter>: move p,
-args);` ... carrying that statement's complete judgment, [LIV-2] included", and
-then justified its existence by the case that expansion refuses. `move buckets[slot]`
-is a partial move, which [OWN-1] 564 makes kill the whole `buckets` binding, so the
-write-back lands on a dead root; probe `q7` is that rejection today, at the `set`,
-citing [OWN-1]. Worse, the expansion killed `len(buckets)` at the root and no rule
-re-established it, so the first `update` at a subscript destroyed the container's
-length for the rest of the function. Under the [SET-2] reading nothing consumes the
-root, so `len(buckets)` never dies and only `len(buckets[slot])` moves, which is
-what [MSR-2]'s support relation says should happen.
-
-Two further consequences are stated rather than left. An `update` at an element
-place of a container of **loan-bearing** elements is refused by [PROV-3] use 3, and
-[CNT-4] already forbids such a container, so the case is closed twice. And the
-`into` shape is what removes the last rebind: every `try` row and every take is
-multi-result, which is where L3 and [RES-6] send an honest writer, and the third
-draft's own 4.1 carried one `update` against eight two-statement rebinds.
-
-Because it is the only spelling, `set p = op(receiver: move p, ...)` for a
-container-domain `op` is a [FORM-1] rejection whose fix is `update p by op(...)`.
-It is the only spelling **for that domain**: a user helper that threads its owner
-keeps `set buf = collect(out: move buf, source: move line);`, because [SEQ-0] fixes
-a receiver-first convention that [FN-1] does not. This design adds no
-receiver-position call form: `view.seq_push(value: byte)` would be a second call
-syntax whose resolution [GRAM-5] does not have, while `update`'s resolution is a
-table lookup.
-*Judgment:* row selection, the result-count and type checks, then [SET-2]'s
-exchange judgment. *Publishes:* the operation's declared relations, on the
-written-back place and on `x`. *Amends:* [SET-2] 508-524, which gains a
-compiler-owned exchange whose replacement value is derived from the read-out rather
-than written by the writer, and whose target may be linear or region-bearing
-because nothing is rebound; [GRAM-4]'s `stmt` production (one added statement
-form); and [FORM-2], which renders it as one line `update <place> by <call>;` or
-`update <place> by <call> into <IDENT>;`. *Verified today:* probe `r2_8` is a
-[FORM-1] parse rejection, so this is new syntax. *Law:* L10.
-
-### 3.9 `[CALL]`: what survives a call
-
-This is D1's section. Exactly three transports exist, and **each reads only the
-callee's declared parameter modes and types and its declared contract.** These are
-the owner's three call rules of 2026-09-03.
-
-**[CALL-1] Through a shared borrow, every fact survives.** For an argument whose
-parameter mode is `&'r`, of any type, container and view included, the call is not
-a kill event for any fact supported by the actual's resolved place. Ground:
-[OWN-5] admits no write through a shared holder, so [EFF-2] can project no
-`writes` occurrence onto that place, so [MSR-2]'s kill does not fire.
-*Judgment:* none; the absence of a kill. *Publishes:* the survival of every such
-fact. *Amends:* nothing. *Verified today* for `&'a buffer<u8>`: probe `p6` keeps
-`len(line) = 10` across the call and the subsequent `line[9_u64]` is accepted.
-*Law:* L11.
-
-**[CALL-2] Through a value passed and returned, only the contract's facts exist on
-the result.** An `own` argument is a consuming use, so every fact whose support
-contains that binding's root dies. The result is a fresh binding carrying exactly
-the callee's verified relations, and nothing else. Those relations may name the
-consumed parameter's measure, which denotes that call's **call datum** [MSR-3]:
-`len(result) = len(view) + 1` means what it reads as, and it is establishable at
-the caller precisely because a datum has empty support and the consume the same
-statement performs cannot kill it. That is the repair of the finding that this
-transport, on which the entire surface rests, published nothing at all: [FN-9]'s
-`M(c,q)` requires every referenced formal to substitute to a **live** term, and the
-actual of a value-in/value-out row is dead by the time the relation is established.
-*Judgment:* the ordinary [ENT-3.S12] establishment, subject to `M(c,q)` as [MSR-3]
-amends it. *Publishes:* the callee's declared relations on the result. *Amends:*
-nothing beyond [MSR-3]'s. *Verified today:* probe `p1`, `passthrough(out: move a)`
-returning the same buffer, then `b[9_u64]`, is **rejected** with residual
-`9_u64 < len(b)`; the transport already behaves correctly and what was missing is
-the vocabulary to publish across it. *Law:* L11.
-
-**[CALL-3] An element write through a length-fixed view never touches length
-facts.** For an argument whose parameter's declared type is `MutSpan<'r, T>` or
-`&uniq 'b MutSpan<'r, T>`, which [VIEW-4] fixes a length for, a projected callee
-`writes` occurrence kills every fact whose support overlaps the viewed **element
-storage** and kills no measure term over that origin. For a parameter of type
-`AppendView<'r, T>` or `&uniq 'b AppendView<'r, T>` the same holds, and in
-addition the callee can neither decrease the owner's length (L14) nor increase it,
-because only `absorb` publishes an increase and [VIEW-3] denies `absorb` to a
-callee. For every other parameter type the projected write kills measures as an
-ordinary descriptor-storage-overlapping event [MSR-2].
-*Judgment:* the kill classification per parameter type. *Publishes:* the surviving
-measures. *Amends:* nothing beyond [MSR-2]'s. *Depends:* [VIEW-4], the
-length-fixedness this classification reads. *Law:* L11, L14.
-
-**[CALL-4] Contract vocabulary, the ordered result list, and where its relations
-land.** [FN-9]'s clause operands are terms [MSR-5], so `len(P)`, `cap(P)` and
-`room(P)` over an admitted formal place are operands with no per-family admission;
-a parameter's measure denotes its **entry datum** [MSR-3], so a consuming use
-inside the body does not take it away. `len(result)`, `cap(result)` and
-`room(result)` are operands when the written result type is measured, which today's
-result-datum restriction to fragment integers forbids. So the canonical append
-contract is writable:
-
-```wf-design
-fn collect['o, 's](out: own AppendView<'o, u8>, source: own Span<'s, u8>) -> written: own AppendView<'o, u8> reads(out, source), writes(out) contract {
-  requires ile(len(source), room(out));
-  ensures ile(len(written), cap(out));
-} { ... }
-```
-
-The clause is single-state: `out` denotes the entry datum and `written` the result,
-with no second state, no `old()`, and no frame rule. Two-state `ensures` is
-rejected by the owner and is not proposed anywhere in this design.
-
-A function may declare an ordered result tuple, and **each result binding is a
-datum of every clause of that function**, so one clause may name more than one:
-
-```wf-design
-fn render['s](block: own PoolVector<'s, u8, 256>, task: own Task) -> (rest: own PoolVector<'s, u8, 256>, written: own u64) ... contract {
-  ensures ile(written, len(rest));
-}
-
-let (rest, task) = seq_take(vector: move pending);
-```
-
-**Those relations reach the caller through one added [ENT-3.S12] destination
-clause**, and without it a multi-result contract publishes nothing: 2827 fixes a
-closed destination list of four, and a destructuring `let` is none of them. The
-clause is the single-binder route quantified over ordinals:
-
-> Each binder of a destructuring `let` is the S12 destination for every published
-> relation naming the result at that ordinal, established after the call's ordinary
-> transfer, consumes, borrow commits and kills in [ENT-5] 2892-2899's existing
-> order, with `M(c,q)` requiring every other referenced support to be live at
-> establishment.
-
-It needs no new fact source, and it makes the writer's multi-return and [SEQ-0]'s
-own row route the same shape rather than two. The third draft amended [FN-9]'s
-admission paragraphs and left the establishment paragraphs untouched, so its own
-4.1 asserted a discharge that could not happen.
-
-The result is not a value: there is no tuple type, no tuple place, and no way to
-store or pass one. It is a return-and-bind form only, which keeps [CNT-4] and
-[TYPE-2] untouched. Multi-return is load-bearing, not a convenience: `seq_take`
-must return an owner and an element, and no single value can carry both, since an
-enum payload holding a loan-bearing value is refused by [CNT-4]. Three productions
-change together: `result_binding` may be one binding or a parenthesized list,
-`let_stmt` may bind one IDENT or a parenthesized list, and `return_stmt` may carry
-one `expr` or a comma-separated list whose length equals the function's. Every
-element is judged independently by the ordinary [FN-1] return rule. Its canonical
-rendering is stated rather than left to [FORM-2]'s attachment sets: a result list
-renders as `-> (` then its comma-separated bindings then `)`, a destructuring `let`
-as `let (` then its binders then `) = `, and a multi-value `return` renders its
-expressions comma-separated on one line.
-*Judgment:* the ordinary [FN-8]/[FN-9] admission over the widened operand set and
-the widened result shape. *Publishes:* the clause relations, on every result
-ordinal. *Amends:* [FN-9] 1295-1362 (measured results, multi-datum clauses, the
-entry-datum operand), [ENT-3.S12] 2827's destination list (one added clause),
-[GRAM-2]'s `fn_decl` result shape, [GRAM-4]'s `let_stmt` and `return_stmt`,
-[FORM-2] 52-76's rendering, and [FN-1] 999-1013's result shape. *Verified today:*
-probe `p4` compiles a single-state `ensures` anchored on `len(deref(destination))`
-with a fragment result, probe `p2` shows `len(result)` does not parse, and probes
-`p8`/`k09` show the multi-return signature does not parse. *Law:* L10, L11, L16.
-
-**[CALL-5] No transport reads the actual's spelling.** The three transports above
-are selected by the callee's declared parameter mode and type and by its declared
-contract. No rule of this design consults the argument expression's shape, the
-callee's body, its name, or any per-parameter summary derived from its body. A
-parameter type for which no transport is selected kills conservatively.
-
-*This is D1 stated as a rule.* The located mechanism of D1, `argument_referent`
-returning `element = true` for every `&uniq buffer<T>` actual, is a fact derived
-from the actual's shape, and under CALL-5 no such fact exists to be derived. The
-precision it was buying is bought instead by the type: a `MutSpan` argument is
-element-only **because its type admits nothing else**. Applying CALL-5 to the
-residual `&uniq buffer<T>` spelling yields `element = false`, which is exactly the
-sweep's minimal sound repair, and is why the D1 conformance case turns XPASS at
-[OP-4] in the batch that lands this family. It is also what refuses D1 one
-indirection over, through `&uniq PoolSlot<'s, Container>`, which [CNT-7] does not
-reach.
-*Judgment:* the conservative default for every unselected parameter type.
-*Publishes:* the absence of a call-site-derived fact. *Amends:* [ENT-5] 2870's
-clause (b), whose projected-callee-write kill is now classified by [CALL-1..3] and
-by nothing else. *Law:* L11.
-
-### 3.10 `[SEQ]`: the operation inventory
-
-**[SEQ-0] The container declaration domain.** The container, store and provider
-operations are one compiler-owned **generic** declaration domain, built as [SYS-1]
-and [SYS-2] build the system domain and admitted to every compilation unit on the
-same terms. Each operation is one complete signature record: named parameters in
-declared order [GRAM-11], its type, const and region parameters written as
-[GRAM-2] orders them, one declared effect row, one declared result mode and type or
-one ordered result list, one declared requirement list, and one declared relation
-list. **The first declared parameter is the value the operation transforms and
-returns; an operation that transforms nothing names its provider first**, which is
-`pool_release`'s existing shape and is what [LIV-3] reads.
-
-Six sentences fix everything a table cell would otherwise decide.
-
-**Written arguments.** A row writes its complete type, const and region argument
-list in one `targs` list, ordered as [GRAM-2] orders a declaration (type and const
-parameters, then region parameters), exactly when some parameter of that list is
-supplied by no operand; otherwise it writes none. A partial list is not a spelling
-option, because a partial list is the transposition hazard redundant-explicit facts
-exist to remove. So `seq_fixed<Task, 32>()`, `seq_vacant<Slot, 64>()` and
-`pool_frame<FixedVector<u8, 256>, 8, 'p>()` write their lists, while
-`seq_lease(pool: &uniq 'b blocks)`, `seq_span(vector: &'s input)` and
-`seq_push(view: move acc, value: byte)` write none: their operands' types supply
-every type, const and store-region parameter and the borrow's own written region
-supplies the loan region. This is [TYPE-5] 369's own criterion, "no operand can
-supply them", applied to a domain rather than enumerated per row.
-
-**The argument form is named, and [GRAM-11] must say so.** A container-domain call
-writes its value arguments as a `fieldinit_list` in declared order, exactly as a
-user `fn` and a system operation do. [GRAM-11] 341 admits that form for exactly
-"a user `fn` or ... an admitted system operation", 343 forces positional operands
-for an [OP-1] table operation, and 345 resolves callee kind by "the same partition
-that already selects the callee", which [OP-1] 833 states. A container-domain
-operation is a fourth class in all three sentences; the third draft registered the
-exactly analogous [TYPE-5] enumeration and put [GRAM-11] in its unchanged list,
-where "unchanged" was false and every call in the file derived under no admitted
-argument form.
-
-**Where the relations come from.** An operation's declared relations are
-established on its results exactly as [ENT-3.S12] establishes a verified user
-summary, with operand measures denoting that call's datums [MSR-3] and multi-result
-rows landing through [CALL-4]'s destination clause. A row with **per-variant**
-relations names one *designated outcome result*, and its per-variant relations are
-established at entry to the arm of the first `match` whose scrutinee is a bare live
-binding of that result, under the same no-kill, no-`set` path discipline
-[ENT-3.S7] already uses for a `+checked` arm fact. A row whose single result is a
-`Result` or an `Option` designates that result and writes no separate line. Probe
-`r2_9` shows that discipline tolerates an intervening statement today; what it does
-not tolerate is a statement that consumes the result the relations name, which is
-why a program that wants both arms' relations writes the `match` before the rebind.
-
-**Every row is complete over the measures it writes.** A row carrying `writes(P)`
-for a measured `P` states the new value of each of `len(P)`, `cap(P)` and `room(P)`,
-including the ones it does not change, or it is not a well-formed row (L15). Where
-two of the three follow from [MSR-2]'s identity the row states one and the
-inventory says so. This is the discipline whose absence made an arena's extent die
-at its first allocation.
-
-**One row per operation.** Each operation carries its own requirement and relation
-cells, written over its own formals.
-
-**The readers are not in this domain.** `len`, `cap` and `room` are three [OP-1]
-table operations taking a bare non-consuming place operand and returning `own u64`,
-and they are **`pure`**: the operation reads no state the caller does not already
-hold, and [EFF-2] attributes the operand's own read exactly as it does for any
-other non-consuming table operand. Probe `r2_10` shows the consequence today: a
-`define capacity = len(deref(destination));` over a shared-borrow parameter compiles
-in a `pure` function, and declaring `reads(destination)` for it is an [EFF-2]
-rejection.
-
-*Judgment:* row resolution by name, receiver type and written arguments; the
-per-row requirement discharge under [MSR-4]; and the [GRAM-11] named-argument
-check. A diagnostic for an operation cites **[SEQ-0]** and names the operation in
-its payload, exactly as an [OP-1] diagnostic cites [OP-1]; [DIAG-1] 1535 admits one
-numbered language rule and the inventory rows below are table data, not rules.
-*Publishes:* every declared relation of every row. *Amends:* [SYS-1] 2130 (a fourth
-admitted declaration source), [SYS-3] 2303 (admitted to every unit), [TYPE-6]
-391-403 (the operation spellings enter the lexical IDENT domain, the nominals the
-TYPEID domain, and a nominal's region parameters the REGIONID domain), [DIAG-1]
-1687-1712 (collision rank 5, a `container_declaration_ordinal` beside the system
-one, and the field table [RES-6]'s three failure structs need for 1768's
-deferred-use carrier), [ENT-3] 2724 (one added enumerated source S13, plus the arm
-route above), [OP-1] 766-845 (`len` gains `cap` and `room`, their domain extends to
-owners, views and providers, and `slice_of`, `buffer_new`, `buffer_vacant`,
-`box_new` and `arena_new` retire; `ReservedLowerNames` gains `cap` and `room`),
-[TYPE-5] 369 (the written-argument criterion above covers a fourth callee class and
-`arena_new` leaves the retained-argument enumeration with its retirement),
-[GRAM-11] 341-345 (the fourth callee class, in all three sentences), and [FN-2]
-1087 (its explicit-argument rule covers this domain). *Law:* L11, L16.
-
-#### The inventory
-
-`V` ranges over the four prefix owners; a row naming a store writes its store
-region `'s`. Every row's first parameter is the value it transforms, except a
-reservation and a release, which name their provider first. A row's type, const and
-region parameters are exactly those its signature names, declared in [GRAM-2]'s
-order and elided below where the signature shows them; what a **call** writes is
-[SEQ-0]'s written-argument rule. Each provider is written out per row rather than
-abbreviated, because a `HeapVector` and an `ArenaVector` have different providers,
-different effect rows and different failure types, and one row varying all three by
-receiver is the effect polymorphism this design rejects.
-
-**Reservation.** A reservation is not an `allocates` site: `allocates` names a
-store a body *draws from* [PROV-4], and a reservation *creates* one whose storage
-is an ordinary place of the reserving activation. So these rows are `pure`, which
-is what lets 4.1's entry be `pure`.
-
-```text
-pool_frame<T, const N: u64>['s]()                      -> own Pool<'s, T, N>            pure
-    declares len(result) = Z, cap(result) = N
-pool_extent<T, const N: u64>['s]()                     -> own Pool<'s, T, N>            pure
-    declares len(result) = Z, cap(result) = N
-arena_frame<const BYTES: u64, const ALIGN: u64>['s]()  -> own Arena<'s, BYTES, ALIGN>   pure
-    declares len(result) = Z, cap(result) = BYTES
-arena_extent<const BYTES: u64, const ALIGN: u64>['s]() -> own Arena<'s, BYTES, ALIGN>   pure
-    declares len(result) = Z, cap(result) = BYTES
-```
-
-**Construction.**
-
-```text
-seq_fixed<T, N>()                  -> own FixedVector<T, N>       pure
-    declares len(result) = Z, cap(result) = N
-seq_ring<T, N>()                   -> own FixedRing<T, N>         pure
-    declares len(result) = Z, cap(result) = N
-seq_filled<T, N>(value: own T)     -> own FixedVector<T, N>       pure          T copy
-    declares len(result) = N, cap(result) = N
-seq_vacant<T, N>()                 -> own FixedVector<Option<T>, N>   pure
-    declares len(result) = N, cap(result) = N
-seq_heap<T, 's>()                  -> own HeapVector<'s, T>       pure
-    declares len(result) = Z, cap(result) = Z
-seq_arena<T, 's>()                 -> own ArenaVector<'s, T>      pure
-    declares len(result) = Z, cap(result) = Z
-seq_heap_filled<T>['s, 'b](heap: &uniq 'b Heap<'s>, count: own u64, value: own T)
-    -> own Result<HeapVector<'s, T>, OutOfMemory<unit>>            allocates(heap), writes(heap)   T copy
-    requires buffer_fits<T>(count)
-    declares Ok(value: r): len(r) = count, cap(r) = count
-seq_lease<T, N, K>['s, 'b](pool: &uniq 'b Pool<'s, FixedVector<T, N>, K>)
-    -> own Result<PoolVector<'s, T, N>, PoolExhausted<unit>>       allocates(pool), writes(pool)
-    declares Ok(value: r): len(r) = Z, cap(r) = N,
-                           len(pool) = <call datum of len(pool)> + 1
-             Err:          room(pool) = Z
-             both:         cap(pool) = <call datum of cap(pool)>
-seq_lease_proved<T, N, K>['s, 'b](pool: &uniq 'b Pool<'s, FixedVector<T, N>, K>)
-    -> own PoolVector<'s, T, N>                                    allocates(pool), writes(pool)
-    requires igt(room(pool), Z)
-    declares len(result) = Z, cap(result) = N,
-             len(pool) = <call datum of len(pool)> + 1, cap(pool) = <call datum of cap(pool)>
-```
-
-**Readers and element access.**
-
-```text
-len(p) / cap(p) / room(p)          -> own u64                     pure          [OP-1] rows
-p[i]                               element place                                prefix owner, ring, Span, MutSpan
-    requires ilt(i, len(p))        [OP-4]
-```
-
-**Prefix-owner operations.** Each takes `vector: own V<T>` first.
-
-```text
-seq_place(vector, value: own T)            -> own V<T>                        reads(vector), writes(vector)
-    requires igt(room(vector), Z)
-    declares len(result) = len(vector) + 1, cap(result) = cap(vector)
-seq_try_place(vector, value: own T)        -> (rest: own V<T>, unplaced: own Option<T>)   reads(vector), writes(vector)
-    designated outcome: unplaced
-    declares None: len(rest) = len(vector) + 1, cap(rest) = cap(vector)
-             Some: len(rest) = len(vector), cap(rest) = cap(vector), room(rest) = Z
-seq_take(vector)                           -> (rest: own V<T>, value: own T)  reads(vector), writes(vector)
-    requires igt(len(vector), Z)
-    declares len(rest) = len(vector) - 1, cap(rest) = cap(vector)
-seq_take_at(vector, index: own u64)        -> (rest: own V<T>, value: own T)  reads(vector), writes(vector)
-    requires ilt(index, len(vector))
-    declares len(rest) = len(vector) - 1, cap(rest) = cap(vector)
-    and the permutation: the element formerly at len(vector) - 1 is at index in rest,
-    every other index below len(rest) is unchanged, and no other index moves
-seq_try_take(vector)                       -> (rest: own V<T>, value: own Option<T>)      reads(vector), writes(vector)
-    designated outcome: value
-    declares Some: len(rest) = len(vector) - 1, cap(rest) = cap(vector)
-             None: len(rest) = Z, cap(rest) = cap(vector), len(vector) = Z
-seq_exchange(vector, first: own u64, second: own u64) -> own V<T>             reads(vector), writes(vector)
-    requires ilt(first, len(vector)), ilt(second, len(vector))
-    declares len(result) = len(vector), cap(result) = cap(vector)
-seq_clear(vector)                          -> own V<T>                        reads(vector), writes(vector)   T non-linear
-    declares len(result) = Z, cap(result) = cap(vector)
-seq_reserve_heap<T>['s, 'b](vector: own HeapVector<'s, T>, heap: &uniq 'b Heap<'s>, additional: own u64)
-    -> own Result<HeapVector<'s, T>, OutOfMemory<HeapVector<'s, T>>>    reads(vector, heap), writes(vector, heap), allocates(heap)
-    declares Ok(value: r): len(r) = len(vector), cap(r) = cap(vector) + additional
-             Err: the vector returns unchanged in error.rejected
-seq_reserve_arena<T>['s, 'b](vector: own ArenaVector<'s, T>, arena: &uniq 'b Arena<'s, BYTES, ALIGN>, additional: own u64)
-    -> own Result<ArenaVector<'s, T>, NeedCapacity<ArenaVector<'s, T>>>
-                                                               reads(vector, arena), writes(vector, arena), allocates(arena)
-    declares Ok(value: r): len(r) = len(vector), cap(r) = cap(vector) + additional,
-                           len(arena) <= <call datum of len(arena)> + K<T> * additional,
-                           cap(arena) = <call datum of cap(arena)>
-             Err: the vector returns unchanged in error.rejected
-seq_shrink<T>['s, 'b](vector: own HeapVector<'s, T>, heap: &uniq 'b Heap<'s>)
-    -> own Result<HeapVector<'s, T>, OutOfMemory<HeapVector<'s, T>>>    reads(vector, heap), writes(vector, heap), allocates(heap)
-    declares Ok(value: r): len(r) = len(vector), cap(r) = len(vector)
-             Err: the vector returns unchanged in error.rejected
-```
-
-`seq_exchange` carries `reads(vector), writes(vector)` like every other by-value
-transformation of an owner. The third draft declared it `pure`, which is an
-ill-formed row: [EFF-2] checks a row in both directions, and probe `c8` shows that
-a function writing one position of an `own buffer<u8>` parameter and returning it
-must exhibit `writes(vector)`.
-
-There is **no release row**. `dispose` [PROV-6] is the one spelling, it is a
-statement rather than an operation, and it needs no `requires ieq(len(v), Z)`
-because its walk drains what it finds. The third draft's `seq_release_heap` and
-`seq_release_pool` retire with that requirement.
-
-**Ring operations.** A ring is a distinct receiver with distinct ends, so it has
-its own names rather than sharing a row.
-
-```text
-ring_place(ring: own FixedRing<T,N>, value: own T) -> own FixedRing<T,N>      reads(ring), writes(ring)
-    requires igt(room(ring), Z)
-    declares len(result) = len(ring) + 1, cap(result) = N          appended at the tail
-ring_try_place(ring, value: own T) -> (rest: own FixedRing<T,N>, unplaced: own Option<T>)   reads(ring), writes(ring)
-    designated outcome: unplaced
-    declares None: len(rest) = len(ring) + 1, cap(rest) = N
-             Some: len(rest) = len(ring), cap(rest) = N, room(rest) = Z
-ring_take(ring: own FixedRing<T,N>) -> (rest: own FixedRing<T,N>, value: own T)             reads(ring), writes(ring)
-    requires igt(len(ring), Z)
-    declares len(rest) = len(ring) - 1, cap(rest) = N              removed from the head
-ring_try_take(ring) -> (rest: own FixedRing<T,N>, value: own Option<T>)                     reads(ring), writes(ring)
-    designated outcome: value
-    declares Some: len(rest) = len(ring) - 1, cap(rest) = N
-             None: len(rest) = Z, cap(rest) = N, len(ring) = Z
-```
-
-**View operations.** Each takes its view first.
-
-```text
-seq_span['r](vector: &'r V<T>)      -> own Span<'r, T>            reads(vector)     [VIEW-2]
-seq_mut_span['r](vector: &uniq 'r V<T>) -> own MutSpan<'r, T>     reads(vector)     [VIEW-2]
-seq_append_view['r](vector: &uniq 'r V<T>) -> own AppendView<'r, T>   reads(vector) [VIEW-2]
-seq_push(view: own AppendView<'r,T>, value: own T) -> own AppendView<'r,T>    reads(view), writes(view)
-    requires igt(room(view), Z)
-    declares len(result) = len(view) + 1, room(result) = room(view) - 1, cap(result) = cap(view)
-seq_try_push(view, value: own T) -> (rest: own AppendView<'r,T>, unplaced: own Option<T>)   reads(view), writes(view)
-    designated outcome: unplaced
-    declares None: len(rest) = len(view) + 1, room(rest) = room(view) - 1, cap(rest) = cap(view)
-             Some: len(rest) = len(view), room(rest) = Z, cap(rest) = cap(view)
-seq_pop(view) -> (rest: own AppendView<'r,T>, value: own T)                  reads(view), writes(view)
-    requires igt(len(view), Z)
-    declares len(rest) = len(view) - 1, room(rest) = room(view) + 1, cap(rest) = cap(view)
-seq_truncate(view, keep: own u64) -> own AppendView<'r,T>                    reads(view), writes(view)   T non-linear
-    requires ile(keep, len(view))
-    declares len(result) = keep, cap(result) = cap(view)
-absorb(view: own AppendView<'r,T>) -> own u64                                reads(view), writes(view)   [VIEW-3]
-```
-
-Notes on the inventory.
-
-- **`seq_push` is the operation the whole design exists for.** It is total,
-  allocation-free on every backing, and lowers to a store plus a length increment
-  with no capacity branch. With `room` readable, [MSR-2]'s identity, and [MSR-3]'s
-  datums and images, it is discharged in a loop by a header invariant, by a
-  dominating branch on `room`, or by a `requires`; probes `k21`/`k21b` are that
-  arithmetic at v0.40 scale.
-- **Every `try` row publishes per-arm relations** and names the result they are
-  keyed on, which is what [SEQ-0]'s arm route needs.
-- **There is no growing `push` anywhere.** Push-with-growth is the shell: reserve,
-  form the view, push, absorb (L4).
-- **`seq_take_at` publishes its permutation**, because a writer who cannot see
-  which element moved cannot use the object table [CNT-3] advertises.
-- **`seq_clear` and `seq_truncate` require a non-linear element type**, because a
-  linear element must go to a store and these rows name none. The writer drains
-  with `seq_try_take` while holding the provider, or disposes the whole container.
-- **A `par` fill needs no new type**: `seq_filled`, `seq_mut_span`, and a counted
-  loop of `set m[i] = ...;` under [RUN-3]'s amendments, in an unmarked program
-  [RUN-2].
-- **Nothing in the inventory is total at a capacity boundary.** An overwriting ring
-  would need L9's published-displacement relation, and no program here needs it.
-
-### 3.11 The pool seam, resolved
-
-`Pool<'s, T, N>` names `N` interchangeable single-`T` slots, and a `PoolVector`
-needs one **contiguous run** of them. A pool that serves *runs* of `k` slots is not
-a uniform-slot domain: whether a run of 3 is serviceable is not decided by `len`,
-and L6's fragmentation counterexample reappears at slot granularity.
-
-The shape that keeps the algebra is to lease **one slot whose content is the run**:
-
-```wf-design
-region 'p {
-  let blocks = pool_frame<FixedVector<Record, 256>, 8, 'p>();
-  region 'b {
-    let leased = seq_lease(pool: &uniq 'b blocks);
-    match leased {
-      Ok(value: block) => { ... }
-      Err(error: refused) => { ... }
-    }
-  }
-}
-```
-
-The pool still holds eight interchangeable slots of one type, `room >= 1` still
-decides serviceability, and `PoolVector<'p, Record, 256>` is exactly a lease of such
-a slot. A `FixedVector` is frame-resident and store-free, so it is a legal slot
-content type. Three consequences, all recorded: the capacity is fixed at
-reservation, so `PoolVector` carries `N` in its type and `seq_lease` takes no
-runtime capacity argument; a program wanting two block sizes reserves two pools in
-two nested regions, so `E` names both and their leases have distinct types; and the
-reservation writes its complete argument list in one `targs`, with the region last,
-because [GRAM-5] 265's `call := callee targs? "(" ... ")"` has no second argument
-position and the third draft's `pool_frame<..., 8>['p]()` does not parse.
-
-The inner `region 'b` is not decoration: [OWN-10] requires a borrow of a local to
-name a region introduced **inside that binding's own scope**, and `'p` is introduced
-before `blocks` exists. Probe `r2_2` is that rejection, probe `r2_1` is the admitted
-shape, and [PROV-2] states the general rule so no example can get it wrong.
-
-### 3.12 One name per concept
+#### 3.K.10 One name per concept
 
 ```text
 | concept                    | chosen                | why                                                     |
 |----------------------------|-----------------------|---------------------------------------------------------|
-| construct an empty owner   | seq_fixed<T,N> etc.   | one prefix names one family; a row is selected by name,  |
-|                            |                       | receiver type and written arguments                      |
-| construct a filled owner   | seq_filled<T,N>       | what array_new already means                             |
-| construct a slot table     | seq_vacant<T,N>       | publishes len = N, which no construction loop can        |
-| append one element         | seq_push (view),      | the backing is in the receiver type, not the name        |
-|                            | seq_place (owner),    |                                                          |
-|                            | ring_place (ring)     |                                                          |
-| remove one element         | seq_pop, seq_take,    | a view cannot remove what another view appended (L14);   |
-|                            | seq_take_at,          | a ring removes from the head and says so in its name     |
-|                            | ring_take             |                                                          |
-| commit an append window    | absorb                | one word for the one event that publishes a new length   |
-| read-only view             | Span<'r, T>           | the rename is the whole change to slice<'r, T>           |
-| the three measures         | len, cap, room        | one quantity, one name, term and reader alike            |
-| reserve a store            | pool_frame,           | the placement is in the name, because it decides which   |
-|                            | pool_extent,          | item of E the store becomes (L6)                         |
-|                            | arena_frame,          |                                                          |
-|                            | arena_extent          |                                                          |
-| take from a store          | heap_take, arena_take,| one verb for acquisition; the store is in the name and   |
-|                            | pool_take, seq_lease  | in the result's type                                     |
-| hand content back          | heap_release,         | the inverse of the take; it destroys nothing             |
-|                            | pool_release          |                                                          |
-| destroy a linear value     | dispose p using (..); | one statement, closed under containment exactly as       |
-|                            |                       | linearity is (L13)                                       |
-| growth failure             | OutOfMemory<T>,       | L3 requires the failure to hand back the affine input;   |
-|                            | PoolExhausted<T>,     | each is a struct with one field, rejected                |
-|                            | NeedCapacity<T>       |                                                          |
-| transform an owner         | update p by op(...);  | one spelling for the one shape value-in/value-out forces |
-| transform and take         | update p by op(...)   | the same statement where the row returns two results     |
-|                            |   into x;             |                                                          |
-| rebind a consumed binding  | set p = e;            | the premise is deadness; the language gains no second    |
-|                            |                       | assignment form                                          |
-| the property               | resource-closed       | the long spelling is the one in use                      |
-| the failure variant field  | Err(error: e)         | [PRE-1] declares Err(error: E)                           |
+| a run of slots, frame-      | FixedVector<T, n>     | the settled name; its capacity is in its type because   |
+|   resident                 |                       | layout needs it before the run exists                   |
+| a run of slots, store-      | Vector<'s, T>         | one type at three regions; its capacity is a measure    |
+|   resident                 |                       | because a growth policy must change it                  |
+| the store's handle          | Heap<'s>, Arena<..>   | a value you must hold in order to act; the parameter    |
+|                            |                       | is never elided, because it is the allocation fact      |
+| the brand's spelling        | written iff it relates| 3.K.0's assumption: decidable from the declaration text |
+|                            | two positions         | alone. The entry heap is never written                  |
+| build an empty run          | seq_fixed, seq_frame, | the placement is in the name, because it decides which  |
+|                            | seq_arena, seq_heap   | item of E the run becomes (L6)                          |
+| reserve a bump store        | arena_frame,          | as above; nothing else reserves                         |
+|                            | arena_extent          |                                                         |
+| append one element          | seq_place             | one name, whatever the backing                          |
+| remove one element          | seq_take              | from the end; every other order is 3.L                  |
+| swap two positions          | seq_exchange          | the row that makes relocation writable                  |
+| read a measure              | len, cap, room        | one quantity, one name, term and reader alike           |
+| a read-only view            | Span<'r, T>           | the rename is the whole change to slice<'r, T>          |
+| a writable view             | MutSpan<'r, T>        | element writes only; its length is fixed by its type    |
+| destroy a linear value      | dispose p using (..); | one statement, closed under containment as linearity is |
+| take a linear value apart   | let N(f: a) = move v; | the inverse of construct, so the closure covers         |
+|                            |                       | disassembly too                                         |
+| transform a place through   | set p = f(q: move p); | one admission on the one assignment form; the only form |
+|   a call                   |                       | the partition test could not write in wf                |
+| rebind a consumed binding   | set p = e;            | the premise is deadness; the language gains no second   |
+|                            |                       | assignment form                                         |
+| a refusal                   | Option<T>             | the kernel consumes no affine input, so it declares no  |
+|                            |                       | failure nominal; a library one declares its own struct  |
+| the property                | resource-closed       | the long spelling is the one in use                     |
+| the failure variant field   | Err(error: e)         | [PRE-1] declares Err(error: E)                          |
 ```
 
-`Full<T>` and `TooSmall` are **not** in the vocabulary: no row produces either,
-because the `try` forms return `Option<T>` instead.
+`FixedRing`, `PoolVector`, `HeapVector`, `ArenaVector`, `AppendView`, `absorb`,
+`update`, `Full<T>`, `TooSmall`, `OutOfMemory`, `PoolExhausted`, `NeedCapacity` and
+`NoRecord` are **not** in the kernel vocabulary. The first four are library names
+for kernel types or library nominals (3.L.1, `CONTAINERS.md` §3, `CONTAINERS.md` §3); the next three are
+retired with their rules; the last six are library nominals a writer declares over
+their own type, and `CONTAINERS.md` §3 declares one.
 
-### 3.13 Amendment register
+#### 3.K.11 Amendment register
 
 **This register is a collation of the `Amends:` and `Depends:` lines of every rule
-in section 3, and it carries nothing else.** It was written last, from the rules.
-Four conditions make it checkable rather than remembered, and each is a defect of
+in 3.K, and it carries nothing else.** It was written last, from the rules. It
+covers 3.K only: 3.L amends nothing, because it is ordinary wf.
+
+Six conditions make it checkable rather than remembered, and each is a defect of
 this file when it fails:
 
 1. a changed row whose `by` column names no rule whose `Amends:` line reaches it;
 2. an `Amends:` line no changed row carries;
-3. a `Depends:` line no third-list row carries, or a third-list row no
-   `Depends:` line produces; and
-4. **a `Depends:` citation whose sentence lies inside a range some `Amends:` line
-   changes.** That is the mechanical form of the failure round 2 found twice and
-   round 3 found once: a rule whose premise another rule moved. When a dependency
-   really does fall inside changed text, it is recorded **on the changed row**,
-   which states that the depended sentence survives and who depends on it. Five
-   such dependencies exist and each is written into its row: [OWN-5] 601 under
-   [VIEW-2], [OWN-7] 624's conservatism under [PROV-3], [FN-1] 1036 under [VIEW-3],
-   [PAR-2] 1999 under [RUN-3], and [STOR-3] 694-700 under [PROV-6].
+3. a `Depends:` line no third-list row carries, or a third-list row no `Depends:`
+   line produces;
+4. **(a)** a `Depends:` citation whose sentence lies inside a range some `Amends:`
+   line changes; and **(b)** a `Depends:` citation, or any sentence in the depended
+   rule, whose subject type, operation spelling, or effect atom any `Amends:` line
+   in this file renames, retires or redefines. When a dependency really does fall
+   inside changed text, or names a retired subject, it is recorded **on the changed
+   row**, which states that the depended sentence survives and who depends on it;
+5. **an `Amends:` line must state a change for every sentence in its cited range
+   that the amending rule's own body contradicts.** Round 4 found the fourth draft
+   satisfying conditions 1 to 4 while leaving [ENT-5] 2887's element-position
+   carve-out — a sentence inside a cited range, made false by the amending rule's
+   own body — unmentioned; and
+6. every `*Publishes:* X on Y` names the [ENT-3] destination clause that puts X on
+   Y. A `Publishes:` line with no destination is the same defect as an `Amends:`
+   line with no row. Three forms publish onto a destination in this design and each
+   names its clause: [CALL-4]'s destructuring `let`, [LIV-3]'s exchange targets, and
+   [PROV-6]'s destructuring consume, all three served by the one added S12 clause.
 
 **Changed.** Line numbers are `spec/kernel-spec.md` at a40c7e70, re-derived in this
-session; four of the third draft's were wrong.
+session; five of the fourth draft's were wrong and four of its ranges overshot into a
+blank line or a section heading. Each row's `by` column names the rules whose
+`Amends:` lines reach it, and those lines carry the detail; a row that also records a
+surviving depended sentence marks it **bold** (condition 4).
 
 ```text
-| rule            | line      | change                                                                    | by                  |
-|-----------------|-----------|---------------------------------------------------------------------------|---------------------|
-| [SCOPE-3]       | 27-34     | heap exhaustion leaves the deferred set; stack and covered-store          | [RES-6], [STK-5]    |
-|                 |           | exhaustion leave it for resource-closed programs                          |                     |
-| [FORM-2]        | 52-76     | +4 rendering sentences: the result list, the destructuring let, the        | [CALL-4], [LIV-3],  |
-|                 |           | one-line update statement in both shapes, and the dispose statement        | [PROV-6]            |
-| [GRAM-2]        | 165-200   | fn_decl admits an ordered result list; program_kind admits resource_closed | [CALL-4], [RES-4],  |
-|                 |           | struct_decl and enum_decl gain region_params?                              | [CNT-4]             |
-| [GRAM-3]        | 204-207   | the fixed slice, buffer, box and arena type productions retire; the views, | [PROV-1], [VIEW-1]  |
-|                 |           | owners and branded singles are ordinary TYPEIDs with targs                 |                     |
-| [GRAM-4]        | 214-254   | let_stmt admits a destructuring binder list and return_stmt a comma-       | [CALL-4], [MSR-5],  |
-|                 |           | separated list; affine_factor GAINS the [ENT-2] place grammar and the      | [LIV-3], [PROV-6]   |
-|                 |           | three measure terms and loses nothing; requires_clause and ensures_clause  |                     |
-|                 |           | take a clause_expr; stmt gains update and dispose                          |                     |
-| [GRAM-5]        | 265-266   | +2 productions, clause_expr and clause_operand, for the contract surface;  | [MSR-5]             |
-|                 |           | atom and atom_list are unchanged, which is why [GRAM-9] needs no scope     |                     |
-| [GRAM-11]       | 341-345   | the callee enumeration, the positional-operand sentence and the partition  | [SEQ-0]             |
-|                 |           | sentence gain the container declaration domain as a fourth class           |                     |
-| [TYPE-2]        | 352       | +16 nominals (3 providers, 3 branded singles, 5 owners, 2 views, 3 failure | [PROV-1], [CNT-1],  |
-|                 |           | structs), slice renamed Span, box/arena/buffer retire from the writer      | [CNT-3], [VIEW-1],  |
-|                 |           | surface; the flat-element restriction is not inherited by the owners       | [RES-6]             |
-| [TYPE-5]        | 369       | a fourth callee class: a container-domain row writes its complete type,    | [SEQ-0]             |
-|                 |           | const and region argument list exactly when an operand supplies none;      |                     |
-|                 |           | arena_new leaves the retained-argument enumeration with its retirement     |                     |
-| [TYPE-6]        | 391-403   | the container-domain spellings enter the lexical IDENT domain, its         | [SEQ-0]             |
-|                 |           | nominals the TYPEID domain, and a nominal's region parameters the REGIONID |                     |
-| [TYPE-7]        | 471       | the closed deref domain becomes the two borrow modes plus HeapBox,         | [PROV-1]            |
-|                 |           | ArenaBox and PoolSlot                                                      |                     |
-| [SET-1]         | 482-500   | "no writable target path may traverse a slice value" is restated over      | [PROV-3], [LIV-2]   |
-|                 |           | loan strength, which admits the MutSpan element write; the affine-target   |                     |
-|                 |           | rejection, the dead-root sentence and the post-right-hand-side             |                     |
-|                 |           | revalidation together become the one deadness-at-commit premise            |                     |
-| [SET-2]         | 508-524   | the region-bearing target rejection is replaced by [PROV-3] use 3 over     | [PROV-3], [LIV-3]   |
-|                 |           | loan-bearing targets only; the exchange gains a compiler-owned form whose  |                     |
-|                 |           | replacement is derived from the read-out value                             |                     |
-| [CONST-2]       | 547-551   | its naming of buffer, slice and slice_of follows the retirements           | [VIEW-1]            |
-| [OWN-1]         | 558-567   | providers, branded values, owners and views are affine; a linear class     | [PROV-6], [VIEW-1], |
-|                 |           | joins copy and affine; 564's "reinitialization requires a new let" gains   | [LIV-1], [LIV-2]    |
-|                 |           | one route; liveness must agree at every join                               |                     |
-| [OWN-4]         | 577       | for a lent-onward child reborrow only, the child's loan ends at the end    | [PROV-7]            |
-|                 |           | of its receiving statement and the parent resumes there                    |                     |
-| [OWN-5]         | 589-607   | the slice-origin paragraphs generalize to loan-bearing values; each origin | [PROV-3]            |
-|                 |           | carries the half-open range its value reaches; the one access clause       |                     |
-|                 |           | becomes two, over ranges; a loan covers its place's address computation;   |                     |
-|                 |           | the resolved origin set is the set minus immutable-const; 596's no-join    |                     |
-|                 |           | sentence is restated over the loan-bearing predicate; 603 gains the        |                     |
-|                 |           | callee-side twin of the [SET-1] change. **601's conflict sentence survives |                     |
-|                 |           | verbatim and its quantifier widens; [VIEW-2] depends on it**               |                     |
-| [OWN-6]         | 611       | a child reborrow may name a caller-supplied region the parent's region     | [PROV-7]            |
-|                 |           | outlives-or-equals when the receiving call's result type does not name     |                     |
-|                 |           | the loan region                                                            |                     |
-| [OWN-7]         | 624       | overlap extends to ranges: two origins with one resolved place overlap     | [PROV-3]            |
-|                 |           | exactly when their ranges intersect. **Subscript overlap stays             |                     |
-|                 |           | conservative and [PROV-3] use 2 depends on that**                          |                     |
-| [OWN-11]        | 641       | the move prohibition is replaced by [LIV-1]'s join agreement; the borrow   | [LIV-1]             |
-|                 |           | half is unchanged                                                          |                     |
-| [STOR-1]        | 674       | the owners join the storage-class table; buffer<T>'s sentence and the      | [LIV-2]             |
-|                 |           | growable-collection paragraph are superseded; the affine-set rejection     |                     |
-|                 |           | narrows to a live target                                                   |                     |
-| [STOR-2]        | 680       | box_new and arena_new retire; heap_take and arena_take are container-      | [PROV-2]            |
-|                 |           | domain rows taking a provider and returning a branded value                |                     |
-| [STOR-3]        | 683-715   | a linear type has no compiler-derived release action; the box<T> and       | [PROV-5], [PROV-6], |
-|                 |           | buffer<T> drop rows retire with their types; the table gains the store     | [VIEW-5]            |
-|                 |           | reset and the AppendView release. **694-700's derived-drop order and its   |                     |
-|                 |           | affine-element clause survive and are the walk [PROV-6] reuses**           |                     |
-| [STOR-4]        | 716       | confinement becomes the ordinary outlives relation, quantified over every  | [CNT-4]             |
-|                 |           | region the value's type names                                              |                     |
-| [STOR-5]        | 718-732   | the enumerated position list is replaced by the intensional split of       | [CNT-4]             |
-|                 |           | loan-bearing and confined types; the per-leaf-provenance deferral is       |                     |
-|                 |           | withdrawn as unnecessary, a store brand being a type parameter             |                     |
-| [STOR-6]        | 733-765   | the "no numeric frame ceiling" sentence keeps its scope for the language;  | [RES-3], [STK-3]    |
-|                 |           | E-materialization and [STK-1]'s ABI obligation join the target-stage       |                     |
-|                 |           | obligations and their failure cites no language rule                       |                     |
-| [OP-1]          | 766-845   | +cap and +room rows beside len, whose domain extends to owners, views and  | [PROV-2], [SEQ-0],  |
-|                 |           | providers and which stay pure; box_new, arena_new, buffer_new,             | [VIEW-1]            |
-|                 |           | buffer_vacant and slice_of retire; ReservedLowerNames +2                   |                     |
-| [OP-4]          | 909       | indexable bases extend to the prefix owners, FixedRing, Span and MutSpan;  | [CNT-2]             |
-|                 |           | the obligation is against len, never cap                                   |                     |
-| [OP-7]          | 935       | slice_of retires; cap and room join the structural operations              | [VIEW-1]            |
-| [OP-9]          | 968-998   | buffer_fits stays a representability predicate, the ceiling table gains a  | [RES-5]             |
-|                 |           | pair for each added nominal, the region-bearing exclusion is lifted, and   |                     |
-|                 |           | the target-independent constant K<T> is fixed here                         |                     |
-| [FN-1]          | 999-1070  | the slice-return ceiling generalizes to views and gains the same-region    | [VIEW-6], [CALL-4], |
-|                 |           | duplicate-result rejection; the result shape admits an ordered list; the   | [RES-8], [STK-4]    |
-|                 |           | boundary publishes a source-stage demand map and a target-stage own-       |                     |
-|                 |           | storage figure; a loop_stmt has an edge to its normal successor if and     |                     |
-|                 |           | only if some break resolves to it. **1036's call-site origin set still     |                     |
-|                 |           | contains immutable-const and [VIEW-3] depends on that**                    |                     |
-| [FN-2]          | 1087      | the region-bearing generic-argument rejection narrows to loan-bearing      | [CNT-4], [SEQ-0]    |
-|                 |           | arguments; explicit instantiation covers nominal region arguments and the  |                     |
-|                 |           | container domain                                                           |                     |
-| [FN-3]          | 1117-1121 | effect-row normalization's allocation component becomes the set of         | [PROV-4]            |
-|                 |           | allocates paths under 1121's own ordinal identity; the region alpha-map    |                     |
-|                 |           | applies to modes and types only                                            |                     |
-| [FN-7]          | 1211-1246 | one new input row command.heap; one new entry marker resource_closed; the  | [PROV-1], [RES-4]   |
-|                 |           | no-region-parameters sentence admits exactly one, naming the heap store,   |                     |
-|                 |           | supplied by program start; main's effect row admits allocates over its own |                     |
-|                 |           | labelled provider input; the canonical byte sequence gains the row         |                     |
-| [FN-8]          | 1256-1257 | clause operands are a clause_expr over terms [MSR-5], not an expr          | [MSR-5]             |
-| [FN-9]          | 1295-1362 | clause operands are terms; a measured result admits len/cap/room; an       | [MSR-3], [MSR-4],   |
-|                 |           | ordered result list gives one clause more than one result datum; a         | [MSR-5], [CALL-4]   |
-|                 |           | parameter's measure operand denotes an entry datum, so 1310 and 1320-1322  |                     |
-|                 |           | are replaced by the datum; 1345's M(c,q) admits a measure datum, which is  |                     |
-|                 |           | always live; the direct-affine route is one step of [MSR-4]                |                     |
-| [EFF-1]         | 1363-1372 | allocates takes formal-rooted effect paths; the atoms heap and arena       | [PROV-4]            |
-|                 |           | retire                                                                     |                     |
-| [EFF-2]         | 1400-1404 | "slice parameter names the backing" generalizes to a loan-bearing          | [PROV-3]            |
-|                 |           | parameter. 1421's empty-release-row sentence is UNCHANGED and stays true,  |                     |
-|                 |           | because after [PROV-6] no reclamation of store-owned storage is derived    |                     |
-| [ERR-4]         | 1478      | "unavailable external resources remain outside the source outcome model"   | [RES-7]             |
-|                 |           | gains the two families that move inside                                    |                     |
-| [PROG-3]        | 1499-1509 | the start-time obligation includes materializing the selected row of E;    | [RUN-4]             |
-|                 |           | ProgramFinished is named; PreStart may descend the profile table and does  |                     |
-|                 |           | not commit the entry stack it received                                     |                     |
-| [DIAG-1]        | 1687-1712 | collision rank 5 covers the container domain; a                            | [SEQ-0]             |
-|                 |           | container_declaration_ordinal joins the system one; 1768's deferred-use    |                     |
-|                 |           | carrier gains the failure structs' field table                             |                     |
-| [PAR-1]         | 1969,1989 | the allocates(arena 'r) region clause becomes the ordinary provider-place  | [RUN-3], [RUN-2],   |
-|                 |           | projection, and a dispose statement enters a footprint through its writes  | [PROV-6]            |
-|                 |           | row; execution-resource exhaustion is unreachable for a marked program     |                     |
-| [PAR-2]         | 1994-2028 | the exclusive-loan condition is stated over loans formed by a statement of | [RUN-3], [RUN-2]    |
-|                 |           | the body; a view's write footprint is its origin at the range it reaches;  |                     |
-|                 |           | the element-write form reads "a direct subscript of an array, a prefix     |                     |
-|                 |           | owner, or a MutSpan"; the exhaustion sentence as above. **1999's           |                     |
-|                 |           | single-binder refinement survives and [RUN-3] depends on it**              |                     |
-| [PAR-3]         | 2029-2058 | the exhaustion sentence as above; its replicated places cannot occur in a  | [RUN-3], [RUN-2]    |
-|                 |           | marked program, which takes no permission                                  |                     |
-| [SYS-1]         | 2130      | a fourth admitted declaration source, on [SYS-1]'s own terms               | [SEQ-0]             |
-| [SYS-2]         | 2158-2302 | the range-bearing operations' buffer parameters become MutSpan or Span,    | [VIEW-7], [RUN-1],  |
-|                 |           | changing the inventory's normative counts; reserve_file returns a Result   | [RES-6]             |
-|                 |           | with a typed exhaustion outcome. **2264's "no system operation allocates"  |                     |
-|                 |           | is kept and gains its companion, and [RES-7]'s exclusion test depends on   |                     |
-|                 |           | it: because it is true, that test excludes nothing in this version**       |                     |
-| [SYS-3]         | 2303      | the container domain is admitted to every compilation unit                 | [SEQ-0]             |
-| [SYS-7]         | 2467-2481 | the IoError class set is unchanged; handle-table exhaustion is a separate  | [RES-6]             |
-|                 |           | outcome type rather than a new class, so no portable class is added        |                     |
-| [SYS-8]         | 2482-2522 | read_at, write_once, directory_next, host_copy_bytes, host_copy_utf8,      | [VIEW-7]            |
-|                 |           | open_directory and open_file take &uniq 'd MutSpan<'r,u8> for a            |                     |
-|                 |           | destination and &'s Span<'r,u8> for a source; the two range obligations    |                     |
-|                 |           | keep their form and order with len of the borrowed view                    |                     |
-| [SYS-9,11,12,14]| 2523-2641 | their normative prose naming buffer<u8> is restated over views             | [VIEW-7]            |
-| [ENT-2]         | 2675,2678,| the three measure terms are one-place terms over an admitted place that    | [MSR-1], [MSR-3],   |
-|                 | 2722      | may end in a subscript; the term list gains the measure datum beside the   | [LIV-2], [MSR-2]    |
-|                 |           | capture and commit-value clauses; a reinitializing set is a declaration    |                     |
-|                 |           | event, so the reinitialized binding is a distinct term; the implicit-fact  |                     |
-|                 |           | sentence gains the four standing facts                                     |                     |
-| [ENT-3]         | 2724,     | +1 enumerated source S13, the declared relations of a container-domain     | [SEQ-0], [VIEW-3],  |
-|                 | 2827      | operation, established as S12 is, with a per-variant arm route on the S7   | [CALL-4]            |
-|                 |           | path discipline; S5 gains absorb's commit value; S12's destination list    |                     |
-|                 |           | gains each binder of a destructuring let at its own ordinal                |                     |
-| [ENT-5]         | 2857-2899 | a measure's support is its descriptor storage, its holders and every       | [MSR-2], [MSR-3],   |
-|                 |           | offset's support, and a kill is any event carrying a writes occurrence     | [CALL-5]            |
-|                 |           | that projects onto it; the call-boundary paragraph and the entry-image     |                     |
-|                 |           | stability paragraph are replaced by the measure datum; clause (b)'s        |                     |
-|                 |           | projected-callee-write kill is classified by [CALL-1..3] and nothing else  |                     |
-| [ENT-6]         | 2970-3092 | one numeric goal disposition replaces the four per-family route and        | [MSR-3], [MSR-4],   |
-|                 |           | attach-site grants; measures carry affine value images, and an image dies  | [MSR-2]             |
-|                 |           | exactly where a fact over the same term dies; 3001's automatic affine-     |                     |
-|                 |           | premise sequence gains len + room = cap as two specification-fixed members |                     |
-| [INV-1]         | 3107      | affine atoms are the [ENT-2] place grammar, the measure terms, and named   | [MSR-5]             |
-|                 |           | consts, which 3107 forbids today                                           |                     |
-| batch 0079      | docs/done/| the heap-refusal abort site loses its last reachable caller; the           | [RES-6]             |
-| exhaustion floor| 0079-...  | guard-page record survives, and for a resource-closed build its alternate  |                     |
-|                 |           | stack is an item of E [STK-5]                                              |                     |
+| rule            | line      | change                                                          | by                          |
+|-----------------|-----------|-----------------------------------------------------------------|-----------------------------|
+| [SCOPE-3]       | 27-31     | heap exhaustion leaves the deferred set; stack and covered-store | [RES-4], [RES-6], [RUN-2]   |
+|                 |           | exhaustion leave it for marked programs                          |                             |
+| [FORM-2]        | 52-76     | +4 renderings: result list, destructuring let and consume, set   | [CALL-4], [LIV-3], [PROV-6] |
+|                 |           | target list, dispose                                             |                             |
+| [GRAM-2]        | 165-200   | result list; resource_closed; region_params on nominals;         | [CALL-4], [RES-4], [BLK-4], |
+|                 |           | requires/ensures (182-183) take a clause_expr                    | [MSR-5]                     |
+| [GRAM-3]        | 204-207   | slice/buffer/box/arena productions retire; runs and views are    | [PROV-1]                    |
+|                 |           | ordinary TYPEIDs with targs                                      |                             |
+| [GRAM-4]        | 214-254   | destructuring let and consume; comma return; set target list;    | [CALL-4], [LIV-3], [MSR-5], |
+|                 |           | affine_factor GAINS terms; stmt gains dispose                    | [PROV-6]                    |
+| [GRAM-5]        | 265-266   | +clause_expr, +clause_operand; atom untouched                    | [MSR-5]                     |
+| [GRAM-9]        | 324       | unchanged; named because [MSR-5] moves the amendment away        | [MSR-5]                     |
+| [GRAM-11]       | 341-345   | a fourth callee class in all three sentences                     | [BLK-0]                     |
+| [TYPE-2]        | 352       | +5 nominals, slice renamed Span, box/arena/buffer retire; the    | [PROV-1], [BLK-1], [BLK-2], |
+|                 |           | flat-element restriction is not inherited                        | [VIEW-1]                    |
+| [TYPE-5]        | 369       | a fourth callee class for the written-argument criterion         | [BLK-0]                     |
+| [TYPE-6]        | 391-403   | the domain's spellings, nominals and region parameters; 396's    | [BLK-0]                     |
+|                 |           | callee IDENT admission                                           |                             |
+| [TYPE-7]        | 471       | the deref domain becomes the two borrow modes alone              | [PROV-1]                    |
+| [SET-1]         | 476-500   | loan-strength target traversal; one deadness-at-commit premise;  | [PROV-3], [LIV-2], [LIV-3], |
+|                 |           | one added admission, the in-place exchange                       | [VIEW-4]                    |
+| [SET-2]         | 508-524   | region-bearing rejection replaced by [PROV-3] use 3 and [LIV-3]; | [PROV-3], [LIV-3], [VIEW-4] |
+|                 |           | a compiler-derived exchange whose replacement is the read-out    |                             |
+| [CONST-2]       | 547-551   | its naming of buffer, slice and slice_of follows the retirements | [VIEW-1]                    |
+| [OWN-1]         | 558-567   | 558-559 UNCHANGED; linear refines affine; 564 gains the          | [PROV-6], [VIEW-1],         |
+|                 |           | partial-move refusal and one reinitialization route              | [LIV-1], [LIV-2]            |
+| [OWN-4]         | 577       | the lent-onward child's loan ends at its receiving statement     | [PROV-7]                    |
+| [OWN-5]         | 589-607   | origins generalize to loan-bearing values and carry a range and  | [PROV-3], [VIEW-2]          |
+|                 |           | formation datums; two ranged access clauses; the address-        |                             |
+|                 |           | computation freeze; 596 and 603 restated. **601 survives and     |                             |
+|                 |           | [VIEW-2] depends on it**                                         |                             |
+| [OWN-6]         | 611       | a child reborrow may name a caller-supplied region under the     | [PROV-7]                    |
+|                 |           | result-type condition, for every reborrow                        |                             |
+| [OWN-7]         | 624-625   | overlap extends to ranges. **625's subscript conservatism        | [PROV-3]                    |
+|                 |           | survives and [PROV-3] use 2 depends on it**                      |                             |
+| [OWN-10]        | 636-640   | 638's arena content clause becomes one over Vector content.      | [PROV-1]                    |
+|                 |           | **636 survives and [PROV-2] depends on it** (4a and 4b)          |                             |
+| [OWN-11]        | 641       | the move prohibition is replaced by [LIV-1]'s join agreement     | [LIV-1]                     |
+| [STOR-1]        | 670-677   | the runs join the storage table; 677's growable paragraph is     | [LIV-2]                     |
+|                 |           | superseded by the library; 674 narrows to a live target          |                             |
+| [STOR-2]        | 680       | box_new and arena_new retire; a store take is a kernel row       | [PROV-2]                    |
+| [STOR-3]        | 683-715   | a linear type has no derived release; box and buffer rows        | [PROV-5], [PROV-6], [RES-9] |
+|                 |           | retire; the store reset joins the table and is split from        |                             |
+|                 |           | content release; 704-707 gains a second subject. **694-700's     |                             |
+|                 |           | drop order survives and [PROV-6] reuses it**                     |                             |
+| [STOR-4]        | 716       | confinement becomes the outlives relation over the region set    | [BLK-4]                     |
+| [STOR-5]        | 718-732   | the position list becomes the three-way intensional split; the   | [BLK-4], [PROV-2]           |
+|                 |           | per-leaf-provenance deferral is withdrawn as unnecessary         |                             |
+| [STOR-6]        | 733-765   | E-materialization joins the target-stage obligations             | [RES-3], [STK-3]            |
+| [OP-1]          | 766-845   | +cap and +room, pure, over runs, views and providers; five       | [PROV-2], [BLK-0], [BLK-2], |
+|                 |           | constructors retire; ReservedLowerNames +2; 833 gains the class  | [VIEW-1]                    |
+| [OP-4]          | 909-915   | indexable bases extend; the obligation is against len; a         | [BLK-1], [MSR-1]            |
+|                 |           | subscripted measure place in an erased clause discharges at its  |                             |
+|                 |           | own attach site                                                  |                             |
+| [OP-5]          | 921       | "and contract predicate" narrows to a source condition           | [MSR-5]                     |
+| [OP-7]          | 935       | slice_of retires; cap and room join the structural operations    | [VIEW-1]                    |
+| [OP-9]          | 968-996   | the ceiling table gains Appendix A.1's rows, the region-bearing  | [RES-5]                     |
+|                 |           | exclusion is lifted, and advance<T> is fixed here                 |                             |
+| [FN-1]          | 999-1070  | the view ceiling and its duplicate-result rejection; an ordered  | [VIEW-6], [CALL-4],         |
+|                 |           | result list; three boundary components; a loop_stmt's normal-    | [RES-8], [STK-4]            |
+|                 |           | successor edge. **1035-1041 survives and [PROV-3] depends on it**|                             |
+| [FN-2]          | 1087      | the rejection narrows to loan-bearing and provider arguments;    | [BLK-4], [BLK-0]            |
+|                 |           | explicit instantiation covers nominals and the kernel domain     |                             |
+| [FN-3]          | 1117-1121 | the allocation component becomes the set of allocates paths      | [PROV-4]                    |
+| [FN-7]          | 1211-1246 | command.heap; resource_closed; exactly one region parameter;     | [PROV-1], [RES-4]           |
+|                 |           | allocates over a labelled input; the byte sequence gains the row |                             |
+| [FN-8]          | 1256-1261 | clause operands are a clause_expr; 1261 becomes a GoalTemplate-  | [MSR-5]                     |
+|                 |           | formation sentence. **1269 survives and [MSR-3] depends on it**  |                             |
+| [FN-9]          | 1295-1360 | terms as operands; measured results; multi-datum clauses; entry  | [MSR-3], [MSR-4], [MSR-5],  |
+|                 |           | and exit datums replace 1310; 1339's M(c,q) admits a datum;      | [CALL-4]                    |
+|                 |           | 1306's closed root set is what [MSR-5] reuses                    |                             |
+| [EFF-1]         | 1363-1380 | allocates takes formal-rooted paths; heap and arena retire;      | [PROV-4], [PROV-3]          |
+|                 |           | 1380 generalizes to a loan-bearing parameter, which [CALL-3]     |                             |
+|                 |           | and [VIEW-7] depend on (4a)                                      |                             |
+| [EFF-2]         | 1400-1421 | the slice projection generalizes; 1421 stays TRUE for its four   | [PROV-3], [PROV-6]          |
+|                 |           | types and is joined by the disposal walk's contribution          |                             |
+| [ERR-4]         | 1478      | the deferral gains the two families that move inside             | [RES-7]                     |
+| [PROG-3]        | 1499-1509 | PreStart materializes E and compares the granted entry stack;    | [RUN-4]                     |
+|                 |           | ProgramFinished is named                                         |                             |
+| [DIAG-1]        | 1687-1712 | rank 5 covers the kernel domain; +container_declaration_ordinal  | [BLK-0]                     |
+| [PAR-1]         | 1969,1989,| the provider-place projection; dispose enters a footprint and    | [RUN-3], [RUN-2], [PROV-6]  |
+|                 | 1990      | joins 1990's intervening list; exhaustion unreachable when       |                             |
+|                 |           | marked. **2102 survives and [RUN-1] depends on it**              |                             |
+| [PAR-2]         | 1994-2028 | iteration-formed loans; a view's ranged write footprint; the     | [RUN-3], [RUN-2]            |
+|                 |           | element-write form. **1999 survives and [RUN-3] depends on it**  |                             |
+| [PAR-3]         | 2029-2056 | the exhaustion sentence; replicated places cannot occur marked   | [RUN-3], [RUN-2]            |
+| [SYS-1]         | 2130      | a fourth admitted declaration source                             | [BLK-0]                     |
+| [SYS-2]         | 2158-2301 | views at the range-bearing operations; an "acquires from" column | [VIEW-7], [RUN-1], [RES-6], |
+|                 |           | reading none for all sixteen; reserve_file gains a recoverable   | [RES-7], [RES-9]            |
+|                 |           | outcome; 2295's proposition set gains covered-store measures.    |                             |
+|                 |           | **2264 is kept and [RES-7]'s column values depend on it**        |                             |
+| [SYS-3]         | 2303      | the kernel domain is admitted to every unit                      | [BLK-0]                     |
+| [SYS-5]         | 2560,2575 | release-completeness is KEPT; the release action gains the       | [RES-9]                     |
+|                 |           | handle-table subject                                             |                             |
+| [SYS-7]         | 2467-2481 | the class set is UNCHANGED, which is why no nominal is added     | [RES-6]                     |
+| [SYS-8]         | 2482-2521 | the seven range-bearing operations take MutSpan and Span         | [VIEW-7]                    |
+| [SYS-9,11,12,14]| 2522-2639 | their prose naming buffer<u8> is restated over views             | [VIEW-7]                    |
+| [SYS-10]        | 2548-2552 | a reservation consumes a runtime record with a published         | [RES-9]                     |
+|                 |           | capacity, and the record returns on release                      |                             |
+| [QUAL-2]        | 2363      | +one failure: an implementation needing an undeclared store.     | [RES-7]                     |
+|                 |           | **2363's own sentence survives and [RES-9] depends on it**       |                             |
+| [ENT-2]         | 2675,2677,| measure terms over a subscriptable place; +the measure datum;    | [MSR-1], [MSR-3], [LIV-2],  |
+|                 | 2722      | a reinitializing set is a declaration event; +standing facts.    | [MSR-2]                     |
+|                 |           | **2687 survives and [MSR-3] depends on it**                      |                             |
+| [ENT-3]         | 2724,2768,| +S13 and its arm route; S5 gains the construct placement; S6     | [BLK-0], [MSR-3], [CALL-4], |
+|                 | 2778,2827 | generalizes over three measures; S12 gains one clause serving    | [LIV-3]                     |
+|                 |           | three forms                                                      |                             |
+| [ENT-5]         | 2857-2899 | descriptor-storage support; the effect-row kill; 2887(a) LOSES   | [MSR-2], [MSR-3], [CALL-5]  |
+|                 |           | its element-position carve-out; the datum replaces the call-     |                             |
+|                 |           | boundary and 2881-2885 paragraphs; clause (b) is classified by   |                             |
+|                 |           | [CALL-1..3]. **2936-2940 survives and [MSR-2] and [MSR-3]        |                             |
+|                 |           | depend on it**                                                   |                             |
+| [ENT-6]         | 2970-3092 | one goal disposition; measures carry images; 3001 gains          | [MSR-3], [MSR-4], [MSR-2]   |
+|                 |           | len + room = cap as two members                                  |                             |
+| [INV-1]         | 3099-3107 | 3099's restriction is reused by [MSR-5] and gains [MSR-3]'s      | [MSR-3], [MSR-5]            |
+|                 |           | atom-identity sentence; 3107 admits terms and named consts.      |                             |
+|                 |           | **3099 survives and [MSR-5] depends on it**                      |                             |
+| batch 0079      | docs/done/| the abort site loses its allocation caller and keeps two until   | [RES-6], [PROV-6]           |
+| exhaustion floor| 0079-...  | [PROV-6]'s bounded walk replaces them                            |                             |
 ```
 
 **Depended on and unchanged.** Each row is the collation of one or more `Depends:`
 lines, and each names the rule that depends on it. A later batch changing one of
-these sentences changes a rule of this design without touching it.
+these sentences changes a rule of this design without touching it. Dependencies that
+fall inside changed text, or that name a retired subject, are on the changed rows
+above instead (condition 4).
 
 ```text
 | rule       | line | the sentence, and who depends on it                                       |
 |------------|------|---------------------------------------------------------------------------|
-| [CONST-2]  | 541  | named const storage is permanently read-only, so immutable-const creates   |
-|            |      | no conflicting access: [PROV-3]'s resolved-set definition                  |
-| [OWN-3]    | 573  | region identifiers are unique within a function: [PROV-1], which is why a  |
+| OWN-3      | 573  | region identifiers are unique within a function: [PROV-1], which is why a  |
 |            |      | store region's spelling denotes one store                                  |
-| [OWN-3]    | 575  | distinct caller-supplied regions are incomparable and every ordering rule  |
-|            |      | fails closed: [PROV-1] and [CNT-4], the whole invariance argument          |
-| [OWN-6]    | 609  | a borrow not bound by let is a call-scoped temporary: [PROV-2] and         |
+| OWN-3      | 575  | distinct caller-supplied regions are incomparable and every ordering rule  |
+|            |      | fails closed: [PROV-1] and [BLK-4], the whole invariance argument          |
+| OWN-6      | 609  | a borrow not bound by let is a call-scoped temporary: [PROV-2] and         |
 |            |      | [VIEW-2], which is why the argument borrow is not the freeze               |
-| [OWN-9]    | 633  | one usable mutable path per place: [PROV-3] use 1, whose ranged access is  |
-|            |      | the form that claim now takes over a view                                  |
-| [OWN-10]   | 636  | a borrow of a local names a region introduced inside that binding's scope: |
-|            |      | [PROV-2], which is why a store region is never a loan region               |
-| [OWN-12]   | 645  | region substitution controls type equality: [PROV-1], which is why two     |
+| OWN-12     | 645  | region substitution controls type equality: [PROV-1], which is why two     |
 |            |      | stores are distinguished by their types                                    |
-| [TYPE-5]   | 374  | argument types match declared parameter types exactly: [PROV-1], the other |
+| TYPE-5     | 374  | argument types match declared parameter types exactly: [PROV-1], the other |
 |            |      | half of the invariance argument                                            |
-| [CAP-1]    | 1962 | own, &, &uniq and place overlap are the complete interference vocabulary:  |
-|            |      | [PROV-2], which adds no capability category                                |
-| [FN-6]     | 1205 | recursion is permitted: [STK-2], which excludes a program from [RES-4]     |
+| ERR-4      | 1481 | parallel permissions never reject the source: [PROV-5], which is why its   |
+|            |      | multiplicity refusal reads the call graph and not a permission             |
+| FN-6       | 1205 | recursion is permitted: [STK-2], which excludes a program from [RES-4]     |
 |            |      | rather than rejecting it                                                   |
-| [FN-8]     | 1269 | a borrow formal uses its resolved referent and an own actual its value     |
-|            |      | before transfer: [MSR-3]'s call placement, which reuses that split         |
-| [PROG-1]   | 1486 | one closed compilation unit with no function values: [PROV-4]'s exact      |
+| PROG-1     | 1486 | one closed compilation unit with no function values: [PROV-4]'s exact      |
 |            |      | reachability closure and [RES-8]'s composition claim                       |
-| [ENT-2]    | 2687 | one static term per statement, because forward flow visits each statement  |
-|            |      | once: [MSR-3]'s per-program-point datum inside a loop                      |
-| [ENT-4]    | 2854 | L0's uniqueness and finiteness rests on the difference-bound shape:        |
+| ENT-4      | 2854 | L0's uniqueness and finiteness rests on the difference-bound shape:        |
 |            |      | [MSR-2], which is why len + room = cap is an affine premise and not an L0  |
 |            |      | fact                                                                       |
-| [QUAL-2]   | 2363 | a target supplies every guarantee a semantic ID requires before the        |
-|            |      | operation is admitted: [RES-7], whose exclusion test reads that record     |
 ```
 
 **META-5 delta**, declared here because the register is its natural home. Numbered
-language rules: 131 today, plus the 52 of section 3, none reusing a live or retired
-id. Unique fixed lowercase grammar atoms: minus 5 for the retired `heap` and
-`arena` effect atoms and the retired `slice`, `buffer` and `box` type productions
-(`arena` is one atom serving both a production and an effect entry, and retires
-once), plus 6 for `resource_closed`, `update`, `by`, `into`, `dispose` and `using`;
-net plus 1. Grammar productions: plus 4, being `clause_expr`, `clause_operand`, the
-`update_stmt` and the `dispose_stmt`; changed, 9, being `let_stmt`, `return_stmt`,
+language rules: 131 today, plus the 48 of 3.K, none reusing a live or retired id;
+the region-spelling amendment (3.K.0) is counted with its own batch and not here.
+Unique fixed lowercase grammar atoms: minus 5 for the retired `heap` and `arena`
+effect atoms and the retired `slice`, `buffer` and `box` type productions (`arena`
+is one atom serving both a production and an effect entry, and retires once), plus 3
+for `resource_closed`, `dispose` and `using`; net minus 2. The fourth draft's
+`update`, `by` and `into` are not added, because [LIV-3] is an admission on `set`.
+Grammar productions: plus 2, being `clause_expr` and `clause_operand` and the
+`dispose_stmt`, less the retired `slice_of`-bearing forms — net plus 3 counting the
+statement; changed, 9, being `let_stmt`, `return_stmt`, `set_stmt`,
 `result_binding`, `program_kind`, `struct_decl`, `enum_decl`, `effect`,
-`affine_factor`, and the two clause productions counted once as the pair
-`requires_clause`/`ensures_clause`. `ReservedLowerNames`: plus 2, `cap` and `room`.
-Nominal types: plus 16, being 3 providers, 3 branded singles, 5 owners, 2 views and
-3 failure structs, and one renamed, `slice` to `Span`. Declaration domains: plus 1,
-with one `container_declaration_ordinal`. Entry input rows: plus 1. [SYS-2]'s
-normative inventory counts change with [VIEW-7] and [RES-6] and are recomputed when
-those rules are written into the spec, not asserted here.
+`affine_factor`, with `requires_clause`/`ensures_clause` counted once as a pair.
+`ReservedLowerNames`: plus 2, `cap` and `room`. Nominal types: plus 5, being 2
+providers, 2 runs and 1 view, and one renamed, `slice` to `Span`. Declaration
+domains: plus 1, with one `container_declaration_ordinal`. Entry input rows: plus 1.
+[SYS-2]'s normative inventory counts change with [VIEW-7], [RES-6], [RES-7] and
+[RES-9] and are recomputed when those rules are written into the spec, not asserted
+here.
 
-**Retired outright, with no successor.** The writer-facing `&uniq buffer<T>` and
-`&uniq Container` state-borrow forms ([CNT-7]); `buffer_vacant`'s `Option`-element
-construction, which `seq_vacant` serves frame-resident; the effect-row atoms `heap`
-and `arena` ([PROV-4]); `slice_of` in favour of `seq_span`; `box_new` and
-`arena_new` in favour of `heap_take` and `arena_take`; the third draft's
-`seq_release_heap` and `seq_release_pool` in favour of `dispose`; the first draft's
-`Builder<'r, T>` type and its `[BLD]` family; the second draft's `[STK-4]`
-reentrancy premise, which had no expressible instance; and `[CNT-5]`, whose content
-[PROV-6] states in one sentence.
+**Retired outright, with no successor.** The fourth draft's five owner types
+([BLK-1]); its `AppendView`, `absorb` and the abandoned-window disposition; its
+`update` statement and its three atoms; its `Pool` store, `PoolSlot`, `PoolVector`,
+`seq_lease`, `pool_frame`, `pool_extent`, `pool_take`, `pool_release` and the pool
+seam; its `FixedRing` and four ring rows; its `HeapBox` and `ArenaBox`, which are
+runs of capacity one; its three failure structs and its `NoRecord`; its `seq_filled`,
+`seq_vacant`, `seq_take_at`, `seq_clear`, `seq_truncate`, `seq_reserve_heap`,
+`seq_reserve_arena`, `seq_shrink`, `seq_heap_filled`, `seq_push`, `seq_try_push`,
+`seq_pop` and every `try` row; the `&uniq buffer<T>` and `&uniq Container`
+prohibition ([CNT-7], deleted as capability rather than as text); the effect-row
+atoms `heap` and `arena`; `slice_of`, `box_new` and `arena_new`; the first draft's
+`Builder<'r, T>` and `[BLD]`; the second draft's `[STK-4]` reentrancy premise;
+`[CNT-5]`; and L14. Every id is retired and none is reused.
 
 **Writer doctrine this design invalidates**, which `docs/patterns.md` must carry in
-the same batch. **P16** ("One length fact above the writes") states that the
-compiler honours the element-write exception across a callee boundary through a
-`&uniq buffer` actual; [CALL-5] makes that kill conservative for exactly that
-spelling, so P16's shape is invalid from B1 until B6 restores it over `MutSpan`,
-where it is sound by type. P16 gains a second correction from [MSR-2]: a length
-fact survives a write to a **sibling field** of the same record, which is precisely
-what probe `r2_4` shows today's compiler killing. **P17**'s advice to fold a
-returned record field by field remains right, and its `replace` note gains
-[LIV-2]'s dead-target `set` and [LIV-3]'s `update` as the third and fourth commit
-forms. **P19**'s join rule is unchanged and gains a case: a measure term joins by
-the same delta-atom rule. **P15** is unchanged and is the pattern both worked
-programs follow. **P8** should gain the sentence probe `q5'` bought: an exact `-`
-carries an ordering into a backedge where `-wrap` gives the checker a fresh atom.
-Two new patterns are owed, and neither is optional: one for structural disposal,
-because [PROV-6] changes the shape of every hosted helper that takes ownership of
-store-backed storage, and one for the `propagate`-free allocating helper, because
-[PROV-6] refuses a shape `growable_vec.wf` and `byte_string.wf` both use today.
+the same batch. **P16** ("One length fact above the writes") rests on the
+element-write exception surviving a callee boundary through a `&uniq buffer` actual;
+[CALL-5] makes that kill conservative, so P16's shape is invalid from B1 until B5
+restores it over `MutSpan`, and P16 gains a second correction from [MSR-2] — a length
+fact survives a write to a **sibling field**, which probe `r2_4` shows today's
+compiler killing. **P17**'s field-by-field fold is **narrowed** to non-linear
+aggregates, because [PROV-6] refuses a partial move of a linear one, and its
+`replace` note gains [LIV-2]'s dead-target `set` and [LIV-3]'s in-place exchange.
+**P19** is unchanged and gains a case: a measure term joins by the same delta-atom
+rule. **P15** is unchanged and both worked programs follow it. **P8** should gain
+what probes `q5'`, `m10` and `x1b` bought: an exact `-` or `+` carries an ordering
+into a backedge where the wrapping form gives the checker a fresh atom. Four new
+patterns are owed: structural disposal, the linear destructuring consume, the
+`propagate`-free allocating helper, and 3.L.3's two-invariant construction loop.
+
+---
+
+### 3.L The library, written in wf
+
+#### 3.L.0 How to read this section
+
+Everything below is **ordinary wf**, written against 3.K and against the unchanged
+v0.40 rules. It defines no rule, amends no rule, and is named by no rule. It exists
+to discharge L18's obligation: an item the kernel no longer carries is written out
+here, or the kernel lacked a primitive and 3.L.6 says which.
+
+Each item states its **proof route** — which kernel rule discharges each obligation,
+and which of those v0.40 already proves today, naming the probe where one exists. The
+code is design text; the standard it is held to is that every statement is accepted by
+a compiler implementing 3.K and the unchanged v0.40 rules.
+
+One genericity limit is stated once here rather than repeated. A **writer's**
+generic over an element type cannot serve a copy and an affine instantiation from
+one body — probes `m12` and `m14` show one accepted at `box<u64>` and rejected at
+`u64` — and a const generic parameter is not readable as a value (`m16`). The
+kernel's own domain is generic because it is compiler-owned and monomorphized
+[BLK-0]; a writer's library is generic only where its body never needs the
+distinction, and is otherwise written per element type. That is an [OWN-1] question
+(Q8) and a compiler-capability question, not a partition finding, and where it
+bites below the code is written at a concrete element type and says so.
+
+#### 3.L.1 The owner names
+
+`FixedVector<T, n>` is the kernel type and needs no library. `HeapVector<T>`,
+`ArenaVector<'a, T>` and `PoolVector` are what a writer *calls* a
+`Vector<'s, T>` whose store is the heap, a named arena, and a library pool
+respectively; they are one kernel type at three regions and the library adds
+nothing to them (footnote 1). Under 3.K.0 a heap run in a stored position is written
+`Vector<u8>` and an arena run `Vector<'a, u8>`, which is the whole visible
+difference between them.
+
+#### 3.L.2 The partition, item by item
+
+Every item is written in wf in `CONTAINERS.md` §3 against 3.K and against the
+unchanged v0.40 rules, with its proof obligations walked there. This table is the
+result; two items are written out below because they are the two that earned kernel
+additions, and one more is the elision demonstration.
+
+```text
+| item                          | written as                          | route, and what discharges it       |
+|-------------------------------|-------------------------------------|-------------------------------------|
+| FixedVector<T, n>             | the kernel type itself              | nothing to write                    |
+| HeapVector, ArenaVector,      | Vector<'s, T> at three regions      | nothing to write                    |
+|   PoolVector                  |                                     |                                     |
+| vacant<T, n>                  | a counted loop of seq_place over    | two header invariants; the exit     |
+|                               | None<T>(), 3.L.3 below              | ordering, not an equality; x1c, x1d |
+| filled_bytes<n>               | the same, reusing one copy value    | as above; per element type (Q8)     |
+| take_at                       | seq_exchange then seq_take          | the requires plus Z <= index        |
+| clear, truncate               | a counted drain, two invariants     | as vacant; a linear T disposes each |
+|                               |                                     | and the signature says so [PROV-6]  |
+| FixedRing<T, n>               | struct Ring { slots: FixedVector<   | [OP-4] from a requires the caller   |
+|                               | Option<T>, n>; head; fill; } with   | discharges from ring_new's ensures  |
+|                               | element replace                     | through the construct placement     |
+| growth policy, HeapVector     | seq_heap, drain-in-reverse,         | four invariants; seq_exchange is    |
+|                               | seq_exchange to restore order,      | what makes order preservation       |
+|                               | replace, dispose                    | writable at all                     |
+| block pool                    | struct BlockPool { free:            | a branch on len and on room, which  |
+|                               | FixedVector<Vector<'s,u8>, m>; }    | needs [ENT-3.S6] over three         |
+|                               | with seq_take and seq_place         | measures                            |
+| collect and the appenders     | a counted loop over &uniq, `CONTAINERS.md` §3    | the exchange, and the exit datum    |
+|                               | below                               |                                     |
+| keyed families                | vacant plus element replace         | [OP-4] from the requires; x7        |
+| try_place, try_take, try_push | a branch on room or len and two     | [ENT-3.S6] again                    |
+|                               | returns                             |                                     |
+| update p by op(...)           | set p = op(receiver: move p, ...)   | [LIV-3]                             |
+| update p by op(...) into x    | set (p, x) = op(receiver: move p,   | [LIV-3]'s multi-target form         |
+|                               | ...)                                |                                     |
+| OutOfMemory<T> and its family | an ordinary one-field struct over   | [BLK-4] admits it; the kernel needs |
+|                               | the writer's own type               | none                                |
+```
+
+Every one of them is writable. Nothing in the fourth draft's container inventory
+turned out to need a kernel primitive that the three per-slot rows, the two views and
+the four formations do not already have — except the seven of 3.L.6, each of which a
+named function below or in `CONTAINERS.md` demanded.
+
+#### 3.L.3 Filled and vacant construction, written out
+
+The two constructions the fourth draft made inventory rows. `vacant` is the more
+interesting because round 3 concluded no loop could publish `len = n`; it is right
+that no loop publishes the *equality*, and wrong that the equality is what a
+subscript needs.
+
+```wf-design
+fn vacant<T, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
+  ensures ige(len(result), n);
+} {
+  doc "Builds a run of n slots, every one holding None.";
+  let built = seq_fixed<Option<T>, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: ige(len(built), at),
+    invariant spare: ige(room(built) + at, n)
+  ) {
+    let empty = None<T>();
+    set built = seq_place(vector: move built, value: move empty);
+  }
+  return move built;
+}
+```
+
+**Proof route.** `seq_fixed` publishes `len(built) = Z` and `cap(built) = n`
+[BLK-2], and [MSR-2]'s identity gives `room(built) = n`. `grown`'s base is
+`Z >= Z`; `spare`'s base is `n + Z >= n`. `seq_place`'s own requirement
+`igt(room(built), Z)` discharges from `spare` and the counted loop's `at < n`
+([ENT-3.S11]) by [MSR-4] step 5's unordered-pair family. On the backedge
+`seq_place` declares `len(result) = len(vector) + 1` and
+`cap(result) = cap(vector)` over that call's own datum, which has empty support
+[MSR-3], so `room` falls by one and `at` rises by one and both invariants are
+preserved; the `set` is an in-place exchange, so it is **not** a declaration event
+and the two atoms survive on the same term [MSR-3]. At the exit `at = n`, so
+`ige(len(built), n)` holds and the `ensures` discharges.
+
+`vacant` is generic over `T` with no copy bound, because `None<T>()` is built fresh
+each iteration. `filled` is not, because it reuses one `value`, so it is written per
+copy element type:
+
+```wf-design
+fn filled_bytes<const n: u64>(value: own u8) -> result: own FixedVector<u8, n> pure contract {
+  ensures ige(len(result), n);
+} {
+  doc "Builds a run of n byte slots, every one holding value.";
+  let built = seq_fixed<u8, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: ige(len(built), at),
+    invariant spare: ige(room(built) + at, n)
+  ) {
+    set built = seq_place(vector: move built, value: value);
+  }
+  return move built;
+}
+```
+
+Same route. This is the function [VIEW-7] needs for an addressable I/O destination,
+and it is the one `wfgrep.wf`'s migration calls twice.
+
+#### 3.L.4 `collect`, written out
+
+The one program every draft has carried, and the item that demanded two of the seven.
+
+```wf-design
+fn collect(out: &uniq Vector<u8>, source: own Span<u8>)
+    -> written: own u64
+    reads(source), writes(out) contract {
+  requires ile(len(source), room(out));
+  ensures ieq(len(out), written);
+} {
+  doc "Appends every byte of source into the destination's spare room.";
+  let count = len(source);
+  let before = len(deref(out));
+  for @copy (
+    at in 0_u64..count,
+    invariant spare: ige(room(deref(out)) + at, count),
+    invariant grown: ige(len(deref(out)), before + at)
+  ) {
+    let byte = source[at];
+    set deref(out) = seq_place(vector: move deref(out), value: byte);
+  }
+  return before +wrap count;
+}
+```
+
+`collect` writes no region at all: `out`'s brand relates nothing, so it is an
+implicit region parameter and the function is generic over the store it is handed,
+and `source`'s loan region relates nothing either. Under the fourth draft the same
+function carried three.
+
+`collect` writes no region at all: `out`'s brand relates nothing, so it is an
+implicit region parameter and the function is generic over the store it is handed,
+and `source`'s loan region relates nothing either. Under the fourth draft the same
+function carried three.
+
+**Proof route.** `spare`'s base is the `requires`, whose `room(out)` denotes the
+parameter's **entry datum** [CALL-4]. `seq_place`'s `igt(room, Z)` discharges from
+`spare` and `at < count` by [MSR-4] step 5; probes `k21` and `k21b` are that
+arithmetic at v0.40 scale, accepted and then rejected when the invariant is deleted.
+The backedge is [MSR-3]'s three steps: the exchange is not a declaration event, the
+facts over `room(deref(out))` die by [MSR-2], and `seq_place`'s declared relation
+over its call datum — which has empty support and therefore survives the exchange's
+own kill — re-establishes them on the same term. The `ensures` names `len(out)` in
+an `ensures`, so it denotes the parameter's **exit datum** [CALL-4].
+
+**Two of the seven are here.** Without [LIV-3]'s exchange there is no way to write
+the loop body at all: `move deref(out)` is a move through a borrow, which [OWN-5]
+614 forbids with [SET-2] as the sole exception, and the `replace` route needs a
+placeholder `Vector<'s, u8>`, which is a run that owns storage and is itself linear,
+so every iteration would allocate and dispose. Probe `x3` is that rejection today.
+Without [CALL-4]'s exit datum the `ensures` says nothing a caller can use, every
+capacity proof collapses into the function that owns the run, and every helper
+boundary costs a re-read and a real branch — which is the branch L4 promises
+`seq_place` does not have.
+
+That pair is also the whole of what `AppendView` was for. The fourth draft's
+`collect` took `own AppendView<'o, u8>` and returned it, and `absorb` published the
+owner's new length from a datum the view had carried since formation. This one
+publishes the same fact about the same run, over a borrow, with no third view type,
+no commit event, no carried datum, and no rule that has to transport one across a
+call — which is round 4's F3 defect 2 removed rather than repaired.
+
+#### 3.L.5 The store region, before and after
+
+**The store region is elided.** `byte_string.wf` has exactly one store, so under
+[PROV-1] nothing in it names a region. The difference is worth writing out, because
+it is F4's largest single finding and it is invisible in prose. Its join — the
+program spells it `bs_concat` — reads, under the fourth draft's brand:
+
+```wf-design
+struct Bytes['h] {
+  v: HeapVector<'h, u8>;
+}
+
+fn bs_concat['h, 'd, 's, 'b](destination: &uniq 'd Bytes<'h>, source: &'s Bytes<'h>,
+                             heap: &uniq 'b Heap<'h>) -> done: own Bool
+    reads(destination.v, source.v, heap), writes(destination.v, heap), allocates(heap) { ... }
+
+    // at each of its four call sites:
+    let joined = bs_concat<'h, 'd, 's, 'b>(destination: ..., source: ..., heap: ...);
+```
+
+and under this draft, where the region-spelling amendment (3.K.0) takes the loan
+regions as well as the brand, because none of them relates two positions:
+
+```wf-design
+struct Bytes {
+  v: Vector<u8>;
+}
+
+fn bs_concat(destination: &uniq Bytes, source: &Bytes, heap: &uniq Heap) -> done: own Bool
+    reads(destination.v, source.v, heap), writes(destination.v, heap), allocates(heap) { ... }
+
+    let joined = bs_concat(destination: ..., source: ..., heap: ...);
+```
+
+The whole region parameter list leaves the struct and the signature, four brand
+occurrences leave the written types, three borrow annotations lose their names, and
+the call site loses its `targs` and its three borrow names. Across the eleven
+functions of `byte_string.wf` that is ten `['h]`, fifteen brand occurrences and
+twelve call-site brand arguments from the brand alone, and every region parameter
+list, borrow name and call-site region argument from 3.K.0. The five provider
+parameters and the seven disposals stay, and they are what buys something. Nothing
+about the brand's soundness changes: `Vector<u8>` still names a store in its type,
+and a nominal meant to hold an arena's run still writes its region at both
+positions.
+
+#### 3.L.6 What the partition test found the kernel lacked
+
+Seven, each named with the library function that demanded it and the probe that
+shows it is new capability rather than a compiler defect. Numbering: this is the
+list 3.L.2's last paragraph points at.
+
+```text
+| # | kernel addition                      | demanded by                       | today                 |
+|---|--------------------------------------|-----------------------------------|-----------------------|
+| 1 | the in-place exchange admission of   | collect, bs_reserve, pool_take,   | x2, x3 REJECTED       |
+|   | `set` [LIV-3]                        | pool_release, vacant, filled,     | [STOR-1]              |
+|   |                                      | clear, try_place — every library  | AffineSetTarget       |
+|   |                                      | function that transforms a place  |                       |
+|   |                                      | it does not own outright          |                       |
+| 2 | its multi-target form,               | pool_take, bs_reserve's drain,    | new grammar           |
+|   | `set (p, x) = f(...)` [LIV-3]        | clear — every two-result row at a |                       |
+|   |                                      | field or deref place              |                       |
+| 3 | the exit datum over a `&uniq`        | collect, bs_reserve — every       | x10 ACCEPTED and      |
+|   | parameter [CALL-4]                   | helper that changes a borrowed    | read as the ENTRY     |
+|   |                                      | run and must tell its caller      | image                 |
+| 4 | [ENT-3.S6] over the three measures   | every try_ form, pool_take,       | S6 2779 covers len    |
+|   | [BLK-0]                              | pool_release — every branch on a  | alone                 |
+|   |                                      | capacity                          |                       |
+| 5 | `seq_exchange` [BLK-3]               | take_at, bs_reserve's             | no analogue           |
+|   |                                      | order-preserving relocation       |                       |
+| 6 | the `&uniq` run parameter, i.e.      | collect, bs_reserve, pool_take,   | x11 ACCEPTED, and     |
+|   | [CNT-7]'s deletion                   | pool_release, and every helper    | unsound without       |
+|   |                                      | that is not a constructor         | [CALL-5]              |
+| 7 | the construct placement of the       | Ring, BlockPool, Bytes — every    | construct kills the   |
+|   | measure datum [MSR-3]                | library nominal wrapping a run    | operand's measures    |
+```
+
+And the list that matters as much: **what the partition did *not* need.** A ring
+needed no kernel rotation, a pool needed no kernel store, a keyed table needed no
+kernel occupancy, a growth policy needed no kernel growth row, middle removal needed
+no kernel row, filled and vacant construction needed no kernel row, and the `try`
+family needed nothing at all. Five owner types became two, thirty-odd operations
+became fourteen, three views became two, sixteen added nominals became five, and one
+statement form became an admission on an existing one — and every capability the
+fourth draft claimed is still written somewhere in this section.
+
+Two items were **not** resolved by writing them, and they are the honest residue of
+the test. An arena-backed run is not linear, so a leased run that a writer drops
+leaks a free-list slot with no diagnostic (`CONTAINERS.md` §3). And a writer's generic cannot
+serve a copy and an affine element type from one body, so `filled` is written per
+element type (3.L.0). Neither is a missing primitive; the first is a consequence of
+tying linearity to the store's reclamation discipline and the second is Q8.
 
 ---
 
@@ -3243,13 +3105,13 @@ store-backed storage, and one for the `propagate`-free allocating helper, becaus
 
 Both are **design text**, and the forms this design adds compile nowhere. The
 standard they are held to is that every statement is accepted by a compiler
-implementing section 3's rules **and the unchanged v0.40 rules**, and both were
-walked statement by statement against both before this draft was finished. Round 3
-walked the third draft's pair and found six classes of refusal: a `requires` whose
-operands are calls, a `set` of a live target, an `absorb` naming a datum no
-producer mints, a multi-return whose relations reach no destination, a reserving
-row with no declared relations, and a disposal whose provenance nothing preserved.
-All six are fixed here, and each fix is named where it appears.
+implementing 3.K's rules, **the library functions of 3.L**, and the unchanged v0.40
+rules; both were walked statement by statement against all three before this draft
+was finished. Round 4 walked the fourth draft's pair and found three classes of
+refusal — an `update` whose relations reach no destination, a `move` and a `dispose`
+of a value no rule classified as affine, and an `absorb` naming a datum no rule
+transports across a call. All three are gone, and each is gone because a rule
+changed rather than because the program was rewritten around it.
 
 Byte figures are symbolic. No implementation computed any of them, and where a
 figure depends on code generation the table says so instead of inventing a number.
@@ -3260,7 +3122,10 @@ A fixed run queue of tasks, a 256-byte transmit ring, and an eight-block pool wi
 typed exhaustion. Each task is a state machine that advances one step per turn and
 re-queues itself while it wants another. No heap, no recursion, an acyclic call
 graph, and a queue loop whose resource state is restored on every backedge. It is
-**not** a context-switching scheduler, and section 1.4 says why.
+**not** a context-switching scheduler, and 1.5 says why. It uses `try_place`,
+`try_take` (3.L.2), `ring_new`, `ring_place` (`CONTAINERS.md` §3), `pool_new`, `pool_take` and
+`pool_release` (`CONTAINERS.md` §3) from the library, and nothing else the kernel does not
+declare.
 
 ```wf-design
 struct Task {
@@ -3279,12 +3144,13 @@ fn advance(task: own Task) -> next: own Option<Task> reads(task.state, task.arg)
   return None<Task>();
 }
 
-fn render['s](block: own PoolVector<'s, u8, 256>, task: own Task) -> (rest: own PoolVector<'s, u8, 256>, back: own Task, written: own u64) reads(block, task.state), writes(block) contract {
+fn render(block: &uniq Vector<u8>, task: &Task) -> written: own u64
+    reads(task.state), writes(block) contract {
   requires ige(room(block), 8_u64);
-  ensures ile(written, len(rest));
+  ensures ile(written, len(block));
 } {
   doc "Writes one eight-byte record for a task into the block and reports the count.";
-  let narrowed = cvt<u32, u8>(task.state);
+  let narrowed = cvt<u32, u8>(deref(task).state);
   let mark = 63_u8;
   match narrowed {
     Ok(value: byte) => {
@@ -3293,28 +3159,30 @@ fn render['s](block: own PoolVector<'s, u8, 256>, task: own Task) -> (rest: own 
     Err(error: narrowing) => {
     }
   }
-  let total = 0_u64;
-  region 'f {
-    let view = seq_append_view(vector: &uniq 'f block);
-    for @fill (
-      at in 0_u64..8_u64,
-      invariant spare: ige(room(view) + at, 8_u64)
-    ) {
-      update view by seq_push(value: mark);
-    }
-    set total = absorb(view: move view);
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant spare: ige(room(deref(block)) + at, 8_u64),
+    invariant grown: ige(len(deref(block)), at)
+  ) {
+    set deref(block) = seq_place(vector: move deref(block), value: mark);
   }
-  return move block, move task, total;
+  return 8_u64;
 }
 
-fn drain['s, 'b](ring: own FixedRing<u8, 256>, block: &'b PoolVector<'s, u8, 256>, count: own u64) -> (rest: own FixedRing<u8, 256>, sent: own u64) reads(ring, block), writes(ring) contract {
-  requires ile(count, len(deref(block)));
+fn drain(ring: &uniq Ring<u8, 256>, block: &Vector<u8>, count: own u64)
+    -> sent: own u64
+    reads(block, ring.head, ring.fill), writes(ring.slots, ring.fill) contract {
+  requires ile(count, len(block));
+  requires ige(len(ring.slots), 256_u64);
 } {
   doc "Copies one prefix of the block into the transmit ring and reports how many bytes it placed.";
   let placed = 0_u64;
-  for @copy (at in 0_u64..count) {
+  for @copy (
+    at in 0_u64..count,
+    invariant slots: ige(len(deref(ring).slots), 256_u64)
+  ) {
     let byte = deref(block)[at];
-    update ring by ring_try_place(value: byte) into unplaced;
+    set (deref(ring), unplaced) = ring_place<u8, 256>(ring: move deref(ring), value: byte);
     match unplaced {
       None() => {
         set placed = placed +wrap 1_u64;
@@ -3323,15 +3191,15 @@ fn drain['s, 'b](ring: own FixedRing<u8, 256>, block: &'b PoolVector<'s, u8, 256
       }
     }
   }
-  return move ring, placed;
+  return placed;
 }
 
 resource_closed command fn main() -> status: own ExitStatus pure {
-  doc "Runs a cooperative queue of state machines over a leased block pool and a transmit ring.";
-  let ring = seq_ring<u8, 256>();
+  doc "Runs a cooperative queue of state machines over a pooled block store and a transmit ring.";
+  let ring = ring_new<u8, 256>();
   let pending = seq_fixed<Task, 32>();
   let first = Task(state: 0_u32, arg: 65_u64);
-  update pending by seq_try_place(value: move first) into unplaced;
+  set (pending, unplaced) = try_place<Task, 32>(vector: move pending, value: move first);
   match unplaced {
     None() => {
     }
@@ -3339,31 +3207,49 @@ resource_closed command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 1_u8);
     }
   }
-  region 'p {
-    let blocks = pool_frame<FixedVector<u8, 256>, 8, 'p>();
-    loop @queue {
-      update pending by seq_try_take() into next;
-      match next {
+  region 'a {
+    let scratch = arena_frame<65536, 16, 'a>();
+    let code = 0_u8;
+    region {
+      let made = pool_new<'a>(arena: &uniq scratch);
+      match made {
         None() => {
-          break @queue;
+          set code = 1_u8;
         }
-        Some(value: task) => {
-          region 'b {
-            let leased = seq_lease(pool: &uniq 'b blocks);
-            match leased {
-              Ok(value: block) => {
-                let (filled, back, written) = render<'p>(block: move block, task: move task);
-                region 'd {
-                  let (fed, sent) = drain<'p, 'd>(ring: move ring, block: &'d filled, count: written);
-                  set ring = move fed;
+        Some(value: pool) => {
+          let blocks = move pool;
+          loop @queue {
+            set (pending, next) = try_take<Task, 32>(vector: move pending);
+            match next {
+              None() => {
+                break @queue;
+              }
+              Some(value: task) => {
+                region {
+                  let leased = pool_take<'a>(pool: &uniq blocks);
+                  match leased {
+                    None() => {
+                    }
+                    Some(value: block) => {
+                      let held = move block;
+                      region {
+                        let written = render(block: &uniq held, task: &task);
+                        region {
+                          let sent = drain(ring: &uniq ring, block: &held, count: written);
+                        }
+                      }
+                      region {
+                        let back = pool_release<'a>(pool: &uniq blocks, run: move held);
+                      }
+                    }
+                  }
                 }
-                dispose filled using (blocks);
-                let stepped = advance(task: move back);
+                let stepped = advance(task: move task);
                 match stepped {
                   None() => {
                   }
                   Some(value: again) => {
-                    update pending by seq_try_place(value: move again) into refused;
+                    set (pending, refused) = try_place<Task, 32>(vector: move pending, value: move again);
                     match refused {
                       None() => {
                       }
@@ -3373,29 +3259,20 @@ resource_closed command fn main() -> status: own ExitStatus pure {
                   }
                 }
               }
-              Err(error: exhausted) => {
-                update ring by ring_try_place(value: 33_u8) into shed;
-                match shed {
-                  None() => {
-                  }
-                  Some(value: dropped) => {
-                  }
-                }
-              }
             }
           }
         }
       }
     }
+    return exit_status(code: code);
   }
-  return exit_status(code: 0_u8);
 }
 ```
 
 #### The envelope the compiler publishes
 
 ```text
-E(queue.wf, <embedded target>) row W = 1
+E(queue.wf, <embedded target>, <this build>) row W = 1
 
   region  static.image        bytes  <target>        align  <target>  contiguous
   stack   entry               bytes  <post-codegen>  align  <ABI>     contiguous
@@ -3405,215 +3282,150 @@ E(queue.wf, <embedded target>) row W = 1
   slots   handle.table        count  0
 ```
 
-```text
-| item                | where it comes from                                                | rule            |
-|---------------------|--------------------------------------------------------------------|-----------------|
-| static.image        | the const items and the static parts of the emitted module         | [STOR-6]        |
-| stack.entry         | main's frame, holding the ring (256 element bytes plus a head and  | [STK-3],        |
-|                     | a length word), the FixedVector<Task, 32> (32 strides plus a       | [PROV-5]        |
-|                     | length word) and the one pool_frame occurrence's extent            |                 |
-|                     | (8 * (256 + one length word), plus the pool's own free-list word); |                 |
-|                     | plus render, drain and advance, plus the runtime frames beneath    |                 |
-|                     | main and its bounded teardown; measured post-codegen over the      |                 |
-|                     | whole chain                                                        |                 |
-| lanes = 1           | no permission is taken; [RUN-2] fixes W = 1 for a marked build     | [RUN-2]         |
-| every slots row = 0 | no par permission, no may-suspend operation, no system handle      | [RUN-2],        |
-|                     |                                                                    | [RES-5]         |
-```
-
-The layout arithmetic is `CONTAINERS.md` G7's, which is why the composition is
-written and no total is. The pool is a frame item because the program wrote
-`pool_frame`; `pool_extent` would have produced its own `region` item instead.
+`static.image` is the const items and the static parts of the emitted module
+[STOR-6]. `stack.entry` is `main`'s frame — the `Ring` (256 `Option<u8>` slots plus
+two words), the `FixedVector<Task, 32>` (32 strides plus one word), the `BlockPool`'s
+`FixedVector<Vector<'a,u8>, 8>` (8 descriptors plus one word) and the one
+`arena_frame` occurrence's 65536-byte extent — plus `render`, `drain`, `advance` and
+the library, plus the runtime frames beneath `main` and its bounded teardown, plus
+the cleanup-scratch domain, whose depth is the height of `Task`, `Ring` and
+`BlockPool` and is therefore a constant; measured post-codegen over the whole chain
+[STK-3], [PROV-5], [RES-5]. `lanes` is 1 because no permission is taken [RUN-1] and
+[RUN-2] publishes the `W = 1` row, and every `slots` row is zero because there is no
+`par` permission, no may-suspend operation and no system handle.
 
 #### Why it is source-resource-closed, item by item
 
 ```text
 | premise               | how it is discharged                                                        |
 |-----------------------|-----------------------------------------------------------------------------|
-| no heap               | main declares pure, selects no command.heap, and every reserving row is      |
-|                       | pure [SEQ-0], so [PROV-4]'s closure is empty and [RES-4] does not fire       |
-| acyclic call graph    | main -> {render, drain, advance, the container domain}; render and drain     |
-|                       | -> the container domain. No cycle, so [STK-1] rewrites nothing and [STK-2]   |
-|                       | passes                                                                      |
-| pool demand bounded   | the lease and its disposal are on the same path, so the Ok arm's map is      |
-|                       | (peak 1, delta 0) on the pool and the Err exit is (0, 0). The queue loop's   |
-|                       | backedge delta is 0, so 3.3.1's loop rule needs no iteration bound and       |
-|                       | len(blocks) <= 1 throughout                                                 |
-| queue and ring        | FixedVector<Task, 32> and FixedRing<u8, 256> are frame placement, whose      |
-|                       | [RES-5] row is decided at compile time and contributes no demand at all;     |
-|                       | their capacities are type-level constants                                   |
-| L9's displacement     | ring_try_place refuses at capacity and returns the byte, and drain reports   |
-|                       | what it placed, so nothing is displaced silently                            |
+| no heap               | main declares pure, selects no command.heap, and arena_frame is pure         |
+|                       | [BLK-2], so [PROV-4]'s closure is empty and [RES-4] does not fire            |
+| acyclic call graph    | main -> {render, drain, advance, the library, the kernel domain}. No cycle,  |
+|                       | so [STK-1] rewrites nothing and [STK-2] passes; and because there is no      |
+|                       | cycle, [PROV-5]'s activation refusal does not fire at arena_frame either     |
+| arena demand bounded  | pool_new takes eight 256-byte runs once, before the queue loop; the loop's   |
+|                       | backedge delta on the bump domain is 0, so 3.K.7.1's loop rule needs no      |
+|                       | iteration bound. The lease and its release are on the same path, so the      |
+|                       | free list's own delta is 0 too                                              |
+| queue and ring        | FixedVector<Task, 32> and Ring<u8, 256> are frame placement, whose [RES-5]   |
+|                       | row is decided at compile time and contributes no demand at all              |
+| cleanup scratch       | every type reachable from main has an acyclic containment graph, so every    |
+|                       | release walk's depth is a constant [PROV-6]                                  |
+| L9's displacement     | ring_place refuses at capacity and returns the byte, and drain reports what  |
+|                       | it placed, so nothing is displaced silently                                  |
 | stack bounded         | one context, one chain, measured after code generation [STK-3]              |
 | runtime closed        | W = 1, no task or completion records; every runtime store's peak is zero     |
 ```
 
 #### The writer's-eye walkthrough
 
-`let blocks = pool_frame<FixedVector<u8, 256>, 8, 'p>();` writes its complete
-argument list because no operand supplies any of it [SEQ-0], with the region last
-in [GRAM-2]'s order and inside the one `targs` list [GRAM-5] admits. `'p` is a
-region this function opens [PROV-5] and is named by no second reserving occurrence
-[PROV-1], so from here on it is this store's name: `blocks` has type
-`Pool<'p, FixedVector<u8, 256>, 8>` and every lease `PoolVector<'p, u8, 256>`.
+`let written = render(block: &uniq held, task: &task);` is the statement the fourth
+draft could not write. `render` takes the run through a
+**`&uniq` container parameter**, which [CNT-7] refused outright; its deletion is safe
+because [CALL-5] kills the caller's measures at the call, and the caller does not
+need them — `render`'s own `ensures ile(written, len(block))` publishes what it
+needs, over the parameter's **exit datum** [CALL-4]. The fourth draft wrote this line as
+`render<'a, 'w, 'w>(block: &uniq 'w held, task: &'w task)`, three region arguments
+and two borrow names for a call that relates nothing.
 
-`update pending by seq_try_place(value: move first) into unplaced;` is [LIV-3] in
-its two-result shape, and it is one [SET-2] exchange: `pending` is read out,
-supplied as the row's first parameter, `rest` is written back, and `unplaced` binds
-the second. Nothing consumes `pending`'s root, so `len(pending)` never dies and the
-`match` may follow the statement rather than having to precede a rebind. The third
-draft wrote this as two statements and carried eight such pairs against one
-`update`.
-
-`region 'b { let leased = seq_lease(pool: &uniq 'b blocks); ... }` opens a region
-**after** the binding it borrows [OWN-10] and inside the loop body [OWN-11]; probes
-`r2_2` and `r2_1` are the two halves. The call writes no arguments: `blocks`'s type
-supplies the element type, both constants and the store region, and the borrow
-supplies the loan region.
-
-`let (filled, back, written) = render<'p>(...)` is **[CALL-4]**'s ordered result
-list, and its `ensures ile(written, len(rest))` names two results, which [CALL-4]
-admits and [FN-9] alone does not. It reaches this caller through [CALL-4]'s added
-[ENT-3.S12] destination clause, each binder receiving the relations that name its
-own ordinal; without that clause the third draft's identical line published
-nothing, and `drain`'s `requires` was undischarged. Inside `render`:
+Inside `render`, whose two borrows and one brand all relate nothing and are all
+elided (3.K.0):
 
 ```wf-design
-    for @fill (
-      at in 0_u64..8_u64,
-      invariant spare: ige(room(view) + at, 8_u64)
-    ) {
-      update view by seq_push(value: mark);
-    }
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant spare: ige(room(deref(block)) + at, 8_u64),
+    invariant grown: ige(len(deref(block)), at)
+  ) {
+    set deref(block) = seq_place(vector: move deref(block), value: mark);
+  }
 ```
 
-The invariant's **base** holds because [VIEW-2] publishes `len(view) = Z` and
-`cap(view) = <call datum of room(block)>` at the formation, [MSR-2]'s identity
-gives `room(view) = cap(view) - len(view)`, and the `requires` gives
-`room(block) >= 8` at an entry no event separates from the formation.
-
-The invariant's **backedge** is the derivation the whole container surface rests
-on, and it is written out here because no earlier draft wrote it. Each `update` is
-a [SET-2] exchange whose replacement is `seq_push`'s result, so [LIV-2] makes the
-written-back `view` a distinct [ENT-2] term and [MSR-3] retires the old affine atom
-and introduces a new one. The new atom is not orphaned: `seq_push` declares
-`room(result) = room(view) - 1` over that call's own datum, the datum has empty
-support and therefore survives the exchange's kill, and `at` grows by exactly one
-on the same edge, so `room(view) + at` is preserved. Three steps, once per
-iteration, per invariant.
-
-The **consumer**, `seq_push`'s `igt(room(view), Z)`, follows from the header target
-and S11's `at < 8` by [MSR-4]'s unordered-pair family. Probes `k21` and `k21b` are
-that arithmetic at v0.40 scale, accepted and then rejected at [FN-8] when the
-invariant is deleted.
-
-`set total = absorb(view: move view);` is the commit. `view`'s resolved origin set
-is the singleton `{block}`, a resolved place of this function, so [VIEW-3] admits
-it, and step 4 publishes `len(block) = <the view's carried formation datum> + w`
-over a datum with empty support. The formation datum is the right one and the entry
-datum is not: they agree here only because nothing touches `block` in between, and
-under the third draft's reading a caller who removed an element first published a
-length one too large. `ensures ile(written, len(rest))` discharges from step 4 and
-the standing `Z <= len(P)`.
-
-`dispose filled using (blocks);` is [PROV-6], one statement where the third draft
-needed two. No `seq_clear` first, because the walk drains what it finds; no region
-around it, because `using` names a place; and the store match is `filled`'s type
-naming `'p` against `blocks`'s. A lease from a second pool in a second region would
-not typecheck here, which is round 3's rank-one break made unrepresentable rather
-than checked.
-
-`drain<'p, 'd>(block: &'d filled, ...)` is **[CALL-1]**: a shared borrow is a kill
-event for nothing, so `len(filled)` survives and discharges `drain`'s `requires`
-from `render`'s `ensures`. It costs its own `region 'd`, because `'b` was opened
-before `filled` was bound and [OWN-10] requires a borrow of a local to name a
-region opened inside that binding's scope. That is the second region this one call
-pays for, and Q11 is where the relief is recorded.
-
-`loop @queue` moves `pending` and `ring` from inside the loop body, which [OWN-11]
-forbade outright; **[LIV-1]** replaces that prohibition with the condition that
-matters, and both are restored on every backedge and live on the `break` edge. The
-loop has a resolved `break`, so [STK-4] gives it a normal successor and `main`'s
-`return` is reachable.
-
-**One thing checked rather than assumed.** The `match` after the first
-`update pending ... into unplaced;` has a `Some` arm that returns from `main`. That
-edge leaves `main` with `pending`, `ring` and `first` all non-linear and the pool
-not yet reserved, so [LIV-1] owes no disposal there. An earlier reservation would
-have made that arm an error, which is the check [PROV-6] performs on every exit
-edge and not only on the last.
-
-**One deferral, stated rather than hidden.** The ring is a transmit buffer and this
-program has no way to reach a device: `main`'s effect row may name only its own
-labelled inputs [FN-7], and the `command` table has no device row. That is open
-question Q4, and it is why 4.1 is a queue rather than a driver.
+The **backedge** is the derivation the whole container surface rests on, and this
+draft has one answer for it rather than two. The `set` is an **in-place exchange**
+[LIV-3], not a reinitializing `set`, so by [MSR-3]'s atom-identity sentence the
+root's [ENT-2] term survives, the facts over `room(deref(block))` and
+`len(deref(block))` die by [MSR-2], and `seq_place`'s declared
+`len(result) = len(vector) + 1` and `cap(result) = cap(vector)` re-establish them on
+the same term through [LIV-3]'s added [ENT-3.S12] destination clause. The datum
+those relations name has empty support and therefore survives the exchange's own
+kill. `at` grows by exactly one on the same edge, so `room + at` is preserved and
+`len >= at` is preserved. Three steps, once per iteration, per invariant — and the
+fourth draft's own walkthrough cited [LIV-2] here for a statement its [LIV-3] said
+was not a `set`, which is the contradiction this form removes by being a `set`.
 
 ### 4.2 A hosted line collector over `Heap`
 
-The same design with the heap on: growth is one named operation with a typed
-failure, disposal is one statement, the append helper takes the view by value and
-returns it, and `OutOfMemory` is a value on an ordinary edge.
+The same design with the heap on: growth is one library function with a typed
+failure, disposal is one statement, the append helper takes the destination by
+`&uniq` and publishes its exit measure, and **not one region names the store**,
+because the program has exactly one.
 
 ```wf-design
 const ceiling: u64 = 4096_u64;
 
-fn collect['o, 's](out: own AppendView<'o, u8>, source: own Span<'s, u8>) -> filled: own AppendView<'o, u8> reads(out, source), writes(out) contract {
-  requires ile(len(source), room(out));
-  ensures ile(len(filled), cap(out));
-} {
-  doc "Appends every byte of source into the view's spare window.";
-  let count = len(source);
-  for @copy (
-    at in 0_u64..count,
-    invariant spare: ige(room(out) + at, count)
-  ) {
-    let byte = source[at];
-    update out by seq_push(value: byte);
+struct Bytes {
+  v: Vector<u8>;
+}
+
+fn bs_new(heap: &uniq Heap) -> made: own Option<Bytes>
+    reads(heap), writes(heap), allocates(heap) {
+  doc "Builds one empty byte string over a zero-length backing run.";
+  let taken = seq_heap<u8>(heap: &uniq deref(heap), count: 0_u64);
+  match taken {
+    Some(value: run) => {
+      let holder = Bytes(v: move run);
+      return Some<Bytes>(value: move holder);
+    }
+    None() => {
+      return None<Bytes>();
+    }
   }
-  return move out;
 }
 
-fn grow['h, 'b](buf: own HeapVector<'h, u8>, heap: &uniq 'b Heap<'h>, additional: own u64) -> outcome: own Result<HeapVector<'h, u8>, OutOfMemory<HeapVector<'h, u8>>> reads(buf, heap), writes(buf, heap), allocates(heap) {
-  doc "Reserves spare capacity, handing the vector back unchanged when the store refuses.";
-  return seq_reserve_heap(vector: move buf, heap: &uniq 'b deref(heap), additional: additional);
-}
-
-command fn main['h](command.stdout as sink: own Output, command.heap as heap: own Heap<'h>) -> status: own ExitStatus reads(sink, heap), writes(sink, heap), allocates(heap) {
-  doc "Collects one fixed input buffer into a heap vector and writes it out, reporting a refusal instead of dying.";
-  let input = seq_filled<u8, 4096>(value: 65_u8);
-  let empty = seq_heap<u8, 'h>();
-  let total = 0_u64;
+command fn main(command.stdout as sink: own Output, command.heap as heap: own Heap)
+    -> status: own ExitStatus
+    reads(sink, heap), writes(sink, heap), allocates(heap) {
+  doc "Collects one fixed input run into a heap-backed run and writes it out, reporting a refusal instead of dying.";
+  let input = filled_bytes<4096>(value: 65_u8);
   let code = 0_u8;
-  region 'g {
-    let reserved = grow<'h, 'g>(buf: move empty, heap: &uniq 'g heap, additional: ceiling);
-    match reserved {
-      Ok(value: ready) => {
-        region 'fill {
-          let view = seq_append_view(vector: &uniq 'fill ready);
-          region 's {
-            let line = seq_span(vector: &'s input);
-            let done = collect<'fill, 's>(out: move view, source: move line);
-            set total = absorb(view: move done);
-          }
-        }
-        region 'w {
-          let body = seq_span(vector: &'w ready);
-          region 'c {
-            let outcome = write_once<'c, 'c, 'w>(output: &uniq 'c sink, source: &'c body, start: 0_u64, end: total);
-            match outcome {
-              Ok(value: next) => {
+  region {
+    let made = bs_new(heap: &uniq heap);
+    match made {
+      Some(value: holder) => {
+        let s = move holder;
+        let total = 0_u64;
+        region {
+          let grew = bs_reserve(s: &uniq s, heap: &uniq heap, additional: ceiling);
+          match grew {
+            True() => {
+              region {
+                let line = seq_span(vector: &input);
+                set total = collect(out: &uniq s.v, source: move line);
               }
-              Err(error: problem) => {
-                set code = 74_u8;
+              region {
+                let body = seq_span(vector: &s.v);
+                region {
+                  let outcome = write_once(output: &uniq sink, source: &body, start: 0_u64, end: total);
+                  match outcome {
+                    Ok(value: next) => {
+                    }
+                    Err(error: problem) => {
+                      set code = 74_u8;
+                    }
+                  }
+                }
               }
+            }
+            False() => {
+              set code = 70_u8;
             }
           }
         }
-        dispose ready using (heap);
+        dispose s using (heap);
       }
-      Err(error: refused) => {
-        let recovered = move refused.rejected;
-        dispose recovered using (heap);
+      None() => {
         set code = 70_u8;
       }
     }
@@ -3624,64 +3436,24 @@ command fn main['h](command.stdout as sink: own Output, command.heap as heap: ow
 
 #### The writer's-eye walkthrough
 
-`command fn main['h](...)` declares one region parameter, which [FN-7] admits only
-because the entry selects `command.heap` [PROV-1]. `'h` is the heap store's name
-for the whole program, and it appears in `Heap<'h>`, in `HeapVector<'h, u8>` and in
-`OutOfMemory<HeapVector<'h, u8>>`. Nothing else can name it, because [OWN-3] makes
-a caller-supplied region incomparable with every other.
-
-`let input = seq_filled<u8, 4096>(value: 65_u8);` is the row whose absence made the
-first draft's `wfgrep` migration unreachable: `seq_fixed` gives `len = Z`, and under
-[CNT-2] a zero-length container is unreadable and unwritable until elements have
-been placed one at a time, so a `MutSpan` formed on it names no bytes. That
-addressability requirement is also the cost [VIEW-7] records.
-
-`let empty = seq_heap<u8, 'h>();` writes its store region because no operand
-supplies it, publishes `len = Z`, `cap = Z`, `room = Z` and **allocates nothing**:
-an empty growable sequence owns no backing. That is L4 at the constructor, and it
-is why `empty` is safely linear from its first statement.
-
-`grow<'h, 'g>(buf: move empty, heap: &uniq 'g heap, additional: ceiling)` is
-**[CALL-2]** on `buf` and the single acquisition point of the program. It is also
-why [PROV-7] exists: `grow` lends `&uniq 'g Heap<'h>` onward to `seq_reserve_heap`,
-whose result type names `'h` and not the loan region `'g`, which is the admitted
-condition and is equally true of `pool_take`, `arena_take` and `seq_lease`. The
-second draft's region-free condition admitted this call and refused all three.
-
-On the `Ok` arm, [SEQ-0]'s relations arrive over `grow`'s call datums:
-`cap(ready) = cap(empty) + ceiling` and `len(ready) = len(empty)`. The capacity is
-an **equality, not a lower bound**, which is what keeps L15 honest.
-
-`let view = seq_append_view(vector: &uniq 'fill ready);` writes no arguments and
-publishes `len(view) = Z`, `cap(view) = <formation datum of room(ready)>`. **The
-view value holds the loan** [VIEW-2], exclusively, so a second `AppendView` on
-`ready` is refused at its own formation by [OWN-5] 601's origin-conflict sentence,
-which [PROV-3] preserves and widens.
-
-`set total = absorb(view: move done);` is the statement the second draft could not
-write: `done` is a call result, so its origin set is `{ready, immutable-const}` by
-[FN-1] 1036 and is never a singleton, while [VIEW-3] requires a singleton
-**resolved** set. The commit ends the loan at the consume rather than at the end of
-`'fill`, which is what lets `region 'w` read `ready` immediately afterwards, and it
-names the datum the view has carried since its formation.
-
 `write_once<'c, 'c, 'w>(...)` is [VIEW-7] over a view. Its obligations are
 `ile(0_u64, total)`, implicit, and `ile(total, len(deref(body)))`, which discharges
-from [VIEW-2]'s `len(body) = len(ready)` and [VIEW-3]'s published
-`len(ready) = Z + total`. This is the statement that makes goal A's container half
-real. Its two regions are the output's loan and the descriptor's loan, and `'w` is
-the viewed data's; `region 'c` exists for [OWN-10] and is opened after `body` is
-bound.
+from [VIEW-2]'s `len(body) = <formation datum of len(s.v)>` and `collect`'s exit
+datum `len(s.v) = total`. This is the statement that makes goal A's container half
+real. Its three regions all relate nothing, so all three are elided (3.K.0); the inner block
+still exists because [OWN-10] needs `body` bound before the borrow, and it has no
+name. Under the fourth draft this one statement carried three region arguments and
+two borrow names, and Q11 asked for the formation half back.
 
-`dispose ready using (heap);` is [PROV-6], on both arms and in one statement each.
-A `HeapVector<'h, u8>` is linear, so `region 'g` cannot be left with one alive; the
-walk drops each `u8` element, which derives nothing, and then releases the backing
-to the store `'h` names. `heap` is the entry's own `own Heap<'h>` binding and needs
-no region, because `using` names a place. On the `Err` arm `refused.rejected` is
-the original owner handed back unchanged (L3), reached by an ordinary field move
-that [CNT-4] admits because the field's type names `'h` exactly as the struct's
-instance does. **There is no path on which the process disappears**, which is the
-whole of goal B.
+`dispose s using (heap);` is [PROV-6], once, on the arm that has a value to destroy.
+`Bytes` is a nominal with a linear field, so it is linear, so the enclosing region
+block cannot be left with one alive; the walk drops each `u8` element, which derives nothing, and
+then releases the backing to the store `Vector<u8>`'s type names. `heap` is the
+entry's own `own Heap` binding and needs no region, because `using` names a place.
+The walk's depth is `Bytes`'s containment height, a constant [PROV-6], so it needs no
+auxiliary storage and no `wf_resource_abort` is reachable from it — which is round
+4's rank-one resource finding, and probe `a8` is the shape that has one today.
+**There is no path on which the process disappears**, which is the whole of goal B.
 
 #### What the compiler reports
 
@@ -3689,319 +3461,258 @@ whole of goal B.
 note: queue.wf is source-resource-closed; envelope written to queue.E
 note: collector.wf is not source-resource-closed
   [RES-4] main selects command.heap
-    heap-reaching path:  main -> grow -> seq_reserve_heap
+    heap-reaching path:  main -> bs_new -> seq_heap
   a general store cannot appear in an envelope [L6], so no envelope is computed
   still true of this program:
-    no covered-resource failure is a trap [RES-6]; seq_reserve_heap returns a value
+    no covered-resource failure is a trap [RES-6]; seq_heap returns a value
     the heap is reachable only through the parameter above [PROV-4]
     every release of heap-owned storage is a statement that names the heap [PROV-6]
+    every release walk's depth is a compile-time constant [PROV-6]
   not true of this program:
     it makes no resource promise, and its environment owes it none
 ```
 
-Five diagnostics the design owes a writer, each citing a rule that exists in
-section 3. Two more, [PROV-1]'s `SecondStoreInOneRegion` and [CNT-4]'s
-`ConfinedFieldWithoutRegion`, are stated inside their rules and are not repeated
-here. The first is what a push without a capacity proof reports:
+Four of the diagnostics the design owes a writer, each citing a rule that exists in
+3.K; `DisposeProviderMissing` and `LinearValueAcrossPropagate` are stated inside
+[PROV-6].
+Three more — [PROV-1]'s `SecondStoreInOneRegion`, [PROV-1]'s `AmbiguousStoreRegion`
+and [BLK-4]'s `ConfinedFieldWithoutRegion` — are stated inside their rules and are
+not repeated here.
 
 ```text
-Semantics/Source [SEQ-0]: UndischargedOperationDomain
-  operation: seq_push
-  residual:  "Z < room(view)"
-  mechanical_fix: state a header invariant over room(view) [INV-1, MSR-5],
-    dominate the push with a branch on room(view), reserve on the owner before
-    forming the view, or use seq_try_push
-```
+Semantics/Source [BLK-0]: UndischargedOperationDomain
+  operation: seq_place
+  residual:  "Z < room(deref(block))"
+  mechanical_fix: state a header invariant over room(deref(block)) [INV-1, MSR-5],
+    dominate the place with a branch on room(deref(block)), take a larger run
+    before the loop, or use the library's try_place
 
-It cites `[SEQ-0]` and names the operation in its payload, because [DIAG-1] 1535
-admits exactly one numbered language rule and an inventory row is table data.
-
-```text
 Semantics/Source [PROV-6]: LinearValueNotDisposed
-  binding "block" of type PoolVector<'p, u8, 256> is live on the edge leaving 'b
-  its store region 'p is reserved at "blocks" of type Pool<'p, FixedVector<u8, 256>, 8>
-  mechanical_fix: move the value out of this scope, or write
-    dispose block using (blocks); a store-backed value has no compiler-derived
-    release, so nothing else can free it
+  binding "s" of type Bytes is live on the edge leaving 'g
+  its linear leaf Bytes.v of type Vector<u8> names the store region of command.heap
+  mechanical_fix: move the value out of this scope, or write dispose s using (heap);
+    a store-backed run has no compiler-derived release, so nothing else can free it
 
-Semantics/Source [PROV-6]: DisposeProviderMissing
-  disposing "table" of type FixedVector<Chunk<'p>, 8> reaches a linear leaf
-    Chunk<'p>.page of type PoolVector<'p, u8, 4096>
-  no named provider has a type naming 'p
-  mechanical_fix: name the provider of 'p in the using list; a dispose names one
-    provider for every store its value's type reaches
+Semantics/Source [PROV-6]: LinearValuePartiallyMoved
+  "move chunk.page" takes one leaf out of "chunk" of type Chunk, which is linear
+  the residual leaf Chunk.spare of type Vector<u8> would then leave this scope by
+    neither a move, a destructuring consume, nor a dispose
+  mechanical_fix: write let Chunk(page: p, spare: q) = move chunk; and handle both
+    leaves, or dispose the whole value
 
-Semantics/Source [PROV-6]: LinearValueAcrossPropagate
-  binding "held" of type HeapBox<'h, u64> is live on this propagate's error edge
-  mechanical_fix: expand the propagate into a match and dispose "held" on the Err
-    arm; a propagate edge leaves every enclosing scope and has no statement
-    position on which a disposal could run
-
-Semantics/Source [SEQ-0]: AffineFillElementType
-  operation: seq_filled
-  element type Option<Task> is affine, and this row requires a copy element type
-  mechanical_fix: use seq_vacant<Task, 32>() for a table of vacant slots, which
-    publishes len = N and needs no copy; or place elements one at a time
+Semantics/Source [PROV-5]: ExtentReservedOnACallCycle
+  arena_extent<65536, 16, 'p> is reached from a strongly connected component of the
+    call graph: descend -> descend
+  one committed extent would be held by every live activation at once
+  mechanical_fix: reserve the store in the caller and lend the provider down
+    [PROV-7], or use arena_frame, whose extent is per activation
 ```
 
-The last is a selection error rather than a caller's later discovery, and it is the
-message round 3 asked for by name: a writer building a task table types
-`seq_filled<Option<Task>, 32>` first.
+The last is the one round 4 asked for by name, and probe `x8` is the program that
+gets it.
 
 ---
 
 ## 5. Open questions
 
-Everything the owner's rulings settle is dropped and not restated. So is
-everything the earlier drafts asked and this one answers: the length-class terms
-and the goal disposition are [MSR-1] and [MSR-4]; the arithmetic residual is
-[MSR-3]'s datums and images; the `absorb` commit is [VIEW-3]; the coverage
-certificate died with `Builder`; the arena's reclamation is [RES-5]'s cursor
-domain; the optimizer-versus-envelope question is [STK-3]; the profile table is
-[RES-2]. Six questions earlier drafts filed are **answered here rather than asked**,
-and the answers are on the merits:
+Everything the owner's rulings settle is dropped and not restated. So is everything
+the earlier drafts asked and this one answers: the length-class terms and the goal
+disposition are [MSR-1] and [MSR-4]; the arithmetic residual is [MSR-3]'s datums and
+images; the coverage certificate died with `Builder`; the arena's reclamation is
+[RES-5]'s cursor domain; the optimizer-versus-envelope question is [STK-3] and
+[RES-2]; the profile table is [RES-2]. Seven questions earlier drafts filed are
+**answered here rather than asked**, on the merits: a store is identified by its
+region *per live activation of its region block* [PROV-1], [PROV-5]; a store-owned
+value is destroyed by one structural statement whose walk is bounded by the type's
+containment height [PROV-6]; a linear value is taken apart by
+`let N(f: a, ...) = move v;` and a partial move of one is refused; disposal needs no
+effect category of its own; region-parametric nominals belong in this version
+[BLK-4]; the value-in / value-out spelling gets an admission on `set` rather than a
+statement of its own [LIV-3]; and control entering the call graph from outside it is
+1.5's, with the row the brand itself now owes.
 
-- *What identifies a store?* Its region, carried in the type of every value it
-  backs, [PROV-1]. A place is defeated by a move plus a rebind and by a runtime
-  offset; a type is defeated by neither.
-- *What disposes a store-owned value?* One structural statement, [PROV-6], closed
-  under containment exactly as linearity is. A four-operation list cannot name a
-  container of leases, and a derived release cannot state its own subject.
-- *Does disposal need its own effect category?* No. A `disposes(item -> pool)`
-  entry would restate the two formals' types, and the footprint it would supply is
-  the `writes` row the statement already carries.
-- *Do region-parametric nominals belong in this version?* Yes, [CNT-4]. The
-  deferral bought no soundness once confined values were admitted into container
-  elements, and its cost was every kernel structure written as parallel columns.
-- *Should the value-in / value-out spelling get sugar?* It gets a statement form in
-  two shapes, [LIV-3], which is not sugar because it is a [SET-2] exchange and
-  reaches places `set` cannot.
-- *What about control entering the call graph from outside it?* Out of scope for
-  this batch, and section 1.4 states the interface the execution-context design
-  inherits, including the two rows it must reopen.
+### 5.0 The decisions the ruling forced, and the ruling's own question
 
-What remains is what this design genuinely does not decide.
+These are the decisions the minimality ruling forced and the owner has not
+separately ruled on. Each states what was traded and what the alternative costs.
 
-**Q1. May a resource-closed program handle a typed refusal, or must it prove every
-acquisition?** *(a)* Strict: every covered acquisition uses the proved spelling.
-*(b)* Permissive: both spellings are admitted, since neither can ask for more than
-`E`.
-**Recommend (b), and L8 plus [RES-6] make it real.** A refusal edge carries the
-store's own `room(store) = Z`, and 3.3.1's loop rule names the checked spelling as
-one of the three things that bounds a retaining loop, on any path rather than only
-on a loop exit.
+**Q0a. `AppendView` and `absorb` are gone** (footnote 3). What is lost is a
+*guarantee*: an `AppendView` could not reach below its owner's length, so a callee
+handed one could not shrink what it was given. A callee handed `&uniq 'a Vector<'s, T>`
+can. What is gained is that [CALL-4]'s exit datum publishes a borrowed value's
+post-state for **every** type rather than for one, which is what makes `collect`
+writable in wf, so the kernel keeps one mechanism instead of two.
+*Recommend the trade*: the lost guarantee is a contract property, not a
+memory-safety one, and keeping `AppendView` means keeping a third view, a commit
+event, and a carried datum needing its own transport across a call.
 
-**Q2. Where does a hosted resource-closed program's large memory come from?**
-*(a)* Frame and extent placement only, as [PROV-5] provides. *(b)* One more entry
-row delivering a committed region, `command.region as store: own Arena<'store, B, A>`.
-**Recommend (a).** `pool_extent` and `arena_extent` already produce a `region` item
-of `E` that a deployment grants separately. (b) becomes right the day a program
-needs a store whose *size* is a deployment decision rather than a source constant,
-and it puts a deployment-shaped input on every hosted program's entry, so it should
-wait for a program that needs it.
+**Q0c. A pool is library, and a leased run is not linear** (`CONTAINERS.md` §3). Under the fourth
+draft a lease was linear and `dispose` was owed, so a dropped lease was a compile
+error. Here it leaks a free-list slot until the region ends, with no diagnostic.
+*This is the one place the trade is genuinely uncomfortable.* The leak is bounded by
+the pool's own capacity and visible in `E` as a retained item, and a writer who wants
+the check backs the free list from the heap instead of the arena; the alternative is
+a way to declare an ordinary nominal linear, which is a feature of its own size.
+*Recommend leaving it, and recording the loss.*
 
-**Q3. Does the range relation need a splitting operation?** [PROV-3] gives each
-origin the half-open range its value reaches, and [RUN-3] uses it, so a counted
-`MutSpan` fill has [PAR-2] permission in this version. What it does not yet have is
-`seq_split_at`, which hands a writer two views of disjoint ranges of one owner as
-two values. *(a)* Add it now. *(b)* Leave it; the counted fill covers the case a
-program has today.
-**Recommend (b) for this version and (a) as the next view operation.** The relation
-the split needs already exists, which is the point of having written the range into
-[PROV-3] rather than refining one loan; what is missing is only the row and its
-declared relations, and no program in this batch needs it.
+**Q0b, Q0d and Q0e together, and *recommend all three*.** Five owners became two and
+`FixedRing` became a library nominal (footnotes 1, 2): a ring costs one `Option` word
+per slot and one `match` per removal, and buys a readable head, correct disposal over
+a linear element with no rule of its own, and one fewer nominal with four fewer rows.
+`update` became an admission on `set` (footnote 4), losing nothing and costing three
+fewer grammar atoms. And the kernel declares no failure nominal ([BLK-2], [RES-6]),
+losing one shared vocabulary and gaining not having three compiler-owned nominals
+whose only job is to be a struct a writer could have written.
 
-**Q4. How does a resource-closed program reach a device?** `main`'s effect row
-names only its own labelled inputs and the `command` table is closed, so 4.1 has a
-transmit ring and no way to flush it. *(a)* A sixth row on the hosted table.
-*(b)* A second program kind under [FN-7]'s existing closed-table discipline, with
-its own standard-input table naming memory-mapped regions.
-**Recommend (b), as a named deferral, arriving with the execution-context design
-of 1.4.** An interrupt vector and an MMIO window are one batch: a handler with no
-device to service and a device with no handler are each half a driver. (a) would
-put a device on every hosted program's entry.
+**Q0g is decided and is recorded rather than asked.** The region-spelling amendment
+lands first, separately and mechanically, and is not this design's (3.K.0). What
+this design owes it is one property — the spelling is decidable from the declaration
+text alone — and what it gets back is measured in 3.K.0 and answers Q11.
 
-**Q5. When does `par` become usable inside a resource-closed program?** [RUN-2]
-denies [PAR-1] to [PAR-3] permission there and publishes `lanes(1)`, because the
-current runtime's wait path executes a stolen task on the waiting lane's own stack
-and no term of [STK-3] counts that. *(a)* Restrict the shapes whose lowering can
-nest a stolen task, and deny permission for the rest. *(b)* Build the
-compiler-managed work-first continuation representation, then lift the denial and
-define a worker lane's chain [STK-3].
-**Recommend (b), and note that [RUN-2] is what makes it a scheduling item rather
-than a soundness risk.** This is the largest engineering item the design implies.
+**Q0f, the ruling's own question: should any of 3.L ship?** The owner leans toward no
+standard library at all, and 3.L proves the partition whether or not a line of it is
+committed. Three items are load-bearing for this design's evidence — `filled` for
+[VIEW-7]'s addressable destinations, `collect` for the append story, and the pool for
+4.1. *Recommend: no `std`; those three land as test programs under
+`tests/programs/`, where a rot check already reaches them.*
 
-**Q6. Does this version want a keyed or sparse container family?** [CNT-2] writes
-stable-identity storage as `seq_vacant<T, N>` over `FixedVector<Option<T>, N>` with
-element-position `replace`, which is sound, is L12-clean, and compiles in shape
-today (probe `r2_7`). Its remaining cost is one `Option` word per slot and one
-`match` per read; the construction loop and its two header invariants are gone.
-*(a)* Leave it there. *(b)* Add a `FixedTable<T, N>` whose typestate is an
-occupancy set, whose whole operation surface is index-local so no quantified
-proposition arises, and whose occupancy word is representation rather than language
-state.
-**Recommend (a) for this version and (b) as the next container family.** (b) is
-what a kernel object table, a page cache and a slab front end actually want, and it
-is exactly the "keyed containers are fixed families over the core, later" the owner
-settled.
+### 5.1 The questions this design genuinely does not decide
 
-**Q7. Should a system operation be able to append?** [VIEW-7] gives a destination
-`&uniq 'd MutSpan<'r, u8>`, so an I/O buffer is addressable before the host writes
-into it and the byte count comes back as an ordinary `u64` beside the container.
-*(a)* Leave it: one fill per buffer, and the length typestate does not reach the
-boundary where lengths come from outside. *(b)* Give the producing operations
-`own AppendView<'r, u8>` and an ordered result list, so the bytes the host wrote
-become the view's `len` and `absorb` publishes the owner's new length.
-**Recommend (b), in the batch that lands multi-return in the [SYS-2] declaration
-domain, and not here.** (b) is the right answer and it is the one place where the
-whole write-back protocol pays for itself twice; it also requires the system domain
-to gain a result-list shape, which is a change to [SYS-2]'s records and counts and
-belongs beside them.
+**Q1. May a marked program handle a typed refusal, or must it prove every
+acquisition?** **Permissive**: both spellings are admitted, since neither can ask for
+more than `E`, and L8 plus [RES-6] make it real — a refusal edge carries the store's
+own `room(store) = Z`, and 3.K.7.1's loop rule names the checked spelling as one of
+the three things that bounds a retaining loop.
+
+**Q2. Where does a hosted marked program's large memory come from?** **Frame and
+extent placement only**, as [PROV-5] and [BLK-2] provide; an entry row delivering a
+committed region becomes right the day a program needs a store whose *size* is a
+deployment decision rather than a source constant.
+
+**Q3. Does the range relation need `seq_split_at`?** Not in this version. The
+relation it needs already exists in [PROV-3]; what is missing is only the row.
+
+**Q4. How does a marked program reach a device?** `main`'s effect row names only its
+own labelled inputs and the `command` table is closed, so 4.1 has a transmit ring and
+no way to flush it. **A second program kind** under [FN-7]'s existing closed-table
+discipline, arriving with the execution-context design of 1.5: an interrupt vector
+and an MMIO window are one batch, and a sixth hosted row would put a device on every
+hosted program's entry.
+
+**Q5. When does `par` become usable inside a marked program?** [RUN-1] denies
+permission and [RUN-2] publishes `lanes(1)`, because the current runtime's wait path
+runs a stolen task on the waiting lane's own stack. The answer is the
+compiler-managed work-first continuation representation, then lifting the denial and
+defining a worker lane's chain [STK-3]. This is the largest engineering item the
+design implies, and [RUN-1] is what makes it a scheduling item rather than a
+soundness risk.
+
+**Q6. Does this version want a keyed or sparse container family?** Not yet.
+`CONTAINERS.md` §3.5 writes stable-identity storage as a vacant run plus
+element-position `replace`, which is sound, L12-clean, and compiles in shape today
+(probe `x7`). A `FixedTable<T, n>` whose typestate is an occupancy set is the next
+candidate, and under L18 it has to justify itself against §3.5, which works.
+
+**Q7. Should a system operation be able to append?** **Yes, in the batch that lands
+[CALL-4]'s exit datum in the [SYS-2] declaration domain, and not here.** Then the
+bytes the host wrote become the run's own `len` and the caller reads it from the
+operation's `ensures`, instead of [VIEW-7]'s addressable destination and a `u64`
+beside the run.
 
 **Q8. Is `copy` structural over aggregates?** [OWN-1] makes every owned composite
-affine regardless of its field types, which is why `seq_filled` and
-`seq_heap_filled` admit only primitives and why P17 exists. *(a)* Leave it.
-*(b)* A `struct` or `enum` all of whose field types are copy is itself copy.
-**Recommend (b), and note that it is not this design's to land.** Under (b)
-`seq_filled<Descriptor, 64>` becomes a construction instead of a loop. It is an
-[OWN-1] question with its own consequences across the language, and this design
-names it because it is the reason two of its own rows read `T copy`.
+affine regardless of its field types, which is why 3.L.3's `filled` is written per
+element type and why probes `m12` and `m14` disagree. **A `struct` or `enum` all of
+whose field types are copy should be copy** — and it is not this design's to land. It
+is the reason a writer's generic library is thinner than the kernel's own domain.
 
-**Q9. Is `E` part of program identity?** *(a)* Diagnostic output only. *(b)* An
-emitted machine-readable table beside the object.
-**Recommend (b), and explicitly not part of [PROG-2] compilation-unit identity.**
-The envelope is useless if the deployment cannot read it, and keeping it out of
-unit identity keeps it a derived fact about one build, which [STK-3] and [RUN-5]
-both say it is.
+**Q9. Is `E` part of program identity?** **An emitted machine-readable table beside
+the object, and explicitly not part of [PROG-2] compilation-unit identity**, which
+[RES-2]'s three-argument form already says it is not.
 
-**Q10. Should a `propagate` be able to carry a disposal?** [PROV-6] refuses a
-`propagate` in a function holding a live linear binding, because the error edge has
-no statement position on which a disposal could run, and probe `w5` shows the
-language admits that shape today. The cost is a five-line `match` in every
-allocating helper that propagates, which `growable_vec.wf` and `byte_string.wf`
-both are. *(a)* Leave the refusal. *(b)* Admit a release list on the statement,
-`let x = propagate f(...) disposing (held using (heap));`, checked by exactly
-[LIV-1].
-**Recommend (a) now and (b) as a measured follow-on.** (a) is one sentence and one
-diagnostic, and it is honest: the third draft refused the same shape and did not
-know it. (b) is a new production carrying a statement list in an initializer, and
-it should be paid for by a program whose rewrite under (a) was actually painful,
-which the migration of the two corpus programs will show.
+**Q10. Should a `propagate` carry a disposal?** [PROV-6] refuses a `propagate` while
+a linear binding is live, and probes `w5` and `m03` show the language admits that
+shape today. **Leave the refusal now**; a release list on the statement, checked by
+exactly [LIV-1], should be paid for by a program whose rewrite was actually painful.
 
-**Q11. Should a view-forming borrow need its own written region?** [OWN-10] forces
-`region 'dest { let window = seq_mut_span(vector: &uniq 'dest input); region 'call { ... } }`,
-two regions and one formation at every I/O site, which is [VIEW-7]'s recorded cost
-and which `wfgrep` pays seven times. *(a)* Leave it. *(b)* Admit a **formation
-borrow** as a call-scoped temporary whose region is introduced by the formation
-statement itself, so `let window = seq_mut_span(vector: &uniq input);` writes no
-region.
-**Recommend (b), and note that [VIEW-2] has already made the argument for it.** If
-the argument borrow is not the freeze, and [VIEW-2] says in terms that it is not
-because the view value holds the loan, then it does not need a writer-named region.
-It is deferred here only because it is an [OWN-10] change with reach beyond this
-design's own operations, and because no program in section 4 is blocked by it.
-
----
+**Q11 is answered and is retained only as a record.** It asked whether a
+view-forming borrow needs its own written region. It does not: the region relates
+nothing, so the region-spelling amendment elides it and the enclosing block keeps its
+braces and loses its name. [VIEW-2] had already made the argument — if the argument
+borrow is not the freeze, it does not need a writer-named region — and the amendment
+is that argument generalized to every position.
 
 ## 6. Verified versus reasoned
 
-**Verified** means a compiler executed it. The binary is the gate-profile
-`whitefootc` built from this tree; every probe below was run against it, either in
-the session that wrote this file or in one of the twelve falsifier sessions whose
-verdicts are quoted with their probe names. No timing figure from any machine
-appears anywhere in this file.
+**Verified** means a compiler executed it, against the gate-profile `whitefootc`
+built from this tree, in this session or in one of the sixteen falsifier sessions
+whose probe names are quoted. No timing figure appears anywhere in this file, and the
+known wrong acceptance of a `replace` at an arena descriptor is a compiler defect
+counted as a design finding nowhere.
 
 ### 6.1 What the current compiler does
 
-Eight probes were run in the session that wrote this draft, to check what this
-draft newly rests on rather than to re-inherit earlier verdicts. The table
-describes each probe program closely enough to rewrite it; the sources were session
+Fourteen runs over eleven probe programs were made in the session that wrote this
+draft. The table describes each closely enough to rewrite it; the sources are session
 scratch files and are not in the repository.
 
 ```text
 | probe            | program                                                        | verdict                                   |
 |------------------|----------------------------------------------------------------|-------------------------------------------|
-| w1_regionname    | two `region 'r` blocks in one function                         | REJECTED [OWN-3] RepeatedRegion           |
-| w2_arenareplace  | `let old = replace first = move second;` at arena<'r, u64>     | ACCEPTED, exit 0                          |
-| w3_clausecall    | `requires ile(len(source), len(target));`                      | REJECTED [GRAM-9] at parse, expected      |
-|                  |                                                                | [":", ")", ",", "[", "."]                 |
-| w4_elemwrite     | hoisted `len`, `set slots[0] = ...`, then a guarded subscript   | ACCEPTED, exit 0                          |
-|                  | against the hoisted length                                     |                                           |
-| w5_propagatebox  | a live `box<u64>` across a `propagate` edge, derived drop after| ACCEPTED, exit 0                          |
-| w6_setaffine     | `set held = box_new(6_u64);` after `let taken = move held;`    | REJECTED [OWN-1] UseAfterMove at the set  |
-| w7_boxfield      | a `box` field in a struct, one field moved out, the residual   | ACCEPTED, exit 0                          |
-|                  | record consumed by a callee declaring only reads(c.tag)        |                                           |
-| w8_twouniq       | two `&uniq 'b x` argument borrows of one place in one region,  | ACCEPTED, exit 0                          |
-|                  | with `set x = 7_u64;` between them                             |                                           |
+| x1_fillorder     | counted loop, one `ige(fill, at)` header, exact `+` in the body | REJECTED [OP-2], residual                 |
+|                  |                                                                | "fill +defined 1_u64"                     |
+| x1b_fillorder    | the same with `+wrap`                                          | REJECTED [INV-1] Backedge, required       |
+|                  |                                                                | relation "ile((at + 1_u64), fill)"        |
+| x1c_fillorder    | the same with BOTH `ige(fill, at)` and `ile(fill, at)`, then    | **ACCEPTED**, exit 0                      |
+|                  | `invariant done: ige(fill, 8_u64);` after the loop              |                                           |
+| x1d_fillsub      | the same, and the loop-exit ordering discharges `data[3]`       | **ACCEPTED**, exit 0                      |
+|                  | under a dominating `ilt(3_u64, fill)` branch                    |                                           |
+| x2_exchange_set  | `set c = bump(cell: move c);` at a struct-typed local           | REJECTED [STOR-1] AffineSetTarget,        |
+|                  |                                                                | fix: "combine it with the old value       |
+|                  |                                                                | field by field"                           |
+| x3_movederef     | `set deref(h) = bump(cell: move deref(h));` through `&uniq`     | REJECTED [STOR-1] AffineSetTarget         |
+| x4_partial       | `struct Two { a: box<u64>; b: box<u64>; }`, `move pair.a`, the  | **ACCEPTED**, exit 0                      |
+|                  | residual never touched                                         |                                           |
+| x5_uniqensures   | `ensures ile(written, len(deref(destination)));` written direct | REJECTED [GRAM-9] at parse                |
+| x6_rectype       | `struct Node { next: Option<box<Node>>; value: u64; }`          | **ACCEPTED**, exit 0                      |
+| x7_optreplace    | `buffer_vacant<u64>(4)`, two element-position `replace`s, then  | **ACCEPTED**, exit 0                      |
+|                  | `len(table)`                                                   |                                           |
+| x8_screc         | recursive `descend` opening `region 's` and calling             | **ACCEPTED**, exit 0                      |
+|                  | `arena_new<'s, u64>` on every activation                       |                                           |
+| x9_capzero       | `buffer_new(0_u64, 0_u8)` and `len` of it                      | **ACCEPTED**, exit 0                      |
+| x10_uniqdefine   | the same `ensures` as x5 through a `define`, `pure` body        | **ACCEPTED**, exit 0                      |
+| x11_uniqkill     | callee writes one element through `&uniq buffer<u8>`; caller    | **ACCEPTED**, exit 0                      |
+|                  | keeps `len(out) = 4` into a subscript                          |                                           |
 ```
 
-What each establishes, and which rule it changed rather than confirmed.
+What each establishes, and which rule it decided rather than confirmed.
 
-- `w1` is [PROV-1]'s enabling fact and the reason a region can be a store's name:
-  [OWN-3] 573's uniqueness is enforced, so one spelling denotes one occurrence.
-  Without it the brand would need a new binder kind.
-- `w2` is a **live compiler defect found by round 3 and re-confirmed here**.
-  [SET-2] 512 makes a region-bearing replace target a hard error for
-  `slice<'r, U>` **and** `arena<'r, U>`; `check_mutation_target_class`
-  (`compiler/src/semantic/check/expressions.rs:310-326`) tests only the slice
-  variant. It is benign at this tip and load-bearing for B6, which must implement
-  [PROV-3] use 3 as a relation over loan-bearing types rather than re-wording
-  [SET-2] over one `CheckedType` variant.
-- `w3` is [MSR-5]'s amendment, and it is why the amendment goes to [GRAM-5] rather
-  than to [GRAM-9]: the compiler's own mechanical fix names `define`, because
-  `atom` has no `call` alternative and [GRAM-9] is only the attribution.
-- `w4` is [MSR-2]'s second consequence at v0.40 scale: an element write does not
-  kill a length, and the surviving length reaches an [OP-4] goal.
-- `w5` is the program [PROV-6] now refuses. A heap value is live across a
-  `propagate` edge and the compiler derives its release there; under [PROV-6] there
-  is no derived release and no statement position, so the design owes the writer a
-  `match`. This is a capability the language has today and this design removes.
-- `w6` is [LIV-2]'s premise from the dead side: a `set` of a consumed affine
-  binding is [OWN-1] `UseAfterMove` **at the set**, and probe `p10` is [STOR-1]
-  `AffineSetTarget` from the live side. The two together are exactly the one
-  premise [LIV-2] states.
-- `w7` is [PROV-6]'s virality target one level deeper than `r2_5`: a struct with a
-  heap-backed field is consumed by a callee whose row names only a copy field, and
-  the free is invisible. It is also the shape [CNT-4] must keep admitting, which is
-  why the position prohibition narrowed to loan-bearing types.
-- `w8` is why store identity may not rest on a place: two argument borrows of one
-  place coexist as call-scoped temporaries with an ordinary write between them, so
-  nothing a provider operation touched stays frozen after its own statement.
-
-Inherited verdicts this draft still rests on, from the twelve falsifier sessions,
-grouped by what each group establishes:
-
-```text
-| probes                             | what they establish                                    |
-|------------------------------------|--------------------------------------------------------|
-| d1 conformance case                | D1 reproduces at this tip, ACCEPTED exit 0             |
-| p1, p6, f7                         | [CALL-1] and [CALL-2] already behave; D1 is narrow     |
-| p7, p9, k12, p2, p8, k09, r1_multi | MutSpan writes, affine elements, len(result) and       |
-|                                    | multi-return are new capability, not compiler defects  |
-| p5_ambient, n4, r1_ambient, r2_5,  | ACCEPTED: allocation while holding nothing, and a free |
-| q9                                 | inside a `pure` callee; L2's and L13's evidence        |
-| f1c, f1d, f2b, r1_twouniq, r2_1,   | why a view value holds the loan, and why a borrow      |
-| r2_2, c4                           | region must open after its binding                     |
-| f3, f5, f6, r1_own11               | the three avoidances [LIV-1] replaces                  |
-| p10                                | [STOR-1] AffineSetTarget, the live half of [LIV-2]     |
-| f2b_tail, f8_tailframe, p3_rec     | the witnesses refuting the syntactic tail conditions   |
-| n2_idle, f3_forever, k30,          | [FN-1] FunctionFallthrough on the idle and driver      |
-| n3_propagate_loop                  | loops [STK-4] admits                                   |
-| f7_regionresult, k05, r2_6, r2_8,  | [CNT-4], `update` and [MSR-5] are new syntax           |
-| r1_lenatom, r1_field, c1 / c2      |                                                        |
-| r2_4, r2_4b, r2_4c                 | the measure kill is root-granular today                |
-| r2_7, k24, n13                     | element-position replace with a surviving len          |
-| r2_9, r2_10                        | the arm-fact route, and the readers' purity            |
-| q1, q2                             | a box field and a replace of one, which [CNT-4] and    |
-|                                    | [PROV-3] must keep admitting                           |
-| q3, q7                             | a partial move kills the root and the later `set` is   |
-|                                    | refused, which is why [LIV-3] is a [SET-2] exchange    |
-| n14, n15, n19                      | no loop publishes len = N, which is why seq_vacant is  |
-| c8                                 | why seq_exchange is not pure                           |
-| r1_relend, r1_relend_affine        | why [PROV-7] exists                                    |
-| k21 / k21b, k08, k31, b4b          | the fill loop's arithmetic and the guard route         |
-| n7_par, --stack-ledger, six programs| par eligibility, three disjoint chain roots, all pass  |
-```
+Inherited verdicts this draft still rests on, from the sixteen falsifier sessions,
+by what each group establishes. D1 reproduces at this tip (`d1`). [CALL-1], [CALL-2]
+and [CALL-5] already behave and the struct-field route already kills correctly (`p1`,
+`p6`, `f7`, `m04`, `s7`). `MutSpan` writes, affine elements, `len(result)` and
+multi-return are new capability rather than compiler defects (`p7`, `p9`, `k12`,
+`p2`, `p8`, `k09`, `r1_multi`). Allocation while holding nothing, and a free inside a
+`pure` callee, are accepted (`p5_ambient`, `n4`, `r1_ambient`, `r2_5`, `q9`, `w7`,
+`m02`) — L2's and L13's evidence. A view value, not its argument borrow, must hold
+the loan, and a borrow region must open after its binding (`f1c`, `f1d`, `f2b`,
+`r1_twouniq`, `r2_1`, `r2_2`, `c4`, `w8`). [LIV-1] replaces three avoidances (`f3`,
+`f5`, `f6`, `r1_own11`, `s5`, `s6`) and [LIV-2] has two halves (`p10`, `w6`). The
+syntactic tail conditions are refuted (`f2b_tail`, `f8_tailframe`, `p3_rec`) and the
+idle and driver loops are `FunctionFallthrough` (`n2_idle`, `f3_forever`, `k30`,
+`n3_propagate_loop`). [BLK-4] and [MSR-5] are new syntax (`f7_regionresult`, `k05`,
+`r2_6`, `m05`, `r1_lenatom`, `r1_field`, `c1`, `c2`, `w3`, `m07`). The measure kill
+is root-granular today (`r2_4`, `r2_4b`, `r2_4c`); element-position replace keeps a
+`len` (`r2_7`, `k24`, `n13`); the arm-fact route and the readers' purity hold
+(`r2_9`, `r2_10`); a box field and a replace of one must keep being admitted (`q1`,
+`q2`); a partial move kills the root (`q3`, `q7`); no loop publishes `len = N` as an
+equality (`n14`, `n15`, `n19`); a by-value transformation is not `pure` (`c8`);
+[PROV-7] has a reason and a general reading has a price (`r1_relend`,
+`r1_relend_affine`, `m19`); the fill loop's arithmetic and its conditional and
+three-invariant shapes are accepted (`k21`, `k21b`, `k08`, `k31`, `b4b`, `m11`,
+`m17`, `m10`); the arena-content stop, the partial-move drop, the recursive region
+and the release walk's worklist are all executed (`a1`, `a2`, `a3`, `a5`, `a6`,
+`a8`); and `par` eligibility plus three disjoint chain roots are the ledger read
+(`n7_par`, `--stack-ledger`).
 
 ### 6.2 The proof surface, isolated
 
@@ -4010,6 +3721,7 @@ grouped by what each group establishes:
 |----------------------------|----------------------------------------------------------|----------------------------------|
 | v23_param_anchored         | counted loop, header invariant, ensures over a parameter  | ACCEPTED                         |
 | v24_len_anchored           | identical, ensures over len(deref(destination))           | REJECTED [FN-9]                  |
+| x10_uniqdefine             | the same through a `define`, `pure` body                  | ACCEPTED, read as the ENTRY image|
 | v25_subscript_consumer     | identical loop, consumer is a subscript                   | ACCEPTED under [OP-4]            |
 | v26_ensures_consumer       | identical loop, consumer is an ensures                    | REJECTED [FN-9]                  |
 | q2b / q3b                  | one file differing in one token                           | ACCEPTED then REJECTED, in one   |
@@ -4017,76 +3729,90 @@ grouped by what each group establishes:
 | k22                        | ensures over a hoisted len after a proved loop            | REJECTED [FN-9], residual        |
 | v22_loop_then_inv_stmt     | the [INV-1] conclusion proves and does not reach [FN-9]   | REJECTED [FN-9]                  |
 | q5 / q5' / q5''            | one-line invariant header; -wrap on the backedge; exact - | [FORM-2]; [INV-1] Backedge; OK   |
+| x1 / x1b / x1c             | the same three ways, on an increasing counter             | [OP-2]; [INV-1] Backedge; OK     |
 ```
 
-`q2b`/`q3b` and `k22` are why [MSR-4] is a law-level change rather than a repair:
-the same proof, asked by two consumers, inside one accepted-then-rejected
-compilation.
+`q2b`/`q3b` and `k22` are why [MSR-4] is a law-level change rather than a repair.
+`x10` against `v24` is why [CALL-4]'s exit datum is a semantic addition and not a
+grammar one.
 
 ### 6.3 Reasoned, and not verified anywhere
 
-- **Every rule in section 3.** None is implemented, and no compiler has seen any of
-  the new types, operations, terms, statements or markers.
-- **Every program in section 4** and every diagnostic quoted there. They are
-  written against the unchanged v0.40 rules as well as this design's and were walked
-  against both, and the walkthrough records two statements that would be rejected as
-  printed rather than repairing them silently.
-- **Every figure in 4.1's envelope**, which is why every one of them is written as
-  a composition or as `<post-codegen>` rather than as a number.
-- **[PROV-1]'s brand, which the whole draft now rests on.** That a region can carry
-  a store's identity as well as its extent, that one-store-per-region is a
-  restriction no program needs to violate, and that invariance follows from
-  [OWN-12] and [TYPE-5] with no variance design are argued from rule text. The
-  claim most worth attacking is the last: if any rule anywhere admits a region
-  argument by outlives rather than by identity, two stores become one type.
-- **[PROV-6]'s structural walk.** That it terminates on every type the language can
-  form, that its order matches [STOR-3]'s derived-drop order leaf for leaf, and
-  that `dispose` on a partially moved aggregate is either well defined or refused
-  are argued and not executed. The partial-move case is the one round 3 raised and
-  this draft does not answer: probe `w7` shows a partially moved record is legal
-  today, and `dispose` of one is not stated.
-- **The composition algebra of 3.3.1.** Its sequence and branch rules over an
-  exit-label map are standard, the no-fallthrough case is defined, and the interval
-  arithmetic is now stated. Its `par` rule depends on a runtime profile that does
-  not exist. Its loop rule's third discharge, a writer invariant, has never been
-  exercised against a program with two stores.
-- **[MSR-3]'s measure datum, re-keyed.** That one former on (point, place, measure)
-  covers all its consumers is checked by enumeration here and not by execution, and
-  the borrow placement's soundness rests on [FN-8] 1269's own split.
-- **[PROV-5]'s store reset.** That no value can observe the reset, because every
-  one names `'s` and [LIV-1] kills it on that edge, is argued from two rules and
-  not executed.
-- **Everything about the current runtime's closure.** [RUN-1] is written as a
-  qualification obligation precisely because no existing target can be certified to
-  meet it, and the `--stack-ledger` read above shows the entry chain is presently
-  three disjoint roots.
-- **The claim that `wfgrep` becomes heap-free.** Its eleven `buffer_new` calls
-  reach three declared rows, all of which [SEQ-0] and [VIEW-7] replace. The
-  substitution was not performed and compiled, and it moves bytes out of the heap
-  and into frames, which is a [STK-3] question rather than a free win.
+- **Every rule in 3.K.** None is implemented, and no compiler has seen any of the
+  new types, operations, terms, statements or markers.
+- **Every function in 3.L.** They are written against 3.K and against the unchanged
+  v0.40 rules and walked against both, and their proof routes are stated per
+  function; none was compiled, because 3.K is not implemented.
+- **Every program in section 4** and every diagnostic quoted there.
+- **Every figure in 4.1's envelope**, which is why every one is written as a
+  composition or as `<post-codegen>` rather than as a number.
+- **[PROV-1]'s brand.** That a region can carry a store's identity as well as its
+  extent, and that invariance follows from [OWN-12] 645 and [TYPE-5] 374 with no
+  variance design, is argued from rule text — and all four round-4 reports attacked
+  it from every position they could build and none of them moved it, which is the
+  strongest evidence any part of this design has.
+- **[PROV-1]'s elision.** That the rule is a function of program text, that it is
+  local to one declaration, and that resolving it before [TYPE-5]'s check changes no
+  judgment are argued and not executed. The claim most worth attacking is locality:
+  if any occurrence's candidate set can be widened by something outside the
+  enclosing declaration, two programs that differ nowhere visible would elide
+  differently.
+- **[PROV-5]'s activation refusal.** That call-graph SCC membership, one execution
+  context, and the ordinary [PAR-1] footprint rules together cover every way two
+  activations of one reserving occurrence can be live at once is argued from four
+  rules and not executed.
+- **[PROV-6]'s bounded walk.** That the containment height is the right bound, that
+  the walk's order matches [STOR-3]'s leaf for leaf, and that the enum case's
+  discriminant selection is ordinary drop glue are argued and not executed. Probe
+  `a8` is the mechanism it replaces and probes `a5`/`a6` are the shape it keeps.
+- **The compiler defect at `[SET-2]`'s arena half**, found in round 3 and confirmed
+  in round 4: [SET-2] 512 makes a region-bearing `replace` target a hard error for
+  `slice<'r, U>` **and** `arena<'r, U>`, and `check_mutation_target_class`
+  (`compiler/src/semantic/check/expressions.rs:310-326`) tests only the slice
+  variant. It is benign at this tip and load-bearing for the batch that implements
+  [PROV-3] use 3, which must be a relation over loan-bearing types and not a
+  re-wording over one `CheckedType` variant.
+- **The composition algebra of 3.K.7.1.** Its sequence and branch rules over an
+  exit-label map are standard, the no-fallthrough case is defined, the interval
+  arithmetic is stated, and the loop's own map is now stated per discharge. Its `par`
+  rule depends on a runtime profile that does not exist, and its derived-release
+  transfer has never been composed against a program with a nonzero `slots` row.
+- **[MSR-3]'s four placements**, checked by enumeration and not by execution, the
+  construct placement being the newest and least attacked; **the current runtime's
+  closure**, which no existing target can be certified to meet and whose ledger read
+  shows three disjoint chain roots; and **the claim that `wfgrep` becomes
+  heap-free**, whose substitution was never compiled and which moves bytes out of the
+  heap into frames, a [STK-3] question rather than a free win.
 
 ### 6.4 Falsifiers this design asks for next
 
-1. Attack [PROV-1]'s invariance: find any rule that admits a region argument by
-   outlives rather than by identity, at a nominal, at a container element type, at
-   a `Result` payload, or through [FN-2]'s substitution, and make two stores share
-   one type.
-2. Attack [PROV-6] with a partially moved linear aggregate, with a linear value
-   inside an `Option` disposed on one arm of a join, and with a type whose walk
-   order differs from [STOR-3]'s.
-3. Attack [PROV-5]'s reset with a value that escapes `'s` through a result, through
-   a `give`, or through an enum payload the confinement check reads differently.
-4. Hand-execute 3.3.1 on 4.1 and on a two-store program, and check the interval
-   arithmetic and the repaired loop route against both.
-5. Attack [MSR-3]'s datum with a `propagate` edge, a `value_if` delivery, and a
-   datum whose call is inside a loop body that the loop-header kill rewrites.
-6. Attack [LIV-3]'s exchange judgment where the operation's own arguments read the
-   target's offset, and where the operation diverges.
-7. Rewrite `wfgrep` and `byte_string` by hand against [VIEW-7], [PROV-6] and Q10's
-   refusal, and count what the `MutSpan` destinations, the disposals and the
-   propagate rewrites cost at every site.
-8. Attack [RES-7]'s exclusion test against a runtime that does allocate in one
-   operation, and check that the test excludes exactly that operation.
+1. **Write 3.L against 3.K by hand, one function at a time, and find the eighth
+   kernel addition.** The partition test is this draft's central claim and one
+   falsifier round is not enough of it; the most valuable single result would be a
+   library function that cannot be written and whose missing primitive is not one of
+   3.L.6's seven.
+2. Attack **[PROV-5]'s activation refusal** with a way to make two activations of one
+   `arena_extent` occurrence live at once that is neither an SCC edge nor a second
+   execution context — through a `par`-permitted window, a rewritten tail component,
+   or a library function the compiler inlines.
+3. Attack **[PROV-6]'s bounded walk** with a linear value inside an `Option` a join
+   left in different variants, a type whose walk order differs from [STOR-3]'s, and
+   the destructuring consume applied to a nominal one of whose fields is itself
+   linear and partially moved in the same statement.
+4. Attack **[CALL-4]'s exit datum** with a callee that consumes a `&uniq` parameter's
+   referent through [SET-2], one that reborrows it into a further call, and a caller
+   holding a second live borrow of an overlapping place.
+5. Attack **[LIV-3]'s exchange** where the call's own arguments read the target's
+   offset, where the call diverges or propagates, and where the first result's type
+   equals the target's only after region substitution.
+6. Attack **3.K.0's assumption**: find a position whose spelling is not decidable
+   from the declaration text alone, or two programs that differ only in a region name
+   and would be spelled differently.
+7. Hand-execute 3.K.7.1 on 4.1, on `CONTAINERS.md` §3.4's pool, and on a hosted
+   program with ten exits, checking the loop's own map and the derived-release
+   transfer against all three.
+8. Rewrite `wfgrep` and `byte_string` by hand against [VIEW-7], [PROV-6], 3.K.0 and
+   Q10's refusal, and count what remains.
 
 ### 6.5 Falsifier round 1: what each finding hit, and what refuses it now
 
@@ -4251,16 +3977,6 @@ and a point.
 | F4-10 FRICTION three drafted-diagnostic holes                   | section 4 drafts five, including all three                 |
 ```
 
-Findings the reports rated HOLDS or CLEAN, preserved and not weakened: [CALL-1]
-and [CALL-2] survive every shape attacked, in both rounds. [LIV-1] is complete for
-[FN-1]'s conservative graph, and round 2 tried six routes around it. [CNT-4]'s
-position closure really does close what [STOR-5]'s enumeration left open.
-[MSR-4]'s claim that one disposition suffices survived fourteen written programs.
-`seq_take_at` and `seq_exchange` create no vacancy state, `FixedRing`'s wraparound
-is one scalar relation, a race in a `par` fill is not expressible, `array<T, N>` is
-untouched, and `fir_filter` pays nothing. The second draft's diagnostics were the
-part round 2 praised, which is why the third draft drafted five and this one seven.
-
 ### 6.7 Falsifier round 3: what each finding hit, and what refuses it now
 
 Every BREAKS, DEFECT, GAP and BLOCKING finding of the four round-3 reports, one
@@ -4390,174 +4106,456 @@ than its type. The right column is therefore mostly one concept, which is the po
 |   seq_filled with an affine T                                   | AffineFillElementType diagnostic points at seq_vacant       |
 ```
 
-Findings the reports rated HOLDS or CLEAN, preserved and not weakened: [CALL-1],
-[CALL-2], [CALL-3] and [CALL-5] survive every shape attacked, in all three rounds,
-now including the region-parametric-nominal route. [LIV-1] is complete for [FN-1]'s
-conservative graph and round 3 tried six more routes. [CNT-4]'s quantified
-confinement and its nominal invariance are total and fail closed. [VIEW-3]'s
-singleton-**resolved**-set requirement is the right repair of round 2's F3-4 and
-round 3 could not manufacture a second resolved origin. [MSR-4]'s one disposition
-survived a fourth set of programs. [PROV-7]'s loan-region condition admits every
-provider-consuming row. [MSR-2]'s descriptor definition gives the right answer for
-a `deref` chain, a subscripted descriptor and a nested `absorb`. `seq_take_at`,
-`seq_exchange` and `FixedRing`'s rotation create no vacancy state, and `array<T, N>`
-and `fir_filter` pay nothing.
+### 6.8 Falsifier round 4: what each finding hit, and what refuses it now
+
+Every BREAKS, GAP, DEFECT, BLOCKING and FRICTION finding of the four round-4
+reports, one line each. Round 4's diagnosis was that the fourth draft closed store
+*identity* under every value-forming step and left three other notions open — a
+store's **activation**, a store's **release**, and the three type-level predicates it
+introduced without the same closure. The owner's minimality ruling arrived in the
+same week and dissolved a second class of finding outright, by moving its subject
+out of the kernel; those rows say `moved to 3.L` and name the function that now
+carries it.
+
+```text
+| finding                                                        | disposition                                                |
+|----------------------------------------------------------------|------------------------------------------------------------|
+| F1-a1 BREAKS recursion makes two entries of one region block    | [PROV-1] states the invariant as one live store per region  |
+|   live at once over one extent-form store                       | per program point; [PROV-5] refuses an extent occurrence on |
+|                                                                 | a call-graph SCC, and says why the frame form is safe       |
+| F1-a2 BREAKS a partial move abandons a linear leaf that neither | [PROV-6]: a partial move of a linear value is a hard error, |
+|   [LIV-1] nor [PROV-6] sees                                     | and `let N(f: a) = move v;` is the route out; probe x4      |
+| F1-a3 GAP [ENT-5] 2887(a)'s element-position carve-out is not   | [MSR-2]: the carve-out is REMOVED, not narrowed; the kill   |
+|   narrowed, and [MSR-1] made element positions hold descriptors | is the plain overlap test and the four consequences derive  |
+| F1-a4 GAP an `update`'s relations have no [ENT-3.S12]           | moved: `update` is gone, and [LIV-3]'s exchange states its  |
+|   destination, and 4.1 patches it by citing [LIV-2]             | own S12 clause; [MSR-3]'s one atom-identity sentence covers |
+|                                                                 | both writing forms, so 4.1's derivation is true as written  |
+| F1-a5 GAP the handle table has an acquire event and no release  | [RES-9]: [SYS-10] and [SYS-2] 2295 are amended and the      |
+|   event                                                         | release row gains the covered store as a second subject     |
+| F1-a6 GAP a non-linear leaf's derived release is invisible in   | [PROV-6]'s effect contribution is the union: each named     |
+|   the operation that runs it                                    | provider plus the release row of every non-linear leaf.     |
+|                                                                 | `seq_clear` and `seq_truncate` are moved to `CONTAINERS.md` §3, where a  |
+|                                                                 | user function's release contribution is [EFF-2]'s ordinary  |
+|                                                                 | one                                                         |
+| F1-a7 GAP nothing forbids a provider in stored content, and     | [PROV-2]: a provider type is inadmissible in every stored   |
+|   `dispose p using (p.q);` is unjudged                          | position, on [BLK-4]'s third clause, for a disposal-order   |
+|                                                                 | reason stated there                                         |
+| F1-a8 GAP [MSR-1] and [MSR-5] give opposite reasons for the     | [MSR-1] decides it once, by position: a program position    |
+|   [OP-4] obligation on a subscripted measure place              | discharges at its program point, an erased clause at its    |
+|                                                                 | own attach site                                             |
+| F1-a9 DEFECT [EFF-1] 1380 is unregistered, so a view            | registered on the [EFF-1] row under [PROV-3], with          |
+|   parameter's effect path names the descriptor                  | [CALL-3] and [VIEW-7] carrying `Depends:` lines             |
+| F1-a10 DEFECT the register's condition 4 cannot catch a         | condition 4 becomes 4a and 4b, and condition 5 is added;    |
+|   `Depends:` whose subject type was retired                     | [OWN-10] 638 and [ENT-5] 2936-2940 are now carried          |
+| F1-a11..a20 HOLDS (the brand from every type-level route, the   | preserved and not weakened; the brand's invariance argument |
+|   reset, `dispose` six ways, hiding a linear value, the datum   | is unchanged and 6.3 still names it as the claim most worth |
+|   across a join, `update ... into`, a clause over a killed      | attacking                                                   |
+|   measure, `seq_vacant`, a box behind `&uniq`, `par` over a     |                                                            |
+|   `MutSpan`)                                                    |                                                            |
+| F1 ranked 10 DEFECT L17's ground and [PROV-6]'s walk exclude    | L17 gains the whether/which split; [PROV-6]'s walk is       |
+|   enums                                                         | stated over the variant structure                           |
+| F2-NB1 BREAKS the disposal walk's scratch is a heap store that  | [PROV-6]: the walk's depth is the type's containment        |
+|   aborts                                                        | height, a constant, so it needs no auxiliary storage;       |
+|                                                                 | [RES-5] gains the cleanup-scratch domain for the cyclic     |
+|                                                                 | case; [RES-6] corrects the false claim about the abort      |
+|                                                                 | site's last caller; probes x6 and a8                        |
+| F2-NB2 BREAKS recursion re-enters an extent occurrence          | as F1-a1                                                    |
+| F2-NB3 BREAKS the handle table has no admissible fact source    | [RES-9] amends [SYS-2] 2295; [MSR-2] makes a profile        |
+|   and its cap dies at the first call                            | symbol a standing fact with empty support                   |
+| F2-NB4 BREAKS [SYS-10] denies the store and is unregistered     | [RES-9] amends [SYS-10] 2548-2552 and registers it          |
+| F2-NB5 BREAKS an arena's reset runs no content release          | [PROV-6]: a store's storage reclamation never stands in for |
+|                                                                 | its content's release; the two actions are split; probe a1  |
+| F2-NB6 BREAKS the residual of a partial move                    | as F1-a2                                                    |
+| F2-NB7 BREAKS [RES-7]'s test is a source rejection over         | [RES-7]: a target-independent "acquires from" column of the |
+|   [QUAL-1] target data                                          | [SYS-2] record, with [QUAL-2] carrying the target half      |
+| F2-NB8 GAP no `(peak, delta)` for a compiler-derived release    | 3.K.7.1 gains the derived-release primitive transfer        |
+| F2-NB9 GAP the loop's own map is never stated for max(d) > 0    | 3.K.7.1 states peak(loop) and delta(loop) per discharge     |
+| F2-NB10 GAP route (ii) does not compose across a call           | [RES-8] gains a per-domain saturation flag, derived from    |
+|                                                                 | declared rows and not from a body, so [CALL-5] is respected |
+| F2-NB11 GAP K<T> is a ceiling where an exact advance exists     | [RES-5]: advance<T> is exact when align >= align_ceiling(T),|
+|                                                                 | required at the take as a comparison of two constants       |
+| F2-NB12 GAP [RUN-2] is stated over an implementation's choice   | the no-permission sentence moves into [RUN-1]'s             |
+|                                                                 | qualification obligation; [RUN-2] keeps the published row   |
+| F2-NB13 GAP the [OP-9] rows disagree about the lease            | moved to Appendix A.1, derived from [BLK-1]'s storage       |
+|                                                                 | column rather than written per nominal; the lease is gone   |
+| F2-NB14 GAP [STK-1]'s target obligation has no subject          | [STK-1] names the lowering: one dispatcher, one frame, no   |
+|                                                                 | transfer, and the ABI obligation is deleted                 |
+| F2-NB15 GAP the entry stack is never checked; E is not a        | [RUN-4] gains the entry-stack comparison; [RES-2] makes E a |
+|   function of (P, T)                                            | function of program, target and build                       |
+| F2-NB16 GAP `update` and `dispose` deny every [PAR-1] window    | `update` is gone and the exchange is an ordinary `set`;     |
+|                                                                 | [PAR-1] 1990 gains `dispose` [RUN-3]                        |
+| F2-NB17 GAP premise 3 never compares peak to cap                | [RES-3] states what premise 3 is for and where the          |
+|                                                                 | no-overdraw guarantee actually comes from                   |
+| F2-NB18 the three re-entry answers                              | stated in [PROV-5] and [STK-4]                              |
+| F3 defect 1 [PROV-3] use 3's two conditions disagree            | split: use 3 is storage-keyed and says nothing about the    |
+|                                                                 | descriptor; [LIV-3] is the consume-keyed rule; [VIEW-4]'s   |
+|                                                                 | bare-`MutSpan` case is the second bullet's                  |
+| F3 defect 2 the carried formation datum has no transport        | [PROV-3]: the datum rides the origin record, which [FN-1]   |
+|                                                                 | 1035-1041 already substitutes at a call boundary — and      |
+|                                                                 | then `AppendView` is deleted, so nothing needs it           |
+| F3 defect 3 `linear` is a third class beside affine             | [PROV-6]: linear REFINES affine; [OWN-1] 558-559 unchanged  |
+| F3 defect 4 `NoRecord<unit>` is undeclared and uncounted        | deleted: the kernel declares no failure nominal at all      |
+|                                                                 | [BLK-2], and reserve_file's refusal is [SYS-7]'s existing   |
+|                                                                 | ResourceExhausted with a published relation [RES-6]         |
+| F3 defect 5 `relation_op` is undefined, and [OP-5]/[FN-8]       | [MSR-5]: the relation is an IDENT on [INV-1] 3099's model,  |
+|   demand a type the production has not                          | restricted to [FN-9] 1306's closed root set, with [OP-5]    |
+|                                                                 | 921 and [FN-8] 1261 amended and registered                  |
+| F3 defect 6 three rows violate L15 on a refusal edge            | L15 gains the exact/monotone split; [MSR-1] gains the       |
+|                                                                 | column; [BLK-0] requires completeness on every exit         |
+| F3 defect 7 `cap` and `room` reads never become facts           | [BLK-0]: [ENT-3.S6] 2779 generalizes over the three         |
+|                                                                 | measures — and 3.L.6 records it as one of the seven the    |
+|                                                                 | library could not be written without                        |
+| F3 defect 8 [PROV-5]'s refusal reads [PAR] permission           | the [PAR] clause is DELETED; the SCC clause replaces it and |
+|                                                                 | the ordinary footprint rules cover the parallel case        |
+| F3 I1 five third-list rows have no `Depends:` line              | every third-list row is now produced by one                 |
+| F3 I2 requires_clause/ensures_clause are [GRAM-2] 182-183       | registered on the [GRAM-2] row                              |
+| F3 I3 five wrong line numbers                                   | corrected: [TYPE-5] 374, [ENT-2] 2677, [FN-9] 1339,         |
+|                                                                 | [ENT-5] 2881-2885, [OWN-7] 625                              |
+| F3 I4 four ranges overshoot a blank line or a heading           | corrected: [SCOPE-3] 27-31, [OP-9] 968-996, [FN-9]          |
+|                                                                 | 1295-1360, [PAR-3] 2029-2056                                |
+| F3 I5 [OP-1] 833 and [TYPE-6] 396 are not registered            | both are on their rows under [BLK-0]                        |
+| F3 I6, I7 [SEQ-0] is in three batches; two B3 tests need B5     | [SEQ-0] is deleted; section 7 is re-derived and every rule  |
+|                                                                 | is in exactly one batch                                     |
+| F3 I8 [MSR-1]'s table has no buffer<T> row, so len(buffer)      | moot: [MSR-1]'s table is Appendix A.1 and `buffer<T>`       |
+|   stops being a term three batches before buffer retires        | retires in the same batch that introduces the runs          |
+| F3 I9 the [GRAM-3] row's `by` names a rule that does not amend  | the row is by [PROV-1] alone, whose Amends line reaches it  |
+| F3 I10 "five such dependencies" is one short                    | the count is dropped; each condition-4 row states itself    |
+| F3 I11 the [STOR-1] row cites 674 alone                         | the row is 670-677                                          |
+| F3 I12 the provider-first exception is misstated                | [BLK-0]'s sentence is over an operation that transforms     |
+|                                                                 | nothing, and a reservation takes no parameters at all       |
+| F3 I13 C:39 cites [VIEW-6] for the absorb commit                | moot; `absorb` is deleted, and CONTAINERS.md is rewritten   |
+| F3 I14 [OWN-9] 633 is in the unchanged list and describes its   | [OWN-9] is not in either list; it is non-normative and no   |
+|   own change                                                    | rule depends on it                                          |
+| F3 I15 two bare "unchanged" claims inside changed rows          | each is now a condition-4a citation with its dependant      |
+| F3 I16 C:269-271's invariant base is derived from the caller    | rewritten in CONTAINERS.md against 3.L.4                    |
+| F3 I17 3.3.1's route (ii) reads which premise discharged a goal | 3.K.7.1's route (ii) reads a property of the acquisition    |
+|                                                                 | and [RES-8]'s saturation flag, both declared data           |
+| F3 I18 [CALL-4]'s examples disagree with section 4's            | the examples are rewritten from section 4                   |
+| F3 I19 [VIEW-4]'s ground covers only a borrowed descriptor      | the bare `own MutSpan` case is the second bullet's          |
+| F3 N1..N9 nine notes                                            | N1 moot (absorb deleted); N2 the shared-loan freeze is      |
+|                                                                 | [OWN-5] 583 and is cited; N3 [PROV-6]'s propagate refusal   |
+|                                                                 | is on the [ERR-3] path and stated in the rule; N4, N5       |
+|                                                                 | fixed in CONTAINERS.md; N6 moot; N7 [CALL-4] states the     |
+|                                                                 | entry/exit split per clause; N8 result_binding is on the    |
+|                                                                 | [GRAM-2] row; N9 [QUAL-2] is a changed row under [RES-7]    |
+| F4-1 BLOCKING [PROV-6] is undefined on a partially moved        | as F1-a2: the destructuring consume plus the refusal        |
+|   linear aggregate, and a slab free list has no spelling        |                                                            |
+| F4-2 BLOCKING round 3's finding 5 is answered twice             | [MSR-3]'s one atom-identity sentence, and `update`'s        |
+|                                                                 | removal leaves one writing form per case                    |
+| F4-3 FRICTION no fact about a borrowed run's post-state crosses | [CALL-4]'s exit datum over a `&uniq` parameter, which is    |
+|   a call                                                        | also what deletes `AppendView`; probe x10                   |
+| F4-4 FRICTION [CNT-7] is nullified by a one-field wrapper       | [CNT-7] is DELETED; `&uniq Vector` is admitted and          |
+|                                                                 | [CALL-5] kills; probes m04, x11                             |
+| F4-5 FRICTION the fallible rows are unreachable from `update`   | moved to 3.L: growth is a library function, and [LIV-3]'s   |
+|                                                                 | multi-target form reaches every two-result row at every     |
+|                                                                 | place                                                       |
+| F4-6 FRICTION the brand's hosted tax: 37 items in an            | the region-spelling amendment, which lands first and         |
+|   11-function program                                           | separately (3.K.0); measured again on this worktree there   |
+| F4-7 FRICTION reserve_file's second failure channel             | as F3 defect 4                                              |
+| F4-8 FRICTION [VIEW-7]'s two regions per I/O site               | both are elided under 3.K.0; Q11 is answered                |
+| F4-9 FRICTION five text and decision gaps                       | `construct OutOfMemory<T>` is moot (no kernel failure       |
+|                                                                 | nominal; a library one is an ordinary struct);              |
+|                                                                 | `dispose item using (deref(heap));` is written in [PROV-6]  |
+|                                                                 | and in `CONTAINERS.md` §3; [PROV-7] is stated generally; const gparams   |
+|                                                                 | are lowercase IDENTs per [FORM-3]; a branded type inside a  |
+|                                                                 | written type argument is admitted by [BLK-0]                |
+| F4-10 FRICTION two prices that should be stated                 | both are stated in [PROV-6] and in `CONTAINERS.md` §3                    |
+| F4-11 CLEAN [PROV-1]'s totality, [PROV-6]'s walk, seq_vacant,   | preserved and not weakened; the brand survives a fourth     |
+|   [MSR-2], [RES-7], [STK-4], [CALL-1/2/3/5], [MSR-4]            | round and is the one thing no report could move             |
+```
+
+**Where a fourth-draft rule's content went**, for a reader holding 6.5 to 6.7:
+
+```text
+| fourth-draft rule            | now                                                     |
+|------------------------------|---------------------------------------------------------|
+| [CNT-1] the owner inventory   | [BLK-1] (two runs) and 3.L.1, `CONTAINERS.md` §3                     |
+| [CNT-2] typestate, seq_vacant | [BLK-1] and 3.L.3, `CONTAINERS.md` §3                               |
+| [CNT-3] affine elements       | [BLK-1]                                                 |
+| [CNT-4] confinement           | [BLK-4]                                                 |
+| [CNT-6] growth is owner-level | `CONTAINERS.md` §3, and L4 unchanged                                 |
+| [CNT-7] no &uniq container    | deleted; [CALL-5] refuses the shape it was protecting   |
+| [SEQ-0] the declaration domain| [BLK-0], with the inventory in Appendix A.2             |
+| [VIEW-3] absorb               | deleted; [CALL-4]'s exit datum                          |
+| [VIEW-5] the abandoned window | deleted with AppendView                                 |
+| [LIV-3] update                | [LIV-3], as an admission on `set`                       |
+| [PROV-1]'s elision paragraph  | 3.K.0, and the separate region-spelling amendment       |
+| [STK-5] stack exhaustion      | [RES-4]                                                 |
+| L14                           | retired                                                 |
+```
 
 ---
 
 ## 7. Implementation order
 
-Twelve batches, re-derived from the rules this draft states. Each names the rules
-it implements and the test it adds, **every rule of section 3 appears in exactly
-one batch**, and **no batch's test needs a later batch's rules**; round 3 found two
-tests of B3 that needed B5. This is an ordering, not a design choice; nothing here
-may be read as trading a rule away for a cheaper batch, and nothing here is an
-approval or a schedule.
+**This is an implementation order and nothing else.** The owner's ruling of
+2026-09-03 says so in terms: batches are an order of work, not spec versions, and a
+single implementation is fine if it is correct. Nothing below is an approval, a
+schedule, or a licence to trade a rule away for a cheaper batch; one batch that lands
+all forty-eight rules correctly is the better outcome. The order is *for* naming, at
+each step, a test writable before the next step exists.
 
-Three hard constraints the ordering obeys. The operation inventory is written in
-the syntax B3 introduces, so multi-return and the transformation statement come
-before any operation that returns two results. The container domain is **generic**,
-and probe `r2_3` shows user generics are `Semantics/Unsupported` today, so B5 is
-the batch that first needs monomorphization for a compiler-owned domain and it must
-carry that work. And the store brand is a region in a type, so every batch that
-introduces a branded type is after the batch that introduces the brand.
+**B0 is not one of these batches.** The region-spelling amendment (3.K.0) lands
+first, separately and mechanically, and is not this design's work; every batch below
+assumes it and none of them implements it.
 
-**B1. Type-derived call transports, and the retirement of container state mutation
-through `&uniq`.** Rules: [CALL-1], [CALL-2], [CALL-3], [CALL-5], [CNT-7]. First
-because it is the live defect and because it needs none of the new types: today's
-`&uniq buffer<T>` keeps its spelling and gets [CALL-5]'s type-derived
-classification, `element = false`, which is exactly the sweep's minimal sound
-repair. Test: **`ent5-neg-callee-uniq-buffer-replace-kills-length.wf` turns XPASS**,
-rejecting at [OP-4] with residual `9_u64 < len(line)`; plus one positive case
-pinning [CALL-1]. `docs/patterns.md` P16 is corrected in the same change.
+**B1. Type-derived call transports.** Rules: [CALL-1], [CALL-2], [CALL-3],
+[CALL-5]. First of the container work because it is the live defect and needs none
+of the new types: today's `&uniq buffer<T>` keeps its spelling and gets [CALL-5]'s
+type-derived classification, `element = false`, which is exactly the sweep's minimal
+sound repair. Test: **`ent5-neg-callee-uniq-buffer-replace-kills-length.wf` turns
+XPASS**, rejecting at [OP-4] with residual `9_u64 < len(line)`; plus probe `x11`'s
+program, whose accept becomes the same rejection; plus one positive case pinning
+[CALL-1]. `docs/patterns.md` P16 is corrected in the same change.
 
-**B2. The proof surface.** Rules: [MSR-1], [MSR-2], [MSR-4], [MSR-5]. Second
-because every later batch's contracts and invariants are unwritable without it, and
-because it is a specification amendment with no new construct. Tests: a conformance
-pair mirroring `v23`/`v24` (both accepted after the amendment); one mirroring
-`v25`/`v26` so two consumers of one exported invariant agree; one mirroring probe
-`w3`, a clause whose operands are two `len` terms, accepted where it is a [GRAM-9]
+**B2. The proof surface.** Rules: [MSR-1], [MSR-2], [MSR-4], [MSR-5]. Second because
+every later batch's contracts and invariants are unwritable without it, and because
+it is a specification amendment with no new construct. Tests: a conformance pair
+mirroring `v23`/`v24`, both accepted after the amendment; one mirroring `v25`/`v26`
+so two consumers of one exported invariant agree; one mirroring probes `w3` and
+`x5`, a clause whose operands are two `len` terms, accepted where it is a [GRAM-9]
 parse failure today; one pinning that a literal and a parenthesized group are still
-affine factors; one discharging a goal from `len + room = cap` as an affine
-premise; **and `r2_4`'s program accepted**, because [MSR-2]'s descriptor-precise
-support is a repair of a live over-kill and not only a new rule.
+affine factors; one discharging a goal from `len + room = cap` as an affine premise;
+one pinning that an element-position `replace` of a *descriptor* kills its measures
+and of a *scalar* kills nothing, which is the carve-out's removal under test; **and
+`r2_4`'s program accepted**, because [MSR-2]'s descriptor-precise support is a repair
+of a live over-kill and not only a new rule.
 
-**B3. Multi-return, the destructuring `let`, join-checked liveness, and the
-transformation statement.** Rules: [CALL-4], [LIV-1], [LIV-2], [LIV-3]. Third
-because B5 and B7 are written in this syntax. Tests, all writable in today's
-vocabulary plus B1 and B2: probe `p8`'s signature parses and binds, and a `v0.40`
-helper's two-result `ensures` reaches both binders of a destructuring `let`, which
-is [CALL-4]'s added S12 clause under test; probe `p10`'s program and probe `w6`'s
-are both accepted after [LIV-2]; probe `f3`'s program is a [LIV-1] error naming both
+**B3. Multi-return, the exchange, and join-checked liveness.** Rules: [CALL-4],
+[LIV-1], [LIV-2], [LIV-3]. Third because B5 and B6 are written in this syntax.
+Tests, all writable in today's vocabulary plus B1 and B2: probe `p8`'s signature
+parses and binds, and a two-result `ensures` reaches both binders of a destructuring
+`let`; **probe `x2`'s and probe `x3`'s programs are accepted**, which is the exchange
+under test at a bare binding and at a `deref`; an exchange at a `buffer` element
+place is accepted where probe `q7`'s `set` spelling is [OWN-1] today; a two-target
+exchange binds its second result; probe `p10`'s program and probe `w6`'s are both
+accepted after [LIV-2]; probe `f3`'s program is a [LIV-1] error naming both
 predecessors instead of `SemanticUnsupported`; a loop moving and restoring an outer
-binding is accepted where probe `f5` is [OWN-11] today; probe `r2_8`'s `update`
-parses, and an `update` at a `buffer` element place is accepted where probe `q7`'s
-`set` spelling is [OWN-1] today, which is the exchange judgment under test; and the
-`set` spelling of a container-domain call is a [FORM-1] rejection naming `update`.
+binding is accepted where probe `f5` is [OWN-11] today; and **probe `x10`'s `ensures`
+read as an exit datum**, with a caller that discharges from it, which is [CALL-4]'s
+addition under test.
 
-**B4. Measure datums and images.** Rules: [MSR-3]. Separated from B2 because it
-touches [ENT-2]'s term list, [ENT-5]'s call boundary and [ENT-6]'s transfer
-machinery rather than route lists, and because it needs [LIV-2] from B3. Tests, all
-writable in today's vocabulary plus B2 and B3: a `buffer` helper whose `ensures`
-names `len` of a parameter it consumed is accepted; the same helper's caller
-establishes the declared relation on the result where `M(c,q)` refuses it today; a
-relation over a **borrowed** owner's measure establishes at the caller, which is the
-call placement's borrow half under test; a reinitialized binding does not inherit a
-fact stated over its predecessor; an image is unavailable after a projected callee
-write, pinning `g1` against `g1b`; and a header invariant over a binding an `update`
-rewrites is preserved on the backedge, which is 4.1's three-step derivation under
-test.
+**B4. Measure datums, images, and atom identity.** Rules: [MSR-3]. Separated from B2
+because it touches [ENT-2]'s term list, [ENT-5]'s call boundary and [ENT-6]'s
+transfer machinery, and because it needs [LIV-2] and [LIV-3] from B3. Tests: a
+`buffer` helper whose `ensures` names `len` of a parameter it consumed is accepted,
+and its caller establishes the relation where `M(c,q)` refuses it today; a relation
+over a **borrowed** owner's measure establishes at the caller; a reinitialized
+binding does not inherit a fact stated over its predecessor; **a header invariant
+over a binding an exchange rewrites is preserved on the backedge**, with the [LIV-2]
+variant rejected so the two forms are pinned apart; and a `construct` carrying a
+measured operand publishes the field's measure, which is `CONTAINERS.md` §3's `Ring`
+under test.
 
-**B5. The store brand, owners, typestate, confinement, and the declaration
-domain.** Rules: [PROV-1], [CNT-1], [CNT-2], [CNT-3], [CNT-4], [CNT-6], [SEQ-0] and
-the constructor, place, take, exchange, clear and ring rows. Retires `buffer<T>`
-from the writer surface. Carries monomorphization for a compiler-owned generic
-domain. [PROV-1] lands here rather than in B7 because the owners are the first
-branded types and because [CNT-4] and [PROV-1] are one confinement story. Tests: a
-`FixedVector<Handle, 64>` object table with affine elements, filled by `seq_vacant`
-and compacted by `seq_take_at`, accepted, where probe `p9` is [OP-1] today; a
-`seq_vacant` result whose `len = N` discharges a subscript with no invariant, where
-probes `n14`/`n15` show no loop can; a `FixedRing<Descriptor, 64>` read and written
-by subscript; `struct Chunk['s]` accepted where probe `r2_6` is a parse error today,
-with two instances at different regions rejected as distinct types; and **two
-reserving occurrences naming one region rejected at the second**, which is
-[PROV-1]'s own check. This batch supersedes B1's conformance case, whose program no
-longer typechecks; that disposition is conformance evidence and is recorded in
-`governance/APPROVALS.md` with the merge.
+**B5. The brand, the runs, typestate, confinement, and the declaration domain.**
+Rules: [PROV-1], [BLK-0], [BLK-1], [BLK-2], [BLK-3], [BLK-4]. Retires `buffer<T>`,
+`box<T>` and `arena<'r, T>` from the writer surface. Carries monomorphization for a
+compiler-owned generic domain. Tests: a `FixedVector<Handle, 64>` object table with
+affine elements, filled by 3.L.3's `vacant` and compacted by `CONTAINERS.md` §3's `take_at`,
+accepted, where probe `p9` is [OP-1] today; a `vacant` result whose `ige(len, n)`
+discharges a subscript with no equality anywhere, which is probes `x1c`/`x1d` under
+test at full scale; `struct Chunk['s]` accepted where probes `r2_6` and `m05` are
+parse errors today, with two instances at different regions rejected as distinct
+types; a stored brand elided in a heap-only program and written beside an arena,
+which is 3.K.0's assumption under test; and **two reserving occurrences naming one
+region rejected at the second**. This batch supersedes B1's conformance case, whose
+program no longer typechecks; that disposition is conformance evidence and is
+recorded in `governance/APPROVALS.md` with the merge.
 
-**B6. Views, loans, ranges, and the commit event.** Rules: [VIEW-1] to [VIEW-6],
-[PROV-3], and the view rows of [SEQ-0]. [PROV-3] lands here because views are its
-only user and because [SET-1] and [SET-2] must change in the same batch that admits
-the `MutSpan` write. Tests: an element write through a `MutSpan` is accepted where
-probe `p7` is [SET-1] today; **a `replace` through `&uniq MutSpan<'r,u8>` is
-rejected**, and so is a `replace` of an `ArenaBox` place, which probe `w2` shows the
-compiler accepts today, so use 3 must be implemented as a relation over loan-bearing
-types and not as one `CheckedType` test; two `AppendView`s on one owner are rejected
-at the second formation citing [OWN-5]; a write to `k` while a view formed at
-`table[k]` is live is rejected citing the view's loan; an owner is readable
-immediately after `absorb` with no enclosing region, and an `absorb` after an
-operation that shortened the owner publishes the **formation** length plus the
-commit; and a two-result signature with two same-region view results is rejected at
-[VIEW-6].
+**B6. Views, loans, ranges.** Rules: [VIEW-1], [VIEW-2], [VIEW-4], [VIEW-6],
+[PROV-3], and the view rows. [PROV-3] lands here because views are its only user and
+because [SET-1] and [SET-2] must change in the same batch that admits the `MutSpan`
+write. Tests: an element write through a `MutSpan` is accepted where probe `p7` is
+[SET-1] today; **a `replace` through `&uniq MutSpan` is rejected**, and so is a
+`replace` of a `Vector` place under a live origin set, which probe `w2` shows the
+compiler accepts today for the arena spelling, so use 3 must be a relation over
+resolved origins and not one `CheckedType` test; two `MutSpan`s on one run are
+rejected at the second formation citing [OWN-5]; a write to `k` while a view formed
+at `table[k]` is live is rejected citing the view's loan; and a two-result signature
+with two same-region view results is rejected at [VIEW-6].
 
-**B7. Stores, the heap as a value, and structural disposal.** Rules: [PROV-2],
-[PROV-4], [PROV-5], [PROV-6], [PROV-7], [RES-6], and the provider-bearing [SEQ-0]
-rows. Tests: probe `p5_ambient`'s program is **rejected**; a `main` that omits
-`command.heap` cannot reach any allocation; probe `r2_5`'s and probe `w7`'s programs
-are rejected with [PROV-6]'s diagnostic and their repairs compile; a lease released
-to a pool of a different store region fails to typecheck, with the two types
-rendered; `dispose` of a `FixedVector<Chunk<'s>, 8>` compiles and frees every leaf,
-and the same statement with a missing provider is `DisposeProviderMissing`; probe
-`w5`'s program is rejected with `LinearValueAcrossPropagate` and its `match` repair
-compiles; a region block entered twice by a loop republishes `len(store) = Z`
-truthfully, which is [PROV-5]'s reset under test; a helper lending a provider onward
-to `pool_take` compiles, where `r1_relend` is [OWN-6] today; and two overlapped
-disposals from one store are denied [PAR-1] permission.
+**B7. Stores, the heap as a value, and structural release.** Rules: [PROV-2],
+[PROV-4], [PROV-5], [PROV-6], [PROV-7], [RES-6]. Tests: probe `p5_ambient`'s program
+is **rejected**; a `main` that omits `command.heap` cannot reach any allocation;
+probes `r2_5`, `w7` and `m02` are rejected with [PROV-6]'s diagnostic and their
+repairs compile; **probe `x4`'s program is rejected with `LinearValuePartiallyMoved`**
+and its destructuring-consume repair compiles; a run released to a store of a
+different region fails to typecheck with the two types rendered; `dispose` of a
+`FixedVector<Chunk<'a>, 8>` compiles and frees every leaf, and the same statement
+with a missing provider is `DisposeProviderMissing`; probes `w5` and `m03` are
+rejected with `LinearValueAcrossPropagate`; a region block entered twice by a loop
+republishes `len(store) = Z` truthfully; **probe `x8`'s program is rejected with
+`ExtentReservedOnACallCycle` under `arena_extent` and accepted under `arena_frame`**;
+**probe `x6`'s self-referential type is rejected at its `dispose`**, naming the
+cycle, and its `a5`/`a6` non-recursive sibling still compiles to a straight-line
+walk; an arena-backed run of `ReadFile` closes every handle at its scope exit, which
+is the reset/content split under test; a helper lending a provider onward compiles,
+where `r1_relend` and `m19` are [OWN-6] today; and two overlapped disposals from one
+store are denied [PAR-1] permission while a window containing one is not.
 
-**B8. System I/O over views.** Rules: [VIEW-7]. Test: `tests/programs/wfgrep.wf`
-migrated to `seq_filled` and `MutSpan`, compiling with no `allocates` entry
-anywhere on its call graph. It is the first program that demonstrates goal A's
-container half end to end, and the migration is also the measurement Q7 and Q11
-need.
+**B8. System I/O over views, and the handle table.** Rules: [VIEW-7], [RES-9].
+Tests: `tests/programs/wfgrep.wf` migrated to 3.L.3's `filled` and `MutSpan`,
+compiling with no `allocates` entry anywhere on its call graph — the first program
+that demonstrates goal A's container half end to end; **and a marked `main` selecting
+`command.files` and `command.cwd` that opens one file in a loop, reads it into a
+`filled` destination over a `MutSpan`, and publishes a handle row of one**, which is
+the witness goal A's I/O half has never had and which is the single test that would
+have caught F2's NB3, NB4, NB5 and NB8 at once.
 
-**B9. The stack judgment.** Rules: [STK-1], [STK-2], [STK-3], [STK-5]. Tests:
-probes `f2b_tail` and `f8_tailframe` are **not** rewritten by [STK-1]'s source
-premise and are rejected by [STK-2] under the marker; their borrow-free variants
-are rewritten and accepted; a member holding a live confined value across the jump
-is likewise not rewritten; a member that opens a region for a `pool_frame` is not
-rewritten, which is the recorded cost under test; probe `p3_rec` stays accepted
-without the marker; and a `--stack-ledger` run reports one chain per context rather
-than disjoint roots.
+**B9. The stack judgment.** Rules: [STK-1], [STK-2], [STK-3]. Tests: probes
+`f2b_tail` and `f8_tailframe` are **not** rewritten by [STK-1]'s premise and are
+rejected by [STK-2] under the marker; their borrow-free variants are rewritten into
+one dispatcher with one frame; a member holding a live confined value across the jump
+is not rewritten, nor is one that opens a region for an `arena_frame`; probe `p3_rec`
+stays accepted without the marker; and a `--stack-ledger` run reports one chain per
+context rather than disjoint roots.
 
-**B10. The divergent entry.** Rules: [STK-4]. Small and separable, and it is the
-batch a kernel writer notices first. Tests: probe `f3_forever`'s idle loop is
-accepted; **probe `n3_propagate_loop`'s driver loop is accepted**; a loop with a
+**B10. The divergent entry.** Rules: [STK-4]. Tests: probe `f3_forever`'s idle loop
+is accepted; **probe `n3_propagate_loop`'s driver loop is accepted**; a loop with a
 reachable `break` still requires a return; and a linear binding live on a path that
 reaches only a divergent loop is accepted and appears as a retained item of the
-published map, which is [STK-4]'s stated disposition under test.
+enclosing scope's published map.
 
-**B11. The envelope and the judgment.** Rules: [RES-1], [RES-2], [RES-3], [RES-4],
-[RES-5], [RES-7], [RES-8], [RUN-1], [RUN-4], [RUN-5]. Tests: section 4.1's program
-is source-resource-closed and its `E` table matches a pinned symbolic expectation;
-section 4.2's is reported not resource-closed with the heap-reaching path rendered;
-a retaining loop whose trip count is a runtime value is rejected at that loop with
-the value named; a retaining loop whose checked refusal rejoins the backedge is
-**accepted**, which is the repaired route (ii) under test; a loop whose only
-discharge is the standing `len <= cap` is rejected; a marked program that opens a
-file composes its handle demand and is rejected when it exceeds the profile cap; and
-a program whose runtime demand exceeds every profile row fails **target
+**B11. The envelope and the judgment.** Rules: [RES-1] to [RES-5], [RES-7], [RES-8],
+[RUN-1], [RUN-4], [RUN-5]. Tests: 4.1 is source-resource-closed and its `E` matches a
+pinned symbolic expectation; 4.2 is reported not resource-closed with the
+heap-reaching path rendered; a retaining loop whose trip count is a runtime value is
+rejected at that loop with the value named; one whose checked refusal rejoins the
+backedge is **accepted**; one of four iterations followed by one more acquisition
+publishes a peak of five and not two (NB9's repair); the same loop with its
+acquisition one function down is accepted through [RES-8]'s saturation flag (NB10's);
+a loop whose only discharge is the standing `len <= cap` is rejected; B8's marked
+file program composes its handle demand and is rejected when it exceeds the profile
+cap; and a program whose demand exceeds every profile row fails **target
 qualification** citing no language rule.
 
-**B12. `par` and the envelope.** Rules: [RUN-2], [RUN-3]. Tests: a `seq_filled`
-plus `MutSpan` plus counted subscript fill receives [PAR-2] permission in an
-unmarked program, which needs the ranged origin and which neither earlier draft
-could pass; the same loop inside a `resource_closed` entry receives no permission
-and the published row reads `lanes(1)`; two overlapped statements allocating from
-distinct providers are permitted and two from one provider are not; and the `par`
-rule of 3.3.1 composes against a pinned profile row for an unmarked program.
+**B12. `par` and the envelope.** Rules: [RUN-2], [RUN-3]. Tests: a `filled` plus
+`MutSpan` plus counted subscript fill receives [PAR-2] permission in an unmarked
+program, which needs the ranged origin and which no earlier draft could pass; the
+same loop inside a `resource_closed` entry receives no permission and the published
+row reads `lanes(1)`; two overlapped statements allocating from distinct providers
+are permitted and two from one provider are not; a permitted window containing a
+`dispose` is not denied; and 3.K.7.1's `par` rule composes against a pinned profile
+row.
 
-Two items sit across the batches. **Monomorphization** for a compiler-owned generic
-domain is B5's, and nothing before B5 needs it. **Q5's continuation redesign** is
-the largest engineering item any of this implies; [RUN-2] lets B11 and B12 ship
-without it at the cost of `lanes(1)`, and lifting that restriction is a batch of its
-own after B12.
+**3.L is not a batch.** It is written against the rules, not implemented beside
+them; where its functions are useful as evidence — `filled` in B8, `collect` and
+`vacant` in B5, the pool in B11 — they land as test programs under
+`tests/programs/`, which is where 5.0 recommends they stay.
+
+---
+
+## Appendix A: generated data
+
+Two tables the rule text refers to and does not contain. **Neither is a rule.**
+[BLK-0] says that an operation inventory exists and what every row of it must
+satisfy; [MSR-1] and [RES-5] say that a measure table and a ceiling table exist and
+what every row of them must contain. The tables themselves are **generated data**,
+carried the way [SYS-2]'s declaration records are carried, and a diagnostic cites the
+rule and names the row in its payload rather than citing the row.
+
+### A.1 Measures and ceilings
+
+Derived from [BLK-1]'s storage column rather than written per nominal: a value whose
+backing is a run of its own is a descriptor, and a value whose backing is inline
+carries its elements.
+
+```text
+| measured type            | len                  | cap            | room      | len is   |
+|--------------------------|----------------------|----------------|-----------|----------|
+| array<T, n>              | n                    | n              | Z         | exact    |
+| FixedVector<T, n>        | initialized elements | n              | cap - len | exact    |
+| Vector<'s, T>            | initialized elements | slots taken    | cap - len | exact    |
+| Span, MutSpan            | viewed elements      | len            | Z         | exact    |
+| Arena<'s, bytes, align>  | cursor bytes         | bytes          | cap - len | monotone |
+| FileFactory              | live handle records  | the profile's  | cap - len | exact    |
+|                          |                      | handle-table   |           |          |
+|                          |                      | row [RES-9]    |           |          |
+| Heap<'s>                 | none                 | none           | none      | -        |
+```
+
+`Heap<'s>` has no row because L6 says a general store has no measure that means
+anything; that is the absence of table data, not an exception clause on a total
+definition. `Arena`'s `len` is the one monotone measure in the design, because the
+store's own alignment padding is a target-stage quantity, and L15's second half is
+what a monotone row publishes instead of an exact value.
+
+```text
+| nominal                     | (size_ceiling, align_ceiling)                          |
+|-----------------------------|--------------------------------------------------------|
+| Heap<'s>, Arena<..>         | (32, 16)   proof-only representation, one word         |
+| Vector<'s, T>               | (32, 16)   a descriptor: one pointer, one cap, one len |
+| FixedVector<T, n>           | T's pair repeated n times, plus (8, 8) for the length  |
+| Span<'r,T>, MutSpan<'r,T>   | (32, 16)                                               |
+```
+
+`advance<T>` for the bump domain is `round_up(len, align_ceiling(T)) - len +
+size_ceiling(T)` when the store's own `align` is at least `align_ceiling(T)`, which
+`arena_take` requires as a compile-time comparison of two constants, and the ceiling
+`align_ceiling(T) - 1 + size_ceiling(T)` otherwise.
+
+### A.2 The kernel operation inventory
+
+Fourteen rows. `V` is either run type. Every row is complete over the measures it
+writes, on every exit, as [BLK-0] requires; where two of three follow from [MSR-2]'s
+identity the row states one and this table says so.
+
+```text
+Formation
+  seq_fixed<T, const n: u64>()                       -> own FixedVector<T, n>          pure
+      len(result) = Z, cap(result) = n
+  seq_frame<T, const n: u64>['s]()                   -> own Vector<'s, T>              pure
+      len(result) = Z, cap(result) = n            its own region item of E [PROV-5]
+  arena_frame<const bytes: u64, const align: u64>['s]()  -> own Arena<'s, bytes, align>   pure
+      len(result) = Z, cap(result) = bytes
+  arena_extent<const bytes: u64, const align: u64>['s]() -> own Arena<'s, bytes, align>   pure
+      len(result) = Z, cap(result) = bytes
+  seq_arena<T>['s](arena: &uniq Arena<'s, bytes, align>, count: own u64)
+      -> own Option<Vector<'s, T>>                   allocates(arena), writes(arena)
+      Some(value: r): len(r) = Z, cap(r) = count,
+                      <datum of len(arena)> <= len(arena) <= <datum> + advance<T> * count
+      None:           len(arena) = <datum of len(arena)>, room(arena) < advance<T> * count
+      both:           cap(arena) = <datum of cap(arena)>
+  seq_arena_proved<T>['s](arena: &uniq Arena<'s, bytes, align>, count: own u64)
+      -> own Vector<'s, T>                           allocates(arena), writes(arena)
+      requires ige(room(arena), advance<T> * count)
+      as the Some row above
+  seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)
+      -> own Option<Vector<'s, T>>                   allocates(heap), writes(heap)
+      Some(value: r): len(r) = Z, cap(r) = count
+      None:           nothing; a general store publishes no measure (L6)
+
+Per slot
+  seq_place(vector: own V, value: own T)             -> own V     reads(vector), writes(vector)
+      requires igt(room(vector), Z)
+      len(result) = len(vector) + 1, cap(result) = cap(vector)
+  seq_take(vector: own V)          -> (rest: own V, value: own T) reads(vector), writes(vector)
+      requires igt(len(vector), Z)
+      len(rest) = len(vector) - 1, cap(rest) = cap(vector)
+  seq_exchange(vector: own V, first: own u64, second: own u64)
+                                                     -> own V     reads(vector), writes(vector)
+      requires ilt(first, len(vector)), ilt(second, len(vector))
+      len(result) = len(vector), cap(result) = cap(vector)
+      the elements formerly at first and second are at second and first
+
+Readers                       ([OP-1] table rows, not this domain)
+  len(p) / cap(p) / room(p)                          -> own u64   pure
+
+Views
+  seq_span['r](vector: &'r v)                        -> own Span<'r, T>      reads(vector)
+      len(result) = <datum of len(v)>, cap(result) = <datum of len(v)>
+  seq_mut_span['r](vector: &uniq 'r v)               -> own MutSpan<'r, T>   reads(vector)
+      len(result) = <datum of len(v)>, cap(result) = <datum of len(v)>
+```
+
+Two statements are not rows and are stated in [PROV-6]: `dispose p using (q1, ...);`
+and the destructuring consume `let N(f1: b1, ...) = move v;`.
+
+Notes on the inventory. **`seq_place` is the operation the whole design exists
+for**: total under its requirement, allocation-free on every backing, one store plus
+one length increment. **`seq_exchange` earns its row from `CONTAINERS.md` §3.3**,
+the only place order-preserving relocation is written. **Nothing here is total at a
+capacity boundary**, because an overwriting form would need L9's published
+displacement. And **nothing here removes from the middle, clears, truncates, grows,
+or constructs a filled or vacant run** — each is 3.L, and 3.L.6 records that none
+needed a row the three per-slot operations do not have.
