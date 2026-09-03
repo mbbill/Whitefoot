@@ -1,20 +1,24 @@
-//! WFGREP-DOUBLE-WALK runner: output-identity verification, null-comparison
-//! precision demonstration, paired end-to-end measurement, and hardware-
-//! counter capture for the candidate source shapes against the fresh
-//! current-bytes baseline (and the pinned system `grep -h -F` for the
-//! fresh-baseline and confirmation phases).
+//! WFGREP-DOUBLE-WALK replay check: corpus generation identical to
+//! WFGREP-BASELINE, then byte-identity verification of the three kept shape
+//! sources (and the pinned system `grep -h -F`) against the inherited
+//! manifest.
 //!
-//! The corpus, digests, statistics, and noise controls are inherited from
-//! WFGREP-BASELINE; corpus generation code is identical so the pinned
-//! manifest verifies unchanged. Phases are subcommands invoked by the bundle
-//! Makefile in protocol order. Every observation appends one JSON line to
-//! the raw evidence file named by `WFD_RAW`. Samples are never deleted,
-//! extended, or rerun after a result is observed.
+//! The single run of 2026-08-06 (`RESULTS.md`) also ran null, bench,
+//! counters, and confirm phases paired against B0, the then-current
+//! `tests/programs/wfgrep.wf`. That program has since become a different
+//! program (a recursive search printing `PATH:LINE:TEXT` lines) and its
+//! frozen bytes predate specification v0.40, so B0 cannot be rebuilt from
+//! HEAD and those phases live only in the freeze commit `RESULTS.md` names.
+//! What HEAD can still assert is here: the shapes, kept on the active
+//! specification, still produce the pinned bytes and exit codes on the
+//! pinned corpus.
+//!
+//! Phases are subcommands invoked by the bundle Makefile: `gen`, then
+//! `verify`. Results go to stdout; nothing here appends to the committed
+//! raw evidence of the frozen run.
 
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::process::Command;
 
 const CORPUS_LARGE_TARGET: u64 = 268_435_456;
 const CORPUS_DENSE_TARGET: u64 = 134_217_728;
@@ -22,35 +26,17 @@ const CORPUS_MANY_FILES: usize = 4096;
 const CORPUS_MANY_TARGET: u64 = 16_384;
 const NEEDLE: &str = "XQWFNEEDLE";
 const ABSENT: &str = "XQWFABSENT";
-const ROUNDS: usize = 30;
-const COUNTER_REPETITIONS: usize = 5;
-const BOOTSTRAP_RESAMPLES: usize = 10_000;
-const BOOTSTRAP_SEED: u64 = 20_260_806;
 
-/// Every locally built subject binary, in build order. `base` is the fresh
-/// baseline built from the current `tests/programs/wfgrep.wf` bytes.
-const SUBJECTS: &[&str] = &["base", "s1", "s2", "s3"];
+/// Every locally built subject binary, in build order: the three shape
+/// sources under `shapes/`.
+const SUBJECTS: &[&str] = &["s1", "s2", "s3"];
 
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let result = match arguments.first().map(String::as_str) {
         Some("gen") => generate(),
         Some("verify") => verify(),
-        Some("null") => null_phase(&arguments),
-        Some("bench-grep") => bench(&"grep".to_owned()),
-        Some("bench-shape") => match arguments.get(1) {
-            Some(shape) => bench(shape),
-            None => Err("bench-shape requires a shape name".to_owned()),
-        },
-        Some("confirm") => match arguments.get(1) {
-            Some(shape) => confirm(shape),
-            None => Err("confirm requires a shape name".to_owned()),
-        },
-        Some("counters") => counters(),
-        _ => Err(
-            "usage: runner gen | verify | null TAG | bench-grep | bench-shape NAME | confirm NAME | counters"
-                .to_owned(),
-        ),
+        _ => Err("usage: runner gen | verify".to_owned()),
     };
     if let Err(message) = result {
         eprintln!("runner: {message}");
@@ -84,10 +70,6 @@ fn manifest_path() -> PathBuf {
     PathBuf::from(required_env("WFD_MANIFEST"))
 }
 
-fn raw_path() -> PathBuf {
-    PathBuf::from(required_env("WFD_RAW"))
-}
-
 fn required_env(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("environment variable {name} must be set"))
 }
@@ -97,9 +79,6 @@ struct Case {
     name: &'static str,
     pattern: &'static str,
     files: Vec<String>,
-    /// Whether the case participates in classification. The floor case is a
-    /// process-startup diagnostic and is never classified.
-    classified: bool,
 }
 
 fn cases() -> Vec<Case> {
@@ -107,11 +86,11 @@ fn cases() -> Vec<Case> {
         .map(|index| format!("many/f{index:04}.txt"))
         .collect();
     vec![
-        Case { name: "large", pattern: NEEDLE, files: vec!["large.txt".into()], classified: true },
-        Case { name: "nomatch", pattern: ABSENT, files: vec!["large.txt".into()], classified: true },
-        Case { name: "dense", pattern: NEEDLE, files: vec!["dense.txt".into()], classified: true },
-        Case { name: "many", pattern: NEEDLE, files: many, classified: true },
-        Case { name: "floor", pattern: NEEDLE, files: vec!["floor/empty.txt".into()], classified: false },
+        Case { name: "large", pattern: NEEDLE, files: vec!["large.txt".into()] },
+        Case { name: "nomatch", pattern: ABSENT, files: vec!["large.txt".into()] },
+        Case { name: "dense", pattern: NEEDLE, files: vec!["dense.txt".into()] },
+        Case { name: "many", pattern: NEEDLE, files: many },
+        Case { name: "floor", pattern: NEEDLE, files: vec!["floor/empty.txt".into()] },
     ]
 }
 
@@ -185,12 +164,11 @@ fn generate() -> Result<(), String> {
         many_matches += matches;
     }
     std::fs::write(root.join("floor/empty.txt"), b"").map_err(|error| error.to_string())?;
-    emit(&format!(
-        "{{\"record\":\"gen\",\"time\":{},\"large_lines\":{large_lines},\"large_matches\":{large_matches},\
-         \"dense_lines\":{dense_lines},\"dense_matches\":{dense_matches},\
-         \"many_lines\":{many_lines},\"many_matches\":{many_matches}}}",
-        unix_time()
-    ));
+    println!(
+        "gen: large {large_lines} lines / {large_matches} matches, \
+         dense {dense_lines} lines / {dense_matches} matches, \
+         many {many_lines} lines / {many_matches} matches"
+    );
     Ok(())
 }
 
@@ -234,9 +212,10 @@ fn sha256_bytes(bytes: &[u8]) -> Result<String, String> {
 
 // --- verification --------------------------------------------------------
 
-/// Verifies corpus digests against the inherited pinned manifest, records
+/// Verifies corpus digests against the inherited pinned manifest, reports
 /// every subject's binary identity, then per subject and case verifies
 /// byte-identical stdout and exit codes against the pinned output digests.
+/// A stale or partial corpus fails at the first step; `make gen` rebuilds it.
 fn verify() -> Result<(), String> {
     let manifest = std::fs::read_to_string(manifest_path()).map_err(|error| error.to_string())?;
     let pinned: Vec<&str> = manifest.lines().filter(|line| !line.is_empty()).collect();
@@ -246,18 +225,10 @@ fn verify() -> Result<(), String> {
             return Err(format!("corpus digest mismatch: computed `{line}` is not pinned"));
         }
     }
-    let mut identities = String::new();
+    println!("corpus: {} digest lines match the inherited manifest", computed.len());
     for name in SUBJECTS.iter().chain(["grep"].iter()) {
-        identities.push_str(&format!(
-            "\"{name}_sha256\":\"{}\",",
-            sha256(&subject_binary(name))?
-        ));
+        println!("identity: {name} sha256 {}", sha256(&subject_binary(name))?);
     }
-    emit(&format!(
-        "{{\"record\":\"identity\",\"time\":{},{identities}\"manifest\":\"{}\"}}",
-        unix_time(),
-        manifest_path().display(),
-    ));
     for name in SUBJECTS.iter().chain(["grep"].iter()) {
         for case in cases() {
             let (output, exit) = captured_run(&subject_binary(name), &case, &leading_arguments(name))?;
@@ -272,15 +243,14 @@ fn verify() -> Result<(), String> {
                     ));
                 }
             }
-            emit(&format!(
-                "{{\"record\":\"verify\",\"time\":{},\"subject\":\"{name}\",\"case\":\"{}\",\
-                 \"bytes\":{},\"exit\":{exit},\"sha256\":\"{digest}\"}}",
-                unix_time(),
+            println!(
+                "verify: {name} {} {} bytes, exit {exit}, sha256 {digest}",
                 case.name,
-                output.len(),
-            ));
+                output.len()
+            );
         }
     }
+    println!("verify: every subject and case matches the pinned outputs and exit codes");
     Ok(())
 }
 
@@ -298,297 +268,4 @@ fn captured_run(binary: &Path, case: &Case, leading: &[&str]) -> Result<(Vec<u8>
         ));
     }
     Ok((output.stdout, output.status.code().unwrap_or(-1)))
-}
-
-// --- timing --------------------------------------------------------------
-
-/// Runs one timed invocation: stdout to /dev/null, stderr captured and
-/// required empty, elapsed wall time from spawn to exit.
-fn timed_run(binary: &Path, case: &Case, leading: &[&str]) -> Result<(u64, i32), String> {
-    let mut command = Command::new(binary);
-    command
-        .current_dir(corpus_root())
-        .env_clear()
-        .env("LC_ALL", "C")
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-    command.args(leading).arg(case.pattern).args(&case.files);
-    let start = Instant::now();
-    let mut child = command.spawn().map_err(|error| error.to_string())?;
-    let mut stderr = Vec::new();
-    child
-        .stderr
-        .take()
-        .ok_or("missing stderr pipe")?
-        .read_to_end(&mut stderr)
-        .map_err(|error| error.to_string())?;
-    let status = child.wait().map_err(|error| error.to_string())?;
-    let elapsed = start.elapsed().as_nanos() as u64;
-    if !stderr.is_empty() {
-        return Err(format!(
-            "case {}: unexpected stderr: {}",
-            case.name,
-            String::from_utf8_lossy(&stderr)
-        ));
-    }
-    let code = status.code().unwrap_or(-1);
-    let expected = if case.name == "nomatch" || case.name == "floor" { 1 } else { 0 };
-    if code != expected {
-        return Err(format!("case {}: exit {code}, expected {expected}", case.name));
-    }
-    Ok((elapsed, code))
-}
-
-/// Reads every case file completely so both timed positions in a round see
-/// the same warm page-cache state.
-fn warm(case: &Case) -> Result<u64, String> {
-    let root = corpus_root();
-    let mut buffer = vec![0u8; 1 << 20];
-    let mut total = 0u64;
-    for name in &case.files {
-        let mut file = std::fs::File::open(root.join(name)).map_err(|error| error.to_string())?;
-        loop {
-            let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
-            if read == 0 {
-                break;
-            }
-            total += read as u64;
-        }
-    }
-    Ok(total)
-}
-
-/// One paired phase: the reference subject against one other subject, 30
-/// order-alternating warm rounds per case.
-///
-/// Ratio orientation per phase, fixed by the protocol:
-/// - null and bench-grep: ratio = other / reference where the reference is
-///   B0 (`base`); in bench-grep the "other" is grep, so below 1.0 means the
-///   baseline is slower — the WFGREP-BASELINE orientation.
-/// - bench-shape: the reference is the shape, the "other" is B0, so the
-///   ratio (B0 / shape) above 1.0 means the shape is faster.
-/// - confirm: the reference is the shape, the "other" is grep — the
-///   baseline orientation with the shape as subject.
-fn paired_phase(phase: &str, reference: &str, other: &str) -> Result<(), String> {
-    record_power(phase, "start");
-    let reference_binary = subject_binary(reference);
-    let other_binary = subject_binary(other);
-    let reference_leading = leading_arguments(reference);
-    let other_leading = leading_arguments(other);
-    for case in cases() {
-        for _ in 0..3 {
-            timed_run(&reference_binary, &case, &reference_leading)?;
-            if other != reference {
-                timed_run(&other_binary, &case, &other_leading)?;
-            }
-        }
-        let mut ratios = Vec::with_capacity(ROUNDS);
-        let mut elapsed_by_side: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
-        let mut position_medians: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
-        for round in 0..ROUNDS {
-            warm(&case)?;
-            // Side 0 is the reference, side 1 the other; the reference runs
-            // first on even rounds.
-            let reference_first = round % 2 == 0;
-            let sample = |side: usize, position: usize| -> Result<u64, String> {
-                let (binary, leading, label) = if side == 0 {
-                    (&reference_binary, &reference_leading, reference)
-                } else {
-                    (&other_binary, &other_leading, other)
-                };
-                let (elapsed, exit) = timed_run(binary, &case, leading)?;
-                emit(&format!(
-                    "{{\"record\":\"sample\",\"phase\":\"{phase}\",\"case\":\"{}\",\"round\":{round},\
-                     \"position\":{position},\"side\":{side},\"binary\":\"{label}\",\
-                     \"elapsed_ns\":{elapsed},\"exit\":{exit}}}",
-                    case.name,
-                ));
-                Ok(elapsed)
-            };
-            let (first_side, second_side) = if reference_first { (0, 1) } else { (1, 0) };
-            let first = sample(first_side, 1)? as f64;
-            let second = sample(second_side, 2)? as f64;
-            let (reference_elapsed, other_elapsed) =
-                if reference_first { (first, second) } else { (second, first) };
-            elapsed_by_side[0].push(reference_elapsed);
-            elapsed_by_side[1].push(other_elapsed);
-            position_medians[usize::from(!reference_first)].push(other_elapsed / reference_elapsed);
-            ratios.push(other_elapsed / reference_elapsed);
-        }
-        let summary = summarize(&ratios);
-        let reference_median = median(&mut elapsed_by_side[0].clone());
-        let other_median = median(&mut elapsed_by_side[1].clone());
-        let reference_first_median = median(&mut position_medians[0].clone());
-        let other_first_median = median(&mut position_medians[1].clone());
-        emit(&format!(
-            "{{\"record\":\"summary\",\"phase\":\"{phase}\",\"case\":\"{}\",\"rounds\":{ROUNDS},\
-             \"reference\":\"{reference}\",\"other\":\"{other}\",\
-             \"reference_median_ns\":{:.0},\"other_median_ns\":{:.0},\
-             \"ratio_median\":{:.6},\"ci_low\":{:.6},\"ci_high\":{:.6},\"relative_half_width\":{:.6},\
-             \"reference_first_ratio_median\":{:.6},\"other_first_ratio_median\":{:.6},\
-             \"classified\":{}}}",
-            case.name,
-            reference_median,
-            other_median,
-            summary.point,
-            summary.low,
-            summary.high,
-            summary.relative_half_width,
-            reference_first_median,
-            other_first_median,
-            case.classified,
-        ));
-    }
-    record_power(phase, "end");
-    Ok(())
-}
-
-fn null_phase(arguments: &[String]) -> Result<(), String> {
-    let tag = arguments.get(1).ok_or("null requires a tag argument")?;
-    paired_phase(&format!("null-{tag}"), "base", "base")
-}
-
-fn bench(other: &str) -> Result<(), String> {
-    if other == "grep" {
-        // Fresh same-protocol baseline: reference B0, other grep, so the
-        // ratio keeps the WFGREP-BASELINE orientation (grep / B0).
-        paired_phase("bench-grep", "base", "grep")
-    } else {
-        if !SUBJECTS.contains(&other) {
-            return Err(format!("unknown shape {other}"));
-        }
-        // Shape phases: reference is the shape, other is B0, so the ratio
-        // is B0 / shape — above 1.0 means the shape is faster.
-        paired_phase(&format!("bench-{other}"), other, "base")
-    }
-}
-
-fn confirm(shape: &str) -> Result<(), String> {
-    if !SUBJECTS.contains(&shape) {
-        return Err(format!("unknown shape {shape}"));
-    }
-    paired_phase(&format!("confirm-{shape}"), shape, "grep")
-}
-
-struct Summary {
-    point: f64,
-    low: f64,
-    high: f64,
-    relative_half_width: f64,
-}
-
-fn summarize(ratios: &[f64]) -> Summary {
-    let point = median(&mut ratios.to_vec());
-    let mut state = XorShift(BOOTSTRAP_SEED);
-    let mut resampled = Vec::with_capacity(BOOTSTRAP_RESAMPLES);
-    for _ in 0..BOOTSTRAP_RESAMPLES {
-        let mut draw: Vec<f64> = (0..ratios.len())
-            .map(|_| ratios[(state.next() % ratios.len() as u64) as usize])
-            .collect();
-        resampled.push(median(&mut draw));
-    }
-    resampled.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let low = resampled[(0.025 * (BOOTSTRAP_RESAMPLES - 1) as f64).round() as usize];
-    let high = resampled[(0.975 * (BOOTSTRAP_RESAMPLES - 1) as f64).round() as usize];
-    Summary { point, low, high, relative_half_width: (high - low) / (2.0 * point) }
-}
-
-fn median(values: &mut Vec<f64>) -> f64 {
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let n = values.len();
-    if n % 2 == 1 { values[n / 2] } else { (values[n / 2 - 1] + values[n / 2]) / 2.0 }
-}
-
-// --- counters ------------------------------------------------------------
-
-/// Captures `/usr/bin/time -l` accounting (real/user/sys, instructions
-/// retired, cycles elapsed, peak footprint) for every subject on every case.
-fn counters() -> Result<(), String> {
-    record_power("counters", "start");
-    for case in cases() {
-        warm(&case)?;
-        for name in SUBJECTS.iter().chain(["grep"].iter()) {
-            let binary = subject_binary(name);
-            let leading = leading_arguments(name);
-            for repetition in 0..COUNTER_REPETITIONS {
-                let mut command = Command::new("/usr/bin/time");
-                command
-                    .arg("-l")
-                    .arg(&binary)
-                    .args(&leading)
-                    .arg(case.pattern)
-                    .args(&case.files)
-                    .current_dir(corpus_root())
-                    .env_clear()
-                    .env("LC_ALL", "C")
-                    .stdout(Stdio::null());
-                let output = command.output().map_err(|error| error.to_string())?;
-                let text = String::from_utf8_lossy(&output.stderr).into_owned();
-                emit(&format!(
-                    "{{\"record\":\"counters\",\"case\":\"{}\",\"binary\":\"{name}\",\"repetition\":{repetition},\
-                     \"real\":{},\"user\":{},\"sys\":{},\"instructions\":{},\"cycles\":{},\"peak_footprint\":{}}}",
-                    case.name,
-                    field(&text, "real"),
-                    field(&text, "user"),
-                    field(&text, "sys"),
-                    field(&text, "instructions retired"),
-                    field(&text, "cycles elapsed"),
-                    field(&text, "peak memory footprint"),
-                ));
-            }
-        }
-    }
-    record_power("counters", "end");
-    Ok(())
-}
-
-fn field(text: &str, name: &str) -> String {
-    for line in text.lines() {
-        if let Some(position) = line.find(name) {
-            let value = line[..position].split_whitespace().last().unwrap_or("0");
-            return value.to_owned();
-        }
-    }
-    "0".to_owned()
-}
-
-// --- evidence ------------------------------------------------------------
-
-fn emit(line: &str) {
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(raw_path())
-        .expect("open raw evidence file");
-    writeln!(file, "{line}").expect("append raw evidence");
-}
-
-fn record_power(phase: &str, event: &str) {
-    let batt = Command::new("/usr/bin/pmset")
-        .args(["-g", "batt"])
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).replace('\n', " ").replace('"', "'"))
-        .unwrap_or_default();
-    let modes = Command::new("/usr/bin/pmset")
-        .args(["-g"])
-        .output()
-        .map(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .find(|line| line.contains("lowpowermode"))
-                .unwrap_or("lowpowermode unknown")
-                .trim()
-                .to_owned()
-        })
-        .unwrap_or_default();
-    emit(&format!(
-        "{{\"record\":\"power\",\"phase\":\"{phase}\",\"event\":\"{event}\",\"time\":{},\"battery\":\"{}\",\"mode\":\"{}\"}}",
-        unix_time(),
-        batt.trim(),
-        modes,
-    ));
-}
-
-fn unix_time() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }

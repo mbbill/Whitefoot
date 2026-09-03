@@ -26,6 +26,32 @@ comparator `/usr/bin/grep` `569588bf…f50d8f1f` (the baseline's pinned
 binary). The verify phase matched all 25 subject×case outputs and exit
 codes against the inherited WFGREP-BASELINE manifest pins byte for byte.
 
+## Replay status (2026-09-03)
+
+The run above is complete and closed. What HEAD holds, and what it can still
+assert:
+
+- The committed `raw/wfgrep-double-walk-1.jsonl` (2,303 lines) hashes to
+  `16b8cc174590afa1a4ee8f82c18d06db88954e3b97d63dec0a60660796fac964`.
+  The digest pinned above names the bytes before commit `c4e82fba`
+  (2026-08-25) rewrote the
+  personal path string inside the one `identity` record; no sample or
+  summary value changed.
+- B0 was the `tests/programs/wfgrep.wf` of 2026-08-06 (digest in
+  `PROTOCOL.md`). Since commit `238ba7ce` (2026-08-18) that file is a
+  recursive search printing `PATH:LINE:TEXT` lines, and B0's frozen bytes
+  predate specification v0.40, so B0 cannot be rebuilt from HEAD. The
+  comparative phases (code-shape, null, bench, counters, confirm) therefore
+  exist only in the freeze commit; on 2026-09-03 the bundle Makefile and
+  `runner.rs` were reduced to corpus generation and the verify phase over
+  the three shapes.
+- The three shape sources are kept on the active specification: respelled
+  for the I/O model on 2026-08-26 and 2026-08-27 and for v0.40/v0.41 on
+  2026-09-03. The source digests in `PROTOCOL.md` identify the frozen
+  bytes. On 2026-09-03 `make check` (the gate-profile `whitefootc`, then
+  `runner gen` and `runner verify`) matched all fifteen shape-case output
+  digests and exit codes against the inherited manifest byte for byte.
+
 ## Result
 
 Shape phases: ratio = B0 elapsed / shape elapsed; above 1.0 means the
