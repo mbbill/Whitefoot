@@ -2,13 +2,14 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **sixth draft, after falsifier round 5 and the owner's rulings of 2026-09-03
-> evening**; this file has been brought to that draft and carries no rule text of
-> its own. Where a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
+> **seventh draft, after falsifier round 6 and the owner's decisions of 2026-09-03**;
+> this file has been brought to that draft and carries no rule text of its own. Where
+> a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
 >
-> **Every spelling below that the kernel does not have today is a proposal**, listed
-> in `DESIGN.md` 3.S with its alternatives and marked PROPOSED. Nothing here is
-> decided.
+> **Every language-surface addition below is now the owner's decision**, recorded in
+> `DESIGN.md` 3.S, which is a decision record rather than a proposal table. Three
+> items remain PROPOSED: `on_propagate` [S28], `seq_rebase` [S29], and the seven
+> [SYS-8] signatures over views [S30].
 
 The resource half of the batch 0116 drafting round, reduced to the material
 `DESIGN.md` does not carry: the goals and non-goals it was written against, and the
@@ -21,35 +22,61 @@ Tree read: `batch/0116-containers-and-resources` at `main 30602914`,
 `spec/kernel-spec.md` **v0.41 ACTIVE**. Bare line numbers are that file. Nothing here
 is implemented, and every clause and call is written in the v0.41 surface.
 
-## What round 5 and the owner's rulings changed, so this file is not read as current
+## What round 6 and the owner's decisions changed, so this file is not read as current
 
-Six things a reader of the fifth draft will look for and not find.
+Seven things a reader of the sixth draft will look for and not find.
 
-- **A domain of `E` is a store, not a kind** [RES-5]. Five *algebras* are defined and
-  a domain is a pair of an algebra and a store identity, so two arenas do not share
-  one domain, a store minted inside a loop body has a domain whose life is one
-  iteration, and [RES-10]'s route (ii) has a referent for `cap(store)`.
+- **A domain of `E` is a store, not a kind, and it carries a KIND column** [RES-5].
+  Four *algebras* are defined — the cleanup-scratch domain is deleted, because a
+  compiler-derived walk is not a statement [RES-10] can attribute a transfer to and its
+  frame cost is ordinary frame cost [STK-3] — and a domain is a pair of an algebra and a
+  store identity. Each domain is **reusable capacity** or **consumable budget**, and
+  [RES-10]'s store-capacity route applies to the first only, because a store's own
+  refusal bounds what is **held** and says nothing about what is **spent**.
+- **An arena or frame take inside a loop is charged trips × size** unless the loop
+  encloses a region block that is entered and reset per iteration (owner-decided
+  2026-09-03). A divergent loop, or a runtime trip count with no bound, therefore makes
+  the program **not resource-closed**, and the diagnostic names the domain and the loop.
+  Round 6 built the counterexample the sixth draft admitted — a `pure`, heap-free
+  service loop taking 256 bytes per turn from a frame arena, certified bounded at the
+  store's capacity while the program silently stopped making progress after 256 turns.
+  Its author proposed re-keying **linearity** to fix it; the owner refused, because the
+  criterion is what a release *needs* and this is accounting.
 - **The map has a `retained` label and a `reset` transfer** [RES-10]. Without the
   first, a service loop with no `break` — one of the two programs goal A exists for —
   publishes an envelope with zero contribution from everything it does. Without the
   second, a region block re-entered by a loop leaves a positive backedge delta and
   the design's own recommended idiom for per-iteration scratch is refused.
-- **A lease that is dropped is a compile error**, because `Lease` is `linear` by
-  declaration [S18]. The fifth draft recorded the leak as bounded and visible in `E`;
-  it was neither, and `DESIGN.md` Q0b says so.
-- **`advance<T>` is a closed expression** [RES-5], because every take rounds the
-  cursor to the store's own `align` and the padding is charged once per run rather
-  than once per element. The fifth draft's exact form named `len(arena)`, a runtime
-  cursor, which [RES-3] forbids in a bound.
-- **A cyclic containment graph is refused at the type, in every program** [PROV-6],
-  and not only under the marker. The fifth draft's disposition left the aborting
-  release walk in every hosted program, which is the shape L3's last clause was
-  written for.
-- **The `acquires from` column is derived and the exclusion test reads a count**
-  [RES-7]. Every may-suspend operation acquires a submission record and a completion
-  record — which the runtime sources show for seven operations the fifth draft's
-  column read `none` for — and an operation is excluded when a store it acquires from
-  has count zero in the selected row, not when its item is absent.
+- **A lease that is dropped is a *visible* discard, and a lease that is *returned* is
+  a proof.** `Lease` is `linear` by declaration, which makes the discard a written
+  statement rather than a silence — and not impossible, because a destructuring consume
+  is a legal consume. A **directional** obligation is bought by proving the return:
+  `pool_release` is the **proved** spelling, total under `requires room(pool.free) >
+  0_u64`, so there is no refusal arm to discard. `DESIGN.md` Q0b records what changed.
+- **`advance<T>` is a closed expression in its formula and its `count` is [RES-3]'s
+  question** [RES-5]. Every take rounds the cursor to the store's own `align` and the
+  padding is charged once per run; whether the operand is closed is decided at the
+  acquisition, where premise 3 fails with the runtime value named. And **[RES-10]'s
+  transfers are stated per algebra**, so a 256-byte take is charged 256 and not one,
+  which the sixth draft's table got wrong for every domain but uniform slots.
+- **A cycle through the CAPABILITY-RELEASED-LEAF graph is refused at the type, in
+  every program** [PROV-6], and not only under the marker. The sixth draft stated the
+  refusal over **containment**, which refuses every recursive structure in every
+  program — including an arena-backed one whose release walk is empty — and
+  `tests/programs/recursive_tree.wf` is in the corpus today. Stating it over the graph
+  the walk follows keeps L3's no-abort clause true and costs no program.
+- **The `acquires from` column is derived over ACTIONS, and the exclusion is split at
+  the stage boundary** [RES-7]. Every may-suspend **action** acquires a submission and a
+  completion record, which reaches [SYS-2]'s seven operations **and [SYS-5]'s three
+  release actions** — a `ReadFile` close is a may-suspend action that reserves from the
+  same fixed table every read uses, and the sixth draft counted none of them. And the
+  test may not be a source rejection reading a figure the runtime publishes: the source
+  half publishes a per-store **declared demand**, and the capacity match is [QUAL-2]'s
+  qualification failure.
+- **`retained` composes by the same formula as every other label, and there is a
+  `return` label** [RES-10]. The sixth draft's `retained`-specific sequence clause lost
+  everything a program acquired before entering a divergent loop, and no label carried a
+  `return` edge at all, so a peak reached only on a returning path left the map.
 
 ## 1. Goals and non-goals
 
@@ -59,13 +86,15 @@ never runs out of memory, and only logic errors remain over its whole lifetime
 world: the compiler computes one finite, shaped envelope `E`, the program promises
 never to demand more, and the environment decides whether it can deliver `E`.
 
-**And "never runs out" now includes a store the program owns.** Round 5's sharpest
-finding against the fifth draft was not about bytes: 4.1 lost a pool block on an
-ignored refusal, with no diagnostic, no effect row and no envelope movement, so a
-program that satisfied every premise of [RES-3] silently stopped making progress
-after eight iterations. `DESIGN.md` §1.1 states the consequence — a program that
-stops at three in the morning has not removed the class of failure either — and R2 is
-what closes it.
+**And "never runs out" now includes a store the program owns.** Rounds 5 and 6 found
+the same failure at two stores. At the **pool**, a block was lost on an ignored refusal
+with no diagnostic, no effect row and no envelope movement, so a program satisfying
+every premise of [RES-3] silently stopped making progress after eight iterations; the
+proved release closes it. At the **arena**, a service loop took 256 bytes per turn from
+a frame store the accounting certified bounded at that store's capacity, and stopped
+making progress after 256 turns; [RES-10]'s consumable-budget rule closes that one.
+`DESIGN.md` §1.1 states the consequence: a program that stops at three in the morning
+has not removed the class of failure either.
 
 **Non-goals**, each with the rule that records it. Disk space, host object
 acquisition, network, CPU time, deadlines, fairness, power, device health and quota
@@ -76,9 +105,11 @@ is `lanes(1)` [RUN-1], [RUN-2]. Execution contexts are the follow-on's
 (`DESIGN.md` 1.5) — with one thing decided here that the fifth draft left open: **a
 worker lane is an execution context**, which is what [PROV-5]'s activation refusal
 reads. And an unmarked program keeps every [SCOPE-3] deferral it has today, with one
-exception: a type whose containment graph has a cycle is refused in every program,
-because a rule that is a hard error under a marker and a process abort without one is
-not one rule.
+exception: a type whose **capability-released-leaf** graph has a cycle is refused in
+every program, because a rule that is a hard error under a marker and a process abort
+without one is not one rule. Stating it over that graph rather than over containment is
+round 6's correction, and it is what keeps an arena- or frame-backed recursive
+structure — whose release walk is empty — compiling.
 
 ## 2. The writer's view
 
@@ -129,9 +160,9 @@ The rewrite is a bounded work list, which is what a kernel writes anyway:
 
 ```wf-design
   let work = seq_fixed::<Entry, 64>();
-  set (work, seeded) = try_place::<Entry, 64>(vector: move work, value: move root);
+  set (work, seeded) = try_place(vector: move work, value: move root);
   loop @walk {
-    set (work, next) = try_take::<Entry, 64>(vector: move work);
+    set (work, next) = try_take(vector: move work);
     match next {
       None() => {
         break @walk;
@@ -149,12 +180,12 @@ And the refusal is a value: `try_place` hands the entry back when the list is fu
 so a deep tree reports rather than dies. `docs/patterns.md` P15 is the pattern and
 [STK-2]'s own diagnostic names it.
 
-**A third fact is new.** Both statements are [LIV-3]'s multi-target `set` at a
-binding declared outside the loop, which [OWN-11] 646 forbids today; [LIV-1]'s join
-agreement replaces that prohibition and admits exactly this shape, because the
-exchange keeps the root live at every point. The fifth draft asserted that
-replacement in its register and not in [LIV-1]'s body, and both of its worked
-programs depended on it.
+**A third fact is new.** Both statements are [LIV-2]'s one commit rule at a binding
+declared outside the loop, which [OWN-11] 646 forbids today; [LIV-1]'s join agreement
+replaces that prohibition and admits exactly this shape, because the commit leaves the
+root live at every point. `work` names a binding in scope and is therefore a **place**;
+`seeded` and `next` name none and declare one each. Neither call writes a type or const
+argument, because the `vector` operand determines both (3.K.0).
 
 ### 2.3 From an unbounded store to a bounded one
 
@@ -165,7 +196,7 @@ a `Pool` store with a lease type; under the ruling it is a run of runs
 ```wf-design
   region 'a {
     let scratch = arena_frame::<65536, 16, 'a>();
-    let made = pool_new::<'a>(arena: &uniq scratch);
+    let made = pool_new(arena: &uniq scratch);
     ...
   }
 ```
@@ -176,17 +207,22 @@ release are on the same path, so the free list's delta is zero too. **What makes
 second sentence a fact rather than an assumption is R2 and not the envelope**: the
 free list is frame placement, whose [RES-5] algebra has no acquire and no release, so
 [RES-10] computes nothing about it and premise 3 says nothing about it. The pool
-stays full because `Lease` is linear, `Option<Lease>` is linear by containment, and
-the refusal arm therefore cannot be dropped. That is the honest division of labour
-between the two halves of this design, and the fifth draft had neither half doing it.
+stays full because `pool_release` is the **proved** spelling: its
+`requires room(pool.free) > 0_u64` is discharged at the call site from `pool_take`'s
+own published relation, so there is no refusal arm and no path on which a lease is
+discarded. `Lease` being `linear` is what makes a deliberate discard a written
+statement; it is the proof, and not the modifier, that makes the return unavoidable.
+That is the honest division of labour between the two halves of this design.
 
-A **retaining** variant — one that keeps a lease across iterations — is bounded
-instead by route (ii): the free list's `cap` is a type-level constant and
-`pool_take`'s refusal cannot succeed on an empty list, so the composed peak is that
-constant. That route composes across a call only because [RES-8] publishes a
-**declared** `saturating(p)` fact; the fifth draft derived it from the body,
-transitively, which is what [CALL-5] forbids and what [ENT-1] 2661 forbids a second
-time by reading which premise discharged a goal.
+A **retaining** variant — one that keeps a lease across iterations — is bounded by
+neither route, and the sixth draft said otherwise. The free list is **not a domain**:
+frame placement's [RES-5] algebra has no acquire and no release, so [RES-10] computes
+nothing about it, and `saturating` is keyed to a **store region** [RES-8] while a
+`BlockPool<'s>` free list is not a store. A retaining pool is bounded by its element
+count, which is the `FixedVector`'s own type constant, and by the proved
+`pool_release` that keeps every lease returnable. That is the honest statement, and
+`saturating('s)` exists for the runtime record stores [RES-9] that genuinely are
+domains.
 
 **A per-iteration scratch extent is the shape the reset transfer exists for.** Write
 the region block inside the loop —
@@ -202,15 +238,13 @@ the region block inside the loop —
 ```
 
 — and the block's body acquires 256 bytes on the bump domain while its exit edge runs
-the store's reset. Under the fifth draft's five primitive transfers the only one that
-fitted a reset was `release one`, whose delta is `-1`, so the block left `+255` on the
-backedge, `max(d) > 0`, and none of the three discharges applied: the loop has no
-constant trip count, a *proved* acquisition succeeds on a full store by construction
-so the saturation route is false, and no header invariant can name a store minted
-inside the body. The design's own recommended idiom was refused. [RES-10]'s `reset`
-transfer has delta `-len(store)`, which is the exact inverse of everything the block
-accumulated, so `delta(region_block) = 0` falls out of the arithmetic instead of
-being asserted in prose.
+the store's reset. [RES-10]'s `acquire` transfer is `(peak a, delta +a)` for the
+domain's own quantity, so the take is charged 256 and not one, and the `reset`
+transfer's delta is `-len(store)`, the exact inverse of everything the block
+accumulated, so `delta(region_block) = 0` falls out of the arithmetic instead of being
+asserted in prose. **Without the block the same take is charged trips × 256 and the
+loop is refused**, which is the owner's accounting ruling and the reason this idiom is
+the recommended one rather than a convenience.
 
 The diagnostic a writer gets when none of the three discharges applies names the
 loop and the value:
@@ -218,12 +252,12 @@ loop and the value:
 ```text
 Semantics/Source [RES-3]: UnboundedStoreDemand
   domain: (bump extent, store region 'a reserved at "scratch")
-  the loop at @serve has backedge delta +1 and no bound
-  the trip count names the runtime value "count"
+  the loop at @serve has backedge delta +256 and no discharge
+  this domain's kind is consumable budget, so a store's own refusal bounds nothing
   mechanical_fix: bound the loop with a compile-time constant trip count, state an
-    [INV-1] invariant over len(scratch), use the checked spelling, whose refusal
-    cannot succeed on a full store, or move the reservation inside the loop, where
-    the block's own reset composes to a zero backedge delta
+    [INV-1] invariant over len(scratch) from which the backedge delta is <= 0, or
+    move the reservation inside the loop, where the block's own reset composes to a
+    zero backedge delta
 ```
 
 ## 3. Evidence
