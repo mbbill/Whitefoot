@@ -71,6 +71,11 @@ where an atom is expected ([GRAM-5]), and `use 3 * a <= b;` does not derive
   resolver's invariant and use roles; the checker's infix, contract-clause,
   invariant, and use readers; the operation catalog and its reserved-name
   derivation; goal and invariant renderings.
+  The backend's per-activation qualification review pin (`REVIEWED_FOR` in
+  `compiler/src/backend/qualification.rs`) is bumped to v0.41 with its dated
+  review note: the respelled rows lower to the same `icmp` predicates, and no
+  system operation, resource, release row, result shape, entry form, or host
+  ABI mapping changes.
 - Corpus and evidence (rule 4 content): every `tests/**/*.wf` case,
   `tests/snapshot/index.tsv`, and `tests/conformance/manifest.jsonl`
   respelled mechanically by the one-shot token rewriter (comparison calls to
