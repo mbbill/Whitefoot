@@ -1,8 +1,9 @@
 //! [ENT-2] terms: the closed vocabulary the L0 fragment relates.
 //!
 //! A term is a tracked place, a length term over a place, one of the two
-//! private endpoint captures of a written counted range, a constant, a
-//! symbolic const-generic parameter, or the distinguished zero term Z. Term
+//! private endpoint captures of a written counted range, the private commit
+//! value of one `set` or `replace` occurrence, a constant, a symbolic
+//! const-generic parameter, or the distinguished zero term Z. Term
 //! identity is declaration-anchored: two places are the same term exactly when
 //! their roots resolve to the same declaration event — one [`BindingId`] in
 //! one checked function — and their canonical spellings agree, which the
@@ -50,6 +51,15 @@ pub(crate) enum TermKind {
     CountedCapture {
         range_path: Vec<u32>,
         side: CountedCaptureSide,
+    },
+    /// One immutable compiler-owned commit value [ENT-2]: the value the
+    /// right-hand side of one `set` or `replace` statement evaluated to at
+    /// that occurrence, before its target kill. The statement's finalized
+    /// NodePath plus the value's fragment type is its complete function-local
+    /// identity; source can neither name nor mutate it.
+    CommitValue {
+        commit_path: Vec<u32>,
+        ty: IntegerType,
     },
 }
 
@@ -129,6 +139,11 @@ impl TermTable {
         self.terms.push(kind.clone());
         self.ids.insert(kind, id);
         id
+    }
+
+    /// The identity of one already interned term, without interning it.
+    pub(crate) fn interned(&self, kind: &TermKind) -> Option<TermId> {
+        self.ids.get(kind).copied()
     }
 
     pub(crate) fn kind(&self, id: TermId) -> &TermKind {

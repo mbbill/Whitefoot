@@ -29,7 +29,7 @@ use super::super::term::{
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
-    S7DerivationKind, ShiftOneIdentity,
+    S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
@@ -44,6 +44,18 @@ const BOUNDARY_ENDPOINTS: [(&str, &str); 5] = [
     ("host_copy_utf8", "Ok"),
     ("directory_next", "ListBytes"),
 ];
+
+/// Which term one evaluated value's [ENT-3] image is established on: the
+/// place a `let` binder introduces, or the compiler-owned commit value of one
+/// `set` or `replace` occurrence, named by that statement's NodePath [ENT-2].
+/// The sources below are written once against this destination so that a
+/// commit's right-hand side receives exactly the image the same initializer
+/// receives at a `let`.
+#[derive(Clone, Copy)]
+pub(super) enum ValueImage<'a> {
+    Binding(BindingId),
+    Commit(&'a crate::NodePath),
+}
 
 /// The three S11 terms installed for one counted range.
 pub(super) struct CountedTerms {
@@ -279,35 +291,42 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // Establishment at a `let` binding: S5, S6, S7, S9
+    // Establishment of one evaluated value's image: S5, S6, S7, S9
     // ------------------------------------------------------------------
 
     /// Every source that establishes at an `ordinary_let_rhs` binding, in one
     /// place because they are mutually exclusive on the initializer's shape.
-    pub(super) fn establish_binding_facts(
+    /// A [SET-1] commit evaluates its right-hand side under exactly these
+    /// rules before its target kill, naming the value by the occurrence's own
+    /// commit-value term instead of a binder [ENT-2, ENT-3.S5].
+    pub(super) fn establish_value_image(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> Option<EstablishedUnsignedDivision> {
-        if self.establish_length_facts(node_path, binding, value, state, event) {
+        if self.establish_length_facts(node_path, destination, value, state, event) {
             return None;
         }
-        if self.establish_element_range(node_path, binding, value, state, event) {
+        if self.establish_element_range(node_path, destination, value, state, event) {
             return None;
         }
         if let Some(image) =
-            self.establish_unsigned_division_bound(node_path, binding, value, state, event)
+            self.establish_unsigned_division_bound(node_path, destination, value, state, event)
         {
             return Some(image);
         }
-        if self.establish_offset_fact(node_path, binding, value, state, event) {
+        if self.establish_offset_fact(node_path, destination, value, state, event) {
             return None;
         }
-        self.record_outcome_origin(binding, value, state);
-        self.establish_copy_fact(node_path, binding, value, state, event);
+        if let ValueImage::Binding(binding) = destination {
+            // Outcome origins are keyed by the binding a `match` can name;
+            // a commit value is unnameable and carries none.
+            self.record_outcome_origin(binding, value, state);
+        }
+        self.establish_copy_fact(node_path, destination, value, state, event);
         None
     }
 
@@ -359,10 +378,62 @@ impl Analyzer<'_, '_> {
         Some(self.terms.intern(kind))
     }
 
-    /// The term of a freshly bound integer place, when its type is one
-    /// fragment type.
-    fn bound_term(&mut self, binding: BindingId, value: &CheckedExpression) -> Option<TermId> {
-        self.writable_place_term(binding, &[], value.ty())
+    /// The term one evaluated value's image is established on, when its type
+    /// is one fragment type: a freshly bound integer place, or the commit
+    /// value of one `set` or `replace` occurrence.
+    fn bound_term(
+        &mut self,
+        destination: ValueImage<'_>,
+        value: &CheckedExpression,
+    ) -> Option<TermId> {
+        match destination {
+            ValueImage::Binding(binding) => self.writable_place_term(binding, &[], value.ty()),
+            ValueImage::Commit(node_path) => self.commit_value_term(node_path, value),
+        }
+    }
+
+    /// The retained identity of the value one S7 image was established on.
+    fn s7_subject(destination: ValueImage<'_>) -> S7Subject {
+        match destination {
+            ValueImage::Binding(binding) => S7Subject::Binding(binding),
+            ValueImage::Commit(node_path) => S7Subject::Commit(node_path.clone()),
+        }
+    }
+
+    /// The commit-value term of one `set` or `replace` occurrence, interned
+    /// on first use. Its identity is the statement's NodePath and the value's
+    /// fragment type, so every source establishing at that one occurrence
+    /// names one term [ENT-2].
+    fn commit_value_term(
+        &mut self,
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+    ) -> Option<TermId> {
+        let kind = Self::commit_value_kind(node_path, value)?;
+        Some(self.terms.intern(kind))
+    }
+
+    /// The same term when a source above already formed it, and nothing when
+    /// the right-hand side matched no source: an image-free value needs no
+    /// term and no post-write equality [ENT-3.S5].
+    pub(super) fn interned_commit_value_term(
+        &self,
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+    ) -> Option<TermId> {
+        self.terms
+            .interned(&Self::commit_value_kind(node_path, value)?)
+    }
+
+    fn commit_value_kind(
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+    ) -> Option<TermKind> {
+        let ty = fragment_type(value.ty())?;
+        Some(TermKind::CommitValue {
+            commit_path: node_path.components().to_vec(),
+            ty,
+        })
     }
 
     /// The value image shared by an ordinary let and a direct-place SET-1
@@ -419,7 +490,7 @@ impl Analyzer<'_, '_> {
     fn establish_copy_fact(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -427,35 +498,35 @@ impl Analyzer<'_, '_> {
         let Some(source) = self.copy_source(value) else {
             return;
         };
-        let Some(bound) = self.bound_term(binding, value) else {
+        let Some(bound) = self.bound_term(destination, value) else {
             return;
         };
         self.establish_copy_equality(node_path, bound, source, state, event);
     }
 
     /// [ENT-3] S5 at a SET-1 value commit. The caller has already evaluated
-    /// the RHS and killed every fact about the old target value. Only a
-    /// direct fragment place receives the finite literal/term/total-cvt image;
-    /// indexed storage and all other RHS shapes establish nothing.
-    pub(super) fn establish_set_copy_fact(
+    /// the right-hand side to the `commit` term above and killed every fact
+    /// about the old target value; this equality names that evaluated value,
+    /// so an arithmetic or other computed right-hand side carries its own
+    /// image across the write exactly as an intervening `let` would. Only a
+    /// direct fragment place receives it; indexed storage establishes
+    /// nothing, since one element write is no image of the whole collection.
+    pub(super) fn establish_commit_copy_fact(
         &mut self,
         node_path: &crate::NodePath,
         target: &CheckedSetTarget,
-        value: &CheckedExpression,
+        commit: TermId,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
         let CheckedSetTarget::Place(target) = target else {
             return;
         };
-        let Some(source) = self.copy_source(value) else {
-            return;
-        };
         let Some(destination) = self.writable_place_term(target.binding, &target.fields, target.ty)
         else {
             return;
         };
-        self.establish_copy_equality(node_path, destination, source, state, event);
+        self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
     /// [ENT-3] S6: `buffer_new<T>(n, v)` establishes len(b) = n;
@@ -468,14 +539,21 @@ impl Analyzer<'_, '_> {
     fn establish_length_facts(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
+        // A length equality is stated over the destination place. One commit
+        // value is no place, so an allocation or slice-formation right-hand
+        // side has no commit image; the length operand row below is an
+        // ordinary fragment value and applies to both destinations.
         match value {
             CheckedExpression::BufferFill { length, .. }
             | CheckedExpression::BufferVacant { length, .. } => {
+                let ValueImage::Binding(binding) = destination else {
+                    return true;
+                };
                 let Some(allocated) = self.read_operand(length) else {
                     return true;
                 };
@@ -493,6 +571,9 @@ impl Analyzer<'_, '_> {
                 true
             }
             CheckedExpression::SliceOf { source, .. } => {
+                let ValueImage::Binding(binding) = destination else {
+                    return true;
+                };
                 let (place, array_length) = match source {
                     CheckedSliceSource::Array { root, length } => {
                         (self.array_root_place(root), Some(*length))
@@ -537,7 +618,7 @@ impl Analyzer<'_, '_> {
             }
             _ => match self.length_operand(value) {
                 Some(source_length) => {
-                    if let Some(bound) = self.bound_term(binding, value) {
+                    if let Some(bound) = self.bound_term(destination, value) {
                         let event = self.binding_event(event, FlowEventKind::S6, node_path);
                         state.establish(
                             &Relation::Equal {
@@ -594,21 +675,21 @@ impl Analyzer<'_, '_> {
     fn establish_offset_fact(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        if self.establish_remainder_bounds(node_path, binding, value, state, event)
-            || self.establish_bit_and_bounds(node_path, binding, value, state, event)
-            || self.establish_shift_one_nonzero(node_path, binding, value, state, event)
+        if self.establish_remainder_bounds(node_path, destination, value, state, event)
+            || self.establish_bit_and_bounds(node_path, destination, value, state, event)
+            || self.establish_shift_one_nonzero(node_path, destination, value, state, event)
         {
             return true;
         }
         let Some((base, delta, exact)) = self.constant_offset(value) else {
             return false;
         };
-        let Some(bound) = self.bound_term(binding, value) else {
+        let Some(bound) = self.bound_term(destination, value) else {
             return true;
         };
         if !exact {
@@ -638,7 +719,7 @@ impl Analyzer<'_, '_> {
     fn establish_unsigned_division_bound(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -668,7 +749,7 @@ impl Analyzer<'_, '_> {
         if divisor <= 0 {
             return None;
         }
-        let result = self.bound_term(binding, value)?;
+        let result = self.bound_term(destination, value)?;
         let dividend = self.read_operand(dividend)?;
         let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
         let relation = Relation::Bound {
@@ -681,7 +762,7 @@ impl Analyzer<'_, '_> {
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
             row: *row,
-            binding,
+            subject: Self::s7_subject(destination),
             kind: S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
             relation,
             event,
@@ -698,7 +779,7 @@ impl Analyzer<'_, '_> {
     fn establish_remainder_bounds(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -715,7 +796,7 @@ impl Analyzer<'_, '_> {
         let [_dividend, divisor] = arguments.as_slice() else {
             return true;
         };
-        let Some(result) = self.bound_term(binding, value) else {
+        let Some(result) = self.bound_term(destination, value) else {
             return true;
         };
         let Some(divisor) = self.read_operand(divisor) else {
@@ -733,7 +814,7 @@ impl Analyzer<'_, '_> {
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
-                binding,
+                subject: Self::s7_subject(destination),
                 kind: S7DerivationKind::UnsignedRemainderBound { divisor },
                 relation,
                 event,
@@ -768,7 +849,7 @@ impl Analyzer<'_, '_> {
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
-                binding,
+                subject: Self::s7_subject(destination),
                 kind: S7DerivationKind::SignedRemainderBound {
                     divisor: divisor_value,
                     endpoint,
@@ -784,7 +865,7 @@ impl Analyzer<'_, '_> {
     fn establish_bit_and_bounds(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -801,7 +882,7 @@ impl Analyzer<'_, '_> {
         if row.signed() {
             return true;
         }
-        let Some(result) = self.bound_term(binding, value) else {
+        let Some(result) = self.bound_term(destination, value) else {
             return true;
         };
         for (operand, argument) in arguments.iter().enumerate() {
@@ -819,7 +900,7 @@ impl Analyzer<'_, '_> {
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
-                binding,
+                subject: Self::s7_subject(destination),
                 kind: S7DerivationKind::BitAndBound {
                     operand: u8::try_from(operand)
                         .expect("integer-operation operand ordinal exceeds u8"),
@@ -836,7 +917,7 @@ impl Analyzer<'_, '_> {
     fn establish_shift_one_nonzero(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -883,7 +964,7 @@ impl Analyzer<'_, '_> {
             CheckedIntegerArgumentSource::GenericNumericIdentity
             | CheckedIntegerArgumentSource::Other => return true,
         };
-        let Some(result) = self.bound_term(binding, value) else {
+        let Some(result) = self.bound_term(destination, value) else {
             return true;
         };
         let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
@@ -898,7 +979,7 @@ impl Analyzer<'_, '_> {
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
             row: *row,
-            binding,
+            subject: Self::s7_subject(destination),
             kind: S7DerivationKind::ShiftOneNonzero {
                 count_atom: count_metadata.node_path.clone(),
                 one,
@@ -971,7 +1052,7 @@ impl Analyzer<'_, '_> {
     fn establish_element_range(
         &mut self,
         node_path: &crate::NodePath,
-        binding: BindingId,
+        destination: ValueImage<'_>,
         value: &CheckedExpression,
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -1000,7 +1081,7 @@ impl Analyzer<'_, '_> {
                 None => (element, element),
             });
         }
-        let (Some((low, high)), Some(bound)) = (range, self.bound_term(binding, value)) else {
+        let (Some((low, high)), Some(bound)) = (range, self.bound_term(destination, value)) else {
             return true;
         };
         let event = self.binding_event(event, FlowEventKind::S9, node_path);

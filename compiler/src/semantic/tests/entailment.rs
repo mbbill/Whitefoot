@@ -17,7 +17,8 @@ use super::super::entailment::{
     GoalId, GoalSign, ImplicitBoundKind, JoinParent, LengthBound, ObligationFamily,
     ObligationOutcome, PlaceProjection, PlaceRoot, PostconditionCallDetail,
     PostconditionDeliveryJoinDetail, PostconditionDisposition, Relation, RemainderEndpoint,
-    S7DerivationKind, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO, type_range,
+    S7Derivation, S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId,
+    TermKind, ZERO, type_range,
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
@@ -193,6 +194,31 @@ fn retained_term(summary: &FunctionEntailment, id: TermId) -> &TermKind {
         .terms
         .get(id.0 as usize)
         .unwrap_or_else(|| panic!("retained term ID {id:?} must resolve"))
+}
+
+/// One retained S7 image names exactly the value its subject identifies: the
+/// `let` binder's own place term, or the commit value of the `set` or
+/// `replace` occurrence whose right-hand side produced it [ENT-2, ENT-3.S7].
+fn s7_result_names_subject(
+    summary: &FunctionEntailment,
+    result: TermId,
+    source: &S7Derivation,
+) -> bool {
+    match &source.subject {
+        S7Subject::Binding(binding) => matches!(
+            retained_term(summary, result),
+            TermKind::Place(place, row)
+                if place.root == PlaceRoot::Binding(*binding)
+                    && !place.deref
+                    && place.fields.is_empty()
+                    && *row == source.row
+        ),
+        S7Subject::Commit(commit) => matches!(
+            retained_term(summary, result),
+            TermKind::CommitValue { commit_path, ty }
+                if commit_path.as_slice() == commit.components() && *ty == source.row
+        ),
+    }
 }
 
 fn assert_relation_terms_resolve(summary: &FunctionEntailment, relation: &Relation) {
@@ -438,6 +464,7 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Length(_) | TermKind::ProjectedLength(_) | TermKind::CountedCapture { .. } => {
             Some(type_range(IntegerType::U64))
         }
+        TermKind::CommitValue { ty, .. } => Some(type_range(*ty)),
         TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
     }
 }
@@ -1800,14 +1827,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ) => {
                         assert_eq!(right, admitted);
                         assert_eq!(*bound, 0);
-                        assert!(matches!(
-                            retained_term(summary, *left),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                                    && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, *left, source));
                     }
                     (
                         S7DerivationKind::ShiftOneNonzero { count_atom, one },
@@ -1819,14 +1839,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         }
                         let result = if *left == ZERO { *right } else { *left };
                         assert!(*left == ZERO || *right == ZERO);
-                        assert!(matches!(
-                            retained_term(summary, result),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                            && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, result, source));
                     }
                     (
                         S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
@@ -1836,14 +1849,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         assert_eq!(*bound, 0);
                         assert!(*divisor > 0);
                         assert!(!source.row.signed());
-                        assert!(matches!(
-                            retained_term(summary, *left),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                                    && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, *left, source));
                     }
                     (
                         S7DerivationKind::UnsignedRemainderBound { divisor },
@@ -1851,14 +1857,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ) => {
                         assert_eq!(right, divisor);
                         assert_eq!(*bound, -1);
-                        assert!(matches!(
-                            retained_term(summary, *left),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                            && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, *left, source));
                     }
                     (
                         S7DerivationKind::SignedRemainderBound { divisor, endpoint },
@@ -1876,14 +1875,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                                 *left
                             }
                         };
-                        assert!(matches!(
-                            retained_term(summary, result),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                            && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, result, source));
                     }
                     _ => panic!("S7 root kind, metadata, and relation must agree"),
                 }
@@ -6080,9 +6072,20 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// [ENT-3.S5, ENT-3.S7] A `set` evaluates its right-hand side under exactly
+/// the value sources a `let` initializer uses, so a wrapping offset whose
+/// range the closed state derives publishes its image through the commit
+/// value just as the two-statement spelling does.
+///
+/// This test previously pinned the opposite: the same expression was accepted
+/// through an intervening `let` binding and rejected when written directly,
+/// because the commit published only the three-row copy image and an
+/// arithmetic right-hand side had none. That asymmetry was a defect in the
+/// commit's value image, not a language rule, so the test now states the
+/// agreement it should always have had.
 #[test]
-fn a_computed_set_rhs_outside_the_fixed_s5_table_publishes_no_image() {
-    let source = br#"const count: u64 = 4_u64;
+fn a_wrapping_offset_commit_publishes_the_image_its_let_spelling_publishes() {
+    let direct = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
   if ilt(replacement, 4_u64) {
@@ -6098,10 +6101,135 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    let through_let = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    let shifted = replacement +wrap 0_u64;
+    set offset = shifted;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
     assert_eq!(
-        discharge_flags(source, "read"),
+        discharge_flags(direct, "read"),
+        vec![true],
+        "the commit value carries the derived wrapping offset to the target"
+    );
+    assert_eq!(
+        discharge_flags(through_let, "read"),
+        discharge_flags(direct, "read"),
+        "one value written two ways must have one verdict"
+    );
+}
+
+/// [ENT-3.S5] A right-hand side outside every value source still publishes no
+/// image. `k +wrap k` is no constant offset, so the commit value carries only
+/// its type range and the subscript stays undischarged — in both spellings.
+#[test]
+fn a_set_right_hand_side_outside_every_value_source_publishes_no_image() {
+    let direct = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    set offset = replacement +wrap replacement;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let through_let = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    let doubled = replacement +wrap replacement;
+    set offset = doubled;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(direct, "read"),
         vec![false],
         "the compiler does not search for an unlisted operation image"
+    );
+    assert_eq!(
+        discharge_flags(through_let, "read"),
+        discharge_flags(direct, "read"),
+        "one value written two ways must have one verdict"
+    );
+}
+
+/// [ENT-3.S5, ENT-3.S7] A wrapping subtraction whose range the closed state
+/// cannot derive publishes no image at a commit, exactly as at a `let`: the
+/// commit value keeps only its own type range, so a following exact use is
+/// still rejected. Accepting it would read `values[u64::MAX]` for a zero
+/// operand, which is why the commit value must never carry the unwrapped
+/// result of an unproved wrap.
+#[test]
+fn a_wrapping_subtraction_commit_publishes_no_post_write_image() {
+    let direct = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    set offset = replacement -wrap 1_u64;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let through_let = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    let lowered = replacement -wrap 1_u64;
+    set offset = lowered;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(direct, "read"),
+        vec![false],
+        "an unproved wrapping subtraction leaves the commit value unbounded"
+    );
+    assert_eq!(
+        discharge_flags(through_let, "read"),
+        discharge_flags(direct, "read"),
+        "one value written two ways must have one verdict"
     );
 }
 
@@ -6235,7 +6363,7 @@ command fn main() -> status: own ExitStatus pure {
     assert!(
         bit_and
             .iter()
-            .all(|source| source.binding == bit_and[0].binding)
+            .all(|source| source.subject == bit_and[0].subject)
     );
     assert!(
         bit_and
@@ -6276,7 +6404,7 @@ command fn main() -> status: own ExitStatus pure {
         assert!(
             group
                 .iter()
-                .all(|source| source.binding == group[0].binding)
+                .all(|source| source.subject == group[0].subject)
         );
         assert!(group.iter().all(|source| source.event == group[0].event));
         assert!(group.iter().all(|source| source.source == group[0].source));
@@ -8173,16 +8301,22 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         .sum();
     // A wall-clock assertion would vary with the host and with the Rust
     // profile.  These two deterministic sizes guard the cost shape instead:
-    // the current source retains 23,394 nodes and 45,669 parent edges, with a
+    // the current source retains 27,460 nodes and 53,423 parent edges, with a
     // small margin for ordinary proof evolution.  A return to the former
     // million-node shape fails here on every machine.
+    //
+    // The counts rose from 23,394 and 45,669 when a `set` to a fragment place
+    // gained the commit-value image [ENT-3.S5]: each such statement now
+    // carries one more term through its pre-kill closure, exactly as the
+    // equivalent `let` of the same right-hand side already did.  The shape is
+    // unchanged.
     assert!(
-        proof_nodes <= 25_000,
-        "wfgrep retained {proof_nodes} proof nodes; expected at most 25,000"
+        proof_nodes <= 30_000,
+        "wfgrep retained {proof_nodes} proof nodes; expected at most 30,000"
     );
     assert!(
-        proof_edges <= 50_000,
-        "wfgrep retained {proof_edges} proof edges; expected at most 50,000"
+        proof_edges <= 58_000,
+        "wfgrep retained {proof_edges} proof edges; expected at most 58,000"
     );
     let shift = program
         .functions

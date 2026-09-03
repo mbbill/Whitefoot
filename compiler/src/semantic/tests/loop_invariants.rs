@@ -1132,13 +1132,20 @@ command fn main() -> status: own ExitStatus pure {
         else {
             panic!("the accepted FN-9 root is a postcondition exit");
         };
-        assert!(matches!(
-            function.entailment.derivations.nodes[parent.0 as usize],
-            DerivationNode::AffineConsequence {
-                ref premises,
-                ..
-            } if !premises.is_empty()
-        ));
+        // The trailing `set value = value;` publishes its own commit-value
+        // image [ENT-3.S5], so the requires bound now reaches the return
+        // closed in L0 through that value as well as through the affine
+        // premise list. Either is a complete derivation; what matters here is
+        // that the accepted exit keeps a real parent proof.
+        let parent = &function.entailment.derivations.nodes[parent.0 as usize];
+        assert!(
+            match parent {
+                DerivationNode::AffineConsequence { premises, .. } => !premises.is_empty(),
+                DerivationNode::TransitiveBound { .. } => true,
+                _ => false,
+            },
+            "the accepted FN-9 exit keeps a complete parent proof, got {parent:?}"
+        );
     });
 }
 
@@ -2313,15 +2320,21 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// [INV-1, ENT-5, ENT-6] A source guard alone is an ordinary L0 relation over
-/// the mutable cursor place. The increment's own SET-1 target kill removes it
-/// and establishes no post-write image, and the L0-to-affine index is an
-/// ephemeral view of the current difference-bound state rather than a
-/// published affine premise. The backedge is therefore unproved until the
-/// writer publishes the guard, which is exactly the repair the test above
-/// applies.
+/// [INV-1, ENT-3.S5, ENT-5] A source guard is an ordinary L0 relation over
+/// the mutable cursor place, and the increment's own SET-1 target kill
+/// removes it. The commit still reaches the backedge, because the right-hand
+/// side is evaluated to this occurrence's commit value before that kill: the
+/// pre-kill closure carries `cursor + 1 <= limit` onto that value, which
+/// survives the write, and the post-write equality then names it.
+///
+/// This test was added asserting the opposite verdict, on the reading that
+/// the rejection followed from the fixed AUTO family. It did not: the
+/// two-statement spelling `let next = cursor + 1_u64; set cursor = next;` was
+/// accepted for the same program, so the rejection was a source-shape
+/// asymmetry in the commit's value image. The written invariant here needs no
+/// republication of the guard.
 #[test]
-fn an_unpublished_guard_does_not_survive_the_cursor_write_to_the_backedge() {
+fn a_guarded_cursor_increment_reaches_the_ordinary_loop_backedge() {
     let source = br#"fn advance(limit: own u64) -> result: own unit pure {
   let cursor = 0_u64;
   loop (
@@ -2342,26 +2355,90 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an unpublished guard must reject at the backedge: {outcome:?}");
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the guarded increment must discharge the backedge: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Inv1);
-        let SemanticIssueKind::UndischargedLoopInvariant {
-            name,
-            obligation,
-            required_relation,
-            ..
-        } = issue.kind()
-        else {
-            panic!(
-                "expected an undischarged loop invariant, got {:?}",
-                issue.kind()
-            );
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "advance")
+            .expect("advance exists");
+        let [invariant] = function.entailment.loop_invariants.as_slice() else {
+            panic!("advance retains one header invariant");
         };
-        assert_eq!(name, "bounded");
-        assert_eq!(*obligation, LoopInvariantProofObligation::Backedge);
-        assert_eq!(required_relation, "ile(cursor, limit)");
+        assert_eq!(invariant.name, "bounded");
+        assert!(invariant.proof.base);
+        assert_eq!(invariant.proof.step, Some(true));
     });
+}
+
+/// [ENT-3.S5] The same increment written as its own value binding and as a
+/// direct commit is one value in two spellings, so the two programs must have
+/// one verdict. Implementing the commit image by the value's shape rather
+/// than by the statement's shape is what makes that hold.
+#[test]
+fn a_direct_cursor_increment_and_its_let_spelling_agree() {
+    let direct = br#"fn advance(limit: own u64) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let below = ilt(cursor, limit);
+    if below {
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let through_let = br#"fn advance(limit: own u64) -> result: own unit pure {
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: ile(cursor, limit)
+  ) {
+    let below = ilt(cursor, limit);
+    if below {
+      let next = cursor + 1_u64;
+      set cursor = next;
+    } else {
+      break;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let step = |source: &[u8]| {
+        let mut proved = None;
+        with_semantics(source, |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("both spellings must be accepted: {outcome:?}");
+            };
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == "advance")
+                .expect("advance exists");
+            let [invariant] = function.entailment.loop_invariants.as_slice() else {
+                panic!("advance retains one header invariant");
+            };
+            proved = Some((invariant.proof.base, invariant.proof.step));
+        });
+        proved.expect("the semantic outcome is observed")
+    };
+    assert_eq!(step(direct), (true, Some(true)));
+    assert_eq!(step(through_let), step(direct));
 }
 
 /// [INV-1] A body invariant placed after the cursor write states the same

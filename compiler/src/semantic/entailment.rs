@@ -721,12 +721,21 @@ pub(crate) enum RemainderEndpoint {
     Maximum,
 }
 
+/// The value one retained S7 image was established on: the `let` binder that
+/// introduced it, or the commit value of one `set` or `replace` occurrence
+/// [ENT-2].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum S7Subject {
+    Binding(BindingId),
+    Commit(NodePath),
+}
+
 /// One required unused-or-consumed S7 source root.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct S7Derivation {
     pub(crate) source: NodePath,
     pub(crate) row: IntegerType,
-    pub(crate) binding: BindingId,
+    pub(crate) subject: S7Subject,
     pub(crate) kind: S7DerivationKind,
     pub(crate) relation: state::Relation,
     pub(crate) event: state::FlowEventId,

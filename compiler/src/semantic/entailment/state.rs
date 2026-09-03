@@ -2927,6 +2927,11 @@ pub(crate) fn contradiction_without_proofs(
                 insert(&mut bounds, id, ZERO, maximum);
                 insert(&mut bounds, ZERO, id, -minimum);
             }
+            TermKind::CommitValue { ty, .. } => {
+                let (minimum, maximum) = type_range(*ty);
+                insert(&mut bounds, id, ZERO, maximum);
+                insert(&mut bounds, ZERO, id, -minimum);
+            }
         }
     }
 
@@ -3143,6 +3148,11 @@ fn close_with_excluded_term(
                 }
                 TermKind::CountedCapture { .. } => {
                     let (minimum, maximum) = type_range(IntegerType::U64);
+                    add(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum, ledger);
+                    add(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum, ledger);
+                }
+                TermKind::CommitValue { ty, .. } => {
+                    let (minimum, maximum) = type_range(*ty);
                     add(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum, ledger);
                     add(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum, ledger);
                 }

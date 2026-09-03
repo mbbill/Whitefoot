@@ -15,6 +15,7 @@
 
 mod sources;
 
+use sources::ValueImage;
 use std::collections::{HashMap, HashSet};
 
 use super::super::goal::{
@@ -1730,7 +1731,7 @@ impl Analyzer<'_, '_> {
                 holders.extend(projected_holders);
             }
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => {}
-            TermKind::CountedCapture { .. } => {}
+            TermKind::CountedCapture { .. } | TermKind::CommitValue { .. } => {}
         }
         holders
     }
@@ -2926,9 +2927,11 @@ impl Analyzer<'_, '_> {
     fn event_kills_term(&self, term: TermId, event: &KillEvent) -> bool {
         match self.terms.kind(term).clone() {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
-            // Counted captures are immutable. Their construct-scope exit is
-            // handled separately from source-place write/consume events.
-            TermKind::CountedCapture { .. } => false,
+            // Counted captures and commit values are immutable. A counted
+            // capture dies with its construct-scope exit, handled separately
+            // from source-place write/consume events; a commit value names one
+            // evaluated value that no later event can change.
+            TermKind::CountedCapture { .. } | TermKind::CommitValue { .. } => false,
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
@@ -2995,7 +2998,7 @@ impl Analyzer<'_, '_> {
     fn scope_kills_term(&self, term: TermId, exited: &HashSet<BindingId>) -> bool {
         match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
-            TermKind::CountedCapture { .. } => false,
+            TermKind::CountedCapture { .. } | TermKind::CommitValue { .. } => false,
             TermKind::Place(place, _) | TermKind::Length(place) => match place.root {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
@@ -6596,7 +6599,8 @@ impl Analyzer<'_, '_> {
             | TermKind::ProjectedPlace(_, _)
             | TermKind::Length(_)
             | TermKind::ProjectedLength(_)
-            | TermKind::CountedCapture { .. } => None,
+            | TermKind::CountedCapture { .. }
+            | TermKind::CommitValue { .. } => None,
         }
     }
 
@@ -8354,34 +8358,40 @@ impl Analyzer<'_, '_> {
         self.affine_pure_expression_form(expression, state)
     }
 
+    /// The dividend's affine value image of one admitted S7 unsigned
+    /// division, read where the division was evaluated. A `set` commit must
+    /// read it before its own target kill, since a dividend naming the target
+    /// place has a different image afterwards.
+    fn unsigned_division_dividend_form(
+        &mut self,
+        value: &CheckedExpression,
+        state: &mut AffineFlowState,
+    ) -> Option<AffineForm> {
+        let CheckedExpression::IntegerOperation { arguments, .. } = value else {
+            return None;
+        };
+        let [dividend, _divisor] = arguments.as_slice() else {
+            return None;
+        };
+        self.affine_pre_domain_form(dividend, state)
+    }
+
     /// Retains the second fixed consequence of one S7 unsigned division:
     /// for `q = a / k` with a positive written literal `k`, `k*q <= a`.
     /// Both sides are the exact affine value images computed at this program
     /// point, so later writes receive different atoms and cannot inherit it.
     fn establish_unsigned_division_image(
         &mut self,
-        binding: BindingId,
-        value: &CheckedExpression,
+        quotient: &AffineForm,
+        dividend: &AffineForm,
         established: sources::EstablishedUnsignedDivision,
         state: &mut AffineFlowState,
     ) {
-        let CheckedExpression::IntegerOperation { arguments, .. } = value else {
-            return;
-        };
-        let [dividend, _divisor] = arguments.as_slice() else {
-            return;
-        };
-        let Some(quotient) = state.values.get(&binding).cloned() else {
-            return;
-        };
-        let Some(dividend) = self.affine_pre_domain_form(dividend, state) else {
-            return;
-        };
         let Ok(scaled_quotient) = quotient.scale(established.divisor, &mut AffineCheckState::new())
         else {
             return;
         };
-        let Some(inequality) = Self::affine_less_equal(&scaled_quotient, &dividend) else {
+        let Some(inequality) = Self::affine_less_equal(&scaled_quotient, dividend) else {
             return;
         };
         state.facts.push(ActiveAffineFact {
@@ -9556,6 +9566,35 @@ impl Analyzer<'_, '_> {
             })
             .flatten();
         invalidate_goal_origin_for_set(&mut state.facts, target);
+        // [SET-1, ENT-3.S5]: the right-hand side is now evaluated, so its
+        // image is established here, on this occurrence's own commit value,
+        // under exactly the rules a `let` initializer uses. Establishing it
+        // before the target kill is what lets [ENT-5]'s pre-kill closure
+        // carry the surviving consequences of that value past the write,
+        // instead of losing them with the old target value.
+        //
+        // Only a direct fragment place can receive that image, so only such a
+        // commit forms a value term: with no destination to carry it to, the
+        // image would relate nothing to the program's later state.
+        let commit_carries_image = matches!(
+            target,
+            CheckedSetTarget::Place(place) if fragment_type(place.ty).is_some()
+        );
+        let mut commit_event = None;
+        let commit_division = (commit_reached && commit_carries_image)
+            .then(|| {
+                self.establish_value_image(
+                    node_path,
+                    ValueImage::Commit(node_path),
+                    value,
+                    &mut state.facts,
+                    &mut commit_event,
+                )
+            })
+            .flatten();
+        let commit_dividend = commit_division
+            .as_ref()
+            .and_then(|_| self.unsigned_division_dividend_form(value, &mut state.affine));
         let mut target_kills = Vec::new();
         match target {
             CheckedSetTarget::Place(place) => {
@@ -9624,22 +9663,40 @@ impl Analyzer<'_, '_> {
             self.apply_kills(state, &target_kills);
         }
         // [ENT-3.S5, ENT-5]: the committed value exists only after the old
-        // target facts have died. An unsupported RHS shape contributes no fact.
+        // target facts have died. The equality names the commit value formed
+        // above; when no source recognized the right-hand side, no commit
+        // value was interned and this commit contributes no fact either.
         let mut set_image_event = None;
         if commit_reached {
-            self.establish_set_copy_fact(
-                node_path,
-                target,
-                value,
-                &mut state.facts,
-                &mut set_image_event,
-            );
+            if let Some(commit) = self.interned_commit_value_term(node_path, value) {
+                self.establish_commit_copy_fact(
+                    node_path,
+                    target,
+                    commit,
+                    &mut state.facts,
+                    &mut set_image_event,
+                );
+            }
+            let mut committed_affine = None;
             if let CheckedSetTarget::Place(place) = target
                 && place.fields.is_empty()
                 && self.affine_binding_type(place.binding).is_some()
                 && let Some(value) = affine_value
             {
+                committed_affine = Some(value.clone());
                 state.affine.values.insert(place.binding, value);
+            }
+            // The scaled quotient image binds the committed value to the
+            // dividend image read before the kill [ENT-3.S7].
+            if let (Some(established), Some(dividend), Some(quotient)) =
+                (commit_division, commit_dividend, committed_affine)
+            {
+                self.establish_unsigned_division_image(
+                    &quotient,
+                    &dividend,
+                    established,
+                    &mut state.affine,
+                );
             }
         }
         if let (Some(prepared), Some(target_event)) = (&prepared, target_event) {
@@ -9685,9 +9742,9 @@ impl Analyzer<'_, '_> {
                 // the initializer's own kills [ENT-3, ENT-5].
                 let mut event = None;
                 let unsigned_division = if judgment.reached {
-                    self.establish_binding_facts(
+                    self.establish_value_image(
                         node_path,
-                        *binding,
+                        ValueImage::Binding(*binding),
                         value,
                         &mut state.facts,
                         &mut event,
@@ -9695,10 +9752,14 @@ impl Analyzer<'_, '_> {
                 } else {
                     None
                 };
-                if let Some(established) = unsigned_division {
+                if let Some(established) = unsigned_division
+                    && let Some(quotient) = state.affine.values.get(binding).cloned()
+                    && let Some(dividend) =
+                        self.unsigned_division_dividend_form(value, &mut state.affine)
+                {
                     self.establish_unsigned_division_image(
-                        *binding,
-                        value,
+                        &quotient,
+                        &dividend,
                         established,
                         &mut state.affine,
                     );
@@ -11108,6 +11169,7 @@ impl Analyzer<'_, '_> {
                 CountedCaptureSide::Lower => "<counted lower capture>".to_owned(),
                 CountedCaptureSide::Upper => "<counted upper capture>".to_owned(),
             },
+            TermKind::CommitValue { .. } => "<assigned value>".to_owned(),
         }
     }
 
